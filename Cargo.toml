@@ -1,0 +1,9 @@
+[package]
+name = "serde-saphyr"
+version = "0.0.1"
+edition = "2024"
+
+[dependencies]
+saphyr-parser = "0.0.6"
+serde = { version = "1", features = ["derive", "alloc", "rc"] }
+
