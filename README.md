@@ -1,4 +1,5 @@
-# serde-saphyr
+# LinkLinkiserde-saphyr
+
 ![panic-free](https://img.shields.io/badge/panic--free-%E2%9C%94%EF%B8%8F-brightgreen)
 [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/bourumir-wyngs/serde-saphyr/rust.yml)](https://github.com/bourumir-wyngs/serde-saphyr/actions)
 [![crates.io](https://img.shields.io/crates/v/serde-saphyr.svg)](https://crates.io/crates/serde-saphyr)
@@ -16,21 +17,23 @@
 - **Also simpler:** No code to support intermediate Value's of all kinds.
 - **Type-driven parsing:** YAML that doesn’t match the expected Rust types is rejected early.
 - **Safer by construction:** No dynamic “any” objects; common YAML-based code-execution [exploits](https://www.arp242.net/yaml-config.html) do not apply.
- 
+
 ### Benchmarking
 
 Parsing Generated YAML, size 25.00 MiB, release build.
 
-| Crate         | Time (ms) | Notes                                                                  |
-|---------------|-----------|------------------------------------------------------------------------|
-| serde-saphyr  | 294.83    | No ``unsafe``, no [unsafe-libyaml](https://github.com/dtolnay/unsafe-libyaml) |
-| serde-yaml-ng | 470.72    |                                                                        |
-| serde-yaml    | 477.33    | Original, deprecated, repo archived                                    |
-| serde-norway  | 479.57    |                                                                        |
-| serde-yml     | 490.92    | Repo archived                                                          |
-| serde-yaml_bw | 702.99    | Slow due Saphyr doing budget check first upfront of libyaml            |
 
-### Other features   
+| Crate                                                   | Time (ms) | Notes                                                                    |
+| ------------------------------------------------------- | --------- | ------------------------------------------------------------------------ |
+| [serde-saphyr](https://crates.io/crates/serde-saphyr)   | 294.83    | No`unsafe`, no [unsafe-libyaml](https://crates.io/crates/unsafe-libyaml) |
+| [serde-yaml-ng](https://crates.io/crates/serde-yaml-ng) | 470.72    |                                                                          |
+| [serde-yaml](https://crates.io/crates/serde-yaml)       | 477.33    | Original, deprecated, repo archived                                      |
+| [serde-norway](https://crates.io/crates/serde-norway)   | 479.57    |                                                                          |
+| [serde-yml](https://crates.io/crates/serde-yml)         | 490.92    | Repo archived                                                            |
+| [serde-yaml_bw](https://crates.io/crates/serde-yaml_bw) | 702.99    | Slow due Saphyr doing budget check first upfront of libyaml              |
+
+### Other features
+
 - **Configurable budgets:** Enforce input limits to mitigate resource-exhaustion
   (e.g., deeply nested structures or very large arrays); see
   [budget constraints](https://docs.rs/serde_yaml_bw/latest/serde_yaml_bw/budget/struct.Budget.html) and
@@ -38,11 +41,12 @@ Parsing Generated YAML, size 25.00 MiB, release build.
 - **Scope:** Currently the crate provides a **deserializer**. YAML merge keys are **not supported**.
 
 ### Duplicate keys
-Duplicate key handling is configurable. By default it’s an error; “first wins”  and “last wins” strategies are available via
-  [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). Duplicate key policy applies not just to strings but also to other types (when deserializing into map).
 
- 
+Duplicate key handling is configurable. By default it’s an error; “first wins”  and “last wins” strategies are available via
+[`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). Duplicate key policy applies not just to strings but also to other types (when deserializing into map).
+
 ### Unsuported features
+
 Merge keys (feature of YAML 1.1 but not 1.2) are not supported because it’s not feasible with the current streaming design to support YAML merge keys without buffering extra data. Use serde-yaml-bw for merge keys.
 
 ---
@@ -122,7 +126,7 @@ let yaml = r#"
   let robot_moves: Vec<Move> = serde_saphyr::from_str(yaml).unwrap();
   println!("Parsed {} moves", robot_moves.len());
   }
-  ```
+```
 
 ## Composite keys
 
@@ -157,7 +161,7 @@ println!("{} entries", transform.map.len());
 
 ## Binary scalars
 
-`!!binary`-tagged YAML values are base64-decoded when deserializing into `Vec<u8>` or `String` (reporting error if it is not valid UTF-8) 
+`!!binary`-tagged YAML values are base64-decoded when deserializing into `Vec<u8>` or `String` (reporting error if it is not valid UTF-8)
 
 ```rust
 use serde::Deserialize;
