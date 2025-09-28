@@ -218,9 +218,11 @@ impl Default for AliasLimits {
 /// Example: parse a small `Config` using a custom `Options`.
 ///
 /// ```rust
-/// use serde::Deserialize;
+/// use serde::Deserialize;///
 ///
-/// #[derive(Debug, Deserialize, PartialEq)]
+/// use serde_saphyr::sf_serde::DuplicateKeyPolicy;
+///
+/// #[derive(Deserialize)]
 /// struct Config {
 ///     name: String,
 ///     enabled: bool,
@@ -228,16 +230,20 @@ impl Default for AliasLimits {
 /// }
 ///
 /// let yaml = r#"
-/// name: My Application
-/// enabled: true
-/// retries: 5
+///     name: My Application
+///     enabled: true
+///     retries: 5
 /// "#;
 ///
-/// let mut options = serde_saphyr::Options::default();
-/// options.budget = Some(serde_saphyr::Budget::default());
-///
-/// // Disallow duplicate keys in mappings (default)
-/// // options.duplicate_keys = /* DuplicateKeyPolicy::Error (default) */ options.duplicate_keys;
+/// let options = serde_saphyr::Options {
+///      budget: Some(serde_saphyr::Budget {
+///            max_documents: 2,
+///            .. serde_saphyr::Budget::default()
+///      }),
+///     // default is error
+///     duplicate_keys: DuplicateKeyPolicy::LastWins,
+///     .. serde_saphyr::Options::default()
+/// };
 ///
 /// let cfg: Config = serde_saphyr::from_str_with_options(yaml, options).unwrap();
 /// assert_eq!(cfg.name, "My Application");
