@@ -1645,6 +1645,7 @@ pub fn from_str_with_options<T: DeserializeOwned>(
 }
 
 /// Deserialize multiple YAML documents from a single string into a vector of `T`.
+/// Completely empty documents are ignored and not included into returned vector.
 ///
 /// Example: read two `Config` documents separated by `---`.
 ///
@@ -1725,6 +1726,12 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
 
     loop {
         match src.peek()? {
+            // Skip documents that are explicit null-like scalars ("", "~", or "null").
+            Some(Ev::Scalar { value: ref s, .. }) if s.is_empty() || s == "~" || s.eq_ignore_ascii_case("null") => {
+                let _ = src.next()?; // consume the null scalar document
+                // Do not push anything for this document; move to the next one.
+                continue;
+            }
             Some(_) => {
                 let value = T::deserialize(Deser::new(&mut src, cfg))?;
                 values.push(value);
@@ -1838,6 +1845,7 @@ pub fn from_slice_multiple<T: DeserializeOwned>(bytes: &[u8]) -> Result<Vec<T>, 
 }
 
 /// Deserialize multiple YAML documents from bytes with configurable [`Options`].
+/// Completely empty documents are ignored and not included into returned vector.
 ///
 /// Example: two `Config` documents with a custom budget from bytes.
 ///
