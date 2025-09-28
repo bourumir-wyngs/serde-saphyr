@@ -1,1 +1,3 @@
 /target
+/tests/yaml-test-suite
+/tests/y_*.rs

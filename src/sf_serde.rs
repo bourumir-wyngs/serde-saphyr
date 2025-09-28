@@ -21,7 +21,7 @@ use std::fmt;
 
 use crate::base64::{decode_base64_yaml, is_binary_tag};
 pub use crate::budget::{Budget, BudgetBreach, BudgetEnforcer};
-use crate::parse_scalars::{parse_num, parse_yaml11_bool, parse_yaml12_f32, parse_yaml12_f64};
+use crate::parse_scalars::{parse_int_signed, parse_int_unsigned, parse_yaml11_bool, parse_yaml12_f32, parse_yaml12_f64};
 use crate::tags::can_parse_into_string;
 use saphyr_parser::{Event, Parser, ScalarStyle, ScanError, Span, StrInput};
 use serde::de::{self, DeserializeOwned, Deserializer as _, IntoDeserializer, Visitor};
@@ -256,6 +256,9 @@ pub struct Options {
     pub duplicate_keys: DuplicateKeyPolicy,
     /// Limits for alias replay to harden against alias bombs.
     pub alias_limits: AliasLimits,
+    /// Enable legacy octal parsing where values starting with `00` are treated as base-8.
+    /// They are deprecated in YAML 1.2. Default: false.
+    pub legacy_octal_numbers: bool,
 }
 
 impl Default for Options {
@@ -264,6 +267,7 @@ impl Default for Options {
             budget: Some(Budget::default()),
             duplicate_keys: DuplicateKeyPolicy::Error,
             alias_limits: AliasLimits::default(),
+            legacy_octal_numbers: false,
         }
     }
 }
@@ -272,6 +276,7 @@ impl Default for Options {
 #[derive(Clone, Copy)]
 struct Cfg {
     dup_policy: DuplicateKeyPolicy,
+    legacy_octal_numbers: bool,
 }
 
 /// Our simplified owned event kind that we feed into Serde.
@@ -822,53 +827,53 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
 
     fn deserialize_i8<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
-        let v: i8 = parse_num(s, "i8", location)?;
+        let v: i8 = parse_int_signed(s, "i8", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i8(v)
     }
     fn deserialize_i16<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
-        let v: i16 = parse_num(s, "i16", location)?;
+        let v: i16 = parse_int_signed(s, "i16", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i16(v)
     }
     fn deserialize_i32<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
-        let v: i32 = parse_num(s, "i32", location)?;
+        let v: i32 = parse_int_signed(s, "i32", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i32(v)
     }
     fn deserialize_i64<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
-        let v: i64 = parse_num(s, "i64", location)?;
+        let v: i64 = parse_int_signed(s, "i64", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i64(v)
     }
     fn deserialize_i128<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
-        let v: i128 = parse_num(s, "i128", location)?;
+        let v: i128 = parse_int_signed(s, "i128", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i128(v)
     }
 
     fn deserialize_u8<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
-        let v: u8 = parse_num(s, "u8", location)?;
+        let v: u8 = parse_int_unsigned(s, "u8", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u8(v)
     }
     fn deserialize_u16<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
-        let v: u16 = parse_num(s, "u16", location)?;
+        let v: u16 = parse_int_unsigned(s, "u16", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u16(v)
     }
     fn deserialize_u32<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
-        let v: u32 = parse_num(s, "u32", location)?;
+        let v: u32 = parse_int_unsigned(s, "u32", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u32(v)
     }
     fn deserialize_u64<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
-        let v: u64 = parse_num(s, "u64", location)?;
+        let v: u64 = parse_int_unsigned(s, "u64", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u64(v)
     }
     fn deserialize_u128<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
-        let v: u128 = parse_num(s, "u128", location)?;
+        let v: u128 = parse_int_unsigned(s, "u128", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u128(v)
     }
 
@@ -1631,6 +1636,7 @@ pub fn from_str_with_options<T: DeserializeOwned>(
 ) -> Result<T, Error> {
     let cfg = Cfg {
         dup_policy: options.duplicate_keys,
+        legacy_octal_numbers: options.legacy_octal_numbers,
     };
     let mut src = LiveEvents::new(input, options.budget, options.alias_limits);
     let value = T::deserialize(Deser::new(&mut src, cfg))?;
@@ -1720,6 +1726,7 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
 ) -> Result<Vec<T>, Error> {
     let cfg = Cfg {
         dup_policy: options.duplicate_keys,
+        legacy_octal_numbers: options.legacy_octal_numbers,
     };
     let mut src = LiveEvents::new(input, options.budget, options.alias_limits);
     let mut values = Vec::new();

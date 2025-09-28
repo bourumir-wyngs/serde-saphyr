@@ -46,8 +46,8 @@ Duplicate key handling is configurable. By default it’s an error; “first win
 [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). Duplicate key policy applies not just to strings but also to other types (when deserializing into map).
 
 ### Unsuported features
-
-Merge keys (feature of YAML 1.1 but not 1.2) are not supported because it’s not feasible with the current streaming design to support YAML merge keys without buffering extra data. Use serde-yaml-bw for merge keys.
+- Tagged enums (!!EnumName RED) are not supported. Use mapping base enums (EnumName: RED). This allows to define nested enums if needed. 
+- Merge keys (feature of YAML 1.1 but not 1.2) are not supported because it’s not feasible with the current streaming design to support YAML merge keys without buffering extra data. Use serde-yaml-bw for merge keys.
 
 ---
 
@@ -181,7 +181,9 @@ fn parse_blob() {
 
 The target Rust types act as a schema. Knowing whether a field is a string or a boolean allows the
 parser to accept `1.2` as either a number or the string `"1.2"` depending on the target type, and to
-interpret common YAML boolean shorthands like `y`, `on`, `n`, or `off` appropriately.
+interpret common YAML boolean shorthands like `y`, `on`, `n`, or `off` appropriately. Same way, `0x2A` is
+the hexadecimal number when parsed into integer field and a string when parsed into String. 
+Legacy octal format like `0052` can be turned on in Options but is off by default.
 
 ## Pathological inputs & budgets
 
