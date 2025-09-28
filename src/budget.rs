@@ -13,6 +13,32 @@ use saphyr_parser::{Event, Parser, ScanError};
 /// The defaults are intentionally permissive for typical configuration files
 /// while stopping obvious resource-amplifying inputs. Tune these per your
 /// application if you regularly process very large YAML streams.
+///
+/// Example: using a `Budget` with `from_str_with_options` to parse into a small
+/// `Config` struct.
+///
+/// ```rust
+/// use serde::Deserialize;
+///
+/// #[derive(Debug, Deserialize, PartialEq)]
+/// struct Config {
+///     name: String,
+///     enabled: bool,
+///     retries: i32,
+/// }
+///
+/// let yaml = r#"
+/// name: My Application
+/// enabled: true
+/// retries: 5
+/// "#;
+///
+/// let mut options = serde_saphyr::Options::default();
+/// options.budget = Some(serde_saphyr::Budget::default());
+///
+/// let cfg: Config = serde_saphyr::from_str_with_options(yaml, options).unwrap();
+/// assert_eq!(cfg.retries, 5);
+/// ```
 #[derive(Clone, Debug)]
 pub struct Budget {
     /// Maximum total parser events (counting every event).

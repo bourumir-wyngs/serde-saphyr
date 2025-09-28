@@ -211,6 +211,37 @@ impl Default for AliasLimits {
 }
 
 /// Parser configuration options.
+///
+/// Use this to configure duplicate-key policy, alias-replay limits, and an
+/// optional pre-parse YAML [`Budget`].
+///
+/// Example: parse a small `Config` using a custom `Options`.
+///
+/// ```rust
+/// use serde::Deserialize;
+///
+/// #[derive(Debug, Deserialize, PartialEq)]
+/// struct Config {
+///     name: String,
+///     enabled: bool,
+///     retries: i32,
+/// }
+///
+/// let yaml = r#"
+/// name: My Application
+/// enabled: true
+/// retries: 5
+/// "#;
+///
+/// let mut options = serde_saphyr::Options::default();
+/// options.budget = Some(serde_saphyr::Budget::default());
+///
+/// // Disallow duplicate keys in mappings (default)
+/// // options.duplicate_keys = /* DuplicateKeyPolicy::Error (default) */ options.duplicate_keys;
+///
+/// let cfg: Config = serde_saphyr::from_str_with_options(yaml, options).unwrap();
+/// assert_eq!(cfg.name, "My Application");
+/// ```
 #[derive(Clone, Debug)]
 pub struct Options {
     /// Optional YAML budget to enforce before parsing (counts raw parser events).
@@ -1525,12 +1556,69 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
     }
 }
 
-/// Entry point: deserialize any T directly from YAML string without building an AST.
+/// Deserialize any `T: serde::de::DeserializeOwned` directly from a YAML string.
+///
+/// This is the simplest entry point; it parses a single YAML document. If the
+/// input contains multiple documents, this returns an error advising to use
+/// [`from_multiple`] or [`from_multiple_with_options`].
+///
+/// Example: read a small `Config` structure from a YAML string.
+///
+/// ```rust
+/// use serde::Deserialize;
+///
+/// #[derive(Debug, Deserialize, PartialEq)]
+/// struct Config {
+///     name: String,
+///     enabled: bool,
+///     retries: i32,
+/// }
+///
+/// let yaml = r#"
+///     name: My Application
+///     enabled: true
+///     retries: 5
+/// "#;
+///
+/// let cfg: Config = serde_saphyr::from_str(yaml).unwrap();
+/// assert!(cfg.enabled);
+/// ```
 pub fn from_str<T: DeserializeOwned>(input: &str) -> Result<T, Error> {
     from_str_with_options(input, Options::default())
 }
 
-/// Entry point with configurable options.
+/// Deserialize a single YAML document with configurable [`Options`].
+///
+/// Example: read a small `Config` with a custom budget and default duplicate-key policy.
+///
+/// ```rust
+/// use serde::Deserialize;
+/// use serde_saphyr::sf_serde::DuplicateKeyPolicy;
+///
+/// #[derive(Debug, Deserialize, PartialEq)]
+/// struct Config {
+///     name: String,
+///     enabled: bool,
+///     retries: i32,
+/// }
+///
+/// let yaml = r#"
+///      name: My Application
+///      enabled: true
+///      retries: 5
+/// "#;
+///
+/// let options = serde_saphyr::Options {
+///      budget: Some(serde_saphyr::Budget {
+///            max_anchors: 200,
+///            .. serde_saphyr::Budget::default()
+///      }),
+///     duplicate_keys: DuplicateKeyPolicy::FirstWins,
+///     .. serde_saphyr::Options::default()
+/// };
+/// let cfg: Config = serde_saphyr::from_str_with_options(yaml, options).unwrap();
+/// assert_eq!(cfg.retries, 5);
+/// ```
 pub fn from_str_with_options<T: DeserializeOwned>(
     input: &str,
     options: Options,
@@ -1550,12 +1638,75 @@ pub fn from_str_with_options<T: DeserializeOwned>(
     Ok(value)
 }
 
-/// Deserialize multiple YAML documents into a vector of values.
+/// Deserialize multiple YAML documents from a single string into a vector of `T`.
+///
+/// Example: read two `Config` documents separated by `---`.
+///
+/// ```rust
+/// use serde::Deserialize;
+///
+/// #[derive(Debug, Deserialize, PartialEq)]
+/// struct Config {
+///     name: String,
+///     enabled: bool,
+///     retries: i32,
+/// }
+///
+/// let yaml = r#"
+/// name: First
+/// enabled: true
+/// retries: 1
+/// ---
+/// name: Second
+/// enabled: false
+/// retries: 2
+/// "#;
+///
+/// let cfgs: Vec<Config> = serde_saphyr::from_multiple(yaml).unwrap();
+/// assert_eq!(cfgs.len(), 2);
+/// assert_eq!(cfgs[0].name, "First");
+/// ```
 pub fn from_multiple<T: DeserializeOwned>(input: &str) -> Result<Vec<T>, Error> {
     from_multiple_with_options(input, Options::default())
 }
 
-/// Deserialize multiple YAML documents into a vector of values with configurable options.
+/// Deserialize multiple YAML documents into a vector with configurable [`Options`].
+///
+/// Example: two `Config` documents with a custom budget.
+///
+/// ```rust
+/// use serde::Deserialize;
+/// use serde_saphyr::sf_serde::DuplicateKeyPolicy;
+///
+/// #[derive(Debug, Deserialize, PartialEq)]
+/// struct Config {
+///     name: String,
+///     enabled: bool,
+///     retries: i32,
+/// }
+///
+/// let yaml = r#"
+/// name: First
+/// enabled: true
+/// retries: 1
+/// ---
+/// name: Second
+/// enabled: false
+/// retries: 2
+/// "#;
+///
+/// let options = serde_saphyr::Options {
+///      budget: Some(serde_saphyr::Budget {
+///            max_anchors: 200,
+///            .. serde_saphyr::Budget::default()
+///      }),
+///     duplicate_keys: DuplicateKeyPolicy::FirstWins,
+///     .. serde_saphyr::Options::default()
+/// };
+/// let cfgs: Vec<Config> = serde_saphyr::from_multiple_with_options(yaml, options).unwrap();
+/// assert_eq!(cfgs.len(), 2);
+/// assert!(!cfgs[1].enabled);
+/// ```
 pub fn from_multiple_with_options<T: DeserializeOwned>(
     input: &str,
     options: Options,

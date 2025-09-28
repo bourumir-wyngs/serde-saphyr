@@ -144,19 +144,10 @@ dependencies = [
 
 [[package]]
 name = "serde-saphyr"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "saphyr-parser",
  "serde",
-]
-
-[[package]]
-name = "serde-saphyr-fuzz"
-version = "0.0.0"
-dependencies = [
- "libfuzzer-sys",
- "serde",
- "serde-saphyr",
 ]
 
 [[package]]
@@ -168,6 +159,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "serde_yaml_bw-fuzz"
+version = "0.0.0"
+dependencies = [
+ "libfuzzer-sys",
+ "serde",
+ "serde-saphyr",
 ]
 
 [[package]]

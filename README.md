@@ -23,14 +23,14 @@
 Parsing Generated YAML, size 25.00 MiB, release build.
 
 
-| Crate                                                   | Time (ms) | Notes                                                                    |
-| ------------------------------------------------------- | --------- | ------------------------------------------------------------------------ |
-| [serde-saphyr](https://crates.io/crates/serde-saphyr)   | 294.83    | No`unsafe`, no [unsafe-libyaml](https://crates.io/crates/unsafe-libyaml) |
-| [serde-yaml-ng](https://crates.io/crates/serde-yaml-ng) | 470.72    |                                                                          |
-| [serde-yaml](https://crates.io/crates/serde-yaml)       | 477.33    | Original, deprecated, repo archived                                      |
-| [serde-norway](https://crates.io/crates/serde-norway)   | 479.57    |                                                                          |
-| [serde-yml](https://crates.io/crates/serde-yml)         | 490.92    | Repo archived                                                            |
-| [serde-yaml_bw](https://crates.io/crates/serde-yaml_bw) | 702.99    | Slow due Saphyr doing budget check first upfront of libyaml              |
+| Crate                                                   | Time (ms) | Notes                                                                     |
+| ------------------------------------------------------- | --------- |---------------------------------------------------------------------------|
+| [serde-saphyr](https://crates.io/crates/serde-saphyr)   | 294.83    | No `unsafe`, no [unsafe-libyaml](https://crates.io/crates/unsafe-libyaml) |
+| [serde-yaml-ng](https://crates.io/crates/serde-yaml-ng) | 470.72    |                                                                           |
+| [serde-yaml](https://crates.io/crates/serde-yaml)       | 477.33    | Original, deprecated, repo archived                                       |
+| [serde-norway](https://crates.io/crates/serde-norway)   | 479.57    |                                                                           |
+| [serde-yml](https://crates.io/crates/serde-yml)         | 490.92    | Repo archived                                                             |
+| [serde-yaml_bw](https://crates.io/crates/serde-yaml_bw) | 702.99    | Slow due Saphyr doing budget check first upfront of libyaml               |
 
 ### Other features
 
