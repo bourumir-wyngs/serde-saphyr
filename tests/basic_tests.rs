@@ -294,7 +294,6 @@ mod tests {
                 ";
             let err =
                 from_str_with_options::<HashMap<String, Vec<Vec<u32>>>>(y, options).unwrap_err();
-            println!("Err: [{err}]");
             assert!(format!("{err}").contains("budget"));
         }
     }
