@@ -1731,6 +1731,148 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
     Ok(values)
 }
 
+/// Deserialize a single YAML document from a UTF-8 byte slice.
+///
+/// This is equivalent to [`from_str`], but accepts `&[u8]` and validates it is
+/// valid UTF-8 before parsing.
+///
+/// Example: read a small `Config` structure from bytes.
+///
+/// ```rust
+/// use serde::Deserialize;
+///
+/// #[derive(Debug, Deserialize, PartialEq)]
+/// struct Config {
+///     name: String,
+///     enabled: bool,
+///     retries: i32,
+/// }
+///
+/// let yaml = r#"
+/// name: My Application
+/// enabled: true
+/// retries: 5
+/// "#;
+/// let bytes = yaml.as_bytes();
+/// let cfg: Config = serde_saphyr::from_slice(bytes).unwrap();
+/// assert!(cfg.enabled);
+/// ```
+///
+pub fn from_slice<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, Error> {
+    from_slice_with_options(bytes, Options::default())
+}
+
+/// Deserialize a single YAML document from a UTF-8 byte slice with configurable [`Options`].
+///
+/// Example: read a small `Config` with a custom budget from bytes.
+///
+/// ```rust
+/// use serde::Deserialize;
+/// use serde_saphyr::sf_serde::DuplicateKeyPolicy;
+///
+/// #[derive(Debug, Deserialize, PartialEq)]
+/// struct Config {
+///     name: String,
+///     enabled: bool,
+///     retries: i32,
+/// }
+///
+/// let yaml = r#"
+///      name: My Application
+///      enabled: true
+///      retries: 5
+/// "#;
+/// let bytes = yaml.as_bytes();
+/// let options = serde_saphyr::Options {
+///      budget: Some(serde_saphyr::Budget {
+///            max_anchors: 200,
+///            .. serde_saphyr::Budget::default()
+///      }),
+///     duplicate_keys: DuplicateKeyPolicy::FirstWins,
+///     .. serde_saphyr::Options::default()
+/// };
+/// let cfg: Config = serde_saphyr::from_slice_with_options(bytes, options).unwrap();
+/// assert_eq!(cfg.retries, 5);
+/// ```
+pub fn from_slice_with_options<T: DeserializeOwned>(bytes: &[u8], options: Options) -> Result<T, Error> {
+    let s = std::str::from_utf8(bytes).map_err(|_| Error::msg("input is not valid UTF-8"))?;
+    from_str_with_options(s, options)
+}
+
+/// Deserialize multiple YAML documents from a UTF-8 byte slice into a vector of `T`.
+///
+/// Example: read two `Config` documents separated by `---` from bytes.
+///
+/// ```rust
+/// use serde::Deserialize;
+///
+/// #[derive(Debug, Deserialize, PartialEq)]
+/// struct Config {
+///     name: String,
+///     enabled: bool,
+///     retries: i32,
+/// }
+///
+/// let yaml = r#"
+/// name: First
+/// enabled: true
+/// retries: 1
+/// ---
+/// name: Second
+/// enabled: false
+/// retries: 2
+/// "#;
+/// let bytes = yaml.as_bytes();
+/// let cfgs: Vec<Config> = serde_saphyr::from_slice_multiple(bytes).unwrap();
+/// assert_eq!(cfgs.len(), 2);
+/// assert_eq!(cfgs[0].name, "First");
+/// ```
+pub fn from_slice_multiple<T: DeserializeOwned>(bytes: &[u8]) -> Result<Vec<T>, Error> {
+    from_slice_multiple_with_options(bytes, Options::default())
+}
+
+/// Deserialize multiple YAML documents from bytes with configurable [`Options`].
+///
+/// Example: two `Config` documents with a custom budget from bytes.
+///
+/// ```rust
+/// use serde::Deserialize;
+/// use serde_saphyr::sf_serde::DuplicateKeyPolicy;
+///
+/// #[derive(Debug, Deserialize, PartialEq)]
+/// struct Config {
+///     name: String,
+///     enabled: bool,
+///     retries: i32,
+/// }
+///
+/// let yaml = r#"
+/// name: First
+/// enabled: true
+/// retries: 1
+/// ---
+/// name: Second
+/// enabled: false
+/// retries: 2
+/// "#;
+/// let bytes = yaml.as_bytes();
+/// let options = serde_saphyr::Options {
+///      budget: Some(serde_saphyr::Budget {
+///            max_anchors: 200,
+///            .. serde_saphyr::Budget::default()
+///      }),
+///     duplicate_keys: DuplicateKeyPolicy::FirstWins,
+///     .. serde_saphyr::Options::default()
+/// };
+/// let cfgs: Vec<Config> = serde_saphyr::from_slice_multiple_with_options(bytes, options).unwrap();
+/// assert_eq!(cfgs.len(), 2);
+/// assert!(!cfgs[1].enabled);
+/// ```
+pub fn from_slice_multiple_with_options<T: DeserializeOwned>(bytes: &[u8], options: Options) -> Result<Vec<T>, Error> {
+    let s = std::str::from_utf8(bytes).map_err(|_| Error::msg("input is not valid UTF-8"))?;
+    from_multiple_with_options(s, options)
+}
+
 fn budget_error(breach: BudgetBreach) -> Error {
     Error::msg(format!("YAML budget breached: {breach:?}"))
 }
