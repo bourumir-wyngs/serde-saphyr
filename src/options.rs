@@ -39,12 +39,13 @@ impl Default for AliasLimits {
 /// Use this to configure duplicate-key policy, alias-replay limits, and an
 /// optional pre-parse YAML [`Budget`].
 ///
-/// Example: parse a small `Config` using a custom `Options`.
+/// Example: parse a small `Config` using custom `Options`.
 ///
 /// ```rust
-/// use serde::Deserialize;///
+/// use serde::Deserialize;
 ///
-/// use serde_saphyr::sf_serde::DuplicateKeyPolicy;
+/// use serde_saphyr::options::DuplicateKeyPolicy;
+/// use serde_saphyr::{from_str_with_options, Budget, Options};
 ///
 /// #[derive(Deserialize)]
 /// struct Config {
@@ -54,22 +55,21 @@ impl Default for AliasLimits {
 /// }
 ///
 /// let yaml = r#"
-///     name: My Application
-///     enabled: true
-///     retries: 5
+/// name: My Application
+/// enabled: true
+/// retries: 5
 /// "#;
 ///
-/// let options = serde_saphyr::Options {
-///      budget: Some(serde_saphyr::Budget {
-///            max_documents: 2,
-///            .. serde_saphyr::Budget::default()
-///      }),
-///     // default is error
+/// let options = Options {
+///     budget: Some(Budget {
+///         max_documents: 2,
+///         ..Budget::default()
+///     }),
 ///     duplicate_keys: DuplicateKeyPolicy::LastWins,
-///     .. serde_saphyr::Options::default()
+///     ..Options::default()
 /// };
 ///
-/// let cfg: Config = serde_saphyr::from_str_with_options(yaml, options).unwrap();
+/// let cfg: Config = from_str_with_options(yaml, options).unwrap();
 /// assert_eq!(cfg.name, "My Application");
 /// ```
 #[derive(Clone, Debug)]

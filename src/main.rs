@@ -1,3 +1,5 @@
+//! Benchmarking test
+
 use serde::Deserialize;
 use serde_saphyr::Options;
 use serde_saphyr::budget::Budget;
@@ -61,7 +63,7 @@ fn build_large_yaml(target_size: usize) -> String {
 }
 
 fn main() -> Result<(), Error> {
-    let target_size = 25 * 1024 * 1024; // 5 MiB
+    let target_size = 25 * 1024 * 1024; // 25 MiB
     let yaml = build_large_yaml(target_size);
 
     println!(
