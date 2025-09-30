@@ -42,7 +42,7 @@ impl Location {
         Self { row, column }
     }
 
-    const fn unknown() -> Self {
+    pub(crate) const fn unknown() -> Self {
         Self::UNKNOWN
     }
 
@@ -92,7 +92,7 @@ impl Error {
         }
     }
 
-    fn unknown_anchor(id: usize) -> Self {
+    pub(crate) fn unknown_anchor(id: usize) -> Self {
         Error::UnknownAnchor {
             id,
             location: Location::unknown(),
@@ -126,7 +126,7 @@ impl Error {
         }
     }
 
-    fn from_scan_error(err: ScanError) -> Self {
+    pub(crate) fn from_scan_error(err: ScanError) -> Self {
         let mark = err.marker();
         let location = Location::new(mark.line(), mark.col() + 1);
         Error::Message {
@@ -173,106 +173,14 @@ fn fmt_with_location(f: &mut fmt::Formatter<'_>, msg: &str, location: &Location)
     }
 }
 
-fn location_from_span(span: &Span) -> Location {
+pub(crate) fn location_from_span(span: &Span) -> Location {
     let start = &span.start;
     Location::new(start.line(), start.col() + 1)
 }
 
-/// Duplicate key handling policy for mappings.
-#[derive(Clone, Copy, Debug)]
-pub enum DuplicateKeyPolicy {
-    /// Error out on encountering a duplicate key.
-    Error,
-    /// First key wins: later duplicate pairs are skipped (key+value are consumed and ignored).
-    FirstWins,
-    /// Last key wins: later duplicate pairs are passed through (default Serde targets typically overwrite).
-    LastWins,
-}
-
-/// Limits applied to alias replay to harden against alias bombs.
-#[derive(Clone, Copy, Debug)]
-pub struct AliasLimits {
-    /// Maximum total number of **replayed** events injected from aliases across the entire parse.
-    /// When exceeded, deserialization errors (alias replay limit exceeded).
-    pub max_total_replayed_events: usize,
-    /// Maximum depth of the alias replay stack (nested alias → injected buffer → alias, etc.).
-    pub max_replay_stack_depth: usize,
-    /// Maximum number of times a **single anchor id** may be expanded via alias.
-    /// Use `usize::MAX` for "unlimited".
-    pub max_alias_expansions_per_anchor: usize,
-}
-
-impl Default for AliasLimits {
-    fn default() -> Self {
-        Self {
-            max_total_replayed_events: 1_000_000,
-            max_replay_stack_depth: 64,
-            max_alias_expansions_per_anchor: usize::MAX,
-        }
-    }
-}
-
-/// Parser configuration options.
-///
-/// Use this to configure duplicate-key policy, alias-replay limits, and an
-/// optional pre-parse YAML [`Budget`].
-///
-/// Example: parse a small `Config` using a custom `Options`.
-///
-/// ```rust
-/// use serde::Deserialize;///
-///
-/// use serde_saphyr::sf_serde::DuplicateKeyPolicy;
-///
-/// #[derive(Deserialize)]
-/// struct Config {
-///     name: String,
-///     enabled: bool,
-///     retries: i32,
-/// }
-///
-/// let yaml = r#"
-///     name: My Application
-///     enabled: true
-///     retries: 5
-/// "#;
-///
-/// let options = serde_saphyr::Options {
-///      budget: Some(serde_saphyr::Budget {
-///            max_documents: 2,
-///            .. serde_saphyr::Budget::default()
-///      }),
-///     // default is error
-///     duplicate_keys: DuplicateKeyPolicy::LastWins,
-///     .. serde_saphyr::Options::default()
-/// };
-///
-/// let cfg: Config = serde_saphyr::from_str_with_options(yaml, options).unwrap();
-/// assert_eq!(cfg.name, "My Application");
-/// ```
-#[derive(Clone, Debug)]
-pub struct Options {
-    /// Optional YAML budget to enforce before parsing (counts raw parser events).
-    pub budget: Option<Budget>,
-    /// Policy for duplicate keys.
-    pub duplicate_keys: DuplicateKeyPolicy,
-    /// Limits for alias replay to harden against alias bombs.
-    pub alias_limits: AliasLimits,
-    /// Enable legacy octal parsing where values starting with `00` are treated as base-8.
-    /// They are deprecated in YAML 1.2. Default: false.
-    pub legacy_octal_numbers: bool,
-}
-
-impl Default for Options {
-    fn default() -> Self {
-        Self {
-            budget: Some(Budget::default()),
-            duplicate_keys: DuplicateKeyPolicy::Error,
-            alias_limits: AliasLimits::default(),
-            legacy_octal_numbers: false,
-        }
-    }
-}
+// Re-export moved Options and related enums from the new options module to preserve
+// the public path serde_saphyr::sf_serde::*. 
+pub use crate::options::{AliasLimits, DuplicateKeyPolicy, Options};
 
 /// Small immutable runtime configuration that `Deser` needs.
 #[derive(Clone, Copy)]
@@ -283,7 +191,7 @@ struct Cfg {
 
 /// Our simplified owned event kind that we feed into Serde.
 #[derive(Clone, Debug)]
-enum Ev {
+pub(crate) enum Ev {
     Scalar {
         value: String,
         tag: Option<String>,
@@ -305,7 +213,7 @@ enum Ev {
 }
 
 impl Ev {
-    fn location(&self) -> Location {
+    pub(crate) fn location(&self) -> Location {
         match self {
             Ev::Scalar { location, .. }
             | Ev::SeqStart { location }
@@ -357,44 +265,18 @@ impl KeyFingerprint {
 
 /// A location-free representation of events for duplicate-key comparison.
 /// Source of events with lookahead and alias-injection.
-trait Events {
+pub(crate) trait Events {
     fn next(&mut self) -> Result<Option<Ev>, Error>;
     fn peek(&mut self) -> Result<Option<Ev>, Error>;
     fn last_location(&self) -> Location;
 }
 
 /// A frame that records events for an anchored container until its end.
-#[derive(Clone, Debug)]
-struct RecFrame {
-    id: usize,
-    depth: usize, // counts nested container starts/ends
-    buf: Vec<Ev>,
-}
 
-/// Live event source that wraps `saphyr_parser::Parser` and:
-/// - Skips stream/document markers
-/// - Records anchored subtrees (containers and scalars)
-/// - Resolves aliases by injecting recorded buffers (replaying)
-struct LiveEvents<'a> {
-    parser: Parser<'a, StrInput<'a>>,
-    look: Option<Ev>,
-    // For alias replay: a stack of injected buffers; we always read from the top first.
-    inject: Vec<(Vec<Ev>, usize)>,
-    // Recorded buffers for anchors (id -> event slice)
-    anchors: HashMap<usize, Vec<Ev>>,
-    // Recording frames for currently-open anchored containers
-    rec_stack: Vec<RecFrame>,
-    // Budget (raw events); independent of alias replay limits below.
-    budget: Option<BudgetEnforcer>,
+// LiveEvents moved to crate::live_events module
+use crate::live_events::LiveEvents;
 
-    last_location: Location,
-
-    // Alias-bomb hardening:
-    alias_limits: AliasLimits,
-    total_replayed_events: usize,
-    per_anchor_expansions: HashMap<usize, usize>,
-}
-
+#[cfg(any())]
 impl<'a> LiveEvents<'a> {
     /// Create a new live event source.
     ///
@@ -422,6 +304,18 @@ impl<'a> LiveEvents<'a> {
         }
     }
 
+    /// Core event pump: pulls the next logical event.
+    ///
+    /// Order of precedence:
+    /// - If there is an injected replay buffer (from an alias), serve from it first.
+    /// - Otherwise, pull from the underlying parser, skipping stream/document markers.
+    ///
+    /// During parsing it:
+    /// - Tracks and records anchors for scalars and containers.
+    /// - Injects recorded buffers on aliases, enforcing alias-bomb hardening limits and budget.
+    /// - Maintains last_location for better error messages.
+    ///
+    /// Returns Some(event) when an event is produced, or Ok(None) on true EOF.
     fn next_impl(&mut self) -> Result<Option<Ev>, Error> {
         // 1) Serve from injected buffers first (alias replay)
         if let Some((buf, idx)) = self.inject.last_mut() {
@@ -605,6 +499,10 @@ impl<'a> LiveEvents<'a> {
         Ok(None)
     }
 
+    /// Reset per-document state when encountering a document boundary.
+    ///
+    /// Clears injected replay buffers, recorded anchors, current recording frames,
+    /// and alias-expansion counters. Does not modify global parser state.
     fn reset_document_state(&mut self) {
         self.inject.clear();
         self.anchors.clear();
@@ -613,6 +511,10 @@ impl<'a> LiveEvents<'a> {
         self.total_replayed_events = 0;
     }
 
+    /// Observe the configured budget for a replayed (injected) event.
+    ///
+    /// Reconstructs a parser Event equivalent to the Ev and passes it to the
+    /// BudgetEnforcer, attaching the event's location on error.
     fn observe_budget_for_replay(&mut self, ev: &Ev) -> Result<(), Error> {
         let Some(budget) = self.budget.as_mut() else {
             return Ok(());
@@ -666,12 +568,17 @@ impl<'a> LiveEvents<'a> {
         }
     }
 
+    /// Increase recording depth for all active anchored frames on a container start.
     fn bump_depth_on_start(&mut self) {
         for fr in &mut self.rec_stack {
             fr.depth += 1;
         }
     }
 
+    /// Decrease recording depth on a container end and finalize any frames
+    /// that reach depth 0 by storing their recorded buffers in `anchors`.
+    ///
+    /// Returns an error if internal depth accounting underflows.
     fn bump_depth_on_end(&mut self) -> Result<(), Error> {
         for fr in &mut self.rec_stack {
             if fr.depth == 0 {
@@ -694,6 +601,10 @@ impl<'a> LiveEvents<'a> {
         Ok(())
     }
 
+    /// Finalize the stream: flush and report budget breaches, if any.
+    ///
+    /// Should be called after parsing completes to surface any delayed
+    /// budget enforcement errors with the last known location.
     fn finish(&mut self) -> Result<(), Error> {
         if let Some(budget) = self.budget.take() {
             let report = budget.finalize();
@@ -705,7 +616,10 @@ impl<'a> LiveEvents<'a> {
     }
 }
 
+#[cfg(any())]
 impl<'a> Events for LiveEvents<'a> {
+    /// Get the next event, using a single-item lookahead buffer if present.
+    /// Updates last_location to the yielded event's location.
     fn next(&mut self) -> Result<Option<Ev>, Error> {
         if let Some(ev) = self.look.take() {
             self.last_location = ev.location();
@@ -713,6 +627,7 @@ impl<'a> Events for LiveEvents<'a> {
         }
         self.next_impl()
     }
+    /// Peek at the next event without consuming it, filling the lookahead buffer if empty.
     fn peek(&mut self) -> Result<Option<Ev>, Error> {
         if self.look.is_none() {
             self.look = self.next_impl()?;
@@ -1949,6 +1864,6 @@ pub fn from_slice_multiple_with_options<T: DeserializeOwned>(
     from_multiple_with_options(s, options)
 }
 
-fn budget_error(breach: BudgetBreach) -> Error {
+pub(crate) fn budget_error(breach: BudgetBreach) -> Error {
     Error::msg(format!("YAML budget breached: {breach:?}"))
 }
