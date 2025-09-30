@@ -13,3 +13,5 @@ keywords = ["yaml", "serde", "serialization", "deserialization", "config"]
 [dependencies]
 saphyr-parser = "0.0.6"
 serde = { version = "1", features = ["derive"] }
+# Our all tests are fine with alpha.
+smallvec = "2.0.0-alpha.11"

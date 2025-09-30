@@ -27,10 +27,7 @@ fn decode_val(b: u8) -> Result<u8, Error> {
 /// Decode a YAML !!binary scalar string (may contain newlines or spaces).
 pub fn decode_base64_yaml(s: &str) -> Result<Vec<u8>, Error> {
     // YAML allows ASCII whitespace inside the base64 text.
-    let cleaned: Vec<u8> = s
-        .bytes()
-        .filter(|b| !(*b as char).is_ascii_whitespace())
-        .collect();
+    let cleaned: Vec<u8> = s.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
 
     if cleaned.len() % 4 != 0 {
         return Err(Error::msg("invalid !!binary base64"));

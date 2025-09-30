@@ -24,8 +24,8 @@ Parsing Generated YAML, size 25.00 MiB, release build.
 
 
 | Crate                                                   | Time (ms) | Notes                                                                     |
-| ------------------------------------------------------- | --------- |---------------------------------------------------------------------------|
-| [serde-saphyr](https://crates.io/crates/serde-saphyr)   | 294.83    | No `unsafe`, no [unsafe-libyaml](https://crates.io/crates/unsafe-libyaml) |
+| ------------------------------------------------------- |-----------|---------------------------------------------------------------------------|
+| [serde-saphyr](https://crates.io/crates/serde-saphyr)   | 290.54 | No `unsafe`, no [unsafe-libyaml](https://crates.io/crates/unsafe-libyaml) |
 | [serde-yaml-ng](https://crates.io/crates/serde-yaml-ng) | 470.72    |                                                                           |
 | [serde-yaml](https://crates.io/crates/serde-yaml)       | 477.33    | Original, deprecated, repo archived                                       |
 | [serde-norway](https://crates.io/crates/serde-norway)   | 479.57    |                                                                           |
