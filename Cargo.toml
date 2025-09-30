@@ -1,17 +1,15 @@
 [package]
 name = "serde-saphyr"
-version = "0.0.2"
-
-authors = ["Bourumir Wyngs <bourumir.wyngs@gmail.com>"]
-categories = ["encoding", "parser-implementations"]
-description = "YAML deserializer for Serde with an emphasis on panic-free parsing on the top of Saphyr."
+version = "0.0.3"
+edition = "2021"
+license = "MIT"
+description = "YAML deserializer for Serde, built on top of Saphyr, emphasizing panic-free parsing."
 documentation = "https://docs.rs/serde-saphyr/latest/serde-saphyr/"
 repository = "https://github.com/bourumir-wyngs/serde-saphyr"
-edition = "2024"
-keywords = ["yaml", "serde", "serialization"]
-license = "MIT"
+readme = "README.md"
+categories = ["encoding", "parser-implementations", "config"]
+keywords = ["yaml", "serde", "serialization", "deserialization", "config"]
 
 [dependencies]
 saphyr-parser = "0.0.6"
-serde = { version = "1", features = ["derive", "alloc", "rc"] }
-
+serde = { version = "1", features = ["derive"] }
