@@ -133,19 +133,7 @@ where
         },
     };
 
-    // Detect base
-    let (radix, digits) = if let Some(r) = rest.strip_prefix("0x").or_else(|| rest.strip_prefix("0X")) {
-        (16u32, r)
-    } else if let Some(r) = rest.strip_prefix("0o").or_else(|| rest.strip_prefix("0O")) {
-        (8u32, r)
-    } else if let Some(r) = rest.strip_prefix("0b").or_else(|| rest.strip_prefix("0B")) {
-        (2u32, r)
-    } else if legacy_octal && rest.starts_with("00") {
-        (8u32, &rest[2..])
-    } else {
-        (10u32, rest)
-    };
-
+    let (radix, digits) = radix_and_digits(legacy_octal, &rest);
     if radix == 10 {
         let val_i128 = parse_decimal_signed_i128(digits, neg)
             .ok_or_else(|| Error::msg(format!("invalid {ty}")).with_location(location))?;
@@ -178,18 +166,7 @@ where
         return Err(Error::msg(format!("invalid {ty}")).with_location(location));
     }
     let rest = t.strip_prefix('+').unwrap_or(t);
-
-    let (radix, digits) = if let Some(r) = rest.strip_prefix("0x").or_else(|| rest.strip_prefix("0X")) {
-        (16u32, r)
-    } else if let Some(r) = rest.strip_prefix("0o").or_else(|| rest.strip_prefix("0O")) {
-        (8u32, r)
-    } else if let Some(r) = rest.strip_prefix("0b").or_else(|| rest.strip_prefix("0B")) {
-        (2u32, r)
-    } else if legacy_octal && rest.starts_with("00") {
-        (8u32, &rest[2..])
-    } else {
-        (10u32, rest)
-    };
+    let (radix, digits) = radix_and_digits(legacy_octal, &rest);
 
     if radix == 10 {
         let val_u128 = parse_decimal_unsigned_u128(digits)
@@ -201,6 +178,26 @@ where
     let mag = parse_digits_u128(digits, radix)
         .ok_or_else(|| Error::msg(format!("invalid {ty}")).with_location(location))?;
     T::try_from(mag).map_err(|_| Error::msg(format!("invalid {ty}")).with_location(location))
+}
+
+fn radix_and_digits<'a>(legacy_octal: bool, rest: &str) -> (u32, &str) {
+    let (radix, digits) = if let Some(r) = rest.strip_prefix("0x").or_else(|| rest.strip_prefix("0X")) {
+        (16u32, r)
+    } else if let Some(r) = rest.strip_prefix("0o").or_else(|| rest.strip_prefix("0O")) {
+        (8u32, r)
+    } else if let Some(r) = rest.strip_prefix("0b").or_else(|| rest.strip_prefix("0B")) {
+        (2u32, r)
+    } else if legacy_octal && rest.starts_with("00") {
+        if rest == "00" {
+            // 00 is 0 and not empty string
+            (8u32, "0")
+        } else {
+            (8u32, &rest[2..])
+        }
+    } else {
+        (10u32, rest)
+    };
+    (radix, digits)
 }
 
 pub(crate) fn parse_yaml12_f64(s: &str, location: Location) -> Result<f64, Error> {

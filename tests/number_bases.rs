@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use serde_saphyr::sf_serde::Error;
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct Numbers {
@@ -35,7 +36,9 @@ legacy_u16: 0052
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
-struct OnlyLegacy { legacy_u16: u16 }
+struct OnlyLegacy {
+    legacy_u16: u16,
+}
 
 #[test]
 fn parse_numeric_bases_with_legacy_octal() {
@@ -48,3 +51,55 @@ legacy_u16: 0052
     // With legacy octal enabled, 0052 is octal -> 42 decimal
     assert_eq!(v.legacy_u16, 42);
 }
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct LegacyZeroMixed {
+    zero_u: u16,
+    plus_zero_u: u16,
+    neg_zero_i: i16,
+}
+
+#[test]
+fn parse_legacy_octal_zero_variants() {
+    let y = r#"
+zero_u: 00
+plus_zero_u: +00
+neg_zero_i: -00
+"#;
+    let mut opts = serde_saphyr::Options::default();
+    opts.legacy_octal_numbers = true;
+    let v: LegacyZeroMixed = serde_saphyr::from_str_with_options(y, opts).expect("parse failed");
+    assert_eq!(v.zero_u, 0);
+    assert_eq!(v.plus_zero_u, 0);
+    assert_eq!(v.neg_zero_i, 0);
+}
+
+
+#[test]
+fn parse_legacy_octal_one() {
+    let y = r#"
+zero_u: 001
+plus_zero_u: +001
+neg_zero_i: -001
+"#;
+    let mut opts = serde_saphyr::Options::default();
+    opts.legacy_octal_numbers = true;
+    let v: LegacyZeroMixed = serde_saphyr::from_str_with_options(y, opts).expect("parse failed");
+    assert_eq!(v.zero_u, 1);
+    assert_eq!(v.plus_zero_u, 1);
+    assert_eq!(v.neg_zero_i, -1);
+}
+
+#[test]
+fn parse_legacy_octal_nine() {
+    let y = r#"
+zero_u: 009
+plus_zero_u: +009
+neg_zero_i: -009
+"#;
+    let mut opts = serde_saphyr::Options::default();
+    opts.legacy_octal_numbers = true;
+    let v: Result<LegacyZeroMixed, Error> = serde_saphyr::from_str_with_options(y, opts);
+    assert!(v.is_err());
+}
+
