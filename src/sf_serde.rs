@@ -317,9 +317,19 @@ impl Ev {
 }
 
 fn scalar_is_nullish(value: &str, style: ScalarStyle) -> bool {
-    (matches!(style, ScalarStyle::Plain) && value.is_empty())
-        || value == "~"
-        || value.eq_ignore_ascii_case("null")
+    if !matches!(style, ScalarStyle::Plain) {
+        return false;
+    }
+    value.is_empty() || value == "~" || value.eq_ignore_ascii_case("null")
+}
+
+fn scalar_is_nullish_for_option(value: &str, style: ScalarStyle) -> bool {
+    // For Option: treat empty unquoted scalar as null, and plain "~"/"null" as null.
+    let empty_unquoted = value.is_empty()
+        && !matches!(style, ScalarStyle::SingleQuoted | ScalarStyle::DoubleQuoted);
+    let plain_nullish = matches!(style, ScalarStyle::Plain)
+        && (value == "~" || value.eq_ignore_ascii_case("null"));
+    empty_unquoted || plain_nullish
 }
 
 /// Canonical fingerprint of a YAML node for duplicate-key detection.
@@ -470,12 +480,16 @@ impl<'a> LiveEvents<'a> {
                     continue;
                 }
 
-                Event::Scalar(val, style, anchor_id, tag) => {
+                Event::Scalar(val, mut style, anchor_id, tag) => {
                     let s = match val {
                         Cow::Borrowed(v) => v.to_string(),
                         Cow::Owned(v) => v,
                     };
                     let tag_s = tag.map(|t| t.to_string());
+                    if s.is_empty() && anchor_id != 0 && matches!(style, ScalarStyle::SingleQuoted | ScalarStyle::DoubleQuoted) {
+                        // Normalize: anchored empty scalars should behave like plain empty (null-like)
+                        style = ScalarStyle::Plain;
+                    }
                     let ev = Ev::Scalar {
                         value: s,
                         tag: tag_s,
@@ -1003,7 +1017,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                      value: ref s,
                      style,
                      ..
-                 }) if scalar_is_nullish(s, style) => {
+                 }) if scalar_is_nullish_for_option(s, style) => {
                 let _ = self.ev.next()?; // consume the scalar
                 visitor.visit_none()
             }
