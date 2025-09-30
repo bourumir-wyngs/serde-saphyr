@@ -178,8 +178,8 @@ pub(crate) fn location_from_span(span: &Span) -> Location {
     Location::new(start.line(), start.col() + 1)
 }
 
-// Re-export moved Options and related enums from the new options module to preserve
-// the public path serde_saphyr::sf_serde::*. 
+// Re-export moved Options and related enums from the options module to preserve
+// the public path serde_saphyr::sf_serde::*.
 pub use crate::options::{AliasLimits, DuplicateKeyPolicy, Options};
 
 /// Small immutable runtime configuration that `Deser` needs.

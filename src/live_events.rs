@@ -9,7 +9,8 @@ use crate::sf_serde::{
     Location,
 };
 
-const SMALLVECT_INLINE: usize = 2;
+/// This is enough to hold a single scalar that is common  case in YAML anchors.
+const SMALLVECT_INLINE: usize = 1;
 
 /// A frame that records events for an anchored container until its end.
 /// Uses SmallVec to avoid heap allocations for small anchors.
