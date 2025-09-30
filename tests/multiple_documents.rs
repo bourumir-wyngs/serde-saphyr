@@ -34,24 +34,60 @@ fn multiple_documents_two_documents() {
 }
 
 #[test]
+fn multiple_documents_cross_document_anchor_error() {
+    // Anchors must not leak across document boundaries.
+    let y = "name: &a John\n---\nname: *a\n";
+    let err = serde_saphyr::from_multiple::<Person>(y)
+        .expect_err("expected cross-document alias to fail");
+    match err {
+        serde_saphyr::sf_serde::Error::UnknownAnchor { .. } => {}
+        other => panic!("expected unknown anchor error, got {other:?}"),
+    }
+}
+
+#[test]
 fn multiple_documents_empty_document_cases() {
     // Case 1: explicitly empty document
     let y1 = "---\n...\n";
     let docs1: Vec<Person> = serde_saphyr::from_multiple(y1).expect("parse empty doc 1");
-    assert!(docs1.is_empty(), "expected empty vec for explicit empty document, got: {:?}", docs1);
+    assert!(
+        docs1.is_empty(),
+        "expected empty vec for explicit empty document, got: {:?}",
+        docs1
+    );
 
     // Case 2: just document start without content
     let y2 = "---\n";
     let docs2: Vec<Person> = serde_saphyr::from_multiple(y2).expect("parse empty doc 2");
-    assert!(docs2.is_empty(), "expected empty vec for start-only empty document, got: {:?}", docs2);
+    assert!(
+        docs2.is_empty(),
+        "expected empty vec for start-only empty document, got: {:?}",
+        docs2
+    );
 
     // Case 3: multiple empties
     let y3 = "---\n---\n...\n";
     let docs3: Vec<Person> = serde_saphyr::from_multiple(y3).expect("parse multiple empty docs");
-    assert!(docs3.is_empty(), "expected empty vec when only empty documents present, got: {:?}", docs3);
+    assert!(
+        docs3.is_empty(),
+        "expected empty vec when only empty documents present, got: {:?}",
+        docs3
+    );
 
     // Case 4: completely empty stream
     let y4 = "";
-    let docs4: Vec<Person> = serde_saphyr::from_multiple(y4).expect("parse completely empty stream");
-    assert!(docs4.is_empty(), "expected empty vec for empty stream, got: {:?}", docs4);
+    let docs4: Vec<Person> =
+        serde_saphyr::from_multiple(y4).expect("parse completely empty stream");
+    assert!(
+        docs4.is_empty(),
+        "expected empty vec for empty stream, got: {:?}",
+        docs4
+    );
+}
+
+#[test]
+fn multiple_documents_preserve_quoted_null_like_scalars() {
+    let y = "\"\"\n---\n\"~\"\n---\n\"null\"\n";
+    let docs: Vec<String> = serde_saphyr::from_multiple(y).expect("parse quoted null-like docs");
+    assert_eq!(docs, vec![String::new(), "~".to_owned(), "null".to_owned()]);
 }

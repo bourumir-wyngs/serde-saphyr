@@ -122,6 +122,14 @@ mod tests {
     }
 
     #[test]
+    fn quoted_and_plain_null_keys_are_distinct() {
+        let y = "\"null\": 1\nnull: 2\n";
+        let map = from_str::<HashMap<String, i32>>(y).unwrap();
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get("null"), Some(&2));
+    }
+
+    #[test]
     fn duplicate_keys_first_wins_policy() {
         let y = "a: 1\na: 2\nb: 3\n";
         let mut opt = Options::default();

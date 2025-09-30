@@ -21,7 +21,9 @@ use std::fmt;
 
 use crate::base64::{decode_base64_yaml, is_binary_tag};
 pub use crate::budget::{Budget, BudgetBreach, BudgetEnforcer};
-use crate::parse_scalars::{parse_int_signed, parse_int_unsigned, parse_yaml11_bool, parse_yaml12_f32, parse_yaml12_f64};
+use crate::parse_scalars::{
+    parse_int_signed, parse_int_unsigned, parse_yaml11_bool, parse_yaml12_f32, parse_yaml12_f64,
+};
 use crate::tags::can_parse_into_string;
 use saphyr_parser::{Event, Parser, ScalarStyle, ScanError, Span, StrInput};
 use serde::de::{self, DeserializeOwned, Deserializer as _, IntoDeserializer, Visitor};
@@ -285,6 +287,7 @@ enum Ev {
     Scalar {
         value: String,
         tag: Option<String>,
+        style: ScalarStyle,
         location: Location,
     },
     SeqStart {
@@ -311,6 +314,12 @@ impl Ev {
             | Ev::MapEnd { location } => *location,
         }
     }
+}
+
+fn scalar_is_nullish(value: &str, style: ScalarStyle) -> bool {
+    (matches!(style, ScalarStyle::Plain) && value.is_empty())
+        || value == "~"
+        || value.eq_ignore_ascii_case("null")
 }
 
 /// Canonical fingerprint of a YAML node for duplicate-key detection.
@@ -423,7 +432,7 @@ impl<'a> LiveEvents<'a> {
                         "alias replay limit exceeded: total_replayed_events={} > {}",
                         self.total_replayed_events, self.alias_limits.max_total_replayed_events
                     ))
-                    .with_location(ev.location()));
+                        .with_location(ev.location()));
                 }
                 self.observe_budget_for_replay(&ev)?;
                 self.record(
@@ -448,16 +457,20 @@ impl<'a> LiveEvents<'a> {
             }
 
             match raw {
-                Event::StreamStart
-                | Event::StreamEnd
-                | Event::DocumentStart(_)
-                | Event::DocumentEnd => {
-                    // Skip document/stream markers.
+                Event::StreamStart | Event::StreamEnd => {
+                    // Skip stream markers.
                     self.last_location = location;
                     continue;
                 }
 
-                Event::Scalar(val, _style, anchor_id, tag) => {
+                Event::DocumentStart(_) | Event::DocumentEnd => {
+                    // Skip document markers and reset per-document state.
+                    self.reset_document_state();
+                    self.last_location = location;
+                    continue;
+                }
+
+                Event::Scalar(val, style, anchor_id, tag) => {
                     let s = match val {
                         Cow::Borrowed(v) => v.to_string(),
                         Cow::Owned(v) => v,
@@ -466,6 +479,7 @@ impl<'a> LiveEvents<'a> {
                     let ev = Ev::Scalar {
                         value: s,
                         tag: tag_s,
+                        style,
                         location,
                     };
                     self.record(&ev, false, false);
@@ -554,7 +568,7 @@ impl<'a> LiveEvents<'a> {
                             "alias expansion limit exceeded for anchor id {}: {} > {}",
                             anchor_id, count, self.alias_limits.max_alias_expansions_per_anchor
                         ))
-                        .with_location(location));
+                            .with_location(location));
                     }
 
                     // Push for replay; enforce stack depth limit.
@@ -564,7 +578,7 @@ impl<'a> LiveEvents<'a> {
                             "alias replay stack depth exceeded: depth={} > {}",
                             next_depth, self.alias_limits.max_replay_stack_depth
                         ))
-                        .with_location(location));
+                            .with_location(location));
                     }
                     self.inject.push((buf, 0));
                     return self.next_impl();
@@ -577,14 +591,22 @@ impl<'a> LiveEvents<'a> {
         Ok(None)
     }
 
+    fn reset_document_state(&mut self) {
+        self.inject.clear();
+        self.anchors.clear();
+        self.rec_stack.clear();
+        self.per_anchor_expansions.clear();
+        self.total_replayed_events = 0;
+    }
+
     fn observe_budget_for_replay(&mut self, ev: &Ev) -> Result<(), Error> {
         let Some(budget) = self.budget.as_mut() else {
             return Ok(());
         };
 
         let raw = match ev {
-            Ev::Scalar { value, .. } => {
-                Event::Scalar(Cow::Owned(value.clone()), ScalarStyle::Plain, 0, None)
+            Ev::Scalar { value, style, .. } => {
+                Event::Scalar(Cow::Owned(value.clone()), *style, 0, None)
             }
             Ev::SeqStart { .. } => Event::SequenceStart(0, None),
             Ev::SeqEnd { .. } => Event::SequenceEnd,
@@ -743,10 +765,11 @@ impl<'e> Deser<'e> {
     fn take_scalar_event(&mut self) -> Result<(String, Option<String>, Location), Error> {
         match self.ev.next()? {
             Some(Ev::Scalar {
-                value,
-                tag,
-                location,
-            }) => Ok((value, tag, location)),
+                     value,
+                     tag,
+                     location,
+                     ..
+                 }) => Ok((value, tag, location)),
             Some(other) => Err(Error::unexpected("string scalar").with_location(other.location())),
             None => Err(Error::eof().with_location(self.ev.last_location())),
         }
@@ -770,7 +793,7 @@ impl<'e> Deser<'e> {
                 return Err(Error::msg(format!(
                     "cannot deserialize scalar tagged {t} into string"
                 ))
-                .with_location(location));
+                    .with_location(location));
             }
         }
 
@@ -918,8 +941,8 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
             Some(Ev::Scalar { tag, .. }) if is_binary_tag(tag.as_deref()) => {
                 let (value, data_location) = match self.ev.next()? {
                     Some(Ev::Scalar {
-                        value, location, ..
-                    }) => (value, location),
+                             value, location, ..
+                         }) => (value, location),
                     _ => unreachable!(),
                 };
                 let data =
@@ -976,9 +999,11 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
             None => visitor.visit_none(),
 
             // YAML null forms as scalars → None
-            Some(Ev::Scalar { value: ref s, .. })
-                if s.is_empty() || s == "~" || s.eq_ignore_ascii_case("null") =>
-            {
+            Some(Ev::Scalar {
+                     value: ref s,
+                     style,
+                     ..
+                 }) if scalar_is_nullish(s, style) => {
                 let _ = self.ev.next()?; // consume the scalar
                 visitor.visit_none()
             }
@@ -995,9 +1020,11 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
         match self.ev.peek()? {
             // Accept YAML null forms or absence as unit
             None => visitor.visit_unit(),
-            Some(Ev::Scalar { value: ref s, .. })
-                if s.is_empty() || s == "~" || s.eq_ignore_ascii_case("null") =>
-            {
+            Some(Ev::Scalar {
+                     value: ref s,
+                     style,
+                     ..
+                 }) if scalar_is_nullish(s, style) => {
                 let _ = self.ev.next()?; // consume the scalar
                 visitor.visit_unit()
             }
@@ -1047,8 +1074,8 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
             if is_binary_tag(tag.as_deref()) {
                 let (scalar, data_location) = match self.ev.next()? {
                     Some(Ev::Scalar {
-                        value, location, ..
-                    }) => (value, location),
+                             value, location, ..
+                         }) => (value, location),
                     _ => unreachable!(),
                 };
                 let data =
@@ -1201,6 +1228,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                     Ev::Scalar {
                         value,
                         tag,
+                        style,
                         location,
                     } => {
                         let fingerprint = KeyFingerprint::Scalar {
@@ -1212,6 +1240,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                             events: vec![Ev::Scalar {
                                 value,
                                 tag,
+                                style,
                                 location,
                             }],
                             location,
@@ -1289,7 +1318,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                     Ev::SeqEnd { location } | Ev::MapEnd { location } => Err(Error::msg(
                         "unexpected container end while reading key node",
                     )
-                    .with_location(location)),
+                        .with_location(location)),
                 }
             }
 
@@ -1469,7 +1498,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                     Some(other) => Err(Error::msg(
                         "expected end of mapping after enum variant value",
                     )
-                    .with_location(other.location())),
+                        .with_location(other.location())),
                     None => Err(Error::eof().with_location(self.ev.last_location())),
                 }
             }
@@ -1485,9 +1514,11 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                             let _ = self.ev.next()?;
                             Ok(())
                         }
-                        Some(Ev::Scalar { value: ref s, .. })
-                            if s.is_empty() || s == "~" || s.eq_ignore_ascii_case("null") =>
-                        {
+                        Some(Ev::Scalar {
+                                 value: ref s,
+                                 style,
+                                 ..
+                             }) if scalar_is_nullish(s, style) => {
                             let _ = self.ev.next()?; // consume the null-like scalar
                             self.expect_map_end()
                         }
@@ -1644,7 +1675,7 @@ pub fn from_str_with_options<T: DeserializeOwned>(
         return Err(Error::msg(
             "multiple YAML documents detected; use from_multiple or from_multiple_with_options",
         )
-        .with_location(ev.location()));
+            .with_location(ev.location()));
     }
     src.finish()?;
     Ok(value)
@@ -1734,7 +1765,11 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
     loop {
         match src.peek()? {
             // Skip documents that are explicit null-like scalars ("", "~", or "null").
-            Some(Ev::Scalar { value: ref s, .. }) if s.is_empty() || s == "~" || s.eq_ignore_ascii_case("null") => {
+            Some(Ev::Scalar {
+                     value: ref s,
+                     style,
+                     ..
+                 }) if scalar_is_nullish(s, style) => {
                 let _ = src.next()?; // consume the null scalar document
                 // Do not push anything for this document; move to the next one.
                 continue;
@@ -1814,7 +1849,10 @@ pub fn from_slice<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, Error> {
 /// let cfg: Config = serde_saphyr::from_slice_with_options(bytes, options).unwrap();
 /// assert_eq!(cfg.retries, 5);
 /// ```
-pub fn from_slice_with_options<T: DeserializeOwned>(bytes: &[u8], options: Options) -> Result<T, Error> {
+pub fn from_slice_with_options<T: DeserializeOwned>(
+    bytes: &[u8],
+    options: Options,
+) -> Result<T, Error> {
     let s = std::str::from_utf8(bytes).map_err(|_| Error::msg("input is not valid UTF-8"))?;
     from_str_with_options(s, options)
 }
@@ -1889,7 +1927,10 @@ pub fn from_slice_multiple<T: DeserializeOwned>(bytes: &[u8]) -> Result<Vec<T>, 
 /// assert_eq!(cfgs.len(), 2);
 /// assert!(!cfgs[1].enabled);
 /// ```
-pub fn from_slice_multiple_with_options<T: DeserializeOwned>(bytes: &[u8], options: Options) -> Result<Vec<T>, Error> {
+pub fn from_slice_multiple_with_options<T: DeserializeOwned>(
+    bytes: &[u8],
+    options: Options,
+) -> Result<Vec<T>, Error> {
     let s = std::str::from_utf8(bytes).map_err(|_| Error::msg("input is not valid UTF-8"))?;
     from_multiple_with_options(s, options)
 }
