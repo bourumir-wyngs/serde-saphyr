@@ -36,7 +36,7 @@ Parsing Generated YAML, size 25.00 MiB, release build.
 
 - **Configurable budgets:** Enforce input limits to mitigate resource-exhaustion
   (e.g., deeply nested structures or very large arrays); see
-  [budget constraints](https://docs.rs/serde_yaml_bw/latest/serde_yaml_bw/budget/struct.Budget.html) and
+  [budget constraints](https://docs.rs/serde_saphyr/latest/serde_saphyr/budget/struct.Budget.html) and
   [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
 - **Scope:** Currently the crate provides a **deserializer** with full support for YAML merge keys
   that obey the configured duplicate-key policy.
@@ -214,7 +214,7 @@ production:
 "#;
 
     // Deserialize YAML with anchors, aliases and merge keys into the Config struct
-    let parsed: Config = serde_yaml_bw::from_str(yaml_input).expect("Failed to deserialize YAML");
+    let parsed: Config = serde_saphyr::from_str(yaml_input).expect("Failed to deserialize YAML");
 
     // Define expected Config structure explicitly
     let expected = Config {

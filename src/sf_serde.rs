@@ -38,14 +38,39 @@ pub struct Location {
 impl Location {
     pub const UNKNOWN: Self = Self { row: 0, column: 0 };
 
+    /// Create a `Location` with explicit 1-based `row` and `column`.
+    ///
+    /// Parameters:
+    /// - `row`: 1-based line index in the source.
+    /// - `column`: 1-based column index in the source.
+    ///
+    /// Returns:
+    /// - A `Location` carrying the given coordinates.
+    ///
+    /// Called by:
+    /// - `location_from_span` when converting parser spans to user-facing locations.
     const fn new(row: usize, column: usize) -> Self {
         Self { row, column }
     }
 
+    /// Shorthand for an unknown/unspecified source location.
+    ///
+    /// Returns:
+    /// - A sentinel `Location` with both coordinates set to `0`.
+    ///
+    /// Called by:
+    /// - Error constructors where exact location is not yet known.
     pub(crate) const fn unknown() -> Self {
         Self::UNKNOWN
     }
 
+    /// Whether this `Location` carries meaningful (non-zero) coordinates.
+    ///
+    /// Returns:
+    /// - `true` if both `row` and `column` are non-zero; otherwise `false`.
+    ///
+    /// Called by:
+    /// - Error formatting/printing to decide whether to append location info.
     fn is_known(&self) -> bool {
         self.row != 0 && self.column != 0
     }
@@ -72,6 +97,16 @@ pub enum Error {
 }
 
 impl Error {
+    /// Construct an `Error::Message` from displayable content with unknown location.
+    ///
+    /// Parameters:
+    /// - `s`: message text.
+    ///
+    /// Returns:
+    /// - An `Error::Message` with `location = Location::unknown()`.
+    ///
+    /// Called by:
+    /// - Many parsing/conversion helpers when surfacing human-readable errors.
     pub(crate) fn msg<S: Into<String>>(s: S) -> Self {
         Error::Message {
             msg: s.into(),
@@ -79,6 +114,16 @@ impl Error {
         }
     }
 
+    /// Internal helper for "unexpected event" errors prior to knowing location.
+    ///
+    /// Parameters:
+    /// - `what`: textual description of what was expected.
+    ///
+    /// Returns:
+    /// - `Error::Unexpected` with an unknown location; caller usually `.with_location(...)`.
+    ///
+    /// Called by:
+    /// - `Deser` helper methods when the next event is structurally invalid.
     fn unexpected(what: &'static str) -> Self {
         Error::Unexpected {
             expected: what,
@@ -86,12 +131,29 @@ impl Error {
         }
     }
 
+    /// Internal helper to create an EOF error with unknown location.
+    ///
+    /// Returns:
+    /// - `Error::Eof` with unknown location (callers typically set one).
+    ///
+    /// Called by:
+    /// - Event consumers when reaching end-of-stream unexpectedly.
     fn eof() -> Self {
         Error::Eof {
             location: Location::unknown(),
         }
     }
 
+    /// Construct an error for an alias that references an unknown anchor id.
+    ///
+    /// Parameters:
+    /// - `id`: missing anchor id.
+    ///
+    /// Returns:
+    /// - `Error::UnknownAnchor` with unknown location (caller sets it later).
+    ///
+    /// Called by:
+    /// - Alias handling in `LiveEvents` and replay logic.
     pub(crate) fn unknown_anchor(id: usize) -> Self {
         Error::UnknownAnchor {
             id,
@@ -99,6 +161,16 @@ impl Error {
         }
     }
 
+    /// Attach a concrete source `Location` to an existing error value.
+    ///
+    /// Parameters:
+    /// - `set_location`: location to associate with the error.
+    ///
+    /// Returns:
+    /// - The same `Error` with its location field updated.
+    ///
+    /// Called by:
+    /// - Most error sites once a `Span`/`Location` is available.
     pub(crate) fn with_location(mut self, set_location: Location) -> Self {
         match &mut self {
             Error::Message { location, .. }
@@ -111,6 +183,13 @@ impl Error {
         self
     }
 
+    /// Read back the error location if present (non-zero), otherwise `None`.
+    ///
+    /// Returns:
+    /// - `Some(Location)` when known; `None` when unknown.
+    ///
+    /// Called by:
+    /// - Error formatting/printing and external consumers wanting to highlight source positions.
     pub fn location(&self) -> Option<Location> {
         match self {
             Error::Message { location, .. }
@@ -126,6 +205,16 @@ impl Error {
         }
     }
 
+    /// Convert a `saphyr_parser::ScanError` to our `Error`, preserving location.
+    ///
+    /// Parameters:
+    /// - `err`: parser scan error with a marker.
+    ///
+    /// Returns:
+    /// - `Error::Message` with the parser's message and computed `Location`.
+    ///
+    /// Called by:
+    /// - Event pump in `LiveEvents` on parser failure.
     pub(crate) fn from_scan_error(err: ScanError) -> Self {
         let mark = err.marker();
         let location = Location::new(mark.line(), mark.col() + 1);
@@ -137,6 +226,10 @@ impl Error {
 }
 
 impl fmt::Display for Error {
+    /// Human-readable formatter that includes location when available.
+    ///
+    /// Called by:
+    /// - Standard error reporting (`{}` formatting), including test assertions and logs.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::Message { msg, location } => fmt_with_location(f, msg, location),
@@ -156,11 +249,30 @@ impl fmt::Display for Error {
 }
 impl std::error::Error for Error {}
 impl de::Error for Error {
+    /// Serde hook to construct our error from a generic displayable message.
+    ///
+    /// Parameters:
+    /// - `msg`: error text provided by Serde.
+    ///
+    /// Returns:
+    /// - `Error::Message` with unknown location (callers typically set one later).
     fn custom<T: fmt::Display>(msg: T) -> Self {
         Error::msg(msg.to_string())
     }
 }
 
+/// Format `{msg}` optionally suffixed with `at line X, column Y` if known.
+///
+/// Parameters:
+/// - `f`: formatter.
+/// - `msg`: core message text.
+/// - `location`: where the error occurred (may be unknown).
+///
+/// Returns:
+/// - Standard `fmt::Result`.
+///
+/// Called by:
+/// - `impl Display for Error`.
 fn fmt_with_location(f: &mut fmt::Formatter<'_>, msg: &str, location: &Location) -> fmt::Result {
     if location.is_known() {
         write!(
@@ -173,6 +285,16 @@ fn fmt_with_location(f: &mut fmt::Formatter<'_>, msg: &str, location: &Location)
     }
 }
 
+/// Compute a `Location` from a `saphyr_parser::Span`.
+///
+/// Parameters:
+/// - `span`: parser span with start coordinates.
+///
+/// Returns:
+/// - 1-based `Location` corresponding to the span's start.
+///
+/// Called by:
+/// - `LiveEvents` when mapping parser items to user-facing errors.
 pub(crate) fn location_from_span(span: &Span) -> Location {
     let start = &span.start;
     Location::new(start.line(), start.col() + 1)
@@ -213,6 +335,13 @@ pub(crate) enum Ev {
 }
 
 impl Ev {
+    /// Extract the source `Location` associated with this event.
+    ///
+    /// Returns:
+    /// - Location of this event.
+    ///
+    /// Called by:
+    /// - Error reporting helpers and event sources on lookahead/consumption.
     pub(crate) fn location(&self) -> Location {
         match self {
             Ev::Scalar { location, .. }
@@ -224,6 +353,17 @@ impl Ev {
     }
 }
 
+/// Whether a scalar should be treated as YAML null in general (not `Option`-specific).
+///
+/// Parameters:
+/// - `value`: scalar text.
+/// - `style`: scalar style (quoted/plain).
+///
+/// Returns:
+/// - `true` if empty string, `~`, or `null` (case-insensitive) in **plain** style; else `false`.
+///
+/// Called by:
+/// - Unit deserialization (`deserialize_unit`), merge-key processing, and document-skipping.
 fn scalar_is_nullish(value: &str, style: ScalarStyle) -> bool {
     if !matches!(style, ScalarStyle::Plain) {
         return false;
@@ -231,6 +371,17 @@ fn scalar_is_nullish(value: &str, style: ScalarStyle) -> bool {
     value.is_empty() || value == "~" || value.eq_ignore_ascii_case("null")
 }
 
+/// Whether a scalar should be treated as YAML `None` when deserializing an `Option<T>`.
+///
+/// Parameters:
+/// - `value`: scalar text.
+/// - `style`: scalar style.
+///
+/// Returns:
+/// - `true` for empty **unquoted** scalar and for plain `~`/`null`; else `false`.
+///
+/// Called by:
+/// - `deserialize_option` only (does not affect other types).
 fn scalar_is_nullish_for_option(value: &str, style: ScalarStyle) -> bool {
     // For Option: treat empty unquoted scalar as null, and plain "~"/"null" as null.
     let empty_unquoted =
@@ -249,6 +400,13 @@ enum KeyFingerprint {
 }
 
 impl KeyFingerprint {
+    /// If this fingerprint represents a string-like scalar, return its raw value.
+    ///
+    /// Returns:
+    /// - `Some(&str)` when tag permits string parsing and it is not `!!binary`; else `None`.
+    ///
+    /// Called by:
+    /// - Duplicate-key error messages to include a user-friendly key when possible.
     fn stringy_scalar_value(&self) -> Option<&str> {
         match self {
             KeyFingerprint::Scalar { value, tag } => {
@@ -274,6 +432,18 @@ struct PendingEntry {
     value: KeyNode,
 }
 
+/// Capture a single YAML node (scalar/sequence/mapping) from the event stream.
+///
+/// Parameters:
+/// - `ev`: event source with lookahead.
+///
+/// Returns:
+/// - `Ok(KeyNode)` containing a fingerprint, recorded events, and node location.
+/// - `Err(Error)` on early EOF or structural mismatch.
+///
+/// Called by:
+/// - Mapping handling for duplicate-key detection and merge-key processing.
+/// - `collect_entries_from_map` / `pending_entries_from_events`.
 fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
     let Some(event) = ev.next()? else {
         return Err(Error::eof().with_location(ev.last_location()));
@@ -373,10 +543,20 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
         Ev::SeqEnd { location } | Ev::MapEnd { location } => Err(Error::msg(
             "unexpected container end while reading key node",
         )
-        .with_location(location)),
+            .with_location(location)),
     }
 }
 
+/// Whether the given `KeyNode` is a YAML merge key (`<<`) in plain style w/o tag.
+///
+/// Parameters:
+/// - `node`: key node previously captured.
+///
+/// Returns:
+/// - `true` if it is a merge key; otherwise `false`.
+///
+/// Called by:
+/// - Mapping deserializer when processing `<<` expansions and pending entries.
 fn is_merge_key(node: &KeyNode) -> bool {
     if node.events.len() != 1 {
         return false;
@@ -392,6 +572,18 @@ fn is_merge_key(node: &KeyNode) -> bool {
     )
 }
 
+/// Convert a merge value node into a flat list of `(key,value)` pairs to merge.
+///
+/// Parameters:
+/// - `events`: recorded events constituting the merge value (map or seq-of-maps).
+/// - `location`: location of the merge value (for error reporting).
+///
+/// Returns:
+/// - `Ok(Vec<PendingEntry>)` flattened from nested merges.
+/// - `Err(Error)` if the value is not a mapping or sequence-of-mappings or on EOF.
+///
+/// Called by:
+/// - MapAccess implementation when encountering a merge key (`<<`).
 fn pending_entries_from_events(
     events: Vec<Ev>,
     location: Location,
@@ -422,12 +614,12 @@ fn pending_entries_from_events(
             Ok(merged)
         }
         Some(Ev::Scalar {
-            ref value, style, ..
-        }) if scalar_is_nullish(value.as_str(), style) => Ok(Vec::new()),
+                 ref value, style, ..
+             }) if scalar_is_nullish(value.as_str(), style) => Ok(Vec::new()),
         Some(Ev::Scalar { location, .. }) => Err(Error::msg(
             "YAML merge value must be mapping or sequence of mappings",
         )
-        .with_location(location)),
+            .with_location(location)),
         Some(other) => Err(
             Error::msg("YAML merge value must be mapping or sequence of mappings")
                 .with_location(other.location()),
@@ -436,6 +628,17 @@ fn pending_entries_from_events(
     }
 }
 
+/// Collect all `(key,value)` entries from a mapping event stream position.
+///
+/// Parameters:
+/// - `ev`: event source positioned at (or before) a `MapStart`.
+///
+/// Returns:
+/// - `Ok(Vec<PendingEntry>)` containing captured key/value nodes in order.
+/// - `Err(Error)` on EOF or structural issues.
+///
+/// Called by:
+/// - `pending_entries_from_events` and merge-key expansion code.
 fn collect_entries_from_map(ev: &mut dyn Events) -> Result<Vec<PendingEntry>, Error> {
     let Some(Ev::MapStart { .. }) = ev.next()? else {
         return Err(
@@ -466,8 +669,31 @@ fn collect_entries_from_map(ev: &mut dyn Events) -> Result<Vec<PendingEntry>, Er
 /// A location-free representation of events for duplicate-key comparison.
 /// Source of events with lookahead and alias-injection.
 pub(crate) trait Events {
+    /// Consume and return the next logical event, or `Ok(None)` on EOF.
+    ///
+    /// Returns:
+    /// - `Ok(Some(Ev))` for the next event, `Ok(None)` for end-of-stream, `Err(Error)` on failure.
+    ///
+    /// Called by:
+    /// - Deserializer (`Deser`) and helper utilities while walking the stream.
     fn next(&mut self) -> Result<Option<Ev>, Error>;
+
+    /// Peek at the next event without consuming it.
+    ///
+    /// Returns:
+    /// - `Ok(Some(Ev))` if there is a buffered/next event; `Ok(None)` on EOF; `Err(Error)` on failure.
+    ///
+    /// Called by:
+    /// - Many structural decisions (e.g., detecting container ends, merge keys).
     fn peek(&mut self) -> Result<Option<Ev>, Error>;
+
+    /// Location of the last yielded/peeked event for error reporting.
+    ///
+    /// Returns:
+    /// - `Location` of the most recent event (or unknown at stream start).
+    ///
+    /// Called by:
+    /// - Error constructors when an exact location is needed.
     fn last_location(&self) -> Location;
 }
 
@@ -479,6 +705,16 @@ struct ReplayEvents {
 }
 
 impl ReplayEvents {
+    /// Create a `ReplayEvents` over a previously captured event buffer.
+    ///
+    /// Parameters:
+    /// - `buf`: events to replay from index 0.
+    ///
+    /// Returns:
+    /// - A `ReplayEvents` instance implementing the `Events` trait.
+    ///
+    /// Called by:
+    /// - Merge-key expansion and duplicate-key deserialization of recorded keys/values.
     fn new(buf: Vec<Ev>) -> Self {
         Self {
             buf,
@@ -489,6 +725,13 @@ impl ReplayEvents {
 }
 
 impl Events for ReplayEvents {
+    /// Pop the next replayed event from the buffer.
+    ///
+    /// Returns:
+    /// - `Ok(Some(Ev))` until the buffer is exhausted; then `Ok(None)`.
+    ///
+    /// Called by:
+    /// - Deserializer when feeding recorded nodes back into Serde.
     fn next(&mut self) -> Result<Option<Ev>, Error> {
         if self.idx >= self.buf.len() {
             return Ok(None);
@@ -499,6 +742,13 @@ impl Events for ReplayEvents {
         Ok(Some(ev))
     }
 
+    /// Peek at the next buffered event without advancing.
+    ///
+    /// Returns:
+    /// - `Ok(Some(Ev))` if any; `Ok(None)` if at end.
+    ///
+    /// Called by:
+    /// - Control-flow decisions (e.g., end detection) while replaying.
     fn peek(&mut self) -> Result<Option<Ev>, Error> {
         if self.idx >= self.buf.len() {
             Ok(None)
@@ -507,6 +757,10 @@ impl Events for ReplayEvents {
         }
     }
 
+    /// Last location observed in this replay stream.
+    ///
+    /// Returns:
+    /// - `Location` of the last event produced or peeked.
     fn last_location(&self) -> Location {
         self.last_location
     }
@@ -519,33 +773,86 @@ struct Deser<'e> {
 }
 
 impl<'e> Deser<'e> {
+    /// Construct a `Deser` over an `Events` source and configuration.
+    ///
+    /// Parameters:
+    /// - `ev`: event source (live parser or replay).
+    /// - `cfg`: duplicate-key policy and numeric parsing switches.
+    ///
+    /// Returns:
+    /// - A `Deser` ready to implement `serde::Deserializer`.
+    ///
+    /// Called by:
+    /// - Top-level `from_*` entry points and nested deserializations inside sequences/maps.
     fn new(ev: &'e mut dyn Events, cfg: Cfg) -> Self {
         Self { ev, cfg }
     }
 
+    /// Consume and return the next **scalar** event triple.
+    ///
+    /// Returns:
+    /// - `Ok((value, tag, location))` on scalar; `Err` if not a scalar or on EOF.
+    ///
+    /// Called by:
+    /// - Scalar decoding helpers (`take_*`) and numeric/bool/char/string deserializers.
     fn take_scalar_event(&mut self) -> Result<(String, Option<String>, Location), Error> {
         match self.ev.next()? {
             Some(Ev::Scalar {
-                value,
-                tag,
-                location,
-                ..
-            }) => Ok((value, tag, location)),
+                     value,
+                     tag,
+                     location,
+                     ..
+                 }) => Ok((value, tag, location)),
             Some(other) => Err(Error::unexpected("string scalar").with_location(other.location())),
             None => Err(Error::eof().with_location(self.ev.last_location())),
         }
     }
+
+    /// Like `take_scalar_event` but discard the location.
+    ///
+    /// Returns:
+    /// - `Ok((value, tag))` or an error if the next event is not a scalar.
+    ///
+    /// Called by:
+    /// - `take_scalar` and callers that only need tag presence.
     fn take_scalar_with_tag(&mut self) -> Result<(String, Option<String>), Error> {
         let (value, tag, _) = self.take_scalar_event()?;
         Ok((value, tag))
     }
+
+    /// Return the next scalar's string contents only.
+    ///
+    /// Returns:
+    /// - `Ok(value)` or error if not a scalar.
+    ///
+    /// Called by:
+    /// - Stringy conversions that ignore tags (caller may validate tag separately).
     fn take_scalar(&mut self) -> Result<String, Error> {
         self.take_scalar_with_tag().map(|(value, _)| value)
     }
+
+    /// Return the next scalar's string contents together with its `Location`.
+    ///
+    /// Returns:
+    /// - `Ok((value, location))` or error if not a scalar.
+    ///
+    /// Called by:
+    /// - Numeric/bool/char parsing to include precise error locations.
     fn take_scalar_with_location(&mut self) -> Result<(String, Location), Error> {
         let (value, _, location) = self.take_scalar_event()?;
         Ok((value, location))
     }
+
+    /// Interpret the next scalar as a `String`, honoring YAML tags and `!!binary`.
+    ///
+    /// - Accepts un/quoted scalars with string-compatible tags.
+    /// - If tagged `!!binary`, base64-decodes and validates UTF-8.
+    ///
+    /// Returns:
+    /// - `Ok(String)` or a typed error (wrong tag, invalid base64/UTF-8).
+    ///
+    /// Called by:
+    /// - `deserialize_string`/`deserialize_str` and `deserialize_any` for scalars.
     fn take_string_scalar(&mut self) -> Result<String, Error> {
         let (value, tag, location) = self.take_scalar_event()?;
         let tag_ref = tag.as_deref();
@@ -554,7 +861,7 @@ impl<'e> Deser<'e> {
                 return Err(Error::msg(format!(
                     "cannot deserialize scalar tagged {t} into string"
                 ))
-                .with_location(location));
+                    .with_location(location));
             }
         }
 
@@ -569,6 +876,13 @@ impl<'e> Deser<'e> {
         }
     }
 
+    /// Expect and consume a sequence start; error otherwise.
+    ///
+    /// Returns:
+    /// - `Ok(())` on `SeqStart`; `Err` with location if another event or EOF.
+    ///
+    /// Called by:
+    /// - `deserialize_seq` and tuple-like deserializers.
     fn expect_seq_start(&mut self) -> Result<(), Error> {
         match self.ev.next()? {
             Some(Ev::SeqStart { .. }) => Ok(()),
@@ -576,6 +890,14 @@ impl<'e> Deser<'e> {
             None => Err(Error::eof().with_location(self.ev.last_location())),
         }
     }
+
+    /// Expect and consume a mapping start; error otherwise.
+    ///
+    /// Returns:
+    /// - `Ok(())` on `MapStart`; `Err` with location if another event or EOF.
+    ///
+    /// Called by:
+    /// - `deserialize_map` and struct-like deserializers.
     fn expect_map_start(&mut self) -> Result<(), Error> {
         match self.ev.next()? {
             Some(Ev::MapStart { .. }) => Ok(()),
@@ -584,9 +906,18 @@ impl<'e> Deser<'e> {
         }
     }
 }
+
 impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
     type Error = Error;
 
+    /// Entry point used by Serde when the target type accepts "any" data.
+    ///
+    /// Behavior:
+    /// - Dispatches based on next event kind: scalar → string visitor, seq → `deserialize_seq`,
+    ///   map → `deserialize_map`. Container-end events cause an error.
+    ///
+    /// Called by:
+    /// - Serde's derive machinery for types that visit arbitrary content.
     fn deserialize_any<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         match self.ev.peek()? {
             Some(Ev::Scalar { .. }) => visitor.visit_string(self.take_string_scalar()?),
@@ -602,6 +933,10 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
         }
     }
 
+    /// Deserialize a YAML 1.1 boolean, handling "y/n/on/off" etc.
+    ///
+    /// Called by:
+    /// - Serde when the destination type is `bool`.
     fn deserialize_bool<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
         let b: bool =
@@ -609,69 +944,87 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
         visitor.visit_bool(b)
     }
 
+    /// Deserialize a signed 8-bit integer (`i8`).
+    ///
+    /// Called by:
+    /// - Serde when the destination type is `i8`.
     fn deserialize_i8<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
         let v: i8 = parse_int_signed(s, "i8", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i8(v)
     }
+    /// Deserialize a signed 16-bit integer (`i16`).
     fn deserialize_i16<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
         let v: i16 = parse_int_signed(s, "i16", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i16(v)
     }
+    /// Deserialize a signed 32-bit integer (`i32`).
     fn deserialize_i32<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
         let v: i32 = parse_int_signed(s, "i32", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i32(v)
     }
+    /// Deserialize a signed 64-bit integer (`i64`).
     fn deserialize_i64<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
         let v: i64 = parse_int_signed(s, "i64", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i64(v)
     }
+    /// Deserialize a signed 128-bit integer (`i128`).
     fn deserialize_i128<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
         let v: i128 = parse_int_signed(s, "i128", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i128(v)
     }
 
+    /// Deserialize an unsigned 8-bit integer (`u8`).
     fn deserialize_u8<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
         let v: u8 = parse_int_unsigned(s, "u8", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u8(v)
     }
+    /// Deserialize an unsigned 16-bit integer (`u16`).
     fn deserialize_u16<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
         let v: u16 = parse_int_unsigned(s, "u16", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u16(v)
     }
+    /// Deserialize an unsigned 32-bit integer (`u32`).
     fn deserialize_u32<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
         let v: u32 = parse_int_unsigned(s, "u32", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u32(v)
     }
+    /// Deserialize an unsigned 64-bit integer (`u64`).
     fn deserialize_u64<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
         let v: u64 = parse_int_unsigned(s, "u64", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u64(v)
     }
+    /// Deserialize an unsigned 128-bit integer (`u128`).
     fn deserialize_u128<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
         let v: u128 = parse_int_unsigned(s, "u128", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u128(v)
     }
 
+    /// Deserialize a 32-bit float (`f32`), honoring YAML 1.2 `.nan` and `±.inf`.
     fn deserialize_f32<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
         let v: f32 = parse_yaml12_f32(&s, location)?;
         visitor.visit_f32(v)
     }
+    /// Deserialize a 64-bit float (`f64`), honoring YAML 1.2 `.nan` and `±.inf`.
     fn deserialize_f64<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
         let v: f64 = parse_yaml12_f64(&s, location)?;
         visitor.visit_f64(v)
     }
 
+    /// Deserialize a single Unicode scalar value (`char`).
+    ///
+    /// - Rejects YAML nullish forms (empty, `~`, `null`) explicitly.
     fn deserialize_char<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
         // Treat YAML null forms as invalid for `char`
@@ -688,22 +1041,33 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
         }
     }
 
+    /// Alias of `deserialize_string` for borrowed string types.
     fn deserialize_str<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
         self.deserialize_string(visitor)
     }
 
+    /// Deserialize a YAML string into `String`, honoring `!!binary` → UTF-8.
     fn deserialize_string<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         visitor.visit_string(self.take_string_scalar()?)
     }
 
+    /// Deserialize binary data.
+    ///
+    /// Behavior:
+    /// - If the next scalar is tagged `!!binary`, base64-decodes into `Vec<u8>`.
+    /// - Else, if a sequence starts, expects a sequence of integers (0..=255) and packs them.
+    /// - Else, errors (scalar without `!!binary` tag is rejected).
+    ///
+    /// Called by:
+    /// - Serde when destination is `Vec<u8>`/`bytes`-compatible types.
     fn deserialize_bytes<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         match self.ev.peek()? {
             // Tagged binary scalar → base64-decode
             Some(Ev::Scalar { tag, .. }) if is_binary_tag(tag.as_deref()) => {
                 let (value, data_location) = match self.ev.next()? {
                     Some(Ev::Scalar {
-                        value, location, ..
-                    }) => (value, location),
+                             value, location, ..
+                         }) => (value, location),
                     _ => unreachable!(),
                 };
                 let data =
@@ -749,10 +1113,16 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
         }
     }
 
+    /// Delegate to `deserialize_bytes`.
     fn deserialize_byte_buf<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
         self.deserialize_bytes(visitor)
     }
 
+    /// Deserialize an `Option<T>`.
+    ///
+    /// Behavior:
+    /// - Returns `None` on EOF, container end, or YAML nullish for `Option` semantics.
+    /// - Otherwise delegates to `Some(self)`.
     fn deserialize_option<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
         // Only when Serde asks for Option<T> do we interpret YAML null-like scalars as None.
         match self.ev.peek()? {
@@ -761,10 +1131,10 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
 
             // YAML null forms as scalars → None
             Some(Ev::Scalar {
-                value: ref s,
-                style,
-                ..
-            }) if scalar_is_nullish_for_option(s, style) => {
+                     value: ref s,
+                     style,
+                     ..
+                 }) if scalar_is_nullish_for_option(s, style) => {
                 let _ = self.ev.next()?; // consume the scalar
                 visitor.visit_none()
             }
@@ -777,15 +1147,20 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
         }
     }
 
+    /// Deserialize a unit `()` value.
+    ///
+    /// Behavior:
+    /// - Accepts YAML nullish forms, container ends, or EOF as unit.
+    /// - Errors on other content.
     fn deserialize_unit<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
         match self.ev.peek()? {
             // Accept YAML null forms or absence as unit
             None => visitor.visit_unit(),
             Some(Ev::Scalar {
-                value: ref s,
-                style,
-                ..
-            }) if scalar_is_nullish(s, style) => {
+                     value: ref s,
+                     style,
+                     ..
+                 }) if scalar_is_nullish(s, style) => {
                 let _ = self.ev.next()?; // consume the scalar
                 visitor.visit_unit()
             }
@@ -798,6 +1173,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
         }
     }
 
+    /// Deserialize a unit struct by accepting an empty mapping `{}` or any unit value.
     fn deserialize_unit_struct<V: Visitor<'de>>(
         self,
         _name: &'static str,
@@ -822,6 +1198,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
         }
     }
 
+    /// Deserialize a newtype struct by delegating its single field to `self`.
     fn deserialize_newtype_struct<V: Visitor<'de>>(
         self,
         _n: &'static str,
@@ -830,23 +1207,30 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
         visitor.visit_newtype_struct(self)
     }
 
+    /// Deserialize a sequence (`[ ... ]` or block list).
+    ///
+    /// Behavior:
+    /// - If the next event is a `!!binary` scalar, exposes bytes as a sequence of `u8`.
+    /// - Else, expects `SeqStart`, yields elements until `SeqEnd`, and tolerates missing end.
     fn deserialize_seq<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         if let Some(Ev::Scalar { tag, .. }) = self.ev.peek()? {
             if is_binary_tag(tag.as_deref()) {
                 let (scalar, data_location) = match self.ev.next()? {
                     Some(Ev::Scalar {
-                        value, location, ..
-                    }) => (value, location),
+                             value, location, ..
+                         }) => (value, location),
                     _ => unreachable!(),
                 };
                 let data =
                     decode_base64_yaml(&scalar).map_err(|err| err.with_location(data_location))?;
+                /// SeqAccess over already-decoded bytes for `!!binary` case.
                 struct ByteSeq {
                     data: Vec<u8>,
                     idx: usize,
                 }
                 impl<'de> de::SeqAccess<'de> for ByteSeq {
                     type Error = Error;
+                    /// Yield the next `u8` from the decoded buffer.
                     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Error>
                     where
                         T: de::DeserializeSeed<'de>,
@@ -864,12 +1248,14 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
             }
         }
         self.expect_seq_start()?;
+        /// Streaming `SeqAccess` over the underlying `Events`.
         struct SA<'e> {
             ev: &'e mut dyn Events,
             cfg: Cfg,
         }
         impl<'de, 'e> de::SeqAccess<'de> for SA<'e> {
             type Error = Error;
+            /// Deserialize the next element in the sequence (or `None` on `SeqEnd`).
             fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Error>
             where
                 T: de::DeserializeSeed<'de>,
@@ -895,6 +1281,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
         Ok(result)
     }
 
+    /// Deserialize a fixed-length tuple (delegates to `deserialize_seq`).
     fn deserialize_tuple<V: Visitor<'de>>(
         self,
         _len: usize,
@@ -903,6 +1290,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
         self.deserialize_seq(visitor)
     }
 
+    /// Deserialize a tuple struct (delegates to `deserialize_seq`).
     fn deserialize_tuple_struct<V: Visitor<'de>>(
         self,
         _name: &'static str,
@@ -912,8 +1300,10 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
         self.deserialize_seq(visitor)
     }
 
+    /// Deserialize a mapping (`{ ... }` or block map), including duplicate-key and merge-key logic.
     fn deserialize_map<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         self.expect_map_start()?;
+        /// MapAccess implementation that handles duplicate keys and merge keys.
         struct MA<'e> {
             ev: &'e mut dyn Events,
             cfg: Cfg,
@@ -925,7 +1315,13 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
         }
 
         impl<'e> MA<'e> {
-            /// Consume a single YAML node (scalar/sequence/mapping) from the event stream.
+            /// Consume exactly one YAML node (scalar/sequence/mapping) from the stream.
+            ///
+            /// Returns:
+            /// - `Ok(())` after skipping over the node; `Err` on EOF/structural mismatch.
+            ///
+            /// Called by:
+            /// - Duplicate-key policy `FirstWins` to advance over ignored values.
             fn skip_one_node(&mut self) -> Result<(), Error> {
                 match self.ev.next()? {
                     Some(Ev::Scalar { .. }) => Ok(()),
@@ -977,6 +1373,17 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                 }
             }
 
+            /// Deserialize a key from a **recorded** event buffer using a fresh `Deser`.
+            ///
+            /// Parameters:
+            /// - `seed`: Serde seed for the key type.
+            /// - `events`: recorded sequence representing the key node.
+            ///
+            /// Returns:
+            /// - The deserialized key value.
+            ///
+            /// Called by:
+            /// - `next_key_seed` when pulling keys from `pending` or directly captured nodes.
             fn deserialize_recorded_key<'de, K>(
                 &mut self,
                 seed: K,
@@ -994,6 +1401,10 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
         impl<'de, 'e> de::MapAccess<'de> for MA<'e> {
             type Error = Error;
 
+            /// Yield the next key for the visitor, handling merge keys and duplicates.
+            ///
+            /// - Expands `<<` merge values into a queue of pending entries.
+            /// - Enforces duplicate-key policy (`Error`, `FirstWins`, `LastWins`).
             fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Error>
             where
                 K: de::DeserializeSeed<'de>,
@@ -1108,6 +1519,10 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                 }
             }
 
+            /// Produce the value for the previously yielded key.
+            ///
+            /// - Uses `pending_value` when the pair came from a merge expansion;
+            ///   otherwise reads directly from `ev`.
             fn next_value_seed<Vv>(&mut self, seed: Vv) -> Result<Vv::Value, Error>
             where
                 Vv: de::DeserializeSeed<'de>,
@@ -1138,6 +1553,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
         })
     }
 
+    /// Deserialize a struct by delegating to `deserialize_map`.
     fn deserialize_struct<V: Visitor<'de>>(
         self,
         _name: &'static str,
@@ -1147,6 +1563,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
         self.deserialize_map(visitor)
     }
 
+    /// Deserialize an externally tagged enum (scalar or `{ Variant: value }`).
     fn deserialize_enum<V: Visitor<'de>>(
         mut self,
         _name: &'static str,
@@ -1186,6 +1603,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
             None => return Err(Error::eof().with_location(self.ev.last_location())),
         };
 
+        /// EnumAccess that carries the resolved variant name and mode.
         struct EA<'e> {
             ev: &'e mut dyn Events,
             cfg: Cfg,
@@ -1197,6 +1615,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
             type Error = Error;
             type Variant = VA<'e>;
 
+            /// Provide the variant identifier to Serde and return a `VariantAccess`.
             fn variant_seed<Vv>(self, seed: Vv) -> Result<(Vv::Value, Self::Variant), Error>
             where
                 Vv: de::DeserializeSeed<'de>,
@@ -1212,6 +1631,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
             }
         }
 
+        /// VariantAccess that drives the value shape (unit/newtype/tuple/struct).
         struct VA<'e> {
             ev: &'e mut dyn Events,
             cfg: Cfg,
@@ -1219,13 +1639,17 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
         }
 
         impl<'e> VA<'e> {
+            /// Expect `MapEnd` after reading a variant value in map mode.
+            ///
+            /// Returns:
+            /// - `Ok(())` when the mapping ends properly; `Err` on mismatch/EOF.
             fn expect_map_end(&mut self) -> Result<(), Error> {
                 match self.ev.next()? {
                     Some(Ev::MapEnd { .. }) => Ok(()),
                     Some(other) => Err(Error::msg(
                         "expected end of mapping after enum variant value",
                     )
-                    .with_location(other.location())),
+                        .with_location(other.location())),
                     None => Err(Error::eof().with_location(self.ev.last_location())),
                 }
             }
@@ -1234,6 +1658,9 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
         impl<'de, 'e> de::VariantAccess<'de> for VA<'e> {
             type Error = Error;
 
+            /// Unit-like variant (no payload).
+            ///
+            /// In map mode, accepts `{ Variant: ~ }`, `{ Variant: null }`, or `{ Variant: }`.
             fn unit_variant(mut self) -> Result<(), Error> {
                 if self.map_mode {
                     match self.ev.peek()? {
@@ -1242,10 +1669,10 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                             Ok(())
                         }
                         Some(Ev::Scalar {
-                            value: ref s,
-                            style,
-                            ..
-                        }) if scalar_is_nullish(s, style) => {
+                                 value: ref s,
+                                 style,
+                                 ..
+                             }) if scalar_is_nullish(s, style) => {
                             let _ = self.ev.next()?; // consume the null-like scalar
                             self.expect_map_end()
                         }
@@ -1258,6 +1685,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                 }
             }
 
+            /// Newtype-like variant: delegate its single field to a nested `Deser`.
             fn newtype_variant_seed<T>(mut self, seed: T) -> Result<T::Value, Error>
             where
                 T: de::DeserializeSeed<'de>,
@@ -1269,6 +1697,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                 Ok(value)
             }
 
+            /// Tuple-like variant: delegate to `deserialize_tuple`.
             fn tuple_variant<Vv>(mut self, len: usize, visitor: Vv) -> Result<Vv::Value, Error>
             where
                 Vv: Visitor<'de>,
@@ -1280,6 +1709,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                 Ok(result)
             }
 
+            /// Struct-like variant: delegate to `deserialize_struct`.
             fn struct_variant<Vv>(
                 mut self,
                 fields: &'static [&'static str],
@@ -1315,10 +1745,12 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
         visitor.visit_enum(access)
     }
 
+    /// Deserialize an identifier (delegates to `deserialize_str`).
     fn deserialize_identifier<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
         self.deserialize_str(visitor)
     }
 
+    /// Let the visitor inspect the value without discarding it (`IgnoredAny` should be used to skip).
     fn deserialize_ignored_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
         // Delegate to `any`—callers that truly want to ignore should request `IgnoredAny`.
         self.deserialize_any(visitor)
@@ -1402,7 +1834,7 @@ pub fn from_str_with_options<T: DeserializeOwned>(
         return Err(Error::msg(
             "multiple YAML documents detected; use from_multiple or from_multiple_with_options",
         )
-        .with_location(ev.location()));
+            .with_location(ev.location()));
     }
     src.finish()?;
     Ok(value)
@@ -1493,10 +1925,10 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
         match src.peek()? {
             // Skip documents that are explicit null-like scalars ("", "~", or "null").
             Some(Ev::Scalar {
-                value: ref s,
-                style,
-                ..
-            }) if scalar_is_nullish(s, style) => {
+                     value: ref s,
+                     style,
+                     ..
+                 }) if scalar_is_nullish(s, style) => {
                 let _ = src.next()?; // consume the null scalar document
                 // Do not push anything for this document; move to the next one.
                 continue;
@@ -1662,6 +2094,16 @@ pub fn from_slice_multiple_with_options<T: DeserializeOwned>(
     from_multiple_with_options(s, options)
 }
 
+/// Convert a `BudgetBreach` into a user-facing `Error` message.
+///
+/// Parameters:
+/// - `breach`: which limit tripped during scanning/replay.
+///
+/// Returns:
+/// - `Error::Message` describing the breach (location added by caller).
+///
+/// Called by:
+/// - `LiveEvents` when enforcing budgets over raw or replayed events.
 pub(crate) fn budget_error(breach: BudgetBreach) -> Error {
     Error::msg(format!("YAML budget breached: {breach:?}"))
 }
