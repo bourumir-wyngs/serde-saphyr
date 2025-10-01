@@ -16,7 +16,7 @@
 //! - `from_multiple*` collects non-empty docs; empty docs are skipped.
 
 use crate::live_events::LiveEvents;
-use std::collections::{HashSet};
+use std::collections::{HashSet, VecDeque};
 use std::fmt;
 
 use crate::base64::{decode_base64_yaml, is_binary_tag};
@@ -233,10 +233,10 @@ fn scalar_is_nullish(value: &str, style: ScalarStyle) -> bool {
 
 fn scalar_is_nullish_for_option(value: &str, style: ScalarStyle) -> bool {
     // For Option: treat empty unquoted scalar as null, and plain "~"/"null" as null.
-    let empty_unquoted = value.is_empty()
-        && !matches!(style, ScalarStyle::SingleQuoted | ScalarStyle::DoubleQuoted);
-    let plain_nullish = matches!(style, ScalarStyle::Plain)
-        && (value == "~" || value.eq_ignore_ascii_case("null"));
+    let empty_unquoted =
+        value.is_empty() && !matches!(style, ScalarStyle::SingleQuoted | ScalarStyle::DoubleQuoted);
+    let plain_nullish =
+        matches!(style, ScalarStyle::Plain) && (value == "~" || value.eq_ignore_ascii_case("null"));
     empty_unquoted || plain_nullish
 }
 
@@ -261,6 +261,225 @@ impl KeyFingerprint {
             _ => None,
         }
     }
+}
+
+struct KeyNode {
+    fingerprint: KeyFingerprint,
+    events: Vec<Ev>,
+    location: Location,
+}
+
+struct PendingEntry {
+    key: KeyNode,
+    value: KeyNode,
+}
+
+fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
+    let Some(event) = ev.next()? else {
+        return Err(Error::eof().with_location(ev.last_location()));
+    };
+
+    match event {
+        Ev::Scalar {
+            value,
+            tag,
+            style,
+            location,
+        } => {
+            let fingerprint = KeyFingerprint::Scalar {
+                value: value.clone(),
+                tag: tag.clone(),
+            };
+            Ok(KeyNode {
+                fingerprint,
+                events: vec![Ev::Scalar {
+                    value,
+                    tag,
+                    style,
+                    location,
+                }],
+                location,
+            })
+        }
+        Ev::SeqStart { location } => {
+            let mut events = vec![Ev::SeqStart { location }];
+            let mut elements = Vec::new();
+            loop {
+                match ev.peek()? {
+                    Some(Ev::SeqEnd { location: end_loc }) => {
+                        let _ = ev.next()?;
+                        events.push(Ev::SeqEnd { location: end_loc });
+                        break;
+                    }
+                    Some(_) => {
+                        let child = capture_node(ev)?;
+                        let KeyNode {
+                            fingerprint: fp,
+                            events: child_events,
+                            location: _,
+                        } = child;
+                        elements.push(fp);
+                        events.extend(child_events);
+                    }
+                    None => {
+                        return Err(Error::eof().with_location(ev.last_location()));
+                    }
+                }
+            }
+            Ok(KeyNode {
+                fingerprint: KeyFingerprint::Sequence(elements),
+                events,
+                location,
+            })
+        }
+        Ev::MapStart { location } => {
+            let mut events = vec![Ev::MapStart { location }];
+            let mut entries = Vec::new();
+            loop {
+                match ev.peek()? {
+                    Some(Ev::MapEnd { location: end_loc }) => {
+                        let _ = ev.next()?;
+                        events.push(Ev::MapEnd { location: end_loc });
+                        break;
+                    }
+                    Some(_) => {
+                        let key = capture_node(ev)?;
+                        let KeyNode {
+                            fingerprint: key_fp,
+                            events: key_events,
+                            location: _,
+                        } = key;
+                        let value = capture_node(ev)?;
+                        let KeyNode {
+                            fingerprint: value_fp,
+                            events: value_events,
+                            location: _,
+                        } = value;
+                        entries.push((key_fp, value_fp));
+                        events.extend(key_events);
+                        events.extend(value_events);
+                    }
+                    None => {
+                        return Err(Error::eof().with_location(ev.last_location()));
+                    }
+                }
+            }
+            Ok(KeyNode {
+                fingerprint: KeyFingerprint::Mapping(entries),
+                events,
+                location,
+            })
+        }
+        Ev::SeqEnd { location } | Ev::MapEnd { location } => Err(Error::msg(
+            "unexpected container end while reading key node",
+        )
+        .with_location(location)),
+    }
+}
+
+fn is_merge_key(node: &KeyNode) -> bool {
+    if node.events.len() != 1 {
+        return false;
+    }
+    matches!(
+        node.events.first(),
+        Some(Ev::Scalar {
+            value,
+            tag,
+            style: ScalarStyle::Plain,
+            ..
+        }) if tag.is_none() && value == "<<"
+    )
+}
+
+fn pending_entries_from_events(
+    events: Vec<Ev>,
+    location: Location,
+) -> Result<Vec<PendingEntry>, Error> {
+    let mut replay = ReplayEvents::new(events);
+    match replay.peek()? {
+        Some(Ev::MapStart { .. }) => collect_entries_from_map(&mut replay),
+        Some(Ev::SeqStart { .. }) => {
+            let mut batches = Vec::new();
+            let _ = replay.next()?; // consume SeqStart
+            loop {
+                match replay.peek()? {
+                    Some(Ev::SeqEnd { .. }) => {
+                        let _ = replay.next()?;
+                        break;
+                    }
+                    Some(_) => {
+                        let element = capture_node(&mut replay)?;
+                        batches.push(pending_entries_from_events(
+                            element.events,
+                            element.location,
+                        )?);
+                    }
+                    None => {
+                        return Err(Error::eof().with_location(replay.last_location()));
+                    }
+                }
+            }
+
+            let mut merged = Vec::new();
+            while let Some(mut nested) = batches.pop() {
+                merged.append(&mut nested);
+            }
+            Ok(merged)
+        }
+        Some(Ev::Scalar {
+            ref value, style, ..
+        }) if scalar_is_nullish(value.as_str(), style) => Ok(Vec::new()),
+        Some(Ev::Scalar { location, .. }) => Err(Error::msg(
+            "YAML merge value must be mapping or sequence of mappings",
+        )
+        .with_location(location)),
+        Some(other) => Err(
+            Error::msg("YAML merge value must be mapping or sequence of mappings")
+                .with_location(other.location()),
+        ),
+        None => Err(Error::eof().with_location(location)),
+    }
+}
+
+fn collect_entries_from_map(ev: &mut dyn Events) -> Result<Vec<PendingEntry>, Error> {
+    let Some(Ev::MapStart { .. }) = ev.next()? else {
+        return Err(
+            Error::msg("YAML merge value must be mapping or sequence of mappings")
+                .with_location(ev.last_location()),
+        );
+    };
+
+    let mut fields = Vec::new();
+    let mut merges = Vec::new();
+
+    loop {
+        match ev.peek()? {
+            Some(Ev::MapEnd { .. }) => {
+                let _ = ev.next()?;
+                break;
+            }
+            Some(_) => {
+                let key = capture_node(ev)?;
+                if is_merge_key(&key) {
+                    let value = capture_node(ev)?;
+                    merges.push(pending_entries_from_events(value.events, value.location)?);
+                } else {
+                    let value = capture_node(ev)?;
+                    fields.push(PendingEntry { key, value });
+                }
+            }
+            None => {
+                return Err(Error::eof().with_location(ev.last_location()));
+            }
+        }
+    }
+
+    let mut entries = fields;
+    while let Some(mut nested) = merges.pop() {
+        entries.append(&mut nested);
+    }
+    Ok(entries)
 }
 
 /// A location-free representation of events for duplicate-key comparison.
@@ -326,11 +545,11 @@ impl<'e> Deser<'e> {
     fn take_scalar_event(&mut self) -> Result<(String, Option<String>, Location), Error> {
         match self.ev.next()? {
             Some(Ev::Scalar {
-                     value,
-                     tag,
-                     location,
-                     ..
-                 }) => Ok((value, tag, location)),
+                value,
+                tag,
+                location,
+                ..
+            }) => Ok((value, tag, location)),
             Some(other) => Err(Error::unexpected("string scalar").with_location(other.location())),
             None => Err(Error::eof().with_location(self.ev.last_location())),
         }
@@ -354,7 +573,7 @@ impl<'e> Deser<'e> {
                 return Err(Error::msg(format!(
                     "cannot deserialize scalar tagged {t} into string"
                 ))
-                    .with_location(location));
+                .with_location(location));
             }
         }
 
@@ -502,8 +721,8 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
             Some(Ev::Scalar { tag, .. }) if is_binary_tag(tag.as_deref()) => {
                 let (value, data_location) = match self.ev.next()? {
                     Some(Ev::Scalar {
-                             value, location, ..
-                         }) => (value, location),
+                        value, location, ..
+                    }) => (value, location),
                     _ => unreachable!(),
                 };
                 let data =
@@ -561,10 +780,10 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
 
             // YAML null forms as scalars → None
             Some(Ev::Scalar {
-                     value: ref s,
-                     style,
-                     ..
-                 }) if scalar_is_nullish_for_option(s, style) => {
+                value: ref s,
+                style,
+                ..
+            }) if scalar_is_nullish_for_option(s, style) => {
                 let _ = self.ev.next()?; // consume the scalar
                 visitor.visit_none()
             }
@@ -582,10 +801,10 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
             // Accept YAML null forms or absence as unit
             None => visitor.visit_unit(),
             Some(Ev::Scalar {
-                     value: ref s,
-                     style,
-                     ..
-                 }) if scalar_is_nullish(s, style) => {
+                value: ref s,
+                style,
+                ..
+            }) if scalar_is_nullish(s, style) => {
                 let _ = self.ev.next()?; // consume the scalar
                 visitor.visit_unit()
             }
@@ -635,8 +854,8 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
             if is_binary_tag(tag.as_deref()) {
                 let (scalar, data_location) = match self.ev.next()? {
                     Some(Ev::Scalar {
-                             value, location, ..
-                         }) => (value, location),
+                        value, location, ..
+                    }) => (value, location),
                     _ => unreachable!(),
                 };
                 let data =
@@ -720,12 +939,10 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
             have_key: bool,
             // For duplicate-key detection for arbitrary keys.
             seen: HashSet<KeyFingerprint>,
-        }
-
-        struct KeyNode {
-            fingerprint: KeyFingerprint,
-            events: Vec<Ev>,
-            location: Location,
+            pending: VecDeque<PendingEntry>,
+            merge_stack: Vec<Vec<PendingEntry>>,
+            flushing_merges: bool,
+            pending_value: Option<Vec<Ev>>,
         }
 
         impl<'e> MA<'e> {
@@ -781,108 +998,6 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                 }
             }
 
-            fn capture_key_node(&mut self) -> Result<KeyNode, Error> {
-                let Some(event) = self.ev.next()? else {
-                    return Err(Error::eof().with_location(self.ev.last_location()));
-                };
-                match event {
-                    Ev::Scalar {
-                        value,
-                        tag,
-                        style,
-                        location,
-                    } => {
-                        let fingerprint = KeyFingerprint::Scalar {
-                            value: value.clone(),
-                            tag: tag.clone(),
-                        };
-                        Ok(KeyNode {
-                            fingerprint,
-                            events: vec![Ev::Scalar {
-                                value,
-                                tag,
-                                style,
-                                location,
-                            }],
-                            location,
-                        })
-                    }
-                    Ev::SeqStart { location } => {
-                        let mut events = vec![Ev::SeqStart { location }];
-                        let mut elements = Vec::new();
-                        loop {
-                            match self.ev.peek()? {
-                                Some(Ev::SeqEnd { location: end_loc }) => {
-                                    let _ = self.ev.next()?;
-                                    events.push(Ev::SeqEnd { location: end_loc });
-                                    break;
-                                }
-                                Some(_) => {
-                                    let child = self.capture_key_node()?;
-                                    let KeyNode {
-                                        fingerprint: fp,
-                                        events: child_events,
-                                        location: _,
-                                    } = child;
-                                    elements.push(fp);
-                                    events.extend(child_events);
-                                }
-                                None => {
-                                    return Err(Error::eof().with_location(self.ev.last_location()));
-                                }
-                            }
-                        }
-                        Ok(KeyNode {
-                            fingerprint: KeyFingerprint::Sequence(elements),
-                            events,
-                            location,
-                        })
-                    }
-                    Ev::MapStart { location } => {
-                        let mut events = vec![Ev::MapStart { location }];
-                        let mut entries = Vec::new();
-                        loop {
-                            match self.ev.peek()? {
-                                Some(Ev::MapEnd { location: end_loc }) => {
-                                    let _ = self.ev.next()?;
-                                    events.push(Ev::MapEnd { location: end_loc });
-                                    break;
-                                }
-                                Some(_) => {
-                                    let key = self.capture_key_node()?;
-                                    let KeyNode {
-                                        fingerprint: key_fp,
-                                        events: key_events,
-                                        location: _,
-                                    } = key;
-                                    let value = self.capture_key_node()?;
-                                    let KeyNode {
-                                        fingerprint: value_fp,
-                                        events: value_events,
-                                        location: _,
-                                    } = value;
-                                    entries.push((key_fp, value_fp));
-                                    events.extend(key_events);
-                                    events.extend(value_events);
-                                }
-                                None => {
-                                    return Err(Error::eof().with_location(self.ev.last_location()));
-                                }
-                            }
-                        }
-                        Ok(KeyNode {
-                            fingerprint: KeyFingerprint::Mapping(entries),
-                            events,
-                            location,
-                        })
-                    }
-                    Ev::SeqEnd { location } | Ev::MapEnd { location } => Err(Error::msg(
-                        "unexpected container end while reading key node",
-                    )
-                        .with_location(location)),
-                }
-            }
-
             fn deserialize_recorded_key<'de, K>(
                 &mut self,
                 seed: K,
@@ -895,6 +1010,23 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                 let de = Deser::new(&mut replay, self.cfg);
                 seed.deserialize(de)
             }
+
+            fn enqueue_entries(&mut self, entries: Vec<PendingEntry>) {
+                for entry in entries.into_iter().rev() {
+                    self.pending.push_front(entry);
+                }
+            }
+
+            fn enqueue_next_merge_batch(&mut self) -> bool {
+                while let Some(entries) = self.merge_stack.pop() {
+                    if entries.is_empty() {
+                        continue;
+                    }
+                    self.enqueue_entries(entries);
+                    return true;
+                }
+                false
+            }
         }
 
         impl<'de, 'e> de::MapAccess<'de> for MA<'e> {
@@ -904,14 +1036,87 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
             where
                 K: de::DeserializeSeed<'de>,
             {
+                let mut seed = Some(seed);
+
                 loop {
+                    if let Some(entry) = self.pending.pop_front() {
+                        let PendingEntry { key, value } = entry;
+                        let KeyNode {
+                            fingerprint,
+                            events,
+                            location,
+                        } = key;
+                        let is_duplicate = self.seen.contains(&fingerprint);
+                        if self.flushing_merges {
+                            if is_duplicate {
+                                continue;
+                            }
+                        } else {
+                            match self.cfg.dup_policy {
+                                DuplicateKeyPolicy::Error => {
+                                    if is_duplicate {
+                                        let msg = fingerprint
+                                            .stringy_scalar_value()
+                                            .map(|s| format!("duplicate mapping key: {s}"))
+                                            .unwrap_or_else(|| "duplicate mapping key".to_string());
+                                        return Err(Error::msg(msg).with_location(location));
+                                    }
+                                }
+                                DuplicateKeyPolicy::FirstWins => {
+                                    if is_duplicate {
+                                        continue;
+                                    }
+                                }
+                                DuplicateKeyPolicy::LastWins => {}
+                            }
+                        }
+
+                        let value_events = value.events;
+                        let key_value = self.deserialize_recorded_key(
+                            seed.take().expect("seed reused for map key"),
+                            events,
+                        )?;
+                        self.have_key = true;
+                        self.pending_value = Some(value_events);
+                        self.seen.insert(fingerprint);
+                        return Ok(Some(key_value));
+                    }
+
+                    if self.flushing_merges {
+                        if self.enqueue_next_merge_batch() {
+                            continue;
+                        }
+                        self.flushing_merges = false;
+                        return Ok(None);
+                    }
+
                     match self.ev.peek()? {
                         Some(Ev::MapEnd { .. }) => {
                             let _ = self.ev.next()?; // consume end
+                            if self.merge_stack.is_empty() {
+                                return Ok(None);
+                            }
+                            self.flushing_merges = true;
+                            if self.enqueue_next_merge_batch() {
+                                continue;
+                            }
+                            self.flushing_merges = false;
                             return Ok(None);
                         }
                         Some(_) => {
-                            let key_node = self.capture_key_node()?;
+                            let key_node = capture_node(self.ev)?;
+                            if is_merge_key(&key_node) {
+                                let value_node = capture_node(self.ev)?;
+                                let entries = pending_entries_from_events(
+                                    value_node.events,
+                                    value_node.location,
+                                )?;
+                                if !entries.is_empty() {
+                                    self.merge_stack.push(entries);
+                                }
+                                continue;
+                            }
+
                             let is_duplicate = self.seen.contains(&key_node.fingerprint);
                             match self.cfg.dup_policy {
                                 DuplicateKeyPolicy::Error => {
@@ -940,7 +1145,10 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                                 events,
                                 location: _,
                             } = key_node;
-                            let key = self.deserialize_recorded_key(seed, events)?;
+                            let key = self.deserialize_recorded_key(
+                                seed.take().expect("seed reused for map key"),
+                                events,
+                            )?;
                             self.have_key = true;
                             self.seen.insert(fingerprint);
                             return Ok(Some(key));
@@ -959,8 +1167,14 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                         .with_location(self.ev.last_location()));
                 }
                 self.have_key = false;
-                let de = Deser::new(self.ev, self.cfg);
-                seed.deserialize(de)
+                if let Some(events) = self.pending_value.take() {
+                    let mut replay = ReplayEvents::new(events);
+                    let de = Deser::new(&mut replay, self.cfg);
+                    seed.deserialize(de)
+                } else {
+                    let de = Deser::new(self.ev, self.cfg);
+                    seed.deserialize(de)
+                }
             }
         }
 
@@ -969,6 +1183,10 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
             cfg: self.cfg,
             have_key: false,
             seen: HashSet::new(),
+            pending: VecDeque::new(),
+            merge_stack: Vec::new(),
+            flushing_merges: false,
+            pending_value: None,
         })
     }
 
@@ -1059,7 +1277,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                     Some(other) => Err(Error::msg(
                         "expected end of mapping after enum variant value",
                     )
-                        .with_location(other.location())),
+                    .with_location(other.location())),
                     None => Err(Error::eof().with_location(self.ev.last_location())),
                 }
             }
@@ -1076,10 +1294,10 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                             Ok(())
                         }
                         Some(Ev::Scalar {
-                                 value: ref s,
-                                 style,
-                                 ..
-                             }) if scalar_is_nullish(s, style) => {
+                            value: ref s,
+                            style,
+                            ..
+                        }) if scalar_is_nullish(s, style) => {
                             let _ = self.ev.next()?; // consume the null-like scalar
                             self.expect_map_end()
                         }
@@ -1236,7 +1454,7 @@ pub fn from_str_with_options<T: DeserializeOwned>(
         return Err(Error::msg(
             "multiple YAML documents detected; use from_multiple or from_multiple_with_options",
         )
-            .with_location(ev.location()));
+        .with_location(ev.location()));
     }
     src.finish()?;
     Ok(value)
@@ -1327,10 +1545,10 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
         match src.peek()? {
             // Skip documents that are explicit null-like scalars ("", "~", or "null").
             Some(Ev::Scalar {
-                     value: ref s,
-                     style,
-                     ..
-                 }) if scalar_is_nullish(s, style) => {
+                value: ref s,
+                style,
+                ..
+            }) if scalar_is_nullish(s, style) => {
                 let _ = src.next()?; // consume the null scalar document
                 // Do not push anything for this document; move to the next one.
                 continue;

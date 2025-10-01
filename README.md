@@ -38,7 +38,8 @@ Parsing Generated YAML, size 25.00 MiB, release build.
   (e.g., deeply nested structures or very large arrays); see
   [budget constraints](https://docs.rs/serde_yaml_bw/latest/serde_yaml_bw/budget/struct.Budget.html) and
   [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
-- **Scope:** Currently the crate provides a **deserializer**. YAML merge keys are **not supported**.
+- **Scope:** Currently the crate provides a **deserializer** with full support for YAML merge keys
+  that obey the configured duplicate-key policy.
 
 ### Duplicate keys
 
@@ -47,7 +48,6 @@ Duplicate key handling is configurable. By default it’s an error; “first win
 
 ### Unsuported features
 - **Tagged enums** (`!!EnumName RED`) are not supported. Use mapping base enums (EnumName: RED). This allows to define nested enums if needed. 
-- **Merge keys** (feature of YAML 1.1 but not 1.2) are not supported because it’s not feasible with the current streaming design to support YAML merge keys without buffering extra data. Use serde-yaml-bw for merge keys.
 
 ---
 
@@ -193,9 +193,3 @@ The budget check uses a separate `saphyr-parser` run that avoids building a synt
 
 ---
 
-<!--
-Notes for maintainers:
-- The "budget constraints" link above intentionally matches the original URL set, which points to serde_yaml_bw.
-- If desired, we can add sections on: feature flags, no_std compatibility, performance tips (zero-copy & borrowing),
-  and guidance on sandboxing user-controlled inputs in larger systems.
--->
