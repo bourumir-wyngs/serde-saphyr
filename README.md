@@ -253,10 +253,3 @@ available through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/s
 The budget check uses a separate `saphyr-parser` run that avoids building a syntax tree and stops as soon as any resource limit is exceeded. Defaults are conservative; tighten them when you know your input shape, or disable the budget if you only parse YAML you generate yourself.
 
 ---
-
-<!--
-Notes for maintainers:
-- The "budget constraints" link above intentionally matches the original URL set, which points to serde_yaml_bw.
-- If desired, we can add sections on: feature flags, no_std compatibility, performance tips (zero-copy & borrowing),
-  and guidance on sandboxing user-controlled inputs in larger systems.
--->
