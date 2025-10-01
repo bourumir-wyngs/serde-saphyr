@@ -177,6 +177,66 @@ fn parse_blob() {
 }
 ```
 
+## Merge keys
+Serde-saphyr supports merge keys, which reduce redundancy and verbosity by specifying shared key-value pairs once and then reusing them across multiple mappings. Here is example with merge keys (inherited properties):
+
+```rust
+use serde::Deserialize;
+
+/// Configuration to parse into. Does not include "defaults"
+#[derive(Debug, Deserialize, PartialEq)]
+struct Config {
+    development: Connection,
+    production: Connection,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct Connection {
+    adapter: String,
+    host: String,
+    database: String,
+}
+
+fn main() {
+    let yaml_input = r#"
+# Here we define "default configuration"  
+defaults: &defaults
+  adapter: postgres
+  host: localhost
+
+development:
+  <<: *defaults
+  database: dev_db
+
+production:
+  <<: *defaults
+  database: prod_db
+"#;
+
+    // Deserialize YAML with anchors, aliases and merge keys into the Config struct
+    let parsed: Config = serde_saphyr::from_str(yaml_input).expect("Failed to deserialize YAML");
+
+    // Define expected Config structure explicitly
+    let expected = Config {
+        development: Connection {
+            adapter: "postgres".into(),
+            host: "localhost".into(),
+            database: "dev_db".into(),
+        },
+        production: Connection {
+            adapter: "postgres".into(),
+            host: "localhost".into(),
+            database: "prod_db".into(),
+        },
+    };
+
+    // Assert parsed config matches expected
+    assert_eq!(parsed, expected);
+}
+```
+Merge keys are standard in YAML 1.1. Although YAML 1.2 no longer includes merge keys in its specification, it doesn't explicitly disallow them either, and many parsers implement this feature.
+
+
 ## Rust types as schema
 
 The target Rust types act as a schema. Knowing whether a field is a string or a boolean allows the
