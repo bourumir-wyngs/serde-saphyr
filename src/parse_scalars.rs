@@ -214,6 +214,19 @@ pub(crate) fn parse_yaml12_f64(s: &str, location: Location) -> Result<f64, Error
 }
 
 pub(crate) fn parse_yaml12_f32(s: &str, location: Location) -> Result<f32, Error> {
-    let v = parse_yaml12_f64(s, location)?;
-    Ok(v as f32)
+    let v64 = parse_yaml12_f64(s, location)?;
+
+    // Allow NaN and infinities directly: they’re representable in f32 too.
+    if !v64.is_finite() {
+        return Ok(v64 as f32);
+    }
+
+    // Reject finite values that are outside f32’s finite range (would become ±∞).
+    if v64 < f32::MIN as f64 || v64 > f32::MAX as f64 {
+        return Err(Error::msg(format!("value out of valid f32 range (overflow): {}", v64))
+            .with_location(location));
+    }
+
+    // Should we check for underflow also? Current code would return 0.0.
+    Ok(v64 as f32)
 }
