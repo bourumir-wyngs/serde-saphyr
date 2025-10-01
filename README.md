@@ -9,7 +9,7 @@
 [![Fuzz & Audit](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/ci.yml/badge.svg)](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/ci.yml)
 
 **serde-saphyr** is a strongly typed YAML deserializer built on
-[`saphyr-parser`](https://crates.io/crates/saphyr-parser). It aims to be **panic-free** on malformed input and to avoid `unsafe` code in library paths. The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.” This way it is not a fork of the older [`serde-yaml`](https://crates.io/crates/serde_yaml) and does not share any code with it.
+[`saphyr-parser`](https://crates.io/crates/saphyr-parser). It aims to be **panic-free** on malformed input and to avoid `unsafe` code in library paths. The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.” This way it is not a fork of the older [`serde-yaml`](https://crates.io/crates/serde_yaml) and does not share any code with it. Anchors and merge keys (supported) are handled by remembering and "replaying" at the reference point the even sequence that was recorded when the anchor was defined.
 
 ### Why this approach?
 
@@ -38,7 +38,8 @@ Parsing Generated YAML, size 25.00 MiB, release build.
   (e.g., deeply nested structures or very large arrays); see
   [budget constraints](https://docs.rs/serde_yaml_bw/latest/serde_yaml_bw/budget/struct.Budget.html) and
   [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
-- **Scope:** Currently the crate provides a **deserializer**. YAML merge keys are **not supported**.
+- **Scope:** Currently the crate provides a **deserializer** with full support for YAML merge keys
+  that obey the configured duplicate-key policy.
 
 ### Duplicate keys
 
@@ -47,7 +48,6 @@ Duplicate key handling is configurable. By default it’s an error; “first win
 
 ### Unsuported features
 - **Tagged enums** (`!!EnumName RED`) are not supported. Use mapping base enums (EnumName: RED). This allows to define nested enums if needed. 
-- **Merge keys** (feature of YAML 1.1 but not 1.2) are not supported because it’s not feasible with the current streaming design to support YAML merge keys without buffering extra data. Use serde-yaml-bw for merge keys.
 
 ---
 
@@ -176,6 +176,67 @@ fn parse_blob() {
     assert_eq!(blob.data, b"hello");
 }
 ```
+
+## Merge keys
+Merge keys (inherited properties) are supported.
+
+```rust
+use serde::Deserialize;
+
+/// Configuration to parse into. Does not include "defaults"
+#[derive(Debug, Deserialize, PartialEq)]
+struct Config {
+    development: Connection,
+    production: Connection,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct Connection {
+    adapter: String,
+    host: String,
+    database: String,
+}
+
+fn main() {
+    let yaml_input = r#"
+# Here we define "default configuration"  
+defaults: &defaults
+  adapter: postgres
+  host: localhost
+
+development:
+  <<: *defaults
+  database: dev_db
+
+production:
+  <<: *defaults
+  database: prod_db
+"#;
+
+    // Deserialize YAML with anchors, aliases and merge keys into the Config struct
+    let parsed: Config = serde_yaml_bw::from_str(yaml_input).expect("Failed to deserialize YAML");
+
+    // Define expected Config structure explicitly
+    let expected = Config {
+        development: Connection {
+            adapter: "postgres".into(),
+            host: "localhost".into(),
+            database: "dev_db".into(),
+        },
+        production: Connection {
+            adapter: "postgres".into(),
+            host: "localhost".into(),
+            database: "prod_db".into(),
+        },
+    };
+
+    // Assert parsed config matches expected
+    assert_eq!(parsed, expected);
+}
+```
+
+Merge keys are standard in YAML 1.1. Although YAML 1.2 no longer includes merge keys in its specification, it doesn't explicitly disallow them either, and many parsers implement this feature.
+
 
 ## Rust types as schema
 
