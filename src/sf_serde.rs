@@ -755,9 +755,9 @@ impl Events for ReplayEvents {
 
 /// The streaming Serde deserializer over `Events`.
 ///
-/// **Where do values come from?** From an `Events` stream (typically [`LiveEvents`])
+/// Where do values come from: From an `Events` stream (typically [`LiveEvents`])
 /// that yields simplified YAML events.  
-/// **Where do values go?** Into a Serde `Visitor` provided by the caller's
+/// Where do values go: Into a Serde `Visitor` provided by the caller's
 /// `T: Deserialize`, which drives how we walk the event stream and construct `T`.
 ///
 /// This type is *stateless* with respect to ownership: it borrows the event source
@@ -1159,11 +1159,11 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
 
     /// Deserialize a newtype struct (`struct Wrapper(T);`) by delegating to its inner value.
     ///
-    /// **Why is this needed?** Serde distinguishes *newtype structs* from their
+    /// Why is this needed: Serde distinguishes *newtype structs* from their
     /// inner `T` so that attributes (like `#[serde(transparent)]`) and coherence
     /// rules are preserved. Even though YAML has no distinct “newtype” shape,
     /// Serde will invoke this method when the target is a newtype struct.  
-    /// **What do we do?** Hand our own deserializer (`self`) to
+    /// What do we do: Hand our own deserializer (`self`) to
     /// `Visitor::visit_newtype_struct`, which in turn will deserialize `T`
     /// using the same YAML event stream.
     fn deserialize_newtype_struct<V: Visitor<'de>>(
@@ -1176,7 +1176,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
 
     /// Deserialize a YAML sequence into a Serde sequence.
     ///
-    /// **Data flow:** We provide a `SeqAccess` that repeatedly feeds nested
+    /// Flow: We provide a `SeqAccess` that repeatedly feeds nested
     /// `Deser` instances back into Serde for each element. Also supports a
     /// `!!binary` scalar as a byte *sequence* view when the caller expects a
     /// sequence of u8.
