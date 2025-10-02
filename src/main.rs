@@ -85,6 +85,7 @@ fn main() -> Result<(), Error> {
                 max_documents: many,
                 max_nodes: many,
                 max_total_scalar_bytes: many,
+                max_merge_keys: many,
                 enforce_alias_anchor_ratio: false,
                 alias_anchor_min_aliases: many,
                 alias_anchor_ratio_multiplier: many,

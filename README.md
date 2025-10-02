@@ -32,6 +32,8 @@ Parsing Generated YAML, size 25.00 MiB, release build.
 | [serde-yml](https://crates.io/crates/serde-yml)         | 490.92    | Repo archived                                                             |
 | [serde-yaml_bw](https://crates.io/crates/serde-yaml_bw) | 702.99    | Slow due Saphyr doing budget check first upfront of libyaml               |
 
+Benchmarking code is included as the [main](./src/main.rs) of this library
+
 ### Other features
 
 - **Configurable budgets:** Enforce input limits to mitigate resource-exhaustion

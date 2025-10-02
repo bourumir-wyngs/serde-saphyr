@@ -6,7 +6,7 @@
 use std::borrow::Cow;
 use std::collections::HashSet;
 
-use saphyr_parser::{Event, Parser, ScanError};
+use saphyr_parser::{Event, Parser, ScalarStyle, ScanError};
 
 /// Budgets for a streaming YAML scan.
 ///
@@ -69,6 +69,10 @@ pub struct Budget {
     ///
     /// Default: 67,108,864 (64 MiB)
     pub max_total_scalar_bytes: usize,
+    /// Maximum number of merge keys (`<<`) allowed across the stream.
+    ///
+    /// Default: 10,000
+    pub max_merge_keys: usize,
     /// If `true`, enforce the alias/anchor heuristic.
     ///
     /// The heuristic flags inputs that use an excessive number of aliases
@@ -99,6 +103,7 @@ impl Default for Budget {
             max_documents: 1_024,                     // doc separator storms
             max_nodes: 250_000,                       // sequences + maps + scalars
             max_total_scalar_bytes: 64 * 1024 * 1024, // 64 MiB of scalar text
+            max_merge_keys: 10_000,                   // generous cap for merge keys
             enforce_alias_anchor_ratio: true,
             alias_anchor_min_aliases: 100,
             alias_anchor_ratio_multiplier: 10,
@@ -155,6 +160,12 @@ pub enum BudgetBreach {
         total_scalar_bytes: usize,
     },
 
+    /// The number of merge keys (`<<`) exceeded [`Budget::max_merge_keys`].
+    MergeKeys {
+        /// Total merge keys observed at the moment of the breach.
+        merge_keys: usize,
+    },
+
     /// The ratio of aliases to defined anchors is excessive.
     ///
     /// Triggered when [`Budget::enforce_alias_anchor_ratio`] is true and
@@ -199,6 +210,9 @@ pub struct BudgetReport {
 
     /// Sum of bytes across all scalar values (`Scalar.value.len()`), saturating on overflow.
     pub total_scalar_bytes: usize,
+
+    /// Total number of merge keys (`<<`) encountered.
+    pub merge_keys: usize,
 }
 
 /// Stateful helper that enforces a [`Budget`] while consuming a stream of [`Event`]s.
@@ -208,6 +222,18 @@ pub struct BudgetEnforcer {
     report: BudgetReport,
     depth: usize,
     defined_anchors: HashSet<usize>,
+    containers: Vec<ContainerState>,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ContainerState {
+    Sequence {
+        from_mapping_value: bool,
+    },
+    Mapping {
+        expecting_key: bool,
+        from_mapping_value: bool,
+    },
 }
 
 impl BudgetEnforcer {
@@ -218,6 +244,7 @@ impl BudgetEnforcer {
             report: BudgetReport::default(),
             depth: 0,
             defined_anchors: HashSet::with_capacity(256),
+            containers: Vec::with_capacity(64),
         }
     }
 
@@ -250,8 +277,9 @@ impl BudgetEnforcer {
                         aliases: self.report.aliases,
                     });
                 }
+                self.handle_alias();
             }
-            Event::Scalar(value, _style, anchor_id, _tag_opt) => {
+            Event::Scalar(value, style, anchor_id, tag_opt) => {
                 self.bump_nodes()?;
                 let len = match value {
                     Cow::Borrowed(s) => s.len(),
@@ -264,6 +292,7 @@ impl BudgetEnforcer {
                     });
                 }
                 self.record_anchor(*anchor_id)?;
+                self.handle_scalar(value, style, tag_opt.is_some())?;
             }
             Event::SequenceStart(anchor_id, _tag_opt) => {
                 self.bump_nodes()?;
@@ -276,6 +305,9 @@ impl BudgetEnforcer {
                         depth: self.report.max_depth,
                     });
                 }
+                let from_mapping_value = self.entering_container();
+                self.containers
+                    .push(ContainerState::Sequence { from_mapping_value });
                 self.record_anchor(*anchor_id)?;
             }
             Event::SequenceEnd => {
@@ -284,6 +316,7 @@ impl BudgetEnforcer {
                 } else {
                     return Err(BudgetBreach::SequenceUnbalanced);
                 }
+                self.leave_sequence()?;
             }
             Event::MappingStart(anchor_id, _tag_opt) => {
                 self.bump_nodes()?;
@@ -296,6 +329,11 @@ impl BudgetEnforcer {
                         depth: self.report.max_depth,
                     });
                 }
+                let from_mapping_value = self.entering_container();
+                self.containers.push(ContainerState::Mapping {
+                    expecting_key: true,
+                    from_mapping_value,
+                });
                 self.record_anchor(*anchor_id)?;
             }
             Event::MappingEnd => {
@@ -304,6 +342,7 @@ impl BudgetEnforcer {
                 } else {
                     return Err(BudgetBreach::SequenceUnbalanced);
                 }
+                self.leave_mapping()?;
             }
             Event::Nothing => {}
         }
@@ -333,6 +372,85 @@ impl BudgetEnforcer {
         }
         self.report.anchors = self.defined_anchors.len();
         Ok(())
+    }
+
+    fn handle_scalar(
+        &mut self,
+        value: &Cow<'_, str>,
+        style: &ScalarStyle,
+        has_tag: bool,
+    ) -> Result<(), BudgetBreach> {
+        if let Some(ContainerState::Mapping { expecting_key, .. }) = self.containers.last_mut() {
+            if *expecting_key {
+                if !has_tag && matches!(style, ScalarStyle::Plain) && value.as_ref() == "<<" {
+                    self.report.merge_keys += 1;
+                    if self.report.merge_keys > self.budget.max_merge_keys {
+                        return Err(BudgetBreach::MergeKeys {
+                            merge_keys: self.report.merge_keys,
+                        });
+                    }
+                }
+                *expecting_key = false;
+            } else {
+                self.finish_value();
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_alias(&mut self) {
+        if let Some(ContainerState::Mapping { expecting_key, .. }) = self.containers.last_mut() {
+            if *expecting_key {
+                *expecting_key = false;
+            } else {
+                self.finish_value();
+            }
+        }
+    }
+
+    fn entering_container(&mut self) -> bool {
+        if let Some(ContainerState::Mapping { expecting_key, .. }) = self.containers.last_mut() {
+            if *expecting_key {
+                *expecting_key = false;
+                false
+            } else {
+                true
+            }
+        } else {
+            false
+        }
+    }
+
+    fn leave_sequence(&mut self) -> Result<(), BudgetBreach> {
+        match self.containers.pop() {
+            Some(ContainerState::Sequence { from_mapping_value }) => {
+                if from_mapping_value {
+                    self.finish_value();
+                }
+                Ok(())
+            }
+            _ => Err(BudgetBreach::SequenceUnbalanced),
+        }
+    }
+
+    fn leave_mapping(&mut self) -> Result<(), BudgetBreach> {
+        match self.containers.pop() {
+            Some(ContainerState::Mapping {
+                from_mapping_value, ..
+            }) => {
+                if from_mapping_value {
+                    self.finish_value();
+                }
+                Ok(())
+            }
+            _ => Err(BudgetBreach::SequenceUnbalanced),
+        }
+    }
+
+    fn finish_value(&mut self) {
+        if let Some(ContainerState::Mapping { expecting_key, .. }) = self.containers.last_mut() {
+            *expecting_key = true;
+        }
     }
 
     /// Consume the enforcer and return the accumulated [`BudgetReport`].
@@ -472,5 +590,23 @@ e: *A
             rep.breached,
             Some(BudgetBreach::Anchors { anchors: 3 })
         ));
+    }
+
+    #[test]
+    fn merge_key_limit_trips() {
+        let mut y = String::from("base: &B\n  k: 1\nitems:\n");
+        for idx in 0..3 {
+            y.push_str(&format!("  item{idx}:\n    <<: *B\n    extra: {idx}\n"));
+        }
+
+        let mut b = Budget::default();
+        b.max_merge_keys = 2;
+
+        let rep = check_yaml_budget(&y, &b).unwrap();
+        assert!(matches!(
+            rep.breached,
+            Some(BudgetBreach::MergeKeys { merge_keys }) if merge_keys == 3
+        ));
+        assert_eq!(rep.merge_keys, 3);
     }
 }
