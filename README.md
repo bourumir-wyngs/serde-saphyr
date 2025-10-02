@@ -276,8 +276,6 @@ Legacy octal format like `0052` can be turned on in `Options` but is off by defa
 ## Pathological inputs & budgets
 
 Fuzzing shows that certain adversarial inputs can make YAML parsers consume excessive time or memory, enabling denial-of-service scenarios. To counter this, `serde-saphyr` offers a fast, configurable pre-check via a [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html),
-available through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html).
-The budget check uses a separate `saphyr-parser` run that avoids building a syntax tree and stops as soon as any resource limit is exceeded. Defaults are conservative; tighten them when you know your input shape, or disable the budget if you only parse YAML you generate yourself.
+available through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). Defaults are conservative; tighten them when you know your input shape, or disable the budget if you only parse YAML you generate yourself.
 
----
 
