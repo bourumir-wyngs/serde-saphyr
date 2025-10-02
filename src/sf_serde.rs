@@ -474,7 +474,7 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
                         break;
                     }
                     Some(_) => {
-                        let child = capture_node(ev)?;
+                        let child = capture_node(ev)?; // recursive
                         let KeyNode {
                             fingerprint: fp,
                             events: child_events,
@@ -505,13 +505,13 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
                         break;
                     }
                     Some(_) => {
-                        let key = capture_node(ev)?;
+                        let key = capture_node(ev)?;  // recursive
                         let KeyNode {
                             fingerprint: key_fp,
                             events: key_events,
                             location: _,
                         } = key;
-                        let value = capture_node(ev)?;
+                        let value = capture_node(ev)?;  // recursive
                         let KeyNode {
                             fingerprint: value_fp,
                             events: value_events,
@@ -591,7 +591,7 @@ fn pending_entries_from_events(
                         batches.push(pending_entries_from_events(
                             element.events,
                             element.location,
-                        )?);
+                        )?);  // recursive
                     }
                     None => {
                         return Err(Error::eof().with_location(replay.last_location()));
