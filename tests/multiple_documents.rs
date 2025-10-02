@@ -5,6 +5,15 @@ struct Person {
     name: String,
 }
 
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(tag = "type")]
+enum Document {
+    #[serde(rename = "person")]
+    Person { name: String, age: String },
+    #[serde(rename = "pet")]
+    Pet { kind: String },
+}
+
 #[test]
 fn multiple_documents_one_no_markers() {
     // Single document without any explicit --- or ... markers
@@ -90,4 +99,26 @@ fn multiple_documents_preserve_quoted_null_like_scalars() {
     let y = "\"\"\n---\n\"~\"\n---\n\"null\"\n";
     let docs: Vec<String> = serde_saphyr::from_multiple(y).expect("parse quoted null-like docs");
     assert_eq!(docs, vec![String::new(), "~".to_owned(), "null".to_owned()]);
+}
+
+#[test]
+fn multiple_documents_enum_variants() {
+    let y = "type: person\nname: Alice\nage: 30\n---\ntype: pet\nkind: cat\n---\ntype: person\nname: Bob\nage: 25\n";
+    let docs: Vec<Document> = serde_saphyr::from_multiple(y).expect("parse enum documents");
+    assert_eq!(
+        docs,
+        vec![
+            Document::Person {
+                name: "Alice".to_owned(),
+                age: "30".to_owned(),
+            },
+            Document::Pet {
+                kind: "cat".to_owned(),
+            },
+            Document::Person {
+                name: "Bob".to_owned(),
+                age: "25".to_owned(),
+            },
+        ],
+    );
 }

@@ -89,6 +89,32 @@ let yaml_input = r#"
 }
 ```
 
+## Multiple documents
+
+YAML streams can contain several documents separated by `---`/`...` markers. When
+deserializing with `serde_saphyr::from_multiple`, you still need to supply the
+vector element type up front (`Vec<T>`). That does **not** lock you into a single
+shape: make the element an enum and each document will deserialize into the
+matching variant. This lets you mix different payloads in one stream while
+retaining strong typing on the Rust side.
+
+```rust
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(tag = "type")]
+enum Document {
+    #[serde(rename = "person")]
+    Person { name: String, age: u8 },
+    #[serde(rename = "pet")]
+    Pet { kind: String },
+}
+
+fn parse_documents(input: &str) -> Vec<Document> {
+    serde_saphyr::from_multiple(input).expect("valid YAML stream")
+}
+```
+
 ## Nested enums
 
 Externally tagged enums nest naturally in YAML as maps keyed by the variant name.
