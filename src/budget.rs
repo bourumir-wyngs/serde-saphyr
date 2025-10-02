@@ -609,4 +609,38 @@ e: *A
         ));
         assert_eq!(rep.merge_keys, 3);
     }
+
+    #[test]
+    fn alias_anchor_ratio_trips_when_excessive() {
+        let yaml = "root: &A [1]\na: *A\nb: *A\nc: *A\n";
+
+        let mut budget = Budget::default();
+        budget.alias_anchor_min_aliases = 1;
+        budget.alias_anchor_ratio_multiplier = 2;
+
+        let report = check_yaml_budget(yaml, &budget).unwrap();
+        assert!(matches!(
+            report.breached,
+            Some(BudgetBreach::AliasAnchorRatio {
+                aliases: 3,
+                anchors: 1
+            })
+        ));
+        assert_eq!(report.aliases, 3);
+        assert_eq!(report.anchors, 1);
+    }
+
+    #[test]
+    fn alias_anchor_ratio_respects_minimum_alias_threshold() {
+        let yaml = "root: &A [1]\na: *A\nb: *A\nc: *A\n";
+
+        let mut budget = Budget::default();
+        budget.alias_anchor_min_aliases = 5;
+        budget.alias_anchor_ratio_multiplier = 1;
+
+        let report = check_yaml_budget(yaml, &budget).unwrap();
+        assert!(report.breached.is_none());
+        assert_eq!(report.aliases, 3);
+        assert_eq!(report.anchors, 1);
+    }
 }

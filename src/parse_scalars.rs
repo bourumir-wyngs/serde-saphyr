@@ -35,21 +35,27 @@ fn parse_digits_u128(digits: &str, radix: u32) -> Option<u128> {
             b'_' => continue,
             b'0'..=b'9' => {
                 let d = (b - b'0') as u32;
-                if d >= radix { return None; }
+                if d >= radix {
+                    return None;
+                }
                 val = val.checked_mul(radix as u128)?;
                 val = val.checked_add(d as u128)?;
                 saw = true;
             }
             b'a'..=b'f' if radix > 10 => {
                 let d = 10 + (b - b'a') as u32;
-                if d >= radix { return None; }
+                if d >= radix {
+                    return None;
+                }
                 val = val.checked_mul(radix as u128)?;
                 val = val.checked_add(d as u128)?;
                 saw = true;
             }
             b'A'..=b'F' if radix > 10 => {
                 let d = 10 + (b - b'A') as u32;
-                if d >= radix { return None; }
+                if d >= radix {
+                    return None;
+                }
                 val = val.checked_mul(radix as u128)?;
                 val = val.checked_add(d as u128)?;
                 saw = true;
@@ -144,10 +150,15 @@ where
     let mag = parse_digits_u128(digits, radix)
         .ok_or_else(|| Error::msg(format!("invalid {ty}")).with_location(location))?;
     let val_i128: i128 = if neg {
-        let mag_i128: i128 = mag.try_into().map_err(|_| Error::msg(format!("invalid {ty}")).with_location(location))?;
-        mag_i128.checked_neg().ok_or_else(|| Error::msg(format!("invalid {ty}")).with_location(location))?
+        let mag_i128: i128 = mag
+            .try_into()
+            .map_err(|_| Error::msg(format!("invalid {ty}")).with_location(location))?;
+        mag_i128
+            .checked_neg()
+            .ok_or_else(|| Error::msg(format!("invalid {ty}")).with_location(location))?
     } else {
-        mag.try_into().map_err(|_| Error::msg(format!("invalid {ty}")).with_location(location))?
+        mag.try_into()
+            .map_err(|_| Error::msg(format!("invalid {ty}")).with_location(location))?
     };
     T::try_from(val_i128).map_err(|_| Error::msg(format!("invalid {ty}")).with_location(location))
 }
@@ -181,22 +192,23 @@ where
 }
 
 fn radix_and_digits<'a>(legacy_octal: bool, rest: &str) -> (u32, &str) {
-    let (radix, digits) = if let Some(r) = rest.strip_prefix("0x").or_else(|| rest.strip_prefix("0X")) {
-        (16u32, r)
-    } else if let Some(r) = rest.strip_prefix("0o").or_else(|| rest.strip_prefix("0O")) {
-        (8u32, r)
-    } else if let Some(r) = rest.strip_prefix("0b").or_else(|| rest.strip_prefix("0B")) {
-        (2u32, r)
-    } else if legacy_octal && rest.starts_with("00") {
-        if rest == "00" {
-            // 00 is 0 and not empty string
-            (8u32, "0")
+    let (radix, digits) =
+        if let Some(r) = rest.strip_prefix("0x").or_else(|| rest.strip_prefix("0X")) {
+            (16u32, r)
+        } else if let Some(r) = rest.strip_prefix("0o").or_else(|| rest.strip_prefix("0O")) {
+            (8u32, r)
+        } else if let Some(r) = rest.strip_prefix("0b").or_else(|| rest.strip_prefix("0B")) {
+            (2u32, r)
+        } else if legacy_octal && rest.starts_with("00") {
+            if rest == "00" {
+                // 00 is 0 and not empty string
+                (8u32, "0")
+            } else {
+                (8u32, &rest[2..])
+            }
         } else {
-            (8u32, &rest[2..])
-        }
-    } else {
-        (10u32, rest)
-    };
+            (10u32, rest)
+        };
     (radix, digits)
 }
 
@@ -216,4 +228,84 @@ pub(crate) fn parse_yaml12_f64(s: &str, location: Location) -> Result<f64, Error
 pub(crate) fn parse_yaml12_f32(s: &str, location: Location) -> Result<f32, Error> {
     let v = parse_yaml12_f64(s, location)?;
     Ok(v as f32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_location() -> Location {
+        Location { row: 42, column: 7 }
+    }
+
+    #[test]
+    fn yaml11_bool_accepts_all_literals_and_trims_whitespace() {
+        let truthy = ["true", "Yes", " y ", "ON\n"];
+        for value in truthy {
+            assert!(parse_yaml11_bool(value).unwrap());
+        }
+
+        let falsy = ["false", "No", " n ", "OFF\t"];
+        for value in falsy {
+            assert!(!parse_yaml11_bool(value).unwrap());
+        }
+    }
+
+    #[test]
+    fn yaml11_bool_reports_error_for_invalid_literal() {
+        let err = parse_yaml11_bool("maybe").unwrap_err();
+        assert!(err.contains("invalid YAML 1.1 bool"));
+    }
+
+    #[test]
+    fn parse_int_signed_supports_alternate_radices_and_underscores() {
+        let loc = sample_location();
+        let value: i64 = parse_int_signed("0x7_fF".to_string(), "i64", loc, false).unwrap();
+        assert_eq!(value, 0x7ff);
+
+        let value: i32 = parse_int_signed("0b1010_1010".to_string(), "i32", loc, false).unwrap();
+        assert_eq!(value, 0b1010_1010);
+    }
+
+    #[test]
+    fn parse_int_signed_honors_legacy_octal_prefixes() {
+        let loc = sample_location();
+        let value: i32 = parse_int_signed("00077".to_string(), "i32", loc, true).unwrap();
+        assert_eq!(value, 0o77);
+    }
+
+    #[test]
+    fn parse_int_signed_preserves_error_location() {
+        let loc = sample_location();
+        let err = parse_int_signed::<i64>("0x8000000000000000".to_string(), "i64", loc, false)
+            .unwrap_err();
+        match err {
+            Error::Message { location, .. } => assert_eq!(location, loc),
+            other => panic!("unexpected error variant: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_int_unsigned_rejects_negative_inputs() {
+        let loc = sample_location();
+        let err = parse_int_unsigned::<u32>("-5".to_string(), "u32", loc, false).unwrap_err();
+        match err {
+            Error::Message { location, .. } => assert_eq!(location, loc),
+            other => panic!("unexpected error variant: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_yaml12_floats_handle_nan_and_infinity_forms() {
+        let loc = sample_location();
+
+        let nan = parse_yaml12_f64(" .NaN ", loc).unwrap();
+        assert!(nan.is_nan());
+
+        let inf = parse_yaml12_f64("+.INF", loc).unwrap();
+        assert!(inf.is_infinite() && inf.is_sign_positive());
+
+        let neg_inf = parse_yaml12_f32("-.Inf", loc).unwrap();
+        assert!(neg_inf.is_infinite() && neg_inf.is_sign_negative());
+    }
 }

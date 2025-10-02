@@ -74,7 +74,6 @@ neg_zero_i: -00
     assert_eq!(v.neg_zero_i, 0);
 }
 
-
 #[test]
 fn parse_legacy_octal_one() {
     let y = r#"
@@ -103,3 +102,36 @@ neg_zero_i: -009
     assert!(v.is_err());
 }
 
+#[derive(Debug, Deserialize, PartialEq)]
+struct UnderscoreNumbers {
+    decimal_i64: i64,
+    decimal_u64: u64,
+    hex_u32: u32,
+    bin_u8: u8,
+}
+
+#[test]
+fn parse_numeric_literals_with_underscores() {
+    let y = r#"
+decimal_i64: -1_234_567_890
+decimal_u64: 9_876_543_210
+hex_u32: 0xAB_CD_EF_01
+bin_u8: 0b1010_1010
+"#;
+    let v: UnderscoreNumbers = serde_saphyr::from_str(y).expect("parse failed");
+    assert_eq!(v.decimal_i64, -1_234_567_890);
+    assert_eq!(v.decimal_u64, 9_876_543_210);
+    assert_eq!(v.hex_u32, 0xAB_CD_EF_01);
+    assert_eq!(v.bin_u8, 0b1010_1010);
+}
+
+#[test]
+fn parse_numeric_literals_with_invalid_digits() {
+    let y = r#"
+hex_u32: 0xABCDG
+bin_u8: 0b1021
+"#;
+    let err = serde_saphyr::from_str::<UnderscoreNumbers>(y).unwrap_err();
+    let msg = format!("{err}");
+    assert!(msg.contains("invalid u32") || msg.contains("invalid u8"));
+}

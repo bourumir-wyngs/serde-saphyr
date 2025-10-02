@@ -78,3 +78,38 @@ pub fn decode_base64_yaml(s: &str) -> Result<Vec<u8>, Error> {
 
     Ok(out)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recognizes_binary_tags() {
+        assert!(is_binary_tag(Some("!!binary")));
+        assert!(is_binary_tag(Some("!binary")));
+        assert!(is_binary_tag(Some("tag:yaml.org,2002:binary")));
+        assert!(is_binary_tag(Some("tag:yaml.org,2002:!binary")));
+        assert!(!is_binary_tag(Some("!not-binary")));
+        assert!(!is_binary_tag(None));
+    }
+
+    #[test]
+    fn decodes_valid_base64() {
+        assert_eq!(decode_base64_yaml("AQID").unwrap(), vec![1, 2, 3]);
+
+        let with_whitespace = "SG Vs\nbG8h";
+        assert_eq!(decode_base64_yaml(with_whitespace).unwrap(), b"Hello!".to_vec());
+    }
+
+    #[test]
+    fn rejects_invalid_base64_inputs() {
+        // Length not divisible by 4
+        assert!(decode_base64_yaml("AQI").is_err());
+
+        // Character outside the base64 alphabet
+        assert!(decode_base64_yaml("AQ?=").is_err());
+
+        // Too much padding in a chunk
+        assert!(decode_base64_yaml("A===").is_err());
+    }
+}
