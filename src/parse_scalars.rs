@@ -1,4 +1,5 @@
 use crate::sf_serde::{Error, Location};
+use std::str::FromStr;
 
 /// Parse a YAML 1.1 boolean from a &str (handles the "Norway problem").
 ///
@@ -212,22 +213,25 @@ fn radix_and_digits<'a>(legacy_octal: bool, rest: &str) -> (u32, &str) {
     (radix, digits)
 }
 
-pub(crate) fn parse_yaml12_f64(s: &str, location: Location) -> Result<f64, Error> {
+pub fn parse_yaml12_float<T>(s: &str, location: Location) -> Result<T, Error>
+where
+    T: FromStr,
+    T: num_traits::Float,
+{
     let t = s.trim();
     let lower = t.to_ascii_lowercase();
     match lower.as_str() {
-        ".nan" | "+.nan" | "-.nan" => Ok(f64::NAN),
-        ".inf" | "+.inf" => Ok(f64::INFINITY),
-        "-.inf" => Ok(f64::NEG_INFINITY),
-        _ => t
-            .parse::<f64>()
-            .map_err(|_| Error::msg("invalid floating point value").with_location(location)),
+        ".nan" | "+.nan" | "-.nan" => Ok(T::nan()),
+        ".inf" | "+.inf" => Ok(T::infinity()),
+        "-.inf" => Ok(T::neg_infinity()),
+        _ => t.parse::<T>().map_err(|_| {
+            Error::msg(format!(
+                "invalid floating point ({} value)",
+                std::any::type_name::<T>()
+            ))
+            .with_location(location)
+        }),
     }
-}
-
-pub(crate) fn parse_yaml12_f32(s: &str, location: Location) -> Result<f32, Error> {
-    let v = parse_yaml12_f64(s, location)?;
-    Ok(v as f32)
 }
 
 #[cfg(test)]
@@ -299,13 +303,59 @@ mod tests {
     fn parse_yaml12_floats_handle_nan_and_infinity_forms() {
         let loc = sample_location();
 
-        let nan = parse_yaml12_f64(" .NaN ", loc).unwrap();
+        let nan: f64 = parse_yaml12_float(" .NaN ", loc).unwrap();
         assert!(nan.is_nan());
 
-        let inf = parse_yaml12_f64("+.INF", loc).unwrap();
+        let inf: f64 = parse_yaml12_float("+.INF", loc).unwrap();
         assert!(inf.is_infinite() && inf.is_sign_positive());
 
-        let neg_inf = parse_yaml12_f32("-.Inf", loc).unwrap();
+        let neg_inf: f64 = parse_yaml12_float("-.Inf", loc).unwrap();
         assert!(neg_inf.is_infinite() && neg_inf.is_sign_negative());
+    }
+
+    fn loc() -> Location {
+        // Replace with how you construct Location in your code
+        Location { row: 1, column: 1 }
+    }
+
+    #[test]
+    fn test_normal_values() {
+        assert_eq!(parse_yaml12_float::<f32>("1.5", loc()).unwrap(), 1.5f32);
+        assert_eq!(
+            parse_yaml12_float::<f32>("-123.456", loc()).unwrap(),
+            -123.456f32
+        );
+    }
+
+    #[test]
+    fn test_zero_values() {
+        assert_eq!(parse_yaml12_float::<f32>("0", loc()).unwrap(), 0.0f32);
+        assert_eq!(parse_yaml12_float::<f32>("-0", loc()).unwrap(), -0.0f32);
+    }
+
+    #[test]
+    fn test_nan_and_infinity() {
+        let nan: f32 = parse_yaml12_float(".nan", loc()).unwrap();
+        assert!(nan.is_nan());
+
+        let inf: f64 = parse_yaml12_float(".inf", loc()).unwrap();
+        assert!(inf.is_infinite() && inf.is_sign_positive());
+
+        let ninf: f32 = parse_yaml12_float("-.Inf", loc()).unwrap();
+        assert!(ninf.is_infinite() && ninf.is_sign_negative());
+    }
+
+    #[test]
+    fn test_subnormal_preserved() {
+        // Smallest positive subnormal f32
+        let smallest = f32::from_bits(1) as f64;
+        let val: f32 = parse_yaml12_float(&format!("{}", smallest), loc()).unwrap();
+        assert_eq!(val, f32::from_bits(1));
+    }
+
+    #[test]
+    fn test_negative_zero_preserved() {
+        let val: f32 = parse_yaml12_float("-0.0", loc()).unwrap();
+        assert_eq!(val.to_bits(), (-0.0f32).to_bits());
     }
 }

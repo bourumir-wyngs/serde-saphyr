@@ -21,9 +21,7 @@ use std::fmt;
 
 use crate::base64::{decode_base64_yaml, is_binary_tag};
 pub use crate::budget::{Budget, BudgetBreach, BudgetEnforcer};
-use crate::parse_scalars::{
-    parse_int_signed, parse_int_unsigned, parse_yaml11_bool, parse_yaml12_f32, parse_yaml12_f64,
-};
+use crate::parse_scalars::{parse_int_signed, parse_int_unsigned, parse_yaml11_bool, parse_yaml12_float};
 use crate::tags::can_parse_into_string;
 use saphyr_parser::{ScalarStyle, ScanError, Span};
 use serde::de::{self, DeserializeOwned, Deserializer as _, IntoDeserializer, Visitor};
@@ -965,13 +963,13 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
     /// Parse a 32-bit float (supports YAML 1.2 `+.inf`, `-.inf`, `.nan`).
     fn deserialize_f32<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
-        let v: f32 = parse_yaml12_f32(&s, location)?;
+        let v: f32 = parse_yaml12_float(&s, location)?;
         visitor.visit_f32(v)
     }
     /// Parse a 64-bit float (supports YAML 1.2 `+.inf`, `-.inf`, `.nan`).
     fn deserialize_f64<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
-        let v: f64 = parse_yaml12_f64(&s, location)?;
+        let v: f64 = parse_yaml12_float(&s, location)?;
         visitor.visit_f64(v)
     }
 
