@@ -9,12 +9,12 @@
 [![Fuzz & Audit](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/ci.yml/badge.svg)](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/ci.yml)
 
 **serde-saphyr** is a strongly typed YAML deserializer built on
-[`saphyr-parser`](https://crates.io/crates/saphyr-parser). It aims to be **panic-free** on malformed input and to avoid `unsafe` code in library paths. The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.” This way it is not a fork of the older [`serde-yaml`](https://crates.io/crates/serde_yaml) and does not share any code with it.
+[`saphyr-parser`](https://crates.io/crates/saphyr-parser). It aims to be **panic-free** on malformed input and to avoid `unsafe` code in library code. The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.” It is not a fork of the older [`serde-yaml`](https://crates.io/crates/serde_yaml) and does not share any code with it.
 
 ### Why this approach?
 
 - **Light on resources:** Having almost no intermediate data structures should result in more efficient parsing, especially if anchors are used only lightly.
-- **Also simpler:** No code to support intermediate Value's of all kinds.
+- **Also simpler:** No code to support intermediate Values of all kinds.
 - **Type-driven parsing:** YAML that doesn’t match the expected Rust types is rejected early.
 - **Safer by construction:** No dynamic “any” objects; common YAML-based code-execution [exploits](https://www.arp242.net/yaml-config.html) do not apply.
 
@@ -32,25 +32,19 @@ Parsing Generated YAML, size 25.00 MiB, release build.
 | [serde-yml](https://crates.io/crates/serde-yml)         | 490.92    | Repo archived                                                             |
 | [serde-yaml_bw](https://crates.io/crates/serde-yaml_bw) | 702.99    | Slow due Saphyr doing budget check first upfront of libyaml               |
 
-Benchmarking code is included as the [main](./src/main.rs) of this library
+Benchmarking code is included in this repository.
 
 ### Other features
 
-- **Configurable budgets:** Enforce input limits to mitigate resource-exhaustion
-  (e.g., deeply nested structures or very large arrays); see
-  [budget constraints](https://docs.rs/serde_yaml_bw/latest/serde_yaml_bw/budget/struct.Budget.html) and
-  [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
-- **Scope:** Currently the crate provides a **deserializer** with full support for YAML merge keys
-  that obey the configured duplicate-key policy.
+- **Configurable budgets:** Enforce input limits to mitigate resource exhaustion (e.g., deeply nested structures or very large arrays); see [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
+- **Scope:** Currently the crate provides a **deserializer** with full support for YAML merge keys that obey the configured duplicate-key policy.
 
 ### Duplicate keys
+Duplicate key handling is configurable. By default it’s an error; “first wins”  and “last wins” strategies are available via [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). Duplicate key policy applies not just to strings but also to other types (when deserializing into map).
 
-Duplicate key handling is configurable. By default it’s an error; “first wins”  and “last wins” strategies are available via
-[`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). Duplicate key policy applies not just to strings but also to other types (when deserializing into map).
-
-### Unsuported features
-- **Tagged enums** (`!!EnumName RED`) are not supported. Use mapping base enums (EnumName: RED). This allows to define nested enums if needed. 
-
+### Unsupported features
+- **Tagged enums** (`!!EnumName RED`) are not supported. Use mapping-based enums (`EnumName: RED`) instead. This also allows you to define nested enums if needed.
+- **Internally tagged enums** (`type: EnumName ... color: RED`). Avoid internally tagged enums (e.g., with `#[serde(tag = "type")]`) because Serde does not provide that target type information,  for them; it calls [`deserialize_any`](./src/sf_serde.rs), forcing to guess the type from the value (see that file for the implementation). This may still work, but you lose the "struct-as-schema" robustness.
 ---
 
 ## Usage
@@ -90,13 +84,7 @@ let yaml_input = r#"
 ```
 
 ## Multiple documents
-
-YAML streams can contain several documents separated by `---`/`...` markers. When
-deserializing with `serde_saphyr::from_multiple`, you still need to supply the
-vector element type up front (`Vec<T>`). That does **not** lock you into a single
-shape: make the element an enum and each document will deserialize into the
-matching variant. This lets you mix different payloads in one stream while
-retaining strong typing on the Rust side.
+YAML streams can contain several documents separated by `---`/`...` markers. When deserializing with `serde_saphyr::from_multiple`, you still need to supply the vector element type up front (`Vec<T>`). That does **not** lock you into a single shape: make the element an enum and each document will deserialize into the matching variant. This lets you mix different payloads in one stream while retaining strong typing on the Rust side.
 
 ```rust
 use serde::Deserialize;
@@ -125,9 +113,6 @@ fn main() {
     let docs = serde_saphyr::from_multiple(input).expect("valid YAML stream");
 }
 ```
-Do not use "typed" enums (with `#[serde(tag = "type")]` as Serde does not provide that target structure information
-for them (calls `deserialize_any`, forcing to guess the type from value). This may still work but you lose the 
-"struct as schema" robustness.
 
 ## Nested enums
 
@@ -139,14 +124,14 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 struct Move {
-by: f32,
-constraints: Vec<Constraint>,
+  by: f32,
+  constraints: Vec<Constraint>,
 }
 
 #[derive(Deserialize)]
 enum Constraint {
-StayWithin { x: f32, y: f32, r: f32 },
-MaxSpeed { v: f32 },
+  StayWithin { x: f32, y: f32, r: f32 },
+  MaxSpeed { v: f32 },
 }
 
 fn main() {
@@ -169,6 +154,7 @@ let yaml = r#"
   println!("Parsed {} moves", robot_moves.len());
   }
 ```
+There are two variants of the deserialization functions: `from_*` and `from_*_with_options`. The latter takes [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html) to configure many aspects of parsing.
 
 ## Composite keys
 
@@ -201,9 +187,15 @@ println!("{} entries", transform.map.len());
 }
 ```
 
-## Binary scalars
+## Booleans
+By default, if the target field is boolean, serde-saphyr will attempt to interpret standard YAML 1.1 values as boolean (not just 'false' but also 'no', etc).
+If you do not want this (or you are parsing into a JSON Value where it is wrongly inferred), enclose the value in quotes or set `strict_booleans` to true in [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html).
 
-`!!binary`-tagged YAML values are base64-decoded when deserializing into `Vec<u8>` or `String` (reporting error if it is not valid UTF-8)
+## Deserializing into abstract JSON Value
+If you must work with abstract types, you can also deserialize YAML into [`serde_json::Value`](https://docs.rs/serde_json/latest/serde_json/value/index.html). Serde will drive the process through [`deserialize_any`](./src/sf_serde.rs) because `Value` does not fix a Rust primitive type ahead of time. You lose strict type control by Rust `struct` data types.
+
+## Binary scalars
+`!!binary`-tagged YAML values are base64-decoded when deserializing into `Vec<u8>` or `String` (reporting an error if it is not valid UTF-8)
 
 ```rust
 use serde::Deserialize;
@@ -220,7 +212,7 @@ fn parse_blob() {
 ```
 
 ## Merge keys
-Serde-saphyr supports merge keys, which reduce redundancy and verbosity by specifying shared key-value pairs once and then reusing them across multiple mappings. Here is example with merge keys (inherited properties):
+`serde-saphyr` supports merge keys, which reduce redundancy and verbosity by specifying shared key-value pairs once and then reusing them across multiple mappings. Here is an example with merge keys (inherited properties):
 
 ```rust
 use serde::Deserialize;
@@ -278,18 +270,13 @@ production:
 ```
 Merge keys are standard in YAML 1.1. Although YAML 1.2 no longer includes merge keys in its specification, it doesn't explicitly disallow them either, and many parsers implement this feature.
 
-
 ## Rust types as schema
 
-The target Rust types act as a schema. Knowing whether a field is a string or a boolean allows the
-parser to accept `1.2` as either a number or the string `"1.2"` depending on the target type, and to
-interpret common YAML boolean shorthands like `y`, `on`, `n`, or `off` appropriately. Same way, `0x2A` is
-the hexadecimal number when parsed into integer field and a string when parsed into `String`. 
-Legacy octal format like `0052` can be turned on in `Options` but is off by default.
+The target Rust types act as a schema. Knowing whether a field is a string or a boolean allows the parser to accept `1.2` as either a number or the string `"1.2"` depending on the target type, and to interpret common YAML boolean shorthands like `y`, `on`, `n`, or `off` appropriately. Similarly, `0x2A` is a hexadecimal number when parsed into an integer field, and a string when parsed into `String`.
+Legacy octal format like `0052` can be turned on in [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html) but is off by default.
 
 ## Pathological inputs & budgets
 
-Fuzzing shows that certain adversarial inputs can make YAML parsers consume excessive time or memory, enabling denial-of-service scenarios. To counter this, `serde-saphyr` offers a fast, configurable pre-check via a [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html),
-available through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). Defaults are conservative; tighten them when you know your input shape, or disable the budget if you only parse YAML you generate yourself.
+Fuzzing shows that certain adversarial inputs can make YAML parsers consume excessive time or memory, enabling denial-of-service scenarios. To counter this, `serde-saphyr` offers a fast, configurable pre-check via a [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html), available through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). Defaults are conservative; tighten them when you know your input shape, or disable the budget if you only parse YAML you generate yourself.
 
 

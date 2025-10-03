@@ -83,6 +83,10 @@ pub struct Options {
     /// Enable legacy octal parsing where values starting with `00` are treated as base-8.
     /// They are deprecated in YAML 1.2. Default: false.
     pub legacy_octal_numbers: bool,
+    /// If true, interpret only the exact literals `true` and `false` as booleans.
+    /// YAML 1.1 forms like `yes`/`no`/`on`/`off` will be rejected and not inferred.
+    /// Default: false (accept YAML 1.1 boolean forms).
+    pub strict_booleans: bool,
 }
 
 impl Default for Options {
@@ -92,6 +96,7 @@ impl Default for Options {
             duplicate_keys: DuplicateKeyPolicy::Error,
             alias_limits: AliasLimits::default(),
             legacy_octal_numbers: false,
+            strict_booleans: false,
         }
     }
 }

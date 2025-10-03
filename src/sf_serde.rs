@@ -22,7 +22,7 @@ use std::fmt;
 use crate::base64::{decode_base64_yaml, is_binary_tag};
 pub use crate::budget::{Budget, BudgetBreach, BudgetEnforcer};
 use crate::parse_scalars::{parse_int_signed, parse_int_unsigned, parse_yaml11_bool, parse_yaml12_float};
-use crate::tags::can_parse_into_string;
+use crate::tags::{can_parse_into_string, is_null_tag};
 use saphyr_parser::{ScalarStyle, ScanError, Span};
 use serde::de::{self, DeserializeOwned, Deserializer as _, IntoDeserializer, Visitor};
 
@@ -280,6 +280,8 @@ struct Cfg {
     dup_policy: DuplicateKeyPolicy,
     /// If true, accept legacy octal numbers that start with `00`.
     legacy_octal_numbers: bool,
+    /// If true, only accept exact literals `true`/`false` as booleans.
+    strict_booleans: bool,
 }
 
 /// Our simplified owned event kind that we feed into Serde.
@@ -862,17 +864,92 @@ impl<'e> Deser<'e> {
         }
     }
 }
+
 impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
     type Error = Error;
 
     /// Fallback entry point when the caller's type has no specific expectation.
     ///
-    /// Used_by: Serde, when `T: Deserialize` invokes `deserialize_any`.
-    /// Flow: We inspect the next event; scalars become `String`, containers
+    /// When does Serde call this?
+    /// - When the caller (Serde) does not know the exact Rust type to deserialize yet and
+    ///   wants the format to "do the best it can" from the data. This happens, for example,
+    ///   inside some enum deserialization strategies, in erased/typeless positions (e.g. Value-like
+    ///   seeds), or when visitor-based APIs defer the concrete type decision.
+    /// - Even for structs/enums, Serde may call `deserialize_any` for individual field values
+    ///   when the driving logic cannot or does not specify a concrete numeric/bool/char method.
+    ///
+    /// Can we force Serde to call the typed methods (deserialize_u8, deserialize_bool, ...)?
+    /// - Not from within a format Deserializer. Serde chooses which method to call based on the
+    ///   Rust type information it has via the caller’s `Deserialize`/`DeserializeSeed` logic.
+    ///   Implementing the typed methods (which we do) ensures Serde will use them whenever it knows
+    ///   the target type; otherwise, it falls back to `deserialize_any`.
+    ///
+    /// Can we learn the target field’s Rust type from here?
+    /// - No. Serde does not expose type reflection to Deserializers. The only hint we get is which
+    ///   method Serde chose to call. Field names are available in `deserialize_struct`, but not the
+    ///   field types.
+    ///
+    /// Our policy:
+    /// - For scalars, we heuristically interpret plain, untagged values as native YAML scalars
+    ///   (null-like → bool → int → float) before falling back to string. Quoted scalars and scalars
+    ///   with explicit non-string-friendly tags (or !!binary) are treated as strings.
+    ///
+    /// Flow: We inspect the next event; scalars are parsed with the heuristic above; containers
     /// delegate to `deserialize_seq`/`deserialize_map`.
     fn deserialize_any<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         match self.ev.peek()? {
-            Some(Ev::Scalar { .. }) => visitor.visit_string(self.take_string_scalar()?),
+            Some(Ev::Scalar { tag, style, .. }) => {
+                let tag_ref = tag.as_deref();
+                // Tagged nulls map to unit/null regardless of style
+                if is_null_tag(tag_ref) {
+                    let _ = self.take_scalar_event()?; // consume
+                    return visitor.visit_unit();
+                }
+                let is_plain = matches!(style, ScalarStyle::Plain);
+                if !is_plain || !can_parse_into_string(tag_ref) || is_binary_tag(tag_ref) {
+                    return visitor.visit_string(self.take_string_scalar()?);
+                }
+
+                // Consume the scalar and attempt typed parses in order: bool -> int -> float.
+                let (s, _tag, location) = self.take_scalar_event()?;
+
+                // Try booleans.
+                if self.cfg.strict_booleans {
+                    let tt = s.trim();
+                    if tt.eq_ignore_ascii_case("true") {
+                        return visitor.visit_bool(true);
+                    } else if tt.eq_ignore_ascii_case("false") {
+                        return visitor.visit_bool(false);
+                    }
+                    // otherwise not a bool in strict mode; continue to numbers/float/string
+                } else if let Ok(b) = parse_yaml11_bool(&s) {
+                    return visitor.visit_bool(b);
+                }
+
+                // Try integers: prefer signed if leading '-', else unsigned. Fallbacks use 64-bit.
+                let t = s.trim();
+                if t.starts_with('-') {
+                    if let Ok(v) = parse_int_signed::<i64>(s.clone(), "i64", location, self.cfg.legacy_octal_numbers) {
+                        return visitor.visit_i64(v);
+                    }
+                } else {
+                    if let Ok(v) = parse_int_unsigned::<u64>(s.clone(), "u64", location, self.cfg.legacy_octal_numbers) {
+                        return visitor.visit_u64(v);
+                    }
+                    // If unsigned failed, a signed parse might still succeed (e.g., overflow handling)
+                    if let Ok(v) = parse_int_signed::<i64>(s.clone(), "i64", location, self.cfg.legacy_octal_numbers) {
+                        return visitor.visit_i64(v);
+                    }
+                }
+
+                // Try float per YAML 1.2 forms.
+                if let Ok(v) = parse_yaml12_float::<f64>(&s, location) {
+                    return visitor.visit_f64(v);
+                }
+
+                // Fallback: treat as string as-is.
+                return visitor.visit_string(s);
+            }
             Some(Ev::SeqStart { .. }) => self.deserialize_seq(visitor),
             Some(Ev::MapStart { .. }) => self.deserialize_map(visitor),
             Some(Ev::SeqEnd { location }) => {
@@ -891,8 +968,19 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
     /// Flow: scalar text → `Visitor::visit_bool`.
     fn deserialize_bool<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
-        let b: bool =
-            parse_yaml11_bool(&s).map_err(|msg| Error::msg(msg).with_location(location))?;
+        let t = s.trim();
+        let b: bool = if self.cfg.strict_booleans {
+            if t.eq_ignore_ascii_case("true") {
+                true
+            } else if t.eq_ignore_ascii_case("false") {
+                false
+            } else {
+                return Err(Error::msg("invalid boolean (strict mode expects true/false)")
+                    .with_location(location));
+            }
+        } else {
+            parse_yaml11_bool(&s).map_err(|msg| Error::msg(msg).with_location(location))?
+        };
         visitor.visit_bool(b)
     }
 
@@ -1074,6 +1162,12 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
         match self.ev.peek()? {
             // End of input → None
             None => visitor.visit_none(),
+
+            // Tagged null → None regardless of style/value
+            Some(Ev::Scalar { tag, .. }) if is_null_tag(tag.as_deref()) => {
+                let _ = self.ev.next()?; // consume
+                visitor.visit_none()
+            }
 
             // YAML null forms as scalars → None
             Some(Ev::Scalar {
@@ -1293,54 +1387,25 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
             /// Used by:
             /// - `DuplicateKeyPolicy::FirstWins` to discard a later value.
             fn skip_one_node(&mut self) -> Result<(), Error> {
+                let mut depth; // assigned later
                 match self.ev.next()? {
-                    Some(Ev::Scalar { .. }) => Ok(()),
-                    Some(Ev::SeqStart { .. }) => {
-                        // Skip until matching SeqEnd with nesting.
-                        let mut depth = 1usize;
-                        while let Some(ev) = self.ev.next()? {
-                            match ev {
-                                Ev::SeqStart { .. } | Ev::MapStart { .. } => depth += 1,
-                                Ev::SeqEnd { .. } | Ev::MapEnd { .. } => {
-                                    depth -= 1;
-                                    if depth == 0 {
-                                        break;
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                        if depth != 0 {
-                            return Err(Error::eof().with_location(self.ev.last_location()));
-                        }
-                        Ok(())
-                    }
-                    Some(Ev::MapStart { .. }) => {
-                        let mut depth = 1usize;
-                        while let Some(ev) = self.ev.next()? {
-                            match ev {
-                                Ev::SeqStart { .. } | Ev::MapStart { .. } => depth += 1,
-                                Ev::SeqEnd { .. } | Ev::MapEnd { .. } => {
-                                    depth -= 1;
-                                    if depth == 0 {
-                                        break;
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                        if depth != 0 {
-                            return Err(Error::eof().with_location(self.ev.last_location()));
-                        }
-                        Ok(())
-                    }
+                    Some(Ev::Scalar { .. }) => return Ok(()),
+                    Some(Ev::SeqStart { .. }) | Some(Ev::MapStart { .. }) => depth = 1,
                     Some(Ev::SeqEnd { location }) | Some(Ev::MapEnd { location }) => {
-                        // This shouldn't occur for a value node start; treat as structural error.
-                        Err(Error::msg("unexpected container end while skipping node")
+                        return Err(Error::msg("unexpected container end while skipping node")
                             .with_location(location))
                     }
-                    None => Err(Error::eof().with_location(self.ev.last_location())),
+                    None => return Err(Error::eof().with_location(self.ev.last_location())),
                 }
+                while depth != 0 {
+                    match self.ev.next()? {
+                        Some(Ev::SeqStart { .. }) | Some(Ev::MapStart { .. }) => depth += 1,
+                        Some(Ev::SeqEnd { .. })   | Some(Ev::MapEnd { .. })   => depth -= 1,
+                        Some(Ev::Scalar { .. }) => {}
+                        None => return Err(Error::eof().with_location(self.ev.last_location())),
+                    }
+                }
+                Ok(())
             }
 
             /// Deserialize a recorded key using a temporary `ReplayEvents`.
@@ -1825,6 +1890,7 @@ pub fn from_str_with_options<T: DeserializeOwned>(
     let cfg = Cfg {
         dup_policy: options.duplicate_keys,
         legacy_octal_numbers: options.legacy_octal_numbers,
+        strict_booleans: options.strict_booleans,
     };
     let mut src = LiveEvents::new(input, options.budget, options.alias_limits);
     let value = T::deserialize(Deser::new(&mut src, cfg))?;
@@ -1915,6 +1981,7 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
     let cfg = Cfg {
         dup_policy: options.duplicate_keys,
         legacy_octal_numbers: options.legacy_octal_numbers,
+        strict_booleans: options.strict_booleans,
     };
     let mut src = LiveEvents::new(input, options.budget, options.alias_limits);
     let mut values = Vec::new();

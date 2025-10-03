@@ -213,7 +213,7 @@ fn radix_and_digits<'a>(legacy_octal: bool, rest: &str) -> (u32, &str) {
     (radix, digits)
 }
 
-pub fn parse_yaml12_float<T>(s: &str, location: Location) -> Result<T, Error>
+pub(crate) fn parse_yaml12_float<T>(s: &str, location: Location) -> Result<T, Error>
 where
     T: FromStr,
     T: num_traits::Float,
