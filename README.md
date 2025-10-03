@@ -102,7 +102,6 @@ retaining strong typing on the Rust side.
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, PartialEq)]
-#[serde(tag = "type")]
 enum Document {
     #[serde(rename = "person")]
     Person { name: String, age: u8 },
@@ -110,10 +109,25 @@ enum Document {
     Pet { kind: String },
 }
 
-fn parse_documents(input: &str) -> Vec<Document> {
-    serde_saphyr::from_multiple(input).expect("valid YAML stream")
+fn main() {
+    let input = r#"---
+ person:
+   name: Alice
+   age: 30
+---
+ pet:
+  kind: cat
+---
+ person:
+   name: Bob
+   age: 25
+"#;
+    let docs = serde_saphyr::from_multiple(input).expect("valid YAML stream");
 }
 ```
+Do not use "typed" enums (with `#[serde(tag = "type")]` as Serde does not provide that target structure information
+for them (calls `deserialize_any`, forcing to guess the type from value). This may still work but you lose the 
+"struct as schema" robustness.
 
 ## Nested enums
 

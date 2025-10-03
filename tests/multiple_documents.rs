@@ -6,10 +6,12 @@ struct Person {
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
-#[serde(tag = "type")]
 enum Document {
     #[serde(rename = "person")]
-    Person { name: String, age: String },
+    Person {
+        name: String,
+        age: u8
+    },
     #[serde(rename = "pet")]
     Pet { kind: String },
 }
@@ -103,21 +105,21 @@ fn multiple_documents_preserve_quoted_null_like_scalars() {
 
 #[test]
 fn multiple_documents_enum_variants() {
-    let y = "type: person\nname: Alice\nage: 30\n---\ntype: pet\nkind: cat\n---\ntype: person\nname: Bob\nage: 25\n";
+    let y = "person:\n  name: Alice\n  age: 30\n---\npet:\n  kind: cat\n---\nperson:\n  name: Bob\n  age: 25\n";
     let docs: Vec<Document> = serde_saphyr::from_multiple(y).expect("parse enum documents");
     assert_eq!(
         docs,
         vec![
             Document::Person {
                 name: "Alice".to_owned(),
-                age: "30".to_owned(),
+                age: 30,
             },
             Document::Pet {
                 kind: "cat".to_owned(),
             },
             Document::Person {
                 name: "Bob".to_owned(),
-                age: "25".to_owned(),
+                age: 25,
             },
         ],
     );

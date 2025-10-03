@@ -107,3 +107,39 @@ fn binary_scalar_example_compiles() {
         serde_saphyr::from_str("data: !!binary aGVsbG8=").expect("binary scalar YAML parses");
     assert_eq!(blob.data, b"hello");
 }
+
+
+#[test]
+fn readme_multiple_documents_stream_example_compiles() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    enum Document {
+        #[serde(rename = "person")]
+        Person { name: String, age: u8 },
+        #[serde(rename = "pet")]
+        Pet { kind: String },
+    }
+
+    let input = r#"---
+ person:
+   name: Alice
+   age: 30
+---
+ pet:
+  kind: cat
+---
+ person:
+   name: Bob
+   age: 25
+"#;
+
+    let docs: Vec<Document> = serde_saphyr::from_multiple(input).expect("valid YAML stream");
+
+    assert_eq!(
+        docs,
+        vec![
+            Document::Person { name: "Alice".to_string(), age: 30 },
+            Document::Pet { kind: "cat".to_string() },
+            Document::Person { name: "Bob".to_string(), age: 25 },
+        ]
+    );
+}
