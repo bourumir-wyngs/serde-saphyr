@@ -10,7 +10,7 @@ use crate::sf_serde::{
 };
 
 /// This is enough to hold a single scalar that is common  case in YAML anchors.
-const SMALLVECT_INLINE: usize = 1;
+const SMALLVECT_INLINE: usize = 4;
 
 /// A frame that records events for an anchored container until its end.
 /// Uses SmallVec to avoid heap allocations for small anchors.
@@ -51,8 +51,8 @@ pub(crate) struct LiveEvents<'a> {
     alias_limits: AliasLimits,
     /// Total number of replayed events across the whole stream (enforced by `alias_limits`).
     total_replayed_events: usize,
-    /// Per-anchor replay expansion counters: anchor id -> number of expansions.
-    per_anchor_expansions: std::collections::HashMap<usize, usize>,
+    /// Per-anchor replay expansion counters, indexed by anchor id (dense ids).
+    per_anchor_expansions: Vec<usize>,
 }
 
 impl<'a> LiveEvents<'a> {
@@ -78,7 +78,7 @@ impl<'a> LiveEvents<'a> {
 
             alias_limits,
             total_replayed_events: 0,
-            per_anchor_expansions: std::collections::HashMap::new(),
+            per_anchor_expansions: Vec::new(),
         }
     }
 
@@ -227,12 +227,12 @@ impl<'a> LiveEvents<'a> {
 
                 Event::Alias(anchor_id) => {
                     // Alias replay hardening.
-                    let count = self
-                        .per_anchor_expansions
-                        .entry(anchor_id)
-                        .and_modify(|c| *c += 1)
-                        .or_insert(1);
-                    if *count > self.alias_limits.max_alias_expansions_per_anchor {
+                    if anchor_id >= self.per_anchor_expansions.len() {
+                        self.per_anchor_expansions.resize(anchor_id + 1, 0);
+                    }
+                    self.per_anchor_expansions[anchor_id] = self.per_anchor_expansions[anchor_id].saturating_add(1);
+                    let count = self.per_anchor_expansions[anchor_id];
+                    if count > self.alias_limits.max_alias_expansions_per_anchor {
                         return Err(Error::msg(format!(
                             "alias expansion limit exceeded for anchor id {}: {} > {}",
                             anchor_id, count, self.alias_limits.max_alias_expansions_per_anchor
@@ -297,7 +297,7 @@ impl<'a> LiveEvents<'a> {
         let Some(budget) = self.budget.as_mut() else { return Ok(()); };
 
         let raw = match ev {
-            Ev::Scalar { value, style, .. } => Event::Scalar(Cow::Owned(value.clone()), *style, 0, None),
+            Ev::Scalar { value, style, .. } => Event::Scalar(Cow::Borrowed(value), *style, 0, None),
             Ev::SeqStart { .. } => Event::SequenceStart(0, None),
             Ev::SeqEnd { .. } => Event::SequenceEnd,
             Ev::MapStart { .. } => Event::MappingStart(0, None),

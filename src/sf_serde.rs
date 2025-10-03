@@ -340,6 +340,7 @@ impl Ev {
 ///
 /// Used by:
 /// - Unit handling and some edge cases where absence is tolerated.
+#[inline]
 fn scalar_is_nullish(value: &str, style: ScalarStyle) -> bool {
     if !matches!(style, ScalarStyle::Plain) {
         return false;
@@ -358,6 +359,7 @@ fn scalar_is_nullish(value: &str, style: ScalarStyle) -> bool {
 ///
 /// Used by:
 /// - `deserialize_option` only (does not affect other types).
+#[inline]
 fn scalar_is_nullish_for_option(value: &str, style: ScalarStyle) -> bool {
     // For Option: treat empty unquoted scalar as null, and plain "~"/"null" as null.
     let empty_unquoted =
@@ -440,24 +442,18 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
     };
 
     match event {
-        Ev::Scalar {
-            value,
-            tag,
-            style,
-            location,
-        } => {
-            let fingerprint = KeyFingerprint::Scalar {
-                value: value.clone(),
-                tag: tag.clone(),
+        Ev::Scalar { value, tag, style, location } => {
+            let ev = Ev::Scalar { value, tag, style, location };
+            let fingerprint = match &ev {
+                Ev::Scalar { value, tag, .. } => KeyFingerprint::Scalar {
+                    value: value.clone(),
+                    tag: tag.clone(),
+                },
+                _ => unreachable!(),
             };
             Ok(KeyNode {
                 fingerprint,
-                events: vec![Ev::Scalar {
-                    value,
-                    tag,
-                    style,
-                    location,
-                }],
+                events: vec![ev],
                 location,
             })
         }
@@ -479,6 +475,7 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
                             location: _,
                         } = child;
                         elements.push(fp);
+                        events.reserve(child_events.len());
                         events.extend(child_events);
                     }
                     None => {
@@ -541,6 +538,7 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
 ///
 /// Used by:
 /// - Mapping deserialization to trigger merge value expansion.
+#[inline]
 fn is_merge_key(node: &KeyNode) -> bool {
     if node.events.len() != 1 {
         return false;
@@ -1365,6 +1363,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
 
             /// Push a batch of entries to the front of the pending queue in order.
             fn enqueue_entries(&mut self, entries: Vec<PendingEntry>) {
+                self.pending.reserve(entries.len());
                 for entry in entries.into_iter().rev() {
                     self.pending.push_front(entry);
                 }
@@ -1538,7 +1537,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
             ev: self.ev,
             cfg: self.cfg,
             have_key: false,
-            seen: HashSet::new(),
+            seen: HashSet::with_capacity(8),
             pending: VecDeque::new(),
             merge_stack: Vec::new(),
             flushing_merges: false,
