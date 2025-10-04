@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use super::*; // pulls from this module: from_str_with_options, Options, DuplicateKeyPolicy, Error, etc.
     use serde_json::Value;
     use std::collections::BTreeMap;
     use serde_saphyr::{from_str_with_options, Options};

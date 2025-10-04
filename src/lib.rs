@@ -7,5 +7,6 @@ pub mod budget;
 pub mod options;
 pub mod parse_scalars;
 pub mod sf_serde;
+pub mod error;
 mod live_events;
 mod tags;

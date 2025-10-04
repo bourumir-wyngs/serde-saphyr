@@ -1,5 +1,6 @@
 use crate::sf_serde::{Error, Location};
 use std::str::FromStr;
+use saphyr_parser::ScalarStyle;
 
 /// Parse a YAML 1.1 boolean from a &str (handles the "Norway problem").
 ///
@@ -233,6 +234,47 @@ where
         }),
     }
 }
+
+/// True if a scalar is a YAML "null-like" value in non-`Option` contexts.
+///
+/// Arguments:
+/// - `value`: scalar text.
+/// - `style`: YAML scalar style; only plain form participates.
+///
+/// Returns:
+/// - `true` for empty, `~`, or case-insensitive `null`; `false` otherwise.
+///
+/// Used by:
+/// - Unit handling and some edge cases where absence is tolerated.
+#[inline]
+pub (crate) fn scalar_is_nullish(value: &str, style: ScalarStyle) -> bool {
+    if !matches!(style, ScalarStyle::Plain) {
+        return false;
+    }
+    value.is_empty() || value == "~" || value.eq_ignore_ascii_case("null")
+}
+
+/// True if a scalar should be turned into `None` for `Option<T>`.
+///
+/// Arguments:
+/// - `value`: scalar text.
+/// - `style`: scalar style.
+///
+/// Returns:
+/// - `true` for empty unquoted or plain `~`/`null`; `false` otherwise.
+///
+/// Used by:
+/// - `deserialize_option` only (does not affect other types).
+#[inline]
+pub (crate) fn scalar_is_nullish_for_option(value: &str, style: ScalarStyle) -> bool {
+    // For Option: treat empty unquoted scalar as null, and plain "~"/"null" as null.
+    let empty_unquoted =
+        value.is_empty() && !matches!(style, ScalarStyle::SingleQuoted | ScalarStyle::DoubleQuoted);
+    let plain_nullish =
+        matches!(style, ScalarStyle::Plain) && (value == "~" || value.eq_ignore_ascii_case("null"));
+    empty_unquoted || plain_nullish
+}
+
 
 #[cfg(test)]
 mod tests {

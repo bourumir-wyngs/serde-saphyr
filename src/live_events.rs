@@ -3,9 +3,9 @@ use std::borrow::Cow;
 
 use smallvec::SmallVec;
 use saphyr_parser::{Event, Parser, ScalarStyle, StrInput};
-
+use crate::error::location_from_span;
 use crate::sf_serde::{
-    budget_error, location_from_span, AliasLimits, Budget, BudgetEnforcer, Error, Ev, Events,
+    budget_error, AliasLimits, Budget, BudgetEnforcer, Error, Ev, Events,
     Location,
 };
 

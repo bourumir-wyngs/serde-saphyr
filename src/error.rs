@@ -1,0 +1,244 @@
+//! Defines error and its location
+use std::fmt;
+
+use serde::de::{self};
+use saphyr_parser::{ScanError, Span};
+
+/// Row/column location within the source YAML document (1-indexed).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Location {
+    /// 1-indexed row number in the input stream.
+    pub row: usize,
+    /// 1-indexed column number in the input stream.
+    pub column: usize,
+}
+
+impl Location {
+    /// Sentinel value meaning "location unknown".
+    ///
+    /// Used when a precise position is not yet available at error creation time.
+    pub const UNKNOWN: Self = Self { row: 0, column: 0 };
+
+    /// Create a new location record.
+    ///
+    /// Arguments:
+    /// - `row`: 1-indexed row.
+    /// - `column`: 1-indexed column.
+    ///
+    /// Returns:
+    /// - `Location` with the provided coordinates.
+    ///
+    /// Called by:
+    /// - Parser/scan adapters that convert upstream spans to `Location`.
+    pub(crate) const fn new(row: usize, column: usize) -> Self {
+        Self { row, column }
+    }
+
+    /// Equivalent to [`Location::UNKNOWN`] as a `const fn` for internal use.
+    ///
+    /// Called by:
+    /// - Error constructors to initialize with an unknown position.
+    pub(crate) const fn unknown() -> Self {
+        Self::UNKNOWN
+    }
+
+    /// Whether this location is populated (non-zero row/column).
+    ///
+    /// Returns:
+    /// - `true` when both row and column are set; `false` otherwise.
+    ///
+    /// Used by:
+    /// - Error formatting to decide if coordinates should be shown.
+    fn is_known(&self) -> bool {
+        self.row != 0 && self.column != 0
+    }
+}
+
+/// Convert a `saphyr_parser::Span` to a 1-indexed `Location`.
+///
+/// Called by:
+/// - The live events adapter for each raw parser event.
+pub(crate) fn location_from_span(span: &Span) -> Location {
+    let start = &span.start;
+    Location::new(start.line(), start.col() + 1)
+}
+
+/// Error type compatible with `serde::de::Error`.
+#[derive(Debug)]
+pub enum Error {
+    /// Free-form error with optional source location.
+    Message {
+        msg: String,
+        location: Location,
+    },
+    /// Unexpected end of input.
+    Eof {
+        location: Location,
+    },
+    /// Structural/type mismatch — something else than the expected token/value was seen.
+    Unexpected {
+        expected: &'static str,
+        location: Location,
+    },
+    /// Alias references a non-existent anchor id.
+    UnknownAnchor {
+        id: usize,
+        location: Location,
+    },
+}
+
+impl Error {
+    /// Construct a `Message` error with no known location.
+    ///
+    /// Arguments:
+    /// - `s`: human-readable message.
+    ///
+    /// Returns:
+    /// - `Error::Message` pointing at [`Location::UNKNOWN`].
+    ///
+    /// Called by:
+    /// - Scalar parsers and helpers throughout this module.
+    pub(crate) fn msg<S: Into<String>>(s: S) -> Self {
+        Error::Message {
+            msg: s.into(),
+            location: Location::unknown(),
+        }
+    }
+
+    /// Convenience for an `Unexpected` error pre-filled with a human phrase.
+    ///
+    /// Arguments:
+    /// - `what`: short description like "sequence start".
+    ///
+    /// Returns:
+    /// - `Error::Unexpected` at unknown location.
+    ///
+    /// Called by:
+    /// - Deserializer methods that validate the next event kind.
+    pub(crate) fn unexpected(what: &'static str) -> Self {
+        Error::Unexpected {
+            expected: what,
+            location: Location::unknown(),
+        }
+    }
+
+    /// Construct an unexpected end-of-input error with unknown location.
+    ///
+    /// Used by:
+    /// - Lookahead and pull methods when `None` appears prematurely.
+    pub(crate) fn eof() -> Self {
+        Error::Eof {
+            location: Location::unknown(),
+        }
+    }
+
+    /// Construct an `UnknownAnchor` error for the given anchor id (unknown location).
+    ///
+    /// Called by:
+    /// - Alias replay logic in the live event source.
+    pub(crate) fn unknown_anchor(id: usize) -> Self {
+        Error::UnknownAnchor {
+            id,
+            location: Location::unknown(),
+        }
+    }
+
+    /// Attach/override a concrete location to this error and return it.
+    ///
+    /// Arguments:
+    /// - `set_location`: location to store in the error.
+    ///
+    /// Returns:
+    /// - The same `Error` with location updated.
+    ///
+    /// Called by:
+    /// - Most error paths once the event position becomes known.
+    pub(crate) fn with_location(mut self, set_location: Location) -> Self {
+        match &mut self {
+            Error::Message { location, .. }
+            | Error::Eof { location }
+            | Error::Unexpected { location, .. }
+            | Error::UnknownAnchor { location, .. } => {
+                *location = set_location;
+            }
+        }
+        self
+    }
+
+    /// If the error has a known location, return it.
+    ///
+    /// Returns:
+    /// - `Some(Location)` when coordinates are known; `None` otherwise.
+    ///
+    /// Used by:
+    /// - Callers that want to surface precise positions to users.
+    pub fn location(&self) -> Option<Location> {
+        match self {
+            Error::Message { location, .. }
+            | Error::Eof { location }
+            | Error::Unexpected { location, .. }
+            | Error::UnknownAnchor { location, .. } => {
+                if location.is_known() {
+                    Some(*location)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    /// Map a `saphyr_parser::ScanError` into our error type with location.
+    ///
+    /// Called by:
+    /// - The live events adapter when the underlying parser fails.
+    pub(crate) fn from_scan_error(err: ScanError) -> Self {
+        let mark = err.marker();
+        let location = Location::new(mark.line(), mark.col() + 1);
+        Error::Message {
+            msg: err.info().to_owned(),
+            location,
+        }
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::Message { msg, location } => fmt_with_location(f, msg, location),
+            Error::Eof { location } => fmt_with_location(f, "unexpected end of input", location),
+            Error::Unexpected { expected, location } => {
+                fmt_with_location(f, &format!("unexpected event: expected {expected}"), location)
+            }
+            Error::UnknownAnchor { id, location } => {
+                fmt_with_location(f, &format!("alias references unknown anchor id {id}"), location)
+            }
+        }
+    }
+}
+impl std::error::Error for Error {}
+impl de::Error for Error {
+    fn custom<T: fmt::Display>(msg: T) -> Self {
+        Error::msg(msg.to_string())
+    }
+}
+
+/// Print a message optionally suffixed with "at line X, column Y".
+///
+/// Arguments:
+/// - `f`: destination formatter.
+/// - `msg`: main text.
+/// - `location`: position to attach if known.
+///
+/// Returns:
+/// - `fmt::Result` as required by `Display`.
+fn fmt_with_location(f: &mut fmt::Formatter<'_>, msg: &str, location: &Location) -> fmt::Result {
+    if location.is_known() {
+        write!(
+            f,
+            "{msg} at line {}, column {}",
+            location.row, location.column
+        )
+    } else {
+        write!(f, "{msg}")
+    }
+}
