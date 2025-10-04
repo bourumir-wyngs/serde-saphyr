@@ -4,7 +4,7 @@ mod tests {
     use std::collections::BTreeMap;
     use serde_saphyr::{from_str_with_options, Options};
     use serde_saphyr::options::DuplicateKeyPolicy;
-    use serde_saphyr::sf_serde::Error;
+    use serde_saphyr::Error;
 
     /// Parse a YAML mapping into a BTreeMap<String, serde_json::Value>,
     /// configuring the deserializer to use DuplicateKeyPolicy::FirstWins.

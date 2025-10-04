@@ -3,7 +3,7 @@
 use serde::Deserialize;
 use serde_saphyr::Options;
 use serde_saphyr::budget::Budget;
-use serde_saphyr::sf_serde::Error;
+use serde_saphyr::Error;
 use std::time::Instant;
 
 #[derive(Debug, Deserialize)]

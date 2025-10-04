@@ -195,7 +195,7 @@ user: []
 "#;
     let err = serde_saphyr::from_str::<ServerStrict>(yaml).expect_err("multi-doc must fail");
     match err {
-        serde_saphyr::sf_serde::Error::Message { msg, .. } => {
+        serde_saphyr::Error::Message { msg, .. } => {
             assert!(
                 msg.contains("from_multiple"),
                 "error should point users to from_multiple, got: {msg}"

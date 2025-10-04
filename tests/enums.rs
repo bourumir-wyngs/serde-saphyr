@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use serde_saphyr::sf_serde;
+use serde_saphyr;
 
 #[derive(Debug, Deserialize, PartialEq)]
 enum Color {
@@ -16,7 +16,7 @@ struct Paint {
 #[test]
 fn enum_unit_from_scalar() {
     let y = "color: Green\n";
-    let paint: Paint = sf_serde::from_str(y).unwrap();
+    let paint: Paint = serde_saphyr::from_str(y).unwrap();
     assert_eq!(paint.color, Color::Green);
 }
 
@@ -34,11 +34,11 @@ struct Response {
 #[test]
 fn enum_newtype_and_struct_variants() {
     let y = "status:\n  Err:\n    code: -7\n";
-    let resp: Response = sf_serde::from_str(y).unwrap();
+    let resp: Response = serde_saphyr::from_str(y).unwrap();
     assert_eq!(resp.status, Status::Err { code: -7 });
 
     let y2 = "status:\n  Ok: 200\n";
-    let resp2: Response = sf_serde::from_str(y2).unwrap();
+    let resp2: Response = serde_saphyr::from_str(y2).unwrap();
     assert_eq!(resp2.status, Status::Ok(200));
 }
 
@@ -70,7 +70,7 @@ fn nested_enum_deserialization() {
         v: 3.5
 "#;
 
-    let moves: Vec<Move> = sf_serde::from_str(y).unwrap();
+    let moves: Vec<Move> = serde_saphyr::from_str(y).unwrap();
 
     assert_eq!(moves.len(), 1);
     assert_eq!(moves[0].by, 10.0);

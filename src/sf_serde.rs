@@ -1599,7 +1599,7 @@ pub fn from_str<T: DeserializeOwned>(input: &str) -> Result<T, Error> {
 ///
 /// ```rust
 /// use serde::Deserialize;
-/// use serde_saphyr::sf_serde::DuplicateKeyPolicy;
+/// use serde_saphyr::DuplicateKeyPolicy;
 ///
 /// #[derive(Debug, Deserialize, PartialEq)]
 /// struct Config {
@@ -1685,7 +1685,7 @@ pub fn from_multiple<T: DeserializeOwned>(input: &str) -> Result<Vec<T>, Error> 
 ///
 /// ```rust
 /// use serde::Deserialize;
-/// use serde_saphyr::sf_serde::DuplicateKeyPolicy;
+/// use serde_saphyr::DuplicateKeyPolicy;
 ///
 /// #[derive(Debug, Deserialize, PartialEq)]
 /// struct Config {
@@ -1789,7 +1789,7 @@ pub fn from_slice<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, Error> {
 ///
 /// ```rust
 /// use serde::Deserialize;
-/// use serde_saphyr::sf_serde::DuplicateKeyPolicy;
+/// use serde_saphyr::DuplicateKeyPolicy;
 ///
 /// #[derive(Debug, Deserialize, PartialEq)]
 /// struct Config {
@@ -1862,7 +1862,7 @@ pub fn from_slice_multiple<T: DeserializeOwned>(bytes: &[u8]) -> Result<Vec<T>, 
 ///
 /// ```rust
 /// use serde::Deserialize;
-/// use serde_saphyr::sf_serde::DuplicateKeyPolicy;
+/// use serde_saphyr::DuplicateKeyPolicy;
 ///
 /// #[derive(Debug, Deserialize, PartialEq)]
 /// struct Config {

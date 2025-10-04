@@ -1,5 +1,4 @@
 use serde::Deserialize;
-use serde_saphyr::sf_serde;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -78,7 +77,7 @@ f32_val: 3.1415927
 f64_val: 2.718281828459045
 "#;
 
-    let parsed = sf_serde::from_str::<PrimitiveStruct>(yaml).expect("failed to deserialize YAML");
+    let parsed = serde_saphyr::from_str::<PrimitiveStruct>(yaml).expect("failed to deserialize YAML");
 
     let expected = PrimitiveStruct {
         text: "Hello Serde".to_string(),
@@ -112,7 +111,7 @@ inner:
 "#;
 
     let parsed =
-        sf_serde::from_str::<NestedStruct>(yaml).expect("failed to deserialize nested struct");
+        serde_saphyr::from_str::<NestedStruct>(yaml).expect("failed to deserialize nested struct");
 
     let expected = NestedStruct {
         title: "Nested Example".to_string(),
@@ -138,7 +137,7 @@ items:
     value: 3
 "#;
 
-    let parsed = sf_serde::from_str::<SequenceHolder>(yaml)
+    let parsed = serde_saphyr::from_str::<SequenceHolder>(yaml)
         .expect("failed to deserialize struct containing sequence of structs");
 
     let expected = SequenceHolder {
@@ -173,7 +172,7 @@ values:
   - 40
 "#;
 
-    let parsed = sf_serde::from_str::<IntSequenceStruct>(yaml)
+    let parsed = serde_saphyr::from_str::<IntSequenceStruct>(yaml)
         .expect("failed to deserialize struct with int sequence");
 
     let expected = IntSequenceStruct {
@@ -193,22 +192,22 @@ struct HasChar {
 fn char_ok_cases() {
     // unquoted ASCII
     let y1 = "c: A\n";
-    let v1: HasChar = sf_serde::from_str(y1).unwrap();
+    let v1: HasChar = serde_saphyr::from_str(y1).unwrap();
     assert_eq!(v1.c, 'A');
 
     // quoted ASCII
     let y2 = "c: 'B'\n";
-    let v2: HasChar = sf_serde::from_str(y2).unwrap();
+    let v2: HasChar = serde_saphyr::from_str(y2).unwrap();
     assert_eq!(v2.c, 'B');
 
     // single Unicode scalar (Greek lambda)
     let y3 = "c: λ\n";
-    let v3: HasChar = sf_serde::from_str(y3).unwrap();
+    let v3: HasChar = serde_saphyr::from_str(y3).unwrap();
     assert_eq!(v3.c, 'λ');
 
     // single Unicode scalar (emoji)
     let y4 = "c: 🙂\n";
-    let v4: HasChar = sf_serde::from_str(y4).unwrap();
+    let v4: HasChar = serde_saphyr::from_str(y4).unwrap();
     assert_eq!(v4.c, '🙂');
 }
 
@@ -216,25 +215,25 @@ fn char_ok_cases() {
 fn char_error_cases() {
     // more than one character
     let y1 = "c: AB\n";
-    let err1 = sf_serde::from_str::<HasChar>(y1).unwrap_err();
+    let err1 = serde_saphyr::from_str::<HasChar>(y1).unwrap_err();
     let msg1 = format!("{err1}");
     assert!(msg1.contains("invalid char"));
 
     // YAML null tilde
     let y2 = "c: ~\n";
-    let err2 = sf_serde::from_str::<HasChar>(y2).unwrap_err();
+    let err2 = serde_saphyr::from_str::<HasChar>(y2).unwrap_err();
     let msg2 = format!("{err2}");
     assert!(msg2.contains("invalid char"));
 
     // YAML 'null' (any case)
     let y3 = "c: Null\n";
-    let err3 = sf_serde::from_str::<HasChar>(y3).unwrap_err();
+    let err3 = serde_saphyr::from_str::<HasChar>(y3).unwrap_err();
     let msg3 = format!("{err3}");
     assert!(msg3.contains("invalid char"));
 
     // empty scalar (missing value)
     let y4 = "c:\n";
-    let err4 = sf_serde::from_str::<HasChar>(y4).unwrap_err();
+    let err4 = serde_saphyr::from_str::<HasChar>(y4).unwrap_err();
     let msg4 = format!("{err4}");
     assert!(msg4.contains("invalid char"));
 }
@@ -249,7 +248,7 @@ fn deserialize_btreemap_with_tuple_keys() {
 "#;
 
     let parsed =
-        sf_serde::from_str::<BTreeMap<(i32, i32), i32>>(yaml).expect("failed to deserialize map");
+        serde_saphyr::from_str::<BTreeMap<(i32, i32), i32>>(yaml).expect("failed to deserialize map");
 
     let mut expected = BTreeMap::new();
     expected.insert((1, 2), 3);
@@ -272,7 +271,7 @@ mapping:
   : 20
 "#;
 
-    let parsed = sf_serde::from_str::<StructKeyMap>(yaml)
+    let parsed = serde_saphyr::from_str::<StructKeyMap>(yaml)
         .expect("failed to deserialize struct containing map with struct keys");
 
     let mut expected_map = BTreeMap::new();

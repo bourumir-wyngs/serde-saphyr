@@ -51,7 +51,7 @@ fn multiple_documents_cross_document_anchor_error() {
     let err = serde_saphyr::from_multiple::<Person>(y)
         .expect_err("expected cross-document alias to fail");
     match err {
-        serde_saphyr::sf_serde::Error::UnknownAnchor { .. } => {}
+        serde_saphyr::Error::UnknownAnchor { .. } => {}
         other => panic!("expected unknown anchor error, got {other:?}"),
     }
 }

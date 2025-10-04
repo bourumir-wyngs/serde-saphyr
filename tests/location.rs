@@ -1,5 +1,5 @@
 use serde_saphyr::from_str;
-use serde_saphyr::sf_serde::{Error, Location};
+use serde_saphyr::{Error, Location};
 
 fn expect_location(err: &Error, expected: Location) {
     assert_eq!(

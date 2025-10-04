@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use serde::Deserialize;
-    use serde_saphyr::sf_serde::{DuplicateKeyPolicy, Error};
+    use serde_saphyr::{DuplicateKeyPolicy, Error};
     use serde_saphyr::{
         Options, from_multiple, from_multiple_with_options, from_str, from_str_with_options,
     };

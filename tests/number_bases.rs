@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use serde_saphyr::sf_serde::Error;
+use serde_saphyr::Error;
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct Numbers {
