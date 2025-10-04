@@ -247,7 +247,7 @@ where
 /// Used by:
 /// - Unit handling and some edge cases where absence is tolerated.
 #[inline]
-pub (crate) fn scalar_is_nullish(value: &str, style: ScalarStyle) -> bool {
+pub (crate) fn scalar_is_nullish(value: &str, style: &ScalarStyle) -> bool {
     if !matches!(style, ScalarStyle::Plain) {
         return false;
     }
@@ -266,7 +266,7 @@ pub (crate) fn scalar_is_nullish(value: &str, style: ScalarStyle) -> bool {
 /// Used by:
 /// - `deserialize_option` only (does not affect other types).
 #[inline]
-pub (crate) fn scalar_is_nullish_for_option(value: &str, style: ScalarStyle) -> bool {
+pub (crate) fn scalar_is_nullish_for_option(value: &str, style: &ScalarStyle) -> bool {
     // For Option: treat empty unquoted scalar as null, and plain "~"/"null" as null.
     let empty_unquoted =
         value.is_empty() && !matches!(style, ScalarStyle::SingleQuoted | ScalarStyle::DoubleQuoted);

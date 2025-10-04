@@ -386,11 +386,11 @@ impl<'a> Events for LiveEvents<'a> {
         self.next_impl()
     }
     /// Peek at the next event without consuming it, filling the lookahead buffer if empty.
-    fn peek(&mut self) -> Result<Option<Ev>, Error> {
+    fn peek(&mut self) -> Result<Option<&Ev>, Error> {
         if self.look.is_none() {
             self.look = self.next_impl()?;
         }
-        Ok(self.look.clone())
+        Ok( (&self.look).into())
     }
     fn last_location(&self) -> Location { self.last_location }
 }

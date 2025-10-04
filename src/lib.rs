@@ -186,7 +186,7 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
         match src.peek()? {
             // Skip documents that are explicit null-like scalars ("", "~", or "null").
             Some(Ev::Scalar {
-                     value: ref s,
+                     value: s,
                      style,
                      ..
                  }) if scalar_is_nullish(s, style) => {

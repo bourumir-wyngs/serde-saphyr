@@ -189,6 +189,7 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
             loop {
                 match ev.peek()? {
                     Some(Ev::SeqEnd { location: end_loc }) => {
+                        let end_loc = *end_loc;
                         let _ = ev.next()?;
                         events.push(Ev::SeqEnd { location: end_loc });
                         break;
@@ -221,6 +222,7 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
             loop {
                 match ev.peek()? {
                     Some(Ev::MapEnd { location: end_loc }) => {
+                        let end_loc = *end_loc;
                         let _ = ev.next()?;
                         events.push(Ev::MapEnd { location: end_loc });
                         break;
@@ -328,12 +330,12 @@ fn pending_entries_from_events(
             Ok(merged)
         }
         Some(Ev::Scalar {
-            ref value, style, ..
+            value, style, ..
         }) if scalar_is_nullish(value.as_str(), style) => Ok(Vec::new()),
         Some(Ev::Scalar { location, .. }) => Err(Error::msg(
             "YAML merge value must be mapping or sequence of mappings",
         )
-        .with_location(location)),
+        .with_location(*location)),
         Some(other) => Err(
             Error::msg("YAML merge value must be mapping or sequence of mappings")
                 .with_location(other.location()),
@@ -409,13 +411,13 @@ pub(crate) trait Events {
     /// Peek at the next event without consuming it.
     ///
     /// Returns:
-    /// - `Ok(Some(Ev))` with a cloned event,
+    /// - `Ok(Some(&Ev))` with the even reference
     /// - `Ok(None)` at end-of-stream,
     /// - `Err(Error)` on error.
     ///
     /// Called by:
     /// - Lookahead logic (merge, container boundaries, option/unit handling).
-    fn peek(&mut self) -> Result<Option<Ev>, Error>;
+    fn peek(&mut self) -> Result<Option<&Ev>, Error>;
 
     /// Last location that `next` or `peek` has observed.
     ///
@@ -426,8 +428,7 @@ pub(crate) trait Events {
 
 /// Event source that replays a pre-recorded buffer.
 struct ReplayEvents {
-    buf: Vec<Ev>,
-    idx: usize,
+    buf: VecDeque<Ev>,
 }
 
 impl ReplayEvents {
@@ -440,8 +441,7 @@ impl ReplayEvents {
     /// - Merge expansion and recorded key/value deserialization.
     fn new(buf: Vec<Ev>) -> Self {
         Self {
-            buf,
-            idx: 0,
+            buf: VecDeque::from(buf),
         }
     }
 }
@@ -449,35 +449,24 @@ impl ReplayEvents {
 impl Events for ReplayEvents {
     /// See [`Events::next`]. Replays and advances the internal index.
     fn next(&mut self) -> Result<Option<Ev>, Error> {
-        if self.idx >= self.buf.len() {
+        if self.buf.is_empty() {
             return Ok(None);
         }
-        let ev = self.buf[self.idx].clone();
-        self.idx += 1;
-        Ok(Some(ev))
+        Ok( self.buf.remove(0))
     }
 
-    /// See [`Events::peek`]. Returns a clone of the next event, if any.
-    fn peek(&mut self) -> Result<Option<Ev>, Error> {
-        if self.idx >= self.buf.len() {
-            Ok(None)
-        } else {
-            Ok(Some(self.buf[self.idx].clone()))
-        }
+    fn peek(&mut self) -> Result<Option<&Ev>, Error> {
+        Ok(self.buf.front())
     }
 
-    /// See [`Events::last_location`].
     fn last_location(&self) -> Location {
-        if self.idx >= self.buf.len() {
-            if let Some(ev) = self.buf.last() {
-                ev.location()
-            } else {
-                Location::unknown()
-            }
+        if let Some(ev) = self.buf.front() {
+            ev.location()
         } else {
-            self.buf[self.idx].location()
+            Location::unknown()
         }
     }
+
 }
 
 /// The streaming Serde deserializer over `Events`.
@@ -697,10 +686,10 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
             Some(Ev::SeqStart { .. }) => self.deserialize_seq(visitor),
             Some(Ev::MapStart { .. }) => self.deserialize_map(visitor),
             Some(Ev::SeqEnd { location }) => {
-                Err(Error::msg("unexpected sequence end").with_location(location))
+                Err(Error::msg("unexpected sequence end").with_location(*location))
             }
             Some(Ev::MapEnd { location }) => {
-                Err(Error::msg("unexpected mapping end").with_location(location))
+                Err(Error::msg("unexpected mapping end").with_location(*location))
             }
             None => Err(Error::eof().with_location(self.ev.last_location())),
         }
@@ -882,7 +871,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
             // Scalar without binary tag → reject
             Some(Ev::Scalar { location, .. }) => {
                 Err(Error::msg("bytes not supported (missing !!binary tag)")
-                    .with_location(location))
+                    .with_location(*location))
             }
 
             // Anything else is unexpected here
@@ -917,7 +906,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
 
             // YAML null forms as scalars → None
             Some(Ev::Scalar {
-                value: ref s,
+                value: s,
                 style,
                 ..
             }) if scalar_is_nullish_for_option(s, style) => {
@@ -945,7 +934,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
             // Accept YAML null forms or absence as unit
             None => visitor.visit_unit(),
             Some(Ev::Scalar {
-                value: ref s,
+                value: s,
                 style,
                 ..
             }) if scalar_is_nullish(s, style) => {
@@ -1404,14 +1393,14 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
             Some(Ev::SeqStart { location }) => {
                 return Err(
                     Error::msg("externally tagged enum expected scalar or mapping")
-                        .with_location(location),
+                        .with_location(*location),
                 );
             }
             Some(Ev::SeqEnd { location }) => {
-                return Err(Error::msg("unexpected sequence end").with_location(location));
+                return Err(Error::msg("unexpected sequence end").with_location(*location));
             }
             Some(Ev::MapEnd { location }) => {
-                return Err(Error::msg("unexpected mapping end").with_location(location));
+                return Err(Error::msg("unexpected mapping end").with_location(*location));
             }
             None => return Err(Error::eof().with_location(self.ev.last_location())),
         };
@@ -1475,7 +1464,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                             Ok(())
                         }
                         Some(Ev::Scalar {
-                            value: ref s,
+                            value: s,
                             style,
                             ..
                         }) if scalar_is_nullish(s, style) => {
