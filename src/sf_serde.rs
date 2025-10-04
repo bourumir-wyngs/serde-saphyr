@@ -428,7 +428,6 @@ pub(crate) trait Events {
 struct ReplayEvents {
     buf: Vec<Ev>,
     idx: usize,
-    last_location: Location,
 }
 
 impl ReplayEvents {
@@ -443,7 +442,6 @@ impl ReplayEvents {
         Self {
             buf,
             idx: 0,
-            last_location: Location::unknown(),
         }
     }
 }
@@ -456,7 +454,6 @@ impl Events for ReplayEvents {
         }
         let ev = self.buf[self.idx].clone();
         self.idx += 1;
-        self.last_location = ev.location();
         Ok(Some(ev))
     }
 
@@ -471,7 +468,15 @@ impl Events for ReplayEvents {
 
     /// See [`Events::last_location`].
     fn last_location(&self) -> Location {
-        self.last_location
+        if self.idx >= self.buf.len() {
+            if let Some(ev) = self.buf.last() {
+                ev.location()
+            } else {
+                Location::unknown()
+            }
+        } else {
+            self.buf[self.idx].location()
+        }
     }
 }
 
