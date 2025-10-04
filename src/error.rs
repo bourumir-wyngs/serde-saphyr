@@ -3,6 +3,7 @@ use std::fmt;
 
 use serde::de::{self};
 use saphyr_parser::{ScanError, Span};
+use crate::budget::BudgetBreach;
 
 /// Row/column location within the source YAML document (1-indexed).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -241,4 +242,18 @@ fn fmt_with_location(f: &mut fmt::Formatter<'_>, msg: &str, location: &Location)
     } else {
         write!(f, "{msg}")
     }
+}
+
+/// Convert a budget breach report into a user-facing error.
+///
+/// Arguments:
+/// - `breach`: which limit was exceeded (from the streaming budget checker).
+///
+/// Returns:
+/// - `Error::Message` with a formatted description.
+///
+/// Called by:
+/// - The live events layer when enforcing budgets during/after parsing.
+pub(crate) fn budget_error(breach: BudgetBreach) -> Error {
+    Error::msg(format!("YAML budget breached: {breach:?}"))
 }
