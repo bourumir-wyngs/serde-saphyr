@@ -20,19 +20,26 @@
 
 ### Benchmarking
 
-Parsing Generated YAML, size 25.00 MiB, release build.
+In our [benchmarking project](https://github.com/bourumir-wyngs/serde-saphyr-benchmark), we tested the following crates:
 
+| Crate | Version | Merge Keys     | Nested Enums | Notes |
+|------:|:---------|:---------------|:--------------|:-------|
+| [serde-saphyr](https://crates.io/crates/serde-saphyr) | 0.0.4 | ✅ Native       | ✅ | No `unsafe`, no [unsafe-libyaml](https://crates.io/crates/unsafe-libyaml) |
+| [serde-yaml-bw](https://crates.io/crates/serde-yaml_bw) | 2.4.1 | ✅ Native       | ✅ | Slow due Saphyr doing budget check first upfront of libyaml |
+| [serde-yaml-ng](https://crates.io/crates/serde-yaml-ng) | 0.10.0 | ⚠️ partial     | ❌ |  |
+| [serde-yaml](https://crates.io/crates/serde-yaml) | 0.9.34 + deprecated | ⚠️ partial     | ❌ | Original, deprecated, repo archived |
+| [serde-norway](https://crates.io/crates/serde-norway) | 0.9 | ⚠️ partial | ❌ |  |
+| [serde-yml](https://crates.io/crates/serde-yml) | 0.0.12 | ⚠️ partial | ❌ | Repo archived |
 
-| Crate                                                   | Time (ms) | Notes                                                                     |
-| ------------------------------------------------------- |-----------|---------------------------------------------------------------------------|
-| [serde-saphyr](https://crates.io/crates/serde-saphyr)   | 290.54 | No `unsafe`, no [unsafe-libyaml](https://crates.io/crates/unsafe-libyaml) |
-| [serde-yaml-ng](https://crates.io/crates/serde-yaml-ng) | 470.72    |                                                                           |
-| [serde-yaml](https://crates.io/crates/serde-yaml)       | 477.33    | Original, deprecated, repo archived                                       |
-| [serde-norway](https://crates.io/crates/serde-norway)   | 479.57    |                                                                           |
-| [serde-yml](https://crates.io/crates/serde-yml)         | 490.92    | Repo archived                                                             |
-| [serde-yaml_bw](https://crates.io/crates/serde-yaml_bw) | 702.99    | Slow due Saphyr doing budget check first upfront of libyaml               |
+Benchmarking was done with [Criterion](https://crates.io/crates/criterion), giving the following results:
 
-Benchmarking code is included in this repository.
+<p align="center">
+<img src="https://github.com/bourumir-wyngs/serde-saphyr-benchmark/blob/master/figures/relative_vs_baseline.png?raw=true"
+alt="Relative median time vs baseline"
+width="60%">
+</p>
+
+As seen, serde-saphyr exceeds others by performance, even with budget check enabled. 
 
 ### Other features
 
