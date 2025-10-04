@@ -1,3 +1,26 @@
+//! Live events: a streaming view over the YAML input.
+//!
+//! This module implements LiveEvents, an Events source that pulls items directly
+//! from the underlying saphyr_parser::Parser as it scans the input string.
+//! Unlike ReplayEvents, which iterates over a pre-recorded buffer, live events
+//! are produced on demand and reflect the current position of the parser.
+//!
+//! Responsibilities and behavior:
+//! - Skip parser-level stream/document boundary markers so consumers see only
+//!   logical YAML nodes: container starts/ends, scalars, and aliases.
+//! - Track and record anchors for both scalars and containers. When an alias is
+//!   encountered later, the previously recorded sequence of events for that
+//!   anchor is injected (replayed) back into the stream.
+//! - Enforce alias-bomb hardening via AliasLimits and account replayed events
+//!   per anchor and in total. BudgetEnforcer can also be attached to limit raw
+//!   event production.
+//! - Maintain a single-item lookahead buffer to implement peek(), and keep
+//!   last_location to improve error reporting.
+//!
+//! LiveEvents is single-pass and does not support rewinding. Aliases expand by
+//! injecting previously recorded buffers; normal parsing continues after the
+//! injection is exhausted.
+
 use std::borrow::Cow;
 // use std::collections::HashMap; // ← gone
 

@@ -428,6 +428,7 @@ pub(crate) trait Events {
 
 /// Event source that replays a pre-recorded buffer.
 struct ReplayEvents {
+    last_location: Location,
     buf: VecDeque<Ev>,
 }
 
@@ -441,6 +442,11 @@ impl ReplayEvents {
     /// - Merge expansion and recorded key/value deserialization.
     fn new(buf: Vec<Ev>) -> Self {
         Self {
+            last_location: if let Some(first) = buf.first() {
+                first.location()
+            } else {
+                Location::UNKNOWN
+            },
             buf: VecDeque::from(buf),
         }
     }
@@ -452,19 +458,26 @@ impl Events for ReplayEvents {
         if self.buf.is_empty() {
             return Ok(None);
         }
-        Ok( self.buf.remove(0))
+
+        if let Some(ev) = self.buf.pop_front() {
+            self.last_location = ev.location();
+            Ok(Some(ev))
+        } else {
+            Ok(None)
+        }
     }
 
     fn peek(&mut self) -> Result<Option<&Ev>, Error> {
-        Ok(self.buf.front())
+        if let Some(ev) = self.buf.front() {
+            self.last_location = ev.location();
+            Ok(Some(ev))
+        } else {
+            Ok(None)
+        }
     }
 
     fn last_location(&self) -> Location {
-        if let Some(ev) = self.buf.front() {
-            ev.location()
-        } else {
-            Location::unknown()
-        }
+        self.last_location
     }
 
 }
