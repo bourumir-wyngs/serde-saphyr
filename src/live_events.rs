@@ -97,7 +97,7 @@ impl<'a> LiveEvents<'a> {
             rec_stack: Vec::new(),
             budget: budget.map(BudgetEnforcer::new),
 
-            last_location: Location::unknown(),
+            last_location: Location::UNKNOWN,
 
             alias_limits,
             total_replayed_events: 0,
@@ -296,7 +296,8 @@ impl<'a> LiveEvents<'a> {
     /// Ensure the anchors vec is large enough for `anchor_id`.
     fn ensure_anchor_capacity(&mut self, anchor_id: usize) {
         if anchor_id >= self.anchors.len() {
-            self.anchors.resize_with(anchor_id + 1, || None);
+            // Allocate at once place for more anchors than just one
+            self.anchors.resize_with(anchor_id + 8, || None);
         }
     }
 
@@ -413,6 +414,10 @@ impl<'a> Events for LiveEvents<'a> {
         if self.look.is_none() {
             self.look = self.next_impl()?;
         }
+        if let Some(ev) = self.look.as_ref() {
+            self.last_location = ev.location();
+        };
+        
         Ok( (&self.look).into())
     }
     fn last_location(&self) -> Location { self.last_location }

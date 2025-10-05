@@ -9,9 +9,9 @@ use crate::budget::BudgetBreach;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Location {
     /// 1-indexed row number in the input stream.
-    pub row: usize,
+    pub row: u32,
     /// 1-indexed column number in the input stream.
-    pub column: usize,
+    pub column: u32,
 }
 
 impl Location {
@@ -32,15 +32,9 @@ impl Location {
     /// Called by:
     /// - Parser/scan adapters that convert upstream spans to `Location`.
     pub(crate) const fn new(row: usize, column: usize) -> Self {
-        Self { row, column }
-    }
-
-    /// Equivalent to [`Location::UNKNOWN`] as a `const fn` for internal use.
-    ///
-    /// Called by:
-    /// - Error constructors to initialize with an unknown position.
-    pub(crate) const fn unknown() -> Self {
-        Self::UNKNOWN
+        // 4 Gb is larger than any YAML document I can imagine, and also this is
+        // error reporting only.
+        Self { row: row as u32, column: column as u32 }
     }
 
     /// Whether this location is populated (non-zero row/column).
@@ -102,7 +96,7 @@ impl Error {
     pub(crate) fn msg<S: Into<String>>(s: S) -> Self {
         Error::Message {
             msg: s.into(),
-            location: Location::unknown(),
+            location: Location::UNKNOWN
         }
     }
 
@@ -119,7 +113,7 @@ impl Error {
     pub(crate) fn unexpected(what: &'static str) -> Self {
         Error::Unexpected {
             expected: what,
-            location: Location::unknown(),
+            location: Location::UNKNOWN
         }
     }
 
@@ -129,7 +123,7 @@ impl Error {
     /// - Lookahead and pull methods when `None` appears prematurely.
     pub(crate) fn eof() -> Self {
         Error::Eof {
-            location: Location::unknown(),
+            location: Location::UNKNOWN
         }
     }
 
@@ -140,7 +134,7 @@ impl Error {
     pub(crate) fn unknown_anchor(id: usize) -> Self {
         Error::UnknownAnchor {
             id,
-            location: Location::unknown(),
+            location: Location::UNKNOWN
         }
     }
 
