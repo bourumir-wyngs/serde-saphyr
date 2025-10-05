@@ -124,7 +124,7 @@ fn parse_decimal_signed_i128(digits: &str, neg: bool) -> Option<i128> {
 }
 
 pub(crate) fn parse_int_signed<T>(
-    s: String,
+    s: &str,
     ty: &'static str,
     location: Location,
     legacy_octal: bool,
@@ -166,7 +166,7 @@ where
 }
 
 pub(crate) fn parse_int_unsigned<T>(
-    s: String,
+    s: &str,
     ty: &'static str,
     location: Location,
     legacy_octal: bool,
@@ -306,24 +306,24 @@ mod tests {
     #[test]
     fn parse_int_signed_supports_alternate_radices_and_underscores() {
         let loc = sample_location();
-        let value: i64 = parse_int_signed("0x7_fF".to_string(), "i64", loc, false).unwrap();
+        let value: i64 = parse_int_signed("0x7_fF", "i64", loc, false).unwrap();
         assert_eq!(value, 0x7ff);
 
-        let value: i32 = parse_int_signed("0b1010_1010".to_string(), "i32", loc, false).unwrap();
+        let value: i32 = parse_int_signed("0b1010_1010", "i32", loc, false).unwrap();
         assert_eq!(value, 0b1010_1010);
     }
 
     #[test]
     fn parse_int_signed_honors_legacy_octal_prefixes() {
         let loc = sample_location();
-        let value: i32 = parse_int_signed("00077".to_string(), "i32", loc, true).unwrap();
+        let value: i32 = parse_int_signed("00077", "i32", loc, true).unwrap();
         assert_eq!(value, 0o77);
     }
 
     #[test]
     fn parse_int_signed_preserves_error_location() {
         let loc = sample_location();
-        let err = parse_int_signed::<i64>("0x8000000000000000".to_string(), "i64", loc, false)
+        let err = parse_int_signed::<i64>("0x8000000000000000", "i64", loc, false)
             .unwrap_err();
         match err {
             Error::Message { location, .. } => assert_eq!(location, loc),
@@ -334,7 +334,7 @@ mod tests {
     #[test]
     fn parse_int_unsigned_rejects_negative_inputs() {
         let loc = sample_location();
-        let err = parse_int_unsigned::<u32>("-5".to_string(), "u32", loc, false).unwrap_err();
+        let err = parse_int_unsigned::<u32>("-5", "u32", loc, false).unwrap_err();
         match err {
             Error::Message { location, .. } => assert_eq!(location, loc),
             other => panic!("unexpected error variant: {:?}", other),

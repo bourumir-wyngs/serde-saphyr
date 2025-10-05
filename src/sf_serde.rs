@@ -661,7 +661,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                 let t = s.trim();
                 if t.starts_with('-') {
                     if let Ok(v) = parse_int_signed::<i64>(
-                        s.clone(),
+                        t,
                         "i64",
                         location,
                         self.cfg.legacy_octal_numbers,
@@ -670,7 +670,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                     }
                 } else {
                     if let Ok(v) = parse_int_unsigned::<u64>(
-                        s.clone(),
+                        t,
                         "u64",
                         location,
                         self.cfg.legacy_octal_numbers,
@@ -679,7 +679,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                     }
                     // If unsigned failed, a signed parse might still succeed (e.g., overflow handling)
                     if let Ok(v) = parse_int_signed::<i64>(
-                        s.clone(),
+                        t,
                         "i64",
                         location,
                         self.cfg.legacy_octal_numbers,
@@ -735,62 +735,62 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
     /// Parse a signed 8-bit integer.
     fn deserialize_i8<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
-        let v: i8 = parse_int_signed(s, "i8", location, self.cfg.legacy_octal_numbers)?;
+        let v: i8 = parse_int_signed(&s, "i8", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i8(v)
     }
     /// Parse a signed 16-bit integer.
     fn deserialize_i16<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
-        let v: i16 = parse_int_signed(s, "i16", location, self.cfg.legacy_octal_numbers)?;
+        let v: i16 = parse_int_signed(&s, "i16", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i16(v)
     }
     /// Parse a signed 32-bit integer.
     fn deserialize_i32<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
-        let v: i32 = parse_int_signed(s, "i32", location, self.cfg.legacy_octal_numbers)?;
+        let v: i32 = parse_int_signed(&s, "i32", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i32(v)
     }
     /// Parse a signed 64-bit integer.
     fn deserialize_i64<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
-        let v: i64 = parse_int_signed(s, "i64", location, self.cfg.legacy_octal_numbers)?;
+        let v: i64 = parse_int_signed(&s, "i64", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i64(v)
     }
     /// Parse a signed 128-bit integer.
     fn deserialize_i128<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
-        let v: i128 = parse_int_signed(s, "i128", location, self.cfg.legacy_octal_numbers)?;
+        let v: i128 = parse_int_signed(&s, "i128", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i128(v)
     }
 
     /// Parse an unsigned 8-bit integer.
     fn deserialize_u8<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
-        let v: u8 = parse_int_unsigned(s, "u8", location, self.cfg.legacy_octal_numbers)?;
+        let v: u8 = parse_int_unsigned(&s, "u8", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u8(v)
     }
     /// Parse an unsigned 16-bit integer.
     fn deserialize_u16<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
-        let v: u16 = parse_int_unsigned(s, "u16", location, self.cfg.legacy_octal_numbers)?;
+        let v: u16 = parse_int_unsigned(&s, "u16", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u16(v)
     }
     /// Parse an unsigned 32-bit integer.
     fn deserialize_u32<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
-        let v: u32 = parse_int_unsigned(s, "u32", location, self.cfg.legacy_octal_numbers)?;
+        let v: u32 = parse_int_unsigned(&s, "u32", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u32(v)
     }
     /// Parse an unsigned 64-bit integer.
     fn deserialize_u64<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
-        let v: u64 = parse_int_unsigned(s, "u64", location, self.cfg.legacy_octal_numbers)?;
+        let v: u64 = parse_int_unsigned(&s, "u64", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u64(v)
     }
     /// Parse an unsigned 128-bit integer.
     fn deserialize_u128<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, location) = self.take_scalar_with_location()?;
-        let v: u128 = parse_int_unsigned(s, "u128", location, self.cfg.legacy_octal_numbers)?;
+        let v: u128 = parse_int_unsigned(&s, "u128", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u128(v)
     }
 
