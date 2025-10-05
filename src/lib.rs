@@ -1,16 +1,16 @@
 use serde::de::DeserializeOwned;
-pub use sf_serde::{
+pub use de::{
     Budget, Options, Error, Location, DuplicateKeyPolicy
 };
 use crate::live_events::LiveEvents;
 use crate::parse_scalars::scalar_is_nullish;
-use crate::sf_serde::{Ev, Events};
+use crate::de::{Ev, Events};
 
 mod base64;
 pub mod budget;
 pub mod options;
 mod parse_scalars;
-mod sf_serde;
+mod de;
 mod error;
 mod live_events;
 mod tags;
@@ -83,13 +83,13 @@ pub fn from_str_with_options<T: DeserializeOwned>(
     input: &str,
     options: Options,
 ) -> Result<T, Error> {
-    let cfg = crate::sf_serde::Cfg {
+    let cfg = crate::de::Cfg {
         dup_policy: options.duplicate_keys,
         legacy_octal_numbers: options.legacy_octal_numbers,
         strict_booleans: options.strict_booleans,
     };
     let mut src = LiveEvents::new(input, options.budget, options.alias_limits);
-    let value = T::deserialize(crate::sf_serde::Deser::new(&mut src, cfg))?;
+    let value = T::deserialize(crate::de::Deser::new(&mut src, cfg))?;
     if let Some(ev) = src.peek()? {
         return Err(Error::msg(
             "multiple YAML documents detected; use from_multiple or from_multiple_with_options",
@@ -174,7 +174,7 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
     input: &str,
     options: Options,
 ) -> Result<Vec<T>, Error> {
-    let cfg = crate::sf_serde::Cfg {
+    let cfg = crate::de::Cfg {
         dup_policy: options.duplicate_keys,
         legacy_octal_numbers: options.legacy_octal_numbers,
         strict_booleans: options.strict_booleans,
@@ -195,7 +195,7 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
                 continue;
             }
             Some(_) => {
-                let value = T::deserialize(crate::sf_serde::Deser::new(&mut src, cfg))?;
+                let value = T::deserialize(crate::de::Deser::new(&mut src, cfg))?;
                 values.push(value);
             }
             None => break,

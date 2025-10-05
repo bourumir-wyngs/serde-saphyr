@@ -1,4 +1,4 @@
-use crate::sf_serde::{Error, Location};
+use crate::de::{Error, Location};
 use std::str::FromStr;
 use saphyr_parser::ScalarStyle;
 

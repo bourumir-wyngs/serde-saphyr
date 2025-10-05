@@ -8,7 +8,7 @@ pub(crate) fn is_binary_tag(tag: Option<&str>) -> bool {
     }
 }
 
-use crate::sf_serde::Error;
+use crate::de::Error;
 
 /// Lookup table translating ASCII bytes to their base64 sextet value.
 ///

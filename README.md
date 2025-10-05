@@ -52,7 +52,7 @@ Duplicate key handling is configurable. By default it’s an error; “first win
 
 ### Unsupported features
 - **Tagged enums** (`!!EnumName RED`) are not supported. Use mapping-based enums (`EnumName: RED`) instead. This also allows you to define nested enums if needed.
-- **Internally tagged enums** (`type: EnumName ... color: RED`). Avoid internally tagged enums (e.g., with `#[serde(tag = "type")]`) because Serde does not provide that target type information,  for them; it calls [`deserialize_any`](./src/sf_serde.rs), forcing to guess the type from the value (see that file for the implementation). This may still work, but you lose the "struct-as-schema" robustness.
+- **Internally tagged enums** (`type: EnumName ... color: RED`). Avoid internally tagged enums (e.g., with `#[serde(tag = "type")]`) because Serde does not provide that target type information,  for them; it calls [`deserialize_any`](src/de.rs), forcing to guess the type from the value (see that file for the implementation). This may still work, but you lose the "struct-as-schema" robustness.
 ---
 
 ## Usage
@@ -200,7 +200,7 @@ By default, if the target field is boolean, serde-saphyr will attempt to interpr
 If you do not want this (or you are parsing into a JSON Value where it is wrongly inferred), enclose the value in quotes or set `strict_booleans` to true in [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html).
 
 ## Deserializing into abstract JSON Value
-If you must work with abstract types, you can also deserialize YAML into [`serde_json::Value`](https://docs.rs/serde_json/latest/serde_json/value/index.html). Serde will drive the process through [`deserialize_any`](./src/sf_serde.rs) because `Value` does not fix a Rust primitive type ahead of time. You lose strict type control by Rust `struct` data types.
+If you must work with abstract types, you can also deserialize YAML into [`serde_json::Value`](https://docs.rs/serde_json/latest/serde_json/value/index.html). Serde will drive the process through [`deserialize_any`](src/de.rs) because `Value` does not fix a Rust primitive type ahead of time. You lose strict type control by Rust `struct` data types.
 
 ## Binary scalars
 `!!binary`-tagged YAML values are base64-decoded when deserializing into `Vec<u8>` or `String` (reporting an error if it is not valid UTF-8)

@@ -27,7 +27,7 @@ use std::borrow::Cow;
 use smallvec::SmallVec;
 use saphyr_parser::{Event, Parser, ScalarStyle, StrInput};
 use crate::error::{budget_error, location_from_span};
-use crate::sf_serde::{
+use crate::de::{
     AliasLimits, Budget, BudgetEnforcer, Error, Ev, Events,
     Location,
 };
