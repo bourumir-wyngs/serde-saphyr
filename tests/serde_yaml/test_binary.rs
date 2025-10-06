@@ -38,7 +38,7 @@ fn test_serialize_vec_as_sequence() {
     };
     let yaml_str = yaml::to_string(&data).unwrap();
     println!("Array:: {}", yaml_str);
-    assert_eq!(yaml_str, "data:\n- 104\n- 105\n");
+    assert_eq!(yaml_str, "data:\n  - 104\n  - 105\n");
 }
 
 #[test]
