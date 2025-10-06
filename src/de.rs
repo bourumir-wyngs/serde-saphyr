@@ -17,13 +17,12 @@
 
 use std::collections::{HashSet, VecDeque};
 
-use crate::base64::{decode_base64_yaml, is_binary_tag};
+use crate::base64::decode_base64_yaml;
 pub use crate::budget::{Budget, BudgetEnforcer};
 use crate::parse_scalars::{
     parse_int_signed, parse_int_unsigned, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish,
     scalar_is_nullish_for_option,
 };
-use crate::tags::{can_parse_into_string, is_null_tag};
 use saphyr_parser::ScalarStyle;
 use serde::de::{self, Deserializer as _, IntoDeserializer, Visitor};
 
@@ -33,6 +32,7 @@ pub use crate::error::{Error, Location};
 // Re-export moved Options and related enums from the options module to preserve
 // the public path serde_saphyr::sf_serde::*.
 pub use crate::options::{AliasLimits, DuplicateKeyPolicy, Options};
+use crate::tags::SfTag;
 
 /// Small immutable runtime configuration that `Deser` needs.
 #[derive(Clone, Copy)]
@@ -51,7 +51,7 @@ pub(crate) enum Ev {
     /// Scalar value from YAML (text), with optional tag and style.
     Scalar {
         value: String,
-        tag: Option<String>,
+        tag: SfTag,
         style: ScalarStyle,
         location: Location,
     },
@@ -88,7 +88,7 @@ impl Ev {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum KeyFingerprint {
     /// Scalar fingerprint (value plus optional tag).
-    Scalar { value: String, tag: Option<String> },
+    Scalar { value: String, tag: SfTag },
     /// Sequence fingerprint (ordered fingerprints of children).
     Sequence(Vec<KeyFingerprint>),
     /// Mapping fingerprint (ordered list of `(key, value)` fingerprints).
@@ -107,7 +107,7 @@ impl KeyFingerprint {
     fn stringy_scalar_value(&self) -> Option<&str> {
         match self {
             KeyFingerprint::Scalar { value, tag } => {
-                if can_parse_into_string(tag.as_deref()) && !is_binary_tag(tag.as_deref()) {
+                if tag.can_parse_into_string() && tag != &SfTag::Binary {
                     Some(value.as_str())
                 } else {
                     None
@@ -262,6 +262,7 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
     }
 }
 
+
 /// True if `node` is the YAML merge key (`<<`) as an untagged plain scalar.
 ///
 /// Used by:
@@ -278,7 +279,7 @@ fn is_merge_key(node: &KeyNode) -> bool {
             tag,
             style: ScalarStyle::Plain,
             ..
-        }) if tag.is_none() && value == "<<"
+        }) if tag == &SfTag::None && value == "<<"
     )
 }
 
@@ -520,7 +521,7 @@ impl<'e> Deser<'e> {
     ///
     /// Called by:
     /// - Numeric/bool/char parsers and `take_string_scalar`.
-    fn take_scalar_event(&mut self) -> Result<(String, Option<String>, Location), Error> {
+    fn take_scalar_event(&mut self) -> Result<(String, SfTag, Location), Error> {
         match self.ev.next()? {
             Some(Ev::Scalar {
                 value,
@@ -534,7 +535,7 @@ impl<'e> Deser<'e> {
     }
 
     /// Consume a scalar and return `(value, tag)` (dropping location).
-    fn take_scalar_with_tag(&mut self) -> Result<(String, Option<String>), Error> {
+    fn take_scalar_with_tag(&mut self) -> Result<(String, SfTag), Error> {
         let (value, tag, _) = self.take_scalar_event()?;
         Ok((value, tag))
     }
@@ -556,25 +557,23 @@ impl<'e> Deser<'e> {
     /// is not valid UTF-8.
     fn take_string_scalar(&mut self) -> Result<String, Error> {
         let (value, tag, location) = self.take_scalar_event()?;
-        let tag_ref = tag.as_deref();
-        if !can_parse_into_string(tag_ref) {
-            if let Some(t) = tag_ref {
-                return Err(Error::msg(format!(
-                    "cannot deserialize scalar tagged {t} into string"
-                ))
-                .with_location(location));
-            }
-        }
 
-        if is_binary_tag(tag_ref) {
+        // Special-case binary: decode base64 and require valid UTF-8.
+        if tag == SfTag::Binary {
             let data = decode_base64_yaml(&value).map_err(|err| err.with_location(location))?;
             let text = std::str::from_utf8(&data).map_err(|_| {
                 Error::msg("!!binary scalar is not valid UTF-8").with_location(location)
             })?;
-            Ok(text.to_owned())
-        } else {
-            Ok(value)
+            return Ok(text.to_owned());
         }
+
+        // For non-binary, ensure the tag allows string deserialization.
+        if !tag.can_parse_into_string() {
+            return Err(Error::msg("cannot deserialize scalar tagged into string")
+                .with_location(location));
+        }
+
+        Ok(value)
     }
 
     /// Expect a sequence start and consume it, or error otherwise.
@@ -630,14 +629,13 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
     fn deserialize_any<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         match self.ev.peek()? {
             Some(Ev::Scalar { tag, style, .. }) => {
-                let tag_ref = tag.as_deref();
                 // Tagged nulls map to unit/null regardless of style
-                if is_null_tag(tag_ref) {
+                if tag == &SfTag::Null {
                     let _ = self.take_scalar_event()?; // consume
                     return visitor.visit_unit();
                 }
                 let is_plain = matches!(style, ScalarStyle::Plain);
-                if !is_plain || !can_parse_into_string(tag_ref) || is_binary_tag(tag_ref) {
+                if !is_plain || !tag.can_parse_into_string() || tag == &SfTag::Binary {
                     return visitor.visit_string(self.take_string_scalar()?);
                 }
 
@@ -846,7 +844,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
     fn deserialize_bytes<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         match self.ev.peek()? {
             // Tagged binary scalar → base64-decode
-            Some(Ev::Scalar { tag, .. }) if is_binary_tag(tag.as_deref()) => {
+            Some(Ev::Scalar { tag, .. }) if tag == &SfTag::Binary => {
                 let (value, data_location) = match self.ev.next()? {
                     Some(Ev::Scalar {
                         value, location, ..
@@ -912,7 +910,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
             None => visitor.visit_none(),
 
             // Tagged null → None regardless of style/value
-            Some(Ev::Scalar { tag, .. }) if is_null_tag(tag.as_deref()) => {
+            Some(Ev::Scalar { tag, .. }) if tag == &SfTag::Null => {
                 let _ = self.ev.next()?; // consume
                 visitor.visit_none()
             }
@@ -1020,7 +1018,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
     /// sequence of u8.
     fn deserialize_seq<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         if let Some(Ev::Scalar { tag, .. }) = self.ev.peek()? {
-            if is_binary_tag(tag.as_deref()) {
+            if tag == &SfTag::Binary {
                 let (scalar, data_location) = match self.ev.next()? {
                     Some(Ev::Scalar {
                         value, location, ..

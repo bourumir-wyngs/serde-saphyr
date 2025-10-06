@@ -31,6 +31,7 @@ use crate::de::{
     AliasLimits, Budget, BudgetEnforcer, Error, Ev, Events,
     Location,
 };
+use crate::tags::SfTag;
 
 /// This is enough to hold a single scalar that is common  case in YAML anchors.
 const SMALLVECT_INLINE: usize = 4;
@@ -184,7 +185,7 @@ impl<'a> LiveEvents<'a> {
                         Cow::Borrowed(v) => v.to_string(),
                         Cow::Owned(v) => v,
                     };
-                    let tag_s = tag.map(|t| t.to_string());
+                    let tag_s = SfTag::from_optional_cow(&tag);
                     if s.is_empty()
                         && anchor_id != 0
                         && matches!(style, ScalarStyle::SingleQuoted | ScalarStyle::DoubleQuoted)

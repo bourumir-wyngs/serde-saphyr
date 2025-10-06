@@ -1,13 +1,3 @@
-pub(crate) fn is_binary_tag(tag: Option<&str>) -> bool {
-    match tag {
-        Some(t) => matches!(
-            t,
-            "!!binary" | "!binary" | "tag:yaml.org,2002:binary" | "tag:yaml.org,2002:!binary"
-        ),
-        None => false,
-    }
-}
-
 use crate::de::Error;
 
 /// Lookup table translating ASCII bytes to their base64 sextet value.
@@ -82,6 +72,16 @@ pub(crate) fn decode_base64_yaml(s: &str) -> Result<Vec<u8>, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn is_binary_tag(tag: Option<&str>) -> bool {
+        match tag {
+            Some(t) => matches!(
+            t,
+            "!!binary" | "!binary" | "tag:yaml.org,2002:binary" | "tag:yaml.org,2002:!binary"
+        ),
+            None => false,
+        }
+    }
 
     #[test]
     fn recognizes_binary_tags() {

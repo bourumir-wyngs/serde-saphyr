@@ -1,85 +1,92 @@
-pub(crate) const TAG_INT: &str = "!!int";
-pub(crate) const TAG_INT_SHORTHAND: &str = "!int";
-pub(crate) const TAG_INT_CANONICAL: &str = "tag:yaml.org,2002:int";
-pub(crate) const TAG_INT_CANONICAL_ALT: &str = "tag:yaml.org,2002:!int";
+//! Tag map. We only care about tags as much as we support them
 
-pub(crate) const TAG_FLOAT: &str = "!!float";
-pub(crate) const TAG_FLOAT_SHORTHAND: &str = "!float";
-pub(crate) const TAG_FLOAT_CANONICAL: &str = "tag:yaml.org,2002:float";
-pub(crate) const TAG_FLOAT_CANONICAL_ALT: &str = "tag:yaml.org,2002:!float";
+use std::borrow::Cow;
+use std::collections::BTreeMap;
+use std::sync::LazyLock;
+use saphyr_parser::Tag;
 
-pub(crate) const TAG_BOOL: &str = "!!bool";
-pub(crate) const TAG_BOOL_SHORTHAND: &str = "!bool";
-pub(crate) const TAG_BOOL_CANONICAL: &str = "tag:yaml.org,2002:bool";
-pub(crate) const TAG_BOOL_CANONICAL_ALT: &str = "tag:yaml.org,2002:!bool";
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum SfTag {
+    None,
+    Int,
+    Float,
+    Bool,
+    Null,
+    Seq,
+    Map,
+    TimeStamp,
+    Binary,
+    Other,
+}
 
-pub(crate) const TAG_NULL: &str = "!!null";
-pub(crate) const TAG_NULL_SHORTHAND: &str = "!null";
-pub(crate) const TAG_NULL_CANONICAL: &str = "tag:yaml.org,2002:null";
-pub(crate) const TAG_NULL_CANONICAL_ALT: &str = "tag:yaml.org,2002:!null";
+pub(crate) static TAG_LOOKUP_MAP: LazyLock<BTreeMap<&'static str, SfTag>> = LazyLock::new(|| {
+    BTreeMap::from([
+        // int
+        ("!!int", SfTag::Int),
+        ("!int", SfTag::Int),
+        ("tag:yaml.org,2002:int", SfTag::Int),
+        ("tag:yaml.org,2002:!int", SfTag::Int),
+        // float
+        ("!!float", SfTag::Float),
+        ("!float", SfTag::Float),
+        ("tag:yaml.org,2002:float", SfTag::Float),
+        ("tag:yaml.org,2002:!float", SfTag::Float),
+        // bool
+        ("!!bool", SfTag::Bool),
+        ("!bool", SfTag::Bool),
+        ("tag:yaml.org,2002:bool", SfTag::Bool),
+        ("tag:yaml.org,2002:!bool", SfTag::Bool),
+        // null
+        ("!!null", SfTag::Null),
+        ("!null", SfTag::Null),
+        ("tag:yaml.org,2002:null", SfTag::Null),
+        ("tag:yaml.org,2002:!null", SfTag::Null),
+        // seq
+        ("!!seq", SfTag::Seq),
+        ("!seq", SfTag::Seq),
+        ("tag:yaml.org,2002:seq", SfTag::Seq),
+        ("tag:yaml.org,2002:!seq", SfTag::Seq),
+        // map
+        ("!!map", SfTag::Map),
+        ("!map", SfTag::Map),
+        ("tag:yaml.org,2002:map", SfTag::Map),
+        ("tag:yaml.org,2002:!map", SfTag::Map),
+        // timestamp
+        ("!!timestamp", SfTag::TimeStamp),
+        ("!timestamp", SfTag::TimeStamp),
+        ("tag:yaml.org,2002:timestamp", SfTag::TimeStamp),
+        ("tag:yaml.org,2002:!timestamp", SfTag::TimeStamp),
+        // binary
+        ("!!binary", SfTag::Binary),
+        ("!binary", SfTag::Binary),
+        ("tag:yaml.org,2002:binary", SfTag::Binary),
+        ("tag:yaml.org,2002:!binary", SfTag::Binary),
+    ])
+});
 
-pub(crate) const TAG_SEQ: &str = "!!seq";
-pub(crate) const TAG_SEQ_SHORTHAND: &str = "!seq";
-pub(crate) const TAG_SEQ_CANONICAL: &str = "tag:yaml.org,2002:seq";
-pub(crate) const TAG_SEQ_CANONICAL_ALT: &str = "tag:yaml.org,2002:!seq";
+impl SfTag {
+    pub(crate) fn from_optional_cow(tag: &Option<Cow<Tag>>) -> SfTag {
+        match tag {
+           Some(cow) => {
+               let key = cow.to_string();
+               TAG_LOOKUP_MAP.get(key.as_str()).copied().unwrap_or(SfTag::Other)
+           },
+            None => SfTag::None,
+        }
+    }
 
-pub(crate) const TAG_MAP: &str = "!!map";
-pub(crate) const TAG_MAP_SHORTHAND: &str = "!map";
-pub(crate) const TAG_MAP_CANONICAL: &str = "tag:yaml.org,2002:map";
-pub(crate) const TAG_MAP_CANONICAL_ALT: &str = "tag:yaml.org,2002:!map";
-
-pub(crate) const TAG_TIMESTAMP: &str = "!!timestamp";
-pub(crate) const TAG_TIMESTAMP_SHORTHAND: &str = "!timestamp";
-pub(crate) const TAG_TIMESTAMP_CANONICAL: &str = "tag:yaml.org,2002:timestamp";
-pub(crate) const TAG_TIMESTAMP_CANONICAL_ALT: &str = "tag:yaml.org,2002:!timestamp";
-
-pub(crate) const NON_STRING_TAGS: &[&str] = &[
-    TAG_INT,
-    TAG_INT_SHORTHAND,
-    TAG_INT_CANONICAL,
-    TAG_INT_CANONICAL_ALT,
-    TAG_FLOAT,
-    TAG_FLOAT_SHORTHAND,
-    TAG_FLOAT_CANONICAL,
-    TAG_FLOAT_CANONICAL_ALT,
-    TAG_BOOL,
-    TAG_BOOL_SHORTHAND,
-    TAG_BOOL_CANONICAL,
-    TAG_BOOL_CANONICAL_ALT,
-    TAG_NULL,
-    TAG_NULL_SHORTHAND,
-    TAG_NULL_CANONICAL,
-    TAG_NULL_CANONICAL_ALT,
-    TAG_SEQ,
-    TAG_SEQ_SHORTHAND,
-    TAG_SEQ_CANONICAL,
-    TAG_SEQ_CANONICAL_ALT,
-    TAG_MAP,
-    TAG_MAP_SHORTHAND,
-    TAG_MAP_CANONICAL,
-    TAG_MAP_CANONICAL_ALT,
-    TAG_TIMESTAMP,
-    TAG_TIMESTAMP_SHORTHAND,
-    TAG_TIMESTAMP_CANONICAL,
-    TAG_TIMESTAMP_CANONICAL_ALT,
-];
-
-pub(crate) fn can_parse_into_string(tag: Option<&str>) -> bool {
-    match tag {
-        None => true,
-        Some(t) => !NON_STRING_TAGS.contains(&t),
+    pub(crate) fn can_parse_into_string(&self) -> bool {
+        match self {
+            SfTag::None | SfTag::Other => true,
+            SfTag::Binary
+            | SfTag::Int
+            | SfTag::Float
+            | SfTag::Bool
+            | SfTag::Null
+            | SfTag::Seq
+            | SfTag::Map
+            | SfTag::TimeStamp => false,
+        }
     }
 }
 
-pub(crate) fn is_null_tag(tag: Option<&str>) -> bool {
-    match tag {
-        Some(t) => matches!(
-            t,
-            TAG_NULL
-                | TAG_NULL_SHORTHAND
-                | TAG_NULL_CANONICAL
-                | TAG_NULL_CANONICAL_ALT
-        ),
-        None => false,
-    }
-}
