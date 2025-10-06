@@ -19,7 +19,7 @@ pub(crate) enum SfTag {
     Other,
 }
 
-pub(crate) static TAG_LOOKUP_MAP: LazyLock<BTreeMap<&'static str, SfTag>> = LazyLock::new(|| {
+static TAG_LOOKUP_MAP: LazyLock<BTreeMap<&'static str, SfTag>> = LazyLock::new(|| {
     BTreeMap::from([
         // int
         ("!!int", SfTag::Int),

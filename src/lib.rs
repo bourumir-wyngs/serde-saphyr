@@ -2,6 +2,10 @@ use serde::de::DeserializeOwned;
 pub use de::{
     Budget, Options, Error, Location, DuplicateKeyPolicy
 };
+
+pub use ser::{ to_string, to_writer, to_writer_with_indent };
+pub use ser::{ RcAnchor, ArcAnchor, RcWeakAnchor, ArcWeakAnchor };
+
 use crate::live_events::LiveEvents;
 use crate::parse_scalars::scalar_is_nullish;
 use crate::de::{Ev, Events};
@@ -14,7 +18,7 @@ mod de;
 mod error;
 mod live_events;
 mod tags;
-
+mod ser;
 
 /// Deserialize any `T: serde::de::DeserializeOwned` directly from a YAML string.
 ///
