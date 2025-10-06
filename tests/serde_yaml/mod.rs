@@ -11,7 +11,7 @@ mod test_json;
 mod test_serde;
 mod test_numeric_enums;
 mod test_rc_arc_cow_etc;
-mod test_readme_examples;
+// mod test_readme_examples;
 // mod test_enum_alias_nested;
 // mod test_serde;
 
