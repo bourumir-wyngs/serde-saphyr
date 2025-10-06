@@ -347,8 +347,8 @@ impl<'a, W: Write> YamlSer<'a, W> {
                     '\u{c}' => self.out.write_str("\\f")?,
                     '\r' => self.out.write_str("\\r")?,
                     '\u{1b}' => self.out.write_str("\\e")?,
-                    // Unicode BOM should be emitted literally in quoted strings (per tests)
-                    '\u{FEFF}' => self.out.write_char('\u{FEFF}')?,
+                    // Unicode BOM should use the standard \u escape rather than Rust's \u{...}
+                    '\u{FEFF}' => self.out.write_str("\\uFEFF")?,
                     // YAML named escapes for Unicode separators
                     '\u{0085}' => self.out.write_str("\\N")?,
                     '\u{2028}' => self.out.write_str("\\L")?,
