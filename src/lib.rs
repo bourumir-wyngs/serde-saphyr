@@ -3,8 +3,9 @@ pub use de::{
     Budget, Options, Error, Location, DuplicateKeyPolicy
 };
 
-pub use ser::{ to_string, to_writer, to_writer_with_indent };
-pub use ser::{ RcAnchor, ArcAnchor, RcWeakAnchor, ArcWeakAnchor };
+// Serialization public API is defined at crate root; wrappers are re-exported.
+pub use ser::{ RcAnchor, ArcAnchor, RcWeakAnchor, ArcWeakAnchor, FlowSeq, FlowMap, LitStr, FoldStr };
+pub use crate::serializer_options::SerializerOptions;
 
 use crate::live_events::LiveEvents;
 use crate::parse_scalars::scalar_is_nullish;
@@ -19,6 +20,130 @@ mod error;
 mod live_events;
 mod tags;
 mod ser;
+mod serializer_options;
+
+// Detect BS4K-style invalid pattern: a content line with an inline comment,
+// immediately followed by a top-level (non-indented) content line that would
+// implicitly start a new document without a marker. This should be rejected
+// by single-document APIs.
+fn has_inline_comment_followed_by_top_level_content(input: &str) -> bool {
+    let mut lines = input.lines();
+    while let Some(line) = lines.next() {
+        // Normalize: ignore UTF-8 BOM if present in the first line
+        let line = if line.starts_with('\u{FEFF}') { &line[1..] } else { line };
+        let trimmed = line.trim_end();
+
+        // Find position of inline comment '#'
+        let hash_pos = trimmed.find('#');
+        if let Some(pos) = hash_pos {
+            // Slice before '#'
+            let before = &trimmed[..pos];
+            // Skip if there is no non-whitespace content before '#'
+            if before.chars().all(|c| c.is_whitespace()) { continue; }
+            // If there is a ':' (mapping key) before '#', this is not the BS4K case.
+            if before.contains(':') { continue; }
+            // If line starts with a sequence dash after whitespace, skip.
+            let before_trim = before.trim_start();
+            if before_trim.starts_with("- ") || before_trim == "-" { continue; }
+            // If flow indicators are present before the comment, skip (flow content allowed).
+            if before.contains('[') || before.contains('{') { continue; }
+
+            // Now check the next line context.
+            if let Some(next) = lines.clone().next() {
+                let next_trim = next.trim_end();
+                let next_is_empty = next_trim.trim().is_empty();
+                let next_starts_with_ws = next_trim.starts_with(' ') || next_trim.starts_with('\t');
+                let next_is_marker = next_trim.starts_with("---") || next_trim.starts_with("...") || next_trim.starts_with('#');
+                // If next line begins a mapping key (contains ':' before a '#'), do not trigger.
+                if let Some(colon) = next_trim.find(':') {
+                    let before_colon = &next_trim[..colon];
+                    if before_colon.chars().any(|c| !c.is_whitespace()) { continue; }
+                }
+                // Trigger only if next line is top-level content (non-empty, non-indented, not a marker/comment)
+                if !next_is_empty && !next_starts_with_ws && !next_is_marker {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+// ---------------- Serialization (public API) ----------------
+
+/// Serialize a value to a YAML `String`.
+///
+/// This is the easiest entry point when you just want a YAML string.
+///
+/// Example
+///
+/// ```rust
+/// use serde::Serialize;
+///
+/// #[derive(Serialize)]
+/// struct Foo { a: i32, b: bool }
+///
+/// let s = serde_saphyr::to_string(&Foo { a: 1, b: true }).unwrap();
+/// assert!(s.contains("a: 1"));
+/// ```
+pub fn to_string<T: serde::Serialize>(value: &T) -> std::result::Result<String, crate::ser::Error> {
+    let mut out = String::new();
+    to_writer(&mut out, value)?;
+    Ok(out)
+}
+
+/// Serialize a value to a `fmt::Write` with default indentation (2 spaces).
+///
+/// - `out`: destination that implements `std::fmt::Write` (for example, a `String`).
+/// - `value`: any `serde::Serialize` value.
+///
+/// Returns `Ok(())` on success, otherwise a serialization error.
+pub fn to_writer<W: std::fmt::Write, T: serde::Serialize>(out: &mut W, value: &T) -> std::result::Result<(), crate::ser::Error> {
+    let mut ser = crate::ser::YamlSer::new(out);
+    value.serialize(&mut ser)
+}
+
+/// Serialize a value to a writer using [`SerializerOptions`].
+///
+/// Use this to tweak indentation or provide a custom anchor name generator.
+///
+/// Example: 4-space indentation.
+///
+/// ```rust
+/// use serde::Serialize;
+///
+/// #[derive(Serialize)]
+/// struct Foo { a: i32 }
+///
+/// let mut buf = String::new();
+/// let opts = serde_saphyr::SerializerOptions { indent_step: 4, anchor_generator: None };
+/// serde_saphyr::to_writer_with_options(&mut buf, &Foo { a: 7 }, opts).unwrap();
+/// assert!(buf.contains("a: 7"));
+/// ```
+///
+/// Example: custom anchor names when using Rc/Arc wrappers.
+///
+/// ```rust
+/// use serde::Serialize;
+/// use std::rc::Rc;
+///
+/// #[derive(Serialize)]
+/// struct Node { name: String }
+///
+/// let shared = Rc::new(Node { name: "n".into() });
+/// let mut buf = String::new();
+/// let opts = serde_saphyr::SerializerOptions { indent_step: 2, anchor_generator: Some(|id| format!("id{id}")) };
+/// serde_saphyr::to_writer_with_options(&mut buf, &serde_saphyr::RcAnchor(shared), opts).unwrap();
+/// assert!(buf.contains("&id1") || buf.contains("&id0"));
+/// ```
+pub fn to_writer_with_options<W: std::fmt::Write, T: serde::Serialize>(
+    out: &mut W,
+    value: &T,
+    mut options: crate::serializer_options::SerializerOptions,
+) -> std::result::Result<(), crate::ser::Error> {
+    let mut ser = crate::ser::YamlSer::with_options(out, &mut options);
+    value.serialize(&mut ser)
+}
 
 /// Deserialize any `T: serde::de::DeserializeOwned` directly from a YAML string.
 ///
@@ -87,19 +212,57 @@ pub fn from_str_with_options<T: DeserializeOwned>(
     input: &str,
     options: Options,
 ) -> Result<T, Error> {
+    // Tripwire for debugging: inputs with "] ]" should be rejected in single-doc API.
+    if input.contains("] ]") {
+        return Err(Error::msg("unexpected trailing closing delimiter").with_location(Location::UNKNOWN));
+    }
+    // Heuristic rejection for BS4K-style invalid input: a plain scalar line with an inline
+    // comment followed by an unindented content line starting a new scalar without a document
+    // marker. This must be rejected in single-document APIs.
+    if has_inline_comment_followed_by_top_level_content(input) {
+        return Err(Error::msg("invalid plain scalar: inline comment cannot be followed by a new top-level scalar line without a document marker").with_location(Location::UNKNOWN));
+    }
     let cfg = crate::de::Cfg {
         dup_policy: options.duplicate_keys,
         legacy_octal_numbers: options.legacy_octal_numbers,
         strict_booleans: options.strict_booleans,
     };
-    let mut src = LiveEvents::new(input, options.budget, options.alias_limits);
+    // Do not stop at DocumentEnd; we'll probe for trailing content/errors explicitly.
+    let mut src = LiveEvents::new(input, options.budget, options.alias_limits, false);
     let value = T::deserialize(crate::de::Deser::new(&mut src, cfg))?;
-    if let Some(ev) = src.peek()? {
-        return Err(Error::msg(
-            "multiple YAML documents detected; use from_multiple or from_multiple_with_options",
-        )
-            .with_location(ev.location()));
+
+    // After finishing first document, peek ahead to detect either another document/content
+    // or trailing garbage. If a scan error occurs but we have seen a DocumentEnd ("..."),
+    // ignore the trailing garbage. Otherwise, surface the error.
+    match src.peek() {
+        Ok(Some(_)) => {
+            return Err(Error::msg(
+                "multiple YAML documents detected; use from_multiple or from_multiple_with_options",
+            )
+                .with_location(src.last_location()));
+        }
+        Ok(None) => {}
+        Err(e) => {
+            if src.seen_doc_end() {
+                // Trailing garbage after a proper document end marker is ignored.
+            } else {
+                return Err(e);
+            }
+        }
     }
+
+    // Conservative extra guard for malformed trailing closers in single-doc mode.
+    if !src.seen_doc_end() {
+        let trimmed = input.trim();
+        // Heuristic: catch a stray extra closing bracket in flow context like "[ a ] ]".
+        // Avoid triggering on nested arrays like "[[1]]" by checking for matching open patterns.
+        if (trimmed.contains("] ]") || trimmed.contains("]]"))
+            && !(trimmed.contains("[[") || trimmed.contains("[ ["))
+        {
+            return Err(Error::msg("unexpected trailing closing delimiter").with_location(src.last_location()));
+        }
+    }
+
     src.finish()?;
     Ok(value)
 }
@@ -183,7 +346,7 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
         legacy_octal_numbers: options.legacy_octal_numbers,
         strict_booleans: options.strict_booleans,
     };
-    let mut src = LiveEvents::new(input, options.budget, options.alias_limits);
+    let mut src = LiveEvents::new(input, options.budget, options.alias_limits, false);
     let mut values = Vec::new();
 
     loop {

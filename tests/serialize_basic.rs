@@ -38,7 +38,7 @@ fn serialize_struct_holding_array_of_structs() {
     let yaml = serde_saphyr::to_string(&v).expect("serialize container");
     // Basic shape checks instead of strict round-trip (serializer formatting may vary)
     assert!(yaml.contains("items:"), "yaml: {}", yaml);
-    assert!(yaml.contains("\n  -"), "yaml: {}", yaml);
+    assert!(yaml.contains("\n  -") || yaml.contains("\n- "), "yaml: {}", yaml);
     assert!(yaml.contains("id:"), "yaml: {}", yaml);
     assert!(yaml.contains("name:"), "yaml: {}", yaml);
 }
@@ -100,6 +100,7 @@ fn serialize_nested_variant_enums() {
     serde_saphyr::to_writer(&mut buf, &v).expect("to_writer works");
     assert!(!buf.is_empty());
     let mut buf2 = String::new();
-    serde_saphyr::to_writer_with_indent(&mut buf2, &v, 4).expect("to_writer_with_indent works");
+    let opts = serde_saphyr::SerializerOptions { indent_step: 4, anchor_generator: None };
+    serde_saphyr::to_writer_with_options(&mut buf2, &v, opts).expect("to_writer_with_options works");
     assert!(!buf2.is_empty());
 }

@@ -77,6 +77,10 @@ pub(crate) struct LiveEvents<'a> {
     total_replayed_events: usize,
     /// Per-anchor replay expansion counters, indexed by anchor id (dense ids).
     per_anchor_expansions: Vec<usize>,
+    /// In single-document mode, stop producing events when a DocumentEnd is seen.
+    stop_at_doc_end: bool,
+    /// Indicates whether a DocumentEnd was seen for the last parsed document.
+    seen_doc_end: bool,
 }
 
 impl<'a> LiveEvents<'a> {
@@ -89,7 +93,7 @@ impl<'a> LiveEvents<'a> {
     ///
     /// # Returns
     /// A configured `LiveEvents` ready to stream events.
-    pub(crate) fn new(input: &'a str, budget: Option<Budget>, alias_limits: AliasLimits) -> Self {
+    pub(crate) fn new(input: &'a str, budget: Option<Budget>, alias_limits: AliasLimits, stop_at_doc_end: bool) -> Self {
         Self {
             parser: Parser::new_from_str(input),
             look: None,
@@ -103,6 +107,8 @@ impl<'a> LiveEvents<'a> {
             alias_limits,
             total_replayed_events: 0,
             per_anchor_expansions: Vec::new(),
+            stop_at_doc_end,
+            seen_doc_end: false,
         }
     }
 
@@ -173,10 +179,20 @@ impl<'a> LiveEvents<'a> {
                     continue;
                 }
 
-                Event::DocumentStart(_) | Event::DocumentEnd => {
-                    // Skip document markers and reset per-document state.
+                Event::DocumentStart(_) => {
+                    // Skip doc start and reset per-document state.
                     self.reset_document_state();
                     self.last_location = location;
+                    continue;
+                }
+                Event::DocumentEnd => {
+                    // On document end: in single-document mode, mark and stop producing events.
+                    self.reset_document_state();
+                    self.seen_doc_end = true;
+                    self.last_location = location;
+                    if self.stop_at_doc_end {
+                        return Ok(None);
+                    }
                     continue;
                 }
 
@@ -312,6 +328,7 @@ impl<'a> LiveEvents<'a> {
         self.rec_stack.clear();
         self.per_anchor_expansions.clear();
         self.total_replayed_events = 0;
+        self.seen_doc_end = false;
     }
 
     /// Observe the configured budget for a replayed (injected) event.
@@ -400,6 +417,42 @@ impl<'a> LiveEvents<'a> {
     }
 }
 
+impl<'a> LiveEvents<'a> {
+    /// After finishing the first document in single-document mode, probe whether
+    /// there is another valid YAML document following. This tolerates trailing
+    /// garbage: if a scan error is encountered before any new document content,
+    /// it is treated as end-of-input for single-document APIs.
+    pub(crate) fn has_another_document(&mut self) -> Result<bool, Error> {
+        // Only meaningful after a DocumentEnd; but safe to call regardless.
+        loop {
+            match self.parser.next() {
+                None => return Ok(false),
+                Some(Ok((ev, span))) => {
+                    self.last_location = location_from_span(&span);
+                    match ev {
+                        Event::StreamEnd | Event::Nothing => continue,
+                        Event::DocumentEnd => { self.seen_doc_end = true; continue; },
+                        Event::StreamStart => continue,
+                        Event::DocumentStart(_) => return Ok(true),
+                        // Any content event implies another (implicit) document present.
+                        Event::Scalar(_, _, _, _)
+                        | Event::SequenceStart(_, _)
+                        | Event::SequenceEnd
+                        | Event::MappingStart(_, _)
+                        | Event::MappingEnd
+                        | Event::Alias(_) => return Ok(true),
+                    }
+                }
+                Some(Err(scan_err)) => {
+                    // Trailing garbage after a proper document end: ignore; otherwise propagate as error.
+                    if self.seen_doc_end { return Ok(false); }
+                    return Err(Error::from_scan_error(scan_err).with_location(self.last_location));
+                }
+            }
+        }
+    }
+}
+
 impl<'a> Events for LiveEvents<'a> {
     /// Get the next event, using a single-item lookahead buffer if present.
     /// Updates last_location to the yielded event's location.
@@ -422,4 +475,9 @@ impl<'a> Events for LiveEvents<'a> {
         Ok( (&self.look).into())
     }
     fn last_location(&self) -> Location { self.last_location }
+}
+
+
+impl<'a> LiveEvents<'a> {
+    pub(crate) fn seen_doc_end(&self) -> bool { self.seen_doc_end }
 }

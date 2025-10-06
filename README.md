@@ -42,6 +42,56 @@ width="60%">
 
 As seen, serde-saphyr exceeds others by performance, even with budget check enabled. 
 
+### Serialization
+
+Serialize any `serde::Serialize` value to YAML using the crate-level helpers:
+
+- `serde_saphyr::to_string(&value)` → `String`
+- `serde_saphyr::to_writer(&mut out, &value)` → writes to any `fmt::Write`
+- `serde_saphyr::to_writer_with_options(&mut out, &value, SerializerOptions)` → allows custom indentation and anchor naming
+
+Example:
+
+```rust
+use serde::Serialize;
+
+#[derive(Serialize)]
+struct User { name: String, active: bool }
+
+let yaml = serde_saphyr::to_string(&User { name: "Ada".into(), active: true }).unwrap();
+assert!(yaml.contains("name: Ada"));
+```
+
+#### Anchors (Rc/Arc/Weak)
+
+You can opt-in to YAML anchors and aliases by wrapping shared pointers:
+
+- `RcAnchor<T>` and `ArcAnchor<T>` emit anchors like `&a1` on first occurrence and may emit aliases `*a1` later.
+- `RcWeakAnchor<T>` and `ArcWeakAnchor<T>` serialize a weak ref: if the strong pointer is gone, it becomes `null`.
+
+```rust
+use serde::Serialize;
+use std::rc::Rc;
+
+#[derive(Serialize)]
+struct Node { name: String }
+
+let shared = Rc::new(Node { name: "n".into() });
+let yaml = serde_saphyr::to_string(&serde_saphyr::RcAnchor(shared)).unwrap();
+assert!(yaml.contains("&a"));
+```
+
+To customize indentation or anchor names, use `SerializerOptions`:
+
+```rust
+let mut buf = String::new();
+let opts = serde_saphyr::SerializerOptions {
+    indent_step: 4,
+    anchor_generator: Some(|id| format!("id{id}")),
+};
+serde_saphyr::to_writer_with_options(&mut buf, &42, opts).unwrap();
+```
+
 ### Other features
 
 - **Configurable budgets:** Enforce input limits to mitigate resource exhaustion (e.g., deeply nested structures or very large arrays); see [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
