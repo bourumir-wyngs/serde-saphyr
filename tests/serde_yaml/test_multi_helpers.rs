@@ -9,7 +9,7 @@ struct Point {
 #[test]
 fn test_from_str_multi() {
     let yaml = indoc!("---\nx: 1\n---\nx: 2\n");
-    let points: Vec<Point> = serde_saphyr::from_str_multi(yaml).unwrap();
+    let points: Vec<Point> = serde_saphyr::from_multiple(yaml).unwrap();
     assert_eq!(points, vec![Point { x: 1 }, Point { x: 2 }]);
 }
 

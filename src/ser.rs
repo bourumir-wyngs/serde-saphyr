@@ -798,7 +798,11 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             // - After a list dash (nested sequence), indent one level for inner dashes.
             // - Otherwise (top-level or already at line start), keep current depth.
             let depth_next = if was_inline_value {
-                if after_map_key { self.depth } else { self.depth + 1 }
+                if after_map_key {
+                    self.current_map_depth.unwrap_or(self.depth) + 1
+                } else {
+                    self.depth + 1
+                }
             } else {
                 self.depth
             };
@@ -1187,7 +1191,10 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
         if self.flow {
             self.ser.with_in_flow(|s| value.serialize(s))?;
         } else {
-            value.serialize(&mut *self.ser)?;
+            let prev_map_depth = self.ser.current_map_depth.replace(self.depth);
+            let result = value.serialize(&mut *self.ser);
+            self.ser.current_map_depth = prev_map_depth;
+            result?;
         }
         self.first = false;
         Ok(())

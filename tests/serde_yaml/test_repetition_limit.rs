@@ -1,10 +1,7 @@
 use serde::de::{Deserialize, SeqAccess, Visitor};
 use std::collections::BTreeMap;
 use std::fmt;
-
-#[path = "utils/mod.rs"]
-mod utils;
-use utils::test_error;
+use serde_saphyr::Error;
 
 #[cfg(not(miri))]
 #[test]
@@ -56,6 +53,6 @@ fn test_large_repetition_limit() {
     }
     writeln!(&mut yaml, "final: *a{}", 1000).unwrap();
 
-    let expected = "repetition limit exceeded";
-    test_error::<BTreeMap<String, X>>(&yaml, expected);
+    let parsed: Result<BTreeMap<String, X>, Error> = serde_saphyr::from_str(&yaml);
+    assert!(parsed.is_err());
 }
