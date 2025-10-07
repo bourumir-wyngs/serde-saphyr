@@ -27,7 +27,7 @@ fn test_large_reader_input() {
     }
 
     let reader = std::io::Cursor::new(yaml.as_bytes());
-    let value: Value = serde_saphyr::from_reader(reader).unwrap();
+    let _value: Value = serde_saphyr::from_reader(reader).unwrap();
 }
 
 #[test]

@@ -777,10 +777,14 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             self.at_line_start = false;
             return value.serialize(&mut *self);
         }
-        // Otherwise (top-level or sequence context), inline is fine.
+        // Otherwise (top-level or sequence context), prefer deferring the spacing
+        // decision to the value serializer by marking a pending space after ':'.
+        // This enables nested enums to break to a new line with proper indentation,
+        // while simple scalars will still inline as "Variant: scalar".
         if self.at_line_start { self.write_indent(self.depth)?; }
         self.write_plain_or_quoted(variant)?;
-        self.out.write_str(": ")?;
+        self.out.write_str(":")?;
+        self.pending_space_after_colon = true;
         self.at_line_start = false;
         value.serialize(&mut *self)
     }

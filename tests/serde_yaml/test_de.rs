@@ -303,7 +303,7 @@ fn test_u128_big() {
     "};
     assert_eq!(
         expected,
-        serde_saphyr::from_str((yaml)).unwrap()
+        serde_saphyr::from_str(yaml).unwrap()
     );
 
     let octal = indoc! {"
@@ -311,7 +311,7 @@ fn test_u128_big() {
     "};
     assert_eq!(
         expected,
-        serde_saphyr::from_str((octal)).unwrap()
+        serde_saphyr::from_str(octal).unwrap()
     );
 }
 
@@ -411,10 +411,7 @@ fn test_numbers() {
     ];
     for &(yaml, expected) in &cases {
         let value = serde_saphyr::from_str::<Value>(yaml).unwrap();
-        match &value {
-            Value=> assert_eq!(value.to_string().trim_matches('"'), expected, "For YAML: {yaml}"),
-            _ => panic!("expected number. input={:?}, result={:?}", yaml, value),
-        }
+        assert_eq!(value.to_string().trim_matches('"'), expected, "For YAML: {yaml}");
     }
 
     // NOT numbers.
@@ -424,10 +421,7 @@ fn test_numbers() {
     ];
     for yaml in &cases {
         let value = serde_saphyr::from_str::<Value>(yaml).unwrap();
-        match &value {
-            Value => assert_eq!(value.to_string().trim_matches('"'), *yaml),
-            _ => panic!("expected string. input={:?}, result={:?}", yaml, value),
-        }
+        assert_eq!(value.to_string().trim_matches('"'), *yaml);
     }
 }
 

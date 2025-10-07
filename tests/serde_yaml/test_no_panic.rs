@@ -120,7 +120,7 @@ fn test_multiline_array() {
         ]
     "#;
 
-    let parsed: Result<Value, Error> = serde_saphyr::from_str(yaml_input);
+    let parsed: Result<Data, Error> = serde_saphyr::from_str(yaml_input);
     assert!(parsed.is_err(), "Multiline array should yield an error.");
 
     let correct_yaml_input = r#"
@@ -129,6 +129,6 @@ fn test_multiline_array() {
          ]
     "#;
 
-    let parsed: Result<Value, Error> = serde_saphyr::from_str(correct_yaml_input);
+    let parsed: Result<Data, Error> = serde_saphyr::from_str(correct_yaml_input);
     assert!(parsed.is_ok(), "Multiline array with fixed indentation.");
 }

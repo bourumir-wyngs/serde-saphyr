@@ -635,7 +635,6 @@ pub fn to_string_multiple<T: serde::Serialize>(values: &[T]) -> std::result::Res
 /// let _value: Value = serde_saphyr::from_reader(reader).unwrap();
 /// ```
 pub fn from_reader<R: std::io::Read>(mut reader: R) -> ReaderDeserializer {
-    use std::io::Read as _;
     let mut buf = String::new();
     reader.read_to_string(&mut buf).map_err(|e| Error::msg(format!("io error: {}", e))).unwrap();
     ReaderDeserializer { buf }

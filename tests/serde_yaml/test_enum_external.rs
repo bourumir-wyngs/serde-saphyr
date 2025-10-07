@@ -12,7 +12,7 @@ where
 {
     let serialized = serde_saphyr::to_string(thing).unwrap();
     assert_eq!(yaml, serialized);
-    let round_trip: T = T::deserialize(serde_saphyr::Deserializer::from_str(&serialized)).unwrap();
+    let round_trip: T = serde_saphyr::from_str(&serialized).unwrap();
     assert_eq!(*thing, round_trip);
 }
 

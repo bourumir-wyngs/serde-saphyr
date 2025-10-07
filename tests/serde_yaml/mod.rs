@@ -25,5 +25,6 @@ mod test_multi_helpers;
 mod test_stream_deserializer;
 mod test_writer_reader;
 mod test_enum_alias_nested;
+mod test_enum_external;
 
 

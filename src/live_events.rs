@@ -454,42 +454,6 @@ impl<'a> LiveEvents<'a> {
     }
 }
 
-impl<'a> LiveEvents<'a> {
-    /// After finishing the first document in single-document mode, probe whether
-    /// there is another valid YAML document following. This tolerates trailing
-    /// garbage: if a scan error is encountered before any new document content,
-    /// it is treated as end-of-input for single-document APIs.
-    pub(crate) fn has_another_document(&mut self) -> Result<bool, Error> {
-        // Only meaningful after a DocumentEnd; but safe to call regardless.
-        loop {
-            match self.parser.next() {
-                None => return Ok(false),
-                Some(Ok((ev, span))) => {
-                    self.last_location = location_from_span(&span);
-                    match ev {
-                        Event::StreamEnd | Event::Nothing => continue,
-                        Event::DocumentEnd => { self.seen_doc_end = true; continue; },
-                        Event::StreamStart => continue,
-                        Event::DocumentStart(_) => return Ok(true),
-                        // Any content event implies another (implicit) document present.
-                        Event::Scalar(_, _, _, _)
-                        | Event::SequenceStart(_, _)
-                        | Event::SequenceEnd
-                        | Event::MappingStart(_, _)
-                        | Event::MappingEnd
-                        | Event::Alias(_) => return Ok(true),
-                    }
-                }
-                Some(Err(scan_err)) => {
-                    // Trailing garbage after a proper document end: ignore; otherwise propagate as error.
-                    if self.seen_doc_end { return Ok(false); }
-                    return Err(Error::from_scan_error(scan_err).with_location(self.last_location));
-                }
-            }
-        }
-    }
-}
-
 impl<'a> Events for LiveEvents<'a> {
     /// Get the next event, using a single-item lookahead buffer if present.
     /// Updates last_location to the yielded event's location.

@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::io::Cursor;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Point {

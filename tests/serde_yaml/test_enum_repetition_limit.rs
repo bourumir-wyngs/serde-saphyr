@@ -28,7 +28,6 @@ fn test_enum_billion_laughs_with_tags() {
         i: &i !List [*h,*h,*h,*h,*h,*h,*h,*h,*h]
         "
     };
-    let expected = "repetition limit exceeded";
     let parsed: Result<BTreeMap<String, String>, Error> = serde_saphyr::from_str(&yaml);
     assert!(parsed.is_err());
     println!("{}", parsed.unwrap_err());
@@ -51,7 +50,6 @@ fn test_enum_billion_laughs() {
         i: &i  [*h,*h,*h,*h,*h,*h,*h,*h,*h]
         "
     };
-    let expected = "repetition limit exceeded";
     let parsed: Result<BTreeMap<String, String>, Error> = serde_saphyr::from_str(&yaml);
     assert!(parsed.is_err());
     println!("{}", parsed.unwrap_err());

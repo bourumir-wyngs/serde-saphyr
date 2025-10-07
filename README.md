@@ -9,7 +9,7 @@
 [![Fuzz & Audit](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/ci.yml/badge.svg)](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/ci.yml)
 
 **serde-saphyr** is a strongly typed YAML deserializer built on
-[`saphyr-parser`](https://crates.io/crates/saphyr-parser). It aims to be **panic-free** on malformed input and to avoid `unsafe` code in library code. The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.” It is not a fork of the older [`serde-yaml`](https://crates.io/crates/serde_yaml) and does not share any code with it.
+[`saphyr-parser`](https://crates.io/crates/saphyr-parser). It aims to be **panic-free** on malformed input and to avoid `unsafe` code in library code. The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.” It is not a fork of the older [`serde-yaml`](https://crates.io/crates/serde_yaml) and does not share any code with it (some tests are reused).
 
 ### Why this approach?
 
@@ -44,11 +44,7 @@ As seen, serde-saphyr exceeds others by performance, even with budget check enab
 
 ### Serialization
 
-Serialize any `serde::Serialize` value to YAML using the crate-level helpers:
-
-- `serde_saphyr::to_string(&value)` → `String`
-- `serde_saphyr::to_writer(&mut out, &value)` → writes to any `fmt::Write`
-- `serde_saphyr::to_writer_with_options(&mut out, &value, SerializerOptions)` → allows custom indentation and anchor naming
+While first versions only included deserializer, from 0.0.5 this library can also serialize. 
 
 Example:
 
@@ -64,7 +60,7 @@ assert!(yaml.contains("name: Ada"));
 
 #### Anchors (Rc/Arc/Weak)
 
-You can opt-in to YAML anchors and aliases by wrapping shared pointers:
+Serde-saphyr can conceptyally connect YAML anchors with Rust shared references (Rc, Weak and De). You need to use wrappers to activate this feture:
 
 - `RcAnchor<T>` and `ArcAnchor<T>` emit anchors like `&a1` on first occurrence and may emit aliases `*a1` later.
 - `RcWeakAnchor<T>` and `ArcWeakAnchor<T>` serialize a weak ref: if the strong pointer is gone, it becomes `null`.
@@ -92,6 +88,7 @@ let opts = serde_saphyr::SerializerOptions {
 serde_saphyr::to_writer_with_options(&mut buf, &42, opts).unwrap();
 ```
 
+These wrappers on the structure fields do not hinder deserialization.
 ### Other features
 
 - **Configurable budgets:** Enforce input limits to mitigate resource exhaustion (e.g., deeply nested structures or very large arrays); see [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
