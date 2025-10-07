@@ -846,7 +846,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             self.out.write_str("{")?;
             self.at_line_start = false;
             let depth_next = self.depth;
-            Ok(MapSer { ser: self, depth: depth_next, flow: true, first: true })
+            Ok(MapSer { ser: self, depth: depth_next, flow: true, first: true, last_key_complex: false })
         } else {
             let inline_first = self.pending_inline_map;
             let was_inline_value = !self.at_line_start;
@@ -865,7 +865,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             // - Top-level (at line start, not after dash): use current depth.
             // - After dash inline first key or as a value: indent one level deeper for subsequent lines.
             let depth_next = if inline_first || was_inline_value { self.depth + 1 } else { self.depth };
-            Ok(MapSer { ser: self, depth: depth_next, flow: false, first: true })
+            Ok(MapSer { ser: self, depth: depth_next, flow: false, first: true, last_key_complex: false })
         }
     }
 
@@ -1162,6 +1162,8 @@ pub struct MapSer<'a, 'b, W: Write> {
     flow: bool,
     /// Whether the next entry is the first (comma handling in flow style).
     first: bool,
+    /// Whether the most recently serialized key was a complex (non-scalar) node.
+    last_key_complex: bool,
 }
 
 impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
@@ -1170,19 +1172,57 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
 
     fn serialize_key<T: ?Sized + Serialize>(&mut self, key: &T) -> Result<()> {
         if self.flow {
-            if !self.first { self.ser.out.write_str(", ")?; }
+            if !self.first {
+                self.ser.out.write_str(", ")?;
+            }
             let text = scalar_key_to_string(key)?;
             self.ser.out.write_str(&text)?;
             self.ser.out.write_str(": ")?;
             self.ser.at_line_start = false;
+            self.last_key_complex = false;
         } else {
-            let text = scalar_key_to_string(key)?;
-            self.ser.write_indent(self.depth)?;
-            self.ser.out.write_str(&text)?;
-            // Defer the decision to put a space vs. newline until we see the value type.
-            self.ser.out.write_str(":")?;
-            self.ser.pending_space_after_colon = true;
-            self.ser.at_line_start = false;
+            match scalar_key_to_string(key) {
+                Ok(text) => {
+                    if !self.ser.at_line_start {
+                        self.ser.write_space_if_pending()?;
+                    }
+                    self.ser.write_indent(self.depth)?;
+                    self.ser.out.write_str(&text)?;
+                    // Defer the decision to put a space vs. newline until we see the value type.
+                    self.ser.out.write_str(":")?;
+                    self.ser.pending_space_after_colon = true;
+                    self.ser.at_line_start = false;
+                    self.last_key_complex = false;
+                }
+                Err(Error(msg)) if msg == "non-scalar key" => {
+                    if !self.ser.at_line_start {
+                        self.ser.write_space_if_pending()?;
+                    }
+                    self.ser.write_anchor_for_complex_node()?;
+                    self.ser.write_indent(self.depth)?;
+                    self.ser.out.write_str("? ")?;
+                    self.ser.at_line_start = false;
+
+                    let saved_depth = self.ser.depth;
+                    let saved_current_map_depth = self.ser.current_map_depth;
+                    let saved_pending_inline_map = self.ser.pending_inline_map;
+                    let saved_inline_map_after_dash = self.ser.inline_map_after_dash;
+                    let saved_after_dash_depth = self.ser.after_dash_depth;
+
+                    self.ser.pending_inline_map = true;
+                    self.ser.depth = self.depth;
+                    self.ser.after_dash_depth = None;
+                    key.serialize(&mut *self.ser)?;
+
+                    self.ser.depth = saved_depth;
+                    self.ser.current_map_depth = saved_current_map_depth;
+                    self.ser.pending_inline_map = saved_pending_inline_map;
+                    self.ser.inline_map_after_dash = saved_inline_map_after_dash;
+                    self.ser.after_dash_depth = saved_after_dash_depth;
+                    self.last_key_complex = true;
+                }
+                Err(e) => return Err(e),
+            }
         }
         Ok(())
     }
@@ -1191,9 +1231,24 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
         if self.flow {
             self.ser.with_in_flow(|s| value.serialize(s))?;
         } else {
+            let saved_pending_inline_map = self.ser.pending_inline_map;
+            let saved_depth = self.ser.depth;
+            if self.last_key_complex {
+                self.ser.write_indent(self.depth)?;
+                self.ser.out.write_str(":")?;
+                self.ser.pending_space_after_colon = true;
+                self.ser.pending_inline_map = true;
+                self.ser.at_line_start = false;
+                self.ser.depth = self.depth;
+            }
             let prev_map_depth = self.ser.current_map_depth.replace(self.depth);
             let result = value.serialize(&mut *self.ser);
             self.ser.current_map_depth = prev_map_depth;
+            if self.last_key_complex {
+                self.ser.pending_inline_map = saved_pending_inline_map;
+                self.ser.depth = saved_depth;
+                self.last_key_complex = false;
+            }
             result?;
         }
         self.first = false;
