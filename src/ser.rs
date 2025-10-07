@@ -39,6 +39,10 @@ use std::collections::HashMap;
 use std::fmt::{self, Write};
 use std::rc::{Rc, Weak as RcWeak};
 use std::sync::{Arc, Weak as ArcWeak};
+
+use nohash_hasher::BuildNoHashHasher;
+use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+
 use crate::serializer_options::SerializerOptions;
 
 // ------------------------------------------------------------
@@ -221,6 +225,9 @@ enum StrStyle {
     Folded,  // >
 }
 
+// Numeric anchor id used internally.
+type AnchorId = u32;
+
 /// Core YAML serializer used by `to_string`/`to_writer`.
 ///
 /// This type implements `serde::Serializer` and writes YAML to a `fmt::Write`.
@@ -236,14 +243,16 @@ pub struct YamlSer<'a, W: Write> {
     at_line_start: bool,
 
     // Anchors:
-    /// Map from pointer identity to anchor name (e.g., `a1`).
-    anchors: HashMap<usize, String>,
-    /// Next numeric id to use when generating anchor names.
-    next_anchor_id: usize,
+    /// Map from pointer identity to anchor id.
+    anchors: HashMap<usize, AnchorId, BuildNoHashHasher<usize>>,
+    /// Next numeric id to use when generating anchor names (1-based).
+    next_anchor_id: AnchorId,
     /// If set, the next scalar/complex node to be emitted will be prefixed with this `&anchor`.
-    pending_anchor: Option<String>,
+    pending_anchor_id: Option<AnchorId>,
     /// Optional custom anchor-name generator supplied by the caller.
     anchor_gen: Option<fn(usize) -> String>,
+    /// Cache of custom anchor names when generator is present (index = id-1).
+    custom_anchor_names: Option<Vec<String>>,
 
     // Style flags:
     /// Pending flow-style hint captured from wrapper types.
@@ -277,10 +286,11 @@ impl<'a, W: Write> YamlSer<'a, W> {
             indent_step: 2,
             depth: 0,
             at_line_start: true,
-            anchors: HashMap::new(),
+            anchors: HashMap::with_hasher(BuildNoHashHasher::default()),
             next_anchor_id: 1,
-            pending_anchor: None,
+            pending_anchor_id: None,
             anchor_gen: None,
+            custom_anchor_names: None,
             pending_flow: None,
             in_flow: 0,
             pending_str_style: None,
@@ -309,8 +319,48 @@ impl<'a, W: Write> YamlSer<'a, W> {
 
     // -------- helpers --------
 
+    /// Allocate (or get existing) anchor id for a pointer identity.
+    /// Returns `(id, is_new)`.
+    #[inline]
+    fn alloc_anchor_for(&mut self, ptr: usize) -> (AnchorId, bool) {
+        match self.anchors.entry(ptr) {
+            std::collections::hash_map::Entry::Occupied(e) => (*e.get(), false),
+            std::collections::hash_map::Entry::Vacant(v) => {
+                let id = self.next_anchor_id;
+                self.next_anchor_id = self.next_anchor_id.saturating_add(1);
+                if let Some(generator) = self.anchor_gen {
+                    let name = generator(id as usize);
+                    self.custom_anchor_names
+                        .get_or_insert_with(Vec::new)
+                        .push(name);
+                }
+                v.insert(id);
+                (id, true)
+            }
+        }
+    }
+
+    /// Resolve an anchor name for `id` and write it.
+    #[inline]
+    fn write_anchor_name(&mut self, id: AnchorId) -> Result<()> {
+        if let Some(names) = &self.custom_anchor_names {
+            // ids are 1-based; vec is 0-based
+            let idx = id as usize - 1;
+            if let Some(name) = names.get(idx) {
+                self.out.write_str(name)?;
+            } else {
+                // Fallback if generator vector is out of sync
+                write!(self.out, "a{}", id)?;
+            }
+        } else {
+            write!(self.out, "a{}", id)?;
+        }
+        Ok(())
+    }
+
     /// If a mapping key has just been written (':' emitted) and we determined the value is a scalar,
     /// insert a single space before the scalar and clear the pending flag.
+    #[inline]
     fn write_space_if_pending(&mut self) -> Result<()> {
         if self.pending_space_after_colon {
             self.out.write_char(' ')?;
@@ -321,9 +371,10 @@ impl<'a, W: Write> YamlSer<'a, W> {
 
     /// Ensure indentation is written if we are at the start of a line.
     /// Internal: called by most emitters before writing tokens.
+    #[inline]
     fn write_indent(&mut self, depth: usize) -> Result<()> {
         if self.at_line_start {
-            for _ in 0..(depth * self.indent_step) {
+            for _k in 0 .. self.indent_step * depth {
                 self.out.write_char(' ')?;
             }
             self.at_line_start = false;
@@ -333,6 +384,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
 
     /// Emit a newline and mark the next write position as line start.
     /// Internal utility used after finishing a top-level token.
+    #[inline]
     fn newline(&mut self) -> Result<()> {
         self.out.write_char('\n')?;
         self.at_line_start = true;
@@ -373,7 +425,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
                     c if (c as u32) <= 0xFFFF && (c.is_control() || (0x7F..=0x9F).contains(&(c as u32))) => {
                         write!(self.out, "\\u{:04X}", c as u32)?
                     }
-                    c => self.out.write_char(c)?, 
+                    c => self.out.write_char(c)?,
                 }
             }
             self.out.write_char('"')?;
@@ -383,6 +435,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
 
     /// Returns true if `s` can be emitted as a plain scalar in VALUE position without quoting.
     /// This is slightly more permissive than `is_plain_safe` for keys: it allows ':' inside values.
+    #[inline]
     fn is_plain_value_safe(s: &str) -> bool {
         if s.is_empty() { return false; }
         if s == "~" || s.eq_ignore_ascii_case("null") || s.eq_ignore_ascii_case("true")
@@ -398,6 +451,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
     }
 
     /// Like `write_plain_or_quoted`, but intended for VALUE position where ':' is allowed.
+    #[inline]
     fn write_plain_or_quoted_value(&mut self, s: &str) -> Result<()> {
         if Self::is_plain_value_safe(s) {
             self.out.write_str(s)?;
@@ -409,24 +463,29 @@ impl<'a, W: Write> YamlSer<'a, W> {
 
     /// If an anchor is pending for the next scalar, emit `&name ` prefix.
     /// Used for in-flow scalars.
+    #[inline]
     fn write_scalar_prefix_if_anchor(&mut self) -> Result<()> {
-        if let Some(a) = self.pending_anchor.take() {
+        if let Some(id) = self.pending_anchor_id.take() {
             if self.at_line_start {
                 self.write_indent(self.depth)?;
             }
-            write!(self.out, "&{} ", a)?;
+            self.out.write_char('&')?;
+            self.write_anchor_name(id)?;
+            self.out.write_char(' ')?;
         }
         Ok(())
     }
 
     /// If an anchor is pending for the next complex node (seq/map),
     /// emit it on its own line before the node.
+    #[inline]
     fn write_anchor_for_complex_node(&mut self) -> Result<()> {
-        if let Some(a) = self.pending_anchor.take() {
+        if let Some(id) = self.pending_anchor_id.take() {
             if self.at_line_start {
                 self.write_indent(self.depth)?;
             }
-            write!(self.out, "&{}", a)?;
+            self.out.write_char('&')?;
+            self.write_anchor_name(id)?;
             self.newline()?;
         }
         Ok(())
@@ -434,29 +493,20 @@ impl<'a, W: Write> YamlSer<'a, W> {
 
     /// Emit an alias `*name`. Adds a newline in block style.
     /// Used when a previously defined anchor is referenced again.
-    fn write_alias(&mut self, name: &str) -> Result<()> {
+    #[inline]
+    fn write_alias_id(&mut self, id: AnchorId) -> Result<()> {
         if self.at_line_start {
             self.write_indent(self.depth)?;
         }
-        write!(self.out, "*{}", name)?;
+        self.out.write_char('*')?;
+        self.write_anchor_name(id)?;
         if self.in_flow == 0 { self.newline()?; }
         Ok(())
     }
 
-    /// Generate a new anchor name either via the custom generator or the default `a{id}`.
-    /// Called whenever we need to define a fresh anchor.
-    fn new_anchor_name(&mut self) -> String {
-        let n = self.next_anchor_id;
-        self.next_anchor_id += 1;
-        if let Some(f) = self.anchor_gen {
-            return f(n);
-        }
-        format!("a{n}")
-    }
-
-
     /// Determine whether the next sequence should be emitted in flow style.
     /// Consumes any pending flow hint.
+    #[inline]
     fn take_flow_for_seq(&mut self) -> bool {
         if self.in_flow > 0 {
             true
@@ -468,6 +518,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
     }
     /// Determine whether the next mapping should be emitted in flow style.
     /// Consumes any pending flow hint.
+    #[inline]
     fn take_flow_for_map(&mut self) -> bool {
         if self.in_flow > 0 {
             true
@@ -480,6 +531,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
 
     /// Temporarily mark that we are inside a flow container while running `f`.
     /// Ensures proper comma insertion and line handling for nested flow nodes.
+    #[inline]
     fn with_in_flow<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
         self.in_flow += 1;
         let r = f(self);
@@ -494,6 +546,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
 
 /// Returns true if `s` can be emitted as a plain scalar without quoting.
 /// Internal heuristic used by `write_plain_or_quoted`.
+#[inline]
 fn is_plain_safe(s: &str) -> bool {
     if s.is_empty() { return false; }
     if s == "~" || s.eq_ignore_ascii_case("null") || s.eq_ignore_ascii_case("true")
@@ -587,13 +640,14 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             if v.is_sign_positive() { self.out.write_str(".inf")?; }
             else { self.out.write_str("-.inf")?; }
         } else {
-            // Ensure floats that are mathematically integers are rendered with a ".0"
-            // so they are not parsed as YAML integers.
-            let mut s = v.to_string();
+            let mut buf = ryu::Buffer::new();
+            let s = buf.format(v);
             if !s.contains('.') && !s.contains('e') && !s.contains('E') {
-                s.push_str(".0");
+                self.out.write_str(s)?;
+                self.out.write_str(".0")?;
+            } else {
+                self.out.write_str(s)?;
             }
-            self.out.write_str(&s)?;
         }
         if self.in_flow == 0 { self.newline()?; }
         Ok(())
@@ -661,43 +715,9 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
         self.write_scalar_prefix_if_anchor()?;
         // No indent needed mid-line; mirror serialize_str behavior.
         self.out.write_str("!!binary ")?;
-        // Base64 encode without whitespace.
-        fn b64_encode(bytes: &[u8]) -> String {
-            const ALPH: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-            let mut out = String::with_capacity((bytes.len() + 2) / 3 * 4);
-            let mut i = 0;
-            while i + 3 <= bytes.len() {
-                let b0 = bytes[i] as u32;
-                let b1 = bytes[i + 1] as u32;
-                let b2 = bytes[i + 2] as u32;
-                let triple = (b0 << 16) | (b1 << 8) | b2;
-                out.push(ALPH[((triple >> 18) & 0x3F) as usize] as char);
-                out.push(ALPH[((triple >> 12) & 0x3F) as usize] as char);
-                out.push(ALPH[((triple >> 6) & 0x3F) as usize] as char);
-                out.push(ALPH[(triple & 0x3F) as usize] as char);
-                i += 3;
-            }
-            let rem = bytes.len() - i;
-            if rem == 1 {
-                let b0 = bytes[i] as u32;
-                let triple = b0 << 16;
-                out.push(ALPH[((triple >> 18) & 0x3F) as usize] as char);
-                out.push(ALPH[((triple >> 12) & 0x3F) as usize] as char);
-                out.push('=');
-                out.push('=');
-            } else if rem == 2 {
-                let b0 = bytes[i] as u32;
-                let b1 = bytes[i + 1] as u32;
-                let triple = (b0 << 16) | (b1 << 8);
-                out.push(ALPH[((triple >> 18) & 0x3F) as usize] as char);
-                out.push(ALPH[((triple >> 12) & 0x3F) as usize] as char);
-                out.push(ALPH[((triple >> 6) & 0x3F) as usize] as char);
-                out.push('=');
-            }
-            out
-        }
-        let encoded = b64_encode(v);
-        self.out.write_str(&encoded)?;
+        let mut s = String::new();
+        B64.encode_string(v, &mut s);
+        self.out.write_str(&s)?;
         if self.in_flow == 0 { self.newline()?; }
         Ok(())
     }
@@ -765,7 +785,9 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
         self, _name: &'static str, _variant_index: u32, variant: &'static str, value: &T
     ) -> Result<()> {
         // If we are the value of a mapping key, YAML forbids "key: Variant: value" inline.
-        // Emit the variant mapping on the next line indented one level.
+        // Emit the variant mapping on the next line indented one level. Also, do not insert
+        // a space after the colon when the value may itself be a mapping; instead, defer
+        // space insertion to the value serializer via pending_space_after_colon.
         if self.pending_space_after_colon {
             // consume the pending space request and start a new line
             self.pending_space_after_colon = false;
@@ -773,16 +795,17 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             // emit nested mapping starting one level deeper
             self.write_indent(self.depth + 1)?;
             self.write_plain_or_quoted(variant)?;
-            self.out.write_str(": ")?;
+            // Write ':' without trailing space, then mark that a space may be needed
+            // if the following value is a scalar.
+            self.out.write_str(":")?;
+            self.pending_space_after_colon = true;
             self.at_line_start = false;
             return value.serialize(&mut *self);
         }
-        // Otherwise (top-level or sequence context), prefer deferring the spacing
-        // decision to the value serializer by marking a pending space after ':'.
-        // This enables nested enums to break to a new line with proper indentation,
-        // while simple scalars will still inline as "Variant: scalar".
+        // Otherwise (top-level or sequence context).
         if self.at_line_start { self.write_indent(self.depth)?; }
         self.write_plain_or_quoted(variant)?;
+        // Write ':' without a space and defer spacing/newline to the value serializer.
         self.out.write_str(":")?;
         self.pending_space_after_colon = true;
         self.at_line_start = false;
@@ -814,19 +837,16 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                 self.newline()?;
             }
             // Indentation policy:
-            // - After a map key ("key: <seq>"), do NOT add extra indentation (tests expect dashes aligned under the key).
+            // - After a map key ("key: <seq>"), indent sequence items one level under the mapping key.
             // - After a list dash (nested sequence), indent one level for inner dashes.
             // - Otherwise (top-level or already at line start), keep current depth.
             let depth_next = if was_inline_value {
                 if after_map_key {
-                    // Standard YAML: indent sequence items one level under the mapping key.
                     self.depth + 1
                 } else {
-                    // After a list dash, indent inner sequence items one level.
                     self.depth + 1
                 }
             } else {
-                // Top-level sequence at current indentation.
                 self.depth
             };
             Ok(SeqSer { ser: self, depth: depth_next, flow: false, first: true })
@@ -948,12 +968,6 @@ impl<'a, 'b, W: Write> SerializeTuple for SeqSer<'a, 'b, W> {
     fn end(self) -> Result<()> { SerializeSeq::end(self) }
 }
 
-// We need our own end() for flow seq; implement Drop-in wrapper:
-impl<'a, 'b, W: Write> SeqSer<'a, 'b, W> {
-}
-
-// But trait requires end(self), so fix above:
-
 // Re-implement SerializeSeq for SeqSer with correct end.
 impl<'a, 'b, W: Write> SerializeSeq for SeqSer<'a, 'b, W> {
     type Ok = ();
@@ -1005,8 +1019,19 @@ pub struct TupleSer<'a, 'b, W: Write> {
     kind: TupleKind,
     /// Current field index being serialized.
     idx: usize,
-    /// For normal tuples: target indentation depth. For weak anchors: temporary storage for ptr.
+    /// For normal tuples: target indentation depth.
+    /// For weak/strong: temporary storage (ptr id or state).
     depth_for_normal: usize,
+
+    // ---- Extra fields for refactoring/perf/correctness ----
+    /// For strong anchors: if Some(id) then we must emit an alias instead of a definition at field #2.
+    strong_alias_id: Option<AnchorId>,
+    /// For weak anchors: whether the `present` flag was true.
+    weak_present: bool,
+    /// Skip serializing the 3rd field (value) in weak case if present==false.
+    skip_third: bool,
+    /// For weak anchors: hold alias id if value should be emitted as alias in field #3.
+    weak_alias_id: Option<AnchorId>,
 }
 enum TupleKind {
     Normal,       // treat as block seq
@@ -1017,15 +1042,24 @@ impl<'a, 'b, W: Write> TupleSer<'a, 'b, W> {
     /// Create a tuple serializer for normal tuple-structs.
     fn normal(ser: &'a mut YamlSer<'b, W>) -> Self {
         let depth_next = ser.depth + 1;
-        Self { ser, kind: TupleKind::Normal, idx: 0, depth_for_normal: depth_next }
+        Self {
+            ser, kind: TupleKind::Normal, idx: 0, depth_for_normal: depth_next,
+            strong_alias_id: None, weak_present: false, skip_third: false, weak_alias_id: None
+        }
     }
     /// Create a tuple serializer for internal strong-anchor payloads.
     fn anchor_strong(ser: &'a mut YamlSer<'b, W>) -> Self {
-        Self { ser, kind: TupleKind::AnchorStrong, idx: 0, depth_for_normal: 0 }
+        Self {
+            ser, kind: TupleKind::AnchorStrong, idx: 0, depth_for_normal: 0,
+            strong_alias_id: None, weak_present: false, skip_third: false, weak_alias_id: None
+        }
     }
     /// Create a tuple serializer for internal weak-anchor payloads.
     fn anchor_weak(ser: &'a mut YamlSer<'b, W>) -> Self {
-        Self { ser, kind: TupleKind::AnchorWeak, idx: 0, depth_for_normal: 0 }
+        Self {
+            ser, kind: TupleKind::AnchorWeak, idx: 0, depth_for_normal: 0,
+            strong_alias_id: None, weak_present: false, skip_third: false, weak_alias_id: None
+        }
     }
 }
 
@@ -1048,30 +1082,26 @@ impl<'a, 'b, W: Write> SerializeTupleStruct for TupleSer<'a, 'b, W> {
             TupleKind::AnchorStrong => {
                 match self.idx {
                     0 => {
-                        // pointer (usize)
+                        // capture ptr, decide define vs alias
                         let mut cap = UsizeCapture::default();
                         value.serialize(&mut cap)?;
                         let ptr = cap.finish()?;
-                        // store ptr for idx 1 via pending_anchor trick:
-                        // We'll actually serialize the 2nd field, using ptr then
-                        // alias_or_define...
-                        self.idx += 1;
-                        // consume second value immediately: we expect caller will call us again with value
-                        self.idx -= 1;
-                        // Define anchor name on first sight without borrowing through closure.
-                        if let Some(name) = self.ser.anchors.get(&ptr).cloned() {
-                            self.ser.pending_anchor = Some(name);
+                        let (id, fresh) = self.ser.alloc_anchor_for(ptr);
+                        if fresh {
+                            self.ser.pending_anchor_id = Some(id);  // define before value
+                            self.strong_alias_id = None;
                         } else {
-                            let name = self.ser.new_anchor_name();
-                            self.ser.anchors.insert(ptr, name.clone());
-                            self.ser.pending_anchor = Some(name);
+                            self.strong_alias_id = Some(id);        // alias instead of value
                         }
                     }
                     1 => {
-                        // actual value
-                        // We can't retrieve ptr here (we put name already).
-                        // Just serialize value; the pending anchor will be emitted.
-                        value.serialize(&mut *self.ser)?;
+                        if let Some(id) = self.strong_alias_id.take() {
+                            // Already defined earlier -> emit alias
+                            self.ser.write_alias_id(id)?;
+                        } else {
+                            // First sight -> serialize value; pending_anchor_id (if any) will be emitted
+                            value.serialize(&mut *self.ser)?;
+                        }
                     }
                     _ => return Err(Error("unexpected field in __yaml_anchor".into())),
                 }
@@ -1082,57 +1112,37 @@ impl<'a, 'b, W: Write> SerializeTupleStruct for TupleSer<'a, 'b, W> {
                         let mut cap = UsizeCapture::default();
                         value.serialize(&mut cap)?;
                         let ptr = cap.finish()?;
-                        // stash anchor name if already defined; else prepare to define on first present=true
-                        // Put it into pending_anchor only *when* present==true/value arrives.
-                        // Save ptr in a side-channel: we'll keep it in UsizeCapture via self.depth_for_normal
-                        // (quick hack). Encode ptr into depth_for_normal to avoid extra field.
-                        self.depth_for_normal = ptr;
+                        self.depth_for_normal = ptr; // store ptr for fields #2/#3
                     }
                     1 => {
                         let mut bc = BoolCapture::default();
                         value.serialize(&mut bc)?;
-                        let present = bc.finish()?;
-                        if !present {
-                            // serialize as null and skip reading the 3rd field's content
+                        self.weak_present = bc.finish()?;
+                        if !self.weak_present {
+                            // present == false: emit null and skip field #3
                             if self.ser.at_line_start { self.ser.write_indent(self.ser.depth)?; }
                             self.ser.out.write_str("null")?;
                             if self.ser.in_flow == 0 { self.ser.newline()?; }
+                            self.skip_third = true;
                         } else {
-                            // present => third field carries the node. Define or alias.
                             let ptr = self.depth_for_normal;
-                            if self.ser.anchors.contains_key(&ptr) {
-                                // already defined; set to alias on third field
-                                // Record name into pending_anchor? No, we want alias, not definition.
-                                // We'll emit alias in field #3 directly; mark pending_anchor None.
-                                // Stash name into depth_for_normal as marker? We'll just keep it:
-                                // we can't store String; so do nothing here and handle in field #3.
-                                // We'll emit alias there using ptr.
+                            let (id, fresh) = self.ser.alloc_anchor_for(ptr);
+                            if fresh {
+                                self.ser.pending_anchor_id = Some(id);  // define before value
+                                self.weak_alias_id = None;
                             } else {
-                                // define now
-                                let name = self.ser.new_anchor_name();
-                                self.ser.anchors.insert(ptr, name.clone());
-                                self.ser.pending_anchor = Some(name);
+                                self.weak_alias_id = Some(id);          // alias in field #3
                             }
                         }
                     }
                     2 => {
-                        // value of weak reference
-                        let ptr = self.depth_for_normal;
-                        if let Some(name) = self.ser.anchors.get(&ptr).cloned() {
-                            if self.ser.pending_anchor.is_none() {
-                                // alias case
-                                self.ser.write_alias(&name)?;
-                            } else {
-                                // definition case: just serialize the value; the pending anchor will be placed.
-                                value.serialize(&mut *self.ser)?;
-                            }
+                        if self.skip_third {
+                            // nothing to do
+                        } else if let Some(id) = self.weak_alias_id.take() {
+                            self.ser.write_alias_id(id)?;
                         } else {
-                            // If we get here with no anchor and no pending, it's a dangling-but-present=false path,
-                            // but then we shouldn't have field #3 serialized. Just ignore.
-                            // To be safe: serialize unit as null.
-                            if self.ser.at_line_start { self.ser.write_indent(self.ser.depth)?; }
-                            self.ser.out.write_str("null")?;
-                            if self.ser.in_flow == 0 { self.ser.newline()?; }
+                            // definition path: pending_anchor_id (if any) will be placed automatically
+                            value.serialize(&mut *self.ser)?;
                         }
                     }
                     _ => return Err(Error("unexpected field in __yaml_weak_anchor".into())),
@@ -1484,9 +1494,14 @@ impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
         if v.is_nan() { self.s.push_str(".nan"); }
         else if v.is_infinite() { if v.is_sign_positive() { self.s.push_str(".inf"); } else { self.s.push_str("-.inf"); } }
         else {
-            let mut s = v.to_string();
-            if !s.contains('.') && !s.contains('e') && !s.contains('E') { s.push_str(".0"); }
-            self.s.push_str(&s);
+            let mut buf = ryu::Buffer::new();
+            let s = buf.format(v);
+            if !s.contains('.') && !s.contains('e') && !s.contains('E') {
+                self.s.push_str(s);
+                self.s.push_str(".0");
+            } else {
+                self.s.push_str(s);
+            }
         }
         Ok(())
     }
@@ -1494,9 +1509,14 @@ impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
         if v.is_nan() { self.s.push_str(".nan"); }
         else if v.is_infinite() { if v.is_sign_positive() { self.s.push_str(".inf"); } else { self.s.push_str("-.inf"); } }
         else {
-            let mut s = v.to_string();
-            if !s.contains('.') && !s.contains('e') && !s.contains('E') { s.push_str(".0"); }
-            self.s.push_str(&s);
+            let mut buf = ryu::Buffer::new();
+            let s = buf.format(v);
+            if !s.contains('.') && !s.contains('e') && !s.contains('E') {
+                self.s.push_str(s);
+                self.s.push_str(".0");
+            } else {
+                self.s.push_str(s);
+            }
         }
         Ok(())
     }
