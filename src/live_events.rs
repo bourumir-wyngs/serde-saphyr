@@ -197,6 +197,16 @@ impl<'a> LiveEvents<'a> {
                 }
 
                 Event::Scalar(val, mut style, anchor_id, tag) => {
+                    if matches!(style, ScalarStyle::Folded)
+                        && span.start.col() == 0
+                        && !val.trim().is_empty()
+                    {
+                        return Err(
+                            Error::msg("folded block scalars must indent their content")
+                                .with_location(location),
+                        );
+                    }
+
                     let s = match val {
                         Cow::Borrowed(v) => v.to_string(),
                         Cow::Owned(v) => v,

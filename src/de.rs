@@ -657,7 +657,24 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
 
                 // Try integers: prefer signed if leading '-', else unsigned. Fallbacks use 64-bit.
                 let t = s.trim();
-                if t.starts_with('-') {
+                // Avoid interpreting decimal forms with redundant leading zeroes (e.g., 0127, +0127, -0127)
+                // as integers when in typeless context; treat them as strings instead unless they are
+                // explicit radices (0x/0o/0b).
+                let unsigned = if let Some(r) = t.strip_prefix('+') {
+                    r
+                } else if let Some(r) = t.strip_prefix('-') {
+                    r
+                } else {
+                    t
+                };
+                let looks_like_prefixed = unsigned.starts_with("0x")
+                    || unsigned.starts_with("0X")
+                    || unsigned.starts_with("0o")
+                    || unsigned.starts_with("0O")
+                    || unsigned.starts_with("0b")
+                    || unsigned.starts_with("0B");
+                let leading_zero_decimal = unsigned.len() > 1 && unsigned.starts_with('0') && !looks_like_prefixed;
+                if t.starts_with('-') && !leading_zero_decimal { 
                     if let Ok(v) = parse_int_signed::<i64>(
                         t,
                         "i64",
@@ -688,7 +705,22 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
 
                 // Try float per YAML 1.2 forms.
                 if let Ok(v) = parse_yaml12_float::<f64>(&s, location) {
-                    return visitor.visit_f64(v);
+                    // serde_json::Value (and possibly other typeless consumers) cannot represent
+                    // non-finite floats. In `deserialize_any`, prefer returning a canonical string
+                    // for NaN/±Inf so that these values round-trip as strings rather than becoming
+                    // null or erroring. Concrete f32/f64 entry points still yield the float values.
+                    if v.is_finite() {
+                        return visitor.visit_f64(v);
+                    } else {
+                        let canon = if v.is_nan() {
+                            ".nan".to_string()
+                        } else if v.is_sign_negative() {
+                            "-.inf".to_string()
+                        } else {
+                            ".inf".to_string()
+                        };
+                        return visitor.visit_string(canon);
+                    }
                 }
 
                 // Fallback: treat as string as-is.

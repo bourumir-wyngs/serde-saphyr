@@ -18,5 +18,6 @@ mod test_recursion_limit;
 mod test_repetition_limit;
 mod test_enum_repetition_limit;
 mod test_composite_keys;
+mod test_de;
 
 

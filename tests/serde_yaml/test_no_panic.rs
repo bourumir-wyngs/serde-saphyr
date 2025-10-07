@@ -37,6 +37,16 @@ fn test_lexer_errors() {
 }
 
 #[test]
+fn test_folded_scalar_with_indented_content() {
+    let yaml_input = ">\n  @ !";
+    let result: Result<serde_json::Value, _> = serde_saphyr::from_str(yaml_input);
+
+    println!("{result:?}");
+    let value = result.expect("Indented folded scalar should deserialize successfully");
+    assert_eq!(value, serde_json::Value::String("@ !\n".to_string()));
+}
+
+#[test]
 fn test_unmatched_brackets() {
     let yaml_input = "{key: [value1, value2";
     let result: Result<serde_json::Value, _> = serde_saphyr::from_str(yaml_input);
