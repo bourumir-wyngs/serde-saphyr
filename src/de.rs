@@ -19,10 +19,7 @@ use std::collections::{HashSet, VecDeque};
 
 use crate::base64::decode_base64_yaml;
 pub use crate::budget::{Budget, BudgetEnforcer};
-use crate::parse_scalars::{
-    parse_int_signed, parse_int_unsigned, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish,
-    scalar_is_nullish_for_option,
-};
+use crate::parse_scalars::{leading_zero_decimal, parse_int_signed, parse_int_unsigned, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish, scalar_is_nullish_for_option};
 use saphyr_parser::ScalarStyle;
 use serde::de::{self, Deserializer as _, IntoDeserializer, Visitor};
 
@@ -657,24 +654,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
 
                 // Try integers: prefer signed if leading '-', else unsigned. Fallbacks use 64-bit.
                 let t = s.trim();
-                // Avoid interpreting decimal forms with redundant leading zeroes (e.g., 0127, +0127, -0127)
-                // as integers when in typeless context; treat them as strings instead unless they are
-                // explicit radices (0x/0o/0b).
-                let unsigned = if let Some(r) = t.strip_prefix('+') {
-                    r
-                } else if let Some(r) = t.strip_prefix('-') {
-                    r
-                } else {
-                    t
-                };
-                let looks_like_prefixed = unsigned.starts_with("0x")
-                    || unsigned.starts_with("0X")
-                    || unsigned.starts_with("0o")
-                    || unsigned.starts_with("0O")
-                    || unsigned.starts_with("0b")
-                    || unsigned.starts_with("0B");
-                let leading_zero_decimal = unsigned.len() > 1 && unsigned.starts_with('0') && !looks_like_prefixed;
-                if t.starts_with('-') && !leading_zero_decimal { 
+                if t.starts_with('-') && !leading_zero_decimal(t) {
                     if let Ok(v) = parse_int_signed::<i64>(
                         t,
                         "i64",

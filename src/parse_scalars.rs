@@ -1,6 +1,6 @@
 use crate::de::{Error, Location};
-use std::str::FromStr;
 use saphyr_parser::ScalarStyle;
+use std::str::FromStr;
 
 /// Parse a YAML 1.1 boolean from a &str (handles the "Norway problem").
 ///
@@ -247,7 +247,7 @@ where
 /// Used by:
 /// - Unit handling and some edge cases where absence is tolerated.
 #[inline]
-pub (crate) fn scalar_is_nullish(value: &str, style: &ScalarStyle) -> bool {
+pub(crate) fn scalar_is_nullish(value: &str, style: &ScalarStyle) -> bool {
     if !matches!(style, ScalarStyle::Plain) {
         return false;
     }
@@ -266,15 +266,34 @@ pub (crate) fn scalar_is_nullish(value: &str, style: &ScalarStyle) -> bool {
 /// Used by:
 /// - `deserialize_option` only (does not affect other types).
 #[inline]
-pub (crate) fn scalar_is_nullish_for_option(value: &str, style: &ScalarStyle) -> bool {
+pub(crate) fn scalar_is_nullish_for_option(value: &str, style: &ScalarStyle) -> bool {
     // For Option: treat empty unquoted scalar as null, and plain "~"/"null" as null.
-    let empty_unquoted =
-        value.is_empty() && !matches!(style, ScalarStyle::SingleQuoted | ScalarStyle::DoubleQuoted);
-    let plain_nullish =
-        matches!(style, ScalarStyle::Plain) && (value == "~" || value.eq_ignore_ascii_case("null"));
-    empty_unquoted || plain_nullish
+    (value.is_empty() && !matches!(style, ScalarStyle::SingleQuoted | ScalarStyle::DoubleQuoted)) || // empty_unquoted
+    (matches!(style, ScalarStyle::Plain) && (value == "~" || value.eq_ignore_ascii_case("null"))) // plain_nullish
 }
 
+/// Returns `true` if the string represents a decimal number with a redundant leading zero,
+/// such as `0127`, `+0127`, or `-0127`.
+/// Explicit radices (`0x`, `0o`, `0b`) are excluded.
+/// A `true` result means this token should be avoided as an integer.
+pub(crate) fn leading_zero_decimal(t: &str) -> bool {
+    let s = t.trim();
+
+    // Handle optional sign
+    let digits = s.strip_prefix(['+', '-']).unwrap_or(s);
+
+    // Must start with 0 but not just "0"
+    if let Some(rest) = digits.strip_prefix('0') {
+        if let Some(next) = rest.chars().next() {
+            // If next char denotes radix, then allow
+            !matches!(next, 'x' | 'X' | 'o' | 'O' | 'b' | 'B')
+        } else {
+            false // "0", "+0", "-0"
+        }
+    } else {
+        false
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -323,8 +342,7 @@ mod tests {
     #[test]
     fn parse_int_signed_preserves_error_location() {
         let loc = sample_location();
-        let err = parse_int_signed::<i64>("0x8000000000000000", "i64", loc, false)
-            .unwrap_err();
+        let err = parse_int_signed::<i64>("0x8000000000000000", "i64", loc, false).unwrap_err();
         match err {
             Error::Message { location, .. } => assert_eq!(location, loc),
             other => panic!("unexpected error variant: {:?}", other),
