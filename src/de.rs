@@ -702,7 +702,14 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
             Some(Ev::MapEnd { location }) => {
                 Err(Error::msg("unexpected mapping end").with_location(*location))
             }
-            None => Err(Error::eof().with_location(self.ev.last_location())),
+            None => {
+                // When deserializing typeless positions (for example
+                // `serde_json::Value`) a completely empty document should be
+                // treated as YAML null rather than an EOF error. Structured
+                // entry points like `deserialize_map` still surface EOF
+                // through their dedicated `expect_*` helpers.
+                visitor.visit_unit()
+            }
         }
     }
 

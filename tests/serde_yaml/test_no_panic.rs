@@ -27,7 +27,6 @@ fn test_yaml_malformed() {
 }
 
 #[test]
-#[ignore]
 fn test_lexer_errors() {
     let yaml_input = ">\n@ !";
     let result: Result<serde_json::Value, _> = serde_saphyr::from_str(yaml_input);
@@ -95,7 +94,7 @@ fn test_unexpected_eof() {
 
 #[test]
 fn test_empty_input() {
-    assert_eq!(serde_json::from_str::<Value>("").unwrap(), Value::Null);
+    assert_eq!(serde_saphyr::from_str::<Value>("").unwrap(), Value::Null);
 }
 
 #[test]
