@@ -1056,7 +1056,22 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
     /// `!!binary` scalar as a byte *sequence* view when the caller expects a
     /// sequence of u8.
     fn deserialize_seq<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        if let Some(Ev::Scalar { tag, .. }) = self.ev.peek()? {
+        if let Some(Ev::Scalar { value: s, tag, style, .. }) = self.ev.peek()? {
+            // Treat null-like scalar as an empty sequence.
+            if tag == &SfTag::Null || scalar_is_nullish(s, style) {
+                let _ = self.ev.next()?; // consume the null-like scalar
+                struct EmptySeq;
+                impl<'de> de::SeqAccess<'de> for EmptySeq {
+                    type Error = Error;
+                    fn next_element_seed<T>(&mut self, _seed: T) -> Result<Option<T::Value>, Error>
+                    where
+                        T: de::DeserializeSeed<'de>,
+                    {
+                        Ok(None)
+                    }
+                }
+                return visitor.visit_seq(EmptySeq);
+            }
             if tag == &SfTag::Binary {
                 let (scalar, data_location) = match self.ev.next()? {
                     Some(Ev::Scalar {
@@ -1152,6 +1167,29 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
     /// Caller: Serde field visitors for maps and for Rust structs
     /// (which Serde also requests via `deserialize_map`).
     fn deserialize_map<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
+        // Treat null-like scalar as an empty map/struct.
+        if let Some(Ev::Scalar { value: s, tag, style, .. }) = self.ev.peek()? {
+            if tag == &SfTag::Null || scalar_is_nullish(s, style) {
+                let _ = self.ev.next()?; // consume the null-like scalar
+                struct EmptyMap;
+                impl<'de> de::MapAccess<'de> for EmptyMap {
+                    type Error = Error;
+                    fn next_key_seed<K>(&mut self, _seed: K) -> Result<Option<K::Value>, Error>
+                    where
+                        K: de::DeserializeSeed<'de>,
+                    {
+                        Ok(None)
+                    }
+                    fn next_value_seed<Vv>(&mut self, _seed: Vv) -> Result<Vv::Value, Error>
+                    where
+                        Vv: de::DeserializeSeed<'de>,
+                    {
+                        unreachable!("no values in empty map")
+                    }
+                }
+                return visitor.visit_map(EmptyMap);
+            }
+        }
         self.expect_map_start()?;
         /// Streaming `MapAccess` over the underlying `Events`.
         struct MA<'e> {

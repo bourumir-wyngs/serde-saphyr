@@ -52,6 +52,10 @@ struct RecFrame {
 /// - Records anchored subtrees (containers and scalars)
 /// - Resolves aliases by injecting recorded buffers (replaying)
 pub(crate) struct LiveEvents<'a> {
+    /// Whether any content event has been produced in the current stream.
+    produced_any_in_doc: bool,
+    /// Whether we emitted a synthetic null scalar to represent an empty document.
+    synthesized_null_emitted: bool,
     /// Underlying streaming parser that produces raw events from the input.
     parser: Parser<'a, StrInput<'a>>,
     /// Single-item lookahead buffer (peeked event not yet consumed).
@@ -95,6 +99,8 @@ impl<'a> LiveEvents<'a> {
     /// A configured `LiveEvents` ready to stream events.
     pub(crate) fn new(input: &'a str, budget: Option<Budget>, alias_limits: AliasLimits, stop_at_doc_end: bool) -> Self {
         Self {
+            produced_any_in_doc: false,
+            synthesized_null_emitted: false,
             parser: Parser::new_from_str(input),
             look: None,
             inject: Vec::new(),
@@ -155,6 +161,7 @@ impl<'a> LiveEvents<'a> {
                 self.observe_budget_for_replay(&ev)?;
                 self.record(&ev, /*is_start*/ false, /*seeded_new_frame*/ false);
                 self.last_location = ev.location();
+                self.produced_any_in_doc = true;
                 return Ok(Some(ev));
             } else {
                 self.inject.pop();
@@ -226,6 +233,7 @@ impl<'a> LiveEvents<'a> {
                         self.anchors[anchor_id] = Some(vec![ev.clone()].into_boxed_slice());
                     }
                     self.last_location = location;
+                    self.produced_any_in_doc = true;
                     return Ok(Some(ev));
                 }
 
@@ -245,6 +253,7 @@ impl<'a> LiveEvents<'a> {
                     // - For ordinary (non-anchored) starts, record into *all* frames.
                     self.record(&ev, /*is_start*/ true, /*seeded_new_frame*/ anchor_id != 0);
                     self.last_location = location;
+                    self.produced_any_in_doc = true;
                     return Ok(Some(ev));
                 }
                 Event::SequenceEnd => {
@@ -252,6 +261,7 @@ impl<'a> LiveEvents<'a> {
                     self.record(&ev, false, false);
                     self.bump_depth_on_end().map_err(|err| err.with_location(location))?; // may finalize frames
                     self.last_location = location;
+                    self.produced_any_in_doc = true;
                     return Ok(Some(ev));
                 }
 
@@ -265,6 +275,7 @@ impl<'a> LiveEvents<'a> {
                     }
                     self.record(&ev, /*is_start*/ true, /*seeded_new_frame*/ anchor_id != 0);
                     self.last_location = location;
+                    self.produced_any_in_doc = true;
                     return Ok(Some(ev));
                 }
                 Event::MappingEnd => {
@@ -272,6 +283,7 @@ impl<'a> LiveEvents<'a> {
                     self.record(&ev, false, false);
                     self.bump_depth_on_end().map_err(|err| err.with_location(location))?;
                     self.last_location = location;
+                    self.produced_any_in_doc = true;
                     return Ok(Some(ev));
                 }
 
@@ -315,6 +327,21 @@ impl<'a> LiveEvents<'a> {
 
                 Event::Nothing => continue,
             }
+        }
+
+        // True EOF. If we have not produced any content in the current document,
+        // synthesize a single null scalar event to represent an empty document.
+        if !self.produced_any_in_doc {
+            let ev = Ev::Scalar {
+                value: String::new(),
+                tag: SfTag::Null,
+                style: ScalarStyle::Plain,
+                location: self.last_location,
+            };
+            self.produced_any_in_doc = true;
+            self.synthesized_null_emitted = true;
+            self.last_location = ev.location();
+            return Ok(Some(ev));
         }
 
         Ok(None)
@@ -490,4 +517,5 @@ impl<'a> Events for LiveEvents<'a> {
 
 impl<'a> LiveEvents<'a> {
     pub(crate) fn seen_doc_end(&self) -> bool { self.seen_doc_end }
+    pub(crate) fn synthesized_null_emitted(&self) -> bool { self.synthesized_null_emitted }
 }

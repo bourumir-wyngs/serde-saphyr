@@ -497,7 +497,6 @@ fn test_ignore_tag() {
 }
 
 #[test]
-#[ignore]
 fn test_no_required_fields() {
     #[derive(Deserialize, PartialEq, Debug)]
     pub struct NoRequiredFields {

@@ -231,7 +231,20 @@ pub fn from_str_with_options<T: DeserializeOwned>(
     };
     // Do not stop at DocumentEnd; we'll probe for trailing content/errors explicitly.
     let mut src = LiveEvents::new(input, options.budget, options.alias_limits, false);
-    let value = T::deserialize(crate::de::Deser::new(&mut src, cfg))?;
+    let value_res = T::deserialize(crate::de::Deser::new(&mut src, cfg));
+    let value = match value_res {
+        Ok(v) => v,
+        Err(e) => {
+            if src.synthesized_null_emitted() {
+                // If the only thing in the input was an empty document (synthetic null),
+                // surface this as an EOF error to preserve expected error semantics
+                // for incompatible target types (e.g., bool).
+                return Err(Error::eof().with_location(src.last_location()));
+            } else {
+                return Err(e);
+            }
+        }
+    };
 
     // After finishing first document, peek ahead to detect either another document/content
     // or trailing garbage. If a scan error occurs but we have seen a DocumentEnd ("..."),
