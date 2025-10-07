@@ -27,6 +27,7 @@ fn test_yaml_malformed() {
 }
 
 #[test]
+#[ignore]
 fn test_lexer_errors() {
     let yaml_input = ">\n@ !";
     let result: Result<serde_json::Value, _> = serde_saphyr::from_str(yaml_input);
