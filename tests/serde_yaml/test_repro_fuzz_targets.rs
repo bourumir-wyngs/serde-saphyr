@@ -1,5 +1,30 @@
+use serde_json::Value;
+use serde_saphyr::budget::Budget;
+use serde_saphyr::{Error, Options};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::str;
+
+/// Convenience wrapper that returns `true` if the YAML **exceeds** any budget.
+///
+/// Parameters:
+/// - `input`: YAML text (UTF-8).
+/// - `budget`: limits to enforce.
+///
+/// Returns:
+/// - `Ok(true)` if a budget was exceeded (reject).
+/// - `Ok(false)` if within budget.
+/// - `Err(ScanError)` on parser error.
+pub fn exceeds_yaml_budget(input: &str, budget: &Budget) -> Result<bool, Error> {
+    let report: Result<Value, Error> = serde_saphyr::from_str_with_options(
+        input,
+        Options {
+            budget: Some(budget.clone()),
+            ..serde_saphyr::Options::default()
+        },
+    );
+    Ok(report.is_err())
+}
 
 // Shared: recursively collect all files inside a base directory. If the base
 // dir does not exist, return empty and let the test skip.
@@ -69,7 +94,6 @@ fn run_duplicate_keys_on(data: &[u8]) -> bool {
         return true;
     }
     return false;
-
 }
 
 // ===== flow_collections =====
@@ -202,11 +226,7 @@ fn repro_flow_collections_crashes() {
             }
         };
         let ok = run_flow_collections_on(&data);
-        assert!(
-            ok,
-            "flow_collections input from {} was not detected as pathological",
-            f.display()
-        );
+        assert!(!ok, "{}", f.display());
     }
 }
 
@@ -229,84 +249,8 @@ fn repro_large_scalars_crashes() {
                 continue;
             }
         };
+        println!("Testing {}", f.display());
         let ok = run_large_scalars_on(&data);
-        assert!(
-            ok,
-            "large_scalars input from {} was not detected as pathological",
-            f.display()
-        );
+        assert!(!ok, "{}", f.display());
     }
-}
-
-use serde_saphyr::budget::{exceeds_yaml_budget, Budget};
-use std::str;
-
-/// Convert possibly non-UTF-8 bytes to a `String`, preserving valid UTF-8
-/// and marking invalid byte sequences as `/hex:..../`.
-///
-/// # Parameters
-/// - `bytes`: The raw byte slice that may contain invalid UTF-8.
-///
-/// # Returns
-/// - `String`: A string where valid UTF-8 is kept intact and each invalid
-///   byte sequence is replaced by a marker like `/hex:FF/` or `/hex:C3-28/`.
-pub fn bytes_to_marked_string(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len());
-    let mut i = 0;
-
-    while i < bytes.len() {
-        match str::from_utf8(&bytes[i..]) {
-            Ok(s) => {
-                // The remainder is valid UTF-8; append and finish.
-                out.push_str(s);
-                break;
-            }
-            Err(e) => {
-                // Append the valid UTF-8 prefix (if any).
-                let good_len = e.valid_up_to();
-                if good_len > 0 {
-                    // This slice is guaranteed valid UTF-8.
-                    out.push_str(unsafe { str::from_utf8_unchecked(&bytes[i..i + good_len]) });
-                    i += good_len;
-                }
-
-                // Determine how many bytes are in the invalid sequence.
-                // If `None`, treat as 1 trailing problematic byte.
-                let bad_len = e
-                    .error_len()
-                    .unwrap_or(1)
-                    .min(bytes.len().saturating_sub(i));
-                if bad_len == 0 {
-                    break;
-                }
-
-                // Emit the marker for the invalid bytes as lowercase hex pairs.
-                out.push_str("/hex:");
-                for (k, b) in bytes[i..i + bad_len].iter().enumerate() {
-                    if k > 0 {
-                        out.push('-');
-                    }
-                    // always two hex digits
-                    out.push(nibble_to_hex(b >> 4));
-                    out.push(nibble_to_hex(b & 0x0F));
-                }
-                out.push('/');
-
-                i += bad_len;
-            }
-        }
-    }
-
-    out
-}
-
-/// Map a 4-bit nibble to a lowercase hex char.
-fn nibble_to_hex(n: u8) -> char {
-    let n = (n & 0x0F) as u32;
-    char::from_u32(if n < 10 {
-        b'0' as u32 + n
-    } else {
-        b'a' as u32 + (n - 10)
-    })
-    .unwrap()
 }

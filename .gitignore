@@ -3,3 +3,4 @@
 /tests/y_*.rs
 /tests/yaml-test-suite-tests/notes.txt
 /announcement.md
+/tests/fuzz_crashes
