@@ -538,3 +538,197 @@ pub fn from_slice_multiple_with_options<T: DeserializeOwned>(
     let s = std::str::from_utf8(bytes).map_err(|_| Error::msg("input is not valid UTF-8"))?;
     from_multiple_with_options(s, options)
 }
+
+
+/// Serialize multiple documents into a YAML string.
+///
+/// Serializes each value in the provided slice as an individual YAML document.
+/// Documents are separated by a standard YAML document start marker ("---\n").
+/// No marker is emitted before the first document.
+///
+/// Example
+///
+/// ```rust
+/// use serde::Serialize;
+///
+/// #[derive(Serialize)]
+/// struct Point { x: i32 }
+///
+/// let docs = vec![Point { x: 1 }, Point { x: 2 }];
+/// let out = serde_saphyr::to_string_multiple(&docs).unwrap();
+/// assert_eq!(out, "x: 1\n---\nx: 2\n");
+/// ```
+pub fn to_string_multiple<T: serde::Serialize>(values: &[T]) -> std::result::Result<String, crate::ser::Error> {
+    let mut out = String::new();
+    let mut first = true;
+    for v in values {
+        if !first {
+            out.push_str("---\n");
+        }
+        first = false;
+        to_writer(&mut out, v)?;
+    }
+    Ok(out)
+}
+
+/// Deserialize a single YAML document from any `std::io::Read`.
+///
+/// The entire reader is read into memory (buffered) and then deserialized
+/// using the same logic as [`from_slice`]. This function is convenient when
+/// your YAML input comes from a file or any other IO stream.
+///
+/// Example
+///
+/// ```rust
+/// use serde::{Deserialize, Serialize};
+/// use std::collections::HashMap;
+/// use serde_json::Value;
+///
+/// #[derive(Debug, PartialEq, Serialize, Deserialize)]
+/// struct Point {
+///     x: i32,
+///     y: i32,
+/// }
+///
+/// let yaml = "x: 3\ny: 4\n";
+/// let reader = std::io::Cursor::new(yaml.as_bytes());
+/// let p: Point = serde_saphyr::from_reader(reader).unwrap();
+/// assert_eq!(p, Point { x: 3, y: 4 });
+///
+/// // It also works for dynamic values like serde_json::Value
+/// let mut big = String::new();
+/// let mut i = 0usize;
+/// while big.len() < 64 * 1024 { big.push_str(&format!("k{0}: v{0}\n", i)); i += 1; }
+/// let reader = std::io::Cursor::new(big.as_bytes());
+/// let _value: Value = serde_saphyr::from_reader(reader).unwrap();
+/// ```
+/// Create a YAML Deserializer from any `std::io::Read`.
+///
+/// This reads the entire reader into memory and exposes a Serde Deserializer
+/// over it. You can either:
+/// - Pass the returned value to `T::deserialize(...)` (streaming style), or
+/// - Call `.unwrap::<T>()` on it to directly obtain a `T` (panicking on error),
+///   which is convenient in tests.
+///
+/// Example
+///
+/// ```rust
+/// use serde::{Deserialize, Serialize};
+/// use std::collections::HashMap;
+/// use serde_json::Value;
+///
+/// #[derive(Debug, PartialEq, Serialize, Deserialize)]
+/// struct Point { x: i32, y: i32 }
+///
+/// // As a Deserializer
+/// let yaml = "x: 3\ny: 4\n";
+/// let reader = std::io::Cursor::new(yaml.as_bytes());
+/// let de = serde_saphyr::from_reader(reader);
+/// let p = Point::deserialize(de).unwrap();
+/// assert_eq!(p, Point { x: 3, y: 4 });
+///
+/// // Directly to a value via unwrap::<T>()
+/// let mut big = String::new();
+/// let mut i = 0usize;
+/// while big.len() < 64 * 1024 { big.push_str(&format!("k{0}: v{0}\n", i)); i += 1; }
+/// let reader = std::io::Cursor::new(big.as_bytes());
+/// let _value: Value = serde_saphyr::from_reader(reader).unwrap();
+/// ```
+pub fn from_reader<R: std::io::Read>(mut reader: R) -> ReaderDeserializer {
+    use std::io::Read as _;
+    let mut buf = String::new();
+    reader.read_to_string(&mut buf).map_err(|e| Error::msg(format!("io error: {}", e))).unwrap();
+    ReaderDeserializer { buf }
+}
+
+/// Deserializer over an owned in-memory YAML buffer.
+pub struct ReaderDeserializer {
+    buf: String,
+}
+
+impl ReaderDeserializer {
+    /// Deserialize into a concrete `T`, panicking on error (like `Result::unwrap`).
+    pub fn unwrap<T: DeserializeOwned>(self) -> T {
+        match from_str::<T>(&self.buf) {
+            Ok(v) => v,
+            Err(e) => panic!("{}", e),
+        }
+    }
+}
+
+impl<'de> serde::de::Deserializer<'de> for ReaderDeserializer {
+    type Error = Error;
+
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        // Reuse the main Deserializer with default options.
+        let options = Options::default();
+        let cfg = crate::de::Cfg {
+            dup_policy: options.duplicate_keys,
+            legacy_octal_numbers: options.legacy_octal_numbers,
+            strict_booleans: options.strict_booleans,
+        };
+        let mut src = LiveEvents::new(&self.buf, options.budget, options.alias_limits, false);
+        crate::de::Deser::new(&mut src, cfg).deserialize_any(visitor)
+    }
+
+    // Delegate the rest to `deserialize_any` which handles all YAML node kinds.
+    fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_f64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_char<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_str<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_string<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_unit_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_newtype_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_tuple<V>(self, _len: usize, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_tuple_struct<V>(self, _name: &'static str, _len: usize, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_struct<V>(self, _name: &'static str, _fields: &'static [&'static str], visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_enum<V>(self, _name: &'static str, _variants: &'static [&'static str], visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    fn deserialize_ignored_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+}

@@ -16,6 +16,6 @@ fn test_from_str_multi() {
 #[test]
 fn test_to_string_multi() {
     let points = vec![Point { x: 1 }, Point { x: 2 }];
-    let out = serde_saphyr::to_string_multi(&points).unwrap();
+    let out = serde_saphyr::to_string_multiple(&points).unwrap();
     assert_eq!(out, "x: 1\n---\nx: 2\n");
 }

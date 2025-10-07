@@ -19,5 +19,11 @@ mod test_repetition_limit;
 mod test_enum_repetition_limit;
 mod test_composite_keys;
 mod test_de;
+mod test_flow_seq;
+mod test_flow_map;
+mod test_multi_helpers;
+mod test_stream_deserializer;
+mod test_writer_reader;
+mod test_enum_alias_nested;
 
 

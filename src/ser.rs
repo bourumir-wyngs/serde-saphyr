@@ -34,6 +34,7 @@ use serde::ser::{
     self, Serialize, SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant,
     SerializeTuple, SerializeTupleStruct, SerializeTupleVariant, Serializer,
 };
+use serde::de::{Deserialize, Deserializer};
 use std::collections::HashMap;
 use std::fmt::{self, Write};
 use std::rc::{Rc, Weak as RcWeak};
@@ -81,10 +82,10 @@ pub struct RcWeakAnchor<T>(pub RcWeak<T>);
 pub struct ArcWeakAnchor<T>(pub ArcWeak<T>);
 
 /// Force a sequence to be emitted in flow style: `[a, b, c]`.
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FlowSeq<T>(pub T);
 /// Force a mapping to be emitted in flow style: `{k1: v1, k2: v2}`.
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FlowMap<T>(pub T);
 
 /// Block literal string (`|`), lines are preserved.
@@ -181,6 +182,19 @@ impl<T: Serialize> Serialize for FlowMap<T> {
         s.serialize_newtype_struct(NAME_FLOW_MAP, &self.0)
     }
 }
+
+// Deserialization for flow wrappers: delegate to inner T during deserialization.
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for FlowSeq<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        T::deserialize(deserializer).map(FlowSeq)
+    }
+}
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for FlowMap<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        T::deserialize(deserializer).map(FlowMap)
+    }
+}
+
 impl<'a> Serialize for LitStr<'a> {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
         s.serialize_newtype_struct(NAME_LIT_STR, &self.0)
@@ -777,6 +791,8 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
         let flow = self.take_flow_for_seq();
         if flow {
             self.write_scalar_prefix_if_anchor()?;
+            // Ensure a space after a preceding colon when this sequence is a mapping value.
+            self.write_space_if_pending()?;
             if self.at_line_start { self.write_indent(self.depth)?; }
             self.out.write_str("[")?;
             self.at_line_start = false;
@@ -799,11 +815,14 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             // - Otherwise (top-level or already at line start), keep current depth.
             let depth_next = if was_inline_value {
                 if after_map_key {
-                    self.current_map_depth.unwrap_or(self.depth) + 1
+                    // Standard YAML: indent sequence items one level under the mapping key.
+                    self.depth + 1
                 } else {
+                    // After a list dash, indent inner sequence items one level.
                     self.depth + 1
                 }
             } else {
+                // Top-level sequence at current indentation.
                 self.depth
             };
             Ok(SeqSer { ser: self, depth: depth_next, flow: false, first: true })
@@ -842,6 +861,8 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
         let flow = self.take_flow_for_map();
         if flow {
             self.write_scalar_prefix_if_anchor()?;
+            // Ensure a space after a preceding colon when this mapping is a value.
+            self.write_space_if_pending()?;
             if self.at_line_start { self.write_indent(self.depth)?; }
             self.out.write_str("{")?;
             self.at_line_start = false;

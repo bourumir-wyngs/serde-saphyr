@@ -2,12 +2,13 @@ use indoc::indoc;
 use serde::Deserialize;
 
 use std::fmt::Debug;
+use serde_saphyr::Error;
 
 fn test_de<T>(yaml: &str, expected: &T)
 where
     T: serde::de::DeserializeOwned + PartialEq + Debug,
 {
-    let deserialized: T = T::deserialize(Deserializer::from_str(yaml)).unwrap();
+    let deserialized: T = serde_saphyr::from_str(yaml).unwrap();
     assert_eq!(*expected, deserialized);
 }
 
@@ -28,10 +29,12 @@ struct Wrapper {
 fn test_alias_in_struct_variant() {
     let yaml = indoc! {
         "
-        first: !A
-          val: &a shared
-        second: !A
-          val: *a
+        first:
+          A:
+            val: &a shared
+        second:
+          A:
+            val: *a
         "
     };
     let expected = Wrapper {
@@ -56,9 +59,10 @@ enum TupleEnum {
 fn test_alias_in_tuple_variant() {
     let yaml = indoc! {
         "
-        item: !Variant
-          - &first 1
-          - 2
+        item:
+          Variant:
+            - &first 1
+            - 2
         num: *first
         "
     };
@@ -82,13 +86,14 @@ enum InnerEnum {
 fn test_nested_enum_alias_error() {
     let yaml = indoc! {
         "
-        outer: !Inner
-          !Item
-            - &v 0
+        outer:
+          Innerr:
+            Item:
+              - &v 0
         alias: *v
         "
     };
-    let result = StructWithOuter::deserialize(Deserializer::from_str(yaml));
+    let result: Result<Outer, Error> = serde_saphyr::from_str(yaml);
     let msg = result.unwrap_err().to_string();
     assert!(msg.contains("unknown variant"), "unexpected message: {}", msg);
 }
