@@ -29,8 +29,8 @@ mod serializer_options;
 fn has_inline_comment_followed_by_top_level_content(input: &str) -> bool {
     let mut lines = input.lines();
     while let Some(line) = lines.next() {
-        // Normalize: ignore UTF-8 BOM if present in the first line
-        let line = if line.starts_with('\u{FEFF}') { &line[1..] } else { line };
+        // Normalize: ignore UTF-8 BOM if present in the first line. Use strip_prefix to avoid slicing at a non-UTF8 boundary.
+        let line = if let Some(rest) = line.strip_prefix('\u{FEFF}') { rest } else { line };
         let trimmed = line.trim_end();
 
         // Find position of inline comment '#'
@@ -212,6 +212,8 @@ pub fn from_str_with_options<T: DeserializeOwned>(
     input: &str,
     options: Options,
 ) -> Result<T, Error> {
+    // Normalize: ignore a single leading UTF-8 BOM if present.
+    let input = if let Some(rest) = input.strip_prefix('\u{FEFF}') { rest } else { input };
     // Tripwire for debugging: inputs with "] ]" should be rejected in single-doc API.
     if input.contains("] ]") {
         return Err(Error::msg("unexpected trailing closing delimiter").with_location(Location::UNKNOWN));
@@ -341,6 +343,8 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
     input: &str,
     options: Options,
 ) -> Result<Vec<T>, Error> {
+    // Normalize: ignore a single leading UTF-8 BOM if present.
+    let input = if let Some(rest) = input.strip_prefix('\u{FEFF}') { rest } else { input };
     let cfg = crate::de::Cfg {
         dup_policy: options.duplicate_keys,
         legacy_octal_numbers: options.legacy_octal_numbers,

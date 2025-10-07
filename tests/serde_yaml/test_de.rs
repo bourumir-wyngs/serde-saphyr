@@ -334,7 +334,6 @@ fn test_number_alias_as_string() {
 }
 
 #[test]
-#[ignore]
 fn test_byte_order_mark() {
     let yaml = "\u{feff}- 0\n";
     let expected = vec![0];
