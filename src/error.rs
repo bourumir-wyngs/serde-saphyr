@@ -9,9 +9,17 @@ use crate::budget::BudgetBreach;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Location {
     /// 1-indexed row number in the input stream.
-    pub row: u32,
+    pub (crate) row: u32,
     /// 1-indexed column number in the input stream.
-    pub column: u32,
+    pub (crate) column: u32,
+}
+
+impl Location {
+    /// serde-yaml compatible line information
+    pub fn line(&self) -> u64 { self.row as u64 }
+
+    /// serde-yaml compatible column information
+    pub fn column(&self) -> u64 { self.column as u64}
 }
 
 impl Location {
@@ -35,17 +43,6 @@ impl Location {
         // 4 Gb is larger than any YAML document I can imagine, and also this is
         // error reporting only.
         Self { row: row as u32, column: column as u32 }
-    }
-
-    /// Whether this location is populated (non-zero row/column).
-    ///
-    /// Returns:
-    /// - `true` when both row and column are set; `false` otherwise.
-    ///
-    /// Used by:
-    /// - Error formatting to decide if coordinates should be shown.
-    fn is_known(&self) -> bool {
-        self.row != 0 && self.column != 0
     }
 }
 
@@ -173,7 +170,7 @@ impl Error {
             | Error::Eof { location }
             | Error::Unexpected { location, .. }
             | Error::UnknownAnchor { location, .. } => {
-                if location.is_known() {
+                if location != &Location::UNKNOWN {
                     Some(*location)
                 } else {
                     None
@@ -227,7 +224,7 @@ impl de::Error for Error {
 /// Returns:
 /// - `fmt::Result` as required by `Display`.
 fn fmt_with_location(f: &mut fmt::Formatter<'_>, msg: &str, location: &Location) -> fmt::Result {
-    if location.is_known() {
+    if location != &Location::UNKNOWN {
         write!(
             f,
             "{msg} at line {}, column {}",

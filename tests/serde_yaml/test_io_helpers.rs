@@ -21,6 +21,6 @@ fn test_error_location() {
     let result: Result<Point, _> = serde_saphyr::from_str("@");
     let err = result.unwrap_err();
     let loc = err.location().expect("location missing");
-    assert_eq!(loc.row, 1);
-    assert_eq!(loc.column, 1);
+    assert_eq!(loc.line(), 1);
+    assert_eq!(loc.column(), 1);
 }
