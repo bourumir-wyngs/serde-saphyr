@@ -35,7 +35,7 @@ In our [benchmarking project](https://github.com/bourumir-wyngs/serde-saphyr-ben
 Benchmarking was done with [Criterion](https://crates.io/crates/criterion), giving the following results:
 
 <p align="center">
-<img src="https://github.com/bourumir-wyngs/serde-saphyr-benchmark/blob/master/figures/relative_vs_baseline.png?raw=true"
+<img src="https://github.com/bourumir-wyngs/serde-saphyr-benchmark/blob/master/figures/yaml_parse/relative_vs_baseline.png?raw=true"
 alt="Relative median time vs baseline"
 width="60%">
 </p>

@@ -26,6 +26,11 @@ mod test_stream_deserializer;
 mod test_writer_reader;
 mod test_enum_alias_nested;
 mod test_enum_external;
+mod test_historical_failures;
+
+
+// This test takes too long in "test" configuration. If must only run in "release"
+// and the fuzz folder is currently too many large files to be practical to commit.
 //mod test_repro_fuzz_targets;
 
 
