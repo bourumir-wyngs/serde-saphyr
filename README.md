@@ -307,7 +307,7 @@ assert!(yaml.contains("name: Ada"));
 
 #### Anchors (Rc/Arc/Weak)
 
-Serde-saphyr can conceptyally connect YAML anchors with Rust shared references (Rc, Weak and Arc). You need to use wrappers to activate this feture:
+Serde-saphyr can conceptually connect YAML anchors with Rust shared references (Rc, Weak and Arc). You need to use wrappers to activate this feture:
 
 - `RcAnchor<T>` and `ArcAnchor<T>` emit anchors like `&a1` on first occurrence and may emit aliases `*a1` later.
 - `RcWeakAnchor<T>` and `ArcWeakAnchor<T>` serialize a weak ref: if the strong pointer is gone, it becomes `null`.
@@ -316,24 +316,36 @@ Serde-saphyr can conceptyally connect YAML anchors with Rust shared references (
 use serde::Serialize;
 use std::rc::Rc;
 
-#[derive(Serialize)]
-struct Node { name: String }
+    #[derive(Serialize, Clone)]
+    struct Node {
+        name: String,
+    }
 
-let shared = Rc::new(Node { name: "n".into() });
-let yaml = serde_saphyr::to_string(&serde_saphyr::RcAnchor(shared)).unwrap();
-assert!(yaml.contains("&a"));
+    let n1 = RcAnchor(Rc::new(Node {
+        name: "node one".to_string(),
+    }));
+
+    let n2 = RcAnchor(Rc::new(Node {
+        name: "node two".to_string(),
+    }));
+
+    let data = vec![n1.clone(), n1.clone(), n1.clone(), n2.clone(), n1.clone(), n2.clone()];
+    println!("{}", serde_saphyr::to_string(&data).expect("Must serialize"));```
 ```
 
-To customize indentation or anchor names, use `SerializerOptions`:
-
-```rust
-let mut buf = String::new();
-let opts = serde_saphyr::SerializerOptions {
-    indent_step: 4,
-    anchor_generator: Some(|id| format!("id{id}")),
-};
-serde_saphyr::to_writer_with_options(&mut buf, &42, opts).unwrap();
+This will produce the following YAML:
+```yaml
+- &a1
+  name: node one
+- *a1
+- *a1
+- &a2
+  name: node two
+- *a1
+- *a2
 ```
 
-These wrappers on the structure fields do not hinder deserialization.
+When anchors are highly repetitive and also large, packing them into references can make YAML more human-readable. 
+In [`SerializerOptions`](https://docs.rs/serde-saphyr/latest/serde_saphyr/ser/struct.SerializerOptions.html), you can set
+your own function to generate anchor names.
 

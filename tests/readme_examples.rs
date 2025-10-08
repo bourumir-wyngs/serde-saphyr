@@ -1,6 +1,7 @@
-use std::collections::HashMap;
-
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::rc::Rc;
+use serde_saphyr::RcAnchor;
 
 #[test]
 fn config_example_compiles() {
@@ -108,7 +109,6 @@ fn binary_scalar_example_compiles() {
     assert_eq!(blob.data, b"hello");
 }
 
-
 #[test]
 fn readme_multiple_documents_stream_example_compiles() {
     #[derive(Debug, Deserialize, PartialEq)]
@@ -137,9 +137,36 @@ fn readme_multiple_documents_stream_example_compiles() {
     assert_eq!(
         docs,
         vec![
-            Document::Person { name: "Alice".to_string(), age: 30 },
-            Document::Pet { kind: "cat".to_string() },
-            Document::Person { name: "Bob".to_string(), age: 25 },
+            Document::Person {
+                name: "Alice".to_string(),
+                age: 30
+            },
+            Document::Pet {
+                kind: "cat".to_string()
+            },
+            Document::Person {
+                name: "Bob".to_string(),
+                age: 25
+            },
         ]
     );
+}
+
+#[test]
+fn serialize_anchors() {
+    #[derive(Serialize, Clone)]
+    struct Node {
+        name: String,
+    }
+
+    let n1 = RcAnchor(Rc::new(Node {
+        name: "node one".to_string(),
+    }));
+
+    let n2 = RcAnchor(Rc::new(Node {
+        name: "node two".to_string(),
+    }));
+
+    let data = vec![n1.clone(), n1.clone(), n1.clone(), n2.clone(), n1.clone(), n2.clone()];
+    println!("{}", serde_saphyr::to_string(&data).expect("Must serialize"));
 }
