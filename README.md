@@ -9,7 +9,7 @@
 [![Fuzz & Audit](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/ci.yml/badge.svg)](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/ci.yml)
 
 **serde-saphyr** is a strongly typed YAML deserializer built on
-[`saphyr-parser`](https://crates.io/crates/saphyr-parser). It aims to be **panic-free** on malformed input and to avoid `unsafe` code in library code. The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.” It is not a fork of the older [`serde-yaml`](https://crates.io/crates/serde_yaml) and does not share any code with it (some tests are reused).
+[`saphyr-parser`](https://crates.io/crates/saphyr-parser). It aims to be **panic-free** on malformed input and to avoid `unsafe` code in library code. The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.” It is not a fork of the older [`serde-yaml`](https://crates.io/crates/serde_yaml) and does not share any code with it (some tests are reused). While first versions only provided deserializer, since 0.0.5 serde-saphyr is complete package featuring serializer as well.
 
 ### Why this approach?
 
@@ -42,57 +42,12 @@ width="60%">
 
 As seen, serde-saphyr exceeds others by performance, even with budget check enabled. 
 
-### Serialization
-
-While first versions only included deserializer, from 0.0.5 this library can also serialize. 
-
-Example:
-
-```rust
-use serde::Serialize;
-
-#[derive(Serialize)]
-struct User { name: String, active: bool }
-
-let yaml = serde_saphyr::to_string(&User { name: "Ada".into(), active: true }).unwrap();
-assert!(yaml.contains("name: Ada"));
-```
-
-#### Anchors (Rc/Arc/Weak)
-
-Serde-saphyr can conceptyally connect YAML anchors with Rust shared references (Rc, Weak and De). You need to use wrappers to activate this feture:
-
-- `RcAnchor<T>` and `ArcAnchor<T>` emit anchors like `&a1` on first occurrence and may emit aliases `*a1` later.
-- `RcWeakAnchor<T>` and `ArcWeakAnchor<T>` serialize a weak ref: if the strong pointer is gone, it becomes `null`.
-
-```rust
-use serde::Serialize;
-use std::rc::Rc;
-
-#[derive(Serialize)]
-struct Node { name: String }
-
-let shared = Rc::new(Node { name: "n".into() });
-let yaml = serde_saphyr::to_string(&serde_saphyr::RcAnchor(shared)).unwrap();
-assert!(yaml.contains("&a"));
-```
-
-To customize indentation or anchor names, use `SerializerOptions`:
-
-```rust
-let mut buf = String::new();
-let opts = serde_saphyr::SerializerOptions {
-    indent_step: 4,
-    anchor_generator: Some(|id| format!("id{id}")),
-};
-serde_saphyr::to_writer_with_options(&mut buf, &42, opts).unwrap();
-```
-
-These wrappers on the structure fields do not hinder deserialization.
-### Other features
 
 - **Configurable budgets:** Enforce input limits to mitigate resource exhaustion (e.g., deeply nested structures or very large arrays); see [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
-- **Scope:** Currently the crate provides a **deserializer** with full support for YAML merge keys that obey the configured duplicate-key policy.
+- **Deserializer supports emitting anchors** (Rc, Arc, Weak) if they properly wrapped (see below).
+- **serde_json::Value** is supported when parsing without target structure defined. 
+
+## Deserialization
 
 ### Duplicate keys
 Duplicate key handling is configurable. By default it’s an error; “first wins”  and “last wins” strategies are available via [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). Duplicate key policy applies not just to strings but also to other types (when deserializing into map).
@@ -334,4 +289,51 @@ Legacy octal format like `0052` can be turned on in [`Options`](https://docs.rs/
 
 Fuzzing shows that certain adversarial inputs can make YAML parsers consume excessive time or memory, enabling denial-of-service scenarios. To counter this, `serde-saphyr` offers a fast, configurable pre-check via a [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html), available through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). Defaults are conservative; tighten them when you know your input shape, or disable the budget if you only parse YAML you generate yourself.
 
+## Serialization
+
+While first versions only included deserializer, from 0.0.5 this library can also serialize.
+
+Example:
+
+```rust
+use serde::Serialize;
+
+#[derive(Serialize)]
+struct User { name: String, active: bool }
+
+let yaml = serde_saphyr::to_string(&User { name: "Ada".into(), active: true }).unwrap();
+assert!(yaml.contains("name: Ada"));
+```
+
+#### Anchors (Rc/Arc/Weak)
+
+Serde-saphyr can conceptyally connect YAML anchors with Rust shared references (Rc, Weak and Arc). You need to use wrappers to activate this feture:
+
+- `RcAnchor<T>` and `ArcAnchor<T>` emit anchors like `&a1` on first occurrence and may emit aliases `*a1` later.
+- `RcWeakAnchor<T>` and `ArcWeakAnchor<T>` serialize a weak ref: if the strong pointer is gone, it becomes `null`.
+
+```rust
+use serde::Serialize;
+use std::rc::Rc;
+
+#[derive(Serialize)]
+struct Node { name: String }
+
+let shared = Rc::new(Node { name: "n".into() });
+let yaml = serde_saphyr::to_string(&serde_saphyr::RcAnchor(shared)).unwrap();
+assert!(yaml.contains("&a"));
+```
+
+To customize indentation or anchor names, use `SerializerOptions`:
+
+```rust
+let mut buf = String::new();
+let opts = serde_saphyr::SerializerOptions {
+    indent_step: 4,
+    anchor_generator: Some(|id| format!("id{id}")),
+};
+serde_saphyr::to_writer_with_options(&mut buf, &42, opts).unwrap();
+```
+
+These wrappers on the structure fields do not hinder deserialization.
 
