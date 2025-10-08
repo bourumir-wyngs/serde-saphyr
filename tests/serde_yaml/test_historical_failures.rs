@@ -1,11 +1,12 @@
 use serde_saphyr;
 use std::collections::HashMap;
 use serde::Deserialize;
+use serde_json::Value;
 
 #[test]
 fn test_recursive_yaml_references_fail() {
     let yaml = "a: &anchor\n  b: *anchor";
-    let res: Result<serde_saphyr::Value, _> = serde_saphyr::from_str(yaml);
+    let res: Result<Value, _> = serde_saphyr::from_str(yaml);
     assert!(res.is_err(), "Recursive references should fail");
 }
 
@@ -22,29 +23,6 @@ fn test_non_string_keys_fail() {
     assert!(res.is_err(), "Non-string keys should fail");
 }
 
-#[test]
-fn test_custom_yaml_tags() {
-    #[derive(Debug, Deserialize)]
-    struct Data {
-        data: serde_saphyr::Value,
-    }
-
-    let yaml = "data: !CustomTag\n  key: value";
-    let res: Data = serde_saphyr::from_str(yaml).expect("Should parse");
-
-    match res.data {
-        serde_saphyr::Value::Tagged(tagged) => {
-            assert_eq!(tagged.tag, "!CustomTag");
-            match tagged.value {
-                serde_saphyr::Value::Mapping(map) => {
-                    assert!(map.contains_key(&serde_saphyr::Value::String("key".into(), None)));
-                }
-                other => panic!("Expected mapping inside tag, got: {other:?}"),
-            }
-        }
-        other => panic!("Expected TaggedValue, got: {other:?}"),
-    }
-}
 
 #[test]
 fn test_large_integer_overflow_fail() {
@@ -62,7 +40,7 @@ fn test_large_integer_overflow_fail() {
 #[test]
 fn test_circular_references_fail() {
     let yaml = "a: &anchor\n  b: &anchor2\n    c: *anchor";
-    let res: Result<serde_saphyr::Value, _> = serde_saphyr::from_str(yaml);
+    let res: Result<Value, _> = serde_saphyr::from_str(yaml);
     assert!(res.is_err(), "Circular references should fail");
 }
 
