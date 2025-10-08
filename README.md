@@ -44,7 +44,7 @@ As seen, serde-saphyr exceeds others by performance, even with budget check enab
 
 
 - **Configurable budgets:** Enforce input limits to mitigate resource exhaustion (e.g., deeply nested structures or very large arrays); see [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
-- **Deserializer supports emitting anchors** (Rc, Arc, Weak) if they properly wrapped (see below).
+- **Serializer supports emitting anchors** (Rc, Arc, Weak) if they properly wrapped (see below).
 - **serde_json::Value** is supported when parsing without target structure defined. 
 
 ## Deserialization
