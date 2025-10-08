@@ -1,8 +1,8 @@
 use indoc::indoc;
 use serde::Deserialize as Derive;
 use serde_saphyr::Error;
-use std::collections::BTreeMap;
 use std::fmt::Debug;
+use serde_json::Value;
 
 #[derive(Derive, Debug)]
 #[allow(dead_code)]
@@ -13,7 +13,6 @@ enum Node {
 
 #[cfg(not(miri))]
 #[test]
-#[ignore]
 fn test_enum_billion_laughs_with_tags() {
     let yaml = indoc! {
         "
@@ -28,10 +27,10 @@ fn test_enum_billion_laughs_with_tags() {
         i: &i !List [*h,*h,*h,*h,*h,*h,*h,*h,*h]
         "
     };
-    let parsed: Result<BTreeMap<String, String>, Error> = serde_saphyr::from_str(&yaml);
+    let parsed: Result<Value, Error> = serde_saphyr::from_str(&yaml);
     assert!(parsed.is_err());
-    println!("{}", parsed.unwrap_err());
-    //assert!(format!("{}", parsed.unwrap_err()).contains("repetition limit exceeded"));
+    println!("{:?}", parsed);
+    assert!(format!("{}", parsed.unwrap_err()).contains("budget breached"));
 }
 
 #[cfg(not(miri))]
@@ -50,8 +49,35 @@ fn test_enum_billion_laughs() {
         i: &i  [*h,*h,*h,*h,*h,*h,*h,*h,*h]
         "
     };
-    let parsed: Result<BTreeMap<String, String>, Error> = serde_saphyr::from_str(&yaml);
+    let parsed: Result<Value, Error> = serde_saphyr::from_str(&yaml);
     assert!(parsed.is_err());
-    println!("{}", parsed.unwrap_err());
-    //assert!(format!("{}", parsed.unwrap_err()).contains("repetition limit exceeded"));
+    println!("{:?}", parsed);
+    assert!(format!("{}", parsed.unwrap_err()).contains("budget breached"));
+}
+
+
+#[test]
+fn test_smaller_with_tags() {
+    let yaml = indoc! {
+        "
+        a: &a !Unit
+        b: &b !List [*a,*a]
+        c: &c !List [*b,*b]
+        "
+    };
+    let parsed: Result<Value, Error> = serde_saphyr::from_str(&yaml);
+    assert!(parsed.is_ok(), "{parsed:?}");
+}
+
+#[test]
+fn test_smaller() {
+    let yaml = indoc! {
+        "
+        a: &a
+        b: &b [*a,*a]
+        c: &c [*b,*b]
+        "
+    };
+    let parsed: Result<Value, Error> = serde_saphyr::from_str(&yaml);
+    assert!(parsed.is_ok(), "{parsed:?}");
 }
