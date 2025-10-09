@@ -50,7 +50,7 @@ As seen, serde-saphyr exceeds others by performance, even with budget check enab
 ## Deserialization
 
 ### Duplicate keys
-Duplicate key handling is configurable. By default it’s an error; “first wins”  and “last wins” strategies are available via [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). Duplicate key policy applies not just to strings but also to other types (when deserializing into map).
+Duplicate key handling is configurable. By default it’s an error; “first wins”  and “last wins” strategies are available via [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). Duplicate key policy applies not just to strings but also to other types (when deserializing into map).
 
 ### Unsupported features
 - **Tagged enums** (`!!EnumName RED`) are not supported. Use mapping-based enums (`EnumName: RED`) instead. This also allows you to define nested enums if needed.
@@ -164,7 +164,7 @@ let yaml = r#"
   println!("Parsed {} moves", robot_moves.len());
   }
 ```
-There are two variants of the deserialization functions: `from_*` and `from_*_with_options`. The latter takes [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html) to configure many aspects of parsing.
+There are two variants of the deserialization functions: `from_*` and `from_*_with_options`. The latter takes [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html) to configure many aspects of parsing.
 
 ## Composite keys
 
@@ -199,7 +199,7 @@ println!("{} entries", transform.map.len());
 
 ## Booleans
 By default, if the target field is boolean, serde-saphyr will attempt to interpret standard YAML 1.1 values as boolean (not just 'false' but also 'no', etc).
-If you do not want this (or you are parsing into a JSON Value where it is wrongly inferred), enclose the value in quotes or set `strict_booleans` to true in [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html).
+If you do not want this (or you are parsing into a JSON Value where it is wrongly inferred), enclose the value in quotes or set `strict_booleans` to true in [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html).
 
 ## Deserializing into abstract JSON Value
 If you must work with abstract types, you can also deserialize YAML into [`serde_json::Value`](https://docs.rs/serde_json/latest/serde_json/value/index.html). Serde will drive the process through [`deserialize_any`](src/de.rs) because `Value` does not fix a Rust primitive type ahead of time. You lose strict type control by Rust `struct` data types.
@@ -307,7 +307,7 @@ assert!(yaml.contains("name: Ada"));
 
 #### Anchors (Rc/Arc/Weak)
 
-Serde-saphyr can conceptually connect YAML anchors with Rust shared references (Rc, Weak and Arc). You need to use wrappers to activate this feture:
+Serde-saphyr can conceptually connect YAML anchors with Rust shared references (Rc, Weak and Arc). You need to use wrappers to activate this feature:
 
 - `RcAnchor<T>` and `ArcAnchor<T>` emit anchors like `&a1` on first occurrence and may emit aliases `*a1` later.
 - `RcWeakAnchor<T>` and `ArcWeakAnchor<T>` serialize a weak ref: if the strong pointer is gone, it becomes `null`.
@@ -346,6 +346,6 @@ This will produce the following YAML:
 ```
 
 When anchors are highly repetitive and also large, packing them into references can make YAML more human-readable. 
-In [`SerializerOptions`](https://docs.rs/serde-saphyr/latest/serde_saphyr/ser/struct.SerializerOptions.html), you can set
+In [`SerializerOptions`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.SerializerOptions.html), you can set
 your own function to generate anchor names.
 
