@@ -53,8 +53,7 @@ As seen, serde-saphyr exceeds others by performance, even with budget check enab
 Duplicate key handling is configurable. By default it’s an error; “first wins”  and “last wins” strategies are available via [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). Duplicate key policy applies not just to strings but also to other types (when deserializing into map).
 
 ### Unsupported features
-- **Tagged enums** (`!!EnumName RED`) are not supported. Use mapping-based enums (`EnumName: RED`) instead. This also allows you to define nested enums if needed.
-- **Internally tagged enums** (`type: EnumName ... color: RED`). Avoid internally tagged enums (e.g., with `#[serde(tag = "type")]`) because Serde does not provide that target type information,  for them; it calls [`deserialize_any`](src/de.rs), forcing to guess the type from the value (see that file for the implementation). This may still work, but you lose the "struct-as-schema" robustness.
+- **Tagged enums** (`!!EnumName RED`) are not supported. Use mapping-based enums (`EnumName: RED`) instead. This also allows you to define nested enums if needed, with tagged enums this is not possible by YAML standard.
 ---
 
 ## Usage
