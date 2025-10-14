@@ -1,6 +1,7 @@
 use crate::de::{Error, Location};
 use saphyr_parser::ScalarStyle;
 use std::str::FromStr;
+use crate::tags::SfTag;
 
 /// Parse a YAML 1.1 boolean from a &str (handles the "Norway problem").
 ///
@@ -214,11 +215,15 @@ fn radix_and_digits(legacy_octal: bool, rest: &str) -> (u32, &str) {
     (radix, digits)
 }
 
-pub(crate) fn parse_yaml12_float<T>(s: &str, location: Location) -> Result<T, Error>
+#[cfg(feature = "robotics")]
+pub(crate) fn parse_yaml12_float<T>(s: &str, location: Location, tag: SfTag, angle_conversions: bool) -> Result<T, Error>
 where
-    T: FromStr,
+    T: FromStr + crate::angles_conversions::FromF64,
     T: num_traits::Float,
 {
+    if angle_conversions {
+        return crate::angles_conversions::parse_yaml12_float_angle_converting(s, location, tag);
+    }
     let t = s.trim();
     let lower = t.to_ascii_lowercase();
     match lower.as_str() {
@@ -234,6 +239,29 @@ where
         }),
     }
 }
+
+#[cfg(not(feature="robotics"))]
+pub(crate) fn parse_yaml12_float<T>(s: &str, location: Location, _tag: SfTag, _angle_conversions: bool) -> Result<T, Error>
+where
+    T: FromStr,
+    T: num_traits::Float,
+{
+    let t = s.trim();
+    let lower = t.to_ascii_lowercase();
+    match lower.as_str() {
+        ".nan" | "+.nan" | "-.nan" => Ok(T::nan()),
+        ".inf" | "+.inf" => Ok(T::infinity()),
+        "-.inf" => Ok(T::neg_infinity()),
+        _ => t.parse::<T>().map_err(|_| {
+            Error::msg(format!(
+                "invalid floating point ({} value)",
+                std::any::type_name::<T>()
+            ))
+                .with_location(location)
+        }),
+    }
+}
+
 
 /// True if a scalar is a YAML "null-like" value in non-`Option` contexts.
 ///
@@ -363,13 +391,13 @@ mod tests {
     fn parse_yaml12_floats_handle_nan_and_infinity_forms() {
         let loc = sample_location();
 
-        let nan: f64 = parse_yaml12_float(" .NaN ", loc).unwrap();
+        let nan: f64 = parse_yaml12_float(" .NaN ", loc, SfTag::None, false).unwrap();
         assert!(nan.is_nan());
 
-        let inf: f64 = parse_yaml12_float("+.INF", loc).unwrap();
+        let inf: f64 = parse_yaml12_float("+.INF", loc, SfTag::None, false).unwrap();
         assert!(inf.is_infinite() && inf.is_sign_positive());
 
-        let neg_inf: f64 = parse_yaml12_float("-.Inf", loc).unwrap();
+        let neg_inf: f64 = parse_yaml12_float("-.Inf", loc, SfTag::None, false).unwrap();
         assert!(neg_inf.is_infinite() && neg_inf.is_sign_negative());
     }
 
@@ -380,28 +408,28 @@ mod tests {
 
     #[test]
     fn test_normal_values() {
-        assert_eq!(parse_yaml12_float::<f32>("1.5", loc()).unwrap(), 1.5f32);
+        assert_eq!(parse_yaml12_float::<f32>("1.5", loc(), SfTag::None, false).unwrap(), 1.5f32);
         assert_eq!(
-            parse_yaml12_float::<f32>("-123.456", loc()).unwrap(),
+            parse_yaml12_float::<f32>("-123.456", loc(), SfTag::None, false).unwrap(),
             -123.456f32
         );
     }
 
     #[test]
     fn test_zero_values() {
-        assert_eq!(parse_yaml12_float::<f32>("0", loc()).unwrap(), 0.0f32);
-        assert_eq!(parse_yaml12_float::<f32>("-0", loc()).unwrap(), -0.0f32);
+        assert_eq!(parse_yaml12_float::<f32>("0", loc(), SfTag::None, false).unwrap(), 0.0f32);
+        assert_eq!(parse_yaml12_float::<f32>("-0", loc(), SfTag::None, false).unwrap(), -0.0f32);
     }
 
     #[test]
     fn test_nan_and_infinity() {
-        let nan: f32 = parse_yaml12_float(".nan", loc()).unwrap();
+        let nan: f32 = parse_yaml12_float(".nan", loc(), SfTag::None, false).unwrap();
         assert!(nan.is_nan());
 
-        let inf: f64 = parse_yaml12_float(".inf", loc()).unwrap();
+        let inf: f64 = parse_yaml12_float(".inf", loc(), SfTag::None, false).unwrap();
         assert!(inf.is_infinite() && inf.is_sign_positive());
 
-        let ninf: f32 = parse_yaml12_float("-.Inf", loc()).unwrap();
+        let ninf: f32 = parse_yaml12_float("-.Inf", loc(), SfTag::None, false).unwrap();
         assert!(ninf.is_infinite() && ninf.is_sign_negative());
     }
 
@@ -409,13 +437,13 @@ mod tests {
     fn test_subnormal_preserved() {
         // Smallest positive subnormal f32
         let smallest = f32::from_bits(1) as f64;
-        let val: f32 = parse_yaml12_float(&format!("{}", smallest), loc()).unwrap();
+        let val: f32 = parse_yaml12_float(&format!("{}", smallest), loc(), SfTag::None, false).unwrap();
         assert_eq!(val, f32::from_bits(1));
     }
 
     #[test]
     fn test_negative_zero_preserved() {
-        let val: f32 = parse_yaml12_float("-0.0", loc()).unwrap();
+        let val: f32 = parse_yaml12_float("-0.0", loc(), SfTag::None, false).unwrap();
         assert_eq!(val.to_bits(), (-0.0f32).to_bits());
     }
 }

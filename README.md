@@ -42,10 +42,11 @@ width="60%">
 
 As seen, serde-saphyr exceeds others by performance, even with budget check enabled. 
 
-
+## Other features
 - **Configurable budgets:** Enforce input limits to mitigate resource exhaustion (e.g., deeply nested structures or very large arrays); see [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
 - **Serializer supports emitting anchors** (Rc, Arc, Weak) if they properly wrapped (see below).
-- **serde_json::Value** is supported when parsing without target structure defined. 
+- **serde_json::Value** is supported when parsing without target structure defined.
+- **robotic extensions** to support YAML dialect common in robotics (see below).
 
 ## Deserialization
 
@@ -348,4 +349,7 @@ This will produce the following YAML:
 When anchors are highly repetitive and also large, packing them into references can make YAML more human-readable. 
 In [`SerializerOptions`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.SerializerOptions.html), you can set
 your own function to generate anchor names.
+
+## Robotics ##
+The feature-gated "robotics" capability enables parsing of YAML extensions commonly used in robotics (ROS, ROS2, etc.) These extensions support conversion functions (deg, rad) and simple mathematical expressions such as deg(180), rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). This capability is gated behind the [robotics] feature and is not enabled by default. Additionally, angle_conversions must be set to true in the Options.
 

@@ -16,6 +16,9 @@ pub(crate) enum SfTag {
     Map,
     TimeStamp,
     Binary,
+    // Custom angle tags supported by angles_hook
+    Degrees,
+    Radians,
     Other,
 }
 
@@ -61,6 +64,13 @@ static TAG_LOOKUP_MAP: LazyLock<BTreeMap<&'static str, SfTag>> = LazyLock::new(|
         ("!binary", SfTag::Binary),
         ("tag:yaml.org,2002:binary", SfTag::Binary),
         ("tag:yaml.org,2002:!binary", SfTag::Binary),
+        // angles (custom)
+        ("!degrees", SfTag::Degrees),
+        ("tag:yaml.org,2002:degrees", SfTag::Degrees),
+        ("tag:yaml.org,2002:!degrees", SfTag::Degrees),
+        ("!radians", SfTag::Radians),
+        ("tag:yaml.org,2002:radians", SfTag::Radians),
+        ("tag:yaml.org,2002:!radians", SfTag::Radians),
     ])
 });
 
@@ -85,7 +95,9 @@ impl SfTag {
             | SfTag::Null
             | SfTag::Seq
             | SfTag::Map
-            | SfTag::TimeStamp => false,
+            | SfTag::TimeStamp
+            | SfTag::Degrees
+            | SfTag::Radians => false,
         }
     }
 }

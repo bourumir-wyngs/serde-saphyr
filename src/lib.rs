@@ -22,6 +22,9 @@ mod tags;
 mod ser;
 mod serializer_options;
 
+#[cfg(feature = "robotics")]
+pub mod angles_conversions;
+
 // Detect BS4K-style invalid pattern: a content line with an inline comment,
 // immediately followed by a top-level (non-indented) content line that would
 // implicitly start a new document without a marker. This should be rejected
@@ -224,11 +227,7 @@ pub fn from_str_with_options<T: DeserializeOwned>(
     if has_inline_comment_followed_by_top_level_content(input) {
         return Err(Error::msg("invalid plain scalar: inline comment cannot be followed by a new top-level scalar line without a document marker").with_location(Location::UNKNOWN));
     }
-    let cfg = crate::de::Cfg {
-        dup_policy: options.duplicate_keys,
-        legacy_octal_numbers: options.legacy_octal_numbers,
-        strict_booleans: options.strict_booleans,
-    };
+    let cfg = crate::de::Cfg::from_options(&options);
     // Do not stop at DocumentEnd; we'll probe for trailing content/errors explicitly.
     let mut src = LiveEvents::new(input, options.budget, options.alias_limits, false);
     let value_res = T::deserialize(crate::de::Deser::new(&mut src, cfg));
@@ -358,11 +357,7 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
 ) -> Result<Vec<T>, Error> {
     // Normalize: ignore a single leading UTF-8 BOM if present.
     let input = if let Some(rest) = input.strip_prefix('\u{FEFF}') { rest } else { input };
-    let cfg = crate::de::Cfg {
-        dup_policy: options.duplicate_keys,
-        legacy_octal_numbers: options.legacy_octal_numbers,
-        strict_booleans: options.strict_booleans,
-    };
+    let cfg = crate::de::Cfg::from_options(&options);
     let mut src = LiveEvents::new(input, options.budget, options.alias_limits, false);
     let mut values = Vec::new();
 
@@ -664,11 +659,7 @@ impl<'de> serde::de::Deserializer<'de> for ReaderDeserializer {
     {
         // Reuse the main Deserializer with default options.
         let options = Options::default();
-        let cfg = crate::de::Cfg {
-            dup_policy: options.duplicate_keys,
-            legacy_octal_numbers: options.legacy_octal_numbers,
-            strict_booleans: options.strict_booleans,
-        };
+        let cfg = crate::de::Cfg::from_options(&options);
         let mut src = LiveEvents::new(&self.buf, options.budget, options.alias_limits, false);
         crate::de::Deser::new(&mut src, cfg).deserialize_any(visitor)
     }

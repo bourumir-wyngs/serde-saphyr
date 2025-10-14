@@ -87,6 +87,9 @@ pub struct Options {
     /// YAML 1.1 forms like `yes`/`no`/`on`/`off` will be rejected and not inferred.
     /// Default: false (accept YAML 1.1 boolean forms).
     pub strict_booleans: bool,
+    /// Defines hooks for custom scalar conversion (ROS syntax for robotics, etc.) See
+    /// [`serde_saphyr::angles_hook::AnglesHook`]
+    pub angle_conversions: bool
 }
 
 impl Default for Options {
@@ -97,6 +100,7 @@ impl Default for Options {
             alias_limits: AliasLimits::default(),
             legacy_octal_numbers: false,
             strict_booleans: false,
+            angle_conversions: false,
         }
     }
 }

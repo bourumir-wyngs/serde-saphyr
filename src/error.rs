@@ -77,6 +77,10 @@ pub enum Error {
         id: usize,
         location: Location,
     },
+    HookError {
+        msg: String,
+        location: Location,
+    }
 }
 
 impl Error {
@@ -150,6 +154,7 @@ impl Error {
             Error::Message { location, .. }
             | Error::Eof { location }
             | Error::Unexpected { location, .. }
+            | Error::HookError { location, .. }
             | Error::UnknownAnchor { location, .. } => {
                 *location = set_location;
             }
@@ -169,6 +174,7 @@ impl Error {
             Error::Message { location, .. }
             | Error::Eof { location }
             | Error::Unexpected { location, .. }
+            | Error::HookError { location, .. }
             | Error::UnknownAnchor { location, .. } => {
                 if location != &Location::UNKNOWN {
                     Some(*location)
@@ -197,6 +203,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::Message { msg, location } => fmt_with_location(f, msg, location),
+            Error::HookError { msg, location } => fmt_with_location(f, msg, location),
             Error::Eof { location } => fmt_with_location(f, "unexpected end of input", location),
             Error::Unexpected { expected, location } => {
                 fmt_with_location(f, &format!("unexpected event: expected {expected}"), location)
