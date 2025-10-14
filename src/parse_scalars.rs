@@ -141,7 +141,7 @@ where
         },
     };
 
-    let (radix, digits) = radix_and_digits(legacy_octal, &rest);
+    let (radix, digits) = radix_and_digits(legacy_octal, rest);
     if radix == 10 {
         let val_i128 = parse_decimal_signed_i128(digits, neg)
             .ok_or_else(|| Error::msg(format!("invalid {ty}")).with_location(location))?;
@@ -179,7 +179,7 @@ where
         return Err(Error::msg(format!("invalid {ty}")).with_location(location));
     }
     let rest = t.strip_prefix('+').unwrap_or(t);
-    let (radix, digits) = radix_and_digits(legacy_octal, &rest);
+    let (radix, digits) = radix_and_digits(legacy_octal, rest);
 
     if radix == 10 {
         let val_u128 = parse_decimal_unsigned_u128(digits)
@@ -193,7 +193,7 @@ where
     T::try_from(mag).map_err(|_| Error::msg(format!("invalid {ty}")).with_location(location))
 }
 
-fn radix_and_digits<'a>(legacy_octal: bool, rest: &str) -> (u32, &str) {
+fn radix_and_digits(legacy_octal: bool, rest: &str) -> (u32, &str) {
     let (radix, digits) =
         if let Some(r) = rest.strip_prefix("0x").or_else(|| rest.strip_prefix("0X")) {
             (16u32, r)

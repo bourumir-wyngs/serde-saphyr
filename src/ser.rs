@@ -510,10 +510,8 @@ impl<'a, W: Write> YamlSer<'a, W> {
     fn take_flow_for_seq(&mut self) -> bool {
         if self.in_flow > 0 {
             true
-        } else if let Some(PendingFlow::AnySeq) = self.pending_flow.take() {
-            true
         } else {
-            false
+            matches!(self.pending_flow.take(), Some(PendingFlow::AnySeq))
         }
     }
     /// Determine whether the next mapping should be emitted in flow style.
@@ -522,10 +520,8 @@ impl<'a, W: Write> YamlSer<'a, W> {
     fn take_flow_for_map(&mut self) -> bool {
         if self.in_flow > 0 {
             true
-        } else if let Some(PendingFlow::AnyMap) = self.pending_flow.take() {
-            true
         } else {
-            false
+            matches!(self.pending_flow.take(), Some(PendingFlow::AnyMap))
         }
     }
 
@@ -828,8 +824,6 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
         } else {
             // Block sequence. Decide indentation based on whether this is after a map key or after a list dash.
             let was_inline_value = !self.at_line_start;
-            // Capture context before we clear it
-            let after_map_key = self.pending_space_after_colon;
             self.write_anchor_for_complex_node()?;
             if was_inline_value {
                 // We were mid-line (after key: or after a list dash). Move to a new line.
@@ -837,18 +831,9 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                 self.newline()?;
             }
             // Indentation policy:
-            // - After a map key ("key: <seq>"), indent sequence items one level under the mapping key.
-            // - After a list dash (nested sequence), indent one level for inner dashes.
+            // - After a map key ("key: <seq>") or nested under a list dash, indent one level deeper.
             // - Otherwise (top-level or already at line start), keep current depth.
-            let depth_next = if was_inline_value {
-                if after_map_key {
-                    self.depth + 1
-                } else {
-                    self.depth + 1
-                }
-            } else {
-                self.depth
-            };
+            let depth_next = if was_inline_value { self.depth + 1 } else { self.depth };
             Ok(SeqSer { ser: self, depth: depth_next, flow: false, first: true })
         }
     }

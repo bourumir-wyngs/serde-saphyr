@@ -61,7 +61,7 @@ pub(crate) fn decode_base64_yaml(s: &str) -> Result<Vec<u8>, Error> {
         }
 
         match pad {
-            0 | 1 | 2 => {}
+            0..=2 => {}
             _ => return Err(Error::msg("invalid !!binary base64")),
         }
     }

@@ -170,7 +170,7 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
             let fingerprint = match &ev {
                 Ev::Scalar { value, tag, .. } => KeyFingerprint::Scalar {
                     value: value.clone(),
-                    tag: tag.clone(),
+                    tag: *tag,
                 },
                 _ => unreachable!(),
             };
