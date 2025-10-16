@@ -4,6 +4,7 @@
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct Doc {
     quoted: String,
 }
