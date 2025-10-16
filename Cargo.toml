@@ -8,7 +8,7 @@ documentation = "https://docs.rs/serde-saphyr/latest/serde-saphyr/"
 repository = "https://github.com/bourumir-wyngs/serde-saphyr"
 readme = "README.md"
 categories = ["encoding", "parser-implementations", "config"]
-keywords = ["yaml", "serde", "serialization", "deserialization", "config"]
+keywords = ["yaml", "serde", "serialization", "config", "ros"]
 
 [dependencies]
 saphyr-parser = "0.0.6"
