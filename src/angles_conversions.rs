@@ -1,5 +1,33 @@
-/// Angle conversion if a feature-gated ability to parse constructs
-/// common in robotics (ROS, ROS2, etc). 
+/// Parse and evaluate a YAML 1.2 float scalar with robotics-style angle support.
+///
+/// This function accepts plain numbers, expressions, and unit functions,
+/// evaluates them, and returns the numeric value (converted to radians when
+/// applicable). It uses a small recursive-descent evaluator supporting `+ - * /`
+/// with parentheses and constants.
+///
+/// # Supported features
+/// - YAML 1.2 float forms: `0.15`, `1e-3`, `.inf`, `.nan`, etc. (case-insensitive)
+/// - Constants: `pi`, `tau`, `inf`, `nan`
+/// - Expressions: `2*pi`, `1 + 2*(3 - 4/5)`, `pi/2`
+/// - Unit functions:
+///     - `deg(<expr>)` — interpret as degrees, convert to radians
+///     - `rad(<expr>)` — interpret as radians (no conversion)
+///
+/// # Tag interaction
+/// - If no `deg`/`rad` is used, `SfTag::Degrees` converts to radians.
+/// - `SfTag::Radians` leaves values as-is.
+/// - Unit functions override tag-based conversion.
+///
+/// # Errors
+/// Returns a descriptive [`Error`] with [`Location`] for malformed syntax,
+/// unbalanced parentheses, or unknown identifiers.
+///
+/// # Examples
+/// ```
+/// use crate::{SfTag, Location};
+/// let v: f64 = parse_yaml12_float_angle_converting("deg(180)", Location::UNKNOWN, SfTag::Radians).unwrap();
+/// assert!((v - std::f64::consts::PI).abs() < 1e-12);
+/// ```
 use core::f64::consts::PI;
 use core::str::FromStr;
 
@@ -25,32 +53,45 @@ impl FromF64 for f32 {
     }
 }
 
-/// Parse a YAML 1.2 float scalar, with robotics-style angle handling.
-///
-/// Supported inputs (examples):
-/// - Plain numbers: `0.15`, `-1`, `1e-3`
-/// - YAML 1.2 specials (case-insensitive): `.inf`, `-.inf`, `.nan`, `inf`, `-inf`, `nan`
-/// - Constants: `pi`, `tau` (case-insensitive; `tau = 2*pi`)
-/// - Expressions: `2*pi`, `1 + 2*(3 - 4/5)`, `pi/2`
-/// - Conversion functions (case-sensitive):
-///     - `deg(<expr>)`  → convert degrees to **radians**
-///     - `rad(<expr>)`  → value is already in **radians**
-///
-/// Tag interaction:
-/// - If the input uses `deg(...)` or `rad(...)`, that **explicit unit wins** and the tag is ignored
-///   to avoid double-conversion.
-/// - If **no** function is used, `SfTag::Degrees` converts the final value to radians; `SfTag::Radians`
-///   leaves it as-is; other tags are ignored.
-///
-/// Returns the parsed value converted to radians when applicable.
-///
-/// # Errors
-/// Yields a descriptive `Error` with `location` on invalid tokens, mismatched parentheses,
-/// unknown identifiers, or trailing garbage.
-///
-/// # Note
-/// This is intentionally small: grammar is `+ - * /`, parentheses, identifiers (`pi`, `tau`, `deg`, `rad`),
-/// YAML float literals, and YAML special floats. No variables or user-defined functions.
+// -----------------------------------------------------------------------------
+// parse_yaml12_float_angle_converting
+//
+// This function parses and evaluates numeric expressions with optional
+// angle-unit handling, returning a numeric value converted to radians when
+// applicable.
+//
+// Core behavior:
+// • Implements a small recursive-descent evaluator supporting +, -, *, /,
+//   parentheses, constants (pi, tau, inf, nan), and functions deg(...)/rad(...).
+// • Accepts YAML 1.2–style float syntax: decimal, scientific, and special
+//   forms (.inf, .nan, inf, nan) in any case.
+// • Evaluates expressions directly (no AST), using double precision (f64)
+//   internally, and converts the final result to the generic type `T` via
+//   the `FromF64` trait.
+// • Recognizes unit functions:
+//       deg(expr) – interprets argument in degrees, converts to radians.
+//       rad(expr) – interprets argument already in radians.
+//   These override any tag-based conversion.
+// • If no explicit unit function is used, the YAML tag determines whether
+//   to convert degrees→radians (`SfTag::Degrees`) or leave as-is
+//   (`SfTag::Radians`); other tags are ignored.
+// • Enforces full expression parsing (no trailing garbage) and produces
+//   descriptive `Error`s with source `Location` for malformed syntax.
+//
+// Grammar summary:
+//     expr   := term (('+' | '-') term)*
+//     term   := unary (('*' | '/') unary)*
+//     unary  := ('+' | '-')* primary
+//     primary:= NUMBER | CONST | '(' expr ')' | FUNC '(' expr ')'
+//
+// Examples:
+//     "2*pi"           → 6.283185307179586
+//     "deg(180)"       → 3.141592653589793
+//     "1 + 2*(3 - 4/5)"→ 5.4
+//
+// Intended for robotics YAML parsing (ROS/URDF/MoveIt! style) where angles
+// may be expressed as numeric expressions or in degrees/radians.
+// -----------------------------------------------------------------------------
 pub(crate) fn parse_yaml12_float_angle_converting<T>(
     s: &str,
     location: Location,
@@ -218,7 +259,7 @@ impl<'a> Parser<'a> {
                     }
                 }
                 c if c.is_ascii_digit() || c == b'.' => self.parse_number_or_special(),
-                c if is_ident_start(c) || c == b'.' => self.parse_ident_or_special(),
+                c if is_ident_start(c) => self.parse_ident_or_special(),
                 _ => Err(self.err("expected number, constant, function, or '('")),
             }
         } else {

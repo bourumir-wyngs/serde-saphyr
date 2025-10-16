@@ -62,8 +62,10 @@ f32_from_deg: deg(90)
 f32_plain: 1.25
 "#;
 
-        let mut options = Options::default();
-        options.angle_conversions = true; // enable robotics angle parsing
+        let options = Options {
+            angle_conversions: true, // enable robotics angle parsing
+            .. Options::default()
+        };
 
         let v: RoboFloats = from_str_with_options(yaml, options).expect("parse robotics YAML");
 
