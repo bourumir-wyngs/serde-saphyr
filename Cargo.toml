@@ -8,7 +8,7 @@ documentation = "https://docs.rs/serde-saphyr/latest/serde-saphyr/"
 repository = "https://github.com/bourumir-wyngs/serde-saphyr"
 readme = "README.md"
 categories = ["encoding", "parser-implementations", "config"]
-keywords = ["yaml", "serde", "serialization", "deserialization", "config"]
+keywords = ["yaml", "serde", "serialization", "config", "ros"]
 
 [dependencies]
 saphyr-parser = "0.0.6"
@@ -20,6 +20,13 @@ num-traits = "0.2.19"
 base64 = "0.22.1"
 ryu = "1.0.20"
 nohash-hasher = "0.2.0"
+
+[features]
+default = []
+
+# Adds YAML conventions common in robotics: conversion functions (deg, rad) and simple mathematical expressions such
+# as deg(180), rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). angle_conversions must be set to true in the Options.
+robotics = []
 
 [dev-dependencies]
 indoc = "2.0.6"
