@@ -354,13 +354,13 @@ your own function to generate anchor names.
 The feature-gated "robotics" capability enables parsing of YAML extensions commonly used in robotics (ROS, ROS2, etc.) These extensions support conversion functions (deg, rad) and simple mathematical expressions such as deg(180), rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). This capability is gated behind the [robotics] feature and is not enabled by default. Additionally, angle_conversions must be set to true in the Options.
 
 ```yaml
-rad_tag: !radians 0.15
-deg_tag: !degrees 180
-expr_complex: 1 + 2*(3 - 4/5)
-func_deg: deg(180)
-func_rad: rad(pi)
-quoted_deg: "deg(90)"
-quoted_rad: 'rad(pi/2)'
+rad_tag: !radians 0.15 # value in radians, stays in radians
+deg_tag: !degrees 180 # value in degrees, converts to radians
+expr_complex: 1 + 2*(3 - 4/5) # simple expressions supported
+func_deg: deg(180) # value in degrees, converts to radians
+func_rad: rad(pi) # value in radians (stays in radians)
+hh_mm_secs: -0:30:30.5 # Time
+longitude: !radians 8:32:53.2 # Nautical, ETH Zürich Main Building (8°32′53.2″ E)
 ```
 
 ```rust
@@ -371,4 +371,4 @@ let options = Options {
 
 let v: RoboFloats = from_str_with_options(yaml, options).expect("parse robotics YAML");
 ```
-
+Safety hardening with this feature enabled include (maximal expression depth, maximal number of digits, strict underscore placement and fraction parsing limits to precision-relevant digit).

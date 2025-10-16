@@ -54,11 +54,15 @@ static TAG_LOOKUP_MAP: LazyLock<BTreeMap<&'static str, SfTag>> = LazyLock::new(|
         ("!map", SfTag::Map),
         ("tag:yaml.org,2002:map", SfTag::Map),
         ("tag:yaml.org,2002:!map", SfTag::Map),
-        // timestamp
+        // timestamp / time
         ("!!timestamp", SfTag::TimeStamp),
         ("!timestamp", SfTag::TimeStamp),
         ("tag:yaml.org,2002:timestamp", SfTag::TimeStamp),
         ("tag:yaml.org,2002:!timestamp", SfTag::TimeStamp),
+        // additional time aliases (custom)
+        ("!time", SfTag::TimeStamp),
+        ("tag:yaml.org,2002:time", SfTag::TimeStamp),
+        ("tag:yaml.org,2002:!time", SfTag::TimeStamp),
         // binary
         ("!!binary", SfTag::Binary),
         ("!binary", SfTag::Binary),
