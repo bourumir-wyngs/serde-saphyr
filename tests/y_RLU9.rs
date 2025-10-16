@@ -1,18 +1,13 @@
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-struct SuiteCase {
-    yaml: String,
-}
-
-#[derive(Debug, Deserialize)]
 struct Root {
     foo: Vec<i64>,
     bar: Vec<i64>,
 }
 
 #[test]
-fn y_RLU9() {
+fn y_rlu9() {
     let yaml = r#"foo:
 - 42
 bar:

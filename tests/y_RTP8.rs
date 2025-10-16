@@ -1,12 +1,5 @@
-use serde::Deserialize;
-
-#[derive(Debug, Deserialize)]
-struct SuiteCase {
-    yaml: String,
-}
-
 #[test]
-fn y_RTP8() {
+fn y_rtp8() {
     let yaml = r#"%YAML 1.2
 ---
 Document

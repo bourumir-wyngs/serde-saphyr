@@ -1,12 +1,5 @@
-use serde::Deserialize;
-
-#[derive(Debug, Deserialize)]
-struct SuiteCase {
-    yaml: String,
-}
-
 #[test]
-fn y_RHX7() {
+fn y_rhx7() {
     let yaml = r#"---
 key: value
 %YAML 1.2

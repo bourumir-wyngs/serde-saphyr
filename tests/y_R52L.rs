@@ -2,11 +2,6 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Deserialize)]
-struct SuiteCase {
-    yaml: String,
-}
-
-#[derive(Debug, Deserialize)]
 struct Root {
     top1: Vec<Top1Item>,
     top2: String,
@@ -20,7 +15,7 @@ enum Top1Item {
 }
 
 #[test]
-fn y_R52L() {
+fn y_r52l() {
     let yaml = r#"---
 { top1: [item1, {key2: value2}, item3], top2: value2 }
 "#;

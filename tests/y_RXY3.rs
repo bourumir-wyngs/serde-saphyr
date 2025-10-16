@@ -1,12 +1,5 @@
-use serde::Deserialize;
-
-#[derive(Debug, Deserialize)]
-struct SuiteCase {
-    yaml: String,
-}
-
 #[test]
-fn y_RXY3() {
+fn y_rxy3() {
     let yaml = r#"---
 '
 ...
