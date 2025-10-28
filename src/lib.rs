@@ -4,7 +4,8 @@ pub use de::{
 };
 
 // Serialization public API is defined at crate root; wrappers are re-exported.
-pub use ser::{ RcAnchor, ArcAnchor, RcWeakAnchor, ArcWeakAnchor, FlowSeq, FlowMap, LitStr, FoldStr };
+pub use ser::{ FlowSeq, FlowMap, LitStr, FoldStr };
+pub use anchors::{ RcAnchor, ArcAnchor, RcWeakAnchor, ArcWeakAnchor };
 pub use crate::serializer_options::SerializerOptions;
 
 use crate::live_events::LiveEvents;
@@ -20,10 +21,12 @@ mod error;
 mod live_events;
 mod tags;
 mod ser;
+mod anchors;
 mod serializer_options;
 
 #[cfg(feature = "robotics")]
 pub mod angles_conversions;
+
 
 // Detect BS4K-style invalid pattern: a content line with an inline comment,
 // immediately followed by a top-level (non-indented) content line that would

@@ -1,8 +1,6 @@
 #[cfg(test)]
 mod tests {
 
-    use serde::Deserialize;
-
     #[derive(Debug, Deserialize, PartialEq)]
     struct Root {
         seq: Vec<Vec<i32>>,
@@ -51,18 +49,40 @@ seq:
     // Serialization tests demonstrating README's anchor wrappers (Rc, Weak)
     // ---------------------------------------------------------------------
     use indoc::indoc;
-    use serde::Serialize;
+    use serde::{Serialize, Deserialize};
+    use serde_saphyr::{to_string, from_str, ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
     use std::rc::Rc;
-    use serde_saphyr::{to_string, RcAnchor, RcWeakAnchor};
+    use std::sync::Arc;
 
-    #[derive(Clone, Serialize)]
+    #[derive(Clone, Serialize, Deserialize)]
     struct Node {
         name: String,
     }
 
+
+    #[test]
+    fn anchor_assign() {
+        let anchor: RcAnchor<Node> = Node {
+            name: "".to_string(),
+        }.into();
+
+        let anchor: RcAnchor<Node> = Rc::new(Node {
+            name: "".to_string(),
+        })
+        .into();
+
+        let nrc = Rc::new(Node {
+            name: "".to_string(),
+        });
+
+        let anchor: RcWeakAnchor<Node> = nrc.into();
+    }
+
     #[test]
     fn rc_anchor_shared_in_sequence_produces_anchor_and_alias() {
-        let shared = Rc::new(Node { name: "node one".into() });
+        let shared = Rc::new(Node {
+            name: "node one".into(),
+        });
         let data: Vec<RcAnchor<Node>> = vec![RcAnchor(shared.clone()), RcAnchor(shared)];
         let yaml = to_string(&data).expect("serialize RcAnchor sequence");
 
@@ -77,21 +97,66 @@ seq:
     #[test]
     fn rc_weak_anchor_present_and_dangling() {
         // Present (upgraded) weak -> emits anchored value
-        let strong = Rc::new(Node { name: "strong".into() });
+        let strong = Rc::new(Node {
+            name: "strong".into(),
+        });
         let weak_present = Rc::downgrade(&strong);
-        let yaml_present = to_string(&RcWeakAnchor(weak_present)).expect("serialize RcWeakAnchor present");
+        let yaml_present =
+            to_string(&RcWeakAnchor(weak_present)).expect("serialize RcWeakAnchor present");
         let expected_present = indoc! {r#"
             &a1
             name: strong
         "#};
-        assert_eq!(yaml_present, expected_present, "RcWeakAnchor (present) YAML mismatch. Got:\n{}", yaml_present);
+        assert_eq!(
+            yaml_present, expected_present,
+            "RcWeakAnchor (present) YAML mismatch. Got:\n{}",
+            yaml_present
+        );
 
         // Dangling weak -> null
         let weak_dangling = {
             let tmp = Rc::new(Node { name: "tmp".into() });
             Rc::downgrade(&tmp)
         }; // tmp dropped here
-        let yaml_null = to_string(&RcWeakAnchor(weak_dangling)).expect("serialize RcWeakAnchor dangling");
+        let yaml_null =
+            to_string(&RcWeakAnchor(weak_dangling)).expect("serialize RcWeakAnchor dangling");
         assert_eq!(yaml_null, "null\n");
+    }
+
+    #[test]
+    fn deserialize_rc_anchor_strong_without_alias_identity() {
+        #[derive(Deserialize)]
+        struct Doc {
+            a: RcAnchor<Node>,
+            b: RcAnchor<Node>,
+        }
+        let y = indoc! {r#"
+            a: &A
+              name: one
+            b: *A
+        "#};
+        let doc: Doc = from_str(y).expect("deserialize Doc with RcAnchor");
+        assert_eq!(doc.a.0.name, "one");
+        assert_eq!(doc.b.0.name, "one");
+        // Not the same allocation; identity is not preserved on deserialize.
+        assert!(!Rc::ptr_eq(&doc.a.0, &doc.b.0));
+    }
+
+    #[test]
+    fn deserialize_arc_anchor_strong_without_alias_identity() {
+        #[derive(Deserialize)]
+        struct Doc {
+            a: ArcAnchor<Node>,
+            b: ArcAnchor<Node>,
+        }
+        let y = indoc! {r#"
+            a: &A
+              name: one
+            b: *A
+        "#};
+        let doc: Doc = from_str(y).expect("deserialize Doc with ArcAnchor");
+        assert_eq!(doc.a.0.name, "one");
+        assert_eq!(doc.b.0.name, "one");
+        assert!(!Arc::ptr_eq(&doc.a.0, &doc.b.0));
     }
 }

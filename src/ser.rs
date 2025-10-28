@@ -42,7 +42,7 @@ use std::sync::{Arc, Weak as ArcWeak};
 
 use nohash_hasher::BuildNoHashHasher;
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
-
+use crate::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
 use crate::serializer_options::SerializerOptions;
 
 // ------------------------------------------------------------
@@ -70,20 +70,6 @@ impl std::error::Error for Error {}
 
 /// Result alias.
 pub type Result<T> = std::result::Result<T, Error>;
-
-
-/// Wrap an `Rc<T>` to opt-in to anchor emission for that field.
-#[derive(Clone)]
-pub struct RcAnchor<T>(pub Rc<T>);
-/// Wrap an `Arc<T>` to opt-in to anchor emission for that field.
-#[derive(Clone)]
-pub struct ArcAnchor<T>(pub Arc<T>);
-/// Wrap an `std::rc::Weak<T>` to opt-in; if dangling it serializes as `null`.
-#[derive(Clone)]
-pub struct RcWeakAnchor<T>(pub RcWeak<T>);
-/// Wrap an `std::sync::Weak<T>` to opt-in; if dangling it serializes as `null`.
-#[derive(Clone)]
-pub struct ArcWeakAnchor<T>(pub ArcWeak<T>);
 
 /// Force a sequence to be emitted in flow style: `[a, b, c]`.
 #[derive(Clone, Debug, PartialEq, Eq)]
