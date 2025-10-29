@@ -18,10 +18,10 @@ use std::sync::{Arc, Weak as ArcWeak};
 ///
 /// // Create from an existing Rc
 /// let rc = Rc::new(String::from("Hello"));
-/// let anchor1: RcAnchor<String> = RcAnchor::from(rc.clone());
+/// let anchor1 = RcAnchor::from(rc.clone());
 ///
 /// // Or directly from a value (Rc::new is called internally)
-/// let anchor2: RcAnchor<String> = RcAnchor::from(String::from("World"));
+/// let anchor2: RcAnchor<String> = RcAnchor::from(Rc::new(String::from("World")));
 ///
 /// assert_eq!(*anchor1.0, "Hello");
 /// assert_eq!(*anchor2.0, "World");
@@ -43,10 +43,10 @@ pub struct RcAnchor<T: ?Sized>(pub Rc<T>);
 ///
 /// // Create from an existing Arc
 /// let arc = Arc::new(String::from("Shared"));
-/// let anchor1: ArcAnchor<String> = ArcAnchor::from(arc.clone());
+/// let anchor1 = ArcAnchor::from(arc.clone());
 ///
 /// // Or create directly from a value
-/// let anchor2: ArcAnchor<String> = ArcAnchor::from(String::from("Data"));
+/// let anchor2: ArcAnchor<String> = ArcAnchor::from(Arc::new(String::from("Data")));
 ///
 /// assert_eq!(*anchor1.0, "Shared");
 /// assert_eq!(*anchor2.0, "Data");
@@ -71,7 +71,7 @@ pub struct ArcAnchor<T: ?Sized>(pub Arc<T>);
 /// use std::rc::Rc;
 /// use serde_saphyr::{RcAnchor, RcWeakAnchor};
 ///
-/// let rc_anchor = RcAnchor::from(String::from("Persistent"));
+/// let rc_anchor = RcAnchor::from(Rc::new(String::from("Persistent")));
 ///
 /// // Create a weak anchor from a strong reference
 /// let weak_anchor = RcWeakAnchor::from(&rc_anchor.0);
@@ -97,7 +97,7 @@ pub struct RcWeakAnchor<T: ?Sized>(pub RcWeak<T>);
 /// use std::sync::Arc;
 /// use serde_saphyr::{ArcAnchor, ArcWeakAnchor};
 ///
-/// let arc_anchor = ArcAnchor::from(String::from("Thread-safe"));
+/// let arc_anchor = ArcAnchor::from(Arc::new(String::from("Thread-safe")));
 ///
 /// // Create a weak anchor from the strong reference
 /// let weak_anchor = ArcWeakAnchor::from(&arc_anchor.0);
@@ -116,17 +116,9 @@ impl<T: ?Sized> From<Rc<T>> for RcAnchor<T> {
     #[inline]
     fn from(rc: Rc<T>) -> Self { RcAnchor(rc) }
 }
-impl<T> From<T> for RcAnchor<T> {
-    #[inline]
-    fn from(value: T) -> Self { RcAnchor(Rc::new(value)) }
-}
 impl<T: ?Sized> From<Arc<T>> for ArcAnchor<T> {
     #[inline]
     fn from(arc: Arc<T>) -> Self { ArcAnchor(arc) }
-}
-impl<T> From<T> for ArcAnchor<T> {
-    #[inline]
-    fn from(value: T) -> Self { ArcAnchor(Arc::new(value)) }
 }
 
 // ===== From conversions (strong -> weak anchor) =====
@@ -184,23 +176,6 @@ impl<T: ?Sized> Borrow<Arc<T>> for ArcAnchor<T> {
     #[inline]
     fn borrow(&self) -> &Arc<T> { &self.0 }
 }
-// Weak AsRef/Borrow for symmetry
-impl<T: ?Sized> AsRef<RcWeak<T>> for RcWeakAnchor<T> {
-    #[inline]
-    fn as_ref(&self) -> &RcWeak<T> { &self.0 }
-}
-impl<T: ?Sized> Borrow<RcWeak<T>> for RcWeakAnchor<T> {
-    #[inline]
-    fn borrow(&self) -> &RcWeak<T> { &self.0 }
-}
-impl<T: ?Sized> AsRef<ArcWeak<T>> for ArcWeakAnchor<T> {
-    #[inline]
-    fn as_ref(&self) -> &ArcWeak<T> { &self.0 }
-}
-impl<T: ?Sized> Borrow<ArcWeak<T>> for ArcWeakAnchor<T> {
-    #[inline]
-    fn borrow(&self) -> &ArcWeak<T> { &self.0 }
-}
 impl<T: ?Sized> From<RcAnchor<T>> for Rc<T> {
     #[inline]
     fn from(a: RcAnchor<T>) -> Rc<T> { a.0 }
@@ -231,16 +206,6 @@ impl<T: ?Sized> ArcWeakAnchor<T> {
     /// Returns `true` if the underlying value has been dropped (no strong refs remain).
     #[inline]
     pub fn is_dangling(&self) -> bool { self.0.strong_count() == 0 }
-}
-
-// Direct conversions from raw Weak types
-impl<T: ?Sized> From<RcWeak<T>> for RcWeakAnchor<T> {
-    #[inline]
-    fn from(w: RcWeak<T>) -> Self { RcWeakAnchor(w) }
-}
-impl<T: ?Sized> From<ArcWeak<T>> for ArcWeakAnchor<T> {
-    #[inline]
-    fn from(w: ArcWeak<T>) -> Self { ArcWeakAnchor(w) }
 }
 
 // ===== Pointer-equality PartialEq/Eq =====
@@ -323,21 +288,12 @@ impl<T: Default> Default for RcAnchor<T> {
     fn default() -> Self { RcAnchor(Rc::new(T::default())) }
 }
 impl<T: Default> Default for ArcAnchor<T> {
-    #[inline]
     fn default() -> Self { ArcAnchor(Arc::new(T::default())) }
 }
-impl<T> Default for RcWeakAnchor<T> {
-    #[inline]
-    fn default() -> Self { RcWeakAnchor(RcWeak::new()) }
-}
-impl<T> Default for ArcWeakAnchor<T> {
-    #[inline]
-    fn default() -> Self { ArcWeakAnchor(ArcWeak::new()) }
-}
 
-// ===== Deserialize support for strong anchors =====
-// Note: aliases in YAML are not preserved as shared identity; each occurrence
-// becomes a fresh Rc/Arc constructed from deserialized T.
+// -------------------------------
+// Deserialize impls
+// -------------------------------
 impl<'de, T> serde::de::Deserialize<'de> for RcAnchor<T>
 where
     T: serde::de::Deserialize<'de>,
@@ -346,7 +302,8 @@ where
     where
         D: serde::de::Deserializer<'de>,
     {
-        T::deserialize(deserializer).map(|t| RcAnchor(Rc::new(t)))
+        let inner = T::deserialize(deserializer)?;
+        Ok(RcAnchor(Rc::new(inner)))
     }
 }
 
@@ -358,7 +315,8 @@ where
     where
         D: serde::de::Deserializer<'de>,
     {
-        T::deserialize(deserializer).map(|t| ArcAnchor(Arc::new(t)))
+        let inner = T::deserialize(deserializer)?;
+        Ok(ArcAnchor(Arc::new(inner)))
     }
 }
 

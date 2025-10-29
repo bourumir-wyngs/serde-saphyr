@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests {
+    use serde::Deserialize;
 
     #[derive(Debug, Deserialize, PartialEq)]
     struct Root {
@@ -49,8 +50,8 @@ seq:
     // Serialization tests demonstrating README's anchor wrappers (Rc, Weak)
     // ---------------------------------------------------------------------
     use indoc::indoc;
-    use serde::{Serialize, Deserialize};
-    use serde_saphyr::{to_string, from_str, ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
+    use serde::Serialize;
+    use serde_saphyr::{from_str, to_string, ArcAnchor, RcAnchor, RcWeakAnchor};
     use std::rc::Rc;
     use std::sync::Arc;
 
@@ -62,11 +63,7 @@ seq:
 
     #[test]
     fn anchor_assign() {
-        let anchor: RcAnchor<Node> = Node {
-            name: "".to_string(),
-        }.into();
-
-        let anchor: RcAnchor<Node> = Rc::new(Node {
+        let _anchor: RcAnchor<Node> = Rc::new(Node {
             name: "".to_string(),
         })
         .into();
@@ -75,7 +72,7 @@ seq:
             name: "".to_string(),
         });
 
-        let anchor: RcWeakAnchor<Node> = nrc.into();
+        let _anchor: RcWeakAnchor<Node> = nrc.into();
     }
 
     #[test]
@@ -122,6 +119,7 @@ seq:
             to_string(&RcWeakAnchor(weak_dangling)).expect("serialize RcWeakAnchor dangling");
         assert_eq!(yaml_null, "null\n");
     }
+
 
     #[test]
     fn deserialize_rc_anchor_strong_without_alias_identity() {

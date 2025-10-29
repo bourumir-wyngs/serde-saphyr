@@ -349,6 +349,8 @@ When anchors are highly repetitive and also large, packing them into references 
 In [`SerializerOptions`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.SerializerOptions.html), you can set
 your own function to generate anchor names.
 
+Starting from 0.0.7, our can also deserialize YAML into these anchor structures, but so far this is not identity preserving (values will be resolved but just cloned)
+
 ## Robotics ##
 The feature-gated "robotics" capability enables parsing of YAML extensions commonly used in robotics (ROS, ROS2, etc.) These extensions support conversion functions (deg, rad) and simple mathematical expressions such as deg(180), rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). This capability is gated behind the [robotics] feature and is not enabled by default. Additionally, angle_conversions must be set to true in the Options.
 
