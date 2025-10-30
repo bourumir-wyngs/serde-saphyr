@@ -1316,6 +1316,8 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
         if self.flow {
             self.ser.out.write_str("}")?;
             if self.ser.in_flow == 0 { self.ser.newline()?; }
+        } else if self.first {
+            self.ser.newline()?;
         }
         Ok(())
     }
