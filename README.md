@@ -306,50 +306,72 @@ assert!(yaml.contains("name: Ada"));
 ```
 
 #### Anchors (Rc/Arc/Weak)
-
 Serde-saphyr can conceptually connect YAML anchors with Rust shared references (Rc, Weak and Arc). You need to use wrappers to activate this feature:
 
 - `RcAnchor<T>` and `ArcAnchor<T>` emit anchors like `&a1` on first occurrence and may emit aliases `*a1` later.
 - `RcWeakAnchor<T>` and `ArcWeakAnchor<T>` serialize a weak ref: if the strong pointer is gone, it becomes `null`.
 
 ```rust
-use serde::Serialize;
-use std::rc::Rc;
-
-    #[derive(Serialize, Clone)]
-    struct Node {
-        name: String,
+     #[derive(Deserialize, Serialize)]
+    struct Doc {
+        a: RcAnchor<Node>,
+        b: RcAnchor<Node>,
     }
 
-    let n1 = RcAnchor(Rc::new(Node {
-        name: "node one".to_string(),
+    #[derive(Deserialize, Serialize)]
+    struct Bigger {
+        primary_a: RcAnchor<Node>,
+        doc: Doc,
+    }
+
+    let the_a = RcAnchor::from(Rc::new(Node {
+        name: "primary_a".to_string(),
     }));
 
-    let n2 = RcAnchor(Rc::new(Node {
-        name: "node two".to_string(),
-    }));
+    let data = Bigger {
+        primary_a: the_a.clone(),
+        doc: Doc {
+            a: the_a.clone(),
+            b: RcAnchor::from(Rc::new(Node {
+                name: "the_b".to_string(),
+            })),
+        },
+    };
 
-    let data = vec![n1.clone(), n1.clone(), n1.clone(), n2.clone(), n1.clone(), n2.clone()];
-    println!("{}", serde_saphyr::to_string(&data).expect("Must serialize"));```
+    let serialized = serde_saphyr::to_string(&data)?;
+    assert_eq!(serialized, String::from(
+        indoc! {
+            r#"primary_a: &a1
+                  name: primary_a
+                doc:
+                  a: *a1
+                  b: &a2
+                    name: the_b
+            "#}));
+
+    let deserialized: Bigger = serde_saphyr::from_str(&serialized)?;
+
+    assert_eq!(&deserialized.primary_a.name, &deserialized.doc.a.name);
+    assert_eq!(&deserialized.doc.b.name, &data.doc.b.name);
+    assert!(Rc::ptr_eq(&deserialized.primary_a.0, &deserialized.doc.a.0));
+
+    Ok(())
+}
 ```
 
 This will produce the following YAML:
 ```yaml
-- &a1
-  name: node one
-- *a1
-- *a1
-- &a2
-  name: node two
-- *a1
-- *a2
+primary_a: &a1
+  name: primary_a
+doc:
+  a: *a1
+  b: &a2
+name: the_b
 ```
 
 When anchors are highly repetitive and also large, packing them into references can make YAML more human-readable. 
-In [`SerializerOptions`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.SerializerOptions.html), you can set
-your own function to generate anchor names.
 
-Starting from 0.0.7, our can also deserialize YAML into these anchor structures, but so far this is not identity preserving (values will be resolved but just cloned)
+Starting from 0.0.7, our can also deserialize YAML into these anchor structures, this serialization is identity-preserving. A field or structure that is defined once and subsequently referenced will exist as a single instance in memory, with all anchor fields pointing to it. This is crucial when the topology of references itself constitutes important information to be transferred.
 
 ## Robotics ##
 The feature-gated "robotics" capability enables parsing of YAML extensions commonly used in robotics (ROS, ROS2, etc.) These extensions support conversion functions (deg, rad) and simple mathematical expressions such as deg(180), rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). This capability is gated behind the [robotics] feature and is not enabled by default. Additionally, angle_conversions must be set to true in the Options.

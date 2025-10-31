@@ -65,13 +65,12 @@ fn arc_anchor_shared_in_map_has_repeated_anchor_and_values() {
     println!("ARC anchor map:\n{}", yaml);
 
     let expected = indoc! {r#"
-        a:&a1
-        
+        a: &a1
           name: shared
           next: null
           prev: null
           unique: null
-        b:*a1
+        b: *a1
     "#};
     assert_eq!(
         yaml, expected,
@@ -198,9 +197,10 @@ fn node_with_unique_unshared_and_present_weak() {
     println!("Parent with weak+unique YAML:\n{}", yaml);
 
     // We expect two anchors emitted (&a1 for target via weak, &a2 for unique), but no aliases
-    let prev_ok = yaml.contains("prev:\n  &a1") || yaml.contains("prev:&a1");
+    // Accept either form depending on formatter: inline after colon (preferred) or on next line.
+    let prev_ok = yaml.contains("prev: &a1") || yaml.contains("prev:\n  &a1");
     assert!(prev_ok, "prev should contain anchored target, got: {}", yaml);
-    let unique_ok = yaml.contains("unique:\n  &a2") || yaml.contains("unique:&a2");
+    let unique_ok = yaml.contains("unique: &a2") || yaml.contains("unique:\n  &a2");
     assert!(unique_ok, "unique should contain its own anchor, got: {}", yaml);
     assert!(yaml.contains("name: target"));
     assert!(yaml.contains("name: unique"));

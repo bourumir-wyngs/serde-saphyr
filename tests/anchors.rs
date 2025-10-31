@@ -185,54 +185,15 @@ seq:
         };
 
         let serialized = serde_saphyr::to_string(&data)?;
-        println!("{}", serialized);
-
         assert_eq!(serialized, String::from(
             indoc! {
             r#"primary_a: &a1
-            name: primary_a
-          doc:
-            a: *a1
-            b: &a2
-            name: the_b
-        "#}));
-
-        let deserialized: Bigger = serde_saphyr::from_str(&serialized)?;
-
-        Ok(())
-    }
-
-    #[test]
-    fn anchor_round_trip() -> anyhow::Result<()> {
-        #[derive(Deserialize, Serialize)]
-        struct Doc {
-            a: RcAnchor<Node>,
-            b: RcAnchor<Node>,
-        }
-
-        #[derive(Deserialize, Serialize)]
-        struct Bigger {
-            primary_a: RcAnchor<Node>,
-            doc: Doc,
-        }
-
-        let the_a = RcAnchor::from(Rc::new(Node {
-            name: "primary_a".to_string(),
-        }));
-
-        let data = Bigger {
-            primary_a: the_a.clone(),
-            doc: Doc {
-                a: the_a.clone(),
-                b: RcAnchor::from(Rc::new(Node {
-                    name: "the_b".to_string(),
-                })),
-            },
-        };
-
-        let serialized = serde_saphyr::to_string(&data)?;
-
-        println!("{}", serialized);
+                  name: primary_a
+                doc:
+                  a: *a1
+                  b: &a2
+                    name: the_b
+            "#}));
 
         let deserialized: Bigger = serde_saphyr::from_str(&serialized)?;
 
@@ -240,7 +201,7 @@ seq:
         assert_eq!(&deserialized.doc.b.name, &data.doc.b.name);
         assert!(Rc::ptr_eq(&deserialized.primary_a.0, &deserialized.doc.a.0));
 
-        println!("{}", serde_saphyr::to_string(&data)?);
         Ok(())
     }
+
 }

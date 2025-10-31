@@ -886,7 +886,15 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             // Indentation rules:
             // - Top-level (at line start, not after dash): use current depth.
             // - After dash inline first key or as a value: indent one level deeper for subsequent lines.
-            let depth_next = if inline_first || was_inline_value { self.depth + 1 } else { self.depth };
+            // Use the current mapping's depth as base only when we are in a VALUE position.
+            // For complex KEYS (non-scalar), keep using the current serializer depth so that
+            // subsequent key lines indent relative to the "? " line, not the parent map's base.
+            let base = if was_inline_value && self.current_map_depth.is_some() {
+                self.current_map_depth.unwrap()
+            } else {
+                self.depth
+            };
+            let depth_next = if inline_first || was_inline_value { base + 1 } else { base };
             Ok(MapSer { ser: self, depth: depth_next, flow: false, first: true, last_key_complex: false })
         }
     }
@@ -1223,6 +1231,9 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
 
                     self.ser.pending_inline_map = true;
                     self.ser.depth = self.depth;
+                    // Provide a base depth for nested maps within this complex key so that
+                    // continuation lines indent one level deeper than the parent mapping.
+                    self.ser.current_map_depth = Some(self.depth);
                     self.ser.after_dash_depth = None;
                     key.serialize(&mut *self.ser)?;
 
