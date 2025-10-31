@@ -395,3 +395,76 @@ where
     }
 }
 
+// -------------------------------
+// Deserialize impls for WEAK anchors (RcWeakAnchor / ArcWeakAnchor)
+// -------------------------------
+impl<'de, T> serde::de::Deserialize<'de> for RcWeakAnchor<T>
+where
+    T: serde::de::Deserialize<'de> + 'static,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+    {
+        struct RcWeakVisitor<T>(PhantomData<T>);
+        impl<'de, T> Visitor<'de> for RcWeakVisitor<T>
+        where
+            T: serde::de::Deserialize<'de> + 'static,
+        {
+            type Value = RcWeakAnchor<T>;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("an RcWeakAnchor referring to a previously defined strong anchor (via alias)")
+            }
+            fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where
+                D: serde::de::Deserializer<'de>,
+            {
+                // Anchor context is established by de.rs when the special name is used.
+                let id = anchor_store::current_rc_anchor().ok_or_else(|| D::Error::custom("weak Rc anchor must refer to an existing strong anchor via alias"))?;
+                // Consume and ignore the inner node to keep the stream in sync (alias replay injects the full target node).
+                let _ = <serde::de::IgnoredAny as serde::de::Deserialize>::deserialize(deserializer)?;
+                // Look up the strong reference by id and downgrade.
+                match anchor_store::get_rc::<T>(id).map_err(D::Error::custom)? {
+                    Some(rc) => Ok(RcWeakAnchor(Rc::downgrade(&rc))),
+                    None => Err(D::Error::custom("weak Rc anchor refers to unknown anchor id; strong anchor must be defined before weak")),
+                }
+            }
+        }
+        deserializer.deserialize_newtype_struct("__yaml_rc_weak_anchor", RcWeakVisitor(PhantomData))
+    }
+}
+
+impl<'de, T> serde::de::Deserialize<'de> for ArcWeakAnchor<T>
+where
+    T: serde::de::Deserialize<'de> + Send + Sync + 'static,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+    {
+        struct ArcWeakVisitor<T>(PhantomData<T>);
+        impl<'de, T> Visitor<'de> for ArcWeakVisitor<T>
+        where
+            T: serde::de::Deserialize<'de> + Send + Sync + 'static,
+        {
+            type Value = ArcWeakAnchor<T>;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("an ArcWeakAnchor referring to a previously defined strong anchor (via alias)")
+            }
+            fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where
+                D: serde::de::Deserializer<'de>,
+            {
+                let id = anchor_store::current_arc_anchor().ok_or_else(|| D::Error::custom("weak Arc anchor must refer to an existing strong anchor via alias"))?;
+                // Consume and ignore the inner node (alias replay injects the target node events).
+                let _ = <serde::de::IgnoredAny as serde::de::Deserialize>::deserialize(deserializer)?;
+                match anchor_store::get_arc::<T>(id).map_err(D::Error::custom)? {
+                    Some(arc) => Ok(ArcWeakAnchor(Arc::downgrade(&arc))),
+                    None => Err(D::Error::custom("weak Arc anchor refers to unknown anchor id; strong anchor must be defined before weak")),
+                }
+            }
+        }
+        deserializer.deserialize_newtype_struct("__yaml_arc_weak_anchor", ArcWeakVisitor(PhantomData))
+    }
+}
+

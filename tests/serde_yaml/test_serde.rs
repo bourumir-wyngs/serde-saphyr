@@ -305,12 +305,10 @@ fn test_strings_needing_quote() {
 fn test_nested_vec() {
     let thing = vec![vec![1, 2, 3], vec![4, 5, 6]];
     let yaml = indoc! {"
-        - 
-          - 1
+        - - 1
           - 2
           - 3
-        - 
-          - 4
+        - - 4
           - 5
           - 6
     "};

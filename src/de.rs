@@ -1065,6 +1065,18 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                     visitor.visit_newtype_struct(self)
                 })
             }
+            "__yaml_rc_weak_anchor" => {
+                let anchor = self.peek_anchor_id()?;
+                anchor_store::with_anchor_context(AnchorKind::Rc, anchor, || {
+                    visitor.visit_newtype_struct(self)
+                })
+            }
+            "__yaml_arc_weak_anchor" => {
+                let anchor = self.peek_anchor_id()?;
+                anchor_store::with_anchor_context(AnchorKind::Arc, anchor, || {
+                    visitor.visit_newtype_struct(self)
+                })
+            }
             _ => visitor.visit_newtype_struct(self),
         }
     }

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
+use serde_saphyr::{RcAnchor, RcWeakAnchor};
 use std::collections::HashMap;
 use std::rc::Rc;
-use serde_saphyr::RcAnchor;
 
 #[test]
 fn config_example_compiles() {
@@ -154,7 +154,7 @@ fn readme_multiple_documents_stream_example_compiles() {
 
 #[test]
 fn serialize_anchors() {
-    #[derive(Serialize, Clone)]
+    #[derive(Serialize, Deserialize, Clone)]
     struct Node {
         name: String,
     }
@@ -167,6 +167,52 @@ fn serialize_anchors() {
         name: "node two".to_string(),
     }));
 
-    let data = vec![n1.clone(), n1.clone(), n1.clone(), n2.clone(), n1.clone(), n2.clone()];
-    println!("{}", serde_saphyr::to_string(&data).expect("Must serialize"));
+    // Strong anchors: repeated references produce an anchor + aliases
+    let data = vec![
+        n1.clone(),
+        n1.clone(),
+        n1.clone(),
+        n2.clone(),
+        n1.clone(),
+        n2.clone(),
+    ];
+    println!(
+        "{}",
+        serde_saphyr::to_string(&data).expect("Must serialize strong anchors")
+    );
+
+    // Weak anchors: present (upgradable) weak created from an existing strong anchor
+    let weak_n1: RcWeakAnchor<Node> = RcWeakAnchor::from(&n1.0);
+    let weak_n2: RcWeakAnchor<Node> = RcWeakAnchor::from(&n2.0);
+
+    let serialize = (n1.clone(), n2.clone(), weak_n1, weak_n2);
+    let yaml = serde_saphyr::to_string(&serialize).expect("Must serialize strong and weak anchors");
+    println!("{}", yaml);
+
+    let deserialized: (
+        RcAnchor<Node>,
+        RcAnchor<Node>,
+        RcWeakAnchor<Node>,
+        RcWeakAnchor<Node>,
+    ) = serde_saphyr::from_str(&yaml).expect("Must serialize");
+
+    assert_eq!(deserialized.0.name, n1.name);
+    assert_eq!(deserialized.1.name, n2.name);
+
+    assert_eq!(
+        deserialized
+            .2
+            .upgrade()
+            .expect("Node 2 still her and should be upgradable")
+            .name,
+        n1.name
+    );
+    assert_eq!(
+        deserialized
+            .3
+            .upgrade()
+            .expect("Node 2 still her and should be upgradable")
+            .name,
+        n2.name
+    );
 }

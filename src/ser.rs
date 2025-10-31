@@ -812,16 +812,38 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
         } else {
             // Block sequence. Decide indentation based on whether this is after a map key or after a list dash.
             let was_inline_value = !self.at_line_start;
+            // For block sequences, never inline the first inner dash after a parent dash.
+            // Style expectation in tests prefers:
+            // -\n  - 1
+            // rather than "- - 1".
+            let inline_first = (!self.at_line_start) && self.after_dash_depth.is_some() && !self.pending_space_after_colon;
+            // Remember if we are a mapping value (space after colon was pending) to handle newline correctly.
+            let had_pending_space = self.pending_space_after_colon;
             self.write_anchor_for_complex_node()?;
-            if was_inline_value {
-                // We were mid-line (after key: or after a list dash). Move to a new line.
+            if inline_first {
+                // Keep staged inline (pending_inline_map) so the child can inline its first dash.
+                // Ensure we stay mid-line so the child can emit its first dash inline.
+                self.at_line_start = false;
+            } else if was_inline_value {
+                // Mid-line start. If we are here due to a map value (after ':'), move to next line.
+                // If we are here due to a list dash, keep inline.
                 self.pending_space_after_colon = false;
-                self.newline()?;
+                if had_pending_space && !self.at_line_start {
+                    self.newline()?;
+                }
             }
-            // Indentation policy:
-            // - After a map key ("key: <seq>") or nested under a list dash, indent one level deeper.
-            // - Otherwise (top-level or already at line start), keep current depth.
-            let depth_next = if was_inline_value { self.depth + 1 } else { self.depth };
+            // Indentation policy mirrors serialize_map:
+            // - After a list dash inline_first: base is dash depth; indent one level deeper.
+            // - As a value after a map key: base is current_map_depth (if set), indent one level deeper.
+            // - Otherwise (top-level or already at line start): base is current depth.
+            let base = if inline_first {
+                self.after_dash_depth.unwrap_or(self.depth)
+            } else if was_inline_value && self.current_map_depth.is_some() {
+                self.current_map_depth.unwrap()
+            } else {
+                self.depth
+            };
+            let depth_next = if inline_first || was_inline_value { base + 1 } else { base };
             Ok(SeqSer { ser: self, depth: depth_next, flow: false, first: true })
         }
     }
@@ -889,7 +911,9 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             // Use the current mapping's depth as base only when we are in a VALUE position.
             // For complex KEYS (non-scalar), keep using the current serializer depth so that
             // subsequent key lines indent relative to the "? " line, not the parent map's base.
-            let base = if was_inline_value && self.current_map_depth.is_some() {
+            let base = if inline_first {
+                self.after_dash_depth.unwrap_or(self.depth)
+            } else if was_inline_value && self.current_map_depth.is_some() {
                 self.current_map_depth.unwrap()
             } else {
                 self.depth
@@ -967,12 +991,22 @@ impl<'a, 'b, W: Write> SerializeSeq for SeqSer<'a, 'b, W> {
             if !self.first && self.ser.inline_map_after_dash {
                 self.ser.inline_map_after_dash = false;
             }
-            self.ser.write_indent(self.depth)?;
+            if self.first && (!self.ser.at_line_start || self.ser.pending_inline_map) {
+                // Inline the first element of this nested sequence right after the outer dash
+                // (either we are already mid-line, or the parent staged inline via pending_inline_map).
+                // Do not write indentation here.
+            } else {
+                self.ser.write_indent(self.depth)?;
+            }
             self.ser.out.write_str("- ")?;
             self.ser.at_line_start = false;
+            if self.first && self.ser.inline_map_after_dash {
+                // We consumed the inline-after-dash behavior for this child sequence.
+                self.ser.inline_map_after_dash = false;
+            }
             // Capture the dash's indentation depth for potential struct-variant that follows.
             self.ser.after_dash_depth = Some(self.depth);
-            // Hint to emit first key of a following mapping inline on the same line.
+            // Hint to emit first key/element of a following mapping/sequence inline on the same line.
             self.ser.pending_inline_map = true;
             v.serialize(&mut *self.ser)?;
         }

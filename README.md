@@ -9,7 +9,7 @@
 [![Fuzz & Audit](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/ci.yml/badge.svg)](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/ci.yml)
 
 **serde-saphyr** is a strongly typed YAML deserializer built on
-[`saphyr-parser`](https://crates.io/crates/saphyr-parser). It aims to be **panic-free** on malformed input and to avoid `unsafe` code in library code. The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.” It is not a fork of the older [`serde-yaml`](https://crates.io/crates/serde_yaml) and does not share any code with it (some tests are reused). While first versions only provided deserializer, since 0.0.5 serde-saphyr is complete package featuring serializer as well.
+[`saphyr-parser`](https://crates.io/crates/saphyr-parser). It aims to be **panic-free** on malformed input and to avoid `unsafe` code in library code. The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.” It is not a fork of the older [`serde-yaml`](https://crates.io/crates/serde_yaml) and does not share any code with it (some tests are reused). It provides both serializer and deserializer.
 
 ### Why this approach?
 
@@ -291,10 +291,6 @@ Fuzzing shows that certain adversarial inputs can make YAML parsers consume exce
 
 ## Serialization
 
-While first versions only included deserializer, from 0.0.5 this library can also serialize.
-
-Example:
-
 ```rust
 use serde::Serialize;
 
@@ -359,19 +355,9 @@ Serde-saphyr can conceptually connect YAML anchors with Rust shared references (
 }
 ```
 
-This will produce the following YAML:
-```yaml
-primary_a: &a1
-  name: primary_a
-doc:
-  a: *a1
-  b: &a2
-name: the_b
-```
-
 When anchors are highly repetitive and also large, packing them into references can make YAML more human-readable. 
 
-Starting from 0.0.7, our can also deserialize YAML into these anchor structures, this serialization is identity-preserving. A field or structure that is defined once and subsequently referenced will exist as a single instance in memory, with all anchor fields pointing to it. This is crucial when the topology of references itself constitutes important information to be transferred.
+Starting from 0.0.7, this library can also deserialize YAML into these anchor structures, this serialization is identity-preserving. A field or structure that is defined once and subsequently referenced will exist as a single instance in memory, with all anchor fields pointing to it. This is crucial when the topology of references itself constitutes important information to be transferred.
 
 ## Robotics ##
 The feature-gated "robotics" capability enables parsing of YAML extensions commonly used in robotics (ROS, ROS2, etc.) These extensions support conversion functions (deg, rad) and simple mathematical expressions such as deg(180), rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). This capability is gated behind the [robotics] feature and is not enabled by default. Additionally, angle_conversions must be set to true in the Options.
