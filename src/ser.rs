@@ -2,33 +2,33 @@
 //! order preservation (uses the iterator order of your types), simple
 //! style controls (block strings & flow containers), and special
 //! float handling for NaN/±Inf. No intermediate YAML DOM is built.
-//
-// Usage example:
-//
-// use serde::Serialize;
-// use std::rc::Rc;
-// use serde_saphyr::ser::{to_string, RcAnchor, LitStr, FlowSeq};
-//
-// #[derive(Serialize)]
-// struct Cfg {
-//     name: String,
-//     ports: FlowSeq<Vec<u16>>,   // render `[8080, 8081]`
-//     note: LitStr<'static>,      // render as `|` block
-//     data: RcAnchor<Vec<i32>>,   // first sight => &a1
-//     alias: RcAnchor<Vec<i32>>,  // later sight => *a1
-// }
-//
-// fn main() {
-//     let shared = Rc::new(vec![1,2,3]);
-//     let cfg = Cfg {
-//         name: "demo".into(),
-//         ports: FlowSeq(vec![8080, 8081]),
-//         note: LitStr("line 1\nline 2"),
-//         data: RcAnchor(shared.clone()),
-//         alias: RcAnchor(shared),
-//     };
-//     println!("{}", to_string(&cfg).unwrap());
-// }
+//!
+//! Usage example:
+//!
+//! use serde::Serialize;
+//! use std::rc::Rc;
+//! use serde_saphyr::ser::{to_string, RcAnchor, LitStr, FlowSeq};
+//!
+//! #[derive(Serialize)]
+//! struct Cfg {
+//!     name: String,
+//!     ports: FlowSeq<Vec<u16>>,   // render `[8080, 8081]`
+//!     note: LitStr<'static>,      // render as `|` block
+//!     data: RcAnchor<Vec<i32>>,   // first sight => &a1
+//!     alias: RcAnchor<Vec<i32>>,  // later sight => *a1
+//! }
+//!
+//! fn main() {
+//!     let shared = Rc::new(vec![1,2,3]);
+//!     let cfg = Cfg {
+//!         name: "demo".into(),
+//!         ports: FlowSeq(vec![8080, 8081]),
+//!         note: LitStr("line 1\nline 2"),
+//!         data: RcAnchor(shared.clone()),
+//!         alias: RcAnchor(shared),
+//!     };
+//!     println!("{}", to_string(&cfg).unwrap());
+//! }
 
 use serde::ser::{
     self, Serialize, SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant,
