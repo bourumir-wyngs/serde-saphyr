@@ -17,9 +17,13 @@
 
 use std::collections::{HashSet, VecDeque};
 
+use crate::anchor_store::{self, AnchorKind};
 use crate::base64::decode_base64_yaml;
 pub use crate::budget::{Budget, BudgetEnforcer};
-use crate::parse_scalars::{leading_zero_decimal, parse_int_signed, parse_int_unsigned, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish, scalar_is_nullish_for_option};
+use crate::parse_scalars::{
+    leading_zero_decimal, parse_int_signed, parse_int_unsigned, parse_yaml11_bool,
+    parse_yaml12_float, scalar_is_nullish, scalar_is_nullish_for_option,
+};
 use saphyr_parser::ScalarStyle;
 use serde::de::{self, Deserializer as _, IntoDeserializer, Visitor};
 
@@ -64,14 +68,16 @@ pub(crate) enum Ev {
         value: String,
         tag: SfTag,
         style: ScalarStyle,
+        /// Numeric anchor id (0 if none) attached to this scalar node.
+        anchor: usize,
         location: Location,
     },
     /// Start of a sequence (`[` / `-`-list).
-    SeqStart { location: Location },
+    SeqStart { anchor: usize, location: Location },
     /// End of a sequence.
     SeqEnd { location: Location },
     /// Start of a mapping (`{` or block mapping).
-    MapStart { location: Location },
+    MapStart { anchor: usize, location: Location },
     /// End of a mapping.
     MapEnd { location: Location },
 }
@@ -87,9 +93,9 @@ impl Ev {
     pub(crate) fn location(&self) -> Location {
         match self {
             Ev::Scalar { location, .. }
-            | Ev::SeqStart { location }
+            | Ev::SeqStart { location, .. }
             | Ev::SeqEnd { location }
-            | Ev::MapStart { location }
+            | Ev::MapStart { location, .. }
             | Ev::MapEnd { location } => *location,
         }
     }
@@ -173,12 +179,14 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
             value,
             tag,
             style,
+            anchor,
             location,
         } => {
             let ev = Ev::Scalar {
                 value,
                 tag,
                 style,
+                anchor,
                 location,
             };
             let fingerprint = match &ev {
@@ -194,8 +202,8 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
                 location,
             })
         }
-        Ev::SeqStart { location } => {
-            let mut events = vec![Ev::SeqStart { location }];
+        Ev::SeqStart { anchor, location } => {
+            let mut events = vec![Ev::SeqStart { anchor, location }];
             let mut elements = Vec::new();
             loop {
                 match ev.peek()? {
@@ -227,8 +235,8 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
                 location,
             })
         }
-        Ev::MapStart { location } => {
-            let mut events = vec![Ev::MapStart { location }];
+        Ev::MapStart { anchor, location } => {
+            let mut events = vec![Ev::MapStart { anchor, location }];
             let mut entries = Vec::new();
             loop {
                 match ev.peek()? {
@@ -272,7 +280,6 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
         .with_location(location)),
     }
 }
-
 
 /// True if `node` is the YAML merge key (`<<`) as an untagged plain scalar.
 ///
@@ -341,9 +348,9 @@ fn pending_entries_from_events(
             }
             Ok(merged)
         }
-        Some(Ev::Scalar {
-            value, style, ..
-        }) if scalar_is_nullish(value.as_str(), style) => Ok(Vec::new()),
+        Some(Ev::Scalar { value, style, .. }) if scalar_is_nullish(value.as_str(), style) => {
+            Ok(Vec::new())
+        }
         Some(Ev::Scalar { location, .. }) => Err(Error::msg(
             "YAML merge value must be mapping or sequence of mappings",
         )
@@ -491,7 +498,6 @@ impl Events for ReplayEvents {
     fn last_location(&self) -> Location {
         self.last_location
     }
-
 }
 
 /// The streaming Serde deserializer over `Events`.
@@ -580,8 +586,9 @@ impl<'e> Deser<'e> {
 
         // For non-binary, ensure the tag allows string deserialization.
         if !tag.can_parse_into_string() {
-            return Err(Error::msg("cannot deserialize scalar tagged into string")
-                .with_location(location));
+            return Err(
+                Error::msg("cannot deserialize scalar tagged into string").with_location(location)
+            );
         }
 
         Ok(value)
@@ -602,6 +609,22 @@ impl<'e> Deser<'e> {
             Some(Ev::MapStart { .. }) => Ok(()),
             Some(other) => Err(Error::unexpected("mapping start").with_location(other.location())),
             None => Err(Error::eof().with_location(self.ev.last_location())),
+        }
+    }
+
+    /// Peek at the next event's anchor id, if any (0 indicates no anchor).
+    fn peek_anchor_id(&mut self) -> Result<Option<usize>, Error> {
+        match self.ev.peek()? {
+            Some(Ev::Scalar { anchor, .. })
+            | Some(Ev::SeqStart { anchor, .. })
+            | Some(Ev::MapStart { anchor, .. }) => {
+                if *anchor == 0 {
+                    Ok(None)
+                } else {
+                    Ok(Some(*anchor))
+                }
+            }
+            _ => Ok(None),
         }
     }
 }
@@ -669,36 +692,29 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                 // Try integers: prefer signed if leading '-', else unsigned. Fallbacks use 64-bit.
                 let t = s.trim();
                 if t.starts_with('-') && !leading_zero_decimal(t) {
-                    if let Ok(v) = parse_int_signed::<i64>(
-                        t,
-                        "i64",
-                        location,
-                        self.cfg.legacy_octal_numbers,
-                    ) {
+                    if let Ok(v) =
+                        parse_int_signed::<i64>(t, "i64", location, self.cfg.legacy_octal_numbers)
+                    {
                         return visitor.visit_i64(v);
                     }
                 } else {
-                    if let Ok(v) = parse_int_unsigned::<u64>(
-                        t,
-                        "u64",
-                        location,
-                        self.cfg.legacy_octal_numbers,
-                    ) {
+                    if let Ok(v) =
+                        parse_int_unsigned::<u64>(t, "u64", location, self.cfg.legacy_octal_numbers)
+                    {
                         return visitor.visit_u64(v);
                     }
                     // If unsigned failed, a signed parse might still succeed (e.g., overflow handling)
-                    if let Ok(v) = parse_int_signed::<i64>(
-                        t,
-                        "i64",
-                        location,
-                        self.cfg.legacy_octal_numbers,
-                    ) {
+                    if let Ok(v) =
+                        parse_int_signed::<i64>(t, "i64", location, self.cfg.legacy_octal_numbers)
+                    {
                         return visitor.visit_i64(v);
                     }
                 }
 
                 // Try float per YAML 1.2 forms.
-                if let Ok(v) = parse_yaml12_float::<f64>(&s, location, tag, self.cfg.angle_conversions) {
+                if let Ok(v) =
+                    parse_yaml12_float::<f64>(&s, location, tag, self.cfg.angle_conversions)
+                {
                     // serde_json::Value (and possibly other typeless consumers) cannot represent
                     // non-finite floats. In `deserialize_any`, prefer returning a canonical string
                     // for NaN/±Inf so that these values round-trip as strings rather than becoming
@@ -950,9 +966,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
 
             // YAML null forms as scalars → None
             Some(Ev::Scalar {
-                value: s,
-                style,
-                ..
+                value: s, style, ..
             }) if scalar_is_nullish_for_option(s, style) => {
                 let _ = self.ev.next()?; // consume the scalar
                 visitor.visit_none()
@@ -978,9 +992,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
             // Accept YAML null forms or absence as unit
             None => visitor.visit_unit(),
             Some(Ev::Scalar {
-                value: s,
-                style,
-                ..
+                value: s, style, ..
             }) if scalar_is_nullish(s, style) => {
                 let _ = self.ev.next()?; // consume the scalar
                 visitor.visit_unit()
@@ -1036,11 +1048,25 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
     /// `Visitor::visit_newtype_struct`, which in turn will deserialize `T`
     /// using the same YAML event stream.
     fn deserialize_newtype_struct<V: Visitor<'de>>(
-        self,
-        _n: &'static str,
+        mut self,
+        n: &'static str,
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
-        visitor.visit_newtype_struct(self)
+        match n {
+            "__yaml_rc_anchor" => {
+                let anchor = self.peek_anchor_id()?;
+                anchor_store::with_anchor_context(AnchorKind::Rc, anchor, || {
+                    visitor.visit_newtype_struct(self)
+                })
+            }
+            "__yaml_arc_anchor" => {
+                let anchor = self.peek_anchor_id()?;
+                anchor_store::with_anchor_context(AnchorKind::Arc, anchor, || {
+                    visitor.visit_newtype_struct(self)
+                })
+            }
+            _ => visitor.visit_newtype_struct(self),
+        }
     }
 
     /// Deserialize a YAML sequence into a Serde sequence.
@@ -1050,7 +1076,13 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
     /// `!!binary` scalar as a byte *sequence* view when the caller expects a
     /// sequence of u8.
     fn deserialize_seq<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        if let Some(Ev::Scalar { value: s, tag, style, .. }) = self.ev.peek()? {
+        if let Some(Ev::Scalar {
+            value: s,
+            tag,
+            style,
+            ..
+        }) = self.ev.peek()?
+        {
             // Treat null-like scalar as an empty sequence.
             if tag == &SfTag::Null || scalar_is_nullish(s, style) {
                 let _ = self.ev.next()?; // consume the null-like scalar
@@ -1162,7 +1194,13 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
     /// (which Serde also requests via `deserialize_map`).
     fn deserialize_map<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Treat null-like scalar as an empty map/struct.
-        if let Some(Ev::Scalar { value: s, tag, style, .. }) = self.ev.peek()? {
+        if let Some(Ev::Scalar {
+            value: s,
+            tag,
+            style,
+            ..
+        }) = self.ev.peek()?
+        {
             if tag == &SfTag::Null || scalar_is_nullish(s, style) {
                 let _ = self.ev.next()?; // consume the null-like scalar
                 struct EmptyMap;
@@ -1472,7 +1510,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                     None => return Err(Error::eof().with_location(self.ev.last_location())),
                 }
             }
-            Some(Ev::SeqStart { location }) => {
+            Some(Ev::SeqStart { location, .. }) => {
                 return Err(
                     Error::msg("externally tagged enum expected scalar or mapping")
                         .with_location(*location),
@@ -1546,9 +1584,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                             Ok(())
                         }
                         Some(Ev::Scalar {
-                            value: s,
-                            style,
-                            ..
+                            value: s, style, ..
                         }) if scalar_is_nullish(s, style) => {
                             let _ = self.ev.next()?; // consume the null-like scalar
                             self.expect_map_end()

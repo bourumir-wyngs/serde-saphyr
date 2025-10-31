@@ -24,14 +24,11 @@
 use std::borrow::Cow;
 // use std::collections::HashMap; // ← gone
 
-use smallvec::SmallVec;
-use saphyr_parser::{Event, Parser, ScalarStyle, StrInput};
+use crate::de::{AliasLimits, Budget, BudgetEnforcer, Error, Ev, Events, Location};
 use crate::error::{budget_error, location_from_span};
-use crate::de::{
-    AliasLimits, Budget, BudgetEnforcer, Error, Ev, Events,
-    Location,
-};
 use crate::tags::SfTag;
+use saphyr_parser::{Event, Parser, ScalarStyle, StrInput};
+use smallvec::SmallVec;
 
 /// This is enough to hold a single scalar that is common  case in YAML anchors.
 const SMALLVECT_INLINE: usize = 4;
@@ -97,7 +94,12 @@ impl<'a> LiveEvents<'a> {
     ///
     /// # Returns
     /// A configured `LiveEvents` ready to stream events.
-    pub(crate) fn new(input: &'a str, budget: Option<Budget>, alias_limits: AliasLimits, stop_at_doc_end: bool) -> Self {
+    pub(crate) fn new(
+        input: &'a str,
+        budget: Option<Budget>,
+        alias_limits: AliasLimits,
+        stop_at_doc_end: bool,
+    ) -> Self {
         Self {
             produced_any_in_doc: false,
             synthesized_null_emitted: false,
@@ -137,7 +139,9 @@ impl<'a> LiveEvents<'a> {
                 .anchors
                 .get(*anchor_id)
                 .and_then(|o| o.as_ref())
-                .ok_or_else(|| Error::unknown_anchor(*anchor_id).with_location(self.last_location))?;
+                .ok_or_else(|| {
+                    Error::unknown_anchor(*anchor_id).with_location(self.last_location)
+                })?;
 
             if *idx < buf.len() {
                 let ev = buf[*idx].clone();
@@ -156,10 +160,12 @@ impl<'a> LiveEvents<'a> {
                         "alias replay limit exceeded: total_replayed_events={} > {}",
                         self.total_replayed_events, self.alias_limits.max_total_replayed_events
                     ))
-                        .with_location(ev.location()));
+                    .with_location(ev.location()));
                 }
                 self.observe_budget_for_replay(&ev)?;
-                self.record(&ev, /*is_start*/ false, /*seeded_new_frame*/ false);
+                self.record(
+                    &ev, /*is_start*/ false, /*seeded_new_frame*/ false,
+                );
                 self.last_location = ev.location();
                 self.produced_any_in_doc = true;
                 return Ok(Some(ev));
@@ -208,10 +214,8 @@ impl<'a> LiveEvents<'a> {
                         && span.start.col() == 0
                         && !val.trim().is_empty()
                     {
-                        return Err(
-                            Error::msg("folded block scalars must indent their content")
-                                .with_location(location),
-                        );
+                        return Err(Error::msg("folded block scalars must indent their content")
+                            .with_location(location));
                     }
 
                     let s = match val {
@@ -226,7 +230,13 @@ impl<'a> LiveEvents<'a> {
                         // Normalize: anchored empty scalars should behave like plain empty (null-like)
                         style = ScalarStyle::Plain;
                     }
-                    let ev = Ev::Scalar { value: s, tag: tag_s, style, location };
+                    let ev = Ev::Scalar {
+                        value: s,
+                        tag: tag_s,
+                        style,
+                        anchor: anchor_id,
+                        location,
+                    };
                     self.record(&ev, false, false);
                     if anchor_id != 0 {
                         self.ensure_anchor_capacity(anchor_id);
@@ -238,7 +248,10 @@ impl<'a> LiveEvents<'a> {
                 }
 
                 Event::SequenceStart(anchor_id, _tag) => {
-                    let ev = Ev::SeqStart { location };
+                    let ev = Ev::SeqStart {
+                        anchor: anchor_id,
+                        location,
+                    };
                     // Existing frames go deeper with this start.
                     self.bump_depth_on_start();
                     // Start recording for this anchor *after* bumping other frames,
@@ -246,12 +259,20 @@ impl<'a> LiveEvents<'a> {
                     if anchor_id != 0 {
                         let mut buf: SmallVec<Ev, SMALLVECT_INLINE> = SmallVec::new();
                         buf.push(ev.clone());
-                        self.rec_stack.push(RecFrame { id: anchor_id, depth: 1, buf });
+                        self.rec_stack.push(RecFrame {
+                            id: anchor_id,
+                            depth: 1,
+                            buf,
+                        });
                     }
                     // Correct recording semantics:
                     // - If we *just* created a new frame for this start, the start was already seeded.
                     // - For ordinary (non-anchored) starts, record into *all* frames.
-                    self.record(&ev, /*is_start*/ true, /*seeded_new_frame*/ anchor_id != 0);
+                    self.record(
+                        &ev,
+                        /*is_start*/ true,
+                        /*seeded_new_frame*/ anchor_id != 0,
+                    );
                     self.last_location = location;
                     self.produced_any_in_doc = true;
                     return Ok(Some(ev));
@@ -259,21 +280,33 @@ impl<'a> LiveEvents<'a> {
                 Event::SequenceEnd => {
                     let ev = Ev::SeqEnd { location };
                     self.record(&ev, false, false);
-                    self.bump_depth_on_end().map_err(|err| err.with_location(location))?; // may finalize frames
+                    self.bump_depth_on_end()
+                        .map_err(|err| err.with_location(location))?; // may finalize frames
                     self.last_location = location;
                     self.produced_any_in_doc = true;
                     return Ok(Some(ev));
                 }
 
                 Event::MappingStart(anchor_id, _tag) => {
-                    let ev = Ev::MapStart { location };
+                    let ev = Ev::MapStart {
+                        anchor: anchor_id,
+                        location,
+                    };
                     self.bump_depth_on_start();
                     if anchor_id != 0 {
                         let mut buf: SmallVec<Ev, SMALLVECT_INLINE> = SmallVec::new();
                         buf.push(ev.clone());
-                        self.rec_stack.push(RecFrame { id: anchor_id, depth: 1, buf });
+                        self.rec_stack.push(RecFrame {
+                            id: anchor_id,
+                            depth: 1,
+                            buf,
+                        });
                     }
-                    self.record(&ev, /*is_start*/ true, /*seeded_new_frame*/ anchor_id != 0);
+                    self.record(
+                        &ev,
+                        /*is_start*/ true,
+                        /*seeded_new_frame*/ anchor_id != 0,
+                    );
                     self.last_location = location;
                     self.produced_any_in_doc = true;
                     return Ok(Some(ev));
@@ -281,7 +314,8 @@ impl<'a> LiveEvents<'a> {
                 Event::MappingEnd => {
                     let ev = Ev::MapEnd { location };
                     self.record(&ev, false, false);
-                    self.bump_depth_on_end().map_err(|err| err.with_location(location))?;
+                    self.bump_depth_on_end()
+                        .map_err(|err| err.with_location(location))?;
                     self.last_location = location;
                     self.produced_any_in_doc = true;
                     return Ok(Some(ev));
@@ -292,14 +326,15 @@ impl<'a> LiveEvents<'a> {
                     if anchor_id >= self.per_anchor_expansions.len() {
                         self.per_anchor_expansions.resize(anchor_id + 1, 0);
                     }
-                    self.per_anchor_expansions[anchor_id] = self.per_anchor_expansions[anchor_id].saturating_add(1);
+                    self.per_anchor_expansions[anchor_id] =
+                        self.per_anchor_expansions[anchor_id].saturating_add(1);
                     let count = self.per_anchor_expansions[anchor_id];
                     if count > self.alias_limits.max_alias_expansions_per_anchor {
                         return Err(Error::msg(format!(
                             "alias expansion limit exceeded for anchor id {}: {} > {}",
                             anchor_id, count, self.alias_limits.max_alias_expansions_per_anchor
                         ))
-                            .with_location(location));
+                        .with_location(location));
                     }
 
                     // Push for replay; enforce stack depth limit.
@@ -309,7 +344,7 @@ impl<'a> LiveEvents<'a> {
                             "alias replay stack depth exceeded: depth={} > {}",
                             next_depth, self.alias_limits.max_replay_stack_depth
                         ))
-                            .with_location(location));
+                        .with_location(location));
                     }
 
                     // Ensure the anchor exists now (fail fast); store only id + idx.
@@ -336,6 +371,7 @@ impl<'a> LiveEvents<'a> {
                 value: String::new(),
                 tag: SfTag::Null,
                 style: ScalarStyle::Plain,
+                anchor: 0,
                 location: self.last_location,
             };
             self.produced_any_in_doc = true;
@@ -373,7 +409,9 @@ impl<'a> LiveEvents<'a> {
     /// Reconstructs a parser Event equivalent to the Ev and passes it to the
     /// BudgetEnforcer, attaching the event's location on error.
     fn observe_budget_for_replay(&mut self, ev: &Ev) -> Result<(), Error> {
-        let Some(budget) = self.budget.as_mut() else { return Ok(()); };
+        let Some(budget) = self.budget.as_mut() else {
+            return Ok(());
+        };
 
         let raw = match ev {
             Ev::Scalar { value, style, .. } => Event::Scalar(Cow::Borrowed(value), *style, 0, None),
@@ -383,7 +421,8 @@ impl<'a> LiveEvents<'a> {
             Ev::MapEnd { .. } => Event::MappingEnd,
         };
 
-        budget.observe(&raw)
+        budget
+            .observe(&raw)
             .map_err(|breach| budget_error(breach).with_location(ev.location()))
     }
 
@@ -395,24 +434,34 @@ impl<'a> LiveEvents<'a> {
     /// - `seeded_new_frame`: true **only** when a new frame was just created and already
     ///   seeded with the same start event (i.e., anchored container start).
     fn record(&mut self, ev: &Ev, is_start: bool, seeded_new_frame: bool) {
-        if self.rec_stack.is_empty() { return; }
+        if self.rec_stack.is_empty() {
+            return;
+        }
         if is_start {
             if seeded_new_frame {
                 let last = self.rec_stack.len() - 1;
                 for (i, fr) in self.rec_stack.iter_mut().enumerate() {
-                    if i != last { fr.buf.push(ev.clone()); }
+                    if i != last {
+                        fr.buf.push(ev.clone());
+                    }
                 }
             } else {
-                for fr in &mut self.rec_stack { fr.buf.push(ev.clone()); }
+                for fr in &mut self.rec_stack {
+                    fr.buf.push(ev.clone());
+                }
             }
         } else {
-            for fr in &mut self.rec_stack { fr.buf.push(ev.clone()); }
+            for fr in &mut self.rec_stack {
+                fr.buf.push(ev.clone());
+            }
         }
     }
 
     /// Increase recording depth for all active anchored frames on a container start.
     fn bump_depth_on_start(&mut self) {
-        for fr in &mut self.rec_stack { fr.depth += 1; }
+        for fr in &mut self.rec_stack {
+            fr.depth += 1;
+        }
     }
 
     /// Decrease recording depth on a container end and finalize any frames
@@ -421,13 +470,17 @@ impl<'a> LiveEvents<'a> {
     /// Returns an error if internal depth accounting underflows.
     fn bump_depth_on_end(&mut self) -> Result<(), Error> {
         for fr in &mut self.rec_stack {
-            if fr.depth == 0 { return Err(Error::msg("internal depth underflow")); }
+            if fr.depth == 0 {
+                return Err(Error::msg("internal depth underflow"));
+            }
             fr.depth -= 1;
         }
         // Finalize frames that just reached depth == 0 (only possible at the top).
         while let Some(top) = self.rec_stack.last() {
             if top.depth == 0 {
-                let done = self.rec_stack.pop()
+                let done = self
+                    .rec_stack
+                    .pop()
                     .ok_or_else(|| Error::msg("internal recursion stack empty"))?;
                 // Convert SmallVec into Box<[Ev]> and store by anchor_id.
                 self.ensure_anchor_capacity(done.id);
@@ -472,14 +525,19 @@ impl<'a> Events for LiveEvents<'a> {
         if let Some(ev) = self.look.as_ref() {
             self.last_location = ev.location();
         };
-        
-        Ok( (&self.look).into())
+
+        Ok((&self.look).into())
     }
-    fn last_location(&self) -> Location { self.last_location }
+    fn last_location(&self) -> Location {
+        self.last_location
+    }
 }
 
-
 impl<'a> LiveEvents<'a> {
-    pub(crate) fn seen_doc_end(&self) -> bool { self.seen_doc_end }
-    pub(crate) fn synthesized_null_emitted(&self) -> bool { self.synthesized_null_emitted }
+    pub(crate) fn seen_doc_end(&self) -> bool {
+        self.seen_doc_end
+    }
+    pub(crate) fn synthesized_null_emitted(&self) -> bool {
+        self.synthesized_null_emitted
+    }
 }

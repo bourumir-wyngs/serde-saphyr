@@ -60,7 +60,6 @@ seq:
         name: String,
     }
 
-
     #[test]
     fn anchor_assign() {
         let _anchor: RcAnchor<Node> = Rc::new(Node {
@@ -120,9 +119,8 @@ seq:
         assert_eq!(yaml_null, "null\n");
     }
 
-
     #[test]
-    fn deserialize_rc_anchor_strong_without_alias_identity() {
+    fn deserialize_rc_anchor_strong_with_alias_identity() {
         #[derive(Deserialize)]
         struct Doc {
             a: RcAnchor<Node>,
@@ -136,12 +134,11 @@ seq:
         let doc: Doc = from_str(y).expect("deserialize Doc with RcAnchor");
         assert_eq!(doc.a.0.name, "one");
         assert_eq!(doc.b.0.name, "one");
-        // Not the same allocation; identity is not preserved on deserialize.
-        assert!(!Rc::ptr_eq(&doc.a.0, &doc.b.0));
+        assert!(Rc::ptr_eq(&doc.a.0, &doc.b.0)); // same object
     }
 
     #[test]
-    fn deserialize_arc_anchor_strong_without_alias_identity() {
+    fn deserialize_arc_anchor_strong_with_alias_identity() {
         #[derive(Deserialize)]
         struct Doc {
             a: ArcAnchor<Node>,
@@ -155,6 +152,95 @@ seq:
         let doc: Doc = from_str(y).expect("deserialize Doc with ArcAnchor");
         assert_eq!(doc.a.0.name, "one");
         assert_eq!(doc.b.0.name, "one");
-        assert!(!Arc::ptr_eq(&doc.a.0, &doc.b.0));
+        assert!(Arc::ptr_eq(&doc.a.0, &doc.b.0)); // same object
+    }
+
+
+    //#[test]
+    fn anchor_struct_deserialize() -> anyhow::Result<()> {
+        #[derive(Deserialize, Serialize)]
+        struct Doc {
+            a: RcAnchor<Node>,
+            b: RcAnchor<Node>,
+        }
+
+        #[derive(Deserialize, Serialize)]
+        struct Bigger {
+            primary_a: RcAnchor<Node>,
+            doc: Doc,
+        }
+
+        let the_a = RcAnchor::from(Rc::new(Node {
+            name: "primary_a".to_string(),
+        }));
+
+        let data = Bigger {
+            primary_a: the_a.clone(),
+            doc: Doc {
+                a: the_a.clone(),
+                b: RcAnchor::from(Rc::new(Node {
+                    name: "the_b".to_string(),
+                })),
+            },
+        };
+
+        let serialized = serde_saphyr::to_string(&data)?;
+        println!("{}", serialized);
+
+        assert_eq!(serialized, String::from(
+            indoc! {
+            r#"primary_a: &a1
+            name: primary_a
+          doc:
+            a: *a1
+            b: &a2
+            name: the_b
+        "#}));
+
+        let deserialized: Bigger = serde_saphyr::from_str(&serialized)?;
+
+        Ok(())
+    }
+
+    //#[test]
+    fn anchor_round_trip() -> anyhow::Result<()> {
+        #[derive(Deserialize, Serialize)]
+        struct Doc {
+            a: RcAnchor<Node>,
+            b: RcAnchor<Node>,
+        }
+
+        #[derive(Deserialize, Serialize)]
+        struct Bigger {
+            primary_a: RcAnchor<Node>,
+            doc: Doc,
+        }
+
+        let the_a = RcAnchor::from(Rc::new(Node {
+            name: "primary_a".to_string(),
+        }));
+
+        let data = Bigger {
+            primary_a: the_a.clone(),
+            doc: Doc {
+                a: the_a.clone(),
+                b: RcAnchor::from(Rc::new(Node {
+                    name: "the_b".to_string(),
+                })),
+            },
+        };
+
+        let serialized = serde_saphyr::to_string(&data)?;
+
+        println!("{}", serialized);
+
+        let deserialized: Bigger = serde_saphyr::from_str(&serialized)?;
+
+        assert_eq!(&deserialized.primary_a.name, &deserialized.doc.a.name);
+        assert_eq!(&deserialized.doc.b.name, &data.doc.b.name);
+        assert!(Rc::ptr_eq(&deserialized.primary_a.0, &deserialized.doc.a.0));
+
+        println!("{}", serde_saphyr::to_string(&data)?);
+        Ok(())
     }
 }

@@ -470,6 +470,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
             if self.at_line_start {
                 self.write_indent(self.depth)?;
             }
+            self.write_space_if_pending()?;
             self.out.write_char('&')?;
             self.write_anchor_name(id)?;
             self.newline()?;
@@ -484,6 +485,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
         if self.at_line_start {
             self.write_indent(self.depth)?;
         }
+        self.write_space_if_pending()?;
         self.out.write_char('*')?;
         self.write_anchor_name(id)?;
         if self.in_flow == 0 { self.newline()?; }
@@ -873,9 +875,13 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                 // Mark that this sequence element is a mapping printed inline after a dash.
                 self.inline_map_after_dash = true;
             } else if was_inline_value {
-                // Map used as a value after "key: ", start it on the next line.
+                // Map used as a value after "key: ". If an anchor was emitted, we are already at
+                // the start of a new line due to write_anchor_for_complex_node() -> newline().
+                // Only add a newline if we are not already at line start (i.e., no anchor emitted).
                 self.pending_space_after_colon = false;
-                self.newline()?;
+                if !self.at_line_start {
+                    self.newline()?;
+                }
             }
             // Indentation rules:
             // - Top-level (at line start, not after dash): use current depth.

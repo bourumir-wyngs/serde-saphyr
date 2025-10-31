@@ -1,8 +1,13 @@
 use std::borrow::Borrow;
 use std::fmt;
+use std::marker::PhantomData;
 use std::ops::Deref;
 use std::rc::{Rc, Weak as RcWeak};
 use std::sync::{Arc, Weak as ArcWeak};
+
+use serde::de::{Error as _, Visitor};
+
+use crate::anchor_store;
 
 /// A wrapper around [`Rc<T>`] that opt-ins a field for **anchor emission** (e.g. serialization by reference).
 ///
@@ -296,27 +301,97 @@ impl<T: Default> Default for ArcAnchor<T> {
 // -------------------------------
 impl<'de, T> serde::de::Deserialize<'de> for RcAnchor<T>
 where
-    T: serde::de::Deserialize<'de>,
+    T: serde::de::Deserialize<'de> + 'static,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::de::Deserializer<'de>,
     {
-        let inner = T::deserialize(deserializer)?;
-        Ok(RcAnchor(Rc::new(inner)))
+        struct RcAnchorVisitor<T>(PhantomData<T>);
+
+        impl<'de, T> Visitor<'de> for RcAnchorVisitor<T>
+        where
+            T: serde::de::Deserialize<'de> + 'static,
+        {
+            type Value = RcAnchor<T>;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("an RcAnchor newtype")
+            }
+
+            fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where
+                D: serde::de::Deserializer<'de>,
+            {
+                let anchor_id = anchor_store::current_rc_anchor();
+                let existing = match anchor_id {
+                    Some(id) => Some((id, anchor_store::get_rc::<T>(id).map_err(D::Error::custom)?)),
+                    None => None,
+                };
+
+                let value = T::deserialize(deserializer)?;
+                if let Some((_, Some(rc))) = existing {
+                    drop(value);
+                    return Ok(RcAnchor(rc));
+                }
+                if let Some((id, None)) = existing {
+                    let rc = Rc::new(value);
+                    anchor_store::store_rc(id, rc.clone());
+                    return Ok(RcAnchor(rc));
+                }
+                Ok(RcAnchor(Rc::new(value)))
+            }
+        }
+
+        deserializer.deserialize_newtype_struct("__yaml_rc_anchor", RcAnchorVisitor(PhantomData))
     }
 }
 
 impl<'de, T> serde::de::Deserialize<'de> for ArcAnchor<T>
 where
-    T: serde::de::Deserialize<'de>,
+    T: serde::de::Deserialize<'de> + Send + Sync + 'static,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::de::Deserializer<'de>,
     {
-        let inner = T::deserialize(deserializer)?;
-        Ok(ArcAnchor(Arc::new(inner)))
+        struct ArcAnchorVisitor<T>(PhantomData<T>);
+
+        impl<'de, T> Visitor<'de> for ArcAnchorVisitor<T>
+        where
+            T: serde::de::Deserialize<'de> + Send + Sync + 'static,
+        {
+            type Value = ArcAnchor<T>;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("an ArcAnchor newtype")
+            }
+
+            fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where
+                D: serde::de::Deserializer<'de>,
+            {
+                let anchor_id = anchor_store::current_arc_anchor();
+                let existing = match anchor_id {
+                    Some(id) => Some((id, anchor_store::get_arc::<T>(id).map_err(D::Error::custom)?)),
+                    None => None,
+                };
+
+                let value = T::deserialize(deserializer)?;
+                if let Some((_, Some(arc))) = existing {
+                    drop(value);
+                    return Ok(ArcAnchor(arc));
+                }
+                if let Some((id, None)) = existing {
+                    let arc = Arc::new(value);
+                    anchor_store::store_arc(id, arc.clone());
+                    return Ok(ArcAnchor(arc));
+                }
+                Ok(ArcAnchor(Arc::new(value)))
+            }
+        }
+
+        deserializer.deserialize_newtype_struct("__yaml_arc_anchor", ArcAnchorVisitor(PhantomData))
     }
 }
 

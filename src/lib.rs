@@ -1,32 +1,30 @@
+pub use de::{Budget, DuplicateKeyPolicy, Error, Location, Options};
 use serde::de::DeserializeOwned;
-pub use de::{
-    Budget, Options, Error, Location, DuplicateKeyPolicy
-};
 
 // Serialization public API is defined at crate root; wrappers are re-exported.
-pub use ser::{ FlowSeq, FlowMap, LitStr, FoldStr };
-pub use anchors::{ RcAnchor, ArcAnchor, RcWeakAnchor, ArcWeakAnchor };
 pub use crate::serializer_options::SerializerOptions;
+pub use anchors::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
+pub use ser::{FlowMap, FlowSeq, FoldStr, LitStr};
 
+use crate::de::{Ev, Events};
 use crate::live_events::LiveEvents;
 use crate::parse_scalars::scalar_is_nullish;
-use crate::de::{Ev, Events};
 
+mod anchor_store;
+mod anchors;
 mod base64;
 pub mod budget;
-pub mod options;
-mod parse_scalars;
 mod de;
 mod error;
 mod live_events;
-mod tags;
+pub mod options;
+mod parse_scalars;
 mod ser;
-mod anchors;
 mod serializer_options;
+mod tags;
 
 #[cfg(feature = "robotics")]
 pub mod angles_conversions;
-
 
 // Detect BS4K-style invalid pattern: a content line with an inline comment,
 // immediately followed by a top-level (non-indented) content line that would
@@ -36,7 +34,11 @@ fn has_inline_comment_followed_by_top_level_content(input: &str) -> bool {
     let mut lines = input.lines();
     while let Some(line) = lines.next() {
         // Normalize: ignore UTF-8 BOM if present in the first line. Use strip_prefix to avoid slicing at a non-UTF8 boundary.
-        let line = if let Some(rest) = line.strip_prefix('\u{FEFF}') { rest } else { line };
+        let line = if let Some(rest) = line.strip_prefix('\u{FEFF}') {
+            rest
+        } else {
+            line
+        };
         let trimmed = line.trim_end();
 
         // Find position of inline comment '#'
@@ -45,25 +47,37 @@ fn has_inline_comment_followed_by_top_level_content(input: &str) -> bool {
             // Slice before '#'
             let before = &trimmed[..pos];
             // Skip if there is no non-whitespace content before '#'
-            if before.chars().all(|c| c.is_whitespace()) { continue; }
+            if before.chars().all(|c| c.is_whitespace()) {
+                continue;
+            }
             // If there is a ':' (mapping key) before '#', this is not the BS4K case.
-            if before.contains(':') { continue; }
+            if before.contains(':') {
+                continue;
+            }
             // If line starts with a sequence dash after whitespace, skip.
             let before_trim = before.trim_start();
-            if before_trim.starts_with("- ") || before_trim == "-" { continue; }
+            if before_trim.starts_with("- ") || before_trim == "-" {
+                continue;
+            }
             // If flow indicators are present before the comment, skip (flow content allowed).
-            if before.contains('[') || before.contains('{') { continue; }
+            if before.contains('[') || before.contains('{') {
+                continue;
+            }
 
             // Now check the next line context.
             if let Some(next) = lines.clone().next() {
                 let next_trim = next.trim_end();
                 let next_is_empty = next_trim.trim().is_empty();
                 let next_starts_with_ws = next_trim.starts_with(' ') || next_trim.starts_with('\t');
-                let next_is_marker = next_trim.starts_with("---") || next_trim.starts_with("...") || next_trim.starts_with('#');
+                let next_is_marker = next_trim.starts_with("---")
+                    || next_trim.starts_with("...")
+                    || next_trim.starts_with('#');
                 // If next line begins a mapping key (contains ':' before a '#'), do not trigger.
                 if let Some(colon) = next_trim.find(':') {
                     let before_colon = &next_trim[..colon];
-                    if before_colon.chars().any(|c| !c.is_whitespace()) { continue; }
+                    if before_colon.chars().any(|c| !c.is_whitespace()) {
+                        continue;
+                    }
                 }
                 // Trigger only if next line is top-level content (non-empty, non-indented, not a marker/comment)
                 if !next_is_empty && !next_starts_with_ws && !next_is_marker {
@@ -104,7 +118,10 @@ pub fn to_string<T: serde::Serialize>(value: &T) -> std::result::Result<String, 
 /// - `value`: any `serde::Serialize` value.
 ///
 /// Returns `Ok(())` on success, otherwise a serialization error.
-pub fn to_writer<W: std::fmt::Write, T: serde::Serialize>(out: &mut W, value: &T) -> std::result::Result<(), crate::ser::Error> {
+pub fn to_writer<W: std::fmt::Write, T: serde::Serialize>(
+    out: &mut W,
+    value: &T,
+) -> std::result::Result<(), crate::ser::Error> {
     let mut ser = crate::ser::YamlSer::new(out);
     value.serialize(&mut ser)
 }
@@ -219,10 +236,16 @@ pub fn from_str_with_options<T: DeserializeOwned>(
     options: Options,
 ) -> Result<T, Error> {
     // Normalize: ignore a single leading UTF-8 BOM if present.
-    let input = if let Some(rest) = input.strip_prefix('\u{FEFF}') { rest } else { input };
+    let input = if let Some(rest) = input.strip_prefix('\u{FEFF}') {
+        rest
+    } else {
+        input
+    };
     // Tripwire for debugging: inputs with "] ]" should be rejected in single-doc API.
     if input.contains("] ]") {
-        return Err(Error::msg("unexpected trailing closing delimiter").with_location(Location::UNKNOWN));
+        return Err(
+            Error::msg("unexpected trailing closing delimiter").with_location(Location::UNKNOWN)
+        );
     }
     // Heuristic rejection for BS4K-style invalid input: a plain scalar line with an inline
     // comment followed by an unindented content line starting a new scalar without a document
@@ -233,7 +256,9 @@ pub fn from_str_with_options<T: DeserializeOwned>(
     let cfg = crate::de::Cfg::from_options(&options);
     // Do not stop at DocumentEnd; we'll probe for trailing content/errors explicitly.
     let mut src = LiveEvents::new(input, options.budget, options.alias_limits, false);
-    let value_res = T::deserialize(crate::de::Deser::new(&mut src, cfg));
+    let value_res = crate::anchor_store::with_document_scope(|| {
+        T::deserialize(crate::de::Deser::new(&mut src, cfg))
+    });
     let value = match value_res {
         Ok(v) => v,
         Err(e) => {
@@ -256,7 +281,7 @@ pub fn from_str_with_options<T: DeserializeOwned>(
             return Err(Error::msg(
                 "multiple YAML documents detected; use from_multiple or from_multiple_with_options",
             )
-                .with_location(src.last_location()));
+            .with_location(src.last_location()));
         }
         Ok(None) => {}
         Err(e) => {
@@ -276,7 +301,8 @@ pub fn from_str_with_options<T: DeserializeOwned>(
         if (trimmed.contains("] ]") || trimmed.contains("]]"))
             && !(trimmed.contains("[[") || trimmed.contains("[ ["))
         {
-            return Err(Error::msg("unexpected trailing closing delimiter").with_location(src.last_location()));
+            return Err(Error::msg("unexpected trailing closing delimiter")
+                .with_location(src.last_location()));
         }
     }
 
@@ -359,7 +385,11 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
     options: Options,
 ) -> Result<Vec<T>, Error> {
     // Normalize: ignore a single leading UTF-8 BOM if present.
-    let input = if let Some(rest) = input.strip_prefix('\u{FEFF}') { rest } else { input };
+    let input = if let Some(rest) = input.strip_prefix('\u{FEFF}') {
+        rest
+    } else {
+        input
+    };
     let cfg = crate::de::Cfg::from_options(&options);
     let mut src = LiveEvents::new(input, options.budget, options.alias_limits, false);
     let mut values = Vec::new();
@@ -368,16 +398,16 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
         match src.peek()? {
             // Skip documents that are explicit null-like scalars ("", "~", or "null").
             Some(Ev::Scalar {
-                     value: s,
-                     style,
-                     ..
-                 }) if scalar_is_nullish(s, style) => {
+                value: s, style, ..
+            }) if scalar_is_nullish(s, style) => {
                 let _ = src.next()?; // consume the null scalar document
                 // Do not push anything for this document; move to the next one.
                 continue;
             }
             Some(_) => {
-                let value = T::deserialize(crate::de::Deser::new(&mut src, cfg))?;
+                let value = crate::anchor_store::with_document_scope(|| {
+                    T::deserialize(crate::de::Deser::new(&mut src, cfg))
+                })?;
                 values.push(value);
             }
             None => break,
@@ -537,7 +567,6 @@ pub fn from_slice_multiple_with_options<T: DeserializeOwned>(
     from_multiple_with_options(s, options)
 }
 
-
 /// Serialize multiple documents into a YAML string.
 ///
 /// Serializes each value in the provided slice as an individual YAML document.
@@ -556,7 +585,9 @@ pub fn from_slice_multiple_with_options<T: DeserializeOwned>(
 /// let out = serde_saphyr::to_string_multiple(&docs).unwrap();
 /// assert_eq!(out, "x: 1\n---\nx: 2\n");
 /// ```
-pub fn to_string_multiple<T: serde::Serialize>(values: &[T]) -> std::result::Result<String, crate::ser::Error> {
+pub fn to_string_multiple<T: serde::Serialize>(
+    values: &[T],
+) -> std::result::Result<String, crate::ser::Error> {
     let mut out = String::new();
     let mut first = true;
     for v in values {
@@ -634,7 +665,10 @@ pub fn to_string_multiple<T: serde::Serialize>(values: &[T]) -> std::result::Res
 /// ```
 pub fn from_reader<R: std::io::Read>(mut reader: R) -> ReaderDeserializer {
     let mut buf = String::new();
-    reader.read_to_string(&mut buf).map_err(|e| Error::msg(format!("io error: {}", e))).unwrap();
+    reader
+        .read_to_string(&mut buf)
+        .map_err(|e| Error::msg(format!("io error: {}", e)))
+        .unwrap();
     ReaderDeserializer { buf }
 }
 
@@ -669,59 +703,194 @@ impl<'de> serde::de::Deserializer<'de> for ReaderDeserializer {
 
     // Delegate the rest to `deserialize_any` which handles all YAML node kinds.
     fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
     fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
     fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
     fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
     fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
     fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
     fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
     fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
     fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
     fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
     fn deserialize_f64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
     fn deserialize_char<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
     fn deserialize_str<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
     fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
     fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
     fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
     fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
-    fn deserialize_unit_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
-    fn deserialize_newtype_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
+    fn deserialize_unit_struct<V>(
+        self,
+        _name: &'static str,
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
+    fn deserialize_newtype_struct<V>(
+        self,
+        _name: &'static str,
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
     fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
     fn deserialize_tuple<V>(self, _len: usize, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
-    fn deserialize_tuple_struct<V>(self, _name: &'static str, _len: usize, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
+    fn deserialize_tuple_struct<V>(
+        self,
+        _name: &'static str,
+        _len: usize,
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
     fn deserialize_map<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
-    fn deserialize_struct<V>(self, _name: &'static str, _fields: &'static [&'static str], visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
-    fn deserialize_enum<V>(self, _name: &'static str, _variants: &'static [&'static str], visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
+    fn deserialize_struct<V>(
+        self,
+        _name: &'static str,
+        _fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
+    fn deserialize_enum<V>(
+        self,
+        _name: &'static str,
+        _variants: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
     fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
     fn deserialize_ignored_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where V: serde::de::Visitor<'de> { self.deserialize_any(visitor) }
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        self.deserialize_any(visitor)
+    }
 }
