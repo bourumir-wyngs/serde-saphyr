@@ -1,7 +1,7 @@
 // A tree-planting robot simulation demonstrating how to describe polymorphic commands
-// tying them to enums carrying polymorphic fields (distance, direction, tree).
-// Robot starts at the center (4,4). It executes an inline program and
-// prints the resulting field using characters:
+// using externally tagged enum variants with tuple/newtype payloads instead of struct
+// payloads. The robot starts at the center (4,4) of a 10x8 grid (x: 0..=9, y: 0..=7).
+// It executes a YAML-described program and prints the resulting field using characters:
 //   '.' = empty, 'O' = oak, 'A' = acer, 'B' = birch, and 'R' = robot's final position.
 // The final shape is:
 //
@@ -13,7 +13,9 @@
 // ..A...A...
 // BB.....BB.
 // ..........
-
+//
+// This example mirrors `polymorphism_tree_planting_robot.rs` but uses tuple variants,
+// so YAML becomes simpler, e.g. `- go: 3`, `- turn: Left`, `- plant: Birch`.
 
 use serde::Deserialize;
 
@@ -39,18 +41,12 @@ enum Direction {
 #[derive(Clone, Copy, Deserialize)]
 enum Command {
     #[serde(rename = "go")]
-    Go { distance: usize },
+    Go(usize),
     #[serde(rename = "turn")]
-    Turn { direction: Direction },
-    // Allow either `plant:` (null/empty) or `plant: { tree: ... }`
+    Turn(Direction),
+    // Allow either `plant:` (null/empty) or `plant: Birch`.
     #[serde(rename = "plant")]
-    Plant(#[serde(default)] Option<PlantArgs>),
-}
-
-#[derive(Clone, Copy, Deserialize)]
-struct PlantArgs {
-    #[serde(default)]
-    tree: Tree,
+    Plant(#[serde(default)] Option<Tree>),
 }
 
 type Program = Vec<Command>;
@@ -122,7 +118,6 @@ impl Robot {
             Tree::Acer => 'A',
             Tree::Birch => 'B',
         };
-        // Ensure within bounds (robot should always be within bounds by construction)
         if self.x >= 0 && self.x <= 9 && self.y >= 0 && self.y <= 7 {
             field[self.y as usize][self.x as usize] = ch;
         }
@@ -130,17 +125,15 @@ impl Robot {
 }
 
 fn print_field(field: &[[char; 10]; 8], rx: i32, ry: i32) {
-    for y in (0..=7).rev() {
-        // print top (y=7) to bottom (y=0)
-        let mut line = String::with_capacity(10);
-        for x in 0..=9 {
+    for y in (0..8).rev() {
+        for x in 0..10 {
             if x as i32 == rx && y as i32 == ry {
-                line.push('R');
+                print!("R");
             } else {
-                line.push(field[y][x]);
+                print!("{}", field[y][x]);
             }
         }
-        println!("{}", line);
+        println!();
     }
 }
 
@@ -149,120 +142,70 @@ fn main() {
     let mut field = [['.'; 10]; 8];
     let mut robot = Robot::new(4, 4);
 
-    // Define a YAML program (externally tagged enum commands as a sequence)
-    // Also use some anchors.
+    // YAML program using tuple/newtype enum variants and anchors.
     let yaml = r#"
 program:
-  - go:
-      distance: 3
-  - turn:
-      direction: Left
-  - go:
-      distance: 4
-  - plant:
-      tree: Birch
-  - turn: { direction: Right } # Some JSON-like
-  - turn:
-      direction: Right
-  # Let's define a command 'step' as anchor.
-  # Anchors must be placed on the same level as the data node they refer to.
+  - go: 3
+  - turn: Left
+  - go: 4
+  - plant: Birch
+  - turn: Right # JSON-like inline also works as a bare value here
+  - turn: Right
+  # Define a command 'step' as an anchor at the same level as the node it refers to.
   - &step
-    go:
-      distance: 1
-  - plant:
-      tree: Birch
-  - go:
-      distance: 6
-  - plant:
-      tree: Birch
+    go: 1
+  - plant: Birch
+  - go: 6
+  - plant: Birch
   - *step
-  - plant:
-      tree: Birch
-  - turn:
-      direction: Right
+  - plant: Birch
+  - turn: Right
   - *step # Use our command
-  - turn:
-      direction: Right
-  - go:
-      distance: 2
-  - plant:
-      tree: Acer
-  - go:
-      distance: 4
-  - plant:
-      tree: Acer
-  - turn:
-      direction: Left
+  - turn: Right
+  - go: 2
+  - plant: Acer
+  - go: 4
+  - plant: Acer
+  - turn: Left
   - *step
-  - turn:
-      direction: Left
-  - go:
-      distance: 1
-  - plant:
-      tree: Oak
-  - go:
-      distance: 2
-  - plant:
-      tree: Oak
-  - turn:
-      direction: Right
+  - turn: Left
+  - go: 1
+  - plant: Oak
+  - go: 2
+  - plant: Oak
+  - turn: Right
   - *step
   - *step
-  - plant:
-      tree: Oak
-  - turn:
-      direction: Right
-  - go:
-      distance: 2
-  - plant:
-      tree: Oak
-  - turn:
-      direction: Left
-  - go:
-      distance: 1
-  - turn:
-      direction: Right
+  - plant: Oak
+  - turn: Right
+  - go: 2
+  - plant: Oak
+  - turn: Left
+  - go: 1
+  - turn: Right
   - *step
-  - plant:
-      tree: Acer
-  - turn:
-      direction: Right
-  - turn:
-      direction: Right
-  - go:
-      distance: 4
-  - plant:
-      tree: Acer
-  - turn:
-      direction: Right
+  - plant: Acer
+  - turn: Right
+  - turn: Right
+  - go: 4
+  - plant: Acer
+  - turn: Right
   - *step
-  - turn:
-      direction: Left
+  - turn: Left
   - *step
-  - plant:
-      tree: Birch
+  - plant: Birch
   - *step
-  - plant:
-      tree: Birch
-  - turn:
-      direction: Left
-  - turn:
-      direction: Left
-  - go:
-      distance: 7
-  - plant:
-      tree: Birch
+  - plant: Birch
+  - turn: Left
+  - turn: Left
+  - go: 7
+  - plant: Birch
   - *step
-  - plant:
-      tree: Birch
-  - turn:
-      direction: Right
-  - go:
-      distance: 3
-  - turn:
-      direction: Right
-  - go:
-      distance: 4
+  - plant: Birch
+  - turn: Right
+  - go: 3
+  - turn: Right
+  - go: 4
 "#;
 
     let cfg: Config = serde_saphyr::from_str(yaml).expect("valid program YAML");
@@ -270,10 +213,10 @@ program:
     // Execute the program
     for cmd in cfg.program {
         match cmd {
-            Command::Go { distance } => robot.go(distance),
-            Command::Turn { direction } => robot.turn(direction),
-            Command::Plant(opt) => {
-                let tree = opt.unwrap_or(PlantArgs { tree: Tree::Oak }).tree;
+            Command::Go(n) => robot.go(n),
+            Command::Turn(d) => robot.turn(d),
+            Command::Plant(opt_tree) => {
+                let tree = opt_tree.unwrap_or(Tree::Oak);
                 robot.plant(&mut field, tree)
             }
         }
