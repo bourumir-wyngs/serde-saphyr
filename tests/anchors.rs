@@ -156,7 +156,7 @@ seq:
     }
 
 
-    //#[test]
+    #[test]
     fn anchor_struct_deserialize() -> anyhow::Result<()> {
         #[derive(Deserialize, Serialize)]
         struct Doc {
@@ -202,7 +202,7 @@ seq:
         Ok(())
     }
 
-    //#[test]
+    #[test]
     fn anchor_round_trip() -> anyhow::Result<()> {
         #[derive(Deserialize, Serialize)]
         struct Doc {
