@@ -150,7 +150,7 @@ fn main() {
     let mut robot = Robot::new(4, 4);
 
     // Define a YAML program (externally tagged enum commands as a sequence)
-    // This program replicates the full pattern requested previously.
+    // Also use some anchors.
     let yaml = r#"
 program:
   - go:
@@ -161,10 +161,11 @@ program:
       distance: 4
   - plant:
       tree: Birch
+  - turn: { direction: Right } # Some JSON-like
   - turn:
       direction: Right
-  - turn:
-      direction: Right
+  # Let's define a command 'step' as anchor.
+  # Anchors must be placed on the same level as the data node they refer to.
   - &step
     go:
       distance: 1
@@ -179,7 +180,7 @@ program:
       tree: Birch
   - turn:
       direction: Right
-  - *step
+  - *step # Use our command
   - turn:
       direction: Right
   - go:
