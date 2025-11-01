@@ -108,64 +108,100 @@ fn has_inline_comment_followed_by_top_level_content(input: &str) -> bool {
 /// ```
 pub fn to_string<T: serde::Serialize>(value: &T) -> std::result::Result<String, crate::ser::Error> {
     let mut out = String::new();
-    to_writer(&mut out, value)?;
+    to_fmt_writer(&mut out, value)?;
     Ok(out)
 }
 
-/// Serialize a value to a `fmt::Write` with default indentation (2 spaces).
-///
-/// - `out`: destination that implements `std::fmt::Write` (for example, a `String`).
-/// - `value`: any `serde::Serialize` value.
-///
-/// Returns `Ok(())` on success, otherwise a serialization error.
+/// DEPRECATED: use `to_fmt_writer` or `to_io_writer`
+/// Kept for a transition release to avoid instant breakage.
+#[deprecated(
+    since = "0.0.7",
+    note = "Use `to_fmt_writer` for `fmt::Write` (String, fmt::Formatter) or `to_io_writer` for files/sockets."
+)]
 pub fn to_writer<W: std::fmt::Write, T: serde::Serialize>(
-    out: &mut W,
+    output: &mut W,
     value: &T,
 ) -> std::result::Result<(), crate::ser::Error> {
-    let mut ser = crate::ser::YamlSer::new(out);
+    let mut ser = crate::ser::YamlSer::new(output);
     value.serialize(&mut ser)
 }
 
-/// Serialize a value to a writer using [`SerializerOptions`].
-///
-/// Use this to tweak indentation or provide a custom anchor name generator.
-///
-/// Example: 4-space indentation.
-///
-/// ```rust
-/// use serde::Serialize;
-///
-/// #[derive(Serialize)]
-/// struct Foo { a: i32 }
-///
-/// let mut buf = String::new();
-/// let opts = serde_saphyr::SerializerOptions { indent_step: 4, anchor_generator: None };
-/// serde_saphyr::to_writer_with_options(&mut buf, &Foo { a: 7 }, opts).unwrap();
-/// assert!(buf.contains("a: 7"));
-/// ```
-///
-/// Example: custom anchor names when using Rc/Arc wrappers.
-///
-/// ```rust
-/// use serde::Serialize;
-/// use std::rc::Rc;
-///
-/// #[derive(Serialize)]
-/// struct Node { name: String }
-///
-/// let shared = Rc::new(Node { name: "n".into() });
-/// let mut buf = String::new();
-/// let opts = serde_saphyr::SerializerOptions { indent_step: 2, anchor_generator: Some(|id| format!("id{id}")) };
-/// serde_saphyr::to_writer_with_options(&mut buf, &serde_saphyr::RcAnchor(shared), opts).unwrap();
-/// assert!(buf.contains("&id1") || buf.contains("&id0"));
-/// ```
-pub fn to_writer_with_options<W: std::fmt::Write, T: serde::Serialize>(
-    out: &mut W,
+/// Serialize a value as YAML into any [`fmt::Write`] target.
+pub fn to_fmt_writer<W: std::fmt::Write, T: serde::Serialize>(
+    output: &mut W,
     value: &T,
-    mut options: crate::serializer_options::SerializerOptions,
 ) -> std::result::Result<(), crate::ser::Error> {
-    let mut ser = crate::ser::YamlSer::with_options(out, &mut options);
+    to_fmt_writer_with_options(output, value, SerializerOptions::default())
+}
+
+/// Serialize a value as YAML into any [`io::Write`] target.
+pub fn to_io_writer<W: std::io::Write, T: serde::Serialize>(
+    output: &mut W,
+    value: &T,
+) -> std::result::Result<(), crate::ser::Error> {
+    to_io_writer_with_options(output, value, SerializerOptions::default())
+}
+
+/// Serialize a value as YAML into any [`fmt::Write`] target, with options.
+/// Options are consumed because anchor generator may be taken from them.
+pub fn to_fmt_writer_with_options<W: std::fmt::Write, T: serde::Serialize>(
+    output: &mut W,
+    value: &T,
+    mut options: SerializerOptions,
+) -> std::result::Result<(), crate::ser::Error> {
+    let mut ser = crate::ser::YamlSer::with_options(output, &mut options);
     value.serialize(&mut ser)
+}
+
+/// Serialize a value as YAML into any [`io::Write`] target, with options.
+/// Options are consumed because anchor generator may be taken from them.
+pub fn to_io_writer_with_options<W: std::io::Write, T: serde::Serialize>(
+    output: &mut W,
+    value: &T,
+    mut options: SerializerOptions,
+) -> std::result::Result<(), crate::ser::Error> {
+    struct Adapter<'a, W: std::io::Write> {
+        output: &'a mut W,
+        last_err: Option<std::io::Error>,
+    }
+    impl<'a, W: std::io::Write> std::fmt::Write for Adapter<'a, W> {
+        fn write_str(&mut self, s: &str) -> std::fmt::Result {
+            if let Err(e) = self.output.write_all(s.as_bytes()) {
+                self.last_err = Some(e);
+                return Err(std::fmt::Error);
+            }
+            Ok(())
+        }
+        fn write_char(&mut self, c: char) -> std::fmt::Result {
+            let mut buf = [0u8; 4];
+            let s = c.encode_utf8(&mut buf);
+            self.write_str(s)
+        }
+    }
+    let mut adapter = Adapter { output: output, last_err: None };
+    let mut ser = crate::ser::YamlSer::with_options(&mut adapter, &mut options);
+    match value.serialize(&mut ser) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            if let Some(io_error) = adapter.last_err.take() {
+                return Err(crate::ser::Error::from(io_error));
+            }
+            Err(e)
+        }
+    }
+}
+
+/// Deprecated: use `to_fmt_writer_with_options` for `fmt::Write` or `to_io_writer_with_options` for `io::Write`.
+#[deprecated(
+    since = "0.0.7",
+    note = "Use `to_fmt_writer_with_options` for fmt::Write or `to_io_writer_with_options` for io::Write."
+)]
+pub fn to_writer_with_options<W: std::fmt::Write, T: serde::Serialize>(
+    output: &mut W,
+    value: &T,
+    options: SerializerOptions,
+) -> std::result::Result<(), crate::ser::Error> {
+    to_fmt_writer_with_options(output, value, options)
 }
 
 /// Deserialize any `T: serde::de::DeserializeOwned` directly from a YAML string.
@@ -595,7 +631,7 @@ pub fn to_string_multiple<T: serde::Serialize>(
             out.push_str("---\n");
         }
         first = false;
-        to_writer(&mut out, v)?;
+        to_fmt_writer(&mut out, v)?;
     }
     Ok(out)
 }

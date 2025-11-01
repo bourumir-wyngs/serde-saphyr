@@ -63,6 +63,11 @@ impl From<fmt::Error> for Error {
         Error(e.to_string())
     }
 }
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Self {
+        Error(e.to_string())
+    }
+}
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str(&self.0) }
 }
