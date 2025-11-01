@@ -104,3 +104,19 @@ fn serialize_nested_variant_enums() {
     serde_saphyr::to_writer_with_options(&mut buf2, &v, opts).expect("to_writer_with_options works");
     assert!(!buf2.is_empty());
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct VecOfMaps {
+    vec: Vec<BTreeMap<String, String>>,
+}
+
+#[test]
+fn serialize_array_of_empty_maps() {
+    let v = VecOfMaps {
+        vec: vec![Default::default(), Default::default(), Default::default()],
+    };
+    let mut buf = String::new();
+    serde_saphyr::to_writer(&mut buf, &v).expect("to_writer works");
+    let v2: VecOfMaps = serde_saphyr::from_str(&buf).expect("deserialize just serialized data");
+    assert_eq!(v, v2);
+}
