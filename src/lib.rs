@@ -20,6 +20,9 @@ mod live_events;
 pub mod options;
 mod parse_scalars;
 mod ser;
+
+pub mod ser_error;
+
 mod serializer_options;
 mod tags;
 
@@ -178,7 +181,10 @@ pub fn to_io_writer_with_options<W: std::io::Write, T: serde::Serialize>(
             self.write_str(s)
         }
     }
-    let mut adapter = Adapter { output: output, last_err: None };
+    let mut adapter = Adapter {
+        output: output,
+        last_err: None,
+    };
     let mut ser = crate::ser::YamlSer::with_options(&mut adapter, &mut options);
     match value.serialize(&mut ser) {
         Ok(()) => Ok(()),

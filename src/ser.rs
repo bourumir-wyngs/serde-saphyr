@@ -30,48 +30,26 @@
 //!     println!("{}", to_string(&cfg).unwrap());
 //! }
 
+use serde::de::{Deserialize, Deserializer};
 use serde::ser::{
     self, Serialize, SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant,
     SerializeTuple, SerializeTupleStruct, SerializeTupleVariant, Serializer,
 };
-use serde::de::{Deserialize, Deserializer};
 use std::collections::HashMap;
 use std::fmt::{self, Write};
 use std::rc::{Rc, Weak as RcWeak};
 use std::sync::{Arc, Weak as ArcWeak};
 
-use nohash_hasher::BuildNoHashHasher;
-use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
-use crate::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
 use crate::serializer_options::SerializerOptions;
+use crate::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
+use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use nohash_hasher::BuildNoHashHasher;
 
 // ------------------------------------------------------------
 // Public API
 // ------------------------------------------------------------
 
-/// Serialization error.
-#[derive(Debug)]
-pub struct Error(String);
-
-impl ser::Error for Error {
-    fn custom<T: fmt::Display>(msg: T) -> Self {
-        Error(msg.to_string())
-    }
-}
-impl From<fmt::Error> for Error {
-    fn from(e: fmt::Error) -> Self {
-        Error(e.to_string())
-    }
-}
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Self {
-        Error(e.to_string())
-    }
-}
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str(&self.0) }
-}
-impl std::error::Error for Error {}
+pub use crate::ser_error::Error;
 
 /// Result alias.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -365,7 +343,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
     #[inline]
     fn write_indent(&mut self, depth: usize) -> Result<()> {
         if self.at_line_start {
-            for _k in 0 .. self.indent_step * depth {
+            for _k in 0..self.indent_step * depth {
                 self.out.write_char(' ')?;
             }
             self.at_line_start = false;
@@ -410,10 +388,14 @@ impl<'a, W: Write> YamlSer<'a, W> {
                     '\u{0085}' => self.out.write_str("\\N")?,
                     '\u{2028}' => self.out.write_str("\\L")?,
                     '\u{2029}' => self.out.write_str("\\P")?,
-                    c if (c as u32) <= 0xFF && (c.is_control() || (0x7F..=0x9F).contains(&(c as u32))) => {
+                    c if (c as u32) <= 0xFF
+                        && (c.is_control() || (0x7F..=0x9F).contains(&(c as u32))) =>
+                    {
                         write!(self.out, "\\x{:02X}", c as u32)?
                     }
-                    c if (c as u32) <= 0xFFFF && (c.is_control() || (0x7F..=0x9F).contains(&(c as u32))) => {
+                    c if (c as u32) <= 0xFFFF
+                        && (c.is_control() || (0x7F..=0x9F).contains(&(c as u32))) =>
+                    {
                         write!(self.out, "\\u{:04X}", c as u32)?
                     }
                     c => self.out.write_char(c)?,
@@ -428,16 +410,48 @@ impl<'a, W: Write> YamlSer<'a, W> {
     /// This is slightly more permissive than `is_plain_safe` for keys: it allows ':' inside values.
     #[inline]
     fn is_plain_value_safe(s: &str) -> bool {
-        if s.is_empty() { return false; }
-        if s == "~" || s.eq_ignore_ascii_case("null") || s.eq_ignore_ascii_case("true")
-            || s.eq_ignore_ascii_case("false") { return false; }
+        if s.is_empty() {
+            return false;
+        }
+        if s == "~"
+            || s.eq_ignore_ascii_case("null")
+            || s.eq_ignore_ascii_case("true")
+            || s.eq_ignore_ascii_case("false")
+        {
+            return false;
+        }
         let bytes = s.as_bytes();
         if bytes[0].is_ascii_whitespace()
-            || matches!(bytes[0], b'-' | b'?' | b':' | b'[' | b']' | b'{' | b'}' | b'#' | b'&' | b'*' | b'!' | b'|' | b'>' | b'\'' | b'"' | b'%' | b'@' | b'`')
-        { return false; }
-        if s.chars().any(|c| c.is_control()) { return false; }
+            || matches!(
+                bytes[0],
+                b'-' | b'?'
+                    | b':'
+                    | b'['
+                    | b']'
+                    | b'{'
+                    | b'}'
+                    | b'#'
+                    | b'&'
+                    | b'*'
+                    | b'!'
+                    | b'|'
+                    | b'>'
+                    | b'\''
+                    | b'"'
+                    | b'%'
+                    | b'@'
+                    | b'`'
+            )
+        {
+            return false;
+        }
+        if s.chars().any(|c| c.is_control()) {
+            return false;
+        }
         // In values, ':' is allowed, but '#' would start a comment so still disallow '#'.
-        if s.contains('#') { return false; }
+        if s.contains('#') {
+            return false;
+        }
         true
     }
 
@@ -493,7 +507,9 @@ impl<'a, W: Write> YamlSer<'a, W> {
         self.write_space_if_pending()?;
         self.out.write_char('*')?;
         self.write_anchor_name(id)?;
-        if self.in_flow == 0 { self.newline()?; }
+        if self.in_flow == 0 {
+            self.newline()?;
+        }
         Ok(())
     }
 
@@ -537,15 +553,47 @@ impl<'a, W: Write> YamlSer<'a, W> {
 /// Internal heuristic used by `write_plain_or_quoted`.
 #[inline]
 fn is_plain_safe(s: &str) -> bool {
-    if s.is_empty() { return false; }
-    if s == "~" || s.eq_ignore_ascii_case("null") || s.eq_ignore_ascii_case("true")
-        || s.eq_ignore_ascii_case("false") { return false; }
+    if s.is_empty() {
+        return false;
+    }
+    if s == "~"
+        || s.eq_ignore_ascii_case("null")
+        || s.eq_ignore_ascii_case("true")
+        || s.eq_ignore_ascii_case("false")
+    {
+        return false;
+    }
     let bytes = s.as_bytes();
     if bytes[0].is_ascii_whitespace()
-        || matches!(bytes[0], b'-' | b'?' | b':' | b'[' | b']' | b'{' | b'}' | b'#' | b'&' | b'*' | b'!' | b'|' | b'>' | b'\'' | b'"' | b'%' | b'@' | b'`')
-    { return false; }
-    if s.chars().any(|c| c.is_control()) { return false; }
-    if s.contains(':') || s.contains('#') { return false; }
+        || matches!(
+            bytes[0],
+            b'-' | b'?'
+                | b':'
+                | b'['
+                | b']'
+                | b'{'
+                | b'}'
+                | b'#'
+                | b'&'
+                | b'*'
+                | b'!'
+                | b'|'
+                | b'>'
+                | b'\''
+                | b'"'
+                | b'%'
+                | b'@'
+                | b'`'
+        )
+    {
+        return false;
+    }
+    if s.chars().any(|c| c.is_control()) {
+        return false;
+    }
+    if s.contains(':') || s.contains('#') {
+        return false;
+    }
     true
 }
 
@@ -570,64 +618,103 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
     fn serialize_bool(self, v: bool) -> Result<()> {
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
-        if self.at_line_start { self.write_indent(self.depth)?; }
+        if self.at_line_start {
+            self.write_indent(self.depth)?;
+        }
         self.out.write_str(if v { "true" } else { "false" })?;
-        if self.in_flow == 0 { self.newline()?; }
+        if self.in_flow == 0 {
+            self.newline()?;
+        }
         Ok(())
     }
 
-    fn serialize_i8(self, v: i8) -> Result<()> { self.serialize_i64(v as i64) }
-    fn serialize_i16(self, v: i16) -> Result<()> { self.serialize_i64(v as i64) }
-    fn serialize_i32(self, v: i32) -> Result<()> { self.serialize_i64(v as i64) }
+    fn serialize_i8(self, v: i8) -> Result<()> {
+        self.serialize_i64(v as i64)
+    }
+    fn serialize_i16(self, v: i16) -> Result<()> {
+        self.serialize_i64(v as i64)
+    }
+    fn serialize_i32(self, v: i32) -> Result<()> {
+        self.serialize_i64(v as i64)
+    }
     fn serialize_i64(self, v: i64) -> Result<()> {
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
-        if self.at_line_start { self.write_indent(self.depth)?; }
+        if self.at_line_start {
+            self.write_indent(self.depth)?;
+        }
         write!(self.out, "{}", v)?;
-        if self.in_flow == 0 { self.newline()?; }
+        if self.in_flow == 0 {
+            self.newline()?;
+        }
         Ok(())
     }
 
     fn serialize_i128(self, v: i128) -> Result<()> {
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
-        if self.at_line_start { self.write_indent(self.depth)?; }
+        if self.at_line_start {
+            self.write_indent(self.depth)?;
+        }
         write!(self.out, "{}", v)?;
-        if self.in_flow == 0 { self.newline()?; }
+        if self.in_flow == 0 {
+            self.newline()?;
+        }
         Ok(())
     }
 
-    fn serialize_u8(self, v: u8) -> Result<()> { self.serialize_u64(v as u64) }
-    fn serialize_u16(self, v: u16) -> Result<()> { self.serialize_u64(v as u64) }
-    fn serialize_u32(self, v: u32) -> Result<()> { self.serialize_u64(v as u64) }
+    fn serialize_u8(self, v: u8) -> Result<()> {
+        self.serialize_u64(v as u64)
+    }
+    fn serialize_u16(self, v: u16) -> Result<()> {
+        self.serialize_u64(v as u64)
+    }
+    fn serialize_u32(self, v: u32) -> Result<()> {
+        self.serialize_u64(v as u64)
+    }
     fn serialize_u64(self, v: u64) -> Result<()> {
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
-        if self.at_line_start { self.write_indent(self.depth)?; }
+        if self.at_line_start {
+            self.write_indent(self.depth)?;
+        }
         write!(self.out, "{}", v)?;
-        if self.in_flow == 0 { self.newline()?; }
+        if self.in_flow == 0 {
+            self.newline()?;
+        }
         Ok(())
     }
 
     fn serialize_u128(self, v: u128) -> Result<()> {
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
-        if self.at_line_start { self.write_indent(self.depth)?; }
+        if self.at_line_start {
+            self.write_indent(self.depth)?;
+        }
         write!(self.out, "{}", v)?;
-        if self.in_flow == 0 { self.newline()?; }
+        if self.in_flow == 0 {
+            self.newline()?;
+        }
         Ok(())
     }
 
-    fn serialize_f32(self, v: f32) -> Result<()> { self.serialize_f64(v as f64) }
+    fn serialize_f32(self, v: f32) -> Result<()> {
+        self.serialize_f64(v as f64)
+    }
     fn serialize_f64(self, v: f64) -> Result<()> {
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
-        if self.at_line_start { self.write_indent(self.depth)?; }
+        if self.at_line_start {
+            self.write_indent(self.depth)?;
+        }
         if v.is_nan() {
             self.out.write_str(".nan")?;
         } else if v.is_infinite() {
-            if v.is_sign_positive() { self.out.write_str(".inf")?; }
-            else { self.out.write_str("-.inf")?; }
+            if v.is_sign_positive() {
+                self.out.write_str(".inf")?;
+            } else {
+                self.out.write_str("-.inf")?;
+            }
         } else {
             let mut buf = ryu::Buffer::new();
             let s = buf.format(v);
@@ -638,7 +725,9 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                 self.out.write_str(s)?;
             }
         }
-        if self.in_flow == 0 { self.newline()?; }
+        if self.in_flow == 0 {
+            self.newline()?;
+        }
         Ok(())
     }
 
@@ -651,9 +740,13 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
     fn serialize_str(self, v: &str) -> Result<()> {
         if let Some(style) = self.pending_str_style.take() {
             // Emit block string
-            if self.at_line_start { self.write_indent(self.depth)?; }
-            match style { StrStyle::Literal => self.out.write_str("|")?,
-                StrStyle::Folded  => self.out.write_str(">")?, }
+            if self.at_line_start {
+                self.write_indent(self.depth)?;
+            }
+            match style {
+                StrStyle::Literal => self.out.write_str("|")?,
+                StrStyle::Folded => self.out.write_str(">")?,
+            }
             self.newline()?;
             for line in v.split('\n') {
                 self.write_indent(self.depth + 1)?;
@@ -664,7 +757,9 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
         }
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
-        if self.at_line_start { self.write_indent(self.depth)?; }
+        if self.at_line_start {
+            self.write_indent(self.depth)?;
+        }
         // Special-case: prefer single-quoted style for select 1-char punctuation to
         // match expected YAML output in tests ('.', '#', '-').
         if v.len() == 1 {
@@ -673,13 +768,17 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                     self.out.write_char('\'')?;
                     self.out.write_char(ch)?;
                     self.out.write_char('\'')?;
-                    if self.in_flow == 0 { self.newline()?; }
+                    if self.in_flow == 0 {
+                        self.newline()?;
+                    }
                     return Ok(());
                 }
             }
         }
         self.write_plain_or_quoted_value(v)?;
-        if self.in_flow == 0 { self.newline()?; }
+        if self.in_flow == 0 {
+            self.newline()?;
+        }
         Ok(())
     }
 
@@ -707,15 +806,21 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
         let mut s = String::new();
         B64.encode_string(v, &mut s);
         self.out.write_str(&s)?;
-        if self.in_flow == 0 { self.newline()?; }
+        if self.in_flow == 0 {
+            self.newline()?;
+        }
         Ok(())
     }
 
     fn serialize_none(self) -> Result<()> {
         self.write_space_if_pending()?;
-        if self.at_line_start { self.write_indent(self.depth)?; }
+        if self.at_line_start {
+            self.write_indent(self.depth)?;
+        }
         self.out.write_str("null")?;
-        if self.in_flow == 0 { self.newline()?; }
+        if self.in_flow == 0 {
+            self.newline()?;
+        }
         Ok(())
     }
 
@@ -725,9 +830,13 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
 
     fn serialize_unit(self) -> Result<()> {
         self.write_space_if_pending()?;
-        if self.at_line_start { self.write_indent(self.depth)?; }
+        if self.at_line_start {
+            self.write_indent(self.depth)?;
+        }
         self.out.write_str("null")?;
-        if self.in_flow == 0 { self.newline()?; }
+        if self.in_flow == 0 {
+            self.newline()?;
+        }
         Ok(())
     }
 
@@ -736,7 +845,10 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
     }
 
     fn serialize_unit_variant(
-        self, _name: &'static str, _variant_index: u32, variant: &'static str
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        variant: &'static str,
     ) -> Result<()> {
         // If we are in a mapping value position, insert the deferred space after ':'
         self.write_space_if_pending()?;
@@ -744,7 +856,9 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
     }
 
     fn serialize_newtype_struct<T: ?Sized + Serialize>(
-        self, name: &'static str, value: &T
+        self,
+        name: &'static str,
+        value: &T,
     ) -> Result<()> {
         // Flow hints & block-string hints:
         match name {
@@ -771,7 +885,11 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
     }
 
     fn serialize_newtype_variant<T: ?Sized + Serialize>(
-        self, _name: &'static str, _variant_index: u32, variant: &'static str, value: &T
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        variant: &'static str,
+        value: &T,
     ) -> Result<()> {
         // If we are the value of a mapping key, YAML forbids "key: Variant: value" inline.
         // Emit the variant mapping on the next line indented one level. Also, do not insert
@@ -792,7 +910,9 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             return value.serialize(&mut *self);
         }
         // Otherwise (top-level or sequence context).
-        if self.at_line_start { self.write_indent(self.depth)?; }
+        if self.at_line_start {
+            self.write_indent(self.depth)?;
+        }
         self.write_plain_or_quoted(variant)?;
         // Write ':' without a space and defer spacing/newline to the value serializer.
         self.out.write_str(":")?;
@@ -809,11 +929,18 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             self.write_scalar_prefix_if_anchor()?;
             // Ensure a space after a preceding colon when this sequence is a mapping value.
             self.write_space_if_pending()?;
-            if self.at_line_start { self.write_indent(self.depth)?; }
+            if self.at_line_start {
+                self.write_indent(self.depth)?;
+            }
             self.out.write_str("[")?;
             self.at_line_start = false;
             let depth_next = self.depth; // inline
-            Ok(SeqSer { ser: self, depth: depth_next, flow: true, first: true })
+            Ok(SeqSer {
+                ser: self,
+                depth: depth_next,
+                flow: true,
+                first: true,
+            })
         } else {
             // Block sequence. Decide indentation based on whether this is after a map key or after a list dash.
             let was_inline_value = !self.at_line_start;
@@ -821,7 +948,9 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             // Style expectation in tests prefers:
             // -\n  - 1
             // rather than "- - 1".
-            let inline_first = (!self.at_line_start) && self.after_dash_depth.is_some() && !self.pending_space_after_colon;
+            let inline_first = (!self.at_line_start)
+                && self.after_dash_depth.is_some()
+                && !self.pending_space_after_colon;
             // Remember if we are a mapping value (space after colon was pending) to handle newline correctly.
             let had_pending_space = self.pending_space_after_colon;
             self.write_anchor_for_complex_node()?;
@@ -848,8 +977,17 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             } else {
                 self.depth
             };
-            let depth_next = if inline_first || was_inline_value { base + 1 } else { base };
-            Ok(SeqSer { ser: self, depth: depth_next, flow: false, first: true })
+            let depth_next = if inline_first || was_inline_value {
+                base + 1
+            } else {
+                base
+            };
+            Ok(SeqSer {
+                ser: self,
+                depth: depth_next,
+                flow: false,
+                first: true,
+            })
         }
     }
 
@@ -858,7 +996,9 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
     }
 
     fn serialize_tuple_struct(
-        self, name: &'static str, _len: usize
+        self,
+        name: &'static str,
+        _len: usize,
     ) -> Result<Self::SerializeTupleStruct> {
         if name == NAME_TUPLE_ANCHOR {
             Ok(TupleSer::anchor_strong(self))
@@ -871,14 +1011,23 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
     }
 
     fn serialize_tuple_variant(
-        self, _name: &'static str, _variant_index: u32, variant: &'static str, _len: usize
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        variant: &'static str,
+        _len: usize,
     ) -> Result<Self::SerializeTupleVariant> {
-        if self.at_line_start { self.write_indent(self.depth)?; }
+        if self.at_line_start {
+            self.write_indent(self.depth)?;
+        }
         self.write_plain_or_quoted(variant)?;
         self.out.write_str(":\n")?;
         self.at_line_start = true;
         let depth_next = self.depth + 1;
-        Ok(TupleVariantSer { ser: self, depth: depth_next })
+        Ok(TupleVariantSer {
+            ser: self,
+            depth: depth_next,
+        })
     }
 
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
@@ -887,11 +1036,19 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             self.write_scalar_prefix_if_anchor()?;
             // Ensure a space after a preceding colon when this mapping is a value.
             self.write_space_if_pending()?;
-            if self.at_line_start { self.write_indent(self.depth)?; }
+            if self.at_line_start {
+                self.write_indent(self.depth)?;
+            }
             self.out.write_str("{")?;
             self.at_line_start = false;
             let depth_next = self.depth;
-            Ok(MapSer { ser: self, depth: depth_next, flow: true, first: true, last_key_complex: false })
+            Ok(MapSer {
+                ser: self,
+                depth: depth_next,
+                flow: true,
+                first: true,
+                last_key_complex: false,
+            })
         } else {
             let inline_first = self.pending_inline_map;
             let was_inline_value = !self.at_line_start;
@@ -923,8 +1080,18 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             } else {
                 self.depth
             };
-            let depth_next = if inline_first || was_inline_value { base + 1 } else { base };
-            Ok(MapSer { ser: self, depth: depth_next, flow: false, first: true, last_key_complex: false })
+            let depth_next = if inline_first || was_inline_value {
+                base + 1
+            } else {
+                base
+            };
+            Ok(MapSer {
+                ser: self,
+                depth: depth_next,
+                flow: false,
+                first: true,
+                last_key_complex: false,
+            })
         }
     }
 
@@ -933,9 +1100,15 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
     }
 
     fn serialize_struct_variant(
-        self, _name: &'static str, _variant_index: u32, variant: &'static str, _len: usize
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        variant: &'static str,
+        _len: usize,
     ) -> Result<Self::SerializeStructVariant> {
-        if self.at_line_start { self.write_indent(self.depth)?; }
+        if self.at_line_start {
+            self.write_indent(self.depth)?;
+        }
         self.write_plain_or_quoted(variant)?;
         self.out.write_str(":\n")?;
         self.at_line_start = true;
@@ -948,7 +1121,10 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             depth_next = d + 2;
             self.pending_inline_map = false;
         }
-        Ok(StructVariantSer { ser: self, depth: depth_next })
+        Ok(StructVariantSer {
+            ser: self,
+            depth: depth_next,
+        })
     }
 }
 
@@ -971,7 +1147,6 @@ pub struct SeqSer<'a, 'b, W: Write> {
     first: bool,
 }
 
-
 impl<'a, 'b, W: Write> SerializeTuple for SeqSer<'a, 'b, W> {
     type Ok = ();
     type Error = Error;
@@ -979,7 +1154,9 @@ impl<'a, 'b, W: Write> SerializeTuple for SeqSer<'a, 'b, W> {
     fn serialize_element<T: ?Sized + Serialize>(&mut self, v: &T) -> Result<()> {
         SerializeSeq::serialize_element(self, v)
     }
-    fn end(self) -> Result<()> { SerializeSeq::end(self) }
+    fn end(self) -> Result<()> {
+        SerializeSeq::end(self)
+    }
 }
 
 // Re-implement SerializeSeq for SeqSer with correct end.
@@ -989,7 +1166,9 @@ impl<'a, 'b, W: Write> SerializeSeq for SeqSer<'a, 'b, W> {
 
     fn serialize_element<T: ?Sized + Serialize>(&mut self, v: &T) -> Result<()> {
         if self.flow {
-            if !self.first { self.ser.out.write_str(", ")?; }
+            if !self.first {
+                self.ser.out.write_str(", ")?;
+            }
             self.ser.with_in_flow(|s| v.serialize(s))?;
         } else {
             // If previous element was an inline map after a dash, just clear the flag; do not change depth.
@@ -1023,7 +1202,9 @@ impl<'a, 'b, W: Write> SerializeSeq for SeqSer<'a, 'b, W> {
         if self.flow {
             let me = self;
             me.ser.out.write_str("]")?;
-            if me.ser.in_flow == 0 { me.ser.newline()?; }
+            if me.ser.in_flow == 0 {
+                me.ser.newline()?;
+            }
         }
         Ok(())
     }
@@ -1067,22 +1248,40 @@ impl<'a, 'b, W: Write> TupleSer<'a, 'b, W> {
     fn normal(ser: &'a mut YamlSer<'b, W>) -> Self {
         let depth_next = ser.depth + 1;
         Self {
-            ser, kind: TupleKind::Normal, idx: 0, depth_for_normal: depth_next,
-            strong_alias_id: None, weak_present: false, skip_third: false, weak_alias_id: None
+            ser,
+            kind: TupleKind::Normal,
+            idx: 0,
+            depth_for_normal: depth_next,
+            strong_alias_id: None,
+            weak_present: false,
+            skip_third: false,
+            weak_alias_id: None,
         }
     }
     /// Create a tuple serializer for internal strong-anchor payloads.
     fn anchor_strong(ser: &'a mut YamlSer<'b, W>) -> Self {
         Self {
-            ser, kind: TupleKind::AnchorStrong, idx: 0, depth_for_normal: 0,
-            strong_alias_id: None, weak_present: false, skip_third: false, weak_alias_id: None
+            ser,
+            kind: TupleKind::AnchorStrong,
+            idx: 0,
+            depth_for_normal: 0,
+            strong_alias_id: None,
+            weak_present: false,
+            skip_third: false,
+            weak_alias_id: None,
         }
     }
     /// Create a tuple serializer for internal weak-anchor payloads.
     fn anchor_weak(ser: &'a mut YamlSer<'b, W>) -> Self {
         Self {
-            ser, kind: TupleKind::AnchorWeak, idx: 0, depth_for_normal: 0,
-            strong_alias_id: None, weak_present: false, skip_third: false, weak_alias_id: None
+            ser,
+            kind: TupleKind::AnchorWeak,
+            idx: 0,
+            depth_for_normal: 0,
+            strong_alias_id: None,
+            weak_present: false,
+            skip_third: false,
+            weak_alias_id: None,
         }
     }
 }
@@ -1096,7 +1295,9 @@ impl<'a, 'b, W: Write> SerializeTupleStruct for TupleSer<'a, 'b, W> {
             TupleKind::Normal => {
                 if self.idx == 0 {
                     self.ser.write_anchor_for_complex_node()?;
-                    if !self.ser.at_line_start { self.ser.newline()?; }
+                    if !self.ser.at_line_start {
+                        self.ser.newline()?;
+                    }
                 }
                 self.ser.write_indent(self.ser.depth + 1)?;
                 self.ser.out.write_str("- ")?;
@@ -1112,10 +1313,10 @@ impl<'a, 'b, W: Write> SerializeTupleStruct for TupleSer<'a, 'b, W> {
                         let ptr = cap.finish()?;
                         let (id, fresh) = self.ser.alloc_anchor_for(ptr);
                         if fresh {
-                            self.ser.pending_anchor_id = Some(id);  // define before value
+                            self.ser.pending_anchor_id = Some(id); // define before value
                             self.strong_alias_id = None;
                         } else {
-                            self.strong_alias_id = Some(id);        // alias instead of value
+                            self.strong_alias_id = Some(id); // alias instead of value
                         }
                     }
                     1 => {
@@ -1127,7 +1328,7 @@ impl<'a, 'b, W: Write> SerializeTupleStruct for TupleSer<'a, 'b, W> {
                             value.serialize(&mut *self.ser)?;
                         }
                     }
-                    _ => return Err(Error("unexpected field in __yaml_anchor".into())),
+                    _ => return Err(Error::unexpected("unexpected field in __yaml_anchor")),
                 }
             }
             TupleKind::AnchorWeak => {
@@ -1144,18 +1345,22 @@ impl<'a, 'b, W: Write> SerializeTupleStruct for TupleSer<'a, 'b, W> {
                         self.weak_present = bc.finish()?;
                         if !self.weak_present {
                             // present == false: emit null and skip field #3
-                            if self.ser.at_line_start { self.ser.write_indent(self.ser.depth)?; }
+                            if self.ser.at_line_start {
+                                self.ser.write_indent(self.ser.depth)?;
+                            }
                             self.ser.out.write_str("null")?;
-                            if self.ser.in_flow == 0 { self.ser.newline()?; }
+                            if self.ser.in_flow == 0 {
+                                self.ser.newline()?;
+                            }
                             self.skip_third = true;
                         } else {
                             let ptr = self.depth_for_normal;
                             let (id, fresh) = self.ser.alloc_anchor_for(ptr);
                             if fresh {
-                                self.ser.pending_anchor_id = Some(id);  // define before value
+                                self.ser.pending_anchor_id = Some(id); // define before value
                                 self.weak_alias_id = None;
                             } else {
-                                self.weak_alias_id = Some(id);          // alias in field #3
+                                self.weak_alias_id = Some(id); // alias in field #3
                             }
                         }
                     }
@@ -1169,7 +1374,7 @@ impl<'a, 'b, W: Write> SerializeTupleStruct for TupleSer<'a, 'b, W> {
                             value.serialize(&mut *self.ser)?;
                         }
                     }
-                    _ => return Err(Error("unexpected field in __yaml_weak_anchor".into())),
+                    _ => return Err(Error::unexpected("unexpected field in __yaml_weak_anchor")),
                 }
             }
         }
@@ -1177,7 +1382,9 @@ impl<'a, 'b, W: Write> SerializeTupleStruct for TupleSer<'a, 'b, W> {
         Ok(())
     }
 
-    fn end(self) -> Result<()> { Ok(()) }
+    fn end(self) -> Result<()> {
+        Ok(())
+    }
 }
 
 // Tuple variant (enum Variant: ( ... ))
@@ -1201,7 +1408,9 @@ impl<'a, 'b, W: Write> SerializeTupleVariant for TupleVariantSer<'a, 'b, W> {
         self.ser.at_line_start = false;
         value.serialize(&mut *self.ser)
     }
-    fn end(self) -> Result<()> { Ok(()) }
+    fn end(self) -> Result<()> {
+        Ok(())
+    }
 }
 
 // ------------------------------------------------------------
@@ -1253,7 +1462,7 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
                     self.ser.at_line_start = false;
                     self.last_key_complex = false;
                 }
-                Err(Error(msg)) if msg == "non-scalar key" => {
+                Err(Error::Unexpected { msg }) if msg == "non-scalar key" => {
                     if !self.ser.at_line_start {
                         self.ser.write_space_if_pending()?;
                     }
@@ -1320,7 +1529,9 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
     fn end(self) -> Result<()> {
         if self.flow {
             self.ser.out.write_str("}")?;
-            if self.ser.in_flow == 0 { self.ser.newline()?; }
+            if self.ser.in_flow == 0 {
+                self.ser.newline()?;
+            }
         } else if self.first {
             self.ser.newline()?;
         }
@@ -1331,11 +1542,17 @@ impl<'a, 'b, W: Write> SerializeStruct for MapSer<'a, 'b, W> {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_field<T: ?Sized + Serialize>(&mut self, key: &'static str, value: &T) -> Result<()> {
+    fn serialize_field<T: ?Sized + Serialize>(
+        &mut self,
+        key: &'static str,
+        value: &T,
+    ) -> Result<()> {
         SerializeMap::serialize_key(self, &key)?;
         SerializeMap::serialize_value(self, value)
     }
-    fn end(self) -> Result<()> { SerializeMap::end(self) }
+    fn end(self) -> Result<()> {
+        SerializeMap::end(self)
+    }
 }
 
 /// Serializer for struct variants (enum Variant: { ... }).
@@ -1352,7 +1569,11 @@ impl<'a, 'b, W: Write> SerializeStructVariant for StructVariantSer<'a, 'b, W> {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_field<T: ?Sized + Serialize>(&mut self, key: &'static str, value: &T) -> Result<()> {
+    fn serialize_field<T: ?Sized + Serialize>(
+        &mut self,
+        key: &'static str,
+        value: &T,
+    ) -> Result<()> {
         let text = scalar_key_to_string(&key)?;
         self.ser.write_indent(self.depth)?;
         self.ser.out.write_str(&text)?;
@@ -1360,7 +1581,9 @@ impl<'a, 'b, W: Write> SerializeStructVariant for StructVariantSer<'a, 'b, W> {
         self.ser.at_line_start = false;
         value.serialize(&mut *self.ser)
     }
-    fn end(self) -> Result<()> { Ok(()) }
+    fn end(self) -> Result<()> {
+        Ok(())
+    }
 }
 
 // ------------------------------------------------------------
@@ -1372,7 +1595,9 @@ impl<'a, 'b, W: Write> SerializeStructVariant for StructVariantSer<'a, 'b, W> {
 /// Used internally to read the raw pointer value encoded as the first field
 /// of our internal anchor tuple payloads.
 #[derive(Default)]
-struct UsizeCapture { v: Option<usize> }
+struct UsizeCapture {
+    v: Option<usize>,
+}
 impl<'a> Serializer for &'a mut UsizeCapture {
     type Ok = ();
     type Error = Error;
@@ -1385,40 +1610,142 @@ impl<'a> Serializer for &'a mut UsizeCapture {
     type SerializeStruct = ser::Impossible<(), Error>;
     type SerializeStructVariant = ser::Impossible<(), Error>;
 
-    fn serialize_i8(self, v: i8) -> Result<()> { self.v = Some(v as usize); Ok(()) }
-    fn serialize_i16(self, v: i16) -> Result<()> { self.v = Some(v as usize); Ok(()) }
-    fn serialize_i32(self, v: i32) -> Result<()> { self.v = Some(v as usize); Ok(()) }
-    fn serialize_i64(self, v: i64) -> Result<()> { self.v = Some(v as usize); Ok(()) }
-    fn serialize_u8(self, v: u8) -> Result<()> { self.v = Some(v as usize); Ok(()) }
-    fn serialize_u16(self, v: u16) -> Result<()> { self.v = Some(v as usize); Ok(()) }
-    fn serialize_u32(self, v: u32) -> Result<()> { self.v = Some(v as usize); Ok(()) }
-    fn serialize_u64(self, v: u64) -> Result<()> { self.v = Some(v as usize); Ok(()) }
-    fn serialize_f32(self, v: f32) -> Result<()> { self.v = Some(v as usize); Ok(()) }
-    fn serialize_f64(self, v: f64) -> Result<()> { self.v = Some(v as usize); Ok(()) }
-    fn serialize_bool(self, v: bool) -> Result<()> { self.v = Some(v as usize); Ok(()) }
-    fn serialize_char(self, _v: char) -> Result<()> { Err(Error("ptr expects number".into())) }
-    fn serialize_str (self, _v: &str) -> Result<()> { Err(Error("ptr expects number".into())) }
-    fn serialize_bytes(self, _v: &[u8]) -> Result<()> { Err(Error("ptr expects number".into())) }
-    fn serialize_none(self) -> Result<()> { Err(Error("ptr cannot be none".into())) }
-    fn serialize_some<T: ?Sized + Serialize>(self, _value: &T) -> Result<()> { Err(Error("ptr not option".into())) }
-    fn serialize_unit(self) -> Result<()> { Err(Error("ptr cannot be unit".into())) }
-    fn serialize_unit_struct(self, _name: &'static str) -> Result<()> { Err(Error("unexpected".into())) }
-    fn serialize_unit_variant(self, _name: &'static str, _i: u32, _v: &'static str) -> Result<()> { Err(Error("unexpected".into())) }
-    fn serialize_newtype_struct<T: ?Sized + Serialize>(self, _name: &'static str, _value: &T) -> Result<()> { Err(Error("unexpected".into())) }
-    fn serialize_newtype_variant<T: ?Sized + Serialize>(self, _name: &'static str, _i: u32, _v: &'static str, _value: &T) -> Result<()> { Err(Error("unexpected".into())) }
-    fn serialize_seq(self, _len: Option<usize>) -> Result<ser::Impossible<(), Error>> { Err(Error("unexpected".into())) }
-    fn serialize_tuple(self, _len: usize) -> Result<ser::Impossible<(), Error>> { Err(Error("unexpected".into())) }
-    fn serialize_tuple_struct(self, _name: &'static str, _len: usize) -> Result<ser::Impossible<(), Error>> { Err(Error("unexpected".into())) }
-    fn serialize_tuple_variant(self, _name: &'static str, _i: u32, _v: &'static str, _len: usize) -> Result<ser::Impossible<(), Error>> { Err(Error("unexpected".into())) }
-    fn serialize_map(self, _len: Option<usize>) -> Result<ser::Impossible<(), Error>> { Err(Error("unexpected".into())) }
-    fn serialize_struct(self, _name: &'static str, _len: usize) -> Result<ser::Impossible<(), Error>> { Err(Error("unexpected".into())) }
-    fn serialize_struct_variant(self, _name: &'static str, _i: u32, _v: &'static str, _len: usize) -> Result<ser::Impossible<(), Error>> { Err(Error("unexpected".into())) }
-    fn collect_str<T: ?Sized + fmt::Display>(self, _value: &T) -> Result<()> { Err(Error("unexpected".into())) }
-    fn is_human_readable(&self) -> bool { true }
+    fn serialize_i8(self, v: i8) -> Result<()> {
+        self.v = Some(v as usize);
+        Ok(())
+    }
+    fn serialize_i16(self, v: i16) -> Result<()> {
+        self.v = Some(v as usize);
+        Ok(())
+    }
+    fn serialize_i32(self, v: i32) -> Result<()> {
+        self.v = Some(v as usize);
+        Ok(())
+    }
+    fn serialize_i64(self, v: i64) -> Result<()> {
+        self.v = Some(v as usize);
+        Ok(())
+    }
+    fn serialize_u8(self, v: u8) -> Result<()> {
+        self.v = Some(v as usize);
+        Ok(())
+    }
+    fn serialize_u16(self, v: u16) -> Result<()> {
+        self.v = Some(v as usize);
+        Ok(())
+    }
+    fn serialize_u32(self, v: u32) -> Result<()> {
+        self.v = Some(v as usize);
+        Ok(())
+    }
+    fn serialize_u64(self, v: u64) -> Result<()> {
+        self.v = Some(v as usize);
+        Ok(())
+    }
+    fn serialize_f32(self, v: f32) -> Result<()> {
+        self.v = Some(v as usize);
+        Ok(())
+    }
+    fn serialize_f64(self, v: f64) -> Result<()> {
+        self.v = Some(v as usize);
+        Ok(())
+    }
+    fn serialize_bool(self, v: bool) -> Result<()> {
+        self.v = Some(v as usize);
+        Ok(())
+    }
+    fn serialize_char(self, _v: char) -> Result<()> {
+        Err(Error::unexpected("ptr expects number"))
+    }
+    fn serialize_str(self, _v: &str) -> Result<()> {
+        Err(Error::unexpected("ptr expects number"))
+    }
+    fn serialize_bytes(self, _v: &[u8]) -> Result<()> {
+        Err(Error::unexpected("ptr expects number"))
+    }
+    fn serialize_none(self) -> Result<()> {
+        Err(Error::unexpected("ptr cannot be none"))
+    }
+    fn serialize_some<T: ?Sized + Serialize>(self, _value: &T) -> Result<()> {
+        Err(Error::unexpected("ptr not option"))
+    }
+    fn serialize_unit(self) -> Result<()> {
+        Err(Error::unexpected("ptr cannot be unit"))
+    }
+    fn serialize_unit_struct(self, _name: &'static str) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_unit_variant(self, _name: &'static str, _i: u32, _v: &'static str) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_newtype_struct<T: ?Sized + Serialize>(
+        self,
+        _name: &'static str,
+        _value: &T,
+    ) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_newtype_variant<T: ?Sized + Serialize>(
+        self,
+        _name: &'static str,
+        _i: u32,
+        _v: &'static str,
+        _value: &T,
+    ) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_seq(self, _len: Option<usize>) -> Result<ser::Impossible<(), Error>> {
+        unexpected()
+    }
+    fn serialize_tuple(self, _len: usize) -> Result<ser::Impossible<(), Error>> {
+        unexpected()
+    }
+    fn serialize_tuple_struct(
+        self,
+        _name: &'static str,
+        _len: usize,
+    ) -> Result<ser::Impossible<(), Error>> {
+        unexpected()
+    }
+    fn serialize_tuple_variant(
+        self,
+        _name: &'static str,
+        _i: u32,
+        _v: &'static str,
+        _len: usize,
+    ) -> Result<ser::Impossible<(), Error>> {
+        unexpected()
+    }
+    fn serialize_map(self, _len: Option<usize>) -> Result<ser::Impossible<(), Error>> {
+        unexpected()
+    }
+    fn serialize_struct(
+        self,
+        _name: &'static str,
+        _len: usize,
+    ) -> Result<ser::Impossible<(), Error>> {
+        unexpected()
+    }
+    fn serialize_struct_variant(
+        self,
+        _name: &'static str,
+        _i: u32,
+        _v: &'static str,
+        _len: usize,
+    ) -> Result<ser::Impossible<(), Error>> {
+        unexpected()
+    }
+    fn collect_str<T: ?Sized + fmt::Display>(self, _value: &T) -> Result<()> {
+        unexpected_e()
+    }
+    fn is_human_readable(&self) -> bool {
+        true
+    }
 }
 impl UsizeCapture {
     fn finish(self) -> Result<usize> {
-        self.v.ok_or_else(|| Error("missing numeric ptr".into()))
+        self.v
+            .ok_or_else(|| Error::unexpected("missing numeric ptr"))
     }
 }
 
@@ -1426,7 +1753,9 @@ impl UsizeCapture {
 ///
 /// Used internally to read the `present` flag from weak-anchor payloads.
 #[derive(Default)]
-struct BoolCapture { v: Option<bool> }
+struct BoolCapture {
+    v: Option<bool>,
+}
 impl<'a> Serializer for &'a mut BoolCapture {
     type Ok = ();
     type Error = Error;
@@ -1439,39 +1768,132 @@ impl<'a> Serializer for &'a mut BoolCapture {
     type SerializeStruct = ser::Impossible<(), Error>;
     type SerializeStructVariant = ser::Impossible<(), Error>;
 
-    fn serialize_bool(self, v: bool) -> Result<()> { self.v = Some(v); Ok(()) }
-    fn serialize_i8(self, _v: i8) -> Result<()> { Err(Error("bool expected".into())) }
-    fn serialize_i16(self, _v: i16) -> Result<()> { Err(Error("bool expected".into())) }
-    fn serialize_i32(self, _v: i32) -> Result<()> { Err(Error("bool expected".into())) }
-    fn serialize_i64(self, _v: i64) -> Result<()> { Err(Error("bool expected".into())) }
-    fn serialize_u8(self, _v: u8) -> Result<()> { Err(Error("bool expected".into())) }
-    fn serialize_u16(self, _v: u16) -> Result<()> { Err(Error("bool expected".into())) }
-    fn serialize_u32(self, _v: u32) -> Result<()> { Err(Error("bool expected".into())) }
-    fn serialize_u64(self, _v: u64) -> Result<()> { Err(Error("bool expected".into())) }
-    fn serialize_f32(self, _v: f32) -> Result<()> { Err(Error("bool expected".into())) }
-    fn serialize_f64(self, _v: f64) -> Result<()> { Err(Error("bool expected".into())) }
-    fn serialize_char(self, _c: char) -> Result<()> { Err(Error("bool expected".into())) }
-    fn serialize_str (self, _v: &str) -> Result<()> { Err(Error("bool expected".into())) }
-    fn serialize_bytes(self, _v: &[u8]) -> Result<()> { Err(Error("bool expected".into())) }
-    fn serialize_none(self) -> Result<()> { Err(Error("bool expected".into())) }
-    fn serialize_some<T: ?Sized + Serialize>(self, _v: &T) -> Result<()> { Err(Error("bool expected".into())) }
-    fn serialize_unit(self) -> Result<()> { Err(Error("bool expected".into())) }
-    fn serialize_unit_struct(self, _name: &'static str) -> Result<()> { Err(Error("unexpected".into())) }
-    fn serialize_unit_variant(self, _name: &'static str, _i: u32, _v: &'static str) -> Result<()> { Err(Error("unexpected".into())) }
-    fn serialize_newtype_struct<T: ?Sized + Serialize>(self, _name: &'static str, _value: &T) -> Result<()> { Err(Error("unexpected".into())) }
-    fn serialize_newtype_variant<T: ?Sized + Serialize>(self, _name: &'static str, _i: u32, _v: &'static str, _value: &T) -> Result<()> { Err(Error("unexpected".into())) }
-    fn serialize_seq(self, _len: Option<usize>) -> Result<ser::Impossible<(), Error>> { Err(Error("unexpected".into())) }
-    fn serialize_tuple(self, _len: usize) -> Result<ser::Impossible<(), Error>> { Err(Error("unexpected".into())) }
-    fn serialize_tuple_struct(self, _name: &'static str, _len: usize) -> Result<ser::Impossible<(), Error>> { Err(Error("unexpected".into())) }
-    fn serialize_tuple_variant(self, _name: &'static str, _i: u32, _v: &'static str, _len: usize) -> Result<ser::Impossible<(), Error>> { Err(Error("unexpected".into())) }
-    fn serialize_map(self, _len: Option<usize>) -> Result<ser::Impossible<(), Error>> { Err(Error("unexpected".into())) }
-    fn serialize_struct(self, _name: &'static str, _len: usize) -> Result<ser::Impossible<(), Error>> { Err(Error("unexpected".into())) }
-    fn serialize_struct_variant(self, _name: &'static str, _i: u32, _v: &'static str, _len: usize) -> Result<ser::Impossible<(), Error>> { Err(Error("unexpected".into())) }
-    fn collect_str<T: ?Sized + fmt::Display>(self, _value: &T) -> Result<()> { Err(Error("unexpected".into())) }
-    fn is_human_readable(&self) -> bool { true }
+    fn serialize_bool(self, v: bool) -> Result<()> {
+        self.v = Some(v);
+        Ok(())
+    }
+    fn serialize_i8(self, _v: i8) -> Result<()> {
+        Err(Error::unexpected("bool expected"))
+    }
+    fn serialize_i16(self, _v: i16) -> Result<()> {
+        Err(Error::unexpected("bool expected"))
+    }
+    fn serialize_i32(self, _v: i32) -> Result<()> {
+        Err(Error::unexpected("bool expected"))
+    }
+    fn serialize_i64(self, _v: i64) -> Result<()> {
+        Err(Error::unexpected("bool expected"))
+    }
+    fn serialize_u8(self, _v: u8) -> Result<()> {
+        Err(Error::unexpected("bool expected"))
+    }
+    fn serialize_u16(self, _v: u16) -> Result<()> {
+        Err(Error::unexpected("bool expected"))
+    }
+    fn serialize_u32(self, _v: u32) -> Result<()> {
+        Err(Error::unexpected("bool expected"))
+    }
+    fn serialize_u64(self, _v: u64) -> Result<()> {
+        Err(Error::unexpected("bool expected"))
+    }
+    fn serialize_f32(self, _v: f32) -> Result<()> {
+        Err(Error::unexpected("bool expected"))
+    }
+    fn serialize_f64(self, _v: f64) -> Result<()> {
+        Err(Error::unexpected("bool expected"))
+    }
+    fn serialize_char(self, _c: char) -> Result<()> {
+        Err(Error::unexpected("bool expected"))
+    }
+    fn serialize_str(self, _v: &str) -> Result<()> {
+        Err(Error::unexpected("bool expected"))
+    }
+    fn serialize_bytes(self, _v: &[u8]) -> Result<()> {
+        Err(Error::unexpected("bool expected"))
+    }
+    fn serialize_none(self) -> Result<()> {
+        Err(Error::unexpected("bool expected"))
+    }
+    fn serialize_some<T: ?Sized + Serialize>(self, _v: &T) -> Result<()> {
+        Err(Error::unexpected("bool expected"))
+    }
+    fn serialize_unit(self) -> Result<()> {
+        Err(Error::unexpected("bool expected"))
+    }
+    fn serialize_unit_struct(self, _name: &'static str) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_unit_variant(self, _name: &'static str, _i: u32, _v: &'static str) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_newtype_struct<T: ?Sized + Serialize>(
+        self,
+        _name: &'static str,
+        _value: &T,
+    ) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_newtype_variant<T: ?Sized + Serialize>(
+        self,
+        _name: &'static str,
+        _i: u32,
+        _v: &'static str,
+        _value: &T,
+    ) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_seq(self, _len: Option<usize>) -> Result<ser::Impossible<(), Error>> {
+        unexpected()
+    }
+    fn serialize_tuple(self, _len: usize) -> Result<ser::Impossible<(), Error>> {
+        unexpected()
+    }
+    fn serialize_tuple_struct(
+        self,
+        _name: &'static str,
+        _len: usize,
+    ) -> Result<ser::Impossible<(), Error>> {
+        unexpected()
+    }
+    fn serialize_tuple_variant(
+        self,
+        _name: &'static str,
+        _i: u32,
+        _v: &'static str,
+        _len: usize,
+    ) -> Result<ser::Impossible<(), Error>> {
+        unexpected()
+    }
+    fn serialize_map(self, _len: Option<usize>) -> Result<ser::Impossible<(), Error>> {
+        unexpected()
+    }
+    fn serialize_struct(
+        self,
+        _name: &'static str,
+        _len: usize,
+    ) -> Result<ser::Impossible<(), Error>> {
+        unexpected()
+    }
+    fn serialize_struct_variant(
+        self,
+        _name: &'static str,
+        _i: u32,
+        _v: &'static str,
+        _len: usize,
+    ) -> Result<ser::Impossible<(), Error>> {
+        unexpected()
+    }
+    fn collect_str<T: ?Sized + fmt::Display>(self, _value: &T) -> Result<()> {
+        unexpected_e()
+    }
+    fn is_human_readable(&self) -> bool {
+        true
+    }
 }
 impl BoolCapture {
-    fn finish(self) -> Result<bool> { self.v.ok_or_else(|| Error("missing bool".into())) }
+    fn finish(self) -> Result<bool> {
+        self.v.ok_or_else(|| Error::unexpected("missing bool"))
+    }
 }
 
 // ------------------------------------------------------------
@@ -1490,7 +1912,9 @@ fn scalar_key_to_string<K: Serialize + ?Sized>(key: &K) -> Result<String> {
     Ok(s)
 }
 
-struct KeyScalarSink<'a> { s: &'a mut String }
+struct KeyScalarSink<'a> {
+    s: &'a mut String,
+}
 
 impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
     type Ok = ();
@@ -1508,21 +1932,51 @@ impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
         self.s.push_str(if v { "true" } else { "false" });
         Ok(())
     }
-    fn serialize_i64(self, v: i64) -> Result<()> { self.s.push_str(&v.to_string()); Ok(()) }
-    fn serialize_i32(self, v: i32) -> Result<()> { self.serialize_i64(v as i64) }
-    fn serialize_i16(self, v: i16) -> Result<()> { self.serialize_i64(v as i64) }
-    fn serialize_i8 (self, v: i8 ) -> Result<()> { self.serialize_i64(v as i64) }
-    fn serialize_i128(self, v: i128) -> Result<()> { self.s.push_str(&v.to_string()); Ok(()) }
-    fn serialize_u64(self, v: u64) -> Result<()> { self.s.push_str(&v.to_string()); Ok(()) }
-    fn serialize_u32(self, v: u32) -> Result<()> { self.serialize_u64(v as u64) }
-    fn serialize_u16(self, v: u16) -> Result<()> { self.serialize_u64(v as u64) }
-    fn serialize_u8 (self, v: u8 ) -> Result<()> { self.serialize_u64(v as u64) }
-    fn serialize_u128(self, v: u128) -> Result<()> { self.s.push_str(&v.to_string()); Ok(()) }
+    fn serialize_i64(self, v: i64) -> Result<()> {
+        self.s.push_str(&v.to_string());
+        Ok(())
+    }
+    fn serialize_i32(self, v: i32) -> Result<()> {
+        self.serialize_i64(v as i64)
+    }
+    fn serialize_i16(self, v: i16) -> Result<()> {
+        self.serialize_i64(v as i64)
+    }
+    fn serialize_i8(self, v: i8) -> Result<()> {
+        self.serialize_i64(v as i64)
+    }
+    fn serialize_i128(self, v: i128) -> Result<()> {
+        self.s.push_str(&v.to_string());
+        Ok(())
+    }
+    fn serialize_u64(self, v: u64) -> Result<()> {
+        self.s.push_str(&v.to_string());
+        Ok(())
+    }
+    fn serialize_u32(self, v: u32) -> Result<()> {
+        self.serialize_u64(v as u64)
+    }
+    fn serialize_u16(self, v: u16) -> Result<()> {
+        self.serialize_u64(v as u64)
+    }
+    fn serialize_u8(self, v: u8) -> Result<()> {
+        self.serialize_u64(v as u64)
+    }
+    fn serialize_u128(self, v: u128) -> Result<()> {
+        self.s.push_str(&v.to_string());
+        Ok(())
+    }
     fn serialize_f32(self, v: f32) -> Result<()> {
         let v = v as f64;
-        if v.is_nan() { self.s.push_str(".nan"); }
-        else if v.is_infinite() { if v.is_sign_positive() { self.s.push_str(".inf"); } else { self.s.push_str("-.inf"); } }
-        else {
+        if v.is_nan() {
+            self.s.push_str(".nan");
+        } else if v.is_infinite() {
+            if v.is_sign_positive() {
+                self.s.push_str(".inf");
+            } else {
+                self.s.push_str("-.inf");
+            }
+        } else {
             let mut buf = ryu::Buffer::new();
             let s = buf.format(v);
             if !s.contains('.') && !s.contains('e') && !s.contains('E') {
@@ -1535,9 +1989,15 @@ impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
         Ok(())
     }
     fn serialize_f64(self, v: f64) -> Result<()> {
-        if v.is_nan() { self.s.push_str(".nan"); }
-        else if v.is_infinite() { if v.is_sign_positive() { self.s.push_str(".inf"); } else { self.s.push_str("-.inf"); } }
-        else {
+        if v.is_nan() {
+            self.s.push_str(".nan");
+        } else if v.is_infinite() {
+            if v.is_sign_positive() {
+                self.s.push_str(".inf");
+            } else {
+                self.s.push_str("-.inf");
+            }
+        } else {
             let mut buf = ryu::Buffer::new();
             let s = buf.format(v);
             if !s.contains('.') && !s.contains('e') && !s.contains('E') {
@@ -1561,7 +2021,7 @@ impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
             for ch in v.chars() {
                 match ch {
                     '\\' => self.s.push_str("\\\\"),
-                    '"'  => self.s.push_str("\\\""),
+                    '"' => self.s.push_str("\\\""),
                     '\n' => self.s.push_str("\\n"),
                     '\r' => self.s.push_str("\\r"),
                     '\t' => self.s.push_str("\\t"),
@@ -1576,35 +2036,108 @@ impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
         }
         Ok(())
     }
-    fn serialize_bytes(self, _v: &[u8]) -> Result<()> { Err(Error("non-scalar key".into())) }
-    fn serialize_none (self) -> Result<()> { self.s.push_str("null"); Ok(()) }
-    fn serialize_some<T: ?Sized + Serialize>(self, v: &T) -> Result<()> { v.serialize(self) }
-    fn serialize_unit(self) -> Result<()> { self.s.push_str("null"); Ok(()) }
-    fn serialize_unit_struct(self, _name: &'static str) -> Result<()> { self.serialize_unit() }
-    fn serialize_unit_variant(self, _name: &'static str, _idx: u32, variant: &'static str) -> Result<()> {
+    fn serialize_bytes(self, _v: &[u8]) -> Result<()> {
+        non_scalar_key_e()
+    }
+    fn serialize_none(self) -> Result<()> {
+        self.s.push_str("null");
+        Ok(())
+    }
+    fn serialize_some<T: ?Sized + Serialize>(self, v: &T) -> Result<()> {
+        v.serialize(self)
+    }
+    fn serialize_unit(self) -> Result<()> {
+        self.s.push_str("null");
+        Ok(())
+    }
+    fn serialize_unit_struct(self, _name: &'static str) -> Result<()> {
+        self.serialize_unit()
+    }
+    fn serialize_unit_variant(
+        self,
+        _name: &'static str,
+        _idx: u32,
+        variant: &'static str,
+    ) -> Result<()> {
         self.serialize_str(variant)
     }
-    fn serialize_newtype_struct<T: ?Sized + Serialize>(self, _name: &'static str, _value: &T) -> Result<()> {
-        Err(Error("non-scalar key".into()))
+    fn serialize_newtype_struct<T: ?Sized + Serialize>(
+        self,
+        _name: &'static str,
+        _value: &T,
+    ) -> Result<()> {
+        non_scalar_key_e()
     }
-    fn serialize_newtype_variant<T: ?Sized + Serialize>(self,_:&'static str,_:u32,_:&'static str,_:&T)->Result<()>{
-        Err(Error("non-scalar key".into()))
+    fn serialize_newtype_variant<T: ?Sized + Serialize>(
+        self,
+        _: &'static str,
+        _: u32,
+        _: &'static str,
+        _: &T,
+    ) -> Result<()> {
+        non_scalar_key_e()
     }
-    fn serialize_seq(self, _len: Option<usize>) -> Result<ser::Impossible<(), Error>> { Err(Error("non-scalar key".into())) }
-    fn serialize_tuple(self, _len: usize) -> Result<ser::Impossible<(), Error>> { Err(Error("non-scalar key".into())) }
-    fn serialize_tuple_struct(self,_:&'static str,_:usize)->Result<ser::Impossible<(), Error>> { Err(Error("non-scalar key".into())) }
-    fn serialize_tuple_variant(self,_:&'static str,_:u32,_:&'static str,_:usize)->Result<ser::Impossible<(), Error>>{
-        Err(Error("non-scalar key".into()))
+    fn serialize_seq(self, _len: Option<usize>) -> Result<ser::Impossible<(), Error>> {
+        non_scalar_key()
     }
-    fn serialize_map(self, _len: Option<usize>) -> Result<ser::Impossible<(), Error>> { Err(Error("non-scalar key".into())) }
-    fn serialize_struct(self, _name: &'static str, _len: usize) -> Result<ser::Impossible<(), Error>> {
-        Err(Error("non-scalar key".into()))
+    fn serialize_tuple(self, _len: usize) -> Result<ser::Impossible<(), Error>> {
+        non_scalar_key()
     }
-    fn serialize_struct_variant(self,_:&'static str,_:u32,_:&'static str,_:usize)->Result<ser::Impossible<(), Error>>{
-        Err(Error("non-scalar key".into()))
+    fn serialize_tuple_struct(
+        self,
+        _: &'static str,
+        _: usize,
+    ) -> Result<ser::Impossible<(), Error>> {
+        non_scalar_key()
+    }
+    fn serialize_tuple_variant(
+        self,
+        _: &'static str,
+        _: u32,
+        _: &'static str,
+        _: usize,
+    ) -> Result<ser::Impossible<(), Error>> {
+        non_scalar_key()
+    }
+    fn serialize_map(self, _len: Option<usize>) -> Result<ser::Impossible<(), Error>> {
+        non_scalar_key()
+    }
+    fn serialize_struct(
+        self,
+        _name: &'static str,
+        _len: usize,
+    ) -> Result<ser::Impossible<(), Error>> {
+        non_scalar_key()
+    }
+    fn serialize_struct_variant(
+        self,
+        _: &'static str,
+        _: u32,
+        _: &'static str,
+        _: usize,
+    ) -> Result<ser::Impossible<(), Error>> {
+        non_scalar_key()
     }
     fn collect_str<T: ?Sized + fmt::Display>(self, v: &T) -> Result<()> {
         self.serialize_str(&v.to_string())
     }
-    fn is_human_readable(&self) -> bool { true }
+    fn is_human_readable(&self) -> bool {
+        true
+    }
+}
+
+fn unexpected() -> Result<ser::Impossible<(), Error>> {
+    Err(Error::unexpected  ("unexpected"))
+}
+
+fn unexpected_e() -> Result<()> {
+    Err(Error::unexpected  ("unexpected"))
+}
+
+fn non_scalar_key() -> Result<ser::Impossible<(), Error>> {
+    Err(Error::unexpected  ("non-scalar key"))
+}
+
+fn non_scalar_key_e() -> Result<()> {
+    Err(Error::unexpected  ("non-scalar key"))
 }
