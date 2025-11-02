@@ -97,11 +97,11 @@ fn serialize_nested_variant_enums() {
     // Also exercise to_writer and to_writer_with_indent
     let v = Outer::Beta { inner: Inner::Unit, note: "ok".into() };
     let mut buf = String::new();
-    serde_saphyr::to_writer(&mut buf, &v).expect("to_writer works");
+    serde_saphyr::to_fmt_writer(&mut buf, &v).expect("to_writer works");
     assert!(!buf.is_empty());
     let mut buf2 = String::new();
     let opts = serde_saphyr::SerializerOptions { indent_step: 4, anchor_generator: None };
-    serde_saphyr::to_writer_with_options(&mut buf2, &v, opts).expect("to_writer_with_options works");
+    serde_saphyr::to_fmt_writer_with_options(&mut buf2, &v, opts).expect("to_writer_with_options works");
     assert!(!buf2.is_empty());
 }
 
@@ -116,7 +116,19 @@ fn serialize_array_of_empty_maps() {
         vec: vec![Default::default(), Default::default(), Default::default()],
     };
     let mut buf = String::new();
-    serde_saphyr::to_writer(&mut buf, &v).expect("to_writer works");
+    serde_saphyr::to_fmt_writer(&mut buf, &v).expect("to_writer works");
     let v2: VecOfMaps = serde_saphyr::from_str(&buf).expect("deserialize just serialized data");
+    assert_eq!(v, v2);
+}
+
+#[test]
+fn serialize_array_of_empty_maps_to_io() {
+    let v = VecOfMaps {
+        vec: vec![Default::default(), Default::default(), Default::default()],
+    };
+    let mut buf: Vec<u8> = Vec::new();
+    serde_saphyr::to_io_writer(&mut buf, &v).expect("to_writer works");
+    let s = String::from_utf8(buf).expect("valid utf-8");
+    let v2: VecOfMaps = serde_saphyr::from_str(&s).expect("deserialize just serialized data");
     assert_eq!(v, v2);
 }
