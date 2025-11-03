@@ -26,6 +26,8 @@ pub mod ser_error;
 mod serializer_options;
 mod tags;
 
+pub (crate) mod ser_quoting;
+
 #[cfg(feature = "robotics")]
 pub mod angles_conversions;
 
