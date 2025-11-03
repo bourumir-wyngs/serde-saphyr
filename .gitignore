@@ -4,3 +4,5 @@
 /announcement.md
 /article.md
 /tests/fuzz_crashes
+# contains network classes so not included
+/tests/network_test.rs

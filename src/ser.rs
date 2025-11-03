@@ -1106,25 +1106,39 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
         variant: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeStructVariant> {
+        // If we are the value of a mapping key, YAML forbids keeping a nested mapping
+        // on the same line (e.g., "key: Variant:"). Move the variant mapping to the next line
+        // indented under the parent mapping's base depth.
+        let _was_inline_value = !self.at_line_start;
+        if self.pending_space_after_colon {
+            // Value position after a map key: start the variant mapping on the next line.
+            self.pending_space_after_colon = false;
+            self.newline()?;
+            // Indent the variant name one level under the parent mapping.
+            let base = self.current_map_depth.unwrap_or(self.depth) + 1;
+            self.write_indent(base)?;
+            self.write_plain_or_quoted(variant)?;
+            self.out.write_str(":\n")?;
+            self.at_line_start = true;
+            // Fields indent one more level under the variant label.
+            let depth_next = base + 1;
+            return Ok(StructVariantSer { ser: self, depth: depth_next });
+        }
+        // Otherwise (top-level or sequence context), emit the variant name at current depth.
         if self.at_line_start {
             self.write_indent(self.depth)?;
         }
         self.write_plain_or_quoted(variant)?;
         self.out.write_str(":\n")?;
         self.at_line_start = true;
-        // Default field indentation is one level deeper than current depth.
+        // Default indentation for fields under a plain variant line.
         let mut depth_next = self.depth + 1;
-        // If this struct variant follows a list dash inline ("- Variant:"),
-        // use the dash's indentation as the base.
+        // If this variant follows a list dash, indent two levels under the dash (one for the element, one for the mapping).
         if let Some(d) = self.after_dash_depth.take() {
-            // After a dash, struct-variant fields are one level deeper than the element's mapping base.
             depth_next = d + 2;
             self.pending_inline_map = false;
         }
-        Ok(StructVariantSer {
-            ser: self,
-            depth: depth_next,
-        })
+        Ok(StructVariantSer { ser: self, depth: depth_next })
     }
 }
 
@@ -1577,9 +1591,15 @@ impl<'a, 'b, W: Write> SerializeStructVariant for StructVariantSer<'a, 'b, W> {
         let text = scalar_key_to_string(&key)?;
         self.ser.write_indent(self.depth)?;
         self.ser.out.write_str(&text)?;
-        self.ser.out.write_str(": ")?;
+        // Defer spacing/newline decision to the value serializer similarly to map entries.
+        self.ser.out.write_str(":")?;
+        self.ser.pending_space_after_colon = true;
         self.ser.at_line_start = false;
-        value.serialize(&mut *self.ser)
+        // Ensure nested mappings/collections used as this field's value indent relative to this struct variant.
+        let prev_map_depth = self.ser.current_map_depth.replace(self.depth);
+        let result = value.serialize(&mut *self.ser);
+        self.ser.current_map_depth = prev_map_depth;
+        result
     }
     fn end(self) -> Result<()> {
         Ok(())
