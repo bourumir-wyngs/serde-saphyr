@@ -50,6 +50,7 @@ use nohash_hasher::BuildNoHashHasher;
 // ------------------------------------------------------------
 
 pub use crate::ser_error::Error;
+use crate::ser_quoting::{is_plain_safe, is_plain_value_safe};
 
 /// Result alias.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -367,102 +368,59 @@ impl<'a, W: Write> YamlSer<'a, W> {
             self.out.write_str(s)?;
             Ok(())
         } else {
-            self.out.write_char('"')?;
-            for ch in s.chars() {
-                match ch {
-                    '\\' => self.out.write_str("\\\\")?,
-                    '"' => self.out.write_str("\\\"")?,
-                    // YAML named escapes for common control characters
-                    '\0' => self.out.write_str("\\0")?,
-                    '\u{7}' => self.out.write_str("\\a")?,
-                    '\u{8}' => self.out.write_str("\\b")?,
-                    '\t' => self.out.write_str("\\t")?,
-                    '\n' => self.out.write_str("\\n")?,
-                    '\u{b}' => self.out.write_str("\\v")?,
-                    '\u{c}' => self.out.write_str("\\f")?,
-                    '\r' => self.out.write_str("\\r")?,
-                    '\u{1b}' => self.out.write_str("\\e")?,
-                    // Unicode BOM should use the standard \u escape rather than Rust's \u{...}
-                    '\u{FEFF}' => self.out.write_str("\\uFEFF")?,
-                    // YAML named escapes for Unicode separators
-                    '\u{0085}' => self.out.write_str("\\N")?,
-                    '\u{2028}' => self.out.write_str("\\L")?,
-                    '\u{2029}' => self.out.write_str("\\P")?,
-                    c if (c as u32) <= 0xFF
-                        && (c.is_control() || (0x7F..=0x9F).contains(&(c as u32))) =>
-                    {
-                        write!(self.out, "\\x{:02X}", c as u32)?
-                    }
-                    c if (c as u32) <= 0xFFFF
-                        && (c.is_control() || (0x7F..=0x9F).contains(&(c as u32))) =>
-                    {
-                        write!(self.out, "\\u{:04X}", c as u32)?
-                    }
-                    c => self.out.write_char(c)?,
-                }
-            }
-            self.out.write_char('"')?;
-            Ok(())
+            self.write_quoted(s)
         }
     }
 
-    /// Returns true if `s` can be emitted as a plain scalar in VALUE position without quoting.
-    /// This is slightly more permissive than `is_plain_safe` for keys: it allows ':' inside values.
-    #[inline]
-    fn is_plain_value_safe(s: &str) -> bool {
-        if s.is_empty() {
-            return false;
+    /// Write a double-quoted string with necessary escapes.
+    fn write_quoted(&mut self, s: &str) -> Result<()> {
+        self.out.write_char('"')?;
+        for ch in s.chars() {
+            match ch {
+                '\\' => self.out.write_str("\\\\")?,
+                '"' => self.out.write_str("\\\"")?,
+                // YAML named escapes for common control characters
+                '\0' => self.out.write_str("\\0")?,
+                '\u{7}' => self.out.write_str("\\a")?,
+                '\u{8}' => self.out.write_str("\\b")?,
+                '\t' => self.out.write_str("\\t")?,
+                '\n' => self.out.write_str("\\n")?,
+                '\u{b}' => self.out.write_str("\\v")?,
+                '\u{c}' => self.out.write_str("\\f")?,
+                '\r' => self.out.write_str("\\r")?,
+                '\u{1b}' => self.out.write_str("\\e")?,
+                // Unicode BOM should use the standard \u escape rather than Rust's \u{...}
+                '\u{FEFF}' => self.out.write_str("\\uFEFF")?,
+                // YAML named escapes for Unicode separators
+                '\u{0085}' => self.out.write_str("\\N")?,
+                '\u{2028}' => self.out.write_str("\\L")?,
+                '\u{2029}' => self.out.write_str("\\P")?,
+                c if (c as u32) <= 0xFF
+                    && (c.is_control() || (0x7F..=0x9F).contains(&(c as u32))) =>
+                {
+                    write!(self.out, "\\x{:02X}", c as u32)?
+                }
+                c if (c as u32) <= 0xFFFF
+                    && (c.is_control() || (0x7F..=0x9F).contains(&(c as u32))) =>
+                {
+                    write!(self.out, "\\u{:04X}", c as u32)?
+                }
+                c => self.out.write_char(c)?,
+            }
         }
-        if s == "~"
-            || s.eq_ignore_ascii_case("null")
-            || s.eq_ignore_ascii_case("true")
-            || s.eq_ignore_ascii_case("false")
-        {
-            return false;
-        }
-        let bytes = s.as_bytes();
-        if bytes[0].is_ascii_whitespace()
-            || matches!(
-                bytes[0],
-                b'-' | b'?'
-                    | b':'
-                    | b'['
-                    | b']'
-                    | b'{'
-                    | b'}'
-                    | b'#'
-                    | b'&'
-                    | b'*'
-                    | b'!'
-                    | b'|'
-                    | b'>'
-                    | b'\''
-                    | b'"'
-                    | b'%'
-                    | b'@'
-                    | b'`'
-            )
-        {
-            return false;
-        }
-        if s.chars().any(|c| c.is_control()) {
-            return false;
-        }
-        // In values, ':' is allowed, but '#' would start a comment so still disallow '#'.
-        if s.contains('#') {
-            return false;
-        }
-        true
+        self.out.write_char('"')?;
+        Ok(())
     }
 
     /// Like `write_plain_or_quoted`, but intended for VALUE position where ':' is allowed.
     #[inline]
     fn write_plain_or_quoted_value(&mut self, s: &str) -> Result<()> {
-        if Self::is_plain_value_safe(s) {
+        if is_plain_value_safe(s) {
             self.out.write_str(s)?;
             Ok(())
         } else {
-            self.write_plain_or_quoted(s)
+            // Force quoted style for unsafe value tokens (commas/brackets, bool/num-like, etc.).
+            self.write_quoted(s)
         }
     }
 
@@ -543,58 +501,6 @@ impl<'a, W: Write> YamlSer<'a, W> {
         self.in_flow -= 1;
         r
     }
-}
-
-// ------------------------------------------------------------
-// Scalar helpers
-// ------------------------------------------------------------
-
-/// Returns true if `s` can be emitted as a plain scalar without quoting.
-/// Internal heuristic used by `write_plain_or_quoted`.
-#[inline]
-fn is_plain_safe(s: &str) -> bool {
-    if s.is_empty() {
-        return false;
-    }
-    if s == "~"
-        || s.eq_ignore_ascii_case("null")
-        || s.eq_ignore_ascii_case("true")
-        || s.eq_ignore_ascii_case("false")
-    {
-        return false;
-    }
-    let bytes = s.as_bytes();
-    if bytes[0].is_ascii_whitespace()
-        || matches!(
-            bytes[0],
-            b'-' | b'?'
-                | b':'
-                | b'['
-                | b']'
-                | b'{'
-                | b'}'
-                | b'#'
-                | b'&'
-                | b'*'
-                | b'!'
-                | b'|'
-                | b'>'
-                | b'\''
-                | b'"'
-                | b'%'
-                | b'@'
-                | b'`'
-        )
-    {
-        return false;
-    }
-    if s.chars().any(|c| c.is_control()) {
-        return false;
-    }
-    if s.contains(':') || s.contains('#') {
-        return false;
-    }
-    true
 }
 
 // ------------------------------------------------------------
