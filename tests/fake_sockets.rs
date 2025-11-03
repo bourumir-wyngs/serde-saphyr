@@ -47,8 +47,7 @@ fn test() {
     };
 
     let s = serde_saphyr::to_string(&ep).unwrap();
-    println!("{}", s);
-
+    
     // Round trip: deserialize back from string and assert values
     let ep2: Listener = serde_saphyr::from_str(&s).unwrap();
 
