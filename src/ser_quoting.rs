@@ -111,16 +111,22 @@ pub(crate) fn is_plain_value_safe(s: &str) -> bool {
     {
         return false;
     }
-    if s.chars().any(|c| c.is_control()) {
+
+    // Yet while colon is ok, colon after space is not.
+    if s.contains(": ") {
         return false;
     }
-    // In values, ':' is allowed, but '#' would start a comment so still disallow '#'.
-    if s.contains('#') {
-        return false;
-    }
+
     // In flow style, commas and brackets/braces are structural; quote strings containing them.
-    if s.contains(',') || s.contains('[') || s.contains(']') || s.contains('{') || s.contains('}') {
+    // In values, ':' is allowed, but '#' would start a comment so still disallow '#'.
+    if contains_any_or_is_control(s, &[',', '[', ']', '{', '}', '#']) {
         return false;
     }
     true
+}
+
+fn contains_any_or_is_control(string: &str, values: &[char]) -> bool {
+    string
+        .chars()
+        .any(|x| values.iter().any(|v| &x == v || x.is_control()))
 }
