@@ -19,7 +19,7 @@ fn test_so_example() {
 
     let data = vec![n1.clone(), n1.clone(), n1.clone(), n2.clone(), n1.clone(), n2.clone()];
     let serialized = serde_saphyr::to_string(&data).expect("Must serialize");
-    println!("{}", serialized);
+    // println!("{}", serialized);
 
     let deserialized: Vec<RcAnchor<Node>> = serde_saphyr::from_str(&serialized).unwrap();
 
