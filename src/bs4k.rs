@@ -63,8 +63,8 @@ pub fn find_bs4k_issue_location(input: &str) -> Option<Location> {
 
         let mut in_single = false;
         let mut in_double = false;
-        let mut bracket = 0i32;
-        let mut brace = 0i32;
+        let mut bracket = 0;
+        let mut brace = 0;
 
         for (i, c) in until.chars().enumerate() {
             match c {
