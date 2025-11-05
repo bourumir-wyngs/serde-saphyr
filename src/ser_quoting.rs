@@ -1,3 +1,7 @@
+use crate::parse_scalars::{parse_int_signed, parse_yaml11_bool, parse_yaml12_float};
+use crate::tags::SfTag;
+use crate::Location;
+
 /// Controls quoting behavior of the serializer.
 
 /// Returns true if `s` can be emitted as a plain scalar without quoting.
@@ -61,31 +65,22 @@ pub(crate) fn is_plain_value_safe(s: &str) -> bool {
     // Nulls and YAML 1.2 booleans
     if s == "~"
         || s.eq_ignore_ascii_case("null")
-        || s.eq_ignore_ascii_case("true")
-        || s.eq_ignore_ascii_case("false")
-    {
-        return false;
-    }
-    // YAML 1.1 boolean aliases that some parsers accept
-    if s.eq_ignore_ascii_case("y")
-        || s.eq_ignore_ascii_case("yes")
-        || s.eq_ignore_ascii_case("n")
-        || s.eq_ignore_ascii_case("no")
-        || s.eq_ignore_ascii_case("on")
-        || s.eq_ignore_ascii_case("off")
     {
         return false;
     }
     // Numeric-looking tokens: quote them to preserve strings
     // Use parsing as a heuristic; if it parses as a number, don't allow plain style
-    if s.parse::<i64>().is_ok() || s.parse::<u64>().is_ok() || s.parse::<f64>().is_ok() {
+    if parse_int_signed::<i64>(s, "i64", Location::UNKNOWN, true).is_ok() {
         return false;
     }
+    if parse_yaml12_float::<f64>(s, Location::UNKNOWN, SfTag::Float, false).is_ok() {
+        return false;
+    }
+    if parse_yaml11_bool(s).is_ok() {
+        return false;
+    }
+
     // Special float tokens per YAML
-    let sl = s.to_ascii_lowercase();
-    if sl == ".nan" || sl == ".inf" || sl == "-.inf" {
-        return false;
-    }
     let bytes = s.as_bytes();
     if bytes[0].is_ascii_whitespace()
         || matches!(

@@ -1,4 +1,3 @@
-#[ignore]
 #[test]
 fn test_quoting() {
     let samples = vec![
