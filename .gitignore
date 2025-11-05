@@ -6,3 +6,5 @@
 /tests/fuzz_crashes
 # contains network classes so not included
 /tests/network_test.rs
+/tests/parser_misplaced_sequence_close.rs
+
