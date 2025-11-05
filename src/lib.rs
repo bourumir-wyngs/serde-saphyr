@@ -4,7 +4,7 @@ use serde::de::DeserializeOwned;
 pub use crate::serializer_options::SerializerOptions;
 pub use anchors::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
 pub use ser::{FlowMap, FlowSeq, FoldStr, LitStr};
-
+use crate::bs4k::find_bs4k_issue_location;
 use crate::de::{Ev, Events};
 use crate::live_events::LiveEvents;
 use crate::parse_scalars::scalar_is_nullish;
@@ -29,69 +29,7 @@ pub (crate) mod ser_quoting;
 
 #[cfg(feature = "robotics")]
 pub mod angles_conversions;
-
-// Detect BS4K-style invalid pattern: a content line with an inline comment,
-// immediately followed by a top-level (non-indented) content line that would
-// implicitly start a new document without a marker. This should be rejected
-// by single-document APIs.
-fn has_inline_comment_followed_by_top_level_content(input: &str) -> bool {
-    let mut lines = input.lines();
-    while let Some(line) = lines.next() {
-        // Normalize: ignore UTF-8 BOM if present in the first line. Use strip_prefix to avoid slicing at a non-UTF8 boundary.
-        let line = if let Some(rest) = line.strip_prefix('\u{FEFF}') {
-            rest
-        } else {
-            line
-        };
-        let trimmed = line.trim_end();
-
-        // Find position of inline comment '#'
-        let hash_pos = trimmed.find('#');
-        if let Some(pos) = hash_pos {
-            // Slice before '#'
-            let before = &trimmed[..pos];
-            // Skip if there is no non-whitespace content before '#'
-            if before.chars().all(|c| c.is_whitespace()) {
-                continue;
-            }
-            // If there is a ':' (mapping key) before '#', this is not the BS4K case.
-            if before.contains(':') {
-                continue;
-            }
-            // If line starts with a sequence dash after whitespace, skip.
-            let before_trim = before.trim_start();
-            if before_trim.starts_with("- ") || before_trim == "-" {
-                continue;
-            }
-            // If flow indicators are present before the comment, skip (flow content allowed).
-            if before.contains('[') || before.contains('{') {
-                continue;
-            }
-
-            // Now check the next line context.
-            if let Some(next) = lines.clone().next() {
-                let next_trim = next.trim_end();
-                let next_is_empty = next_trim.trim().is_empty();
-                let next_starts_with_ws = next_trim.starts_with(' ') || next_trim.starts_with('\t');
-                let next_is_marker = next_trim.starts_with("---")
-                    || next_trim.starts_with("...")
-                    || next_trim.starts_with('#');
-                // If next line begins a mapping key (contains ':' before a '#'), do not trigger.
-                if let Some(colon) = next_trim.find(':') {
-                    let before_colon = &next_trim[..colon];
-                    if before_colon.chars().any(|c| !c.is_whitespace()) {
-                        continue;
-                    }
-                }
-                // Trigger only if next line is top-level content (non-empty, non-indented, not a marker/comment)
-                if !next_is_empty && !next_starts_with_ws && !next_is_marker {
-                    return true;
-                }
-            }
-        }
-    }
-    false
-}
+mod bs4k;
 
 // ---------------- Serialization (public API) ----------------
 
@@ -293,9 +231,12 @@ pub fn from_str_with_options<T: DeserializeOwned>(
     // Heuristic rejection for BS4K-style invalid input: a plain scalar line with an inline
     // comment followed by an unindented content line starting a new scalar without a document
     // marker. This must be rejected in single-document APIs.
-    if has_inline_comment_followed_by_top_level_content(input) {
-        return Err(Error::msg("invalid plain scalar: inline comment cannot be followed by a new top-level scalar line without a document marker").with_location(Location::UNKNOWN));
+    if let Some(location) = find_bs4k_issue_location(input) {
+        return Err(Error::msg("invalid plain scalar: inline comment cannot be \
+        followed by a new top-level scalar line without a document marker (bs4k)")
+            .with_location(location));
     }
+
     let cfg = crate::de::Cfg::from_options(&options);
     // Do not stop at DocumentEnd; we'll probe for trailing content/errors explicitly.
     let mut src = LiveEvents::new(input, options.budget, options.alias_limits, false);
