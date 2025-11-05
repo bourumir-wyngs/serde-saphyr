@@ -7,80 +7,126 @@ use crate::Location;
 ///
 /// Location points to the start (col 1) of that next top-level line.
 /// Returns `None` if no such pattern is detected.
+/// Faster detector: single-pass, byte-wise, quote/flow aware.
+/// Returns the approximate location (row, column=1) of the *next* top-level line
+/// that would implicitly start a new document after an inline `#` comment,
+/// or `None` if no violation is found.
 pub fn find_bs4k_issue_location(input: &str) -> Option<Location> {
-    // Find the index of a YAML comment '#' that is NOT inside quotes or flow collections.
-    fn find_real_comment_idx(s: &str) -> Option<usize> {
+    #[inline]
+    fn has_non_ws(bytes: &[u8]) -> bool {
+        bytes.iter().any(|&b| b != b' ' && b != b'\t' && b != b'\r' && b != b'\n')
+    }
+
+    /// Scan a line once. Returns:
+    /// - comment_pos: position of a real YAML comment `#` (not in quotes/flow)
+    /// - has_colon_before_comment: saw `:` outside quotes/flow before `#`
+    /// - saw_flow_opener_before_comment: saw `[` or `{` before `#`
+    /// - first_non_ws: index of first non-space/tab (None if none)
+    #[inline]
+    fn scan_line(bytes: &[u8]) -> (Option<usize>, bool, bool, Option<usize>) {
         let mut in_single = false;
         let mut in_double = false;
-        let mut bracket = 0; // []
-        let mut brace = 0;   // {}
+        let mut depth_bracket: i32 = 0; // []
+        let mut depth_brace: i32 = 0;   // {}
+        let mut has_colon = false;
+        let mut saw_flow = false;
 
-        let mut iter = s.chars().enumerate().peekable();
-        while let Some((i, c)) = iter.next() {
-            match c {
-                '\'' if !in_double => {
+        // first non space/tab
+        let mut first_non_ws = None;
+        for (i, &b) in bytes.iter().enumerate() {
+            if first_non_ws.is_none() && b != b' ' && b != b'\t' {
+                first_non_ws = Some(i);
+            }
+
+            match b {
+                b'\'' if !in_double => {
                     if in_single {
-                        // YAML single quotes escape by doubling ('')
-                        if let Some((_, next)) = iter.peek() {
-                            if *next == '\'' {
-                                iter.next(); // consume escaped '
-                                continue;
-                            }
+                        // YAML single-quote escape: '' -> literal '
+                        if let Some(&b'\'') = bytes.get(i + 1) {
+                            // consume the escaped quote
+                            // (loop will move to next i anyway; we just skip its effect)
+                            continue;
                         }
                         in_single = false;
                     } else {
                         in_single = true;
                     }
                 }
-                '"' if !in_single => {
+                b'"' if !in_single => {
                     in_double = !in_double;
                 }
-                '\\' if in_double => {
-                    // skip escaped char in double quotes
-                    let _ = iter.next();
+                b'\\' if in_double => {
+                    // skip next byte in double-quoted escapes
+                    // (bounds check okay; if None, it's fine to do nothing)
+                    // we can't mutate `i` here; just let the next iteration consume it
                 }
-                '[' if !in_single && !in_double => bracket += 1,
-                ']' if !in_single && !in_double => bracket = (bracket - 1).max(0),
-                '{' if !in_single && !in_double => brace += 1,
-                '}' if !in_single && !in_double => brace = (brace - 1).max(0),
-                '#' if !in_single && !in_double && bracket == 0 && brace == 0 => {
-                    return Some(i);
+                b'[' if !in_single && !in_double => {
+                    depth_bracket += 1;
+                    saw_flow = true;
+                }
+                b']' if !in_single && !in_double => {
+                    if depth_bracket > 0 { depth_bracket -= 1; }
+                }
+                b'{' if !in_single && !in_double => {
+                    depth_brace += 1;
+                    saw_flow = true;
+                }
+                b'}' if !in_single && !in_double => {
+                    if depth_brace > 0 { depth_brace -= 1; }
+                }
+                b':' if !in_single && !in_double && depth_bracket == 0 && depth_brace == 0 => {
+                    has_colon = true;
+                }
+                b'#' if !in_single && !in_double && depth_bracket == 0 && depth_brace == 0 => {
+                    return (Some(i), has_colon, saw_flow, first_non_ws);
                 }
                 _ => {}
             }
         }
-        None
+        (None, has_colon, saw_flow, first_non_ws)
     }
 
-    // True if `s` starts with an unindented mapping key like `key:` (before any real comment).
-    fn starts_with_top_level_mapping_key(s: &str) -> bool {
-        let line = s.trim_end();
-        if line.is_empty() { return false; }
-        if line.starts_with(' ') || line.starts_with('\t') { return false; }
+    /// True if the (already known) *unindented* line starts a mapping key like `key: ...`
+    /// before any real comment `#`. Quote/flow aware, single pass.
+    #[inline]
+    fn starts_with_top_level_mapping_key_unindented(line: &str) -> bool {
+        let b = line.as_bytes();
 
-        let comment_at = find_real_comment_idx(line).unwrap_or(line.len());
-        let until = &line[..comment_at];
+        // Trim only trailing \r (from CRLF) to avoid allocations.
+        let end = if b.last() == Some(&b'\r') { b.len().saturating_sub(1) } else { b.len() };
+        let b = &b[..end];
 
+        // Empty or comment/marker checks are done by caller; here we just find a colon.
+        let (comment_pos, _, _, first_non_ws) = scan_line(b);
+        let limit = comment_pos.unwrap_or(b.len());
+
+        // Find a ':' outside quotes/flow before comment; ensure some non-ws before it.
         let mut in_single = false;
         let mut in_double = false;
-        let mut bracket = 0;
-        let mut brace = 0;
+        let mut depth_bracket: i32 = 0;
+        let mut depth_brace: i32 = 0;
 
-        for (i, c) in until.chars().enumerate() {
+        for i in 0..limit {
+            let c = b[i];
             match c {
-                '\'' if !in_double => {
-                    in_single = !in_single; // acceptable heuristic for keys
+                b'\'' if !in_double => {
+                    if in_single {
+                        if i + 1 < limit && b[i + 1] == b'\'' { /* '' escape */ }
+                        else { in_single = false; }
+                    } else {
+                        in_single = true;
+                    }
                 }
-                '"' if !in_single => {
-                    in_double = !in_double;
-                }
-                '[' if !in_single && !in_double => bracket += 1,
-                ']' if !in_single && !in_double => bracket = (bracket - 1).max(0),
-                '{' if !in_single && !in_double => brace += 1,
-                '}' if !in_single && !in_double => brace = (brace - 1).max(0),
-                ':' if !in_single && !in_double && bracket == 0 && brace == 0 => {
+                b'"' if !in_single => { in_double = !in_double; }
+                b'[' if !in_single && !in_double => { depth_bracket += 1; }
+                b']' if !in_single && !in_double => { if depth_bracket > 0 { depth_bracket -= 1; } }
+                b'{' if !in_single && !in_double => { depth_brace += 1; }
+                b'}' if !in_single && !in_double => { if depth_brace > 0 { depth_brace -= 1; } }
+                b':' if !in_single && !in_double && depth_bracket == 0 && depth_brace == 0 => {
+                    let key_start = first_non_ws.unwrap_or(0);
                     // ensure there is some non-whitespace before ':'
-                    return !until[..i].trim().is_empty();
+                    let has_key = b[key_start..i].iter().any(|&ch| ch != b' ' && ch != b'\t');
+                    return has_key;
                 }
                 _ => {}
             }
@@ -89,65 +135,81 @@ pub fn find_bs4k_issue_location(input: &str) -> Option<Location> {
     }
 
     let mut lines = input.lines().peekable();
-    let mut row_idx: u32 = 0;
+    let mut row: u32 = 0;
 
     while let Some(line) = lines.next() {
-        row_idx += 1;
+        row += 1;
 
-        // Locate a real YAML comment in the current line.
-        let Some(hash_pos) = find_real_comment_idx(line) else { continue };
+        // Right-trim only '\r' (avoid allocs and keep semantics of input.lines()).
+        let bytes = line.as_bytes();
+        let end = if bytes.last() == Some(&b'\r') { bytes.len().saturating_sub(1) } else { bytes.len() };
+        let cur = &bytes[..end];
 
-        let before = &line[..hash_pos];
+        // Scan current line once.
+        let (comment_pos, has_colon_before_comment, saw_flow_before_comment, first_non_ws) = scan_line(cur);
 
-        // No non-whitespace content before '#': not our case.
-        if before.chars().all(|c| c.is_whitespace()) {
+        let Some(hash_idx) = comment_pos else { continue };
+
+        // Slice before '#'
+        let before = &cur[..hash_idx];
+
+        // Skip if no non-whitespace content before '#'
+        if !has_non_ws(before) {
             continue;
         }
 
-        // If there is a ':' before '#', treat as mapping context: skip.
-        if before.contains(':') {
+        // If there is a ':' before '#', skip (mapping context).
+        if has_colon_before_comment {
             continue;
         }
 
-        // If the line starts with a sequence dash (after whitespace), skip.
-        let before_trim = before.trim_start();
-        if before_trim.starts_with("- ") || before_trim == "-" {
-            continue;
-        }
-
-        // If flow indicators appear before the comment, skip (flow content allowed).
-        if before.contains('[') || before.contains('{') {
-            continue;
-        }
-
-        // Peek at next line to decide if it starts top-level content.
-        if let Some(next) = lines.peek() {
-            let next_line = next.trim_end();
-
-            // Non-empty?
-            if next_line.trim().is_empty() {
+        // If line starts with a sequence dash after whitespace, skip.
+        if let Some(nz) = first_non_ws {
+            if before.get(nz) == Some(&b'-') && (nz + 1 == before.len() || before.get(nz + 1) == Some(&b' ')) {
                 continue;
             }
-            // Must be *top-level* (no indentation).
-            if next_line.starts_with(' ') || next_line.starts_with('\t') {
+        }
+
+        // If flow indicators appeared before the comment, skip (flow content allowed).
+        if saw_flow_before_comment {
+            continue;
+        }
+
+        // Check the next line without consuming it.
+        if let Some(next_line) = lines.peek() {
+            let nb = next_line.as_bytes();
+            // right-trim only '\r'
+            let nend = if nb.last() == Some(&b'\r') { nb.len().saturating_sub(1) } else { nb.len() };
+            let nb = &nb[..nend];
+
+            // Is next line empty? (any non ws?)
+            if !has_non_ws(nb) {
                 continue;
             }
+
+            // Must be top-level (no leading space/tab).
+            if nb.first() == Some(&b' ') || nb.first() == Some(&b'\t') {
+                continue;
+            }
+
             // Ignore markers/comments.
-            if next_line.starts_with("---") || next_line.starts_with("...") || next_line.starts_with('#') {
-                continue;
-            }
-            // If the next line starts a top-level mapping key, we *don't* flag.
-            if starts_with_top_level_mapping_key(next_line) {
+            if nb.starts_with(b"---") || nb.starts_with(b"...") || nb.first() == Some(&b'#') {
                 continue;
             }
 
-            // We found the invalid pattern. Report the *next* line start (col 1).
-            return Some(Location { row: row_idx + 1, column: 1 });
+            // If the next line starts a top-level mapping key, do not trigger.
+            if starts_with_top_level_mapping_key_unindented(next_line) {
+                continue;
+            }
+
+            // Violation: report next line, column 1.
+            return Some(Location { row: row + 1, column: 1 });
         }
     }
 
     None
 }
+
 
 
 #[cfg(test)]
