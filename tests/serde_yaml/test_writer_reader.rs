@@ -9,12 +9,19 @@ struct Point {
 }
 
 #[test]
-fn test_reader_deserialize() {
+fn test_reader_deserialize_unwrap() {
     let yaml = "x: 3\ny: 4\n";
     let reader = std::io::Cursor::new(yaml.as_bytes());
-    let de = serde_saphyr::from_reader(reader);
-    let p = Point::deserialize(de).unwrap();
+    let p: Point = serde_saphyr::from_reader(reader).unwrap();
     assert_eq!(p, Point { x: 3, y: 4 });
+}
+
+#[test]
+fn test_reader_deserialize_question() -> anyhow::Result<()> {
+    let yaml = "x: 3\ny: 4\n";
+    let reader = std::io::Cursor::new(yaml.as_bytes());
+    let _result: Value = serde_saphyr::from_reader(reader)?;
+    Ok(())
 }
 
 #[test]

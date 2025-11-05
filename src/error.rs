@@ -77,9 +77,15 @@ pub enum Error {
         id: usize,
         location: Location,
     },
+    /// Error when parsing robotic and other extensions beyond standard YAML.
+    /// (error in extension hook).
     HookError {
         msg: String,
         location: Location,
+    },
+    /// Unexpected IO error. This may happen only when deserializing from the reader.
+    IOError {
+        cause: std::io::Error
     }
 }
 
@@ -157,7 +163,8 @@ impl Error {
             | Error::HookError { location, .. }
             | Error::UnknownAnchor { location, .. } => {
                 *location = set_location;
-            }
+            },
+            Error::IOError { .. } => {} // this error does not support location
         }
         self
     }
@@ -181,7 +188,8 @@ impl Error {
                 } else {
                     None
                 }
-            }
+            },
+            Error:: IOError { cause: _ } => None,
         }
     }
 
@@ -211,6 +219,7 @@ impl fmt::Display for Error {
             Error::UnknownAnchor { id, location } => {
                 fmt_with_location(f, &format!("alias references unknown anchor id {id}"), location)
             }
+            Error::IOError { cause } => write!(f, "IO error: {}", cause),
         }
     }
 }
