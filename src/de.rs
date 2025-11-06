@@ -585,7 +585,7 @@ impl<'e> Deser<'e> {
         }
 
         // For non-binary, ensure the tag allows string deserialization.
-        if !tag.can_parse_into_string() {
+        if !tag.can_parse_into_string() && tag != SfTag::NonSpecific {
             return Err(
                 Error::msg("cannot deserialize scalar tagged into string").with_location(location)
             );
