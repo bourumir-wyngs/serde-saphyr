@@ -4,7 +4,6 @@ use serde::de::DeserializeOwned;
 pub use crate::serializer_options::SerializerOptions;
 pub use anchors::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
 pub use ser::{FlowMap, FlowSeq, FoldStr, LitStr};
-use crate::bs4k::find_bs4k_issue_location;
 use crate::de::{Ev, Events};
 use crate::live_events::LiveEvents;
 use crate::parse_scalars::scalar_is_nullish;
@@ -29,8 +28,7 @@ pub (crate) mod ser_quoting;
 
 #[cfg(feature = "robotics")]
 pub mod angles_conversions;
-mod bs4k;
-
+mod buffered_input;
 // ---------------- Serialization (public API) ----------------
 
 /// Serialize a value to a YAML `String`.
@@ -222,24 +220,18 @@ pub fn from_str_with_options<T: DeserializeOwned>(
     } else {
         input
     };
-    // Tripwire for debugging: inputs with "] ]" should be rejected in single-doc API.
-    if input.contains("] ]") {
-        return Err(
-            Error::msg("unexpected trailing closing delimiter").with_location(Location::UNKNOWN)
-        );
-    }
-    // Heuristic rejection for BS4K-style invalid input: a plain scalar line with an inline
-    // comment followed by an unindented content line starting a new scalar without a document
-    // marker. This must be rejected in single-document APIs.
-    if let Some(location) = find_bs4k_issue_location(input) {
-        return Err(Error::msg("invalid plain scalar: inline comment cannot be \
-        followed by a new top-level scalar line without a document marker (bs4k)")
-            .with_location(location));
+
+    // Enforce input byte cap from budget (applies to pre-existing strings too).
+    if let Some(b) = &options.budget {
+        let len = input.as_bytes().len();
+        if len > b.max_input_bytes {
+            return Err(crate::error::budget_error(crate::budget::BudgetBreach::InputBytes { input_bytes: len }));
+        }
     }
 
     let cfg = crate::de::Cfg::from_options(&options);
     // Do not stop at DocumentEnd; we'll probe for trailing content/errors explicitly.
-    let mut src = LiveEvents::new(input, options.budget, options.alias_limits, false);
+    let mut src = LiveEvents::from_str(input, options.budget, options.alias_limits, false);
     let value_res = crate::anchor_store::with_document_scope(|| {
         T::deserialize(crate::de::Deser::new(&mut src, cfg))
     });
@@ -274,19 +266,6 @@ pub fn from_str_with_options<T: DeserializeOwned>(
             } else {
                 return Err(e);
             }
-        }
-    }
-
-    // Conservative extra guard for malformed trailing closers in single-doc mode.
-    if !src.seen_doc_end() {
-        let trimmed = input.trim();
-        // Heuristic: catch a stray extra closing bracket in flow context like "[ a ] ]".
-        // Avoid triggering on nested arrays like "[[1]]" by checking for matching open patterns.
-        if (trimmed.contains("] ]") || trimmed.contains("]]"))
-            && !(trimmed.contains("[[") || trimmed.contains("[ ["))
-        {
-            return Err(Error::msg("unexpected trailing closing delimiter")
-                .with_location(src.last_location()));
         }
     }
 
@@ -375,7 +354,7 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
         input
     };
     let cfg = crate::de::Cfg::from_options(&options);
-    let mut src = LiveEvents::new(input, options.budget, options.alias_limits, false);
+    let mut src = LiveEvents::from_str(input, options.budget, options.alias_limits, false);
     let mut values = Vec::new();
 
     loop {
@@ -612,7 +591,7 @@ pub fn to_string_multiple<T: serde::Serialize>(
 /// let mut big = String::new();
 /// let mut i = 0usize;
 /// while big.len() < 64 * 1024 { big.push_str(&format!("k{0}: v{0}\n", i)); i += 1; }
-/// let reader = std::io::Cursor::new(big.as_bytes());
+/// let reader = std::io::Cursor::new(big.as_bytes().to_owned());
 /// let _value: Value = serde_saphyr::from_reader(reader).unwrap();
 /// ```
 /// Create a YAML Deserializer from any `std::io::Read`.
@@ -640,13 +619,95 @@ pub fn to_string_multiple<T: serde::Serialize>(
 /// let mut big = String::new();
 /// let mut i = 0usize;
 /// while big.len() < 64 * 1024 { big.push_str(&format!("k{0}: v{0}\n", i)); i += 1; }
-/// let reader = std::io::Cursor::new(big.as_bytes());
+/// let reader = std::io::Cursor::new(big.as_bytes().to_owned());
 /// let _value: Value = serde_saphyr::from_reader(reader).unwrap();
 /// ```
-pub fn from_reader<R: std::io::Read, T: DeserializeOwned>(mut reader: R) -> Result<T, Error> {
-    let mut buf = String::new();
-    match reader.read_to_string(&mut buf) {
-        Ok(_) => { from_str::<T>(&buf) }
-        Err(error) => {Err(Error::IOError { cause: error })}
+pub fn from_reader<'a, R: std::io::Read + 'a, T: DeserializeOwned>(reader: R) -> Result<T, Error> {
+    from_reader_with_options(reader, Options::default())
+}
+
+/// Deserialize a single YAML document from any `std::io::Read` with configurable `Options`.
+///
+/// This is the reader-based counterpart to [`from_str_with_options`]. It consumes a
+/// byte-oriented reader, decodes it to UTF-8, and streams events into the deserializer.
+///
+/// Notes on limits and large inputs
+/// - Parsing limits: Use [`Options::budget`] to constrain YAML complexity (events, nodes,
+///   nesting depth, total scalar bytes, number of documents, anchors, aliases, etc.). These
+///   limits are enforced during parsing and are enabled by default via `Options::default()`.
+/// - Byte-level input cap: A hard cap on input bytes is enforced via `Options::budget.max_input_bytes`.
+///   The default budget sets this to 1 GiB. You can override it by customizing `Options::budget`.
+///   When the cap is exceeded, deserialization fails early with a budget error.
+///
+/// Example: limit raw input bytes and customize options
+/// ```rust
+/// use std::io::{Read, Cursor};
+/// use serde::Deserialize;
+/// use serde_saphyr::{Budget, Options};
+///
+/// #[derive(Debug, Deserialize, PartialEq)]
+/// struct Point { x: i32, y: i32 }
+///
+/// let yaml = "x: 3\ny: 4\n";
+/// let reader = Cursor::new(yaml.as_bytes());
+///
+/// // Cap the reader to at most 1 KiB of input bytes.
+/// let capped = reader.take(1024);
+///
+/// // Tighten the parsing budget as well (optional).
+/// let mut opts = Options::default();
+/// opts.budget = Some(Budget { max_events: 10_000, ..Budget::default() });
+///
+/// let p: Point = serde_saphyr::from_reader_with_options(capped, opts).unwrap();
+/// assert_eq!(p, Point { x: 3, y: 4 });
+/// ```
+///
+/// Error behavior
+/// - If an empty document is provided (no content), a type-mismatch (eof) error is returned when
+///   attempting to deserialize into non-null-like targets.
+/// - If the reader contains multiple documents, an error is returned suggesting the
+///   `from_multiple*_` APIs.
+/// - If `Options::budget` is set and a limit is exceeded, an error is returned early.
+pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(reader: R, options: Options) -> Result<T, Error> {
+    let cfg = crate::de::Cfg::from_options(&options);
+    let mut src = LiveEvents::from_reader(reader, options.budget, options.alias_limits, false);
+    let value_res = crate::anchor_store::with_document_scope(|| {
+        T::deserialize(crate::de::Deser::new(&mut src, cfg))
+    });
+    let value = match value_res {
+        Ok(v) => v,
+        Err(e) => {
+            if src.synthesized_null_emitted() {
+                // If the only thing in the input was an empty document (synthetic null),
+                // surface this as an EOF error to preserve expected error semantics
+                // for incompatible target types (e.g., bool).
+                return Err(Error::eof().with_location(src.last_location()));
+            } else {
+                return Err(e);
+            }
+        }
+    };
+
+    // After finishing first document, peek ahead to detect either another document/content
+    // or trailing garbage. If a scan error occurs but we have seen a DocumentEnd ("..."),
+    // ignore the trailing garbage. Otherwise, surface the error.
+    match src.peek() {
+        Ok(Some(_)) => {
+            return Err(Error::msg(
+                "multiple YAML documents detected; use from_multiple or from_multiple_with_options",
+            )
+                .with_location(src.last_location()));
+        }
+        Ok(None) => {}
+        Err(e) => {
+            if src.seen_doc_end() {
+                // Trailing garbage after a proper document end marker is ignored.
+            } else {
+                return Err(e);
+            }
+        }
     }
+
+    src.finish()?;
+    Ok(value)
 }

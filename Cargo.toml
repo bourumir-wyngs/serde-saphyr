@@ -1,6 +1,6 @@
 [package]
 name = "serde-saphyr"
-version = "0.0.7"
+version = "0.0.8"
 edition = "2024"
 license = "MIT"
 description = "YAML deserializer for Serde, built on top of Saphyr, emphasizing panic-free parsing."
@@ -20,6 +20,7 @@ num-traits = "0.2.19"
 base64 = "0.22.1"
 ryu = "1.0.20"
 nohash-hasher = "0.2.0"
+encoding_rs_io = "0.1.7"
 
 [features]
 default = []

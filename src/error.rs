@@ -72,6 +72,9 @@ pub enum Error {
         expected: &'static str,
         location: Location,
     },
+    ContainerEndMismatch {
+        location: Location,
+    },
     /// Alias references a non-existent anchor id.
     UnknownAnchor {
         id: usize,
@@ -161,6 +164,7 @@ impl Error {
             | Error::Eof { location }
             | Error::Unexpected { location, .. }
             | Error::HookError { location, .. }
+            | Error::ContainerEndMismatch { location, .. }
             | Error::UnknownAnchor { location, .. } => {
                 *location = set_location;
             },
@@ -182,6 +186,7 @@ impl Error {
             | Error::Eof { location }
             | Error::Unexpected { location, .. }
             | Error::HookError { location, .. }
+            | Error::ContainerEndMismatch { location, .. }
             | Error::UnknownAnchor { location, .. } => {
                 if location != &Location::UNKNOWN {
                     Some(*location)
@@ -215,6 +220,9 @@ impl fmt::Display for Error {
             Error::Eof { location } => fmt_with_location(f, "unexpected end of input", location),
             Error::Unexpected { expected, location } => {
                 fmt_with_location(f, &format!("unexpected event: expected {expected}"), location)
+            }
+            Error::ContainerEndMismatch { location } => {
+                fmt_with_location(f, "list or mapping end with no start", location)
             }
             Error::UnknownAnchor { id, location } => {
                 fmt_with_location(f, &format!("alias references unknown anchor id {id}"), location)
