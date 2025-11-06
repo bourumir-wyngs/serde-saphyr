@@ -43,13 +43,8 @@ pub(crate) fn is_plain_safe(s: &str) -> bool {
     {
         return false;
     }
-    if s.chars().any(|c| c.is_control()) {
-        return false;
-    }
-    if s.contains(':') || s.contains('#') {
-        return false;
-    }
-    true
+
+    !contains_any_or_is_control(s, &[':' , '#' , ','])
 }
 
 /// Returns true if `s` can be emitted as a plain scalar in VALUE position without quoting.
@@ -116,10 +111,7 @@ pub(crate) fn is_plain_value_safe(s: &str) -> bool {
 
     // In flow style, commas and brackets/braces are structural; quote strings containing them.
     // In values, ':' is allowed, but '#' would start a comment so still disallow '#'.
-    if contains_any_or_is_control(s, &[',', '[', ']', '{', '}', '#']) {
-        return false;
-    }
-    true
+    !contains_any_or_is_control(s, &[',', '[', ']', '{', '}', '#'])
 }
 
 fn contains_any_or_is_control(string: &str, values: &[char]) -> bool {
