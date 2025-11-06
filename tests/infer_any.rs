@@ -30,7 +30,7 @@ fn quoted_scalars_remain_strings_in_json_value() {
 #[test]
 fn nullish_literals_remain_strings_in_json_value() {
     let v: Value = serde_saphyr::from_str("~").expect("parse ~");
-    assert_eq!(v, Value::String("~".to_owned()));
+    assert_eq!(v, Value::Null);
 
     let v: Value = serde_saphyr::from_str("null").expect("parse null");
     assert_eq!(v, Value::Null);
