@@ -1435,8 +1435,10 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
             let prev_map_depth = self.ser.current_map_depth.replace(self.depth);
             let result = value.serialize(&mut *self.ser);
             self.ser.current_map_depth = prev_map_depth;
+            // Always restore the parent's pending_inline_map to avoid leaking inline hints
+            // across sibling values (e.g., after finishing a sequence value like `groups`).
+            self.ser.pending_inline_map = saved_pending_inline_map;
             if self.last_key_complex {
-                self.ser.pending_inline_map = saved_pending_inline_map;
                 self.ser.depth = saved_depth;
                 self.last_key_complex = false;
             }
