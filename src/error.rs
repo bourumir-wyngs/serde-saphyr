@@ -86,6 +86,11 @@ pub enum Error {
         msg: String,
         location: Location,
     },
+    /// A YAML budget limit was exceeded.
+    Budget {
+        breach: BudgetBreach,
+        location: Location,
+    },
     /// Unexpected IO error. This may happen only when deserializing from the reader.
     IOError {
         cause: std::io::Error
@@ -165,7 +170,8 @@ impl Error {
             | Error::Unexpected { location, .. }
             | Error::HookError { location, .. }
             | Error::ContainerEndMismatch { location, .. }
-            | Error::UnknownAnchor { location, .. } => {
+            | Error::UnknownAnchor { location, .. }
+            | Error::Budget { location, .. } => {
                 *location = set_location;
             },
             Error::IOError { .. } => {} // this error does not support location
@@ -187,7 +193,8 @@ impl Error {
             | Error::Unexpected { location, .. }
             | Error::HookError { location, .. }
             | Error::ContainerEndMismatch { location, .. }
-            | Error::UnknownAnchor { location, .. } => {
+            | Error::UnknownAnchor { location, .. }
+            | Error::Budget { location, .. } => {
                 if location != &Location::UNKNOWN {
                     Some(*location)
                 } else {
@@ -226,6 +233,9 @@ impl fmt::Display for Error {
             }
             Error::UnknownAnchor { id, location } => {
                 fmt_with_location(f, &format!("alias references unknown anchor id {id}"), location)
+            }
+            Error::Budget { breach, location } => {
+                fmt_with_location(f, &format!("YAML budget breached: {breach:?}"), location)
             }
             Error::IOError { cause } => write!(f, "IO error: {}", cause),
         }
@@ -270,5 +280,5 @@ fn fmt_with_location(f: &mut fmt::Formatter<'_>, msg: &str, location: &Location)
 /// Called by:
 /// - The live events layer when enforcing budgets during/after parsing.
 pub(crate) fn budget_error(breach: BudgetBreach) -> Error {
-    Error::msg(format!("YAML budget breached: {breach:?}"))
+    Error::Budget { breach, location: Location::UNKNOWN }
 }

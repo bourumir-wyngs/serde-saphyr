@@ -5,6 +5,7 @@ mod tests {
     use serde_saphyr::{
         Options, from_multiple, from_multiple_with_options, from_str, from_str_with_options,
     };
+    use serde_saphyr::budget::BudgetBreach;
     use std::collections::HashMap;
 
     #[derive(Debug, Deserialize, PartialEq)]
@@ -71,7 +72,7 @@ mod tests {
 
         let yaml = "a: 1\n";
         let err = from_str_with_options::<HashMap<String, String>>(yaml, options).unwrap_err();
-        assert!(matches!(err, Error::Message { msg, .. } if msg.contains("budget")));
+        assert!(matches!(err, Error::Budget { breach: BudgetBreach::Nodes { .. }, .. }));
     }
 
     #[test]
@@ -85,7 +86,7 @@ mod tests {
 
         let yaml = "a: 1\n---\nb: 2\n";
         let err = from_multiple_with_options::<HashMap<String, String>>(yaml, options).unwrap_err();
-        assert!(matches!(err, Error::Message { msg, .. } if msg.contains("budget")));
+        assert!(matches!(err, Error::Budget { breach: BudgetBreach::Nodes { .. }, .. }));
     }
 
     #[test]
