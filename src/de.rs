@@ -662,13 +662,20 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
     /// delegate to `deserialize_seq`/`deserialize_map`.
     fn deserialize_any<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         match self.ev.peek()? {
-            Some(Ev::Scalar { tag, style, .. }) => {
+            Some(Ev::Scalar { tag, style, value, .. }) => {
                 // Tagged nulls map to unit/null regardless of style
                 if tag == &SfTag::Null {
                     let _ = self.take_scalar_event()?; // consume
                     return visitor.visit_unit();
                 }
                 let is_plain = matches!(style, ScalarStyle::Plain);
+                if is_plain {
+                    let tt = value.trim();
+                    if tt.eq_ignore_ascii_case("null") {
+                        let _ = self.ev.next()?; // consume
+                        return visitor.visit_unit();
+                    }
+                }
                 if !is_plain || !tag.can_parse_into_string() || tag == &SfTag::Binary {
                     return visitor.visit_string(self.take_string_scalar()?);
                 }

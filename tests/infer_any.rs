@@ -33,7 +33,7 @@ fn nullish_literals_remain_strings_in_json_value() {
     assert_eq!(v, Value::String("~".to_owned()));
 
     let v: Value = serde_saphyr::from_str("null").expect("parse null");
-    assert_eq!(v, Value::String("null".to_owned()));
+    assert_eq!(v, Value::Null);
 }
 
 #[test]
