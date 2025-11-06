@@ -669,12 +669,10 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                     return visitor.visit_unit();
                 }
                 let is_plain = matches!(style, ScalarStyle::Plain);
-                if is_plain {
-                    let tt = value.trim();
-                    if tt.eq_ignore_ascii_case("null") {
-                        let _ = self.ev.next()?; // consume
-                        return visitor.visit_unit();
-                    }
+                // Treat all YAML null-like scalars (null, ~, empty) as null when typeless.
+                if scalar_is_nullish(value, style) {
+                    let _ = self.ev.next()?; // consume
+                    return visitor.visit_unit();
                 }
                 if !is_plain || !tag.can_parse_into_string() || tag == &SfTag::Binary {
                     return visitor.visit_string(self.take_string_scalar()?);
