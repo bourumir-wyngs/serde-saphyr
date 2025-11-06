@@ -50,6 +50,7 @@ settings:
         assert_eq!(settings.site_language, "en");
         assert_eq!(settings.restrict, "all");
         assert_eq!(settings.match_partial, false);
+        assert_eq!(settings.the_thousand, 1001);
 
         // Languages list equality (order is preserved from YAML)
         let expected = vec![
