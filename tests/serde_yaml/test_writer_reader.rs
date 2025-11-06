@@ -33,7 +33,8 @@ fn test_large_reader_input() {
         i += 1;
     }
 
-    let reader = std::io::Cursor::new(yaml.as_bytes());
+    let bytes = yaml.as_bytes().to_owned();
+    let reader = std::io::Cursor::new(bytes);
     let _value: Value = serde_saphyr::from_reader(reader).unwrap();
 }
 

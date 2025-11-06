@@ -41,6 +41,14 @@ use saphyr_parser::{Event, Parser, ScalarStyle, ScanError};
 /// ```
 #[derive(Clone, Debug)]
 pub struct Budget {
+    /// Hard cap on the size of the input in bytes.
+    ///
+    /// Applies to both string and reader-based inputs. For string inputs, this
+    /// compares against `input.len()` (UTF-8 bytes). For reader inputs, bytes
+    /// are counted as they are read from the underlying `Read`.
+    ///
+    /// Default: 1 GiB
+    pub max_input_bytes: usize,
     /// Maximum total parser events (counting every event).
     ///
     /// Default: 1,000,000
@@ -96,6 +104,7 @@ pub struct Budget {
 impl Default for Budget {
     fn default() -> Self {
         Self {
+            max_input_bytes: 1 << 30,                 // 1 GiB
             max_events: 1_000_000, // plenty for normal configs
             max_aliases: 50_000,   // liberal absolute cap
             max_anchors: 50_000,
@@ -182,6 +191,12 @@ pub enum BudgetBreach {
     /// Unbalanced structure: a closing event was encountered without a matching
     /// opening event (depth underflow). Indicates malformed or truncated input.
     SequenceUnbalanced,
+
+    /// The total number of input bytes exceeded [`Budget::max_input_bytes`].
+    InputBytes {
+        /// Total number of bytes consumed from the input when the breach occurred.
+        input_bytes: usize,
+    },
 }
 
 /// Summary of the scan (even if no breach).

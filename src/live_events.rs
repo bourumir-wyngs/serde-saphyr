@@ -22,12 +22,12 @@
 //! injection is exhausted.
 
 use std::borrow::Cow;
-// use std::collections::HashMap; // ← gone
 
+use crate::buffered_input::{ChunkedChars, buffered_input_from_reader_with_limit};
 use crate::de::{AliasLimits, Budget, BudgetEnforcer, Error, Ev, Events, Location};
 use crate::error::{budget_error, location_from_span};
 use crate::tags::SfTag;
-use saphyr_parser::{Event, Parser, ScalarStyle, StrInput};
+use saphyr_parser::{BufferedInput, Event, Parser, ScalarStyle, ScanError, Span, StrInput};
 use smallvec::SmallVec;
 
 /// This is enough to hold a single scalar that is common  case in YAML anchors.
@@ -44,17 +44,35 @@ struct RecFrame {
     buf: SmallVec<Ev, SMALLVECT_INLINE>,
 }
 
+/// Handle input polymorphism
+pub(crate) enum SaphyrParser<'a> {
+    StringParser(Parser<'a, StrInput<'a>>),
+    StreamParser(
+        Parser<'a, BufferedInput<ChunkedChars<std::io::BufReader<Box<dyn std::io::Read + 'a>>>>>,
+    ),
+}
+
+impl<'input> SaphyrParser<'input> {
+    fn next(&mut self) -> Option<Result<(Event<'input>, Span), ScanError>> {
+        match self {
+            SaphyrParser::StringParser(parser) => parser.next(),
+            SaphyrParser::StreamParser(parser) => parser.next(),
+        }
+    }
+}
+
 /// Live event source that wraps `saphyr_parser::Parser` and:
 /// - Skips stream/document markers
 /// - Records anchored subtrees (containers and scalars)
 /// - Resolves aliases by injecting recorded buffers (replaying)
 pub(crate) struct LiveEvents<'a> {
+    /// Underlying streaming parser that produces raw events from the input.
+    parser: SaphyrParser<'a>,
+
     /// Whether any content event has been produced in the current stream.
     produced_any_in_doc: bool,
     /// Whether we emitted a synthetic null scalar to represent an empty document.
     synthesized_null_emitted: bool,
-    /// Underlying streaming parser that produces raw events from the input.
-    parser: Parser<'a, StrInput<'a>>,
     /// Single-item lookahead buffer (peeked event not yet consumed).
     look: Option<Ev>,
     /// For alias replay: a stack of injected buffers; we always read from the top first.
@@ -72,6 +90,11 @@ pub(crate) struct LiveEvents<'a> {
     /// Location of the last yielded event (for better error reporting).
     last_location: Location,
 
+    /// Simple container balance: counts open sequences/maps regardless of anchors/budget.
+    /// Incremented on SequenceStart/MappingStart; decremented on SequenceEnd/MappingEnd.
+    /// Used to detect extra closing brackets/braces even when no budget is configured.
+    open_containers: usize,
+
     /// Alias-bomb hardening limits and counters.
     alias_limits: AliasLimits,
     /// Total number of replayed events across the whole stream (enforced by `alias_limits`).
@@ -85,25 +108,20 @@ pub(crate) struct LiveEvents<'a> {
 }
 
 impl<'a> LiveEvents<'a> {
-    /// Create a new live event source.
-    ///
-    /// # Parameters
-    /// - `input`: YAML source string.
-    /// - `budget`: Optional budget info for raw events (external `BudgetEnforcer`).
-    /// - `alias_limits`: Alias replay limits to mitigate alias bombs.
-    ///
-    /// # Returns
-    /// A configured `LiveEvents` ready to stream events.
-    pub(crate) fn new(
-        input: &'a str,
+    pub(crate) fn from_reader<R: std::io::Read + 'a>(
+        inputs: R,
         budget: Option<Budget>,
         alias_limits: AliasLimits,
         stop_at_doc_end: bool,
     ) -> Self {
+        // Build a streaming character iterator from the byte reader, honoring input byte cap if configured
+        let max_bytes = budget.as_ref().map(|b| b.max_input_bytes);
+        let input = buffered_input_from_reader_with_limit(inputs, max_bytes);
+        let parser = Parser::new(input);
         Self {
             produced_any_in_doc: false,
             synthesized_null_emitted: false,
-            parser: Parser::new_from_str(input),
+            parser: SaphyrParser::StreamParser(parser),
             look: None,
             inject: Vec::new(),
             anchors: Vec::new(),
@@ -117,6 +135,64 @@ impl<'a> LiveEvents<'a> {
             per_anchor_expansions: Vec::new(),
             stop_at_doc_end,
             seen_doc_end: false,
+
+            // Check bracket balance
+            open_containers: 0,
+        }
+    }
+}
+
+impl<'a> LiveEvents<'a> {
+    /// Create a new live event source.
+    ///
+    /// # Parameters
+    /// - `input`: YAML source string.
+    /// - `budget`: Optional budget info for raw events (external `BudgetEnforcer`).
+    /// - `alias_limits`: Alias replay limits to mitigate alias bombs.
+    ///
+    /// # Returns
+    /// A configured `LiveEvents` ready to stream events.
+    pub(crate) fn from_str(
+        input: &'a str,
+        budget: Option<Budget>,
+        alias_limits: AliasLimits,
+        stop_at_doc_end: bool,
+    ) -> Self {
+        Self {
+            produced_any_in_doc: false,
+            synthesized_null_emitted: false,
+            parser: SaphyrParser::StringParser(Parser::new_from_str(input)),
+            look: None,
+            inject: Vec::new(),
+            anchors: Vec::new(),
+            rec_stack: Vec::new(),
+            budget: budget.map(BudgetEnforcer::new),
+
+            last_location: Location::UNKNOWN,
+
+            alias_limits,
+            total_replayed_events: 0,
+            per_anchor_expansions: Vec::new(),
+            stop_at_doc_end,
+            seen_doc_end: false,
+
+            // Check bracket balance
+            open_containers: 0,
+        }
+    }
+
+    fn container_start(&mut self) {
+        self.open_containers += 1;
+    }
+
+    fn container_end(&mut self) -> Result<(), Error> {
+        if self.open_containers == 0 {
+            Err(Error::ContainerEndMismatch {
+                location: self.last_location,
+            })
+        } else {
+            self.open_containers -= 1; // 0 checked
+            Ok(())
         }
     }
 
@@ -148,6 +224,16 @@ impl<'a> LiveEvents<'a> {
                 *idx += 1;
                 if *idx == buf.len() {
                     self.inject.pop();
+                }
+
+                match ev {
+                    Ev::SeqStart { .. } | Ev::MapStart { .. } => {
+                        self.container_start();
+                    }
+                    Ev::SeqEnd { .. } | Ev::MapEnd { .. } => {
+                        self.container_end()?;
+                    }
+                    Ev::Scalar { .. } => {}
                 }
                 // Count replayed events for alias-bomb hardening.
                 self.total_replayed_events = self
@@ -204,6 +290,17 @@ impl<'a> LiveEvents<'a> {
                     self.seen_doc_end = true;
                     self.last_location = location;
                     if self.stop_at_doc_end {
+                        // One-step lookahead to distinguish multi-doc streams from garbage
+                        // after an explicit end marker. If the very next token is a
+                        // DocumentStart, signal multi-doc error; otherwise ignore anything else.
+                        if let Some(item2) = self.parser.next() {
+                            if let Ok((raw2, span2)) = item2 {
+                                if let Event::DocumentStart(_) = raw2 {
+                                    let loc2 = location_from_span(&span2);
+                                    return Err(Error::msg("multiple YAML documents detected; use from_multiple or from_multiple_with_options").with_location(loc2));
+                                }
+                            }
+                        }
                         return Ok(None);
                     }
                     continue;
@@ -265,6 +362,8 @@ impl<'a> LiveEvents<'a> {
                             buf,
                         });
                     }
+
+                    self.container_start();
                     // Correct recording semantics:
                     // - If we *just* created a new frame for this start, the start was already seeded.
                     // - For ordinary (non-anchored) starts, record into *all* frames.
@@ -278,6 +377,7 @@ impl<'a> LiveEvents<'a> {
                     return Ok(Some(ev));
                 }
                 Event::SequenceEnd => {
+                    self.container_end()?;
                     let ev = Ev::SeqEnd { location };
                     self.record(&ev, false, false);
                     self.bump_depth_on_end()
@@ -302,6 +402,8 @@ impl<'a> LiveEvents<'a> {
                             buf,
                         });
                     }
+                    // Container-balance: count open containers independent of budgets/anchors.
+                    self.container_start();
                     self.record(
                         &ev,
                         /*is_start*/ true,
@@ -312,6 +414,7 @@ impl<'a> LiveEvents<'a> {
                     return Ok(Some(ev));
                 }
                 Event::MappingEnd => {
+                    self.container_end()?;
                     let ev = Ev::MapEnd { location };
                     self.record(&ev, false, false);
                     self.bump_depth_on_end()
@@ -402,6 +505,8 @@ impl<'a> LiveEvents<'a> {
         self.per_anchor_expansions.clear();
         self.total_replayed_events = 0;
         self.seen_doc_end = false;
+        // Reset simple container balance per document.
+        self.open_containers = 0;
     }
 
     /// Observe the configured budget for a replayed (injected) event.

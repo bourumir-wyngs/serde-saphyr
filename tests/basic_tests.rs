@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use serde::Deserialize;
-    use serde_saphyr::{DuplicateKeyPolicy, Error};
+    use serde_saphyr::{from_reader, DuplicateKeyPolicy, Error};
     use serde_saphyr::{
         Options, from_multiple, from_multiple_with_options, from_str, from_str_with_options,
     };
@@ -23,6 +23,16 @@ mod tests {
     fn simple_nested_struct() {
         let y = "name: John\nage: 80\ndetails: { city: Paris }\n";
         let p: Person = from_str(y).unwrap();
+        assert_eq!(p.name, "John");
+        assert_eq!(p.age, 80);
+        assert_eq!(p.details.city, "Paris");
+    }
+
+    #[test]
+    fn simple_nested_struct_from_reader() {
+        let y = "name: John\nage: 80\ndetails: { city: Paris }\n";
+        let reader = std::io::Cursor::new(y.as_bytes().to_owned());
+        let p: Person = from_reader(reader).unwrap();
         assert_eq!(p.name, "John");
         assert_eq!(p.age, 80);
         assert_eq!(p.details.city, "Paris");
