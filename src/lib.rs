@@ -1,12 +1,12 @@
 // Serialization public API is defined at crate root; wrappers are re-exported.
-pub use de::{Budget, DuplicateKeyPolicy, Error, Location, Options};
-use serde::de::DeserializeOwned;
-pub use crate::serializer_options::SerializerOptions;
-pub use anchors::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
-pub use ser::{FlowMap, FlowSeq, FoldStr, LitStr};
 use crate::de::{Ev, Events};
 use crate::live_events::LiveEvents;
 use crate::parse_scalars::scalar_is_nullish;
+pub use crate::serializer_options::SerializerOptions;
+pub use anchors::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
+pub use de::{Budget, DuplicateKeyPolicy, Error, Location, Options};
+pub use ser::{FlowMap, FlowSeq, FoldStr, LitStr};
+use serde::de::DeserializeOwned;
 
 mod anchor_store;
 mod anchors;
@@ -24,7 +24,7 @@ pub mod ser_error;
 mod serializer_options;
 mod tags;
 
-pub (crate) mod ser_quoting;
+pub(crate) mod ser_quoting;
 
 #[cfg(feature = "robotics")]
 pub mod angles_conversions;
@@ -225,7 +225,9 @@ pub fn from_str_with_options<T: DeserializeOwned>(
     if let Some(b) = &options.budget {
         let len = input.as_bytes().len();
         if len > b.max_input_bytes {
-            return Err(crate::error::budget_error(crate::budget::BudgetBreach::InputBytes { input_bytes: len }));
+            return Err(crate::error::budget_error(
+                crate::budget::BudgetBreach::InputBytes { input_bytes: len },
+            ));
         }
     }
 
@@ -668,7 +670,10 @@ pub fn from_reader<'a, R: std::io::Read + 'a, T: DeserializeOwned>(reader: R) ->
 /// - If the reader contains multiple documents, an error is returned suggesting the
 ///   `from_multiple*_` APIs.
 /// - If `Options::budget` is set and a limit is exceeded, an error is returned early.
-pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(reader: R, options: Options) -> Result<T, Error> {
+pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
+    reader: R,
+    options: Options,
+) -> Result<T, Error> {
     let cfg = crate::de::Cfg::from_options(&options);
     let mut src = LiveEvents::from_reader(reader, options.budget, options.alias_limits, false);
     let value_res = crate::anchor_store::with_document_scope(|| {
@@ -694,7 +699,7 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
     match src.peek() {
         Ok(Some(_)) => {
             return Err(Error::msg(
-                "multiple YAML documents detected; use from_multiple or from_multiple_with_options",
+                "multiple YAML documents detected; use read or read_with_options to obtain the iterator",
             )
                 .with_location(src.last_location()));
         }
@@ -710,4 +715,201 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
 
     src.finish()?;
     Ok(value)
+}
+
+/// Create an iterator over YAML documents from any `std::io::Read` using default options.
+///
+/// This is a convenience wrapper around [`read_with_options`], equivalent to
+/// `read_with_options(reader, Options::default())`.
+///
+/// - It streams the reader without loading the whole input into memory.
+/// - Each item produced by the returned iterator is one deserialized YAML document of type `T`.
+/// - Documents that are completely empty or null-like (e.g., `"", ~, null`) are skipped.
+///
+/// Generic parameters
+/// - `R`: the concrete reader type implementing [`std::io::Read`]. You almost never need to
+///   write this explicitly; the compiler will infer it from the `reader` you pass. When using
+///   turbofish, write `_` to let the compiler infer `R`.
+/// - `T`: the type to deserialize each YAML document into. Must implement [`serde::de::DeserializeOwned`].
+///
+/// Lifetimes
+/// - `'a`: the lifetime of the returned iterator, tied to the lifetime of the provided `reader`.
+///   The iterator cannot outlive the reader it was created from.
+///
+/// Limits and budget
+/// - Uses `Options::default()`, which enables a YAML parsing budget by default. This enforces
+///   limits such as maximum events, nodes, nesting depth, total scalar bytes, and a hard input-byte
+///   cap (1 GiB by default). To customize these, call [`read_with_options`].
+/// - Alias replay limits are also enforced with their default values to mitigate alias bombs.
+///
+/// ```rust
+/// use serde::Deserialize;
+///
+/// #[derive(Debug, Deserialize, PartialEq)]
+/// struct Simple { id: usize }
+///
+/// let yaml = b"id: 1\n---\nid: 2\n";
+/// let reader = std::io::Cursor::new(&yaml[..]);
+///
+/// // Type `T` is inferred from the collection target (Vec<Simple>).
+/// let values: Vec<Simple> = serde_saphyr::read(reader)
+///     .map(|r| r.unwrap())
+///     .collect();
+/// assert_eq!(values.len(), 2);
+/// assert_eq!(values[0].id, 1);
+/// ```
+///
+/// Specifying only `T` with turbofish and letting `R` be inferred using `_`:
+/// ```rust
+/// use serde::Deserialize;
+///
+/// #[derive(Debug, Deserialize, PartialEq)]
+/// struct Simple { id: usize }
+///
+/// let yaml = b"id: 10\n---\nid: 20\n";
+/// let reader = std::io::Cursor::new(&yaml[..]);
+///
+/// // First turbofish parameter is R (reader type), `_` lets the compiler infer it.
+/// let iter = serde_saphyr::read::<_, Simple>(reader);
+/// let ids: Vec<usize> = iter.map(|res| res.unwrap().id).collect();
+/// assert_eq!(ids, vec![10, 20]);
+/// ```
+///
+/// - Each `next()` yields either `Ok(T)` for a successfully deserialized document or `Err(Error)`
+///   if parsing fails or a limit is exceeded. After an error, the iterator ends.
+/// - Empty/null-like documents are skipped and produce no items.
+pub fn read<'a, R, T>(reader: R) -> Box<dyn Iterator<Item = Result<T, Error>> + 'a>
+where
+    R: std::io::Read + 'a,
+    T: DeserializeOwned + 'a,
+{
+    read_with_options(reader, Options::default())
+}
+
+/// Create an iterator over YAML documents from any `std::io::Read`, with configurable options.
+///
+/// This is the multi-document counterpart to [`from_reader_with_options`]. It does not load
+/// the entire input into memory. Instead, it streams the reader, deserializing one document
+/// at a time into values of type `T`, yielding them through the returned iterator. Documents
+/// that are completely empty or null-like (e.g., `""`, `~`, or `null`) are skipped.
+///
+/// Generic parameters
+/// - `R`: the concrete reader type that implements [`std::io::Read`]. You rarely need to spell
+///   this out; it is almost always inferred from the `reader` value you pass in. When using
+///   turbofish, you can write `_` for this parameter to let the compiler infer it.
+/// - `T`: the type to deserialize each YAML document into. This must implement [`serde::de::DeserializeOwned`].
+///
+/// Lifetimes
+/// - `'a`: the lifetime of the returned iterator. It is tied to the lifetime of the provided
+///   `reader` value because the iterator borrows internal state that references the reader.
+///   In practice, this means the iterator cannot outlive the reader it was created from.
+///
+/// Limits and budget
+/// - All parsing limits configured via [`Options::budget`] (such as maximum events, nodes,
+///   nesting depth, total scalar bytes, and the hard input-byte cap) are enforced while streaming.
+/// - Alias replay limits from [`Options::alias_limits`] are also enforced to mitigate alias bombs.
+///
+/// ```rust
+/// use serde::Deserialize;
+///
+/// #[derive(Debug, Deserialize, PartialEq)]
+/// struct Simple { id: usize }
+///
+/// let yaml = b"id: 1\n---\nid: 2\n";
+/// let reader = std::io::Cursor::new(&yaml[..]);
+///
+/// // Type `T` is inferred from the collection target (Vec<Simple>).
+/// let values: Vec<Simple> = serde_saphyr::read(reader)
+///     .map(|r| r.unwrap())
+///     .collect();
+/// assert_eq!(values.len(), 2);
+/// assert_eq!(values[0].id, 1);
+/// ```
+///
+/// Specifying only `T` with turbofish and letting `R` be inferred using `_`:
+/// ```rust
+/// use serde::Deserialize;
+///
+/// #[derive(Debug, Deserialize, PartialEq)]
+/// struct Simple { id: usize }
+///
+/// let yaml = b"id: 10\n---\nid: 20\n";
+/// let reader = std::io::Cursor::new(&yaml[..]);
+///
+/// // First turbofish parameter is R (reader type) which we let the compiler infer via `_`.
+/// let iter = serde_saphyr::read_with_options::<_, Simple>(reader, serde_saphyr::Options::default());
+/// let ids: Vec<usize> = iter.map(|res| res.unwrap().id).collect();
+/// assert_eq!(ids, vec![10, 20]);
+/// ```
+///
+/// - Each `next()` yields either `Ok(T)` for a successfully deserialized document or `Err(Error)`
+///   if parsing fails or a budget/alias limit is exceeded. After an error, the iterator ends.
+/// - Empty/null-like documents are skipped and produce no items.
+pub fn read_with_options<'a, R, T>(
+    reader: R,
+    options: Options,
+) -> Box<dyn Iterator<Item = Result<T, Error>> + 'a>
+where
+    R: std::io::Read + 'a,
+    T: DeserializeOwned + 'a,
+{
+    struct ReadIter<'a, T> {
+        src: LiveEvents<'a>,
+        cfg: crate::de::Cfg,
+        finished: bool,
+        _marker: std::marker::PhantomData<T>,
+    }
+
+    impl<'a, T> Iterator for ReadIter<'a, T>
+    where
+        T: DeserializeOwned + 'a,
+    {
+        type Item = Result<T, Error>;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            if self.finished {
+                return None;
+            }
+            loop {
+                match self.src.peek() {
+                    Ok(Some(Ev::Scalar { value, style, .. }))
+                        if scalar_is_nullish(value, style) =>
+                    {
+                        // Skip completely empty documents ("", "~", or "null").
+                        let _ = self.src.next();
+                        continue;
+                    }
+                    Ok(Some(_)) => {
+                        let res = crate::anchor_store::with_document_scope(|| {
+                            T::deserialize(crate::de::Deser::new(&mut self.src, self.cfg))
+                        });
+                        return Some(res);
+                    }
+                    Ok(None) => {
+                        // End of stream. Finalize once and end iteration.
+                        self.finished = true;
+                        if let Err(e) = self.src.finish() {
+                            return Some(Err(e));
+                        }
+                        return None;
+                    }
+                    Err(e) => {
+                        // Surface parser/budget error
+                        self.finished = true;
+                        let _ = self.src.finish();
+                        return Some(Err(e));
+                    }
+                }
+            }
+        }
+    }
+
+    let cfg = crate::de::Cfg::from_options(&options);
+    let src = LiveEvents::from_reader(reader, options.budget, options.alias_limits, false);
+    Box::new(ReadIter {
+        src,
+        cfg,
+        finished: false,
+        _marker: std::marker::PhantomData,
+    })
 }
