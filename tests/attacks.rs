@@ -1,4 +1,4 @@
-use serde_saphyr::budget::{Budget, BudgetBreach, check_yaml_budget};
+use serde_saphyr::budget::{Budget, BudgetBreach, check_yaml_budget, EnforcingPolicy};
 
 fn billion_laughs_yaml(levels: usize, fan_out: usize) -> String {
     assert!(levels > 0, "need at least one level");
@@ -33,7 +33,7 @@ fn document_storm_yaml(count: usize) -> String {
 #[test]
 fn billion_laughs_is_rejected() {
     let yaml = billion_laughs_yaml(1, 128);
-    let report = check_yaml_budget(&yaml, &Budget::default()).unwrap();
+    let report = check_yaml_budget(&yaml, Budget::default(), EnforcingPolicy::AllContent).unwrap();
     assert!(
         matches!(
             report.breached,
@@ -49,7 +49,7 @@ fn billion_laughs_is_rejected() {
 fn excessive_document_storm_is_rejected() {
     let limit = Budget::default().max_documents;
     let yaml = document_storm_yaml(limit + 1);
-    let report = check_yaml_budget(&yaml, &Budget::default()).unwrap();
+    let report = check_yaml_budget(&yaml, Budget::default(), EnforcingPolicy::AllContent).unwrap();
     assert!(
         matches!(report.breached, Some(BudgetBreach::Documents { .. })),
         "expected document limit breach, got {:?}",

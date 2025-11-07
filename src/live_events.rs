@@ -30,7 +30,7 @@ use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::rc::Rc;
-use crate::budget::BudgetEnforcer;
+use crate::budget::{BudgetEnforcer, EnforcingPolicy};
 
 /// This is enough to hold a single scalar that is common  case in YAML anchors.
 const SMALLVECT_INLINE: usize = 4;
@@ -118,6 +118,7 @@ impl<'a> LiveEvents<'a> {
         budget: Option<Budget>,
         alias_limits: AliasLimits,
         stop_at_doc_end: bool,
+        policy: EnforcingPolicy,
     ) -> Self {
         // Build a streaming character iterator from the byte reader, honoring input byte cap if configured
         let max_bytes = budget.as_ref().map(|b| b.max_reader_input_bytes).flatten();
@@ -132,7 +133,7 @@ impl<'a> LiveEvents<'a> {
             inject: Vec::new(),
             anchors: Vec::new(),
             rec_stack: Vec::new(),
-            budget: budget.map(BudgetEnforcer::new),
+            budget: budget.map(|budget| BudgetEnforcer::new(budget, policy)),
 
             last_location: Location::UNKNOWN,
 
@@ -174,7 +175,7 @@ impl<'a> LiveEvents<'a> {
             inject: Vec::new(),
             anchors: Vec::new(),
             rec_stack: Vec::new(),
-            budget: budget.map(BudgetEnforcer::new),
+            budget: budget.map(|budget|BudgetEnforcer::new(budget, EnforcingPolicy::AllContent)),
 
             last_location: Location::UNKNOWN,
 

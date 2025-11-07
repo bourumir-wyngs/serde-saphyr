@@ -1,5 +1,5 @@
-use std::io::Read;
 // Serialization public API is defined at crate root; wrappers are re-exported.
+use crate::budget::EnforcingPolicy;
 use crate::de::{Ev, Events};
 use crate::live_events::LiveEvents;
 use crate::parse_scalars::scalar_is_nullish;
@@ -8,6 +8,7 @@ pub use anchors::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
 pub use de::{Budget, DuplicateKeyPolicy, Error, Location, Options};
 pub use ser::{FlowMap, FlowSeq, FoldStr, LitStr};
 use serde::de::DeserializeOwned;
+use std::io::Read;
 
 mod anchor_store;
 mod anchors;
@@ -638,7 +639,13 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
     options: Options,
 ) -> Result<T, Error> {
     let cfg = crate::de::Cfg::from_options(&options);
-    let mut src = LiveEvents::from_reader(reader, options.budget, options.alias_limits, false);
+    let mut src = LiveEvents::from_reader(
+        reader,
+        options.budget,
+        options.alias_limits,
+        false,
+        EnforcingPolicy::AllContent,
+    );
     let value_res = crate::anchor_store::with_document_scope(|| {
         T::deserialize(crate::de::Deser::new(&mut src, cfg))
     });
@@ -748,13 +755,16 @@ where
     R: Read + 'a,
     T: DeserializeOwned + 'a,
 {
-    Box::new(read_with_options(reader, Options {
-        budget: Some(Budget {
-            max_reader_input_bytes: None,
-            .. Budget::default()
-        }),
-        .. Options::default()
-    }))
+    Box::new(read_with_options(
+        reader,
+        Options {
+            budget: Some(Budget {
+                max_reader_input_bytes: None,
+                ..Budget::default()
+            }),
+            ..Options::default()
+        },
+    ))
 }
 
 /// Create an iterator over YAML documents from any `std::io::Read`, with configurable options.
@@ -819,7 +829,7 @@ where
 ///   if parsing fails or a budget/alias limit is exceeded. After an error, the iterator ends.
 /// - Empty/null-like documents are skipped and produce no items.
 pub fn read_with_options<'a, R, T>(
-    reader: &'a mut R,           // iterator must not outlive this borrow
+    reader: &'a mut R, // iterator must not outlive this borrow
     options: Options,
 ) -> impl Iterator<Item = Result<T, Error>> + 'a
 where
@@ -827,7 +837,7 @@ where
     T: DeserializeOwned + 'a,
 {
     struct ReadIter<'a, T> {
-        src: LiveEvents<'a>,      // borrows from `reader`
+        src: LiveEvents<'a>, // borrows from `reader`
         cfg: crate::de::Cfg,
         finished: bool,
         _marker: std::marker::PhantomData<T>,
@@ -845,7 +855,9 @@ where
             }
             loop {
                 match self.src.peek() {
-                    Ok(Some(Ev::Scalar { value, style, .. })) if scalar_is_nullish(value, style) => {
+                    Ok(Some(Ev::Scalar { value, style, .. }))
+                        if scalar_is_nullish(value, style) =>
+                    {
                         let _ = self.src.next();
                         continue;
                     }
@@ -873,7 +885,13 @@ where
     }
 
     let cfg = crate::de::Cfg::from_options(&options);
-    let src = LiveEvents::from_reader(reader, options.budget, options.alias_limits, false);
+    let src = LiveEvents::from_reader(
+        reader,
+        options.budget,
+        options.alias_limits,
+        false,
+        EnforcingPolicy::PerDocument,
+    );
 
     ReadIter::<T> {
         src,

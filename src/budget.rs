@@ -71,7 +71,7 @@ pub struct Budget {
     pub max_depth: usize,
     /// Maximum number of YAML documents in the stream.
     ///
-    /// Default: 1,024
+    /// Default: 1,024. If enforcing policy is "per document", this is ignored.
     pub max_documents: usize,
     /// Maximum number of *nodes* (SequenceStart/MappingStart/Scalar).
     ///
@@ -234,6 +234,29 @@ pub struct BudgetReport {
     pub merge_keys: usize,
 }
 
+impl BudgetReport {
+    fn reset(&mut self) {
+        // Resets all fields except "breached" and document count.
+        self.events = 0;
+        self.aliases = 0;
+        self.anchors = 0;
+        self.nodes = 0;
+        self.max_depth = 0;
+        self.total_scalar_bytes = 0;
+        self.merge_keys = 0;
+    }
+}
+
+
+/// Defines how budget limit policies are enforces (per document or for all content).
+/// Default is for all content, except when streaming from reader to iterator where
+/// it is per document as infinite may be required.
+#[derive(Debug, PartialEq)]
+pub enum EnforcingPolicy {
+    AllContent,
+    PerDocument,
+}
+
 /// Stateful helper that enforces a [`Budget`] while consuming a stream of [`Event`]s.
 #[derive(Debug)]
 pub (crate) struct BudgetEnforcer {
@@ -242,6 +265,7 @@ pub (crate) struct BudgetEnforcer {
     depth: usize,
     defined_anchors: HashSet<usize>,
     containers: Vec<ContainerState>,
+    policy: EnforcingPolicy
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -257,13 +281,14 @@ enum ContainerState {
 
 impl BudgetEnforcer {
     /// Create a new enforcer for the provided `budget`.
-    pub fn new(budget: Budget) -> Self {
+    pub fn new(budget: Budget, policy: EnforcingPolicy) -> Self {
         Self {
             budget,
             report: BudgetReport::default(),
             depth: 0,
             defined_anchors: HashSet::with_capacity(256),
             containers: Vec::with_capacity(64),
+            policy
         }
     }
 
@@ -281,11 +306,15 @@ impl BudgetEnforcer {
         match ev {
             Event::StreamStart | Event::StreamEnd => {}
             Event::DocumentStart(_explicit) => {
-                self.report.documents += 1;
-                if self.report.documents > self.budget.max_documents {
-                    return Err(BudgetBreach::Documents {
-                        documents: self.report.documents,
-                    });
+                if self.policy == EnforcingPolicy::PerDocument {
+                    self.report.reset();
+                } else {
+                    self.report.documents += 1;
+                    if self.report.documents > self.budget.max_documents {
+                        return Err(BudgetBreach::Documents {
+                            documents: self.report.documents,
+                        });
+                    }
                 }
             }
             Event::DocumentEnd => {}
@@ -516,9 +545,9 @@ impl BudgetEnforcer {
 /// Note:
 /// - This is **streaming** and does not allocate a DOM.
 /// - Depth counts nested `SequenceStart` and `MappingStart`.
-pub fn check_yaml_budget(input: &str, budget: &Budget) -> Result<BudgetReport, ScanError> {
+pub fn check_yaml_budget(input: &str, budget: Budget, policy: EnforcingPolicy) -> Result<BudgetReport, ScanError> {
     let mut parser = Parser::new_from_str(input);
-    let mut enforcer = BudgetEnforcer::new(budget.clone());
+    let mut enforcer = BudgetEnforcer::new(budget, policy);
 
     while let Some(item) = parser.next() {
         let (ev, _span) = item?;
@@ -542,8 +571,8 @@ pub fn check_yaml_budget(input: &str, budget: &Budget) -> Result<BudgetReport, S
 /// - `Ok(true)` if a budget was exceeded (reject).
 /// - `Ok(false)` if within budget.
 /// - `Err(ScanError)` on parser error.
-pub fn parse_yaml(input: &str, budget: &Budget) -> Result<bool, ScanError> {
-    let report = check_yaml_budget(input, budget)?;
+pub fn parse_yaml(input: &str, budget: Budget) -> Result<bool, ScanError> {
+    let report = check_yaml_budget(input, budget, EnforcingPolicy::AllContent)?;
     Ok(report.breached.is_some())
 }
 
@@ -555,7 +584,7 @@ mod tests {
     fn tiny_yaml_ok() {
         let b = Budget::default();
         let y = "a: [1, 2, 3]\n";
-        let r = check_yaml_budget(y, &b).unwrap();
+        let r = check_yaml_budget(y, b, EnforcingPolicy::AllContent).unwrap();
         assert!(r.breached.is_none());
         assert_eq!(r.documents, 1);
         assert_eq!(r.nodes > 0, true);
@@ -575,7 +604,7 @@ e: *A
         let mut b = Budget::default();
         b.max_aliases = 3; // set a tiny limit for the test
 
-        let rep = check_yaml_budget(y, &b).unwrap();
+        let rep = check_yaml_budget(y, b, EnforcingPolicy::AllContent).unwrap();
         assert!(matches!(rep.breached, Some(BudgetBreach::Aliases { .. })));
     }
 
@@ -594,7 +623,7 @@ e: *A
         let mut b = Budget::default();
         b.max_depth = 150;
 
-        let rep = check_yaml_budget(&y, &b).unwrap();
+        let rep = check_yaml_budget(&y, b, EnforcingPolicy::AllContent).unwrap();
         assert!(matches!(rep.breached, Some(BudgetBreach::Depth { .. })));
     }
 
@@ -604,7 +633,7 @@ e: *A
         let y = "a: &A 1\nb: &B 2\nc: &C 3\n";
         let mut b = Budget::default();
         b.max_anchors = 2;
-        let rep = check_yaml_budget(y, &b).unwrap();
+        let rep = check_yaml_budget(y, b, EnforcingPolicy::AllContent).unwrap();
         assert!(matches!(
             rep.breached,
             Some(BudgetBreach::Anchors { anchors: 3 })
@@ -621,7 +650,7 @@ e: *A
         let mut b = Budget::default();
         b.max_merge_keys = 2;
 
-        let rep = check_yaml_budget(&y, &b).unwrap();
+        let rep = check_yaml_budget(&y, b, EnforcingPolicy::AllContent).unwrap();
         assert!(matches!(
             rep.breached,
             Some(BudgetBreach::MergeKeys { merge_keys }) if merge_keys == 3
@@ -637,7 +666,7 @@ e: *A
         budget.alias_anchor_min_aliases = 1;
         budget.alias_anchor_ratio_multiplier = 2;
 
-        let report = check_yaml_budget(yaml, &budget).unwrap();
+        let report = check_yaml_budget(yaml, budget, EnforcingPolicy::AllContent).unwrap();
         assert!(matches!(
             report.breached,
             Some(BudgetBreach::AliasAnchorRatio {
@@ -657,7 +686,7 @@ e: *A
         budget.alias_anchor_min_aliases = 5;
         budget.alias_anchor_ratio_multiplier = 1;
 
-        let report = check_yaml_budget(yaml, &budget).unwrap();
+        let report = check_yaml_budget(yaml, budget, EnforcingPolicy::AllContent).unwrap();
         assert!(report.breached.is_none());
         assert_eq!(report.aliases, 3);
         assert_eq!(report.anchors, 1);
