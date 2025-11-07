@@ -11,11 +11,11 @@ use std::{fmt, io};
 ///
 /// Other variants wrap concrete underlying failures that can occur while
 /// serializing:
-/// - `Format` wraps a `core::fmt::Error` produced when writing to a
+/// - `Format` wraps a `std::fmt::Error` produced when writing to a
 ///   `fmt::Write` target.
 /// - `IO` wraps a `std::io::Error` produced when writing to an `io::Write`
 ///   target.
-/// - `Unexpected` is used internally for invariant violations (e.g. around
+/// - `Unexpected` is used internally for invariant violations (e.g., around
 ///   anchors). It should not normally surface; if it does, please file a bug.
 #[derive(Debug)]
 pub enum Error {

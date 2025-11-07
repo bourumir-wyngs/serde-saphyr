@@ -15,10 +15,10 @@ pub struct Location {
 }
 
 impl Location {
-    /// serde-yaml compatible line information
+    /// serde_yaml-compatible line information
     pub fn line(&self) -> u64 { self.row as u64 }
 
-    /// serde-yaml compatible column information
+    /// serde_yaml-compatible column information
     pub fn column(&self) -> u64 { self.column as u64}
 }
 
@@ -91,7 +91,7 @@ pub enum Error {
         breach: BudgetBreach,
         location: Location,
     },
-    /// Unexpected IO error. This may happen only when deserializing from the reader.
+    /// Unexpected I/O error. This may happen only when deserializing from a reader.
     IOError {
         cause: std::io::Error
     }
