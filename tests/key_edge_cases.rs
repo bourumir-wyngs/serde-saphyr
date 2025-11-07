@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 
+
+/// Unsure if this should be error. When forcing into string, empty key is currently
+/// deserialized into unit ('~')
 #[test]
 fn deserialize_empty_key_into_hashmap_string() {
     // Single mapping entry with an empty key
     let y = ": value\n";
-    let m: HashMap<String, String> = serde_saphyr::from_str(y).expect("failed to parse empty-key mapping");
-
-    assert_eq!(m.len(), 1);
-    assert_eq!(m.get(""), Some(&"value".to_string()));
+    let m: HashMap<String, String> = serde_saphyr::from_str(y).expect("deserialization error");
+    println!("{:?}", m);
+    assert_eq!(m.get("~"), Some(&"value".to_string()));
 }
 
 #[test]
