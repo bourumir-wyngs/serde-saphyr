@@ -62,9 +62,9 @@ fn read_iterator_over_polymorphic_enum_documents() {
      - plant: { tree: Oak }
 "#;
 
-    let reader = std::io::Cursor::new(yaml.as_bytes());
+    let mut reader = std::io::Cursor::new(yaml.as_bytes());
 
-    let iter = serde_saphyr::read::<_, Command>(reader);
+    let iter = serde_saphyr::read::<_, Command>(&mut reader);
     let cmds: Vec<Command> = iter.map(|r| r.expect("failed to read enum doc"))
                                  .collect();
 

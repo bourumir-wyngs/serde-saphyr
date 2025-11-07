@@ -1,3 +1,4 @@
+use std::io::Read;
 // Serialization public API is defined at crate root; wrappers are re-exported.
 use crate::de::{Ev, Events};
 use crate::live_events::LiveEvents;
@@ -52,7 +53,7 @@ pub fn to_string<T: serde::Serialize>(value: &T) -> std::result::Result<String, 
     Ok(out)
 }
 
-/// DEPRECATED: use `to_fmt_writer` or `to_io_writer`
+/// Deprecated: use `to_fmt_writer` or `to_io_writer`
 /// Kept for a transition release to avoid instant breakage.
 #[deprecated(
     since = "0.0.7",
@@ -586,34 +587,6 @@ pub fn to_string_multiple<T: serde::Serialize>(
 /// let reader = std::io::Cursor::new(big.as_bytes().to_owned());
 /// let _value: Value = serde_saphyr::from_reader(reader).unwrap();
 /// ```
-/// Create a YAML Deserializer from any `std::io::Read`.
-///
-/// This reads the entire reader into memory and exposes a Serde Deserializer
-/// over it.
-///
-/// Example
-///
-/// ```rust
-/// use serde::{Deserialize, Serialize};
-/// use std::collections::HashMap;
-/// use serde_json::Value;
-///
-/// #[derive(Debug, PartialEq, Serialize, Deserialize)]
-/// struct Point { x: i32, y: i32 }
-///
-/// // As a Deserializer
-/// let yaml = "x: 3\ny: 4\n";
-/// let reader = std::io::Cursor::new(yaml.as_bytes());
-/// let p: Point = serde_saphyr::from_reader(reader).unwrap();
-/// assert_eq!(p, Point { x: 3, y: 4 });
-///
-/// // Directly to a value via unwrap::<T>()
-/// let mut big = String::new();
-/// let mut i = 0usize;
-/// while big.len() < 64 * 1024 { big.push_str(&format!("k{0}: v{0}\n", i)); i += 1; }
-/// let reader = std::io::Cursor::new(big.as_bytes().to_owned());
-/// let _value: Value = serde_saphyr::from_reader(reader).unwrap();
-/// ```
 pub fn from_reader<'a, R: std::io::Read + 'a, T: DeserializeOwned>(reader: R) -> Result<T, Error> {
     from_reader_with_options(reader, Options::default())
 }
@@ -627,8 +600,8 @@ pub fn from_reader<'a, R: std::io::Read + 'a, T: DeserializeOwned>(reader: R) ->
 /// - Parsing limits: Use [`Options::budget`] to constrain YAML complexity (events, nodes,
 ///   nesting depth, total scalar bytes, number of documents, anchors, aliases, etc.). These
 ///   limits are enforced during parsing and are enabled by default via `Options::default()`.
-/// - Byte-level input cap: A hard cap on input bytes is enforced via `Options::budget.max_input_bytes`.
-///   The default budget sets this to 1 GiB. You can override it by customizing `Options::budget`.
+/// - Byte-level input cap: A hard cap on input bytes is enforced via `Options::budget.max_reader_input_bytes`.
+///   The default budget sets this to 256 MiB. You can override it by customizing `Options::budget`.
 ///   When the cap is exceeded, deserialization fails early with a budget error.
 ///
 /// Example: limit raw input bytes and customize options
@@ -658,7 +631,7 @@ pub fn from_reader<'a, R: std::io::Read + 'a, T: DeserializeOwned>(reader: R) ->
 /// - If an empty document is provided (no content), a type-mismatch (eof) error is returned when
 ///   attempting to deserialize into non-null-like targets.
 /// - If the reader contains multiple documents, an error is returned suggesting the
-///   `from_multiple*_` APIs.
+///   `read`/`read_with_options` iterator APIs.
 /// - If `Options::budget` is set and a limit is exceeded, an error is returned early.
 pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
     reader: R,
@@ -729,7 +702,8 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
 /// Limits and budget
 /// - Uses `Options::default()`, which enables a YAML parsing budget by default. This enforces
 ///   limits such as maximum events, nodes, nesting depth, total scalar bytes, and a hard input-byte
-///   cap (1 GiB by default). To customize these, call [`read_with_options`].
+///   cap (256 MiB by default). To customize these, call [`read_with_options`] and set
+///   `Options::budget.max_reader_input_bytes` in the provided `Options`.
 /// - Alias replay limits are also enforced with their default values to mitigate alias bombs.
 ///
 /// ```rust
@@ -739,10 +713,10 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
 /// struct Simple { id: usize }
 ///
 /// let yaml = b"id: 1\n---\nid: 2\n";
-/// let reader = std::io::Cursor::new(&yaml[..]);
+/// let mut reader = std::io::Cursor::new(&yaml[..]);
 ///
 /// // Type `T` is inferred from the collection target (Vec<Simple>).
-/// let values: Vec<Simple> = serde_saphyr::read(reader)
+/// let values: Vec<Simple> = serde_saphyr::read(&mut reader)
 ///     .map(|r| r.unwrap())
 ///     .collect();
 /// assert_eq!(values.len(), 2);
@@ -757,10 +731,10 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
 /// struct Simple { id: usize }
 ///
 /// let yaml = b"id: 10\n---\nid: 20\n";
-/// let reader = std::io::Cursor::new(&yaml[..]);
+/// let mut reader = std::io::Cursor::new(&yaml[..]);
 ///
 /// // First turbofish parameter is R (reader type), `_` lets the compiler infer it.
-/// let iter = serde_saphyr::read::<_, Simple>(reader);
+/// let iter = serde_saphyr::read::<_, Simple>(&mut reader);
 /// let ids: Vec<usize> = iter.map(|res| res.unwrap().id).collect();
 /// assert_eq!(ids, vec![10, 20]);
 /// ```
@@ -768,12 +742,12 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
 /// - Each `next()` yields either `Ok(T)` for a successfully deserialized document or `Err(Error)`
 ///   if parsing fails or a limit is exceeded. After an error, the iterator ends.
 /// - Empty/null-like documents are skipped and produce no items.
-pub fn read<'a, R, T>(reader: R) -> Box<dyn Iterator<Item = Result<T, Error>> + 'a>
+pub fn read<'a, R, T>(reader: &'a mut R) -> Box<dyn Iterator<Item = Result<T, Error>> + 'a>
 where
-    R: std::io::Read + 'a,
+    R: Read + 'a,
     T: DeserializeOwned + 'a,
 {
-    read_with_options(reader, Options::default())
+    Box::new(read_with_options(reader, Options::default()))
 }
 
 /// Create an iterator over YAML documents from any `std::io::Read`, with configurable options.
@@ -796,7 +770,8 @@ where
 ///
 /// Limits and budget
 /// - All parsing limits configured via [`Options::budget`] (such as maximum events, nodes,
-///   nesting depth, total scalar bytes, and the hard input-byte cap) are enforced while streaming.
+///   nesting depth, total scalar bytes) are enforced while streaming. A hard input-byte cap
+///   is also enforced via `Budget::max_reader_input_bytes` (256 MiB by default).
 /// - Alias replay limits from [`Options::alias_limits`] are also enforced to mitigate alias bombs.
 ///
 /// ```rust
@@ -806,10 +781,10 @@ where
 /// struct Simple { id: usize }
 ///
 /// let yaml = b"id: 1\n---\nid: 2\n";
-/// let reader = std::io::Cursor::new(&yaml[..]);
+/// let mut reader = std::io::Cursor::new(&yaml[..]);
 ///
 /// // Type `T` is inferred from the collection target (Vec<Simple>).
-/// let values: Vec<Simple> = serde_saphyr::read(reader)
+/// let values: Vec<Simple> = serde_saphyr::read(&mut reader)
 ///     .map(|r| r.unwrap())
 ///     .collect();
 /// assert_eq!(values.len(), 2);
@@ -824,10 +799,10 @@ where
 /// struct Simple { id: usize }
 ///
 /// let yaml = b"id: 10\n---\nid: 20\n";
-/// let reader = std::io::Cursor::new(&yaml[..]);
+/// let mut reader = std::io::Cursor::new(&yaml[..]);
 ///
 /// // First turbofish parameter is R (reader type) which we let the compiler infer via `_`.
-/// let iter = serde_saphyr::read_with_options::<_, Simple>(reader, serde_saphyr::Options::default());
+/// let iter = serde_saphyr::read_with_options::<_, Simple>(&mut reader, serde_saphyr::Options::default());
 /// let ids: Vec<usize> = iter.map(|res| res.unwrap().id).collect();
 /// assert_eq!(ids, vec![10, 20]);
 /// ```
@@ -836,15 +811,15 @@ where
 ///   if parsing fails or a budget/alias limit is exceeded. After an error, the iterator ends.
 /// - Empty/null-like documents are skipped and produce no items.
 pub fn read_with_options<'a, R, T>(
-    reader: R,
+    reader: &'a mut R,           // iterator must not outlive this borrow
     options: Options,
-) -> Box<dyn Iterator<Item = Result<T, Error>> + 'a>
+) -> impl Iterator<Item = Result<T, Error>> + 'a
 where
-    R: std::io::Read + 'a,
+    R: Read + 'a,
     T: DeserializeOwned + 'a,
 {
     struct ReadIter<'a, T> {
-        src: LiveEvents<'a>,
+        src: LiveEvents<'a>,      // borrows from `reader`
         cfg: crate::de::Cfg,
         finished: bool,
         _marker: std::marker::PhantomData<T>,
@@ -862,10 +837,7 @@ where
             }
             loop {
                 match self.src.peek() {
-                    Ok(Some(Ev::Scalar { value, style, .. }))
-                        if scalar_is_nullish(value, style) =>
-                    {
-                        // Skip completely empty documents ("", "~", or "null").
+                    Ok(Some(Ev::Scalar { value, style, .. })) if scalar_is_nullish(value, style) => {
                         let _ = self.src.next();
                         continue;
                     }
@@ -876,7 +848,6 @@ where
                         return Some(res);
                     }
                     Ok(None) => {
-                        // End of stream. Finalize once and end iteration.
                         self.finished = true;
                         if let Err(e) = self.src.finish() {
                             return Some(Err(e));
@@ -884,7 +855,6 @@ where
                         return None;
                     }
                     Err(e) => {
-                        // Surface parser/budget error
                         self.finished = true;
                         let _ = self.src.finish();
                         return Some(Err(e));
@@ -896,10 +866,11 @@ where
 
     let cfg = crate::de::Cfg::from_options(&options);
     let src = LiveEvents::from_reader(reader, options.budget, options.alias_limits, false);
-    Box::new(ReadIter {
+
+    ReadIter::<T> {
         src,
         cfg,
         finished: false,
         _marker: std::marker::PhantomData,
-    })
+    }
 }
