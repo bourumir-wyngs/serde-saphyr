@@ -77,7 +77,7 @@ fn main() -> Result<(), Error> {
     let document: Document = serde_saphyr::from_str_with_options(
         &yaml,
         Options {
-            budget: Some(Budget { max_input_bytes: many, 
+            budget: Some(Budget { max_reader_input_bytes: many, 
                 max_events: many,
                 max_aliases: many,
                 max_anchors: many,

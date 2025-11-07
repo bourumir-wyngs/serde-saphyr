@@ -21,14 +21,15 @@
 //! injecting previously recorded buffers; normal parsing continues after the
 //! injection is exhausted.
 
-use std::borrow::Cow;
-
-use crate::buffered_input::{ChunkedChars, buffered_input_from_reader_with_limit};
+use crate::buffered_input::{buffered_input_from_reader_with_limit, ChunkedChars};
 use crate::de::{AliasLimits, Budget, BudgetEnforcer, Error, Ev, Events, Location};
 use crate::error::{budget_error, location_from_span};
 use crate::tags::SfTag;
 use saphyr_parser::{BufferedInput, Event, Parser, ScalarStyle, ScanError, Span, StrInput};
 use smallvec::SmallVec;
+use std::borrow::Cow;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 /// This is enough to hold a single scalar that is common  case in YAML anchors.
 const SMALLVECT_INLINE: usize = 4;
@@ -105,6 +106,9 @@ pub(crate) struct LiveEvents<'a> {
     stop_at_doc_end: bool,
     /// Indicates whether a DocumentEnd was seen for the last parsed document.
     seen_doc_end: bool,
+
+    /// Error reference that is checked at the end of parsing.
+    error: Rc<RefCell<Option<std::io::Error>>>,
 }
 
 impl<'a> LiveEvents<'a> {
@@ -115,8 +119,8 @@ impl<'a> LiveEvents<'a> {
         stop_at_doc_end: bool,
     ) -> Self {
         // Build a streaming character iterator from the byte reader, honoring input byte cap if configured
-        let max_bytes = budget.as_ref().map(|b| b.max_input_bytes);
-        let input = buffered_input_from_reader_with_limit(inputs, max_bytes);
+        let max_bytes = budget.as_ref().map(|b| b.max_reader_input_bytes);
+        let (input, error) = buffered_input_from_reader_with_limit(inputs, max_bytes);
         let parser = Parser::new(input);
         Self {
             produced_any_in_doc: false,
@@ -138,6 +142,8 @@ impl<'a> LiveEvents<'a> {
 
             // Check bracket balance
             open_containers: 0,
+
+            error,
         }
     }
 }
@@ -178,6 +184,9 @@ impl<'a> LiveEvents<'a> {
 
             // Check bracket balance
             open_containers: 0,
+
+            // Error field is provided but for string, nothing is ever reported
+            error: Rc::new(RefCell::new(None))
         }
     }
 
@@ -602,6 +611,7 @@ impl<'a> LiveEvents<'a> {
     /// Should be called after parsing completes to surface any delayed
     /// budget enforcement errors with the last known location.
     pub(crate) fn finish(&mut self) -> Result<(), Error> {
+        self.io_error()?;
         if let Some(budget) = self.budget.take() {
             let report = budget.finalize();
             if let Some(breach) = report.breached {
@@ -610,12 +620,22 @@ impl<'a> LiveEvents<'a> {
         }
         Ok(())
     }
+
+    fn io_error(&self) -> Result<(), Error> {
+        if let Some(error) = self.error.take() {
+            Err(Error::IOError { cause: error })
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl<'a> Events for LiveEvents<'a> {
     /// Get the next event, using a single-item lookahead buffer if present.
     /// Updates last_location to the yielded event's location.
     fn next(&mut self) -> Result<Option<Ev>, Error> {
+        self.io_error()?;
+
         if let Some(ev) = self.look.take() {
             self.last_location = ev.location();
             return Ok(Some(ev));
@@ -624,6 +644,8 @@ impl<'a> Events for LiveEvents<'a> {
     }
     /// Peek at the next event without consuming it, filling the lookahead buffer if empty.
     fn peek(&mut self) -> Result<Option<&Ev>, Error> {
+        self.io_error()?;
+
         if self.look.is_none() {
             self.look = self.next_impl()?;
         }

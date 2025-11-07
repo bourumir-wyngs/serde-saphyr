@@ -221,16 +221,6 @@ pub fn from_str_with_options<T: DeserializeOwned>(
         input
     };
 
-    // Enforce input byte cap from budget (applies to pre-existing strings too).
-    if let Some(b) = &options.budget {
-        let len = input.as_bytes().len();
-        if len > b.max_input_bytes {
-            return Err(crate::error::budget_error(
-                crate::budget::BudgetBreach::InputBytes { input_bytes: len },
-            ));
-        }
-    }
-
     let cfg = crate::de::Cfg::from_options(&options);
     // Do not stop at DocumentEnd; we'll probe for trailing content/errors explicitly.
     let mut src = LiveEvents::from_str(input, options.budget, options.alias_limits, false);

@@ -8,7 +8,9 @@
 
 use encoding_rs_io::DecodeReaderBytesBuilder;
 use saphyr_parser::BufferedInput;
+use std::cell::RefCell;
 use std::io::{self, BufReader, Error, Read};
+use std::rc::Rc;
 
 /// IO error replacement char
 pub(crate) const IO_ERROR_CHAR: char = '\u{FFFD}';
@@ -30,13 +32,17 @@ pub struct ChunkedChars<R: Read> {
     /// Reusable temporary byte buffer used to read the next chunk from
     /// `reader` before converting it into `buf`.
     tmp: Vec<u8>,
-    /// Remember IO error, if any, here to report it later
-    pub(crate) err: Option<Error>,
+    /// Remember IO error, if any, here to report it later. This must be shared,
+    /// as otherwise we cannot later reach with Saphyr parser API
+    pub(crate) err: Rc<RefCell<Option<Error>>>,
 }
 
 impl<R: Read> ChunkedChars<R> {
-    #[inline]
-    pub fn new_with_limit(reader: R, max_bytes: Option<usize>) -> Self {
+    pub fn new(
+        reader: R,
+        max_bytes: Option<usize>,
+        err: Rc<RefCell<Option<Error>>>,
+    ) -> Self {
         Self {
             max_bytes,
             total_bytes: 0,
@@ -44,7 +50,7 @@ impl<R: Read> ChunkedChars<R> {
             buf: String::new(),
             idx: 0,
             tmp: vec![0u8; 8 * 1024],
-            err: None,
+            err,
         }
     }
 
@@ -72,8 +78,8 @@ impl<R: Read> ChunkedChars<R> {
                     self.total_bytes = self.total_bytes.saturating_add(s.len());
                     if self.total_bytes > limit {
                         return Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            format!("input limit of {limit} bytes exceeded")
+                            io::ErrorKind::FileTooLarge,
+                            format!("input size limit of {limit} bytes exceeded"),
                         ));
                     }
                 }
@@ -88,7 +94,7 @@ impl<R: Read> ChunkedChars<R> {
             if spin_guards > 128 {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    "read keeps returning Ok(0) without EOF",
+                    "read keeps returning Ok(0) 128 times without EOF",
                 ));
             }
         }
@@ -99,15 +105,8 @@ impl<R: Read> Iterator for ChunkedChars<R> {
     type Item = char;
 
     /// Returns the next Unicode scalar value from the stream, or `None` on EOF.
-    ///
-    /// Behavior on errors:
-    /// - If the underlying reader returns an I/O error during refill, a single
-    ///   Unicode replacement character (U+FFFD, IO_ERROR_CHAR) is yielded and iteration may
-    ///   continue on subsequent calls. Same if budget limit exceeded.
-    /// - UTF-8 validity is assumed (the reader is expected to produce valid
-    ///   UTF-8). Internal slicing uses `str::from_utf8` during refills and will
-    ///   panic only if that assumption is violated in debug assertions; in
-    ///   practice the decoder guarantees validity.
+    /// If error occurs, sets the error field that is a shared reference to the
+    /// error value, so that the parser can later pick this up.
     fn next(&mut self) -> Option<char> {
         loop {
             if self.idx < self.buf.len() {
@@ -121,43 +120,46 @@ impl<R: Read> Iterator for ChunkedChars<R> {
                 Ok(true) => continue,
                 Ok(false) => return None, // EOF
                 Err(error) => {
-                    // Not very elegant but unclear what else could be done.
-                    // Without this error understanding what went wrong may get very difficult.
-                    eprintln!("IO error: {:?}", error);
-                    self.err = Some(error);
-                    // Returning FFFD seems reasonable way to stop the parsing process with error.
-                    return Some(IO_ERROR_CHAR);
+                    self.err.replace(Some(error));
+                    return None; // Return EOF, err will be checked later.
                 }
             }
         }
     }
 }
 
-/// Same as `buffered_input_from_reader` but with an optional hard cap on input bytes.
+/// Creates buffered input and returns both input and reference to the variable
+/// holding the possible error. We cannot otherwise later reach our ChunkedChars.
 pub fn buffered_input_from_reader_with_limit<'a, R: Read + 'a>(
     reader: R,
     max_bytes: Option<usize>,
-) -> BufferedInput<ChunkedChars<BufReader<Box<dyn Read + 'a>>>> {
+) -> (
+    BufferedInput<ChunkedChars<BufReader<Box<dyn Read + 'a>>>>,
+    Rc<RefCell<Option<Error>>>,
+) {
     // Auto-detect encoding (BOM or guess), decode to UTF-8 on the fly.
     let decoder = DecodeReaderBytesBuilder::new()
         .encoding(None) // None = sniff BOM / use heuristics; set Some(encoding) to force
         .build(reader);
 
+    let error: Rc<RefCell<Option<Error>>> = Rc::new(RefCell::new(None));
+
     let br = BufReader::new(Box::new(decoder) as Box<dyn Read + 'a>);
-    let char_iter = ChunkedChars::new_with_limit(br, max_bytes);
-    BufferedInput::new(char_iter)
+    let char_iter = ChunkedChars::new(br, max_bytes, error.clone());
+
+    (BufferedInput::new(char_iter), error)
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::buffered_input::{buffered_input_from_reader_with_limit, ChunkedChars};
     use saphyr_parser::{BufferedInput, Event, Parser};
     use std::io::{BufReader, Cursor, Read};
-    use crate::buffered_input::{buffered_input_from_reader_with_limit, ChunkedChars};
 
     pub fn buffered_input_from_reader<'a, R: Read + 'a>(
         reader: R,
     ) -> BufferedInput<ChunkedChars<BufReader<Box<dyn Read + 'a>>>> {
-        buffered_input_from_reader_with_limit(reader, None)
+        buffered_input_from_reader_with_limit(reader, None).0
     }
 
     // Helper to collect a few core events for assertions without being fragile
