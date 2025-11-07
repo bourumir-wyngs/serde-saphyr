@@ -48,8 +48,11 @@ pub struct Budget {
     /// If the limit is exceeded, serde_saphyr::IOError is returned, with cause set to
     /// std::IO::Error having ErrorKind::FileTooLarge.
     ///
+    /// If set to None, this check is not active. This may be needed when reading from
+    /// stream into iterator, where potentially infinite input may need to be supported.
+    ///
     /// Default: 256 Mb
-    pub max_reader_input_bytes: usize,
+    pub max_reader_input_bytes: Option<usize>,
     /// Maximum total parser events (counting every event).
     ///
     /// Default: 1,000,000
@@ -105,7 +108,7 @@ pub struct Budget {
 impl Default for Budget {
     fn default() -> Self {
         Self {
-            max_reader_input_bytes: 256 * 1024 * 1024, // 256 Mb
+            max_reader_input_bytes: Some(256 * 1024 * 1024), // 256 Mb
             max_events: 1_000_000, // plenty for normal configs
             max_aliases: 50_000,   // liberal absolute cap
             max_anchors: 50_000,
@@ -233,7 +236,7 @@ pub struct BudgetReport {
 
 /// Stateful helper that enforces a [`Budget`] while consuming a stream of [`Event`]s.
 #[derive(Debug)]
-pub struct BudgetEnforcer {
+pub (crate) struct BudgetEnforcer {
     budget: Budget,
     report: BudgetReport,
     depth: usize,

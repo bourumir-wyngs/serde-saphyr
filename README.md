@@ -94,7 +94,7 @@ let yaml_input = r#"
 ```
 
 ## Multiple documents
-YAML streams can contain several documents separated by `---`/`...` markers. When deserializing with `serde_saphyr::from_multiple`, you still need to supply the vector element type up front (`Vec<T>`). That does **not** lock you into a single shape: make the element an enum and each document will deserialize into the matching variant. This lets you mix different payloads in one stream while retaining strong typing on the Rust side.
+YAML streams can contain several documents separated by `---`/`...` markers. When deserializing with [serde_saphyr::from_multiple](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.from_multiple.html)`, you still need to supply the vector element type up front (`Vec<T>`). That does **not** lock you into a single shape: make the element an enum and each document will deserialize into the matching variant. This lets you mix different payloads in one stream while retaining strong typing on the Rust side.
 
 ```rust
 use serde::Deserialize;
@@ -288,6 +288,7 @@ Legacy octal format like `0052` can be turned on in [`Options`](https://docs.rs/
 ## Pathological inputs & budgets
 
 Fuzzing shows that certain adversarial inputs can make YAML parsers consume excessive time or memory, enabling denial-of-service scenarios. To counter this, `serde-saphyr` offers a fast, configurable pre-check via a [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html), available through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). Defaults are conservative; tighten them when you know your input shape, or disable the budget if you only parse YAML you generate yourself.
+During [reader](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.from_reader_with_options.html)-based deserialization, serde-saphyr does not buffer the entire payload; it parses incrementally, counting bytes and enforcing configured budgets. This design blocks denial-of-service attempts via excessively large inputs. When [streaming](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.read_with_options.html) through the iterator, all budget limits apply on a per-document basis, since the reader may be expected to stream indefinitely.
 
 ## Serialization
 

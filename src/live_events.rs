@@ -22,7 +22,7 @@
 //! injection is exhausted.
 
 use crate::buffered_input::{buffered_input_from_reader_with_limit, ChunkedChars};
-use crate::de::{AliasLimits, Budget, BudgetEnforcer, Error, Ev, Events, Location};
+use crate::de::{AliasLimits, Budget, Error, Ev, Events, Location};
 use crate::error::{budget_error, location_from_span};
 use crate::tags::SfTag;
 use saphyr_parser::{BufferedInput, Event, Parser, ScalarStyle, ScanError, Span, StrInput};
@@ -30,6 +30,7 @@ use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::rc::Rc;
+use crate::budget::BudgetEnforcer;
 
 /// This is enough to hold a single scalar that is common  case in YAML anchors.
 const SMALLVECT_INLINE: usize = 4;
@@ -119,8 +120,9 @@ impl<'a> LiveEvents<'a> {
         stop_at_doc_end: bool,
     ) -> Self {
         // Build a streaming character iterator from the byte reader, honoring input byte cap if configured
-        let max_bytes = budget.as_ref().map(|b| b.max_reader_input_bytes);
-        let (input, error) = buffered_input_from_reader_with_limit(inputs, max_bytes);
+        let max_bytes = budget.as_ref().map(|b| b.max_reader_input_bytes).flatten();
+        let (input, error) =
+            buffered_input_from_reader_with_limit(inputs, max_bytes);
         let parser = Parser::new(input);
         Self {
             produced_any_in_doc: false,
