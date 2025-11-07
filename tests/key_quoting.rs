@@ -31,9 +31,11 @@ mod tests {
     /// Focused check for a comma key. This ensures that a map with `,` as a key
     /// survives serialization and deserialization exactly.
     #[test]
-    fn comma_key_roundtrip() {
+    fn specific_key_roundtrip() {
         let mut h = HashMap::new();
         h.insert(",".to_string(), ",".to_string());
+        h.insert("".to_string(), " ".to_string()); // empty key
+        h.insert("null".to_string(), " ".to_string()); // null key
 
         // Serialize with the same FlowSeq wrapper as in the original snippet.
         let yaml = to_string(&serde_saphyr::FlowSeq(h.clone()))
