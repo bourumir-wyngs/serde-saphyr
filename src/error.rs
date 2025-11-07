@@ -15,10 +15,10 @@ pub struct Location {
 }
 
 impl Location {
-    /// serde-yaml compatible line information
+    /// serde_yaml-compatible line information
     pub fn line(&self) -> u64 { self.row as u64 }
 
-    /// serde-yaml compatible column information
+    /// serde_yaml-compatible column information
     pub fn column(&self) -> u64 { self.column as u64}
 }
 
@@ -72,6 +72,9 @@ pub enum Error {
         expected: &'static str,
         location: Location,
     },
+    ContainerEndMismatch {
+        location: Location,
+    },
     /// Alias references a non-existent anchor id.
     UnknownAnchor {
         id: usize,
@@ -83,7 +86,12 @@ pub enum Error {
         msg: String,
         location: Location,
     },
-    /// Unexpected IO error. This may happen only when deserializing from the reader.
+    /// A YAML budget limit was exceeded.
+    Budget {
+        breach: BudgetBreach,
+        location: Location,
+    },
+    /// Unexpected I/O error. This may happen only when deserializing from a reader.
     IOError {
         cause: std::io::Error
     }
@@ -161,7 +169,9 @@ impl Error {
             | Error::Eof { location }
             | Error::Unexpected { location, .. }
             | Error::HookError { location, .. }
-            | Error::UnknownAnchor { location, .. } => {
+            | Error::ContainerEndMismatch { location, .. }
+            | Error::UnknownAnchor { location, .. }
+            | Error::Budget { location, .. } => {
                 *location = set_location;
             },
             Error::IOError { .. } => {} // this error does not support location
@@ -182,7 +192,9 @@ impl Error {
             | Error::Eof { location }
             | Error::Unexpected { location, .. }
             | Error::HookError { location, .. }
-            | Error::UnknownAnchor { location, .. } => {
+            | Error::ContainerEndMismatch { location, .. }
+            | Error::UnknownAnchor { location, .. }
+            | Error::Budget { location, .. } => {
                 if location != &Location::UNKNOWN {
                     Some(*location)
                 } else {
@@ -216,8 +228,14 @@ impl fmt::Display for Error {
             Error::Unexpected { expected, location } => {
                 fmt_with_location(f, &format!("unexpected event: expected {expected}"), location)
             }
+            Error::ContainerEndMismatch { location } => {
+                fmt_with_location(f, "list or mapping end with no start", location)
+            }
             Error::UnknownAnchor { id, location } => {
                 fmt_with_location(f, &format!("alias references unknown anchor id {id}"), location)
+            }
+            Error::Budget { breach, location } => {
+                fmt_with_location(f, &format!("YAML budget breached: {breach:?}"), location)
             }
             Error::IOError { cause } => write!(f, "IO error: {}", cause),
         }
@@ -262,5 +280,5 @@ fn fmt_with_location(f: &mut fmt::Formatter<'_>, msg: &str, location: &Location)
 /// Called by:
 /// - The live events layer when enforcing budgets during/after parsing.
 pub(crate) fn budget_error(breach: BudgetBreach) -> Error {
-    Error::msg(format!("YAML budget breached: {breach:?}"))
+    Error::Budget { breach, location: Location::UNKNOWN }
 }

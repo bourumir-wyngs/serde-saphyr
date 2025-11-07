@@ -1,10 +1,11 @@
 #[cfg(test)]
 mod tests {
     use serde::Deserialize;
-    use serde_saphyr::{DuplicateKeyPolicy, Error};
+    use serde_saphyr::{from_reader, DuplicateKeyPolicy, Error};
     use serde_saphyr::{
         Options, from_multiple, from_multiple_with_options, from_str, from_str_with_options,
     };
+    use serde_saphyr::budget::BudgetBreach;
     use std::collections::HashMap;
 
     #[derive(Debug, Deserialize, PartialEq)]
@@ -23,6 +24,16 @@ mod tests {
     fn simple_nested_struct() {
         let y = "name: John\nage: 80\ndetails: { city: Paris }\n";
         let p: Person = from_str(y).unwrap();
+        assert_eq!(p.name, "John");
+        assert_eq!(p.age, 80);
+        assert_eq!(p.details.city, "Paris");
+    }
+
+    #[test]
+    fn simple_nested_struct_from_reader() {
+        let y = "name: John\nage: 80\ndetails: { city: Paris }\n";
+        let reader = std::io::Cursor::new(y.as_bytes().to_owned());
+        let p: Person = from_reader(reader).unwrap();
         assert_eq!(p.name, "John");
         assert_eq!(p.age, 80);
         assert_eq!(p.details.city, "Paris");
@@ -61,7 +72,7 @@ mod tests {
 
         let yaml = "a: 1\n";
         let err = from_str_with_options::<HashMap<String, String>>(yaml, options).unwrap_err();
-        assert!(matches!(err, Error::Message { msg, .. } if msg.contains("budget")));
+        assert!(matches!(err, Error::Budget { breach: BudgetBreach::Nodes { .. }, .. }));
     }
 
     #[test]
@@ -75,7 +86,7 @@ mod tests {
 
         let yaml = "a: 1\n---\nb: 2\n";
         let err = from_multiple_with_options::<HashMap<String, String>>(yaml, options).unwrap_err();
-        assert!(matches!(err, Error::Message { msg, .. } if msg.contains("budget")));
+        assert!(matches!(err, Error::Budget { breach: BudgetBreach::Nodes { .. }, .. }));
     }
 
     #[test]

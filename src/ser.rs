@@ -7,7 +7,7 @@
 //!
 //! use serde::Serialize;
 //! use std::rc::Rc;
-//! use serde_saphyr::ser::{to_string, RcAnchor, LitStr, FlowSeq};
+//! use serde_saphyr::{to_string, RcAnchor, LitStr, FlowSeq};
 //!
 //! #[derive(Serialize)]
 //! struct Cfg {
@@ -198,7 +198,7 @@ enum StrStyle {
 // Numeric anchor id used internally.
 type AnchorId = u32;
 
-/// Core YAML serializer used by `to_string`/`to_writer`.
+/// Core YAML serializer used by `to_string`, `to_fmt_writer`, and `to_io_writer` (and their `_with_options` variants).
 ///
 /// This type implements `serde::Serializer` and writes YAML to a `fmt::Write`.
 /// It manages indentation, flow/block styles, and YAML anchors/aliases.

@@ -41,6 +41,15 @@ use saphyr_parser::{Event, Parser, ScalarStyle, ScanError};
 /// ```
 #[derive(Clone, Debug)]
 pub struct Budget {
+    /// Hard cap on the size of the input in bytes.
+    /// This limit only applies for the Reader, to prevent resource starving
+    /// by reading large malicious input (even if valid YAML). String can be
+    /// manually checked only if needed (it is already in RAM anyway).
+    /// If the limit is exceeded, serde_saphyr::IOError is returned, with cause set to
+    /// std::IO::Error having ErrorKind::FileTooLarge.
+    ///
+    /// Default: 256 Mb
+    pub max_reader_input_bytes: usize,
     /// Maximum total parser events (counting every event).
     ///
     /// Default: 1,000,000
@@ -96,6 +105,7 @@ pub struct Budget {
 impl Default for Budget {
     fn default() -> Self {
         Self {
+            max_reader_input_bytes: 256 * 1024 * 1024, // 256 Mb
             max_events: 1_000_000, // plenty for normal configs
             max_aliases: 50_000,   // liberal absolute cap
             max_anchors: 50_000,
@@ -182,6 +192,12 @@ pub enum BudgetBreach {
     /// Unbalanced structure: a closing event was encountered without a matching
     /// opening event (depth underflow). Indicates malformed or truncated input.
     SequenceUnbalanced,
+
+    /// The total number of input bytes exceeded [`Budget::max_input_bytes`].
+    InputBytes {
+        /// Total number of bytes consumed from the input when the breach occurred.
+        input_bytes: usize,
+    },
 }
 
 /// Summary of the scan (even if no breach).

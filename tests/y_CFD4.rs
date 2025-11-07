@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 // CFD4: Empty implicit key in single pair flow sequences
 // Input: sequence of one-element sequences; each inner element is a mapping with empty key and a value.
+// serde-saphyr requires empty keys to be quoted.
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum One {
@@ -11,7 +12,7 @@ enum One {
 
 #[test]
 fn yaml_cfd4_empty_implicit_key_in_single_pair_flow_sequences() {
-    let y = "- [ : empty key ]\n- [: another empty key]\n";
+    let y = "- [ \"\" : empty key ]\n- [ \"\" : another empty key]\n";
     let v: Vec<Vec<One>> = serde_saphyr::from_str(y).expect("failed to parse CFD4");
     assert_eq!(v.len(), 2);
 
