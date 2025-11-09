@@ -62,10 +62,116 @@ pub struct FlowSeq<T>(pub T);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FlowMap<T>(pub T);
 
-/// Block literal string (`|`), lines are preserved.
+/// Attach an inline YAML comment to a value when serializing.
+///
+/// This wrapper lets you annotate a scalar with an inline YAML comment that is
+/// emitted after the value when using block style. The typical form is:
+/// `value # comment`.
+///
+/// Behavior
+/// - Block style (default): the comment appears after the scalar on the same line.
+/// - Flow style (inside `[ ... ]` or `{ ... }`): comments are suppressed to keep
+///   the flow representation compact and unambiguous.
+/// - Complex values (sequences/maps/structs): the comment is ignored; only the
+///   inner value is serialized to preserve indentation and layout.
+/// - Newlines in comments are sanitized to spaces so the comment remains on a
+///   single line (e.g., "a\nb" becomes "a b").
+/// - Deserialization of `Commented<T>` ignores comments: it behaves like `T` and
+///   produces an empty comment string.
+///
+/// Examples
+///
+/// Basic scalar with a comment in block style:
+/// ```rust
+/// use serde::Serialize;
+///
+/// // Re-exported from the crate root
+/// use serde_saphyr::Commented;
+///
+/// let out = serde_saphyr::to_string(&Commented(42, "answer".to_string())).unwrap();
+/// assert_eq!(out, "42 # answer\n");
+/// ```
+///
+/// As a mapping value, still inline:
+/// ```rust
+/// use serde::Serialize;
+/// use serde_saphyr::Commented;
+///
+/// #[derive(Serialize)]
+/// struct S { n: Commented<i32> }
+///
+/// let s = S { n: Commented(5, "send five starships first".into()) };
+/// let out = serde_saphyr::to_string(&s).unwrap();
+/// assert_eq!(out, "n: 5 # send five starships first\n");
+/// ```
+///
+/// *Important*: Comments are suppressed in flow contexts (no `#` appears), and ignored for complex inner values.
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Commented<T>(pub T, pub String);
+
+/// Force a YAML block literal string using the `|` style.
+///
+/// Emits the inner `&str` as a block scalar that preserves newlines exactly
+/// as written. Each line is indented one level deeper than the surrounding
+/// indentation where the value appears.
+///
+/// Behavior
+/// - Uses YAML's literal block style: a leading `|` followed by newline.
+/// - Newlines are preserved verbatim by YAML consumers.
+/// - Indentation is handled automatically by the serializer.
+/// - Works in mapping values, sequence items, and at the top level.
+///
+/// Examples
+///
+/// Top-level literal block string:
+/// ```rust
+/// let out = serde_saphyr::to_string(&serde_saphyr::LitStr("line 1\nline 2")).unwrap();
+/// assert_eq!(out, "|\n  line 1\n  line 2\n");
+/// ```
+///
+/// As a mapping value:
+/// ```rust
+/// use serde::Serialize;
+/// #[derive(Serialize)]
+/// struct S { note: serde_saphyr::LitStr<'static> }
+/// let s = S { note: serde_saphyr::LitStr("a\nb") };
+/// let out = serde_saphyr::to_string(&s).unwrap();
+/// assert_eq!(out, "note: |\n  a\n  b\n");
+/// ```
 #[derive(Clone, Copy)]
 pub struct LitStr<'a>(pub &'a str);
-/// Block folded string (`>`), lines are folded by YAML consumers.
+
+/// Force a YAML folded block string using the `>` style.
+///
+/// Emits the inner `&str` as a block scalar that suggests folding line breaks
+/// to spaces for display by YAML consumers (empty lines are kept as paragraph
+/// breaks). The serializer writes each line on its own; the folding behavior is
+/// applied by consumers of the YAML, not during serialization.
+///
+/// Behavior
+/// - Uses YAML's folded block style: a leading `>` followed by newline.
+/// - Intended for human-readable paragraphs where soft-wrapping is desirable.
+/// - Indentation is handled automatically by the serializer.
+/// - Works in mapping values, sequence items, and at the top level.
+///
+/// Examples
+///
+/// Top-level folded block string:
+/// ```rust
+/// let out = serde_saphyr::to_string(&serde_saphyr::FoldStr("line 1\nline 2")).unwrap();
+/// assert_eq!(out, ">\n  line 1\n  line 2\n");
+/// ```
+///
+/// As a mapping value:
+/// ```rust
+/// use serde::Serialize;
+/// #[derive(Serialize)]
+/// struct S { note: serde_saphyr::FoldStr<'static> }
+/// let s = S { note: serde_saphyr::FoldStr("a\nb") };
+/// let out = serde_saphyr::to_string(&s).unwrap();
+/// assert_eq!(out, "note: >\n  a\n  b\n");
+/// ```
 #[derive(Clone, Copy)]
 pub struct FoldStr<'a>(pub &'a str);
 
@@ -93,6 +199,7 @@ const NAME_FLOW_SEQ: &str = "__yaml_flow_seq";
 const NAME_FLOW_MAP: &str = "__yaml_flow_map";
 const NAME_LIT_STR: &str = "__yaml_lit_str";
 const NAME_FOLD_STR: &str = "__yaml_fold_str";
+const NAME_TUPLE_COMMENTED: &str = "__yaml_commented";
 
 // Top-level newtype wrappers for strong/weak simply wrap the real payloads.
 impl<T: Serialize> Serialize for RcAnchor<T> {
@@ -157,6 +264,17 @@ impl<T: Serialize> Serialize for FlowMap<T> {
     }
 }
 
+impl<T: Serialize> Serialize for Commented<T> {
+    fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        // Represent as a special tuple-struct with two fields: (comment, value)
+        // so the serializer can stage the comment before serializing the value.
+        let mut ts = s.serialize_tuple_struct(NAME_TUPLE_COMMENTED, 2)?;
+        ts.serialize_field(&self.1)?; // comment first
+        ts.serialize_field(&self.0)?; // then value
+        ts.end()
+    }
+}
+
 // Deserialization for flow wrappers: delegate to inner T during deserialization.
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for FlowSeq<T> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
@@ -166,6 +284,11 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for FlowSeq<T> {
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for FlowMap<T> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
         T::deserialize(deserializer).map(FlowMap)
+    }
+}
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Commented<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        T::deserialize(deserializer).map(|v| Commented(v, String::new()))
     }
 }
 
@@ -231,6 +354,8 @@ pub struct YamlSer<'a, W: Write> {
     in_flow: usize,
     /// Pending block-string style hint (literal `|` or folded `>`).
     pending_str_style: Option<StrStyle>,
+    /// Pending inline comment to be appended after the next scalar (block style only).
+    pending_inline_comment: Option<String>,
     /// When the previous token was a list item dash ("- ") and the next node is a mapping,
     /// emit the first key inline on the same line ("- key: value").
     pending_inline_map: bool,
@@ -264,6 +389,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
             pending_flow: None,
             in_flow: 0,
             pending_str_style: None,
+            pending_inline_comment: None,
             pending_inline_map: false,
             pending_space_after_colon: false,
             inline_map_after_dash: false,
@@ -288,6 +414,20 @@ impl<'a, W: Write> YamlSer<'a, W> {
     }
 
     // -------- helpers --------
+
+    /// Called at the end of emitting a scalar in block style: appends a pending inline
+    /// comment (if any) and then emits a newline. In flow style, comments are suppressed.
+    #[inline]
+    fn write_end_of_scalar(&mut self) -> Result<()> {
+        if self.in_flow == 0 {
+            if let Some(c) = self.pending_inline_comment.take() {
+                self.out.write_str(" # ")?;
+                self.out.write_str(&c)?;
+            }
+            self.newline()?;
+        }
+        Ok(())
+    }
 
     /// Allocate (or get existing) anchor id for a pointer identity.
     /// Returns `(id, is_new)`.
@@ -528,9 +668,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             self.write_indent(self.depth)?;
         }
         self.out.write_str(if v { "true" } else { "false" })?;
-        if self.in_flow == 0 {
-            self.newline()?;
-        }
+        self.write_end_of_scalar()?;
         Ok(())
     }
 
@@ -645,7 +783,9 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
 
     fn serialize_str(self, v: &str) -> Result<()> {
         if let Some(style) = self.pending_str_style.take() {
-            // Emit block string
+            // Emit block string. If we are a mapping value, YAML requires a space after ':'.
+            // Insert it now if pending.
+            self.write_space_if_pending()?;
             if self.at_line_start {
                 self.write_indent(self.depth)?;
             }
@@ -910,6 +1050,8 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             Ok(TupleSer::anchor_strong(self))
         } else if name == NAME_TUPLE_WEAK {
             Ok(TupleSer::anchor_weak(self))
+        } else if name == NAME_TUPLE_COMMENTED {
+            Ok(TupleSer::commented(self))
         } else {
             // Treat as normal block sequence
             Ok(TupleSer::normal(self))
@@ -1157,11 +1299,14 @@ pub struct TupleSer<'a, 'b, W: Write> {
     skip_third: bool,
     /// For weak anchors: hold alias id if value should be emitted as alias in field #3.
     weak_alias_id: Option<AnchorId>,
+    /// For commented wrapper: captured comment text from field #0.
+    comment_text: Option<String>,
 }
 enum TupleKind {
     Normal,       // treat as block seq
     AnchorStrong, // [ptr, value]
     AnchorWeak,   // [ptr, present, value]
+    Commented,    // [comment, value]
 }
 impl<'a, 'b, W: Write> TupleSer<'a, 'b, W> {
     /// Create a tuple serializer for normal tuple-structs.
@@ -1176,6 +1321,7 @@ impl<'a, 'b, W: Write> TupleSer<'a, 'b, W> {
             weak_present: false,
             skip_third: false,
             weak_alias_id: None,
+            comment_text: None,
         }
     }
     /// Create a tuple serializer for internal strong-anchor payloads.
@@ -1189,6 +1335,7 @@ impl<'a, 'b, W: Write> TupleSer<'a, 'b, W> {
             weak_present: false,
             skip_third: false,
             weak_alias_id: None,
+            comment_text: None,
         }
     }
     /// Create a tuple serializer for internal weak-anchor payloads.
@@ -1202,6 +1349,21 @@ impl<'a, 'b, W: Write> TupleSer<'a, 'b, W> {
             weak_present: false,
             skip_third: false,
             weak_alias_id: None,
+            comment_text: None,
+        }
+    }
+    /// Create a tuple serializer for internal commented wrapper.
+    fn commented(ser: &'a mut YamlSer<'b, W>) -> Self {
+        Self {
+            ser,
+            kind: TupleKind::Commented,
+            idx: 0,
+            depth_for_normal: 0,
+            strong_alias_id: None,
+            weak_present: false,
+            skip_third: false,
+            weak_alias_id: None,
+            comment_text: None,
         }
     }
 }
@@ -1295,6 +1457,39 @@ impl<'a, 'b, W: Write> SerializeTupleStruct for TupleSer<'a, 'b, W> {
                         }
                     }
                     _ => return Err(Error::unexpected("unexpected field in __yaml_weak_anchor")),
+                }
+            }
+            TupleKind::Commented => {
+                match self.idx {
+                    0 => {
+                        // Capture comment string
+                        let mut sc = StrCapture::default();
+                        value.serialize(&mut sc)?;
+                        self.comment_text = Some(sc.finish()?);
+                    }
+                    1 => {
+                        let comment = self.comment_text.take().unwrap_or_default();
+                        let is_scalar = scalar_key_to_string(value).is_ok();
+                        if is_scalar && self.ser.in_flow == 0 {
+                            // Serialize the scalar without trailing newline and then append the comment.
+                            self.ser.with_in_flow(|s| {
+                                value.serialize(&mut *s)?;
+                                if !comment.is_empty() {
+                                    s.out.write_str(" # ")?;
+                                    // Replace newlines in comment with spaces to keep it on one line
+                                    let sanitized = comment.replace('\n', " ");
+                                    s.out.write_str(&sanitized)?;
+                                }
+                                Ok(())
+                            })?;
+                            // End the line after leaving the flow context
+                            self.ser.newline()?;
+                        } else {
+                            // Complex value or inside flow: just serialize the value, ignore the comment
+                            value.serialize(&mut *self.ser)?;
+                        }
+                    }
+                    _ => return Err(Error::unexpected("unexpected field in __yaml_commented")),
                 }
             }
         }
@@ -1821,6 +2016,68 @@ impl<'a> Serializer for &'a mut BoolCapture {
 impl BoolCapture {
     fn finish(self) -> Result<bool> {
         self.v.ok_or_else(|| Error::unexpected("missing bool"))
+    }
+}
+
+/// Minimal serializer that captures a string from a serialized field.
+///
+/// Used internally to read the comment text for the Commented wrapper.
+#[derive(Default)]
+struct StrCapture {
+    s: Option<String>,
+}
+impl<'a> Serializer for &'a mut StrCapture {
+    type Ok = ();
+    type Error = Error;
+
+    type SerializeSeq = ser::Impossible<(), Error>;
+    type SerializeTuple = ser::Impossible<(), Error>;
+    type SerializeTupleStruct = ser::Impossible<(), Error>;
+    type SerializeTupleVariant = ser::Impossible<(), Error>;
+    type SerializeMap = ser::Impossible<(), Error>;
+    type SerializeStruct = ser::Impossible<(), Error>;
+    type SerializeStructVariant = ser::Impossible<(), Error>;
+
+    fn serialize_str(self, v: &str) -> Result<()> {
+        self.s = Some(v.to_string());
+        Ok(())
+    }
+
+    fn serialize_bool(self, _v: bool) -> Result<()> { unexpected_e() }
+    fn serialize_i8(self, _v: i8) -> Result<()> { unexpected_e() }
+    fn serialize_i16(self, _v: i16) -> Result<()> { unexpected_e() }
+    fn serialize_i32(self, _v: i32) -> Result<()> { unexpected_e() }
+    fn serialize_i64(self, _v: i64) -> Result<()> { unexpected_e() }
+    fn serialize_i128(self, _v: i128) -> Result<()> { unexpected_e() }
+    fn serialize_u8(self, _v: u8) -> Result<()> { unexpected_e() }
+    fn serialize_u16(self, _v: u16) -> Result<()> { unexpected_e() }
+    fn serialize_u32(self, _v: u32) -> Result<()> { unexpected_e() }
+    fn serialize_u64(self, _v: u64) -> Result<()> { unexpected_e() }
+    fn serialize_u128(self, _v: u128) -> Result<()> { unexpected_e() }
+    fn serialize_f32(self, _v: f32) -> Result<()> { unexpected_e() }
+    fn serialize_f64(self, _v: f64) -> Result<()> { unexpected_e() }
+    fn serialize_char(self, _c: char) -> Result<()> { unexpected_e() }
+    fn serialize_bytes(self, _v: &[u8]) -> Result<()> { unexpected_e() }
+    fn serialize_none(self) -> Result<()> { unexpected_e() }
+    fn serialize_some<T: ?Sized + Serialize>(self, _value: &T) -> Result<()> { unexpected_e() }
+    fn serialize_unit(self) -> Result<()> { unexpected_e() }
+    fn serialize_unit_struct(self, _name: &'static str) -> Result<()> { unexpected_e() }
+    fn serialize_unit_variant(self, _name: &'static str, _i: u32, _v: &'static str) -> Result<()> { unexpected_e() }
+    fn serialize_newtype_struct<T: ?Sized + Serialize>(self, _name: &'static str, _value: &T) -> Result<()> { unexpected_e() }
+    fn serialize_newtype_variant<T: ?Sized + Serialize>(self, _name: &'static str, _i: u32, _v: &'static str, _value: &T) -> Result<()> { unexpected_e() }
+    fn serialize_seq(self, _len: Option<usize>) -> Result<ser::Impossible<(), Error>> { unexpected() }
+    fn serialize_tuple(self, _len: usize) -> Result<ser::Impossible<(), Error>> { unexpected() }
+    fn serialize_tuple_struct(self, _name: &'static str, _len: usize) -> Result<ser::Impossible<(), Error>> { unexpected() }
+    fn serialize_tuple_variant(self, _name: &'static str, _i: u32, _v: &'static str, _len: usize) -> Result<ser::Impossible<(), Error>> { unexpected() }
+    fn serialize_map(self, _len: Option<usize>) -> Result<ser::Impossible<(), Error>> { unexpected() }
+    fn serialize_struct(self, _name: &'static str, _len: usize) -> Result<ser::Impossible<(), Error>> { unexpected() }
+    fn serialize_struct_variant(self, _name: &'static str, _i: u32, _v: &'static str, _len: usize) -> Result<ser::Impossible<(), Error>> { unexpected() }
+    fn collect_str<T: ?Sized + fmt::Display>(self, _value: &T) -> Result<()> { unexpected_e() }
+    fn is_human_readable(&self) -> bool { true }
+}
+impl StrCapture {
+    fn finish(self) -> Result<String> {
+        self.s.ok_or_else(|| Error::unexpected("missing string"))
     }
 }
 

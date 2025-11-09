@@ -6,7 +6,7 @@ use crate::parse_scalars::scalar_is_nullish;
 pub use crate::serializer_options::SerializerOptions;
 pub use anchors::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
 pub use de::{Budget, DuplicateKeyPolicy, Error, Location, Options};
-pub use ser::{FlowMap, FlowSeq, FoldStr, LitStr};
+pub use ser::{Commented, FlowMap, FlowSeq, FoldStr, LitStr};
 use serde::de::DeserializeOwned;
 use std::io::Read;
 
