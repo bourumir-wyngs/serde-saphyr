@@ -105,7 +105,10 @@ pub struct FlowMap<T>(pub T);
 /// assert_eq!(out, "n: 5 # send five starships first\n");
 /// ```
 ///
-/// *Important*: Comments are suppressed in flow contexts (no `#` appears), and ignored for complex inner values.
+/// *Important*: Comments are suppressed in flow contexts (no `#` appears), and
+/// ignored for complex inner values. Value with `Commented` wrapper will be
+/// deserializaed correctly as well, but deserialization of comment is
+/// currently not supported.
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Commented<T>(pub T, pub String);
