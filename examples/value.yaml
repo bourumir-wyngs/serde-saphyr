@@ -1,0 +1,47 @@
+# Example data file for `examples/from_reader.rs`
+# Usage:
+#   cargo run --example from_reader -- value.yaml
+
+name: "serde-saphyr demo"
+version: 1
+enabled: true
+
+tags:
+  - yaml
+  - example
+  - reader
+
+# Nested mapping
+server:
+  host: localhost
+  port: 8080
+  tls: false
+
+# Mixed types with list of objects
+users:
+  - id: 1
+    name: Alice
+    roles: [admin, editor]
+  - id: 2
+    name: Bob
+    roles:
+      - viewer
+
+# Arbitrary key/value map
+metadata:
+  project: serde-saphyr
+  generated_by: "assistant"
+  generated_at: "2025-11-10T11:33:00Z"
+
+# Multiline (block scalar) text
+notes: |
+  This YAML file is intended to be read by the from_reader example.
+  It demonstrates a variety of YAML features:
+  - scalars (strings, numbers, booleans)
+  - sequences (lists)
+  - mappings (objects)
+  - nested structures
+  - block scalar for multiline text
+
+# Simple list of numbers
+numbers: [1, 2, 3, 4, 5]

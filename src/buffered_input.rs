@@ -12,9 +12,6 @@ use std::cell::RefCell;
 use std::io::{self, BufReader, Error, Read};
 use std::rc::Rc;
 
-/// IO error replacement char
-pub(crate) const IO_ERROR_CHAR: char = '\u{FFFD}';
-
 pub struct ChunkedChars<R: Read> {
     /// Optional hard cap on total decoded UTF-8 bytes yielded by this iterator.
     max_bytes: Option<usize>,
@@ -23,15 +20,6 @@ pub struct ChunkedChars<R: Read> {
     /// The underlying reader that already yields UTF-8 bytes (typically a
     /// `BufReader<DecodeReaderBytes<...>>`). It is read incrementally.
     reader: R,
-    /// Buffer holding the currently available decoded UTF-8 slice that hasn't
-    /// been fully iterated yet.
-    buf: String,
-    /// Byte index into `buf` pointing at the start of the next character to
-    /// return from the iterator.
-    idx: usize,
-    /// Reusable temporary byte buffer used to read the next chunk from
-    /// `reader` before converting it into `buf`.
-    tmp: Vec<u8>,
     /// Remember IO error, if any, here to report it later. This must be shared,
     /// as otherwise we cannot later reach with Saphyr parser API
     pub(crate) err: Rc<RefCell<Option<Error>>>,
@@ -47,56 +35,7 @@ impl<R: Read> ChunkedChars<R> {
             max_bytes,
             total_bytes: 0,
             reader,
-            buf: String::new(),
-            idx: 0,
-            tmp: vec![0u8; 8 * 1024],
             err,
-        }
-    }
-
-    /// Refill `buf` with the next chunk of decoded UTF-8.
-    ///
-    /// Returns `Ok(true)` when new data has been loaded into `buf`,
-    /// `Ok(false)` on EOF, or an `Err` if the underlying reader
-    /// returned an I/O error.
-    #[inline]
-    fn refill(&mut self) -> io::Result<bool> {
-        // Defensive: cap the number of consecutive iterations that do not
-        // make progress (should never happen with a well-behaved reader/decoder).
-        let mut spin_guards = 0;
-        loop {
-            let n = self.reader.read(&mut self.tmp)?;
-            if n == 0 {
-                return Ok(false); // EOF
-            }
-            // Safe: reader is guaranteed to output valid UTF-8.
-            let s = std::str::from_utf8(&self.tmp[..n])
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-            if !s.is_empty() {
-                // Enforce byte limit on decoded bytes if configured
-                if let Some(limit) = self.max_bytes {
-                    self.total_bytes = self.total_bytes.saturating_add(s.len());
-                    if self.total_bytes > limit {
-                        return Err(io::Error::new(
-                            io::ErrorKind::FileTooLarge,
-                            format!("input size limit of {limit} bytes exceeded"),
-                        ));
-                    }
-                }
-                self.buf.clear();
-                self.buf.push_str(s);
-                self.idx = 0;
-                return Ok(true);
-            }
-            // If we somehow got empty (can only happen with buggy Read), try again a few times
-            // then stop.
-            spin_guards += 1;
-            if spin_guards > 128 {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "read keeps returning Ok(0) 128 times without EOF",
-                ));
-            }
         }
     }
 }
@@ -108,21 +47,79 @@ impl<R: Read> Iterator for ChunkedChars<R> {
     /// If error occurs, sets the error field that is a shared reference to the
     /// error value, so that the parser can later pick this up.
     fn next(&mut self) -> Option<char> {
-        loop {
-            if self.idx < self.buf.len() {
-                // Read one char and advance by its UTF-8 byte width.
-                let ch = self.buf[self.idx..].chars().next().unwrap_or(IO_ERROR_CHAR);
-                self.idx += ch.len_utf8();
-                return Some(ch);
-            }
-            // Need more data.
-            match self.refill() {
-                Ok(true) => continue,
-                Ok(false) => return None, // EOF
-                Err(error) => {
-                    self.err.replace(Some(error));
-                    return None; // Return EOF, err will be checked later.
+        // Read exactly one UTF-8 codepoint (1..=4 bytes) from the underlying reader.
+        // No internal buffering: rely on the outer BufReader and decoder.
+        let mut buf = [0u8; 4];
+        // Read first byte
+        if let Err(e) = self.reader.read_exact(&mut buf[..1]) {
+            match e.kind() {
+                io::ErrorKind::UnexpectedEof => return None, // true EOF
+                _ => {
+                    self.err.replace(Some(e));
+                    return None;
                 }
+            }
+        }
+        let first = buf[0];
+        let needed = if first < 0x80 {
+            1
+        } else if first & 0b1110_0000 == 0b1100_0000 {
+            2
+        } else if first & 0b1111_0000 == 0b1110_0000 {
+            3
+        } else if first & 0b1111_1000 == 0b1111_0000 {
+            4
+        } else {
+            // Invalid leading byte
+            self.err.replace(Some(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid UTF-8 leading byte",
+            )));
+            return None;
+        };
+
+        if needed > 1 {
+            let mut read = 0;
+            while read < needed - 1 {
+                match self.reader.read(&mut buf[1 + read..needed]) {
+                    Ok(0) => {
+                        self.err.replace(Some(io::Error::new(
+                            io::ErrorKind::UnexpectedEof,
+                            "unexpected EOF in middle of UTF-8 codepoint",
+                        )));
+                        return None;
+                    }
+                    Ok(n) => read += n,
+                    Err(e) => {
+                        self.err.replace(Some(e));
+                        return None;
+                    }
+                }
+            }
+        }
+
+        // Enforce byte limit if configured
+        let add = needed;
+        if let Some(limit) = self.max_bytes {
+            let new_total = self.total_bytes.saturating_add(add);
+            if new_total > limit {
+                self.err.replace(Some(io::Error::new(
+                    io::ErrorKind::FileTooLarge,
+                    format!("input size limit of {limit} bytes exceeded"),
+                )));
+                return None;
+            }
+            self.total_bytes = new_total;
+        } else {
+            self.total_bytes = self.total_bytes.saturating_add(add);
+        }
+
+        // Validate assembled bytes as UTF-8 and extract the char
+        match std::str::from_utf8(&buf[..needed]) {
+            Ok(s) => s.chars().next(),
+            Err(e) => {
+                self.err.replace(Some(io::Error::new(io::ErrorKind::InvalidData, e)));
+                None
             }
         }
     }
