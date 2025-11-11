@@ -4,9 +4,8 @@ use serde_saphyr::Error;
 
 #[test]
 fn null_key() {
-    let value: serde_json::Value = serde_saphyr::from_str(r#"null: "key_value""#).unwrap();
-    let json_str = serde_json::to_string(&value).unwrap();
-    assert_eq!("{\"null\":\"key_value\"}", json_str);
+    let value: Result<serde_json::Value, Error> = serde_saphyr::from_str(r#"null: "key_value"#);
+    assert!(value.is_err());
 }
 
 #[test]

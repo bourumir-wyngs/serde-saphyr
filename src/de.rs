@@ -512,6 +512,10 @@ impl Events for ReplayEvents {
 pub(crate) struct Deser<'e> {
     ev: &'e mut dyn Events,
     cfg: Cfg,
+    /// True when deserializing a map key.
+    in_key: bool,
+    /// True when the recorded key node was exactly an empty mapping (MapStart followed by MapEnd).
+    key_empty_map_node: bool,
 }
 
 impl<'e> Deser<'e> {
@@ -527,7 +531,7 @@ impl<'e> Deser<'e> {
     /// Called by:
     /// - Top-level entry points and recursively for nested values.
     pub(crate) fn new(ev: &'e mut dyn Events, cfg: Cfg) -> Self {
-        Self { ev, cfg }
+        Self { ev, cfg, in_key: false, key_empty_map_node: false }
     }
 
     /// Consume the next scalar event and return `(value, tag, location)`.
@@ -885,8 +889,27 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
 
     /// Deserialize an owned string (with `!!binary` UTF-8 support).
     ///
+    /// Null semantics:
+    /// - Tagged null or plain null-like scalars (empty, `~`, or case-insensitive `null`) are not valid `String`.
+    ///   Suggest using `Option<String>` for such YAML values.
+    /// - Quoted "null" and quoted empty strings are treated as normal strings and allowed.
+    ///
     /// **From/To:** scalar text (or base64-decoded bytes) → `Visitor::visit_string`.
     fn deserialize_string<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
+        // Reject YAML null when deserializing into String. Allow quoted forms.
+        if let Some(next) = self.ev.peek()? {
+            if let Ev::Scalar { tag, style, value, .. } = next {
+                // If explicitly tagged as null, or plain null-like, this is not a valid String.
+                if tag != &SfTag::String {
+                    if tag == &SfTag::Null || scalar_is_nullish(value, style) {
+                        // Consume the scalar to anchor the error at the correct location.
+                        let (_value, _tag, location) = self.take_scalar_event()?;
+                        return Err(Error::msg("cannot deserialize null into string; use Option<String>")
+                            .with_location(location));
+                    }
+                }
+            }
+        }
         visitor.visit_string(self.take_string_scalar()?)
     }
 
@@ -959,6 +982,27 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
     /// that is empty-unquoted / `~` / `null` in plain style.
     fn deserialize_option<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
         // Only when Serde asks for Option<T> do we interpret YAML null-like scalars as None.
+        // Special-case for map keys: treat an explicit empty key captured as an empty mapping node
+        // as None when the target is Option<T>. This is scoped strictly to key position to avoid
+        // conflating a literal empty mapping `{}` with null for non-Option targets.
+        if self.in_key && self.key_empty_map_node {
+            // Recorded key is an empty mapping: treat as None for Option<T> in key position
+            match self.ev.next()? {
+                Some(Ev::MapStart { .. }) => {}
+                Some(other) => {
+                    return Err(Error::unexpected("empty mapping start").with_location(other.location()))
+                }
+                None => return Err(Error::eof().with_location(self.ev.last_location())),
+            }
+            match self.ev.next()? {
+                Some(Ev::MapEnd { .. }) => {}
+                Some(other) => {
+                    return Err(Error::unexpected("empty mapping end").with_location(other.location()))
+                }
+                None => return Err(Error::eof().with_location(self.ev.last_location())),
+            }
+            return visitor.visit_none();
+        }
         match self.ev.peek()? {
             // End of input → None
             None => visitor.visit_none(),
@@ -1289,12 +1333,13 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                 &mut self,
                 seed: K,
                 events: Vec<Ev>,
+                kemn: bool,
             ) -> Result<K::Value, Error>
             where
                 K: de::DeserializeSeed<'de>,
             {
                 let mut replay = ReplayEvents::new(events);
-                let de = Deser::new(&mut replay, self.cfg);
+                let de = Deser { ev: &mut replay, cfg: self.cfg, in_key: true, key_empty_map_node: kemn };
                 seed.deserialize(de)
             }
 
@@ -1362,10 +1407,67 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                             }
                         }
 
-                        let value_events = value.events;
+                        let mut value_events = value.events;
+                        // Special-case: explicit empty key captured as a one-entry mapping { null: V }
+                        // In this case, we want key=None and the outer value to be V.
+                        let mut events = events;
+                        let kemn_direct = matches!(fingerprint, KeyFingerprint::Mapping(ref v) if v.is_empty());
+                        let mut kemn = kemn_direct;
+                        if !kemn {
+                            if let KeyFingerprint::Mapping(ref pairs) = fingerprint {
+                                if pairs.len() == 1 {
+                                    if let (KeyFingerprint::Scalar { value: sv, tag: stag }, _) = &pairs[0] {
+                                        let is_nullish = *stag == SfTag::Null
+                                            || sv.is_empty()
+                                            || sv == "~"
+                                            || sv.eq_ignore_ascii_case("null");
+                                        if is_nullish {
+                                            // Parse inner value events from recorded key events
+                                            let mut replay = ReplayEvents::new(events.clone());
+                                            // Expect MapStart
+                                            match replay.next()? { Some(Ev::MapStart { .. }) => {}, _ => {} }
+                                            // Capture inner key and inner value
+                                            let _inner_key = capture_node(&mut replay)?;
+                                            let inner_value = capture_node(&mut replay)?;
+                                            // Ensure MapEnd follows
+                                            match replay.next()? { Some(Ev::MapEnd { .. }) => {}, _ => {} }
+                                            // Replace value_events with inner value events and key events with empty map
+                                            value_events = inner_value.events;
+                                            // Build empty map events using the first and last from original events
+                                            // If the recorded events are unexpectedly empty, return a structured error instead of panicking.
+                                            let start = match events.first() {
+                                                Some(Ev::MapStart { anchor, location }) => Ev::MapStart { anchor: *anchor, location: *location },
+                                                Some(other) => other.clone(),
+                                                None => {
+                                                    return Err(Error::unexpected("mapping start").with_location(location));
+                                                }
+                                            };
+                                            let end = match events.last() {
+                                                Some(Ev::MapEnd { location }) => Ev::MapEnd { location: *location },
+                                                Some(other) => other.clone(),
+                                                None => {
+                                                    return Err(Error::unexpected("mapping end").with_location(location));
+                                                }
+                                            };
+                                            events = vec![start, end];
+                                            kemn = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        let key_seed = match seed.take() {
+                            Some(s) => s,
+                            None => {
+                                return Err(
+                                    Error::msg("internal error: seed reused for map key").with_location(location)
+                                );
+                            }
+                        };
                         let key_value = self.deserialize_recorded_key(
-                            seed.take().expect("seed reused for map key"),
+                            key_seed,
                             events,
+                            kemn,
                         )?;
                         self.have_key = true;
                         self.pending_value = Some(value_events);
@@ -1431,18 +1533,13 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                                 DuplicateKeyPolicy::LastWins => {}
                             }
 
-                            let KeyNode {
-                                fingerprint,
-                                events,
-                                location: _,
-                            } = key_node;
-                            let key = self.deserialize_recorded_key(
-                                seed.take().expect("seed reused for map key"),
-                                events,
-                            )?;
-                            self.have_key = true;
-                            self.seen.insert(fingerprint);
-                            return Ok(Some(key));
+                            // Capture the value node now so we can handle edge cases and feed from pending.
+                            let value_node = capture_node(self.ev)?;
+                            // Enqueue this pair to pending and process via the recorded-entries path,
+                            // which has key-context Option-handling and supports using recorded events.
+                            self.enqueue_entries(vec![PendingEntry { key: key_node, value: value_node }]);
+                            // Loop will pick from pending in the next iteration.
+                            continue;
                         }
                         None => return Err(Error::eof().with_location(self.ev.last_location())),
                     }

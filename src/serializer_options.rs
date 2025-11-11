@@ -15,7 +15,7 @@
 //!     indent_step: 4,
 //!     anchor_generator: Some(|id| format!("id{}/", id)),
 //! };
-//! serde_saphyr::to_writer_with_options(&mut buf, &Item { a: 1, b: true }, opts).unwrap();
+//! serde_saphyr::to_fmt_writer_with_options(&mut buf, &Item { a: 1, b: true }, opts).unwrap();
 //! assert!(buf.contains("a: 1"));
 //! ```
 #[derive(Clone, Copy)]

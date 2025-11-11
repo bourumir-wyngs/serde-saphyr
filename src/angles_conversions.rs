@@ -32,10 +32,11 @@
 use core::f64::consts::PI;
 use core::str::FromStr;
 
+
 // small constants / guards
 const DEG2RAD: f64 = PI / 180.0;
-const MAX_EXPR_DEPTH: u32 = 256;          // guard against deeply nested parentheses/functions
-const MAX_NUM_DIGITS: usize = 1_000_000;  // cap digits in a single numeric token (DoS mitigation)
+const MAX_EXPR_DEPTH: u32 = 256; // guard against deeply nested parentheses/functions
+const MAX_NUM_DIGITS: usize = 1_000_000; // cap digits in a single numeric token (DoS mitigation)
 
 // Adjust imports to your crate layout:
 use crate::tags::SfTag;
@@ -48,11 +49,15 @@ pub trait FromF64 {
 }
 impl FromF64 for f64 {
     #[inline]
-    fn from_f64(v: f64) -> Self { v }
+    fn from_f64(v: f64) -> Self {
+        v
+    }
 }
 impl FromF64 for f32 {
     #[inline]
-    fn from_f64(v: f64) -> Self { v as f32 }
+    fn from_f64(v: f64) -> Self {
+        v as f32
+    }
 }
 
 // Evaluator result: (value, used_unitized, saw_plain_outside)
@@ -98,9 +103,9 @@ where
 /* ----------------------------- Parser impl ------------------------------ */
 
 struct Parser<'a> {
-    s:   &'a str,
-    b:   &'a [u8],
-    i:   usize,
+    s: &'a str,
+    b: &'a [u8],
+    i: usize,
     loc: Location,
     depth: u32,
     tag: SfTag,
@@ -110,21 +115,61 @@ struct Parser<'a> {
 impl<'a> Parser<'a> {
     fn new(s: &'a str, loc: Location, tag: SfTag) -> Self {
         // Default: time semantics for hh:mm[:ss] → seconds
-        Self { s, b: s.as_bytes(), i: 0, loc, depth: 0, tag, sexagesimal_is_time: true }
+        Self {
+            s,
+            b: s.as_bytes(),
+            i: 0,
+            loc,
+            depth: 0,
+            tag,
+            sexagesimal_is_time: true,
+        }
     }
-    #[inline] fn eof(&self) -> bool { self.i >= self.b.len() }
-    #[inline] fn peek(&self) -> Option<u8> { self.b.get(self.i).copied() }
-    #[inline] fn bump(&mut self) -> Option<u8> { let c = self.peek()?; self.i += 1; Some(c) }
-    #[inline] fn is_ws(c: u8) -> bool { matches!(c, b' ' | b'\t' | b'\n' | b'\r') }
-    fn skip_ws(&mut self) { while let Some(c) = self.peek() { if !Self::is_ws(c) { break; } self.i += 1; } }
+    #[inline]
+    fn eof(&self) -> bool {
+        self.i >= self.b.len()
+    }
+    #[inline]
+    fn peek(&self) -> Option<u8> {
+        self.b.get(self.i).copied()
+    }
+    #[inline]
+    fn bump(&mut self) -> Option<u8> {
+        let c = self.peek()?;
+        self.i += 1;
+        Some(c)
+    }
+    #[inline]
+    fn is_ws(c: u8) -> bool {
+        matches!(c, b' ' | b'\t' | b'\n' | b'\r')
+    }
+    fn skip_ws(&mut self) {
+        while let Some(c) = self.peek() {
+            if !Self::is_ws(c) {
+                break;
+            }
+            self.i += 1;
+        }
+    }
     fn err(&self, msg: &str) -> Error {
-        Error::HookError { msg: msg.to_string(), location: self.loc }
+        Error::HookError {
+            msg: msg.to_string(),
+            location: self.loc,
+        }
     }
-    #[inline] fn enter(&mut self) -> Result<(), Error> {
-        if self.depth >= MAX_EXPR_DEPTH { return Err(self.err("expression too deeply nested")); }
-        self.depth += 1; Ok(())
+    #[inline]
+    fn enter(&mut self) -> Result<(), Error> {
+        if self.depth >= MAX_EXPR_DEPTH {
+            return Err(self.err("expression too deeply nested"));
+        }
+        self.depth += 1;
+        Ok(())
     }
-    #[inline] fn exit(&mut self) { debug_assert!(self.depth > 0); self.depth -= 1; }
+    #[inline]
+    fn exit(&mut self) {
+        debug_assert!(self.depth > 0);
+        self.depth -= 1;
+    }
 
     /// expr := term (('+'|'-') term)*
     fn expr(&mut self) -> Result<Eval, Error> {
@@ -135,12 +180,16 @@ impl<'a> Parser<'a> {
                 Some(b'+') => {
                     self.bump();
                     let (rhs, uu, sp) = self.term()?;
-                    v += rhs; used_unit |= uu; saw_plain |= sp;
+                    v += rhs;
+                    used_unit |= uu;
+                    saw_plain |= sp;
                 }
                 Some(b'-') => {
                     self.bump();
                     let (rhs, uu, sp) = self.term()?;
-                    v -= rhs; used_unit |= uu; saw_plain |= sp;
+                    v -= rhs;
+                    used_unit |= uu;
+                    saw_plain |= sp;
                 }
                 _ => break,
             }
@@ -157,12 +206,16 @@ impl<'a> Parser<'a> {
                 Some(b'*') => {
                     self.bump();
                     let (rhs, uu, sp) = self.unary()?;
-                    v *= rhs; used_unit |= uu; saw_plain |= sp;
+                    v *= rhs;
+                    used_unit |= uu;
+                    saw_plain |= sp;
                 }
                 Some(b'/') => {
                     self.bump();
                     let (rhs, uu, sp) = self.unary()?;
-                    v /= rhs; used_unit |= uu; saw_plain |= sp;
+                    v /= rhs;
+                    used_unit |= uu;
+                    saw_plain |= sp;
                 }
                 _ => break,
             }
@@ -176,8 +229,13 @@ impl<'a> Parser<'a> {
         let mut sign = 1.0;
         loop {
             match self.peek() {
-                Some(b'+') => { self.bump(); }
-                Some(b'-') => { self.bump(); sign = -sign; }
+                Some(b'+') => {
+                    self.bump();
+                }
+                Some(b'-') => {
+                    self.bump();
+                    sign = -sign;
+                }
                 _ => break,
             }
         }
@@ -219,11 +277,19 @@ impl<'a> Parser<'a> {
     /// Parse a number/special/sexagesimal.
     fn parse_number_or_special(&mut self) -> Result<Eval, Error> {
         // `.inf` / `.nan` (case-insensitive)
-        if self.starts_ci(".inf") { self.i += 4; return Ok((f64::INFINITY, false, true)); }
-        if self.starts_ci(".nan") { self.i += 4; return Ok((f64::NAN,      false, true)); }
+        if self.starts_ci(".inf") {
+            self.i += 4;
+            return Ok((f64::INFINITY, false, true));
+        }
+        if self.starts_ci(".nan") {
+            self.i += 4;
+            return Ok((f64::NAN, false, true));
+        }
 
         // Sexagesimal look-ahead (starts with digits or '.'? only digits make sense here):
-        if let Some(res) = self.try_parse_sexagesimal()? { return Ok(res); }
+        if let Some(res) = self.try_parse_sexagesimal()? {
+            return Ok(res);
+        }
 
         // Regular float with optional underscores
         let start = self.i;
@@ -233,7 +299,9 @@ impl<'a> Parser<'a> {
         // integer part (optional if we start with '.')
         while let Some(c) = self.peek() {
             if c.is_ascii_digit() {
-                digits_seen += 1; buf.push(c); self.i += 1;
+                digits_seen += 1;
+                buf.push(c);
+                self.i += 1;
             } else if c == b'_' {
                 // underscore must be between digits
                 let next = self.b.get(self.i + 1).copied();
@@ -242,29 +310,41 @@ impl<'a> Parser<'a> {
                     return Err(self.err("invalid underscore placement in number"));
                 }
                 self.i += 1; // skip underscore
-            } else { break; }
-            if digits_seen > MAX_NUM_DIGITS { return Err(self.err("too many digits in numeric literal")); }
+            } else {
+                break;
+            }
+            if digits_seen > MAX_NUM_DIGITS {
+                return Err(self.err("too many digits in numeric literal"));
+            }
         }
 
         // fraction
         if let Some(b'.') = self.peek() {
-            buf.push(b'.'); self.i += 1;
+            buf.push(b'.');
+            self.i += 1;
             let frac_start_i = self.i;
             let mut had_digit = false;
             while let Some(c) = self.peek() {
                 if c.is_ascii_digit() {
                     had_digit = true;
-                    digits_seen += 1; buf.push(c); self.i += 1;
+                    digits_seen += 1;
+                    buf.push(c);
+                    self.i += 1;
                 } else if c == b'_' {
                     // underscore must be between digits
                     let next = self.b.get(self.i + 1).copied();
-                    let prev_is_digit = self.i > frac_start_i && self.b[self.i - 1].is_ascii_digit();
+                    let prev_is_digit =
+                        self.i > frac_start_i && self.b[self.i - 1].is_ascii_digit();
                     if !prev_is_digit || !matches!(next, Some(nc) if nc.is_ascii_digit()) {
                         return Err(self.err("invalid underscore placement in fraction"));
                     }
                     self.i += 1; // skip underscore
-                } else { break; }
-                if digits_seen > MAX_NUM_DIGITS { return Err(self.err("too many digits in numeric literal")); }
+                } else {
+                    break;
+                }
+                if digits_seen > MAX_NUM_DIGITS {
+                    return Err(self.err("too many digits in numeric literal"));
+                }
             }
             // allow "10." (no digits after dot)
             let _ = had_digit;
@@ -272,14 +352,27 @@ impl<'a> Parser<'a> {
 
         // exponent: e[+|-]?digits (digits may contain underscores between digits)
         if matches!(self.peek(), Some(b'e' | b'E')) {
-            buf.push(self.bump().unwrap()); // 'e' or 'E'
-            if matches!(self.peek(), Some(b'+' | b'-')) { buf.push(self.bump().unwrap()); }
+            // Safe to unwrap previously because we checked with peek; avoid unwrap by matching again.
+            if let Some(c) = self.bump() {
+                buf.push(c);
+            } else {
+                return Err(self.err("expected exponent marker"));
+            }
+            if matches!(self.peek(), Some(b'+' | b'-')) {
+                if let Some(sign) = self.bump() {
+                    buf.push(sign);
+                } else {
+                    return Err(self.err("expected sign after exponent marker"));
+                }
+            }
             let exp_start = self.i;
             let mut have_digit = false;
             while let Some(c) = self.peek() {
                 if c.is_ascii_digit() {
                     have_digit = true;
-                    digits_seen += 1; buf.push(c); self.i += 1;
+                    digits_seen += 1;
+                    buf.push(c);
+                    self.i += 1;
                 } else if c == b'_' {
                     let next = self.b.get(self.i + 1).copied();
                     let prev_is_digit = self.i > exp_start && self.b[self.i - 1].is_ascii_digit();
@@ -287,10 +380,16 @@ impl<'a> Parser<'a> {
                         return Err(self.err("invalid underscore placement in exponent"));
                     }
                     self.i += 1; // skip underscore
-                } else { break; }
-                if digits_seen > MAX_NUM_DIGITS { return Err(self.err("too many digits in numeric literal")); }
+                } else {
+                    break;
+                }
+                if digits_seen > MAX_NUM_DIGITS {
+                    return Err(self.err("too many digits in numeric literal"));
+                }
             }
-            if !have_digit { return Err(self.err("malformed exponent")); }
+            if !have_digit {
+                return Err(self.err("malformed exponent"));
+            }
         }
 
         if buf.is_empty() {
@@ -302,7 +401,10 @@ impl<'a> Parser<'a> {
             }
         } else {
             // underscores removed in buf
-            match f64::from_str(core::str::from_utf8(&buf).unwrap()) {
+            match core::str::from_utf8(&buf)
+                .map_err(|_| self.err("invalid utf-8 in numeric literal"))
+                .and_then(|s| f64::from_str(s).map_err(|_| self.err("invalid float literal")))
+            {
                 Ok(v) => Ok((v, false, true)),
                 Err(_) => Err(self.err("invalid float literal")),
             }
@@ -313,32 +415,42 @@ impl<'a> Parser<'a> {
     fn parse_ident_or_special(&mut self) -> Result<Eval, Error> {
         let start = self.i;
         while let Some(c) = self.peek() {
-            if is_ident_cont(c) { self.i += 1; } else { break; }
+            if is_ident_cont(c) {
+                self.i += 1;
+            } else {
+                break;
+            }
         }
         let ident = &self.s[start..self.i];
         let ident_lc = ident.to_ascii_lowercase();
 
         match ident_lc.as_str() {
-            "pi"  => Ok((PI,           false, true)),
-            "tau" => Ok((2.0 * PI,     false, true)),
-            "inf" => Ok((f64::INFINITY,false, true)),
-            "nan" => Ok((f64::NAN,     false, true)),
+            "pi" => Ok((PI, false, true)),
+            "tau" => Ok((2.0 * PI, false, true)),
+            "inf" => Ok((f64::INFINITY, false, true)),
+            "nan" => Ok((f64::NAN, false, true)),
             "deg" | "rad" => {
                 self.skip_ws();
-                if self.bump() != Some(b'(') { return Err(self.err("expected '(' after function name")); }
+                if self.bump() != Some(b'(') {
+                    return Err(self.err("expected '(' after function name"));
+                }
                 // Inside unit functions, treat sexagesimal as degrees (angle) rather than time.
                 let old_mode = self.sexagesimal_is_time;
                 self.sexagesimal_is_time = false;
-                self.enter()?; let r = self.expr(); self.exit();
+                self.enter()?;
+                let r = self.expr();
+                self.exit();
                 self.sexagesimal_is_time = old_mode;
                 let (v, _used_inner, _plain_inner) = r?;
                 self.skip_ws();
-                if self.bump() != Some(b')') { return Err(self.err("expected ')' after function argument")); }
+                if self.bump() != Some(b')') {
+                    return Err(self.err("expected ')' after function argument"));
+                }
 
                 let used_unit = true;
                 match ident_lc.as_str() {
                     "deg" => Ok((v * DEG2RAD, used_unit, false)),
-                    "rad" => Ok((v,          used_unit, false)),
+                    "rad" => Ok((v, used_unit, false)),
                     _ => unreachable!(),
                 }
             }
@@ -349,7 +461,9 @@ impl<'a> Parser<'a> {
     #[inline]
     fn starts_ci(&self, kw: &str) -> bool {
         let end = self.i + kw.len();
-        if end > self.b.len() { return false; }
+        if end > self.b.len() {
+            return false;
+        }
         self.s[self.i..end].eq_ignore_ascii_case(kw)
     }
 
@@ -364,22 +478,38 @@ impl<'a> Parser<'a> {
         let mut last_underscore = false;
         while let Some(c) = self.b.get(j).copied() {
             if c.is_ascii_digit() {
-                saw_digit = true; last_underscore = false; j += 1;
+                saw_digit = true;
+                last_underscore = false;
+                j += 1;
             } else if c == b'_' {
-                if !saw_digit || last_underscore { break; }
-                last_underscore = true; j += 1;
-            } else { break; }
+                if !saw_digit || last_underscore {
+                    break;
+                }
+                last_underscore = true;
+                j += 1;
+            } else {
+                break;
+            }
         }
-        if !saw_digit || last_underscore { return Ok(None); }
-        if self.b.get(j).copied() != Some(b':') { return Ok(None); }
+        if !saw_digit || last_underscore {
+            return Ok(None);
+        }
+        if self.b.get(j).copied() != Some(b':') {
+            return Ok(None);
+        }
 
         // degrees (D in D:M[:S[.frac]])
         let (deg_whole, d1) = self.read_uint_unders_to_f64()?;
-        if self.bump() != Some(b':') { self.i = save; return Ok(None); }
+        if self.bump() != Some(b':') {
+            self.i = save;
+            return Ok(None);
+        }
 
         // minutes
         let (mins_u, d2) = self.read_uint_unders_to_u32()?;
-        if mins_u > 59 { return Err(self.err("minutes out of range in sexagesimal literal")); }
+        if mins_u > 59 {
+            return Err(self.err("minutes out of range in sexagesimal literal"));
+        }
 
         let mut secs: f64 = 0.0;
         let mut total_digits = d1 + d2;
@@ -387,7 +517,9 @@ impl<'a> Parser<'a> {
         if let Some(b':') = self.peek() {
             self.bump();
             let (secs_u, d3) = self.read_uint_unders_to_u32()?;
-            if secs_u > 59 { return Err(self.err("seconds out of range in sexagesimal literal")); }
+            if secs_u > 59 {
+                return Err(self.err("seconds out of range in sexagesimal literal"));
+            }
             total_digits += d3;
             secs = secs_u as f64;
 
@@ -436,17 +568,26 @@ impl<'a> Parser<'a> {
         while let Some(c) = self.peek() {
             if c.is_ascii_digit() {
                 v = v * 10.0 + (c - b'0') as f64;
-                self.i += 1; digits += 1; prev_is_digit = true;
+                self.i += 1;
+                digits += 1;
+                prev_is_digit = true;
             } else if c == b'_' {
                 let next = self.b.get(self.i + 1).copied();
                 if !prev_is_digit || !matches!(next, Some(nc) if nc.is_ascii_digit()) {
                     return Err(self.err("invalid underscore placement in integer field"));
                 }
-                self.i += 1; prev_is_digit = false;
-            } else { break; }
-            if digits > MAX_NUM_DIGITS { return Err(self.err("too many digits in integer field")); }
+                self.i += 1;
+                prev_is_digit = false;
+            } else {
+                break;
+            }
+            if digits > MAX_NUM_DIGITS {
+                return Err(self.err("too many digits in integer field"));
+            }
         }
-        if digits == 0 { return Err(self.err("expected digits")); }
+        if digits == 0 {
+            return Err(self.err("expected digits"));
+        }
         debug_assert!(self.i > start);
         Ok((v, digits))
     }
@@ -454,7 +595,9 @@ impl<'a> Parser<'a> {
     /// Read unsigned integer with underscores to u32. Returns (value, digit_count).
     fn read_uint_unders_to_u32(&mut self) -> Result<(u32, usize), Error> {
         let (v_f, d) = self.read_uint_unders_to_f64()?;
-        if v_f > u32::MAX as f64 { return Err(self.err("numeric field too large")); }
+        if v_f > u32::MAX as f64 {
+            return Err(self.err("numeric field too large"));
+        }
         Ok((v_f as u32, d))
     }
 
@@ -467,44 +610,68 @@ impl<'a> Parser<'a> {
         const MAX_FRAC_DIGITS: usize = 18; // enough for f64 precision
         while let Some(c) = self.peek() {
             if c.is_ascii_digit() {
-                if digits < MAX_FRAC_DIGITS { num = num * 10.0 + (c - b'0') as f64; scale *= 10.0; }
-                self.i += 1; digits += 1; prev_is_digit = true;
+                if digits < MAX_FRAC_DIGITS {
+                    num = num * 10.0 + (c - b'0') as f64;
+                    scale *= 10.0;
+                }
+                self.i += 1;
+                digits += 1;
+                prev_is_digit = true;
             } else if c == b'_' {
                 let next = self.b.get(self.i + 1).copied();
                 if !prev_is_digit || !matches!(next, Some(nc) if nc.is_ascii_digit()) {
                     return Err(self.err("invalid underscore placement in fraction"));
                 }
-                self.i += 1; prev_is_digit = false;
-            } else { break; }
-            if digits > MAX_NUM_DIGITS { return Err(self.err("too many digits in fraction")); }
+                self.i += 1;
+                prev_is_digit = false;
+            } else {
+                break;
+            }
+            if digits > MAX_NUM_DIGITS {
+                return Err(self.err("too many digits in fraction"));
+            }
         }
-        if digits == 0 { return Err(self.err("expected digits after decimal point")); }
+        if digits == 0 {
+            return Err(self.err("expected digits after decimal point"));
+        }
         Ok((num / scale, digits))
     }
 }
 
-#[inline] fn is_ident_start(c: u8) -> bool { (c as char).is_ascii_alphabetic() || c == b'_' }
-#[inline] fn is_ident_cont(c: u8)  -> bool { (c as char).is_ascii_alphanumeric() || c == b'_' }
+#[inline]
+fn is_ident_start(c: u8) -> bool {
+    (c as char).is_ascii_alphabetic() || c == b'_'
+}
+#[inline]
+fn is_ident_cont(c: u8) -> bool {
+    (c as char).is_ascii_alphanumeric() || c == b'_'
+}
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use core::f64::consts::PI;
     use crate::tags::SfTag;
+    use core::f64::consts::PI;
 
     // helpers
-    fn loc() -> Location { Location::UNKNOWN }
+    fn loc() -> Location {
+        Location::UNKNOWN
+    }
 
     #[track_caller]
     fn assert_almost_eq_f64(actual: f64, expected: f64, eps: f64) {
         if expected.is_nan() {
             assert!(actual.is_nan(), "expected NaN, got {actual}");
         } else if expected.is_infinite() {
-            assert!(actual.is_infinite() && actual.is_sign_positive() == expected.is_sign_positive(),
-                    "expected {expected}, got {actual}");
+            assert!(
+                actual.is_infinite() && actual.is_sign_positive() == expected.is_sign_positive(),
+                "expected {expected}, got {actual}"
+            );
         } else {
             let diff = (actual - expected).abs();
-            assert!(diff <= eps, "expected {expected} ± {eps}, got {actual} (diff {diff})");
+            assert!(
+                diff <= eps,
+                "expected {expected} ± {eps}, got {actual} (diff {diff})"
+            );
         }
     }
 
@@ -518,7 +685,10 @@ mod tests {
     fn assert_ok32(s: &str, tag: SfTag, expected: f32) {
         let v: f32 = parse_yaml12_float_angle_converting::<f32>(s, loc(), tag).unwrap();
         let diff = (v - expected).abs();
-        assert!(diff <= 1e-6, "expected {expected} ± 1e-6, got {v} (diff {diff})");
+        assert!(
+            diff <= 1e-6,
+            "expected {expected} ± 1e-6, got {v} (diff {diff})"
+        );
     }
 
     #[track_caller]
@@ -544,9 +714,21 @@ mod tests {
         assert_ok64(".inf", SfTag::Radians, f64::INFINITY);
         assert_ok64("+.inf", SfTag::Radians, f64::INFINITY);
         assert_ok64("-.inf", SfTag::Radians, f64::NEG_INFINITY);
-        assert!(parse_yaml12_float_angle_converting::<f64>(".nan", loc(), SfTag::Radians).unwrap().is_nan());
-        assert!(parse_yaml12_float_angle_converting::<f64>("-.NaN", loc(), SfTag::Radians).unwrap().is_nan());
-        assert!(parse_yaml12_float_angle_converting::<f64>("+.nAn", loc(), SfTag::Radians).unwrap().is_nan());
+        assert!(
+            parse_yaml12_float_angle_converting::<f64>(".nan", loc(), SfTag::Radians)
+                .unwrap()
+                .is_nan()
+        );
+        assert!(
+            parse_yaml12_float_angle_converting::<f64>("-.NaN", loc(), SfTag::Radians)
+                .unwrap()
+                .is_nan()
+        );
+        assert!(
+            parse_yaml12_float_angle_converting::<f64>("+.nAn", loc(), SfTag::Radians)
+                .unwrap()
+                .is_nan()
+        );
     }
 
     #[test]
@@ -554,8 +736,16 @@ mod tests {
         assert_ok64("inf", SfTag::Radians, f64::INFINITY);
         assert_ok64("+INF", SfTag::Radians, f64::INFINITY);
         assert_ok64("-InF", SfTag::Radians, f64::NEG_INFINITY);
-        assert!(parse_yaml12_float_angle_converting::<f64>("nan", loc(), SfTag::Radians).unwrap().is_nan());
-        assert!(parse_yaml12_float_angle_converting::<f64>("-NaN", loc(), SfTag::Radians).unwrap().is_nan());
+        assert!(
+            parse_yaml12_float_angle_converting::<f64>("nan", loc(), SfTag::Radians)
+                .unwrap()
+                .is_nan()
+        );
+        assert!(
+            parse_yaml12_float_angle_converting::<f64>("-NaN", loc(), SfTag::Radians)
+                .unwrap()
+                .is_nan()
+        );
     }
 
     // constants
@@ -573,7 +763,11 @@ mod tests {
         assert_ok64("2*pi", SfTag::Radians, 2.0 * PI);
         assert_ok64("pi/2", SfTag::Radians, PI / 2.0);
         assert_ok64("1 + 2*(3 - 4/5)", SfTag::Radians, 5.4);
-        assert_ok64("  3 + 4*2 / (1 - 5) ", SfTag::Radians, 3.0 + 4.0 * 2.0 / (1.0 - 5.0));
+        assert_ok64(
+            "  3 + 4*2 / (1 - 5) ",
+            SfTag::Radians,
+            3.0 + 4.0 * 2.0 / (1.0 - 5.0),
+        );
     }
 
     // underscores
@@ -596,11 +790,13 @@ mod tests {
         assert_ok64("180:0", SfTag::None, 180.0 * 3600.0);
         // -0:30:30.5 => -(0*3600 + 30*60 + 30.5) seconds
         let expected = -(0.0 * 3600.0 + 30.0 * 60.0 + 30.5);
-        let v: f64 = parse_yaml12_float_angle_converting(" -0:30:30.5 ", loc(), SfTag::None).unwrap();
+        let v: f64 =
+            parse_yaml12_float_angle_converting(" -0:30:30.5 ", loc(), SfTag::None).unwrap();
         assert_almost_eq_f64(v, expected, 1e-12);
         // Angle via sexagesimal must be explicit using deg(...)
-        let angle: f64 = parse_yaml12_float_angle_converting("deg(1:2:3)", loc(), SfTag::Radians).unwrap();
-        let degs = 1.0 + 2.0/60.0 + 3.0/3600.0;
+        let angle: f64 =
+            parse_yaml12_float_angle_converting("deg(1:2:3)", loc(), SfTag::Radians).unwrap();
+        let degs = 1.0 + 2.0 / 60.0 + 3.0 / 3600.0;
         assert_almost_eq_f64(angle, degs * DEG2RAD, 1e-12);
     }
 
@@ -658,15 +854,23 @@ mod tests {
     #[test]
     fn mixed_units_with_radians_tag_is_ok() {
         // Angle via sexagesimal must be explicit when mixing units
-        assert_ok64("deg(30:0:0) + 0.001", SfTag::Radians, 30.0 * DEG2RAD + 0.001);
+        assert_ok64(
+            "deg(30:0:0) + 0.001",
+            SfTag::Radians,
+            30.0 * DEG2RAD + 0.001,
+        );
     }
 
     // numeric edge cases
     #[test]
     fn division_by_zero_and_nan_propagation() {
         let v: f64 = parse_yaml12_float_angle_converting("1/0", loc(), SfTag::Radians).unwrap();
-        assert!(v.is_infinite() && v.is_sign_positive(), "expected +inf, got {v}");
-        let v2: f64 = parse_yaml12_float_angle_converting("nan + 1", loc(), SfTag::Radians).unwrap();
+        assert!(
+            v.is_infinite() && v.is_sign_positive(),
+            "expected +inf, got {v}"
+        );
+        let v2: f64 =
+            parse_yaml12_float_angle_converting("nan + 1", loc(), SfTag::Radians).unwrap();
         assert!(v2.is_nan(), "expected NaN, got {v2}");
     }
 

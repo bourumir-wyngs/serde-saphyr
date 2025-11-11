@@ -1022,7 +1022,8 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             let base = if inline_first {
                 self.after_dash_depth.unwrap_or(self.depth)
             } else if was_inline_value && self.current_map_depth.is_some() {
-                self.current_map_depth.unwrap()
+                // Guarded by is_some(); use unwrap_or to avoid panicking unwrap
+                self.current_map_depth.unwrap_or(self.depth)
             } else {
                 self.depth
             };
@@ -1127,7 +1128,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             let base = if inline_first {
                 self.after_dash_depth.unwrap_or(self.depth)
             } else if was_inline_value && self.current_map_depth.is_some() {
-                self.current_map_depth.unwrap()
+                self.current_map_depth.unwrap_or(self.depth)
             } else {
                 self.depth
             };
@@ -1173,7 +1174,10 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             self.at_line_start = true;
             // Fields indent one more level under the variant label.
             let depth_next = base + 1;
-            return Ok(StructVariantSer { ser: self, depth: depth_next });
+            return Ok(StructVariantSer {
+                ser: self,
+                depth: depth_next,
+            });
         }
         // Otherwise (top-level or sequence context), emit the variant name at current depth.
         if self.at_line_start {
@@ -1189,7 +1193,10 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             depth_next = d + 2;
             self.pending_inline_map = false;
         }
-        Ok(StructVariantSer { ser: self, depth: depth_next })
+        Ok(StructVariantSer {
+            ser: self,
+            depth: depth_next,
+        })
     }
 }
 
@@ -2046,37 +2053,129 @@ impl<'a> Serializer for &'a mut StrCapture {
         Ok(())
     }
 
-    fn serialize_bool(self, _v: bool) -> Result<()> { unexpected_e() }
-    fn serialize_i8(self, _v: i8) -> Result<()> { unexpected_e() }
-    fn serialize_i16(self, _v: i16) -> Result<()> { unexpected_e() }
-    fn serialize_i32(self, _v: i32) -> Result<()> { unexpected_e() }
-    fn serialize_i64(self, _v: i64) -> Result<()> { unexpected_e() }
-    fn serialize_i128(self, _v: i128) -> Result<()> { unexpected_e() }
-    fn serialize_u8(self, _v: u8) -> Result<()> { unexpected_e() }
-    fn serialize_u16(self, _v: u16) -> Result<()> { unexpected_e() }
-    fn serialize_u32(self, _v: u32) -> Result<()> { unexpected_e() }
-    fn serialize_u64(self, _v: u64) -> Result<()> { unexpected_e() }
-    fn serialize_u128(self, _v: u128) -> Result<()> { unexpected_e() }
-    fn serialize_f32(self, _v: f32) -> Result<()> { unexpected_e() }
-    fn serialize_f64(self, _v: f64) -> Result<()> { unexpected_e() }
-    fn serialize_char(self, _c: char) -> Result<()> { unexpected_e() }
-    fn serialize_bytes(self, _v: &[u8]) -> Result<()> { unexpected_e() }
-    fn serialize_none(self) -> Result<()> { unexpected_e() }
-    fn serialize_some<T: ?Sized + Serialize>(self, _value: &T) -> Result<()> { unexpected_e() }
-    fn serialize_unit(self) -> Result<()> { unexpected_e() }
-    fn serialize_unit_struct(self, _name: &'static str) -> Result<()> { unexpected_e() }
-    fn serialize_unit_variant(self, _name: &'static str, _i: u32, _v: &'static str) -> Result<()> { unexpected_e() }
-    fn serialize_newtype_struct<T: ?Sized + Serialize>(self, _name: &'static str, _value: &T) -> Result<()> { unexpected_e() }
-    fn serialize_newtype_variant<T: ?Sized + Serialize>(self, _name: &'static str, _i: u32, _v: &'static str, _value: &T) -> Result<()> { unexpected_e() }
-    fn serialize_seq(self, _len: Option<usize>) -> Result<ser::Impossible<(), Error>> { unexpected() }
-    fn serialize_tuple(self, _len: usize) -> Result<ser::Impossible<(), Error>> { unexpected() }
-    fn serialize_tuple_struct(self, _name: &'static str, _len: usize) -> Result<ser::Impossible<(), Error>> { unexpected() }
-    fn serialize_tuple_variant(self, _name: &'static str, _i: u32, _v: &'static str, _len: usize) -> Result<ser::Impossible<(), Error>> { unexpected() }
-    fn serialize_map(self, _len: Option<usize>) -> Result<ser::Impossible<(), Error>> { unexpected() }
-    fn serialize_struct(self, _name: &'static str, _len: usize) -> Result<ser::Impossible<(), Error>> { unexpected() }
-    fn serialize_struct_variant(self, _name: &'static str, _i: u32, _v: &'static str, _len: usize) -> Result<ser::Impossible<(), Error>> { unexpected() }
-    fn collect_str<T: ?Sized + fmt::Display>(self, _value: &T) -> Result<()> { unexpected_e() }
-    fn is_human_readable(&self) -> bool { true }
+    fn serialize_bool(self, _v: bool) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_i8(self, _v: i8) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_i16(self, _v: i16) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_i32(self, _v: i32) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_i64(self, _v: i64) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_i128(self, _v: i128) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_u8(self, _v: u8) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_u16(self, _v: u16) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_u32(self, _v: u32) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_u64(self, _v: u64) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_u128(self, _v: u128) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_f32(self, _v: f32) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_f64(self, _v: f64) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_char(self, _c: char) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_bytes(self, _v: &[u8]) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_none(self) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_some<T: ?Sized + Serialize>(self, _value: &T) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_unit(self) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_unit_struct(self, _name: &'static str) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_unit_variant(self, _name: &'static str, _i: u32, _v: &'static str) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_newtype_struct<T: ?Sized + Serialize>(
+        self,
+        _name: &'static str,
+        _value: &T,
+    ) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_newtype_variant<T: ?Sized + Serialize>(
+        self,
+        _name: &'static str,
+        _i: u32,
+        _v: &'static str,
+        _value: &T,
+    ) -> Result<()> {
+        unexpected_e()
+    }
+    fn serialize_seq(self, _len: Option<usize>) -> Result<ser::Impossible<(), Error>> {
+        unexpected()
+    }
+    fn serialize_tuple(self, _len: usize) -> Result<ser::Impossible<(), Error>> {
+        unexpected()
+    }
+    fn serialize_tuple_struct(
+        self,
+        _name: &'static str,
+        _len: usize,
+    ) -> Result<ser::Impossible<(), Error>> {
+        unexpected()
+    }
+    fn serialize_tuple_variant(
+        self,
+        _name: &'static str,
+        _i: u32,
+        _v: &'static str,
+        _len: usize,
+    ) -> Result<ser::Impossible<(), Error>> {
+        unexpected()
+    }
+    fn serialize_map(self, _len: Option<usize>) -> Result<ser::Impossible<(), Error>> {
+        unexpected()
+    }
+    fn serialize_struct(
+        self,
+        _name: &'static str,
+        _len: usize,
+    ) -> Result<ser::Impossible<(), Error>> {
+        unexpected()
+    }
+    fn serialize_struct_variant(
+        self,
+        _name: &'static str,
+        _i: u32,
+        _v: &'static str,
+        _len: usize,
+    ) -> Result<ser::Impossible<(), Error>> {
+        unexpected()
+    }
+    fn collect_str<T: ?Sized + fmt::Display>(self, _value: &T) -> Result<()> {
+        unexpected_e()
+    }
+    fn is_human_readable(&self) -> bool {
+        true
+    }
 }
 impl StrCapture {
     fn finish(self) -> Result<String> {
@@ -2215,7 +2314,8 @@ impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
                     '\t' => self.s.push_str("\\t"),
                     c if c.is_control() => {
                         use std::fmt::Write as _;
-                        write!(self.s, "\\u{:04X}", c as u32).unwrap();
+                        // Writing into a String cannot fail; ignore the Result to avoid unwrap.
+                        let _ = write!(self.s, "\\u{:04X}", c as u32);
                     }
                     c => self.s.push(c),
                 }
@@ -2315,17 +2415,17 @@ impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
 }
 
 fn unexpected() -> Result<ser::Impossible<(), Error>> {
-    Err(Error::unexpected  ("unexpected"))
+    Err(Error::unexpected("unexpected"))
 }
 
 fn unexpected_e() -> Result<()> {
-    Err(Error::unexpected  ("unexpected"))
+    Err(Error::unexpected("unexpected"))
 }
 
 fn non_scalar_key() -> Result<ser::Impossible<(), Error>> {
-    Err(Error::unexpected  ("non-scalar key"))
+    Err(Error::unexpected("non-scalar key"))
 }
 
 fn non_scalar_key_e() -> Result<()> {
-    Err(Error::unexpected  ("non-scalar key"))
+    Err(Error::unexpected("non-scalar key"))
 }

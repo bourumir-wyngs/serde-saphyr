@@ -1,9 +1,9 @@
 //! Tag map. We only care about tags as much as we support them
 
+use saphyr_parser::Tag;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
-use saphyr_parser::Tag;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum SfTag {
@@ -16,6 +16,7 @@ pub(crate) enum SfTag {
     Map,
     TimeStamp,
     Binary,
+    String,
     /// Non-specific tag "!" (no resolution) — we force scalar to be treated as string
     NonSpecific,
     // Custom angle tags supported by angles_hook
@@ -56,6 +57,11 @@ static TAG_LOOKUP_MAP: LazyLock<BTreeMap<&'static str, SfTag>> = LazyLock::new(|
         ("!map", SfTag::Map),
         ("tag:yaml.org,2002:map", SfTag::Map),
         ("tag:yaml.org,2002:!map", SfTag::Map),
+        // string (null key or value with this tag can be serialized into empty string)
+        ("!!str", SfTag::String),
+        ("!str", SfTag::String),
+        ("tag:yaml.org,2002:str", SfTag::String),
+        ("tag:yaml.org,2002:!str", SfTag::String),
         // timestamp / time
         ("!!timestamp", SfTag::TimeStamp),
         ("!timestamp", SfTag::TimeStamp),
@@ -77,7 +83,6 @@ static TAG_LOOKUP_MAP: LazyLock<BTreeMap<&'static str, SfTag>> = LazyLock::new(|
         ("!radians", SfTag::Radians),
         ("tag:yaml.org,2002:radians", SfTag::Radians),
         ("tag:yaml.org,2002:!radians", SfTag::Radians),
-
         // non-specific ("!", "!!"), should force into string.
         ("!", SfTag::NonSpecific),
         ("!!", SfTag::NonSpecific),
@@ -87,17 +92,20 @@ static TAG_LOOKUP_MAP: LazyLock<BTreeMap<&'static str, SfTag>> = LazyLock::new(|
 impl SfTag {
     pub(crate) fn from_optional_cow(tag: &Option<Cow<Tag>>) -> SfTag {
         match tag {
-           Some(cow) => {
-               let key = cow.to_string();
-               TAG_LOOKUP_MAP.get(key.as_str()).copied().unwrap_or(SfTag::Other)
-           },
+            Some(cow) => {
+                let key = cow.to_string();
+                TAG_LOOKUP_MAP
+                    .get(key.as_str())
+                    .copied()
+                    .unwrap_or(SfTag::Other)
+            }
             None => SfTag::None,
         }
     }
 
     pub(crate) fn can_parse_into_string(&self) -> bool {
         match self {
-            SfTag::None | SfTag::Other => true,
+            SfTag::None | SfTag::String | SfTag::Other => true,
             SfTag::Binary
             | SfTag::Int
             | SfTag::Float
@@ -112,4 +120,3 @@ impl SfTag {
         }
     }
 }
-
