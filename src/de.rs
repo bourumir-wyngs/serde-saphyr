@@ -1533,13 +1533,48 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                                 DuplicateKeyPolicy::LastWins => {}
                             }
 
-                            // Capture the value node now so we can handle edge cases and feed from pending.
-                            let value_node = capture_node(self.ev)?;
-                            // Enqueue this pair to pending and process via the recorded-entries path,
-                            // which has key-context Option-handling and supports using recorded events.
-                            self.enqueue_entries(vec![PendingEntry { key: key_node, value: value_node }]);
-                            // Loop will pick from pending in the next iteration.
-                            continue;
+                            // Decide whether we need the slow recorded path (only for the tricky
+                            // explicit-empty-key-as-one-entry-map-with-nullish-inner-key case).
+                            let kemn_direct = matches!(key_node.fingerprint, KeyFingerprint::Mapping(ref v) if v.is_empty());
+                            let kemn_one_entry_nullish = match &key_node.fingerprint {
+                                KeyFingerprint::Mapping(pairs) if pairs.len() == 1 => {
+                                    if let (KeyFingerprint::Scalar { value: sv, tag: stag }, _) = &pairs[0] {
+                                        *stag == SfTag::Null || sv.is_empty() || sv == "~" || sv.eq_ignore_ascii_case("null")
+                                    } else {
+                                        false
+                                    }
+                                }
+                                _ => false,
+                            };
+
+                            if kemn_one_entry_nullish {
+                                // Slow path needed: capture value and enqueue so pending branch can
+                                // swap inner value to outer and treat key as None.
+                                let value_node = capture_node(self.ev)?;
+                                self.enqueue_entries(vec![PendingEntry { key: key_node, value: value_node }]);
+                                continue;
+                            } else {
+                                // Fast path: deserialize key now from recorded events, do not buffer value.
+                                let events = key_node.events;
+                                let location = key_node.location;
+                                let key_seed = match seed.take() {
+                                    Some(s) => s,
+                                    None => {
+                                        return Err(
+                                            Error::msg("internal error: seed reused for map key").with_location(location)
+                                        );
+                                    }
+                                };
+                                let key_value = self.deserialize_recorded_key(
+                                    key_seed,
+                                    events,
+                                    kemn_direct,
+                                )?;
+                                self.have_key = true;
+                                self.pending_value = None; // value will be read live
+                                self.seen.insert(key_node.fingerprint);
+                                return Ok(Some(key_value));
+                            }
                         }
                         None => return Err(Error::eof().with_location(self.ev.last_location())),
                     }
