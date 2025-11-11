@@ -156,6 +156,90 @@ struct PendingEntry {
     value: KeyNode,
 }
 
+/// Return the span lengths of key and value for a one-entry map encoded in `events`.
+/// The expected layout is: MapStart, <key node>, <value node>, MapEnd.
+/// On success returns (key_start, key_end, val_start, val_end) as indices into events.
+fn one_entry_map_spans(events: &[Ev]) -> Option<(usize, usize, usize, usize)> {
+    if events.len() < 4 {
+        return None;
+    }
+    match events.first()? {
+        Ev::MapStart { .. } => {}
+        _ => return None,
+    }
+    match events.last()? {
+        Ev::MapEnd { .. } => {}
+        _ => return None,
+    }
+    // Cursor over the interior
+    let mut i = 1; // after MapStart
+    let key_start = i;
+    i += skip_one_node_len(events, i)?;
+    let key_end = i;
+    let val_start = i;
+    i += skip_one_node_len(events, i)?;
+    let val_end = i;
+    if i != events.len() - 1 {
+        return None;
+    }
+    Some((key_start, key_end, val_start, val_end))
+}
+
+/// Skip one complete node in `events` starting at index `i`, returning the number of
+/// events consumed. Returns None if the slice is malformed.
+fn skip_one_node_len(events: &[Ev], mut i: usize) -> Option<usize> {
+    match events.get(i)? {
+        Ev::Scalar { .. } => Some(1),
+        Ev::SeqStart { .. } => {
+            let start = i;
+            let mut depth = 1i32;
+            i += 1;
+            while i < events.len() {
+                match events.get(i)? {
+                    Ev::SeqStart { .. } => depth += 1,
+                    Ev::SeqEnd { .. } => {
+                        depth -= 1;
+                        if depth == 0 {
+                            return Some(i - start + 1);
+                        }
+                    }
+                    Ev::MapStart { .. } => depth += 1,
+                    Ev::MapEnd { .. } => {
+                        depth -= 1;
+                    }
+                    Ev::Scalar { .. } => {}
+                }
+                i += 1;
+            }
+            None
+        }
+        Ev::MapStart { .. } => {
+            let start = i;
+            let mut depth = 1i32;
+            i += 1;
+            while i < events.len() {
+                match events.get(i)? {
+                    Ev::MapStart { .. } => depth += 1,
+                    Ev::MapEnd { .. } => {
+                        depth -= 1;
+                        if depth == 0 {
+                            return Some(i - start + 1);
+                        }
+                    }
+                    Ev::SeqStart { .. } => depth += 1,
+                    Ev::SeqEnd { .. } => {
+                        depth -= 1;
+                    }
+                    Ev::Scalar { .. } => {}
+                }
+                i += 1;
+            }
+            None
+        }
+        Ev::SeqEnd { .. } | Ev::MapEnd { .. } => None,
+    }
+}
+
 /// Capture a complete node (scalar/sequence/mapping) from an `Events` source,
 /// returning both a fingerprint (for duplicate checks) and a replayable buffer.
 /// This is recursive function.
@@ -1422,35 +1506,28 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                                             || sv == "~"
                                             || sv.eq_ignore_ascii_case("null");
                                         if is_nullish {
-                                            // Parse inner value events from recorded key events
-                                            let mut replay = ReplayEvents::new(events.clone());
-                                            // Expect MapStart
-                                            match replay.next()? { Some(Ev::MapStart { .. }) => {}, _ => {} }
-                                            // Capture inner key and inner value
-                                            let _inner_key = capture_node(&mut replay)?;
-                                            let inner_value = capture_node(&mut replay)?;
-                                            // Ensure MapEnd follows
-                                            match replay.next()? { Some(Ev::MapEnd { .. }) => {}, _ => {} }
-                                            // Replace value_events with inner value events and key events with empty map
-                                            value_events = inner_value.events;
-                                            // Build empty map events using the first and last from original events
-                                            // If the recorded events are unexpectedly empty, return a structured error instead of panicking.
-                                            let start = match events.first() {
-                                                Some(Ev::MapStart { anchor, location }) => Ev::MapStart { anchor: *anchor, location: *location },
-                                                Some(other) => other.clone(),
-                                                None => {
-                                                    return Err(Error::unexpected("mapping start").with_location(location));
-                                                }
-                                            };
-                                            let end = match events.last() {
-                                                Some(Ev::MapEnd { location }) => Ev::MapEnd { location: *location },
-                                                Some(other) => other.clone(),
-                                                None => {
-                                                    return Err(Error::unexpected("mapping end").with_location(location));
-                                                }
-                                            };
-                                            events = vec![start, end];
-                                            kemn = true;
+                                            // Zero-copy probe over recorded events to extract inner key/value spans
+                                            if let Some((_ks, _ke, vs, ve)) = one_entry_map_spans(&events) {
+                                                // Replace value_events with inner value events and key events with empty map
+                                                value_events = events[vs..ve].to_vec();
+                                                // Build empty map events using the first and last from original events
+                                                let start = match events.first() {
+                                                    Some(Ev::MapStart { anchor, location }) => Ev::MapStart { anchor: *anchor, location: *location },
+                                                    Some(other) => other.clone(),
+                                                    None => {
+                                                        return Err(Error::unexpected("mapping start").with_location(location));
+                                                    }
+                                                };
+                                                let end = match events.last() {
+                                                    Some(Ev::MapEnd { location }) => Ev::MapEnd { location: *location },
+                                                    Some(other) => other.clone(),
+                                                    None => {
+                                                        return Err(Error::unexpected("mapping end").with_location(location));
+                                                    }
+                                                };
+                                                events = vec![start, end];
+                                                kemn = true;
+                                            }
                                         }
                                     }
                                 }

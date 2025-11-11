@@ -2220,7 +2220,7 @@ impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
         Ok(())
     }
     fn serialize_i64(self, v: i64) -> Result<()> {
-        self.s.push_str(&v.to_string());
+        let _ = write!(self.s, "{}", v);
         Ok(())
     }
     fn serialize_i32(self, v: i32) -> Result<()> {
@@ -2233,11 +2233,11 @@ impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
         self.serialize_i64(v as i64)
     }
     fn serialize_i128(self, v: i128) -> Result<()> {
-        self.s.push_str(&v.to_string());
+        let _ = write!(self.s, "{}", v);
         Ok(())
     }
     fn serialize_u64(self, v: u64) -> Result<()> {
-        self.s.push_str(&v.to_string());
+        let _ = write!(self.s, "{}", v);
         Ok(())
     }
     fn serialize_u32(self, v: u32) -> Result<()> {
@@ -2250,7 +2250,7 @@ impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
         self.serialize_u64(v as u64)
     }
     fn serialize_u128(self, v: u128) -> Result<()> {
-        self.s.push_str(&v.to_string());
+        let _ = write!(self.s, "{}", v);
         Ok(())
     }
     fn serialize_f32(self, v: f32) -> Result<()> {

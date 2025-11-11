@@ -422,39 +422,46 @@ impl<'a> Parser<'a> {
             }
         }
         let ident = &self.s[start..self.i];
-        let ident_lc = ident.to_ascii_lowercase();
 
-        match ident_lc.as_str() {
-            "pi" => Ok((PI, false, true)),
-            "tau" => Ok((2.0 * PI, false, true)),
-            "inf" => Ok((f64::INFINITY, false, true)),
-            "nan" => Ok((f64::NAN, false, true)),
-            "deg" | "rad" => {
-                self.skip_ws();
-                if self.bump() != Some(b'(') {
-                    return Err(self.err("expected '(' after function name"));
-                }
-                // Inside unit functions, treat sexagesimal as degrees (angle) rather than time.
-                let old_mode = self.sexagesimal_is_time;
-                self.sexagesimal_is_time = false;
-                self.enter()?;
-                let r = self.expr();
-                self.exit();
-                self.sexagesimal_is_time = old_mode;
-                let (v, _used_inner, _plain_inner) = r?;
-                self.skip_ws();
-                if self.bump() != Some(b')') {
-                    return Err(self.err("expected ')' after function argument"));
-                }
-
-                let used_unit = true;
-                match ident_lc.as_str() {
-                    "deg" => Ok((v * DEG2RAD, used_unit, false)),
-                    "rad" => Ok((v, used_unit, false)),
-                    _ => unreachable!(),
-                }
+        // Case-insensitive match without allocating a lowercase copy
+        if ident.eq_ignore_ascii_case("pi") {
+            return Ok((PI, false, true));
+        }
+        if ident.eq_ignore_ascii_case("tau") {
+            return Ok((2.0 * PI, false, true));
+        }
+        if ident.eq_ignore_ascii_case("inf") {
+            return Ok((f64::INFINITY, false, true));
+        }
+        if ident.eq_ignore_ascii_case("nan") {
+            return Ok((f64::NAN, false, true));
+        }
+        if ident.eq_ignore_ascii_case("deg") || ident.eq_ignore_ascii_case("rad") {
+            self.skip_ws();
+            if self.bump() != Some(b'(') {
+                return Err(self.err("expected '(' after function name"));
             }
-            _ => Err(self.err("unknown identifier")),
+            // Inside unit functions, treat sexagesimal as degrees (angle) rather than time.
+            let old_mode = self.sexagesimal_is_time;
+            self.sexagesimal_is_time = false;
+            self.enter()?;
+            let r = self.expr();
+            self.exit();
+            self.sexagesimal_is_time = old_mode;
+            let (v, _used_inner, _plain_inner) = r?;
+            self.skip_ws();
+            if self.bump() != Some(b')') {
+                return Err(self.err("expected ')' after function argument"));
+            }
+
+            let used_unit = true;
+            if ident.eq_ignore_ascii_case("deg") {
+                Ok((v * DEG2RAD, used_unit, false))
+            } else {
+                Ok((v, used_unit, false))
+            }
+        } else {
+            Err(self.err("unknown identifier"))
         }
     }
 
