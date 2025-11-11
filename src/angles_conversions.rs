@@ -656,8 +656,10 @@ fn is_ident_cont(c: u8) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::tags::SfTag;
+    use crate::{Error, Location};
+use crate::tags::SfTag;
     use core::f64::consts::PI;
+    use crate::angles_conversions::{parse_yaml12_float_angle_converting, DEG2RAD};
 
     // helpers
     fn loc() -> Location {
