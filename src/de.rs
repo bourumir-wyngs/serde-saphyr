@@ -16,7 +16,6 @@
 //! - `from_multiple*` collects non-empty docs; empty docs are skipped.
 
 use std::collections::{HashSet, VecDeque};
-
 use crate::anchor_store::{self, AnchorKind};
 use crate::base64::decode_base64_yaml;
 pub use crate::budget::{Budget};
@@ -954,7 +953,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
         let (s, _tag, location) = self.take_scalar_with_location()?;
         // Treat YAML null forms as invalid for `char`
         if s.is_empty() || s == "~" || s.eq_ignore_ascii_case("null") {
-            return Err(Error::msg("invalid char: null not allowed").with_location(location));
+            return Err(Error::msg("invalid char: value cannot be 'null'").with_location(location));
         }
         let mut it = s.chars();
         match (it.next(), it.next()) {
@@ -966,9 +965,37 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
         }
     }
 
-    /// Deserialize a borrowed string; delegates to owned `String`.
+    /// Deserialize a borrowed string; delegate to owned `String` and replace the generic
+    /// borrowed-string failure with a more actionable message that includes location.
     fn deserialize_str<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
-        self.deserialize_string(visitor)
+        // Capture location if the next event is a scalar, so we can attach it to our message.
+        let loc_hint = match self.ev.peek()? {
+            Some(Ev::Scalar { location, .. }) => Some(*location),
+            Some(other) => return Err(Error::unexpected("string scalar").with_location(other.location())),
+            None => return Err(Error::eof().with_location(self.ev.last_location())),
+        };
+
+        match self.deserialize_string(visitor) {
+            Ok(v) => Ok(v),
+            Err(err) => {
+                // Serde will typically produce an Error::Message like
+                // "invalid type: string \"...\", expected a borrowed string" when a
+                // &str visitor rejects an owned String. Detect that shape and replace it
+                // with an actionable hint.
+                let msg = err.to_string();
+                if msg.contains("expected a borrowed string") || msg.contains("borrowed string") {
+                    let location = loc_hint.unwrap();
+                    Err(Error::msg(r#"YAML string cannot be deserialized as &str in
+`deserialize_with`. &str deserialization here would need a borrowed
+string with longer life span than this format can provide. Change your
+helper to deserialize into String or Cow<'de, str> instead
+(e.g. String::deserialize(deserializer)?))"#)
+                    .with_location(location))
+                } else {
+                    Err(err)
+                }
+            }
+        }
     }
 
     /// Deserialize an owned string (with `!!binary` UTF-8 support).
