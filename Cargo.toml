@@ -21,6 +21,7 @@ base64 = "0.22.1"
 ryu = "1.0.20"
 nohash-hasher = "0.2.0"
 encoding_rs_io = "0.1.7"
+ahash = "0.8.12"
 
 [features]
 default = []

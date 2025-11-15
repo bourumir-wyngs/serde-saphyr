@@ -24,11 +24,14 @@ use crate::parse_scalars::{
     leading_zero_decimal, parse_int_signed, parse_int_unsigned, parse_yaml11_bool,
     parse_yaml12_float, scalar_is_nullish, scalar_is_nullish_for_option,
 };
+use ahash::{HashSetExt, RandomState};
 use saphyr_parser::ScalarStyle;
 use serde::de::{self, Deserializer as _, IntoDeserializer, Visitor};
 use std::borrow::Cow;
 use std::collections::{HashSet, VecDeque};
 use std::mem;
+
+type FastHashSet<T> = HashSet<T, RandomState>;
 
 // Re-export moved Options and related enums from the options module to preserve
 // the public path serde_saphyr::sf_serde::*.
@@ -200,7 +203,7 @@ impl KeyNode {
     fn take_fingerprint(&mut self) -> KeyFingerprint {
         match self {
             KeyNode::Fingerprinted { fingerprint, .. } => mem::take(fingerprint),
-            KeyNode::Scalar { .. } => self.fingerprint().into_owned()
+            KeyNode::Scalar { .. } => self.fingerprint().into_owned(),
         }
     }
 
@@ -1473,7 +1476,7 @@ helper to deserialize into String or Cow<'de, str> instead
             cfg: Cfg,
             have_key: bool,
             // For duplicate-key detection for arbitrary keys.
-            seen: HashSet<KeyFingerprint>,
+            seen: FastHashSet<KeyFingerprint>,
             pending: VecDeque<PendingEntry>,
             merge_stack: Vec<Vec<PendingEntry>>,
             flushing_merges: bool,
@@ -1777,11 +1780,8 @@ helper to deserialize into String or Cow<'de, str> instead
                                         .with_location(location));
                                     }
                                 };
-                                let key_value = self.deserialize_recorded_key(
-                                    key_seed,
-                                    events,
-                                    kemn_direct,
-                                )?;
+                                let key_value =
+                                    self.deserialize_recorded_key(key_seed, events, kemn_direct)?;
                                 self.have_key = true;
                                 self.pending_value = None; // value will be read live
 
@@ -1819,7 +1819,7 @@ helper to deserialize into String or Cow<'de, str> instead
             ev: self.ev,
             cfg: self.cfg,
             have_key: false,
-            seen: HashSet::with_capacity(8),
+            seen: FastHashSet::with_capacity(8),
             pending: VecDeque::new(),
             merge_stack: Vec::new(),
             flushing_merges: false,
