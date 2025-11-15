@@ -186,7 +186,7 @@ impl KeyNode {
         }
     }
 
-    fn events(&self) -> &Vec<Ev> {
+    fn events(&self) -> &[Ev] {
         match self {
             KeyNode::Fingerprinted { events, .. } => &events,
             KeyNode::Scalar { events, .. } => &events,
@@ -725,10 +725,10 @@ impl<'e> Deser<'e> {
         // Special-case binary: decode base64 and require valid UTF-8.
         if tag == SfTag::Binary {
             let data = decode_base64_yaml(&value).map_err(|err| err.with_location(location))?;
-            let text = std::str::from_utf8(&data).map_err(|_| {
+            let text = String::from_utf8(data).map_err(|_| {
                 Error::msg("!!binary scalar is not valid UTF-8").with_location(location)
             })?;
-            return Ok(text.to_owned());
+            return Ok(text);
         }
 
         // For non-binary, ensure the tag allows string deserialization.
