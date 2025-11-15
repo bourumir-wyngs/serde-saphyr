@@ -324,7 +324,7 @@ fn skip_one_node_len(events: &[Ev], mut i: usize) -> Option<usize> {
 /// - Mapping deserialization to stage keys and values, and by merge processing.
 fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
     let Some(event) = ev.next()? else {
-        return Err(Error::eof().with_location(ev.last_location()));
+        return Err(Error::eof().with_location(ev.last_location()))
     };
 
     match event {
@@ -394,8 +394,11 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
                         let mut value = capture_node(ev)?; // recursive
                         let value_fp = value.take_fingerprint();
                         entries.push((key_fp, value_fp));
-                        events.extend(key.take_events());
-                        events.extend(value.take_events());
+                        let key_events = key.take_events();
+                        let value_events = value.take_events();
+                        events.reserve(key_events.len() + value_events.len());
+                        events.extend(key_events);
+                        events.extend(value_events);
                     }
                     None => {
                         return Err(Error::eof().with_location(ev.last_location()));
