@@ -14,7 +14,6 @@ enum Key {
 }
 
 #[test]
-#[ignore]
 fn yaml_4fj6_nested_implicit_complex_keys() {
     // NOTE: The YAML suite case 4FJ6 uses nested implicit complex keys in flow style.
     // This YAML is valid per the test suite, but our current parser fails to handle it

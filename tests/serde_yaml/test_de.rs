@@ -257,20 +257,22 @@ fn test_bool_as_string() {
 }
 
 #[test]
-#[ignore]
 fn test_empty_string() {
     #[derive(Deserialize, PartialEq, Debug)]
     struct Struct {
-        empty: String,
-        tilde: String,
+        empty: Option<String>,
+        tilde: Option<String>,
+        null: Option<String>,
     }
     let yaml = indoc! {"
         empty:
         tilde: ~
+        \"null\": null
     "};
     let expected = Struct {
-        empty: String::new(),
-        tilde: "~".to_owned(),
+        empty: None,
+        tilde: None,
+        null: None,
     };
     test_de(yaml, &expected);
 }
@@ -521,7 +523,6 @@ fn test_no_required_fields() {
 }
 
 #[test]
-#[ignore]
 fn test_empty_scalar() {
     #[derive(Deserialize, PartialEq, Debug)]
     struct Struct<T> {
