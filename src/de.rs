@@ -15,19 +15,20 @@
 //! - `from_str*` rejects multiple docs.
 //! - `from_multiple*` collects non-empty docs; empty docs are skipped.
 
-use std::collections::{HashSet, VecDeque};
 use crate::anchor_store::{self, AnchorKind};
 use crate::base64::decode_base64_yaml;
-pub use crate::budget::{Budget};
+pub use crate::budget::Budget;
+// Re-export error types
+pub use crate::error::{Error, Location};
 use crate::parse_scalars::{
     leading_zero_decimal, parse_int_signed, parse_int_unsigned, parse_yaml11_bool,
     parse_yaml12_float, scalar_is_nullish, scalar_is_nullish_for_option,
 };
 use saphyr_parser::ScalarStyle;
 use serde::de::{self, Deserializer as _, IntoDeserializer, Visitor};
-
-// Re-export error types
-pub use crate::error::{Error, Location};
+use std::borrow::Cow;
+use std::collections::{HashSet, VecDeque};
+use std::mem;
 
 // Re-export moved Options and related enums from the options module to preserve
 // the public path serde_saphyr::sf_serde::*.
@@ -109,6 +110,14 @@ enum KeyFingerprint {
     Sequence(Vec<KeyFingerprint>),
     /// Mapping fingerprint (ordered list of `(key, value)` fingerprints).
     Mapping(Vec<(KeyFingerprint, KeyFingerprint)>),
+    /// Should not be used, arises after taking the value away
+    Default,
+}
+
+impl Default for KeyFingerprint {
+    fn default() -> Self {
+        KeyFingerprint::Default
+    }
 }
 
 impl KeyFingerprint {
@@ -140,10 +149,68 @@ impl KeyFingerprint {
 /// - `fingerprint`: canonical representation for duplicate detection.
 /// - `events`: exact event slice that replays the node on demand.
 /// - `location`: start location of the node (for diagnostics).
-struct KeyNode {
-    fingerprint: KeyFingerprint,
-    events: Vec<Ev>,
-    location: Location,
+enum KeyNode {
+    Fingerprinted {
+        fingerprint: KeyFingerprint,
+        events: Vec<Ev>,
+        location: Location,
+    },
+    Scalar {
+        events: Vec<Ev>,
+        location: Location,
+    },
+}
+
+impl KeyNode {
+    fn fingerprint(&self) -> Cow<'_, KeyFingerprint> {
+        match self {
+            KeyNode::Fingerprinted { fingerprint, .. } => Cow::Borrowed(fingerprint),
+            KeyNode::Scalar { events, .. } => {
+                if let Some(first_event) = events.first() {
+                    match first_event {
+                        Ev::Scalar { tag, value, .. } => Cow::Owned(KeyFingerprint::Scalar {
+                            tag: *tag,
+                            value: value.clone(),
+                        }),
+                        _ => {
+                            unreachable!()
+                        }
+                    }
+                } else {
+                    unreachable!()
+                }
+            }
+        }
+    }
+
+    fn events(&self) -> &Vec<Ev> {
+        match self {
+            KeyNode::Fingerprinted { events, .. } => &events,
+            KeyNode::Scalar { events, .. } => &events,
+        }
+    }
+
+    fn take_events(&mut self) -> Vec<Ev> {
+        match self {
+            KeyNode::Fingerprinted { events, .. } => mem::take(events),
+            KeyNode::Scalar { events, .. } => mem::take(events),
+        }
+    }
+
+    fn take_fingerprint(&mut self) -> KeyFingerprint {
+        match self {
+            KeyNode::Fingerprinted { fingerprint, .. } => mem::take(fingerprint),
+            KeyNode::Scalar { .. } => self.fingerprint().into_owned()
+        }
+    }
+
+    fn location(&self) -> Location {
+        let location = match self {
+            KeyNode::Fingerprinted { location, .. } => location,
+            KeyNode::Scalar { location, .. } => location,
+        };
+        *location
+    }
 }
 
 /// A pending key/value pair to be injected into the current mapping.
@@ -272,15 +339,7 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
                 anchor,
                 location,
             };
-            let fingerprint = match &ev {
-                Ev::Scalar { value, tag, .. } => KeyFingerprint::Scalar {
-                    value: value.clone(),
-                    tag: *tag,
-                },
-                _ => unreachable!(),
-            };
-            Ok(KeyNode {
-                fingerprint,
+            Ok(KeyNode::Scalar {
                 events: vec![ev],
                 location,
             })
@@ -297,12 +356,9 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
                         break;
                     }
                     Some(_) => {
-                        let child = capture_node(ev)?; // recursive
-                        let KeyNode {
-                            fingerprint: fp,
-                            events: child_events,
-                            location: _,
-                        } = child;
+                        let mut child = capture_node(ev)?; // recursive
+                        let fp = child.take_fingerprint();
+                        let child_events = child.take_events();
                         elements.push(fp);
                         events.reserve(child_events.len());
                         events.extend(child_events);
@@ -312,7 +368,7 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
                     }
                 }
             }
-            Ok(KeyNode {
+            Ok(KeyNode::Fingerprinted {
                 fingerprint: KeyFingerprint::Sequence(elements),
                 events,
                 location,
@@ -330,28 +386,20 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
                         break;
                     }
                     Some(_) => {
-                        let key = capture_node(ev)?; // recursive
-                        let KeyNode {
-                            fingerprint: key_fp,
-                            events: key_events,
-                            location: _,
-                        } = key;
-                        let value = capture_node(ev)?; // recursive
-                        let KeyNode {
-                            fingerprint: value_fp,
-                            events: value_events,
-                            location: _,
-                        } = value;
+                        let mut key = capture_node(ev)?; // recursive
+                        let key_fp = key.take_fingerprint();
+                        let mut value = capture_node(ev)?; // recursive
+                        let value_fp = value.take_fingerprint();
                         entries.push((key_fp, value_fp));
-                        events.extend(key_events);
-                        events.extend(value_events);
+                        events.extend(key.take_events());
+                        events.extend(value.take_events());
                     }
                     None => {
                         return Err(Error::eof().with_location(ev.last_location()));
                     }
                 }
             }
-            Ok(KeyNode {
+            Ok(KeyNode::Fingerprinted {
                 fingerprint: KeyFingerprint::Mapping(entries),
                 events,
                 location,
@@ -370,11 +418,12 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
 /// - Mapping deserialization to trigger merge value expansion.
 #[inline]
 fn is_merge_key(node: &KeyNode) -> bool {
-    if node.events.len() != 1 {
+    let events = node.events();
+    if events.len() != 1 {
         return false;
     }
     matches!(
-        node.events.first(),
+        events.first(),
         Some(Ev::Scalar {
             value,
             tag,
@@ -413,10 +462,10 @@ fn pending_entries_from_events(
                         break;
                     }
                     Some(_) => {
-                        let element = capture_node(&mut replay)?;
+                        let mut element = capture_node(&mut replay)?;
                         batches.push(pending_entries_from_events(
-                            element.events,
-                            element.location,
+                            element.take_events(),
+                            element.location(),
                         )?); // recursive
                     }
                     None => {
@@ -476,8 +525,11 @@ fn collect_entries_from_map(ev: &mut dyn Events) -> Result<Vec<PendingEntry>, Er
             Some(_) => {
                 let key = capture_node(ev)?;
                 if is_merge_key(&key) {
-                    let value = capture_node(ev)?;
-                    merges.push(pending_entries_from_events(value.events, value.location)?);
+                    let mut value = capture_node(ev)?;
+                    merges.push(pending_entries_from_events(
+                        value.take_events(),
+                        value.location(),
+                    )?);
                 } else {
                     let value = capture_node(ev)?;
                     fields.push(PendingEntry { key, value });
@@ -614,7 +666,12 @@ impl<'e> Deser<'e> {
     /// Called by:
     /// - Top-level entry points and recursively for nested values.
     pub(crate) fn new(ev: &'e mut dyn Events, cfg: Cfg) -> Self {
-        Self { ev, cfg, in_key: false, key_empty_map_node: false }
+        Self {
+            ev,
+            cfg,
+            in_key: false,
+            key_empty_map_node: false,
+        }
     }
 
     /// Consume the next scalar event and return `(value, tag, location)`.
@@ -749,7 +806,9 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
     /// delegate to `deserialize_seq`/`deserialize_map`.
     fn deserialize_any<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         match self.ev.peek()? {
-            Some(Ev::Scalar { tag, style, value, .. }) => {
+            Some(Ev::Scalar {
+                tag, style, value, ..
+            }) => {
                 // Tagged nulls map to unit/null regardless of style
                 if tag == &SfTag::Null {
                     let _ = self.take_scalar_event()?; // consume
@@ -971,7 +1030,9 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
         // Capture location if the next event is a scalar, so we can attach it to our message.
         let loc_hint = match self.ev.peek()? {
             Some(Ev::Scalar { location, .. }) => Some(*location),
-            Some(other) => return Err(Error::unexpected("string scalar").with_location(other.location())),
+            Some(other) => {
+                return Err(Error::unexpected("string scalar").with_location(other.location()));
+            }
             None => return Err(Error::eof().with_location(self.ev.last_location())),
         };
 
@@ -985,11 +1046,13 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                 let msg = err.to_string();
                 if msg.contains("expected a borrowed string") || msg.contains("borrowed string") {
                     let location = loc_hint.unwrap();
-                    Err(Error::msg(r#"YAML string cannot be deserialized as &str in
+                    Err(Error::msg(
+                        r#"YAML string cannot be deserialized as &str in
 `deserialize_with`. &str deserialization here would need a borrowed
 string with longer life span than this format can provide. Change your
 helper to deserialize into String or Cow<'de, str> instead
-(e.g. String::deserialize(deserializer)?))"#)
+(e.g. String::deserialize(deserializer)?))"#,
+                    )
                     .with_location(location))
                 } else {
                     Err(err)
@@ -1009,14 +1072,19 @@ helper to deserialize into String or Cow<'de, str> instead
     fn deserialize_string<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Reject YAML null when deserializing into String. Allow quoted forms.
         if let Some(next) = self.ev.peek()? {
-            if let Ev::Scalar { tag, style, value, .. } = next {
+            if let Ev::Scalar {
+                tag, style, value, ..
+            } = next
+            {
                 // If explicitly tagged as null, or plain null-like, this is not a valid String.
                 if tag != &SfTag::String {
                     if tag == &SfTag::Null || scalar_is_nullish(value, style) {
                         // Consume the scalar to anchor the error at the correct location.
                         let (_value, _tag, location) = self.take_scalar_event()?;
-                        return Err(Error::msg("cannot deserialize null into string; use Option<String>")
-                            .with_location(location));
+                        return Err(Error::msg(
+                            "cannot deserialize null into string; use Option<String>",
+                        )
+                        .with_location(location));
                     }
                 }
             }
@@ -1101,14 +1169,18 @@ helper to deserialize into String or Cow<'de, str> instead
             match self.ev.next()? {
                 Some(Ev::MapStart { .. }) => {}
                 Some(other) => {
-                    return Err(Error::unexpected("empty mapping start").with_location(other.location()))
+                    return Err(
+                        Error::unexpected("empty mapping start").with_location(other.location())
+                    );
                 }
                 None => return Err(Error::eof().with_location(self.ev.last_location())),
             }
             match self.ev.next()? {
                 Some(Ev::MapEnd { .. }) => {}
                 Some(other) => {
-                    return Err(Error::unexpected("empty mapping end").with_location(other.location()))
+                    return Err(
+                        Error::unexpected("empty mapping end").with_location(other.location())
+                    );
                 }
                 None => return Err(Error::eof().with_location(self.ev.last_location())),
             }
@@ -1450,7 +1522,12 @@ helper to deserialize into String or Cow<'de, str> instead
                 K: de::DeserializeSeed<'de>,
             {
                 let mut replay = ReplayEvents::new(events);
-                let de = Deser { ev: &mut replay, cfg: self.cfg, in_key: true, key_empty_map_node: kemn };
+                let de = Deser {
+                    ev: &mut replay,
+                    cfg: self.cfg,
+                    in_key: true,
+                    key_empty_map_node: kemn,
+                };
                 seed.deserialize(de)
             }
 
@@ -1487,12 +1564,10 @@ helper to deserialize into String or Cow<'de, str> instead
 
                 loop {
                     if let Some(entry) = self.pending.pop_front() {
-                        let PendingEntry { key, value } = entry;
-                        let KeyNode {
-                            fingerprint,
-                            events,
-                            location,
-                        } = key;
+                        let PendingEntry { mut key, mut value } = entry;
+                        let fingerprint = key.take_fingerprint();
+                        let location = key.location();
+                        let mut events = key.take_events();
                         let is_duplicate = self.seen.contains(&fingerprint);
                         if self.flushing_merges {
                             if is_duplicate {
@@ -1518,38 +1593,60 @@ helper to deserialize into String or Cow<'de, str> instead
                             }
                         }
 
-                        let mut value_events = value.events;
+                        let mut value_events = value.take_events();
                         // Special-case: explicit empty key captured as a one-entry mapping { null: V }
                         // In this case, we want key=None and the outer value to be V.
-                        let mut events = events;
-                        let kemn_direct = matches!(fingerprint, KeyFingerprint::Mapping(ref v) if v.is_empty());
+                        let kemn_direct =
+                            matches!(fingerprint, KeyFingerprint::Mapping(ref v) if v.is_empty());
                         let mut kemn = kemn_direct;
                         if !kemn {
                             if let KeyFingerprint::Mapping(ref pairs) = fingerprint {
                                 if pairs.len() == 1 {
-                                    if let (KeyFingerprint::Scalar { value: sv, tag: stag }, _) = &pairs[0] {
+                                    if let (
+                                        KeyFingerprint::Scalar {
+                                            value: sv,
+                                            tag: stag,
+                                        },
+                                        _,
+                                    ) = &pairs[0]
+                                    {
                                         let is_nullish = *stag == SfTag::Null
                                             || sv.is_empty()
                                             || sv == "~"
                                             || sv.eq_ignore_ascii_case("null");
                                         if is_nullish {
                                             // Zero-copy probe over recorded events to extract inner key/value spans
-                                            if let Some((_ks, _ke, vs, ve)) = one_entry_map_spans(&events) {
+                                            if let Some((_ks, _ke, vs, ve)) =
+                                                one_entry_map_spans(&events)
+                                            {
                                                 // Replace value_events with inner value events and key events with empty map
                                                 value_events = events[vs..ve].to_vec();
                                                 // Build empty map events using the first and last from original events
                                                 let start = match events.first() {
-                                                    Some(Ev::MapStart { anchor, location }) => Ev::MapStart { anchor: *anchor, location: *location },
+                                                    Some(Ev::MapStart { anchor, location }) => {
+                                                        Ev::MapStart {
+                                                            anchor: *anchor,
+                                                            location: *location,
+                                                        }
+                                                    }
                                                     Some(other) => other.clone(),
                                                     None => {
-                                                        return Err(Error::unexpected("mapping start").with_location(location));
+                                                        return Err(Error::unexpected(
+                                                            "mapping start",
+                                                        )
+                                                        .with_location(location));
                                                     }
                                                 };
                                                 let end = match events.last() {
-                                                    Some(Ev::MapEnd { location }) => Ev::MapEnd { location: *location },
+                                                    Some(Ev::MapEnd { location }) => Ev::MapEnd {
+                                                        location: *location,
+                                                    },
                                                     Some(other) => other.clone(),
                                                     None => {
-                                                        return Err(Error::unexpected("mapping end").with_location(location));
+                                                        return Err(Error::unexpected(
+                                                            "mapping end",
+                                                        )
+                                                        .with_location(location));
                                                     }
                                                 };
                                                 events = vec![start, end];
@@ -1563,16 +1660,11 @@ helper to deserialize into String or Cow<'de, str> instead
                         let key_seed = match seed.take() {
                             Some(s) => s,
                             None => {
-                                return Err(
-                                    Error::msg("internal error: seed reused for map key").with_location(location)
-                                );
+                                return Err(Error::msg("internal error: seed reused for map key")
+                                    .with_location(location));
                             }
                         };
-                        let key_value = self.deserialize_recorded_key(
-                            key_seed,
-                            events,
-                            kemn,
-                        )?;
+                        let key_value = self.deserialize_recorded_key(key_seed, events, kemn)?;
                         self.have_key = true;
                         self.pending_value = Some(value_events);
                         self.seen.insert(fingerprint);
@@ -1601,12 +1693,12 @@ helper to deserialize into String or Cow<'de, str> instead
                             return Ok(None);
                         }
                         Some(_) => {
-                            let key_node = capture_node(self.ev)?;
+                            let mut key_node = capture_node(self.ev)?;
                             if is_merge_key(&key_node) {
-                                let value_node = capture_node(self.ev)?;
+                                let mut value_node = capture_node(self.ev)?;
                                 let entries = pending_entries_from_events(
-                                    value_node.events,
-                                    value_node.location,
+                                    value_node.take_events(),
+                                    value_node.location(),
                                 )?;
                                 if !entries.is_empty() {
                                     self.merge_stack.push(entries);
@@ -1614,17 +1706,18 @@ helper to deserialize into String or Cow<'de, str> instead
                                 continue;
                             }
 
-                            let is_duplicate = self.seen.contains(&key_node.fingerprint);
+                            let fingerprint = key_node.fingerprint();
+                            let is_duplicate = self.seen.contains(&fingerprint);
                             match self.cfg.dup_policy {
                                 DuplicateKeyPolicy::Error => {
                                     if is_duplicate {
                                         let msg = key_node
-                                            .fingerprint
+                                            .fingerprint()
                                             .stringy_scalar_value()
                                             .map(|s| format!("duplicate mapping key: {s}"))
                                             .unwrap_or_else(|| "duplicate mapping key".to_string());
                                         return Err(
-                                            Error::msg(msg).with_location(key_node.location)
+                                            Error::msg(msg).with_location(key_node.location())
                                         );
                                     }
                                 }
@@ -1639,11 +1732,21 @@ helper to deserialize into String or Cow<'de, str> instead
 
                             // Decide whether we need the slow recorded path (only for the tricky
                             // explicit-empty-key-as-one-entry-map-with-nullish-inner-key case).
-                            let kemn_direct = matches!(key_node.fingerprint, KeyFingerprint::Mapping(ref v) if v.is_empty());
-                            let kemn_one_entry_nullish = match &key_node.fingerprint {
+                            let kemn_direct = matches!(*fingerprint, KeyFingerprint::Mapping(ref v) if v.is_empty());
+                            let kemn_one_entry_nullish = match &*fingerprint {
                                 KeyFingerprint::Mapping(pairs) if pairs.len() == 1 => {
-                                    if let (KeyFingerprint::Scalar { value: sv, tag: stag }, _) = &pairs[0] {
-                                        *stag == SfTag::Null || sv.is_empty() || sv == "~" || sv.eq_ignore_ascii_case("null")
+                                    if let (
+                                        KeyFingerprint::Scalar {
+                                            value: sv,
+                                            tag: stag,
+                                        },
+                                        _,
+                                    ) = &pairs[0]
+                                    {
+                                        *stag == SfTag::Null
+                                            || sv.is_empty()
+                                            || sv == "~"
+                                            || sv.eq_ignore_ascii_case("null")
                                     } else {
                                         false
                                     }
@@ -1655,18 +1758,23 @@ helper to deserialize into String or Cow<'de, str> instead
                                 // Slow path needed: capture value and enqueue so pending branch can
                                 // swap inner value to outer and treat key as None.
                                 let value_node = capture_node(self.ev)?;
-                                self.enqueue_entries(vec![PendingEntry { key: key_node, value: value_node }]);
+                                self.enqueue_entries(vec![PendingEntry {
+                                    key: key_node,
+                                    value: value_node,
+                                }]);
                                 continue;
                             } else {
                                 // Fast path: deserialize key now from recorded events, do not buffer value.
-                                let events = key_node.events;
-                                let location = key_node.location;
+                                let fingerprint = fingerprint.into_owned();
+                                let location = key_node.location();
+                                let events = key_node.take_events();
                                 let key_seed = match seed.take() {
                                     Some(s) => s,
                                     None => {
-                                        return Err(
-                                            Error::msg("internal error: seed reused for map key").with_location(location)
-                                        );
+                                        return Err(Error::msg(
+                                            "internal error: seed reused for map key",
+                                        )
+                                        .with_location(location));
                                     }
                                 };
                                 let key_value = self.deserialize_recorded_key(
@@ -1676,7 +1784,8 @@ helper to deserialize into String or Cow<'de, str> instead
                                 )?;
                                 self.have_key = true;
                                 self.pending_value = None; // value will be read live
-                                self.seen.insert(key_node.fingerprint);
+
+                                self.seen.insert(fingerprint);
                                 return Ok(Some(key_value));
                             }
                         }
