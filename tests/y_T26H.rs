@@ -1,5 +1,3 @@
-use serde::Deserialize;
-
 // T26H: Spec Example 8.8. Literal Content [1.3]
 #[test]
 fn y_t26h_literal_content() {

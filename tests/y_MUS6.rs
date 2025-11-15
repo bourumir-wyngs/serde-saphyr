@@ -56,10 +56,8 @@ fn yaml_mus6_reserved_directive_yamll_then_empty_doc() {
     assert_eq!(v, None);
 }
 
-// Case 6: "%YAML \t 1.1" — directive with TABs around the version. Some parsers reject
-// this spacing. If our parser cannot handle it consistently, mark ignored; keep assertion for future.
+// Case 6: "%YAML \t 1.1" — directive with TABs around the version.
 #[test]
-#[ignore]
 fn yaml_mus6_yaml_with_tab_between_name_and_version() {
     let y = "%YAML \t 1.1\n---\n";
     let v: Option<String> = serde_saphyr::from_str(y).expect("MUS6 case6 parse failed");
