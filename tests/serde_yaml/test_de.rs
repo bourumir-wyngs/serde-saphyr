@@ -182,7 +182,6 @@ fn test_option_alias() {
 }
 
 #[test]
-#[ignore]
 fn test_enum_alias() {
     #[derive(Deserialize, PartialEq, Debug)]
     enum E {
@@ -194,14 +193,20 @@ fn test_enum_alias() {
         a: E,
         b: E,
     }
+
     let yaml = indoc! {"
-        A: &aref
-        B: &bref
-          - 1
-          - 2
+        definitions:
+            - &aref
+              A:
+            - &bref
+              B:
+                - 1
+                - 2
+
         a: *aref
         b: *bref
     "};
+
     let expected = Data {
         a: E::A,
         b: E::B(1, 2),
