@@ -324,7 +324,7 @@ fn skip_one_node_len(events: &[Ev], mut i: usize) -> Option<usize> {
 /// - Mapping deserialization to stage keys and values, and by merge processing.
 fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
     let Some(event) = ev.next()? else {
-        return Err(Error::eof().with_event_location(ev));
+        return Err(Error::eof().with_location(ev.last_location()));
     };
 
     match event {
@@ -394,11 +394,8 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
                         let mut value = capture_node(ev)?; // recursive
                         let value_fp = value.take_fingerprint();
                         entries.push((key_fp, value_fp));
-                        let key_events = key.take_events();
-                        let value_events = value.take_events();
-                        events.reserve(key_events.len());
-                        events.extend(key_events);
-                        events.extend(value_events);
+                        events.extend(key.take_events());
+                        events.extend(value.take_events());
                     }
                     None => {
                         return Err(Error::eof().with_location(ev.last_location()));
@@ -459,7 +456,7 @@ fn pending_entries_from_events(
     match replay.peek()? {
         Some(Ev::MapStart { .. }) => collect_entries_from_map(&mut replay),
         Some(Ev::SeqStart { .. }) => {
-            let mut merged = Vec::new();
+            let mut batches = Vec::new();
             let _ = replay.next()?; // consume SeqStart
             loop {
                 match replay.peek()? {
@@ -468,18 +465,21 @@ fn pending_entries_from_events(
                         break;
                     }
                     Some(_) => {
-                        let mut element_node = capture_node(&mut replay)?;
-                        let pee = pending_entries_from_events(
-                            element_node.take_events(),
-                            element_node.location(),
-                        )?; // recursive
-                        merged.reserve(pee.len());
-                        merged.extend(pee);
+                        let mut element = capture_node(&mut replay)?;
+                        batches.push(pending_entries_from_events(
+                            element.take_events(),
+                            element.location(),
+                        )?); // recursive
                     }
                     None => {
                         return Err(Error::eof().with_location(replay.last_location()));
                     }
                 }
+            }
+
+            let mut merged = Vec::new();
+            while let Some(mut nested) = batches.pop() {
+                merged.append(&mut nested);
             }
             Ok(merged)
         }
@@ -529,9 +529,10 @@ fn collect_entries_from_map(ev: &mut dyn Events) -> Result<Vec<PendingEntry>, Er
                 let key = capture_node(ev)?;
                 if is_merge_key(&key) {
                     let mut value = capture_node(ev)?;
-                    let pee = pending_entries_from_events(value.take_events(), value.location())?;
-                    merges.reserve(pee.len());
-                    merges.extend(pee);
+                    merges.push(pending_entries_from_events(
+                        value.take_events(),
+                        value.location(),
+                    )?);
                 } else {
                     let value = capture_node(ev)?;
                     fields.push(PendingEntry { key, value });
@@ -543,7 +544,11 @@ fn collect_entries_from_map(ev: &mut dyn Events) -> Result<Vec<PendingEntry>, Er
         }
     }
 
-    Ok(merges)
+    let mut entries = fields;
+    while let Some(mut nested) = merges.pop() {
+        entries.append(&mut nested);
+    }
+    Ok(entries)
 }
 
 /// A location-free representation of events for duplicate-key comparison.
@@ -689,7 +694,7 @@ impl<'e> Deser<'e> {
                 ..
             }) => Ok((value, tag, location)),
             Some(other) => Err(Error::unexpected("string scalar").with_location(other.location())),
-            None => Err(Error::eof().with_event_location(self.ev)),
+            None => Err(Error::eof().with_location(self.ev.last_location())),
         }
     }
 
@@ -741,7 +746,7 @@ impl<'e> Deser<'e> {
         match self.ev.next()? {
             Some(Ev::SeqStart { .. }) => Ok(()),
             Some(other) => Err(Error::unexpected("sequence start").with_location(other.location())),
-            None => Err(Error::eof().with_event_location(self.ev)),
+            None => Err(Error::eof().with_location(self.ev.last_location())),
         }
     }
 
@@ -750,7 +755,7 @@ impl<'e> Deser<'e> {
         match self.ev.next()? {
             Some(Ev::MapStart { .. }) => Ok(()),
             Some(other) => Err(Error::unexpected("mapping start").with_location(other.location())),
-            None => Err(Error::eof().with_event_location(self.ev)),
+            None => Err(Error::eof().with_location(self.ev.last_location())),
         }
     }
 
@@ -1031,7 +1036,7 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
             Some(other) => {
                 return Err(Error::unexpected("string scalar").with_location(other.location()));
             }
-            None => return Err(Error::eof().with_event_location(self.ev)),
+            None => return Err(Error::eof().with_location(self.ev.last_location())),
         };
 
         match self.deserialize_string(visitor) {
@@ -1127,7 +1132,7 @@ helper to deserialize into String or Cow<'de, str> instead
                             ))?;
                             out.push(b);
                         }
-                        None => return Err(Error::eof().with_event_location(self.ev)),
+                        None => return Err(Error::eof().with_location(self.ev.last_location())),
                     }
                 }
                 visitor.visit_byte_buf(out)
@@ -1144,7 +1149,7 @@ helper to deserialize into String or Cow<'de, str> instead
                 Error::unexpected("scalar (!!binary) or sequence of 0..=255")
                     .with_location(other.location()),
             ),
-            None => Err(Error::eof().with_event_location(self.ev)),
+            None => Err(Error::eof().with_location(self.ev.last_location())),
         }
     }
 
@@ -1171,7 +1176,7 @@ helper to deserialize into String or Cow<'de, str> instead
                         Error::unexpected("empty mapping start").with_location(other.location())
                     );
                 }
-                None => return Err(Error::eof().with_event_location(self.ev)),
+                None => return Err(Error::eof().with_location(self.ev.last_location())),
             }
             match self.ev.next()? {
                 Some(Ev::MapEnd { .. }) => {}
@@ -1180,7 +1185,7 @@ helper to deserialize into String or Cow<'de, str> instead
                         Error::unexpected("empty mapping end").with_location(other.location())
                     );
                 }
-                None => return Err(Error::eof().with_event_location(self.ev)),
+                None => return Err(Error::eof().with_location(self.ev.last_location())),
             }
             return visitor.visit_none();
         }
@@ -1260,7 +1265,7 @@ helper to deserialize into String or Cow<'de, str> instead
                     }
                     Some(other) => Err(Error::msg("expected empty mapping for unit struct")
                         .with_location(other.location())),
-                    None => Err(Error::eof().with_event_location(self.ev)),
+                    None => Err(Error::eof().with_location(self.ev.last_location())),
                 }
             }
             // Otherwise, delegate to unit handling (null, ~, empty scalar, EOF, etc.)
@@ -1392,7 +1397,7 @@ helper to deserialize into String or Cow<'de, str> instead
                         let de = Deser::new(self.ev, self.cfg);
                         seed.deserialize(de).map(Some)
                     }
-                    None => Err(Error::eof().with_event_location(self.ev)),
+                    None => Err(Error::eof().with_location(self.ev.last_location())),
                 }
             }
         }
@@ -1492,14 +1497,14 @@ helper to deserialize into String or Cow<'de, str> instead
                         return Err(Error::msg("unexpected container end while skipping node")
                             .with_location(location));
                     }
-                    None => return Err(Error::eof().with_event_location(self.ev)),
+                    None => return Err(Error::eof().with_location(self.ev.last_location())),
                 }
                 while depth != 0 {
                     match self.ev.next()? {
                         Some(Ev::SeqStart { .. }) | Some(Ev::MapStart { .. }) => depth += 1,
                         Some(Ev::SeqEnd { .. }) | Some(Ev::MapEnd { .. }) => depth -= 1,
                         Some(Ev::Scalar { .. }) => {}
-                        None => return Err(Error::eof().with_event_location(self.ev)),
+                        None => return Err(Error::eof().with_location(self.ev.last_location())),
                     }
                 }
                 Ok(())
@@ -1784,7 +1789,7 @@ helper to deserialize into String or Cow<'de, str> instead
                                 return Ok(Some(key_value));
                             }
                         }
-                        None => return Err(Error::eof().with_event_location(self.ev)),
+                        None => return Err(Error::eof().with_location(self.ev.last_location())),
                     }
                 }
             }
@@ -1795,9 +1800,8 @@ helper to deserialize into String or Cow<'de, str> instead
                 Vv: de::DeserializeSeed<'de>,
             {
                 if !self.have_key {
-                    return Err(
-                        Error::msg("value requested before key").with_event_location(self.ev)
-                    );
+                    return Err(Error::msg("value requested before key")
+                        .with_location(self.ev.last_location()));
                 }
                 self.have_key = false;
                 if let Some(events) = self.pending_value.take() {
@@ -1865,7 +1869,7 @@ helper to deserialize into String or Cow<'de, str> instead
                         return Err(Error::msg("expected string key for externally tagged enum")
                             .with_location(other.location()));
                     }
-                    None => return Err(Error::eof().with_event_location(self.ev)),
+                    None => return Err(Error::eof().with_location(self.ev.last_location())),
                 }
             }
             Some(Ev::SeqStart { location, .. }) => {
@@ -1880,7 +1884,7 @@ helper to deserialize into String or Cow<'de, str> instead
             Some(Ev::MapEnd { location }) => {
                 return Err(Error::msg("unexpected mapping end").with_location(*location));
             }
-            None => return Err(Error::eof().with_event_location(self.ev)),
+            None => return Err(Error::eof().with_location(self.ev.last_location())),
         };
 
         struct EA<'e> {
@@ -1925,7 +1929,7 @@ helper to deserialize into String or Cow<'de, str> instead
                         "expected end of mapping after enum variant value",
                     )
                     .with_location(other.location())),
-                    None => Err(Error::eof().with_event_location(self.ev)),
+                    None => Err(Error::eof().with_location(self.ev.last_location())),
                 }
             }
         }
@@ -1949,7 +1953,7 @@ helper to deserialize into String or Cow<'de, str> instead
                         }
                         Some(other) => Err(Error::msg("unexpected value for unit enum variant")
                             .with_location(other.location())),
-                        None => Err(Error::eof().with_event_location(self.ev)),
+                        None => Err(Error::eof().with_location(self.ev.last_location())),
                     }
                 } else {
                     Ok(())

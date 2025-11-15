@@ -4,7 +4,6 @@ use std::fmt;
 use serde::de::{self};
 use saphyr_parser::{ScanError, Span};
 use crate::budget::BudgetBreach;
-use crate::de::Events;
 
 /// Row/column location within the source YAML document (1-indexed).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -178,20 +177,6 @@ impl Error {
             Error::IOError { .. } => {} // this error does not support location
         }
         self
-    }
-
-    /// Attach/override a concrete location to this error and return it.
-    ///
-    /// Arguments:
-    /// - `event`: event providing location
-    ///
-    /// Returns:
-    /// - The same `Error` with location updated.
-    ///
-    /// Called by:
-    /// - Most error paths once the event position becomes known.
-    pub(crate) fn with_event_location(self, event: &dyn Events) -> Self {
-        self.with_location(event.last_location())
     }
 
     /// If the error has a known location, return it.
