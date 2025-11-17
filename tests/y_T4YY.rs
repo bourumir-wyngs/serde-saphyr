@@ -1,7 +1,6 @@
 use serde_json::Value;
 
 // T4YY: Single quoted lines with a real trailing space and a blank line between lines.
-// Replace the visible space glyph from the suite with an actual space character where intended.
 
 #[test]
 fn y_t4yy_single_quoted_lines_suite_glyphs() {

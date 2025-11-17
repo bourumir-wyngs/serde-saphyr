@@ -2,9 +2,6 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 
 // Q9WF: Separation Spaces with complex key (flow mapping used as a mapping key)
-// Write a full test that deserializes into a concrete Rust structure with a non-string key.
-// The main code may need to be fixed to pass this, but this test is the expected behavior.
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
 struct PlayerKey {
     first: String,

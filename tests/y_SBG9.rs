@@ -1,11 +1,6 @@
 use std::collections::BTreeMap;
 
 // SBG9: Flow Sequence in Flow Mapping
-// Note: original test calls for let y = "{a: [b, c], [d, e]: f}\n"
-// but we only support variable members in array via variable enums we
-// specify by using variant name as key value. Here we just cannot do.
-// Also, serde_json::Value does not hold this structure. Hence
-// testing only as much as we still can do.
 #[test]
 fn flow_sequence_in_flow_mapping() {
     #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Clone)]

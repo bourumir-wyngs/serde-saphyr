@@ -3,8 +3,6 @@ use std::collections::HashMap;
 // NHX8: Empty Lines at End of Document — mapping with empty key ("") and empty value (null)
 
 // ":" alone is not a valid YAML mapping entry with an empty key.
-// Most parsers won’t treat it as "" : null. If you want an empty string key with a null value,
-// you must write the key explicitly as "" and leave the value empty (or write null/~).
 
 #[test]
 fn yaml_nhx8_empty_lines_at_end_of_document() {

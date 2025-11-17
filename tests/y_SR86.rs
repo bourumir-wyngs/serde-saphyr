@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 // SR86: Anchor plus Alias in value: key2: &b *a
-// The test suite marks this as fail: true. Parser should reject alias immediately
+// Parser should reject alias immediately
 // following an anchor as part of the same node.
 #[test]
 fn y_sr86_anchor_plus_alias_should_fail() {

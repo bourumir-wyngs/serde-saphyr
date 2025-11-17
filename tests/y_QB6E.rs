@@ -1,6 +1,5 @@
 // QB6E: Wrong indented multiline quoted scalar — this YAML is expected to fail to parse.
 // We attempt to parse into a simple struct; if the parser correctly rejects it, the test passes.
-// If this unexpectedly succeeds due to parser leniency, we will mark this test as #[ignore] with an explanation.
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
