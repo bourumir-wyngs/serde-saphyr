@@ -1626,7 +1626,7 @@ helper to deserialize into String or Cow<'de, str> instead
                                                 one_entry_map_spans(&events)
                                             {
                                                 // Replace value_events with inner value events and key events with empty map
-                                                value_events = events[vs..ve].to_vec();
+                                                value_events = events.drain(vs..ve).collect();
                                                 // Build empty map events using the first and last from original events
                                                 let start = match events.first() {
                                                     Some(Ev::MapStart { anchor, location }) => {
