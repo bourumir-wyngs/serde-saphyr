@@ -1,5 +1,3 @@
-use serde::Deserialize;
-
 // TS54: Folded Block Scalar
 // YAML '>' folding with blank lines preserved.
 // Source: tests/yaml-test-suite/src/TS54.yaml

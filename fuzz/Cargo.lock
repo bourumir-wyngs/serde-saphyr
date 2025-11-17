@@ -227,7 +227,7 @@ dependencies = [
 
 [[package]]
 name = "serde-saphyr"
-version = "0.0.8-alpha-pre"
+version = "0.0.8"
 dependencies = [
  "ahash",
  "base64",
@@ -291,9 +291,9 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
 name = "smallvec"
-version = "2.0.0-alpha.11"
+version = "2.0.0-alpha.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87b96efa4bd6bdd2ff0c6615cc36fc4970cbae63cfd46ddff5cee35a1b4df570"
+checksum = "ef784004ca8777809dcdad6ac37629f0a97caee4c685fcea805278d81dd8b857"
 
 [[package]]
 name = "syn"
