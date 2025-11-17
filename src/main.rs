@@ -1,4 +1,5 @@
-//! Benchmarking test
+//! Benchmarking test. This is used periodically during development to make sure
+//! we do not degrade the performance when working on features.
 
 use serde::Deserialize;
 use serde_saphyr::Options;
