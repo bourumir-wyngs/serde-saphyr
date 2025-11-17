@@ -33,7 +33,7 @@ use std::rc::Rc;
 use crate::budget::{BudgetEnforcer, EnforcingPolicy};
 
 /// This is enough to hold a single scalar that is common  case in YAML anchors.
-const SMALLVECT_INLINE: usize = 4;
+const SMALLVECT_INLINE: usize = 8;
 
 /// A frame that records events for an anchored container until its end.
 /// Uses SmallVec to avoid heap allocations for small anchors.
@@ -130,9 +130,9 @@ impl<'a> LiveEvents<'a> {
             synthesized_null_emitted: false,
             parser: SaphyrParser::StreamParser(parser),
             look: None,
-            inject: Vec::new(),
-            anchors: Vec::new(),
-            rec_stack: Vec::new(),
+            inject: Vec::with_capacity(2),
+            anchors: Vec::with_capacity(8),
+            rec_stack: Vec::with_capacity(2),
             budget: budget.map(|budget| BudgetEnforcer::new(budget, policy)),
 
             last_location: Location::UNKNOWN,
@@ -172,9 +172,9 @@ impl<'a> LiveEvents<'a> {
             synthesized_null_emitted: false,
             parser: SaphyrParser::StringParser(Parser::new_from_str(input)),
             look: None,
-            inject: Vec::new(),
-            anchors: Vec::new(),
-            rec_stack: Vec::new(),
+            inject: Vec::with_capacity(2),
+            anchors: Vec::with_capacity(8),
+            rec_stack: Vec::with_capacity(2),
             budget: budget.map(|budget|BudgetEnforcer::new(budget, EnforcingPolicy::AllContent)),
 
             last_location: Location::UNKNOWN,
@@ -511,10 +511,22 @@ impl<'a> LiveEvents<'a> {
     /// Clears injected replay buffers, recorded anchors, current recording frames,
     /// and alias-expansion counters. Does not modify global parser state.
     fn reset_document_state(&mut self) {
+        // Clear injected replay buffers and recording stack but keep capacity.
         self.inject.clear();
-        self.anchors.clear(); // drop all per-doc anchors
         self.rec_stack.clear();
-        self.per_anchor_expansions.clear();
+
+        // Anchors are per-document. Instead of dropping the whole vec (which frees
+        // capacity and may cause re-allocation in the next document), keep the
+        // allocation and just clear the entries.
+        for slot in &mut self.anchors {
+            *slot = None;
+        }
+
+        // Reset per-anchor expansion counters without dropping capacity.
+        for cnt in &mut self.per_anchor_expansions {
+            *cnt = 0;
+        }
+
         self.total_replayed_events = 0;
         self.seen_doc_end = false;
         // Reset simple container balance per document.
