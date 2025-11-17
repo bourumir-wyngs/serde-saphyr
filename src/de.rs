@@ -15,11 +15,11 @@
 //! - `from_str*` rejects multiple docs.
 //! - `from_multiple*` collects non-empty docs; empty docs are skipped.
 
+pub use crate::budget::Budget;
+pub use crate::de_error::{Error, Location};
+
 use crate::anchor_store::{self, AnchorKind};
 use crate::base64::decode_base64_yaml;
-pub use crate::budget::Budget;
-// Re-export error types
-pub use crate::error::{Error, Location};
 use crate::parse_scalars::{
     leading_zero_decimal, parse_int_signed, parse_int_unsigned, parse_yaml11_bool,
     parse_yaml12_float, scalar_is_nullish, scalar_is_nullish_for_option,

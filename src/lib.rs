@@ -1,12 +1,13 @@
-// Serialization public API is defined at crate root; wrappers are re-exported.
+/// Serialization public API is defined at crate root
+pub use anchors::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
+pub use de::{Budget, DuplicateKeyPolicy, Error, Location, Options};
+pub use ser::{Commented, FlowMap, FlowSeq, FoldStr, LitStr};
+
 use crate::budget::EnforcingPolicy;
 use crate::de::{Ev, Events};
 use crate::live_events::LiveEvents;
 use crate::parse_scalars::scalar_is_nullish;
 pub use crate::serializer_options::SerializerOptions;
-pub use anchors::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
-pub use de::{Budget, DuplicateKeyPolicy, Error, Location, Options};
-pub use ser::{Commented, FlowMap, FlowSeq, FoldStr, LitStr};
 use serde::de::DeserializeOwned;
 use std::io::Read;
 
@@ -15,7 +16,7 @@ mod anchors;
 mod base64;
 pub mod budget;
 mod de;
-mod error;
+mod de_error;
 mod live_events;
 pub mod options;
 mod parse_scalars;

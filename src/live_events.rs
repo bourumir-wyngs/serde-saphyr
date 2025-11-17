@@ -23,7 +23,7 @@
 
 use crate::buffered_input::{buffered_input_from_reader_with_limit, ChunkedChars};
 use crate::de::{AliasLimits, Budget, Error, Ev, Events, Location};
-use crate::error::{budget_error, location_from_span};
+use crate::de_error::{budget_error, location_from_span};
 use crate::tags::SfTag;
 use saphyr_parser::{BufferedInput, Event, Parser, ScalarStyle, ScanError, Span, StrInput};
 use smallvec::SmallVec;
