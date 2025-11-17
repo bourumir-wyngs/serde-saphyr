@@ -2,7 +2,9 @@ use std::io::{stdin};
 
 fn main() -> anyhow::Result<()> {
     println!("This program reads YAML files from console. It parses as you type.\
-    Type in any valid YAML code. Use --- to separate the documents. ");
+    Type in any valid YAML code. Use --- to separate the documents. \
+    Some content of the next document is read before the current parsed document is emitted
+    ");
 
     let mut stdin = stdin();
 

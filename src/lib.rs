@@ -750,6 +750,11 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
 /// - Each `next()` yields either `Ok(T)` for a successfully deserialized document or `Err(Error)`
 ///   if parsing fails or a limit is exceeded. After an error, the iterator ends.
 /// - Empty/null-like documents are skipped and produce no items.
+/// 
+/// *Note* Some content of the next document is read before the current parsed document is emitted. 
+/// Hence, while streaming is good for safely parsing large files with multiple documents without 
+/// loading it into RAM in advance, it does not emit each document exactly 
+/// after `---`  is encountered.
 pub fn read<'a, R, T>(reader: &'a mut R) -> Box<dyn Iterator<Item = Result<T, Error>> + 'a>
 where
     R: Read + 'a,
