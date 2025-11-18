@@ -8,3 +8,4 @@
 /tests/network_test.rs
 /tests/parser_misplaced_sequence_close.rs
 
+/tests/indentation.rs
