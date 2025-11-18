@@ -2,14 +2,13 @@ use serde::Deserialize;
 
 // UV7Q: Legal tab after indentation — multiline plain scalar folded into one value
 // YAML intends that the second physical line belongs to the first sequence item, producing "x x".
-// Replace the tab glyph from the suite with a real tab character ("\t").
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct Doc {
     x: Vec<String>,
 }
 
-// The error is " "while scanning a plain scalar, found a tab"
+// The error is "while scanning a plain scalar, found a tab"
 // Tabs are okay in scalar body
 // Submitted https://github.com/saphyr-rs/saphyr/issues/89
 #[ignore]
