@@ -29,3 +29,52 @@ array_form: [72, 101, 108, 108, 111, 33]
     assert_eq!(v2.binary_form, b"Hello!");
     assert_eq!(v2.array_form, b"Hello!");
 }
+
+#[test]
+fn test_serde_saphyr_binary_supporting() -> anyhow::Result<()> {
+    let content = "name: !!binary H4sIAA==";
+
+    #[derive(Deserialize)]
+    struct SupportsBinary {
+        name: Vec<u8>,
+    }
+
+    let value: SupportsBinary  = serde_saphyr::from_str(content)?;
+    assert_eq!(value.name, vec![31, 139, 8, 0]);
+
+    Ok(())
+}
+
+#[test]
+fn test_serde_saphyr_binary_supporting_false() -> anyhow::Result<()> {
+    let content = "name: !!binary H4sIAA==";
+
+    #[derive(Deserialize)]
+    struct SupportsBinary {
+        name: Vec<u8>,
+    }
+
+    let options = serde_saphyr::Options {
+        ignore_binary_tag_for_string: false, // Still should be fine as the target is not string
+        .. serde_saphyr::Options::default()
+    };
+
+    let value: SupportsBinary  = serde_saphyr::from_str_with_options(content, options)?;
+    assert_eq!(value.name, vec![31, 139, 8, 0]);
+
+    Ok(())
+}
+
+
+#[test]
+fn test_serde_saphyr_json_value() -> anyhow::Result<()> {
+    let content = "name: !!binary H4sIAA==";
+    let options = serde_saphyr::Options {
+        ignore_binary_tag_for_string: true,
+        .. serde_saphyr::Options::default()
+    };
+
+    let value: serde_json::Value  = serde_saphyr::from_str_with_options(content, options)?;
+    assert_eq!(value["name"], "H4sIAA==");
+    Ok(())
+}

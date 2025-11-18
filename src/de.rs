@@ -49,6 +49,8 @@ pub(crate) struct Cfg {
     pub(crate) strict_booleans: bool,
     /// If true, ROS-compliant angle resolver is enabled
     pub(crate) angle_conversions: bool,
+    /// Ignore !!binary for string
+    pub (crate) ignore_binary_tag_for_string: bool,
 }
 
 impl Cfg {
@@ -59,6 +61,7 @@ impl Cfg {
             legacy_octal_numbers: options.legacy_octal_numbers,
             strict_booleans: options.strict_booleans,
             angle_conversions: options.angle_conversions,
+            ignore_binary_tag_for_string: options.ignore_binary_tag_for_string
         }
     }
 }
@@ -726,7 +729,7 @@ impl<'e> Deser<'e> {
         let (value, tag, location) = self.take_scalar_event()?;
 
         // Special-case binary: decode base64 and require valid UTF-8.
-        if tag == SfTag::Binary {
+        if tag == SfTag::Binary && !self.cfg.ignore_binary_tag_for_string {
             let data = decode_base64_yaml(&value).map_err(|err| err.with_location(location))?;
             let text = String::from_utf8(data).map_err(|_| {
                 Error::msg("!!binary scalar is not valid UTF-8").with_location(location)
@@ -735,7 +738,8 @@ impl<'e> Deser<'e> {
         }
 
         // For non-binary, ensure the tag allows string deserialization.
-        if !tag.can_parse_into_string() && tag != SfTag::NonSpecific {
+        if !tag.can_parse_into_string() && tag != SfTag::NonSpecific && !
+                (self.cfg.ignore_binary_tag_for_string && tag == SfTag::Binary) {
             return Err(
                 Error::msg("cannot deserialize scalar tagged into string").with_location(location)
             );

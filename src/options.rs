@@ -87,6 +87,11 @@ pub struct Options {
     /// YAML 1.1 forms like `yes`/`no`/`on`/`off` will be rejected and not inferred.
     /// Default: false (accept YAML 1.1 boolean forms).
     pub strict_booleans: bool,
+    /// When a field marked with the `!!binary` tag is deserialized into a `String`,
+    /// `serde-saphyr` normally expects the value to be base64-encoded UTF-8.
+    /// If you want to treat the value as a plain string and ignore the `!!binary` tag,
+    /// set this to `true` (the default is `false`).
+    pub ignore_binary_tag_for_string: bool,
     /// Defines hooks for custom scalar conversion (ROS syntax for robotics, etc.) See
     /// [`serde_saphyr::angles_hook::AnglesHook`]
     pub angle_conversions: bool
@@ -101,6 +106,7 @@ impl Default for Options {
             legacy_octal_numbers: false,
             strict_booleans: false,
             angle_conversions: false,
+            ignore_binary_tag_for_string: false,
         }
     }
 }
