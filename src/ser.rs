@@ -948,8 +948,10 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             // consume the pending space request and start a new line
             self.pending_space_after_colon = false;
             self.newline()?;
-            // emit nested mapping starting one level deeper
-            self.write_indent(self.depth + 1)?;
+            // When used as a mapping value, indent relative to the parent mapping's base,
+            // not the serializer's current depth (which may still be the outer level).
+            let base = self.current_map_depth.unwrap_or(self.depth);
+            self.write_indent(base + 1)?;
             self.write_plain_or_quoted(variant)?;
             // Write ':' without trailing space, then mark that a space may be needed
             // if the following value is a scalar.
