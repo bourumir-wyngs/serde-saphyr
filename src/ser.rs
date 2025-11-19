@@ -958,7 +958,12 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             self.out.write_str(":")?;
             self.pending_space_after_colon = true;
             self.at_line_start = false;
-            return value.serialize(&mut *self);
+            // Ensure that if the value is another variant or a mapping/sequence,
+            // it indents under this variant label rather than the parent map key.
+            let prev_map_depth = self.current_map_depth.replace(base + 1);
+            let res = value.serialize(&mut *self);
+            self.current_map_depth = prev_map_depth;
+            return res;
         }
         // Otherwise (top-level or sequence context).
         if self.at_line_start {
@@ -1029,7 +1034,11 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             } else {
                 self.depth
             };
-            let depth_next = if inline_first || was_inline_value {
+            // For sequences used as a mapping value, the dash should align under the parent key
+            // (no extra indentation). Keep depth at `base` so the first dash starts at the base.
+            let depth_next = if inline_first {
+                base + 1
+            } else if was_inline_value {
                 base + 1
             } else {
                 base
