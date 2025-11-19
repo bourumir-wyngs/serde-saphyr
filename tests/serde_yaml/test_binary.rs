@@ -37,7 +37,6 @@ fn test_serialize_vec_as_sequence() {
         data: b"hi".to_vec(),
     };
     let yaml_str = yaml::to_string(&data).unwrap();
-    println!("Array:: {}", yaml_str);
     assert_eq!(yaml_str, "data:\n  - 104\n  - 105\n");
 }
 
@@ -47,6 +46,5 @@ fn test_serialize_vec_as_bytes() {
         data: b"hello".to_vec(),
     };
     let yaml_str = yaml::to_string(&data).unwrap();
-    println!("ByteBuf:: {}", yaml_str);
     assert_eq!(yaml_str, "data: !!binary aGVsbG8=\n");
 }
