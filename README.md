@@ -55,7 +55,15 @@ Duplicate key handling is configurable. By default it’s an error; “first win
 
 ### Unsupported features
 - **Tagged enums** (`!!EnumName RED`) are not supported. Use mapping-based enums (`EnumName: RED`) instead. This also allows you to define nested enums if needed, with tagged enums this is not possible by YAML standard.
----
+- **Tabs in block scalar** While standard YAML only disallows tabs for indentation, saphyr-parser rejects 
+    them also in the body of unquoted scalar. This looks even reasonable (to avoid invisible characters) and looks like implemented deliberately.
+- **Invalid indentation of the closing bracket.** The code like
+```yaml
+    key: [
+    ]
+```
+is not a valid YAML, closing bracket must be moved more to the right. Some parsers allow this deviation from the rules, serde-saphyr does not. 
+
 
 ## Usage
 

@@ -23,4 +23,10 @@ fn yaml_y79y_block_scalar_with_tab() {
     assert_eq!(v.bar, 1);
 }
 
-
+#[test]
+fn yaml_y79y_quoted_scalar_with_tab() {
+    let y = "foo: \"\\t\\n\"\nbar: 1\n";
+    let v: Doc = serde_saphyr::from_str(y).unwrap();
+    assert_eq!(v.foo, "\t\n");
+    assert_eq!(v.bar, 1);
+}
