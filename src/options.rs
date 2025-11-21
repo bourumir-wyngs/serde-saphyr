@@ -92,8 +92,9 @@ pub struct Options {
     /// If you want to treat the value as a plain string and ignore the `!!binary` tag,
     /// set this to `true` (the default is `false`).
     pub ignore_binary_tag_for_string: bool,
-    /// Defines hooks for custom scalar conversion (ROS syntax for robotics, etc.) See
-    /// [`serde_saphyr::angles_hook::AnglesHook`]
+    /// Activates YAML conventions common in robotics community. These extensions support
+    /// conversion functions (deg, rad) and simple mathematical expressions such as deg(180),
+    /// rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). [robotics] feature must also be enabled.
     pub angle_conversions: bool
 }
 
