@@ -262,6 +262,20 @@ where
     }
 }
 
+/// If we are not using Rust struct as schema, check if we should not be quoting the value.
+pub (crate) fn maybe_not_string(s: &str, style: &ScalarStyle) -> bool {
+    let location = Location::UNKNOWN;
+    if style == &ScalarStyle::Plain {
+        if parse_yaml12_float::<f64>(s, location, SfTag::None, false).is_ok() ||
+            parse_int_signed::<i128>(s, "i128", location, false).is_ok() ||
+            parse_yaml11_bool(s).is_ok() ||
+            scalar_is_nullish(s, &ScalarStyle::Plain) {
+            return true;
+        };
+    }
+    false
+}
+
 
 /// True if a scalar is a YAML "null-like" value in non-`Option` contexts.
 ///

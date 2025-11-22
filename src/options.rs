@@ -95,7 +95,14 @@ pub struct Options {
     /// Activates YAML conventions common in robotics community. These extensions support
     /// conversion functions (deg, rad) and simple mathematical expressions such as deg(180),
     /// rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). [robotics] feature must also be enabled.
-    pub angle_conversions: bool
+    pub angle_conversions: bool,
+    /// If true, values that can be parsed as booleans or numbers are rejected as
+    /// unquoted strings. This flag is intended for teams that want to enforce
+    /// compatibility with YAML parsers that infer types from unquoted values,
+    /// requiring such strings to be explicitly quoted.
+    /// The default is false (a number or boolean will be stored in the string
+    /// field exactly as provided, without quoting).
+    pub no_schema: bool,
 }
 
 impl Default for Options {
@@ -108,6 +115,7 @@ impl Default for Options {
             strict_booleans: false,
             angle_conversions: false,
             ignore_binary_tag_for_string: false,
+            no_schema: false,
         }
     }
 }

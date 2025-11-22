@@ -1,25 +1,33 @@
 //! Defines error and its location
 use std::fmt;
 
-use serde::de::{self};
-use saphyr_parser::{ScanError, Span};
 use crate::budget::BudgetBreach;
+use crate::parse_scalars::{
+    parse_int_signed, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish,
+};
+use crate::tags::SfTag;
+use saphyr_parser::{ScalarStyle, ScanError, Span};
+use serde::de::{self};
 
 /// Row/column location within the source YAML document (1-indexed).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Location {
     /// 1-indexed row number in the input stream.
-    pub (crate) row: u32,
+    pub(crate) row: u32,
     /// 1-indexed column number in the input stream.
-    pub (crate) column: u32,
+    pub(crate) column: u32,
 }
 
 impl Location {
     /// serde_yaml-compatible line information
-    pub fn line(&self) -> u64 { self.row as u64 }
+    pub fn line(&self) -> u64 {
+        self.row as u64
+    }
 
     /// serde_yaml-compatible column information
-    pub fn column(&self) -> u64 { self.column as u64}
+    pub fn column(&self) -> u64 {
+        self.column as u64
+    }
 }
 
 impl Location {
@@ -42,7 +50,10 @@ impl Location {
     pub(crate) const fn new(row: usize, column: usize) -> Self {
         // 4 Gb is larger than any YAML document I can imagine, and also this is
         // error reporting only.
-        Self { row: row as u32, column: column as u32 }
+        Self {
+            row: row as u32,
+            column: column as u32,
+        }
     }
 }
 
@@ -93,8 +104,14 @@ pub enum Error {
     },
     /// Unexpected I/O error. This may happen only when deserializing from a reader.
     IOError {
-        cause: std::io::Error
-    }
+        cause: std::io::Error,
+    },
+    /// The value is targeted to the string field but can be interpreted as a number or boolean.
+    /// This error can only happens if no_schema set true.
+    QuotingRequired {
+        value: String, // sanitized (checked) value that must be quoted
+        location: Location,
+    },
 }
 
 impl Error {
@@ -111,8 +128,27 @@ impl Error {
     pub(crate) fn msg<S: Into<String>>(s: S) -> Self {
         Error::Message {
             msg: s.into(),
-            location: Location::UNKNOWN
+            location: Location::UNKNOWN,
         }
+    }
+
+    /// Construct a `QuotingRequired` error with no known location.
+    /// Called by:
+    /// - Deserializer, when deserializing into string if no_schema set to true.
+    pub(crate) fn quoting_required(value: &str) -> Self {
+        // Ensure the value really is like number or boolean (do not reflect back content
+        // that may be used for attack)
+        let location = Location::UNKNOWN;
+        let value = if parse_yaml12_float::<f64>(value, location, SfTag::None, false).is_ok()
+            || parse_int_signed::<i128>(value, "i128", location, false).is_ok()
+            || parse_yaml11_bool(value).is_ok()
+            || scalar_is_nullish(value, &ScalarStyle::Plain)
+        {
+            value.to_string()
+        } else {
+            String::new()
+        };
+        Error::QuotingRequired { value, location }
     }
 
     /// Convenience for an `Unexpected` error pre-filled with a human phrase.
@@ -128,7 +164,7 @@ impl Error {
     pub(crate) fn unexpected(what: &'static str) -> Self {
         Error::Unexpected {
             expected: what,
-            location: Location::UNKNOWN
+            location: Location::UNKNOWN,
         }
     }
 
@@ -138,7 +174,7 @@ impl Error {
     /// - Lookahead and pull methods when `None` appears prematurely.
     pub(crate) fn eof() -> Self {
         Error::Eof {
-            location: Location::UNKNOWN
+            location: Location::UNKNOWN,
         }
     }
 
@@ -149,7 +185,7 @@ impl Error {
     pub(crate) fn unknown_anchor(id: usize) -> Self {
         Error::UnknownAnchor {
             id,
-            location: Location::UNKNOWN
+            location: Location::UNKNOWN,
         }
     }
 
@@ -171,9 +207,10 @@ impl Error {
             | Error::HookError { location, .. }
             | Error::ContainerEndMismatch { location, .. }
             | Error::UnknownAnchor { location, .. }
+            | Error::QuotingRequired { location, .. }
             | Error::Budget { location, .. } => {
                 *location = set_location;
-            },
+            }
             Error::IOError { .. } => {} // this error does not support location
         }
         self
@@ -194,14 +231,15 @@ impl Error {
             | Error::HookError { location, .. }
             | Error::ContainerEndMismatch { location, .. }
             | Error::UnknownAnchor { location, .. }
+            | Error::QuotingRequired { location, .. }
             | Error::Budget { location, .. } => {
                 if location != &Location::UNKNOWN {
                     Some(*location)
                 } else {
                     None
                 }
-            },
-            Error:: IOError { cause: _ } => None,
+            }
+            Error::IOError { cause: _ } => None,
         }
     }
 
@@ -225,18 +263,27 @@ impl fmt::Display for Error {
             Error::Message { msg, location } => fmt_with_location(f, msg, location),
             Error::HookError { msg, location } => fmt_with_location(f, msg, location),
             Error::Eof { location } => fmt_with_location(f, "unexpected end of input", location),
-            Error::Unexpected { expected, location } => {
-                fmt_with_location(f, &format!("unexpected event: expected {expected}"), location)
-            }
+            Error::Unexpected { expected, location } => fmt_with_location(
+                f,
+                &format!("unexpected event: expected {expected}"),
+                location,
+            ),
             Error::ContainerEndMismatch { location } => {
                 fmt_with_location(f, "list or mapping end with no start", location)
             }
-            Error::UnknownAnchor { id, location } => {
-                fmt_with_location(f, &format!("alias references unknown anchor id {id}"), location)
-            }
+            Error::UnknownAnchor { id, location } => fmt_with_location(
+                f,
+                &format!("alias references unknown anchor id {id}"),
+                location,
+            ),
             Error::Budget { breach, location } => {
                 fmt_with_location(f, &format!("YAML budget breached: {breach:?}"), location)
             }
+            Error::QuotingRequired { value, location } => fmt_with_location(
+                f,
+                &format!("The string value [{value}] must be quoted"),
+                location,
+            ),
             Error::IOError { cause } => write!(f, "IO error: {}", cause),
         }
     }
@@ -280,5 +327,8 @@ fn fmt_with_location(f: &mut fmt::Formatter<'_>, msg: &str, location: &Location)
 /// Called by:
 /// - The live events layer when enforcing budgets during/after parsing.
 pub(crate) fn budget_error(breach: BudgetBreach) -> Error {
-    Error::Budget { breach, location: Location::UNKNOWN }
+    Error::Budget {
+        breach,
+        location: Location::UNKNOWN,
+    }
 }

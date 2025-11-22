@@ -21,8 +21,8 @@ pub use crate::de_error::{Error, Location};
 use crate::anchor_store::{self, AnchorKind};
 use crate::base64::decode_base64_yaml;
 use crate::parse_scalars::{
-    leading_zero_decimal, parse_int_signed, parse_int_unsigned, parse_yaml11_bool,
-    parse_yaml12_float, scalar_is_nullish, scalar_is_nullish_for_option,
+    leading_zero_decimal, maybe_not_string, parse_int_signed, parse_int_unsigned,
+    parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish, scalar_is_nullish_for_option,
 };
 use ahash::{HashSetExt, RandomState};
 use saphyr_parser::ScalarStyle;
@@ -50,7 +50,9 @@ pub(crate) struct Cfg {
     /// If true, ROS-compliant angle resolver is enabled
     pub(crate) angle_conversions: bool,
     /// Ignore !!binary for string
-    pub (crate) ignore_binary_tag_for_string: bool,
+    pub(crate) ignore_binary_tag_for_string: bool,
+    /// Do not take into String type that looks like number or boolean (require quoting)
+    pub(crate) no_schema: bool,
 }
 
 impl Cfg {
@@ -61,7 +63,8 @@ impl Cfg {
             legacy_octal_numbers: options.legacy_octal_numbers,
             strict_booleans: options.strict_booleans,
             angle_conversions: options.angle_conversions,
-            ignore_binary_tag_for_string: options.ignore_binary_tag_for_string
+            ignore_binary_tag_for_string: options.ignore_binary_tag_for_string,
+            no_schema: options.no_schema,
         }
     }
 }
@@ -327,7 +330,7 @@ fn skip_one_node_len(events: &[Ev], mut i: usize) -> Option<usize> {
 /// - Mapping deserialization to stage keys and values, and by merge processing.
 fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
     let Some(event) = ev.next()? else {
-        return Err(Error::eof().with_location(ev.last_location()))
+        return Err(Error::eof().with_location(ev.last_location()));
     };
 
     match event {
@@ -738,8 +741,10 @@ impl<'e> Deser<'e> {
         }
 
         // For non-binary, ensure the tag allows string deserialization.
-        if !tag.can_parse_into_string() && tag != SfTag::NonSpecific && !
-                (self.cfg.ignore_binary_tag_for_string && tag == SfTag::Binary) {
+        if !tag.can_parse_into_string()
+            && tag != SfTag::NonSpecific
+            && !(self.cfg.ignore_binary_tag_for_string && tag == SfTag::Binary)
+        {
             return Err(
                 Error::msg("cannot deserialize scalar tagged into string").with_location(location)
             );
@@ -1017,20 +1022,36 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
 
     /// Parse a single Unicode scalar value (`char`).
     ///
-    /// **Note:** YAML null forms are rejected for `char`.
+    /// Null semantics:
+    /// - Tagged null or plain null-like scalars (empty, `~`, or case-insensitive `null`) are not valid `char`.
+    ///   Quoted forms are treated as normal strings and validated for length 1.
+    /// - In `no_schema` mode, plain scalars that look like non-strings (numbers, bools, etc.)
+    ///   must be quoted; this check uses scalar style to avoid flagging quoted scalars.
     fn deserialize_char<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_with_location()?;
-        // Treat YAML null forms as invalid for `char`
-        if s.is_empty() || s == "~" || s.eq_ignore_ascii_case("null") {
-            return Err(Error::msg("invalid char: value cannot be 'null'").with_location(location));
+        // Mirror deserialize_string pre-checks to leverage tag/style and maybe_not_string.
+        if let Some(next) = self.ev.peek()? {
+            if let Ev::Scalar { tag, style, value, .. } = next {
+                if tag != &SfTag::String {
+                    // Reject YAML null for char (allow quoted values like "null").
+                    if tag == &SfTag::Null || scalar_is_nullish(value, style) {
+                        let (_value, _tag, location) = self.take_scalar_event()?;
+                        return Err(Error::msg("invalid char: cannot deserialize null; use Option<char>")
+                            .with_location(location));
+                    } else if self.cfg.no_schema && maybe_not_string(value, style) {
+                        // Require quoting for ambiguous plain scalars in no_schema mode.
+                        let (value, _tag, location) = self.take_scalar_event()?;
+                        return Err(Error::quoting_required(&value).with_location(location));
+                    }
+                }
+            }
         }
+
+        // Now consume the scalar and validate it contains exactly one Unicode scalar value.
+        let (s, _tag, location) = self.take_scalar_with_location()?;
         let mut it = s.chars();
         match (it.next(), it.next()) {
             (Some(c), None) => visitor.visit_char(c),
-            _ => Err(
-                Error::msg("invalid char: expected a single Unicode scalar value")
-                    .with_location(location),
-            ),
+            _ => Err(Error::msg("invalid char: expected a single Unicode scalar value").with_location(location)),
         }
     }
 
@@ -1095,6 +1116,10 @@ helper to deserialize into String or Cow<'de, str> instead
                             "cannot deserialize null into string; use Option<String>",
                         )
                         .with_location(location));
+                    } else if self.cfg.no_schema && maybe_not_string(value, style) {
+                        // Consume the scalar to anchor the error at the correct location.
+                        let (value, _tag, location) = self.take_scalar_event()?;
+                        return Err(Error::quoting_required(&value).with_location(location));
                     }
                 }
             }
@@ -1867,11 +1892,22 @@ helper to deserialize into String or Cow<'de, str> instead
         }
 
         let mode = match self.ev.peek()? {
-            Some(Ev::Scalar { .. }) => Mode::Unit(self.take_scalar()?),
+            Some(Ev::Scalar { tag, style, value, .. }) => {
+                if self.cfg.no_schema && *tag != SfTag::String && maybe_not_string(value, style) {
+                    let (v, _t, loc) = self.take_scalar_event()?;
+                    return Err(Error::quoting_required(&v).with_location(loc));
+                }
+                Mode::Unit(self.take_scalar()?)
+            }
             Some(Ev::MapStart { .. }) => {
                 self.expect_map_start()?;
                 match self.ev.next()? {
-                    Some(Ev::Scalar { value, .. }) => Mode::Map(value),
+                    Some(Ev::Scalar { value, tag, style, location, .. }) => {
+                        if self.cfg.no_schema && tag != SfTag::String && maybe_not_string(&value, &style) {
+                            return Err(Error::quoting_required(&value).with_location(location));
+                        }
+                        Mode::Map(value)
+                    }
                     Some(other) => {
                         return Err(Error::msg("expected string key for externally tagged enum")
                             .with_location(other.location()));

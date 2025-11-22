@@ -290,8 +290,12 @@ Merge keys are standard in YAML 1.1. Although YAML 1.2 no longer includes merge 
 
 ## Rust types as schema
 
-The target Rust types act as a schema. Knowing whether a field is a string or a boolean allows the parser to accept `1.2` as either a number or the string `"1.2"` depending on the target type, and to interpret common YAML boolean shorthands like `y`, `on`, `n`, or `off` appropriately. Similarly, `0x2A` is a hexadecimal number when parsed into an integer field, and a string when parsed into `String`.
-Legacy octal format like `0052` can be turned on in [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html) but is off by default.
+To address the “Norway problem,” the target Rust types serve as an explicit schema. Because the parser knows whether a field expects a string or a boolean, it can correctly accept `1.2` either as a number or as the string `"1.2"`, and interpret the common YAML boolean shorthands (`y`, `on`, `n`, `off`) as actual booleans when appropriate. Likewise, `0x2A` is parsed as a hexadecimal integer when the target field is numeric, and as a string when the target is `String`. As with [StrictYAML](https://hitchdev.com/strictyaml/why/implicit-typing-removed/), **serde-saphyr** avoids inferring types from values — one of the most heavily criticized aspects of YAML. The Rust type system already provides all the necessary schema information.
+
+Schema based parsing can be disabled by setting `no_schema` to true in  [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). In this case all *unquoted* values that are parsed into strings, but can be understood as something else, are rejected. This can be used for enforcing compatibility with another YAML parser that reads the same content and requires this quoting. Default setting if false.
+
+Legacy octal notation such as `0052` can be enabled via `Options, but it is disabled by default.
+
 
 ## Pathological inputs & budgets
 
