@@ -1,4 +1,4 @@
-//! Streaming YAML budget checker using saphyr-parser (YAML 1.2).
+//! Streaming YAML budget checker using saphyr-parser.
 //!
 //! This inspects the parser's event stream and enforces simple budgets to
 //! avoid pathological inputs
@@ -29,9 +29,9 @@ use smallvec::SmallVec;
 /// }
 ///
 /// let yaml = r#"
-/// name: My Application
-/// enabled: true
-/// retries: 5
+///   name: My Application
+///   enabled: true
+///   retries: 5
 /// "#;
 ///
 /// let mut options = serde_saphyr::Options::default();
