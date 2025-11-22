@@ -307,29 +307,6 @@ impl BudgetEnforcer {
         }
 
         match ev {
-            Event::StreamStart | Event::StreamEnd => {}
-            Event::DocumentStart(_explicit) => {
-                if self.policy == EnforcingPolicy::PerDocument {
-                    self.report.reset();
-                } else {
-                    self.report.documents += 1;
-                    if self.report.documents > self.budget.max_documents {
-                        return Err(BudgetBreach::Documents {
-                            documents: self.report.documents,
-                        });
-                    }
-                }
-            }
-            Event::DocumentEnd => {}
-            Event::Alias(_anchor_id) => {
-                self.report.aliases += 1;
-                if self.report.aliases > self.budget.max_aliases {
-                    return Err(BudgetBreach::Aliases {
-                        aliases: self.report.aliases,
-                    });
-                }
-                self.handle_alias();
-            }
             Event::Scalar(value, style, anchor_id, tag_opt) => {
                 self.bump_nodes()?;
                 self.report.total_scalar_bytes = self
@@ -393,6 +370,30 @@ impl BudgetEnforcer {
                 }
                 self.leave_mapping()?;
             }
+            Event::StreamStart | Event::StreamEnd => {}
+            Event::DocumentStart(_explicit) => {
+                if self.policy == EnforcingPolicy::PerDocument {
+                    self.report.reset();
+                } else {
+                    self.report.documents += 1;
+                    if self.report.documents > self.budget.max_documents {
+                        return Err(BudgetBreach::Documents {
+                            documents: self.report.documents,
+                        });
+                    }
+                }
+            }
+            Event::DocumentEnd => {}
+            Event::Alias(_anchor_id) => {
+                self.report.aliases += 1;
+                if self.report.aliases > self.budget.max_aliases {
+                    return Err(BudgetBreach::Aliases {
+                        aliases: self.report.aliases,
+                    });
+                }
+                self.handle_alias();
+            }
+
             Event::Nothing => {}
         }
 

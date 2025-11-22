@@ -480,6 +480,12 @@ fn pending_entries_from_events(
 ) -> Result<Vec<PendingEntry>, Error> {
     let mut replay = ReplayEvents::new(events);
     match replay.peek()? {
+        Some(Ev::Scalar { value, style, .. }) if scalar_is_nullish(value.as_str(), style) => {
+            Ok(Vec::new())
+        }
+        Some(Ev::Scalar { location, .. }) => Err(Error::msg(
+            "YAML merge value must be mapping or sequence of mappings",
+        ).with_location(*location)),
         Some(Ev::MapStart { .. }) => collect_entries_from_map(&mut replay),
         Some(Ev::SeqStart { .. }) => {
             let mut batches = Vec::new();
@@ -509,13 +515,6 @@ fn pending_entries_from_events(
             }
             Ok(merged)
         }
-        Some(Ev::Scalar { value, style, .. }) if scalar_is_nullish(value.as_str(), style) => {
-            Ok(Vec::new())
-        }
-        Some(Ev::Scalar { location, .. }) => Err(Error::msg(
-            "YAML merge value must be mapping or sequence of mappings",
-        )
-        .with_location(*location)),
         Some(other) => Err(
             Error::msg("YAML merge value must be mapping or sequence of mappings")
                 .with_location(other.location()),

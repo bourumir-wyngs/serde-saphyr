@@ -92,11 +92,6 @@ pub(crate) struct LiveEvents<'a> {
     /// Location of the last yielded event (for better error reporting).
     last_location: Location,
 
-    /// Simple container balance: counts open sequences/maps regardless of anchors/budget.
-    /// Incremented on SequenceStart/MappingStart; decremented on SequenceEnd/MappingEnd.
-    /// Used to detect extra closing brackets/braces even when no budget is configured.
-    open_containers: usize,
-
     /// Alias-bomb hardening limits and counters.
     alias_limits: AliasLimits,
     /// Total number of replayed events across the whole stream (enforced by `alias_limits`).
@@ -142,9 +137,6 @@ impl<'a> LiveEvents<'a> {
             stop_at_doc_end,
             seen_doc_end: false,
 
-            // Check bracket balance
-            open_containers: 0,
-
             error,
         }
     }
@@ -184,26 +176,8 @@ impl<'a> LiveEvents<'a> {
             stop_at_doc_end,
             seen_doc_end: false,
 
-            // Check bracket balance
-            open_containers: 0,
-
             // Error field is provided but for string, nothing is ever reported
             error: Rc::new(RefCell::new(None)),
-        }
-    }
-
-    fn container_start(&mut self) {
-        self.open_containers += 1;
-    }
-
-    fn container_end(&mut self) -> Result<(), Error> {
-        if self.open_containers == 0 {
-            Err(Error::ContainerEndMismatch {
-                location: self.last_location,
-            })
-        } else {
-            self.open_containers -= 1; // 0 checked
-            Ok(())
         }
     }
 
@@ -239,10 +213,8 @@ impl<'a> LiveEvents<'a> {
 
                 match ev {
                     Ev::SeqStart { .. } | Ev::MapStart { .. } => {
-                        self.container_start();
                     }
                     Ev::SeqEnd { .. } | Ev::MapEnd { .. } => {
-                        self.container_end()?;
                     }
                     Ev::Scalar { .. } => {}
                     Ev::Taken { location } => {
@@ -343,7 +315,6 @@ impl<'a> LiveEvents<'a> {
                         });
                     }
 
-                    self.container_start();
                     // Correct recording semantics:
                     // - If we *just* created a new frame for this start, the start was already seeded.
                     // - For ordinary (non-anchored) starts, record into *all* frames.
@@ -357,7 +328,6 @@ impl<'a> LiveEvents<'a> {
                     return Ok(Some(ev));
                 }
                 Event::SequenceEnd => {
-                    self.container_end()?;
                     let ev = Ev::SeqEnd { location };
                     self.record(&ev, false, false);
                     self.bump_depth_on_end()
@@ -383,7 +353,6 @@ impl<'a> LiveEvents<'a> {
                         });
                     }
                     // Container-balance: count open containers independent of budgets/anchors.
-                    self.container_start();
                     self.record(
                         &ev,
                         /*is_start*/ true,
@@ -394,7 +363,6 @@ impl<'a> LiveEvents<'a> {
                     return Ok(Some(ev));
                 }
                 Event::MappingEnd => {
-                    self.container_end()?;
                     let ev = Ev::MapEnd { location };
                     self.record(&ev, false, false);
                     self.bump_depth_on_end()
@@ -531,8 +499,6 @@ impl<'a> LiveEvents<'a> {
 
         self.total_replayed_events = 0;
         self.seen_doc_end = false;
-        // Reset simple container balance per document.
-        self.open_containers = 0;
     }
 
     /// Observe the configured budget for a replayed (injected) event.
