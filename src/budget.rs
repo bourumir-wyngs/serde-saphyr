@@ -5,8 +5,9 @@
 
 use std::borrow::Cow;
 use std::collections::HashSet;
-
+use ahash::HashSetExt;
 use saphyr_parser::{Event, Parser, ScalarStyle, ScanError};
+use smallvec::SmallVec;
 
 /// Budgets for a streaming YAML scan.
 ///
@@ -258,13 +259,15 @@ pub enum EnforcingPolicy {
 }
 
 /// Stateful helper that enforces a [`Budget`] while consuming a stream of [`Event`]s.
+type FastHashSet<T> = HashSet<T, ahash::RandomState>;
+
 #[derive(Debug)]
 pub (crate) struct BudgetEnforcer {
     budget: Budget,
     report: BudgetReport,
     depth: usize,
-    defined_anchors: HashSet<usize>,
-    containers: Vec<ContainerState>,
+    defined_anchors: FastHashSet<usize>,
+    containers: SmallVec<ContainerState, 64>,
     policy: EnforcingPolicy
 }
 
@@ -286,8 +289,8 @@ impl BudgetEnforcer {
             budget,
             report: BudgetReport::default(),
             depth: 0,
-            defined_anchors: HashSet::with_capacity(256),
-            containers: Vec::with_capacity(64),
+            defined_anchors: FastHashSet::with_capacity(256),
+            containers: SmallVec::new(),
             policy
         }
     }
@@ -329,11 +332,9 @@ impl BudgetEnforcer {
             }
             Event::Scalar(value, style, anchor_id, tag_opt) => {
                 self.bump_nodes()?;
-                let len = match value {
-                    Cow::Borrowed(s) => s.len(),
-                    Cow::Owned(s) => s.len(),
-                };
-                self.report.total_scalar_bytes = self.report.total_scalar_bytes.saturating_add(len);
+                self.report.total_scalar_bytes = self
+                    .report.total_scalar_bytes
+                    .saturating_add(value.len());
                 if self.report.total_scalar_bytes > self.budget.max_total_scalar_bytes {
                     return Err(BudgetBreach::ScalarBytes {
                         total_scalar_bytes: self.report.total_scalar_bytes,
