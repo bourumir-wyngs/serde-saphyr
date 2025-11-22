@@ -89,6 +89,18 @@ pub(crate) enum Ev {
     MapStart { anchor: usize, location: Location },
     /// End of a mapping.
     MapEnd { location: Location },
+    /// The event have been taken from the array, with only location remaining. This should not
+    /// appear in the event stream and reserved for internal usage withing container.
+    Taken { location: Location },
+}
+
+impl Default for Ev {
+    // Used for optimization
+    fn default() -> Self {
+        Ev::Taken {
+            location: Location::UNKNOWN,
+        }
+    }
 }
 
 impl Ev {
@@ -105,7 +117,8 @@ impl Ev {
             | Ev::SeqStart { location, .. }
             | Ev::SeqEnd { location }
             | Ev::MapStart { location, .. }
-            | Ev::MapEnd { location } => *location,
+            | Ev::MapEnd { location }
+            | Ev::Taken { location } => *location,
         }
     }
 }
@@ -283,6 +296,7 @@ fn skip_one_node_len(events: &[Ev], mut i: usize) -> Option<usize> {
                         depth -= 1;
                     }
                     Ev::Scalar { .. } => {}
+                    Ev::Taken { .. } => return None,
                 }
                 i += 1;
             }
@@ -306,12 +320,14 @@ fn skip_one_node_len(events: &[Ev], mut i: usize) -> Option<usize> {
                         depth -= 1;
                     }
                     Ev::Scalar { .. } => {}
+                    Ev::Taken { .. } => return None,
                 }
                 i += 1;
             }
             None
         }
         Ev::SeqEnd { .. } | Ev::MapEnd { .. } => None,
+        Ev::Taken { .. } => None,
     }
 }
 
@@ -421,6 +437,7 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
             "unexpected container end while reading key node",
         )
         .with_location(location)),
+        Ev::Taken { location } => Err(Error::unexpected("consumed event").with_location(location)),
     }
 }
 
@@ -594,8 +611,9 @@ pub(crate) trait Events {
 
 /// Event source that replays a pre-recorded buffer.
 struct ReplayEvents {
-    last_location: Location,
-    buf: VecDeque<Ev>,
+    buf: Vec<Ev>,
+    /// Index of the next event to yield (0..=buf.len()).
+    idx: usize,
 }
 
 impl ReplayEvents {
@@ -607,43 +625,32 @@ impl ReplayEvents {
     /// Called by:
     /// - Merge expansion and recorded key/value deserialization.
     fn new(buf: Vec<Ev>) -> Self {
-        Self {
-            last_location: if let Some(first) = buf.first() {
-                first.location()
-            } else {
-                Location::UNKNOWN
-            },
-            buf: VecDeque::from(buf),
-        }
+        Self { buf, idx: 0 }
     }
 }
 
 impl Events for ReplayEvents {
     /// See [`Events::next`]. Replays and advances the internal index.
     fn next(&mut self) -> Result<Option<Ev>, Error> {
-        if self.buf.is_empty() {
+        if self.idx >= self.buf.len() {
             return Ok(None);
         }
-
-        if let Some(ev) = self.buf.pop_front() {
-            self.last_location = ev.location();
-            Ok(Some(ev))
-        } else {
-            Ok(None)
-        }
+        let location = self.buf[self.idx].location();
+        // Flag as taken to avoid unexpected reuse.
+        let ev = mem::replace(&mut self.buf[self.idx], Ev::Taken { location });
+        self.idx += 1;
+        Ok(Some(ev))
     }
 
     fn peek(&mut self) -> Result<Option<&Ev>, Error> {
-        if let Some(ev) = self.buf.front() {
-            self.last_location = ev.location();
-            Ok(Some(ev))
-        } else {
-            Ok(None)
-        }
+        Ok(self.buf.get(self.idx))
     }
 
     fn last_location(&self) -> Location {
-        self.last_location
+        let last = self.idx.saturating_sub(1);
+        self.buf.get(last)
+            .map(|e| e.location())
+            .unwrap_or(Location::UNKNOWN)
     }
 }
 
@@ -918,6 +925,9 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
                 // through their dedicated `expect_*` helpers.
                 visitor.visit_unit()
             }
+            Some(Ev::Taken { location }) => {
+                Err(Error::unexpected("consumed event").with_location(*location))
+            }
         }
     }
 
@@ -1030,13 +1040,18 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
     fn deserialize_char<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Mirror deserialize_string pre-checks to leverage tag/style and maybe_not_string.
         if let Some(next) = self.ev.peek()? {
-            if let Ev::Scalar { tag, style, value, .. } = next {
+            if let Ev::Scalar {
+                tag, style, value, ..
+            } = next
+            {
                 if tag != &SfTag::String {
                     // Reject YAML null for char (allow quoted values like "null").
                     if tag == &SfTag::Null || scalar_is_nullish(value, style) {
                         let (_value, _tag, location) = self.take_scalar_event()?;
-                        return Err(Error::msg("invalid char: cannot deserialize null; use Option<char>")
-                            .with_location(location));
+                        return Err(Error::msg(
+                            "invalid char: cannot deserialize null; use Option<char>",
+                        )
+                        .with_location(location));
                     } else if self.cfg.no_schema && maybe_not_string(value, style) {
                         // Require quoting for ambiguous plain scalars in no_schema mode.
                         let (value, _tag, location) = self.take_scalar_event()?;
@@ -1051,7 +1066,10 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
         let mut it = s.chars();
         match (it.next(), it.next()) {
             (Some(c), None) => visitor.visit_char(c),
-            _ => Err(Error::msg("invalid char: expected a single Unicode scalar value").with_location(location)),
+            _ => Err(
+                Error::msg("invalid char: expected a single Unicode scalar value")
+                    .with_location(location),
+            ),
         }
     }
 
@@ -1529,6 +1547,9 @@ helper to deserialize into String or Cow<'de, str> instead
                         return Err(Error::msg("unexpected container end while skipping node")
                             .with_location(location));
                     }
+                    Some(Ev::Taken { location }) => {
+                        return Err(Error::unexpected("consumed event").with_location(location));
+                    }
                     None => return Err(Error::eof().with_location(self.ev.last_location())),
                 }
                 while depth != 0 {
@@ -1536,6 +1557,9 @@ helper to deserialize into String or Cow<'de, str> instead
                         Some(Ev::SeqStart { .. }) | Some(Ev::MapStart { .. }) => depth += 1,
                         Some(Ev::SeqEnd { .. }) | Some(Ev::MapEnd { .. }) => depth -= 1,
                         Some(Ev::Scalar { .. }) => {}
+                        Some(Ev::Taken { location }) => {
+                            return Err(Error::unexpected("consumed event").with_location(location));
+                        }
                         None => return Err(Error::eof().with_location(self.ev.last_location())),
                     }
                 }
@@ -1892,7 +1916,9 @@ helper to deserialize into String or Cow<'de, str> instead
         }
 
         let mode = match self.ev.peek()? {
-            Some(Ev::Scalar { tag, style, value, .. }) => {
+            Some(Ev::Scalar {
+                tag, style, value, ..
+            }) => {
                 if self.cfg.no_schema && *tag != SfTag::String && maybe_not_string(value, style) {
                     let (v, _t, loc) = self.take_scalar_event()?;
                     return Err(Error::quoting_required(&v).with_location(loc));
@@ -1902,8 +1928,17 @@ helper to deserialize into String or Cow<'de, str> instead
             Some(Ev::MapStart { .. }) => {
                 self.expect_map_start()?;
                 match self.ev.next()? {
-                    Some(Ev::Scalar { value, tag, style, location, .. }) => {
-                        if self.cfg.no_schema && tag != SfTag::String && maybe_not_string(&value, &style) {
+                    Some(Ev::Scalar {
+                        value,
+                        tag,
+                        style,
+                        location,
+                        ..
+                    }) => {
+                        if self.cfg.no_schema
+                            && tag != SfTag::String
+                            && maybe_not_string(&value, &style)
+                        {
                             return Err(Error::quoting_required(&value).with_location(location));
                         }
                         Mode::Map(value)
@@ -1926,6 +1961,9 @@ helper to deserialize into String or Cow<'de, str> instead
             }
             Some(Ev::MapEnd { location }) => {
                 return Err(Error::msg("unexpected mapping end").with_location(*location));
+            }
+            Some(Ev::Taken { location }) => {
+                return Err(Error::unexpected("consumed event").with_location(*location));
             }
             None => return Err(Error::eof().with_location(self.ev.last_location())),
         };

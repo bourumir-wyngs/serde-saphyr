@@ -21,6 +21,7 @@
 //! injecting previously recorded buffers; normal parsing continues after the
 //! injection is exhausted.
 
+use crate::budget::{BudgetEnforcer, EnforcingPolicy};
 use crate::buffered_input::{buffered_input_from_reader_with_limit, ChunkedChars};
 use crate::de::{AliasLimits, Budget, Error, Ev, Events, Location};
 use crate::de_error::{budget_error, location_from_span};
@@ -30,7 +31,6 @@ use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::rc::Rc;
-use crate::budget::{BudgetEnforcer, EnforcingPolicy};
 
 /// This is enough to hold a single scalar that is common  case in YAML anchors.
 const SMALLVECT_INLINE: usize = 8;
@@ -122,8 +122,7 @@ impl<'a> LiveEvents<'a> {
     ) -> Self {
         // Build a streaming character iterator from the byte reader, honoring input byte cap if configured
         let max_bytes = budget.as_ref().map(|b| b.max_reader_input_bytes).flatten();
-        let (input, error) =
-            buffered_input_from_reader_with_limit(inputs, max_bytes);
+        let (input, error) = buffered_input_from_reader_with_limit(inputs, max_bytes);
         let parser = Parser::new(input);
         Self {
             produced_any_in_doc: false,
@@ -175,7 +174,7 @@ impl<'a> LiveEvents<'a> {
             inject: Vec::with_capacity(2),
             anchors: Vec::with_capacity(8),
             rec_stack: Vec::with_capacity(2),
-            budget: budget.map(|budget|BudgetEnforcer::new(budget, EnforcingPolicy::AllContent)),
+            budget: budget.map(|budget| BudgetEnforcer::new(budget, EnforcingPolicy::AllContent)),
 
             last_location: Location::UNKNOWN,
 
@@ -189,7 +188,7 @@ impl<'a> LiveEvents<'a> {
             open_containers: 0,
 
             // Error field is provided but for string, nothing is ever reported
-            error: Rc::new(RefCell::new(None))
+            error: Rc::new(RefCell::new(None)),
         }
     }
 
@@ -246,6 +245,9 @@ impl<'a> LiveEvents<'a> {
                         self.container_end()?;
                     }
                     Ev::Scalar { .. } => {}
+                    Ev::Taken { location } => {
+                        return Err(Error::unexpected("consumed event").with_location(location));
+                    }
                 }
                 // Count replayed events for alias-bomb hardening.
                 self.total_replayed_events = self
@@ -548,6 +550,9 @@ impl<'a> LiveEvents<'a> {
             Ev::SeqEnd { .. } => Event::SequenceEnd,
             Ev::MapStart { .. } => Event::MappingStart(0, None),
             Ev::MapEnd { .. } => Event::MappingEnd,
+            Ev::Taken { location } => {
+                return Err(Error::unexpected("consumed event").with_location(*location));
+            }
         };
 
         budget
