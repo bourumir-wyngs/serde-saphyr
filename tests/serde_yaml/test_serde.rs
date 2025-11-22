@@ -277,27 +277,31 @@ fn test_multiline_string() {
 }
 
 #[test]
-#[ignore]
 fn test_strings_needing_quote() {
     #[derive(Serialize, Deserialize, PartialEq, Debug)]
     struct Struct {
         boolean: String,
         integer: String,
         void: String,
+        nan: String,
         leading_zeros: String,
+        ok: String,
     }
     let thing = Struct {
         boolean: "true".to_owned(),
         integer: "1".to_owned(),
         void: "null".to_owned(),
+        nan: "NaN".to_owned(),
         leading_zeros: "007".to_owned(),
+        ok: "OK".to_owned(), // does not need quote
     };
-    let yaml = indoc! {"
-        boolean: 'true'
-        integer: '1'
-        void: 'null'
-        leading_zeros: '007'
-    "};
+    let yaml = r#"boolean: "true"
+integer: "1"
+void: "null"
+nan: "NaN"
+leading_zeros: "007"
+ok: OK
+"#;
     test_serde(&thing, yaml);
 }
 
