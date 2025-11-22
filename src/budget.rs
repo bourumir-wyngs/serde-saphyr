@@ -320,30 +320,6 @@ impl BudgetEnforcer {
                 self.record_anchor(*anchor_id)?;
                 self.handle_scalar(value, style, tag_opt.is_some())?;
             }
-            Event::SequenceStart(anchor_id, _tag_opt) => {
-                self.bump_nodes()?;
-                self.depth = self.depth.saturating_add(1);
-                if self.depth > self.report.max_depth {
-                    self.report.max_depth = self.depth;
-                }
-                if self.report.max_depth > self.budget.max_depth {
-                    return Err(BudgetBreach::Depth {
-                        depth: self.report.max_depth,
-                    });
-                }
-                let from_mapping_value = self.entering_container();
-                self.containers
-                    .push(ContainerState::Sequence { from_mapping_value });
-                self.record_anchor(*anchor_id)?;
-            }
-            Event::SequenceEnd => {
-                if let Some(new_depth) = self.depth.checked_sub(1) {
-                    self.depth = new_depth;
-                } else {
-                    return Err(BudgetBreach::SequenceUnbalanced);
-                }
-                self.leave_sequence()?;
-            }
             Event::MappingStart(anchor_id, _tag_opt) => {
                 self.bump_nodes()?;
                 self.depth = self.depth.saturating_add(1);
@@ -369,6 +345,30 @@ impl BudgetEnforcer {
                     return Err(BudgetBreach::SequenceUnbalanced);
                 }
                 self.leave_mapping()?;
+            }
+            Event::SequenceStart(anchor_id, _tag_opt) => {
+                self.bump_nodes()?;
+                self.depth = self.depth.saturating_add(1);
+                if self.depth > self.report.max_depth {
+                    self.report.max_depth = self.depth;
+                }
+                if self.report.max_depth > self.budget.max_depth {
+                    return Err(BudgetBreach::Depth {
+                        depth: self.report.max_depth,
+                    });
+                }
+                let from_mapping_value = self.entering_container();
+                self.containers
+                    .push(ContainerState::Sequence { from_mapping_value });
+                self.record_anchor(*anchor_id)?;
+            }
+            Event::SequenceEnd => {
+                if let Some(new_depth) = self.depth.checked_sub(1) {
+                    self.depth = new_depth;
+                } else {
+                    return Err(BudgetBreach::SequenceUnbalanced);
+                }
+                self.leave_sequence()?;
             }
             Event::StreamStart | Event::StreamEnd => {}
             Event::DocumentStart(_explicit) => {
