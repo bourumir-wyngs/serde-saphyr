@@ -370,7 +370,15 @@ impl BudgetEnforcer {
                 }
                 self.leave_sequence()?;
             }
-            Event::StreamStart | Event::StreamEnd => {}
+            Event::Alias(_anchor_id) => {
+                self.report.aliases += 1;
+                if self.report.aliases > self.budget.max_aliases {
+                    return Err(BudgetBreach::Aliases {
+                        aliases: self.report.aliases,
+                    });
+                }
+                self.handle_alias();
+            }
             Event::DocumentStart(_explicit) => {
                 if self.policy == EnforcingPolicy::PerDocument {
                     self.report.reset();
@@ -384,17 +392,8 @@ impl BudgetEnforcer {
                 }
             }
             Event::DocumentEnd => {}
-            Event::Alias(_anchor_id) => {
-                self.report.aliases += 1;
-                if self.report.aliases > self.budget.max_aliases {
-                    return Err(BudgetBreach::Aliases {
-                        aliases: self.report.aliases,
-                    });
-                }
-                self.handle_alias();
-            }
-
             Event::Nothing => {}
+            Event::StreamStart | Event::StreamEnd => {}
         }
 
         Ok(())
