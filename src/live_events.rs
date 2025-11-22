@@ -286,40 +286,6 @@ impl<'a> LiveEvents<'a> {
             }
 
             match raw {
-                Event::StreamStart | Event::StreamEnd => {
-                    // Skip stream markers.
-                    self.last_location = location;
-                    continue;
-                }
-
-                Event::DocumentStart(_) => {
-                    // Skip doc start and reset per-document state.
-                    self.reset_document_state();
-                    self.last_location = location;
-                    continue;
-                }
-                Event::DocumentEnd => {
-                    // On document end: in single-document mode, mark and stop producing events.
-                    self.reset_document_state();
-                    self.seen_doc_end = true;
-                    self.last_location = location;
-                    if self.stop_at_doc_end {
-                        // One-step lookahead to distinguish multi-doc streams from garbage
-                        // after an explicit end marker. If the very next token is a
-                        // DocumentStart, signal multi-doc error; otherwise ignore anything else.
-                        if let Some(item2) = self.parser.next() {
-                            if let Ok((raw2, span2)) = item2 {
-                                if let Event::DocumentStart(_) = raw2 {
-                                    let loc2 = location_from_span(&span2);
-                                    return Err(Error::msg("multiple YAML documents detected; use from_multiple or from_multiple_with_options").with_location(loc2));
-                                }
-                            }
-                        }
-                        return Ok(None);
-                    }
-                    continue;
-                }
-
                 Event::Scalar(val, mut style, anchor_id, tag) => {
                     if matches!(style, ScalarStyle::Folded)
                         && span.start.col() == 0
@@ -475,6 +441,40 @@ impl<'a> LiveEvents<'a> {
                     }
                     self.inject.push((anchor_id, 0));
                     return self.next_impl();
+                }
+
+                Event::DocumentStart(_) => {
+                    // Skip doc start and reset per-document state.
+                    self.reset_document_state();
+                    self.last_location = location;
+                    continue;
+                }
+                Event::DocumentEnd => {
+                    // On document end: in single-document mode, mark and stop producing events.
+                    self.reset_document_state();
+                    self.seen_doc_end = true;
+                    self.last_location = location;
+                    if self.stop_at_doc_end {
+                        // One-step lookahead to distinguish multi-doc streams from garbage
+                        // after an explicit end marker. If the very next token is a
+                        // DocumentStart, signal multi-doc error; otherwise ignore anything else.
+                        if let Some(item2) = self.parser.next() {
+                            if let Ok((raw2, span2)) = item2 {
+                                if let Event::DocumentStart(_) = raw2 {
+                                    let loc2 = location_from_span(&span2);
+                                    return Err(Error::msg("multiple YAML documents detected; use from_multiple or from_multiple_with_options").with_location(loc2));
+                                }
+                            }
+                        }
+                        return Ok(None);
+                    }
+                    continue;
+                }
+
+                Event::StreamStart | Event::StreamEnd => {
+                    // Skip stream markers.
+                    self.last_location = location;
+                    continue;
                 }
 
                 Event::Nothing => continue,
