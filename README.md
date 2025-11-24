@@ -43,7 +43,7 @@ width="60%">
 As seen, serde-saphyr exceeds others by performance, even with budget check enabled. 
 
 ## Testing
-The test suite currently includes 656 passing tests, most of them originating from the fully converted pyaml-test-suite](https://github.com/yaml/yaml-test-suite), with additional cases taken from the original serde-yaml tests. The remaining 18 failing corner cases (marked as ignored) have been reviewed, and their causes are well understood. To the best of our assessment, these failures stem from the saphyr parser. They represent extremely rare edge cases that are unlikely to appear in real-world use.
+The test suite currently includes 656 passing tests, most of them originating from the fully converted [yaml-test-suite](https://github.com/yaml/yaml-test-suite), with additional cases taken from the original serde-yaml tests. The remaining 18 failing corner cases (marked as ignored) have been reviewed, and their causes are well understood. To the best of our assessment, these failures stem from the saphyr parser. They represent extremely rare edge cases that are unlikely to appear in real-world use.
 
 ## Other features
 - **Configurable budgets:** Enforce input limits to mitigate resource exhaustion (e.g., deeply nested structures or very large arrays); see [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
@@ -299,7 +299,7 @@ To address the “Norway problem,” the target Rust types serve as an explicit 
 
 Schema based parsing can be disabled by setting `no_schema` to true in  [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). In this case all *unquoted* values that are parsed into strings, but can be understood as something else, are rejected. This can be used for enforcing compatibility with another YAML parser that reads the same content and requires this quoting. Default setting if false.
 
-Legacy octal notation such as `0052` can be enabled via `Options, but it is disabled by default.
+Legacy octal notation such as `0052` can be enabled via `Options`, but it is disabled by default.
 
 
 ## Pathological inputs & budgets
