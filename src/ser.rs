@@ -348,6 +348,18 @@ impl Serialize for FoldString {
     }
 }
 
+// Deserialization for owned block string wrappers: delegate to String
+impl<'de> Deserialize<'de> for LitString {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        String::deserialize(deserializer).map(LitString)
+    }
+}
+impl<'de> Deserialize<'de> for FoldString {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        String::deserialize(deserializer).map(FoldString)
+    }
+}
+
 // ------------------------------------------------------------
 // Core serializer
 // ------------------------------------------------------------
