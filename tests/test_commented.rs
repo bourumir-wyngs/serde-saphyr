@@ -42,8 +42,8 @@ fn commented_scalar_suppressed_in_flow_map_value() {
 
 #[test]
 fn commented_complex_values() {
-    let y = to_string(&Commented(vec![1, 2], "commented".into())).unwrap();
-    assert_eq!(y, "[1, 2] # commented\n");
+    let y = to_string(&Commented(vec![1, 2], "ignored".into())).unwrap();
+    assert_eq!(y, "- 1\n- 2\n");
 }
 
 #[test]

@@ -66,7 +66,8 @@ pub struct FlowMap<T>(pub T);
 ///
 /// This wrapper lets you annotate a scalar with an inline YAML comment that is
 /// emitted after the value when using block style. The typical form is:
-/// `value # comment`.
+/// `value # comment`. This is the most useful when deserializing the anchor
+/// reference (human reader may want short comment what is the reference about)
 ///
 /// Behavior
 /// - Block style (default): the comment appears after the scalar on the same line.
@@ -608,9 +609,8 @@ impl<'a, W: Write> YamlSer<'a, W> {
         self.write_space_if_pending()?;
         self.out.write_char('*')?;
         self.write_anchor_name(id)?;
-        if self.in_flow == 0 {
-            self.newline()?;
-        }
+        // Use the shared end-of-scalar path so pending inline comments are appended in block style
+        self.write_end_of_scalar()?;
         Ok(())
     }
 
@@ -691,9 +691,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             self.write_indent(self.depth)?;
         }
         write!(self.out, "{}", v)?;
-        if self.in_flow == 0 {
-            self.newline()?;
-        }
+        self.write_end_of_scalar()?;
         Ok(())
     }
 
@@ -704,9 +702,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             self.write_indent(self.depth)?;
         }
         write!(self.out, "{}", v)?;
-        if self.in_flow == 0 {
-            self.newline()?;
-        }
+        self.write_end_of_scalar()?;
         Ok(())
     }
 
@@ -726,9 +722,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             self.write_indent(self.depth)?;
         }
         write!(self.out, "{}", v)?;
-        if self.in_flow == 0 {
-            self.newline()?;
-        }
+        self.write_end_of_scalar()?;
         Ok(())
     }
 
@@ -739,9 +733,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             self.write_indent(self.depth)?;
         }
         write!(self.out, "{}", v)?;
-        if self.in_flow == 0 {
-            self.newline()?;
-        }
+        self.write_end_of_scalar()?;
         Ok(())
     }
 
@@ -772,9 +764,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                 self.out.write_str(s)?;
             }
         }
-        if self.in_flow == 0 {
-            self.newline()?;
-        }
+        self.write_end_of_scalar()?;
         Ok(())
     }
 
@@ -817,17 +807,13 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                     self.out.write_char('\'')?;
                     self.out.write_char(ch)?;
                     self.out.write_char('\'')?;
-                    if self.in_flow == 0 {
-                        self.newline()?;
-                    }
+                    self.write_end_of_scalar()?;
                     return Ok(());
                 }
             }
         }
         self.write_plain_or_quoted_value(v)?;
-        if self.in_flow == 0 {
-            self.newline()?;
-        }
+        self.write_end_of_scalar()?;
         Ok(())
     }
 
@@ -855,9 +841,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
         let mut s = String::new();
         B64.encode_string(v, &mut s);
         self.out.write_str(&s)?;
-        if self.in_flow == 0 {
-            self.newline()?;
-        }
+        self.write_end_of_scalar()?;
         Ok(())
     }
 
@@ -867,9 +851,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             self.write_indent(self.depth)?;
         }
         self.out.write_str("null")?;
-        if self.in_flow == 0 {
-            self.newline()?;
-        }
+        self.write_end_of_scalar()?;
         Ok(())
     }
 
@@ -883,9 +865,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             self.write_indent(self.depth)?;
         }
         self.out.write_str("null")?;
-        if self.in_flow == 0 {
-            self.newline()?;
-        }
+        self.write_end_of_scalar()?;
         Ok(())
     }
 
@@ -1043,6 +1023,8 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             } else {
                 base
             };
+            // Starting a complex (block) sequence: drop any staged inline comment.
+            self.pending_inline_comment = None;
             Ok(SeqSer {
                 ser: self,
                 depth: depth_next,
@@ -1452,9 +1434,8 @@ impl<'a, 'b, W: Write> SerializeTupleStruct for TupleSer<'a, 'b, W> {
                                 self.ser.write_indent(self.ser.depth)?;
                             }
                             self.ser.out.write_str("null")?;
-                            if self.ser.in_flow == 0 {
-                                self.ser.newline()?;
-                            }
+                            // Use shared end-of-scalar so pending inline comments (if any) are appended
+                            self.ser.write_end_of_scalar()?;
                             self.skip_third = true;
                         } else {
                             let ptr = self.depth_for_normal;
@@ -1490,22 +1471,16 @@ impl<'a, 'b, W: Write> SerializeTupleStruct for TupleSer<'a, 'b, W> {
                     }
                     1 => {
                         let comment = self.comment_text.take().unwrap_or_default();
-                        // Only consider emitting an inline comment in block style
                         if self.ser.in_flow == 0 {
-                            // Serialize the value while temporarily suppressing automatic newlines
-                            // for single-line tokens (scalars or aliases) by entering a flow context.
-                            self.ser.with_in_flow(|s| {
-                                value.serialize(&mut *s)
-                            })?;
-                            // If we are still mid-line after serialization, it means the value was
-                            // emitted as a single-line token (scalar or alias). Append the comment.
-                            if !self.ser.at_line_start && !comment.is_empty() {
-                                self.ser.out.write_str(" # ")?;
+                            // Stage the comment so scalar/alias serializers append it inline via write_end_of_scalar.
+                            if !comment.is_empty() {
                                 let sanitized = comment.replace('\n', " ");
-                                self.ser.out.write_str(&sanitized)?;
+                                self.ser.pending_inline_comment = Some(sanitized);
                             }
-                            // Finish the line when in block style.
-                            self.ser.newline()?;
+                            // Serialize the inner value as-is. Complex values will ignore the comment (it will be cleared).
+                            value.serialize(&mut *self.ser)?;
+                            // Ensure no leftover staged comment leaks to subsequent tokens.
+                            self.ser.pending_inline_comment = None;
                         } else {
                             // Inside a flow context: serialize value and suppress comments.
                             value.serialize(&mut *self.ser)?;
