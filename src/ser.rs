@@ -120,6 +120,9 @@ pub struct Commented<T>(pub T, pub String);
 /// as written. Each line is indented one level deeper than the surrounding
 /// indentation where the value appears.
 ///
+/// In short: use LitStr (|) to preserve line breaks exactly; use FoldStr (>) when you want
+/// readers to display line breaks as spaces (soft-wrapped paragraphs).
+///
 /// Behavior
 /// - Uses YAML's literal block style: a leading `|` followed by newline.
 /// - Newlines are preserved verbatim by YAML consumers.
@@ -146,12 +149,28 @@ pub struct Commented<T>(pub T, pub String);
 #[derive(Clone, Copy)]
 pub struct LitStr<'a>(pub &'a str);
 
+/// Owned-string variant of LitStr that forces a YAML block literal string using the `|` style.
+///
+/// This works the same as LitStr but takes ownership of a String. Useful when you already
+/// have an owned String and want to avoid borrowing lifetimes.
+///
+/// Example
+/// ```rust
+/// let out = serde_saphyr::to_string(&serde_saphyr::LitString("line 1\nline 2".to_string())).unwrap();
+/// assert_eq!(out, "|\n  line 1\n  line 2\n");
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LitString(pub String);
+
 /// Force a YAML folded block string using the `>` style.
 ///
 /// Emits the inner `&str` as a block scalar that suggests folding line breaks
 /// to spaces for display by YAML consumers (empty lines are kept as paragraph
 /// breaks). The serializer writes each line on its own; the folding behavior is
 /// applied by consumers of the YAML, not during serialization.
+///
+/// In short: use FoldStr (>) for human-readable paragraphs that may soft-wrap; use
+/// LitStr (|) when you need to preserve line breaks exactly as written.
 ///
 /// Behavior
 /// - Uses YAML's folded block style: a leading `>` followed by newline.
@@ -178,6 +197,18 @@ pub struct LitStr<'a>(pub &'a str);
 /// ```
 #[derive(Clone, Copy)]
 pub struct FoldStr<'a>(pub &'a str);
+
+/// Owned-string variant of FoldStr that forces a YAML folded block string using the `>` style.
+///
+/// Same behavior as FoldStr but owns a String.
+///
+/// Example
+/// ```rust
+/// let out = serde_saphyr::to_string(&serde_saphyr::FoldString("line 1\nline 2".to_string())).unwrap();
+/// assert_eq!(out, ">\n  line 1\n  line 2\n");
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FoldString(pub String);
 
 // ------------------------------------------------------------
 // Internal wrappers -> shape the stream Serde produces so our
@@ -301,7 +332,17 @@ impl<'a> Serialize for LitStr<'a> {
         s.serialize_newtype_struct(NAME_LIT_STR, &self.0)
     }
 }
+impl Serialize for LitString {
+    fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        s.serialize_newtype_struct(NAME_LIT_STR, &self.0)
+    }
+}
 impl<'a> Serialize for FoldStr<'a> {
+    fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        s.serialize_newtype_struct(NAME_FOLD_STR, &self.0)
+    }
+}
+impl Serialize for FoldString {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
         s.serialize_newtype_struct(NAME_FOLD_STR, &self.0)
     }
