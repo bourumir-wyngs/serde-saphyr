@@ -13,7 +13,12 @@ struct Prims {
 
 #[test]
 fn serialize_basic_primitives_struct() {
-    let v = Prims { int: 7, float: 3.5, boolean: true, string: "hello".to_string() };
+    let v = Prims {
+        int: 7,
+        float: 3.5,
+        boolean: true,
+        string: "hello".to_string(),
+    };
     let yaml = serde_saphyr::to_string(&v).expect("serialize primitives struct");
     // Round-trip to validate
     let back: Prims = serde_saphyr::from_str(&yaml).expect("roundtrip primitives struct");
@@ -22,30 +27,47 @@ fn serialize_basic_primitives_struct() {
 
 // 2. A structure holding array of structures
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-struct Item { id: u32, name: String }
+struct Item {
+    id: u32,
+    name: String,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-struct Container { items: Vec<Item> }
+struct Container {
+    items: Vec<Item>,
+}
 
 #[test]
 fn serialize_struct_holding_array_of_structs() {
     let v = Container {
         items: vec![
-            Item { id: 1, name: "first".into() },
-            Item { id: 2, name: "second".into() },
+            Item {
+                id: 1,
+                name: "first".into(),
+            },
+            Item {
+                id: 2,
+                name: "second".into(),
+            },
         ],
     };
     let yaml = serde_saphyr::to_string(&v).expect("serialize container");
     // Basic shape checks instead of strict round-trip (serializer formatting may vary)
     assert!(yaml.contains("items:"), "yaml: {}", yaml);
-    assert!(yaml.contains("\n  -") || yaml.contains("\n- "), "yaml: {}", yaml);
+    assert!(
+        yaml.contains("\n  -") || yaml.contains("\n- "),
+        "yaml: {}",
+        yaml
+    );
     assert!(yaml.contains("id:"), "yaml: {}", yaml);
     assert!(yaml.contains("name:"), "yaml: {}", yaml);
 }
 
 // 3. A structure holding BTreeMap of ints.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-struct MapWrap { map: BTreeMap<String, i32> }
+struct MapWrap {
+    map: BTreeMap<String, i32>,
+}
 
 #[test]
 fn serialize_struct_holding_btreemap_of_ints() {
@@ -80,7 +102,10 @@ enum Outer {
 fn serialize_nested_variant_enums() {
     let cases = vec![
         Outer::Alpha("hello".into()),
-        Outer::Beta { inner: Inner::Struct { flag: true }, note: "x".into() },
+        Outer::Beta {
+            inner: Inner::Struct { flag: true },
+            note: "x".into(),
+        },
         Outer::Gamma(Inner::Newtype(42), -10),
     ];
     for v in cases {
@@ -95,13 +120,21 @@ fn serialize_nested_variant_enums() {
     }
 
     // Also exercise to_writer and to_writer_with_indent
-    let v = Outer::Beta { inner: Inner::Unit, note: "ok".into() };
+    let v = Outer::Beta {
+        inner: Inner::Unit,
+        note: "ok".into(),
+    };
     let mut buf = String::new();
     serde_saphyr::to_fmt_writer(&mut buf, &v).expect("to_writer works");
     assert!(!buf.is_empty());
     let mut buf2 = String::new();
-    let opts = serde_saphyr::SerializerOptions { indent_step: 4, anchor_generator: None };
-    serde_saphyr::to_fmt_writer_with_options(&mut buf2, &v, opts).expect("to_writer_with_options works");
+    let opts = serde_saphyr::SerializerOptions {
+        indent_step: 4,
+        anchor_generator: None,
+        ..Default::default()
+    };
+    serde_saphyr::to_fmt_writer_with_options(&mut buf2, &v, opts)
+        .expect("to_writer_with_options works");
     assert!(!buf2.is_empty());
 }
 

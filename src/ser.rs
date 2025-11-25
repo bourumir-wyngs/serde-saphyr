@@ -40,7 +40,7 @@ use std::fmt::{self, Write};
 use std::rc::{Rc, Weak as RcWeak};
 use std::sync::{Arc, Weak as ArcWeak};
 
-use crate::serializer_options::SerializerOptions;
+use crate::serializer_options::{SerializerOptions, FOLDED_WRAP_CHARS, MIN_FOLD_CHARS};
 use crate::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use nohash_hasher::BuildNoHashHasher;
@@ -120,8 +120,10 @@ pub struct Commented<T>(pub T, pub String);
 /// as written. Each line is indented one level deeper than the surrounding
 /// indentation where the value appears.
 ///
-/// In short: use LitStr (|) to preserve line breaks exactly; use FoldStr (>) when you want
+/// In short: use [LitStr] (|) to preserve line breaks exactly; use [FoldStr] (>) when you want
 /// readers to display line breaks as spaces (soft-wrapped paragraphs).
+///
+/// See also: [FoldStr], [LitString], [FoldString].
 ///
 /// Behavior
 /// - Uses YAML's literal block style: a leading `|` followed by newline.
@@ -150,10 +152,12 @@ pub struct Commented<T>(pub T, pub String);
 #[derive(Clone, Copy)]
 pub struct LitStr<'a>(pub &'a str);
 
-/// Owned-string variant of LitStr that forces a YAML block literal string using the `|` style.
+/// Owned-string variant of [LitStr] that forces a YAML block literal string using the `|` style.
 ///
-/// This works the same as LitStr but takes ownership of a String. Useful when you already
+/// This works the same as [LitStr] but takes ownership of a String. Useful when you already
 /// have an owned String and want to avoid borrowing lifetimes.
+///
+/// See also: [FoldStr], [FoldString].
 ///
 /// Example
 /// ```rust
@@ -170,8 +174,10 @@ pub struct LitString(pub String);
 /// breaks). The serializer writes each line on its own; the folding behavior is
 /// applied by consumers of the YAML, not during serialization.
 ///
-/// In short: use FoldStr (>) for human-readable paragraphs that may soft-wrap; use
-/// LitStr (|) when you need to preserve line breaks exactly as written.
+/// In short: use [FoldStr] (>) for human-readable paragraphs that may soft-wrap; use
+/// [LitStr] (|) when you need to preserve line breaks exactly as written.
+///
+/// See also: [LitStr], [LitString], [FoldString].
 ///
 /// Behavior
 /// - Uses YAML's folded block style: a leading `>` followed by newline.
@@ -199,9 +205,11 @@ pub struct LitString(pub String);
 #[derive(Clone, Copy)]
 pub struct FoldStr<'a>(pub &'a str);
 
-/// Owned-string variant of FoldStr that forces a YAML folded block string using the `>` style.
+/// Owned-string variant of [FoldStr] that forces a YAML folded block string using the `>` style.
 ///
-/// Same behavior as FoldStr but owns a String.
+/// Same behavior as [FoldStr] but owns a String.
+///
+/// See also: [LitStr], [LitString].
 ///
 /// Example
 /// ```rust
@@ -236,15 +244,6 @@ const NAME_FLOW_MAP: &str = "__yaml_flow_map";
 const NAME_LIT_STR: &str = "__yaml_lit_str";
 const NAME_FOLD_STR: &str = "__yaml_fold_str";
 const NAME_TUPLE_COMMENTED: &str = "__yaml_commented";
-
-// Below this length, block-string wrappers serialize as regular scalars
-// instead of YAML block styles. This keeps short values compact.
-const MIN_FOLD_CHARS: usize = 32;
-/// Maximum width (in characters) for lines inside folded block scalars.
-/// Lines will be wrapped at whitespace so that each emitted line is at most
-/// this many characters long (excluding indentation). If no whitespace is
-/// available within the limit, a hard break is performed.
-const FOLDED_WRAP_COL: usize = 80;
 
 // Top-level newtype wrappers for strong/weak simply wrap the real payloads.
 impl<T: Serialize> Serialize for RcAnchor<T> {
@@ -339,33 +338,22 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Commented<T> {
 
 impl<'a> Serialize for LitStr<'a> {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
-        if self.0.len() < MIN_FOLD_CHARS && !self.0.contains('\n') {
-            return s.serialize_str(self.0);
-        }
+        // Always delegate decision to the YAML serializer so it can apply options.
         s.serialize_newtype_struct(NAME_LIT_STR, &self.0)
     }
 }
 impl Serialize for LitString {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
-        if self.0.len() < MIN_FOLD_CHARS && !self.0.contains('\n') {
-            return s.serialize_str(&self.0);
-        }
         s.serialize_newtype_struct(NAME_LIT_STR, &self.0)
     }
 }
 impl<'a> Serialize for FoldStr<'a> {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
-        if self.0.len() < MIN_FOLD_CHARS && !self.0.contains('\n') {
-            return s.serialize_str(self.0);
-        }
         s.serialize_newtype_struct(NAME_FOLD_STR, &self.0)
     }
 }
 impl Serialize for FoldString {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
-        if self.0.len() < MIN_FOLD_CHARS && !self.0.contains('\n') {
-            return s.serialize_str(&self.0);
-        }
         s.serialize_newtype_struct(NAME_FOLD_STR, &self.0)
     }
 }
@@ -409,6 +397,10 @@ pub struct YamlSer<'a, W: Write> {
     out: &'a mut W,
     /// Spaces per indentation level for block-style collections.
     indent_step: usize,
+    /// Threshold for downgrading block-string wrappers to plain scalars.
+    min_fold_chars: usize,
+    /// Wrap width for folded block scalars ('>').
+    folded_wrap_col: usize,
     /// Current nesting depth (used for indentation).
     depth: usize,
     /// Whether the cursor is at the start of a line.
@@ -458,6 +450,8 @@ impl<'a, W: Write> YamlSer<'a, W> {
         Self {
             out,
             indent_step: 2,
+            min_fold_chars: MIN_FOLD_CHARS,
+            folded_wrap_col: FOLDED_WRAP_CHARS,
             depth: 0,
             at_line_start: true,
             anchors: HashMap::with_hasher(BuildNoHashHasher::default()),
@@ -488,6 +482,8 @@ impl<'a, W: Write> YamlSer<'a, W> {
     pub fn with_options(out: &'a mut W, options: &mut SerializerOptions) -> Self {
         let mut s = Self::new(out);
         s.indent_step = options.indent_step;
+        s.min_fold_chars = options.min_fold_chars;
+        s.folded_wrap_col = options.folded_wrap_chars;
         s.anchor_gen = options.anchor_generator.take();
         s
     }
@@ -593,7 +589,6 @@ impl<'a, W: Write> YamlSer<'a, W> {
                 continue;
             }
             let mut start = 0; // byte index
-            let bytes = line.as_bytes();
             let mut last_space_byte: Option<usize> = None;
             let mut col = 0usize; // column in chars
             for (i, ch) in line.char_indices() {
@@ -602,7 +597,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
                     last_space_byte = Some(i);
                 }
                 col += 1;
-                if col > FOLDED_WRAP_COL {
+                if col > self.folded_wrap_col {
                     let break_at = last_space_byte.unwrap_or(i);
                     // Emit [start, break_at)
                     self.write_indent(self.depth + 1)?;
@@ -611,19 +606,27 @@ impl<'a, W: Write> YamlSer<'a, W> {
                     self.out.write_str(slice)?;
                     self.newline()?;
                     // Advance start: skip the whitespace if we broke at space
-                    start = if let Some(sp) = last_space_byte { sp + 1 } else { break_at };
-                    // Reset trackers starting at new segment
+                    start = if let Some(sp) = last_space_byte {
+                        sp + 1
+                    } else {
+                        break_at
+                    };
+                    // Reset trackers starting at new segment. We intentionally do not try
+                    // to recompute `col` relative to the current `i` because `start` may
+                    // have advanced past `i` when we broke at the current whitespace.
+                    // Starting a fresh column count avoids invalid slice ranges.
                     last_space_byte = None;
                     col = 0;
-                    // Recompute col from start to current i
-                    // Count chars between start and i
-                    for ch2 in line[start..i].chars() { let _ = ch2; col += 1; }
                 }
             }
             // Emit the tail if any
-            if start <= bytes.len() {
+            if start < line.len() {
                 self.write_indent(self.depth + 1)?;
                 self.out.write_str(&line[start..])?;
+                self.newline()?;
+            } else {
+                // If start == line.len(), the line ended exactly at a wrap boundary; still emit an empty line
+                self.write_indent(self.depth + 1)?;
                 self.newline()?;
             }
         }
@@ -1031,12 +1034,29 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                 return value.serialize(self);
             }
             NAME_LIT_STR => {
+                // Decide plain vs block based on options and content length/newlines.
+                // Capture the inner string first.
+                let mut cap = StrCapture::default();
+                value.serialize(&mut cap)?;
+                let s = cap.finish()?;
+                let is_multiline = s.contains('\n');
+                if !is_multiline && s.len() < self.min_fold_chars {
+                    // Emit as a normal scalar (no block style)
+                    return self.serialize_str(&s);
+                }
                 self.pending_str_style = Some(StrStyle::Literal);
-                return value.serialize(self);
+                return self.serialize_str(&s);
             }
             NAME_FOLD_STR => {
+                let mut cap = StrCapture::default();
+                value.serialize(&mut cap)?;
+                let s = cap.finish()?;
+                let is_multiline = s.contains('\n');
+                if !is_multiline && s.len() < self.min_fold_chars {
+                    return self.serialize_str(&s);
+                }
                 self.pending_str_style = Some(StrStyle::Folded);
-                return value.serialize(self);
+                return self.serialize_str(&s);
             }
             _ => {}
         }

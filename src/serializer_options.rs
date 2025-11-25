@@ -14,6 +14,7 @@
 //! let opts = serde_saphyr::SerializerOptions {
 //!     indent_step: 4,
 //!     anchor_generator: Some(|id| format!("id{}/", id)),
+//!     ..Default::default()
 //! };
 //! serde_saphyr::to_fmt_writer_with_options(&mut buf, &Item { a: 1, b: true }, opts).unwrap();
 //! assert!(buf.contains("a: 1"));
@@ -27,8 +28,41 @@ pub struct SerializerOptions {
     /// Receives a monotonically increasing `usize` id (starting at 1) and returns the
     /// anchor name to emit. If `None`, the built-in generator yields names like `a1`, `a2`, ...
     pub anchor_generator: Option<fn(usize) -> String>,
+    /// Threshold for block-string wrappers ([crate::LitStr]/[crate::FoldStr] and owned variants
+    /// [crate::LitString]/[crate::FoldString]).
+    ///
+    /// If the string contains a newline, block style is always used. Otherwise, when the
+    /// string is single-line and its length is strictly less than this threshold, the
+    /// serializer emits a normal YAML scalar (no block style). Longer strings use block
+    /// styles `|` or `>` depending on the wrapper. See the type docs for
+    /// [crate::LitStr], [crate::FoldStr], [crate::LitString] and [crate::FoldString] for
+    /// examples.
+    pub min_fold_chars: usize,
+    /// Maximum width (in characters) for lines in folded block scalars (`>`).
+    ///
+    /// Lines are wrapped at whitespace so that each emitted line is at most this many
+    /// characters long (excluding indentation). If no whitespace is present within the
+    /// limit, a hard break is performed.
+    pub folded_wrap_chars: usize,
 }
 
+// Below this length, block-string wrappers serialize as regular scalars
+// instead of YAML block styles. This keeps short values compact.
+pub(crate) const MIN_FOLD_CHARS: usize = 32;
+/// Maximum width (in characters) for lines inside folded block scalars.
+/// Lines will be wrapped at whitespace so that each emitted line is at most
+/// this many characters long (excluding indentation). If no whitespace is
+/// available within the limit, a hard break is performed.
+pub(crate) const FOLDED_WRAP_CHARS: usize = 80;
+
 impl Default for SerializerOptions {
-    fn default() -> Self { Self { indent_step: 2, anchor_generator: None } }
+    fn default() -> Self {
+        // Defaults mirror internal constants used by the serializer.
+        Self {
+            indent_step: 2,
+            anchor_generator: None,
+            min_fold_chars: MIN_FOLD_CHARS,
+            folded_wrap_chars: FOLDED_WRAP_CHARS,
+        }
+    }
 }

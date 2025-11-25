@@ -375,7 +375,10 @@ Serde-saphyr can conceptually connect YAML anchors with Rust shared references (
 
 When anchors are highly repetitive and also large, packing them into references can make YAML more human-readable. 
 
-Starting from 0.0.7, this library can also deserialize YAML into these anchor structures, this serialization is identity-preserving. A field or structure that is defined once and subsequently referenced will exist as a single instance in memory, with all anchor fields pointing to it. This is crucial when the topology of references itself constitutes important information to be transferred.
+To support round trip, library can also deserialize into these anchor structures, this serialization is identity-preserving. A field or structure that is defined once and subsequently referenced will exist as a single instance in memory, with all anchor fields pointing to it. This is crucial when the topology of references itself constitutes important information to be transferred.
+
+### Controlling text deserialization ###
+To make long text blocks look tidy, you can use wrappers such as FoldString to enable YAML scalar presentation. You can also use Commented to append a comment string after a scalar or an anchor reference.
 
 ## Robotics ##
 The feature-gated "robotics" capability enables parsing of YAML extensions commonly used in robotics ([ROS](https://www.ros.org/blog/why-ros/) These extensions support conversion functions (deg, rad) and simple mathematical expressions such as deg(180), rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). This capability is gated behind the [robotics] feature and is not enabled by default. Additionally, **angle_conversions** must be set to true in the [Options](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). Just adding robotics feature is not sufficient to activate this mode of parsing. This parser is still just a simple expression calculator implemented directly in Rust, not a some hook to a language interpreter.
