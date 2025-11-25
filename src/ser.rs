@@ -1490,23 +1490,24 @@ impl<'a, 'b, W: Write> SerializeTupleStruct for TupleSer<'a, 'b, W> {
                     }
                     1 => {
                         let comment = self.comment_text.take().unwrap_or_default();
-                        let is_scalar = scalar_key_to_string(value).is_ok();
-                        if is_scalar && self.ser.in_flow == 0 {
-                            // Serialize the scalar without trailing newline and then append the comment.
+                        // Only consider emitting an inline comment in block style
+                        if self.ser.in_flow == 0 {
+                            // Serialize the value while temporarily suppressing automatic newlines
+                            // for single-line tokens (scalars or aliases) by entering a flow context.
                             self.ser.with_in_flow(|s| {
-                                value.serialize(&mut *s)?;
-                                if !comment.is_empty() {
-                                    s.out.write_str(" # ")?;
-                                    // Replace newlines in comment with spaces to keep it on one line
-                                    let sanitized = comment.replace('\n', " ");
-                                    s.out.write_str(&sanitized)?;
-                                }
-                                Ok(())
+                                value.serialize(&mut *s)
                             })?;
-                            // End the line after leaving the flow context
+                            // If we are still mid-line after serialization, it means the value was
+                            // emitted as a single-line token (scalar or alias). Append the comment.
+                            if !self.ser.at_line_start && !comment.is_empty() {
+                                self.ser.out.write_str(" # ")?;
+                                let sanitized = comment.replace('\n', " ");
+                                self.ser.out.write_str(&sanitized)?;
+                            }
+                            // Finish the line when in block style.
                             self.ser.newline()?;
                         } else {
-                            // Complex value or inside flow: just serialize the value, ignore the comment
+                            // Inside a flow context: serialize value and suppress comments.
                             value.serialize(&mut *self.ser)?;
                         }
                     }

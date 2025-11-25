@@ -9,6 +9,7 @@ use serde::de::{Error as _, Visitor};
 
 use crate::anchor_store;
 
+
 /// A wrapper around [`Rc<T>`] that opt-ins a field for **anchor emission** (e.g. serialization by reference).
 ///
 /// This type behaves like a normal [`Rc<T>`] but signals that the value
@@ -33,7 +34,7 @@ use crate::anchor_store;
 /// ```
 #[repr(transparent)]
 #[derive(Clone)]
-pub struct RcAnchor<T: ?Sized>(pub Rc<T>);
+pub struct RcAnchor<T>(pub Rc<T>);
 
 /// A wrapper around [`Arc<T>`] that opt-ins a field for **anchor emission** (e.g. serialization by reference).
 ///
@@ -58,7 +59,7 @@ pub struct RcAnchor<T: ?Sized>(pub Rc<T>);
 /// ```
 #[repr(transparent)]
 #[derive(Clone)]
-pub struct ArcAnchor<T: ?Sized>(pub Arc<T>);
+pub struct ArcAnchor<T>(pub Arc<T>);
 
 /// A wrapper around [`Weak<T>`] (from [`std::rc`]) that opt-ins for **anchor emission**.
 ///
@@ -87,7 +88,7 @@ pub struct ArcAnchor<T: ?Sized>(pub Arc<T>);
 /// ```
 #[repr(transparent)]
 #[derive(Clone)]
-pub struct RcWeakAnchor<T: ?Sized>(pub RcWeak<T>);
+pub struct RcWeakAnchor<T>(pub RcWeak<T>);
 
 /// A wrapper around [`Weak<T>`] (from [`std::sync`]) that opt-ins for **anchor emission**.
 ///
@@ -113,86 +114,101 @@ pub struct RcWeakAnchor<T: ?Sized>(pub RcWeak<T>);
 /// ```
 #[repr(transparent)]
 #[derive(Clone)]
-pub struct ArcWeakAnchor<T: ?Sized>(pub ArcWeak<T>);
+pub struct ArcWeakAnchor<T>(pub ArcWeak<T>);
 
 // ===== From conversions (strong -> anchor) =====
 
-impl<T: ?Sized> From<Rc<T>> for RcAnchor<T> {
-    #[inline]
+impl<T> From<Rc<T>> for RcAnchor<T> {
     fn from(rc: Rc<T>) -> Self { RcAnchor(rc) }
+
 }
-impl<T: ?Sized> From<Arc<T>> for ArcAnchor<T> {
+
+impl <T> RcAnchor<T> {
+    /// Create inner Rc (takes arbitrary value Rc can take)
+    pub fn wrapping(x: T) -> Self {
+        RcAnchor(Rc::new(x))
+    }
+}
+
+impl <T> ArcAnchor<T> {
+    /// Create inner Rc (takes arbitrary value Rc can take)
+    pub fn wrapping(x: T) -> Self {
+        ArcAnchor(Arc::new(x))
+    }
+}
+
+impl<T> From<Arc<T>> for ArcAnchor<T> {
     #[inline]
     fn from(arc: Arc<T>) -> Self { ArcAnchor(arc) }
 }
 
 // ===== From conversions (strong -> weak anchor) =====
 
-impl<T: ?Sized> From<&Rc<T>> for RcWeakAnchor<T> {
+impl<T> From<&Rc<T>> for RcWeakAnchor<T> {
     #[inline]
     fn from(rc: &Rc<T>) -> Self { RcWeakAnchor(Rc::downgrade(rc)) }
 }
-impl<T: ?Sized> From<Rc<T>> for RcWeakAnchor<T> {
+impl<T> From<Rc<T>> for RcWeakAnchor<T> {
     #[inline]
     fn from(rc: Rc<T>) -> Self { RcWeakAnchor(Rc::downgrade(&rc)) }
 }
-impl<T: ?Sized> From<&RcAnchor<T>> for RcWeakAnchor<T> {
+impl<T> From<&RcAnchor<T>> for RcWeakAnchor<T> {
     #[inline]
     fn from(rca: &RcAnchor<T>) -> Self { RcWeakAnchor(Rc::downgrade(&rca.0)) }
 }
-impl<T: ?Sized> From<&Arc<T>> for ArcWeakAnchor<T> {
+impl<T> From<&Arc<T>> for ArcWeakAnchor<T> {
     #[inline]
     fn from(arc: &Arc<T>) -> Self { ArcWeakAnchor(Arc::downgrade(arc)) }
 }
-impl<T: ?Sized> From<Arc<T>> for ArcWeakAnchor<T> {
+impl<T> From<Arc<T>> for ArcWeakAnchor<T> {
     #[inline]
     fn from(arc: Arc<T>) -> Self { ArcWeakAnchor(Arc::downgrade(&arc)) }
 }
-impl<T: ?Sized> From<&ArcAnchor<T>> for ArcWeakAnchor<T> {
+impl<T> From<&ArcAnchor<T>> for ArcWeakAnchor<T> {
     #[inline]
     fn from(ara: &ArcAnchor<T>) -> Self { ArcWeakAnchor(Arc::downgrade(&ara.0)) }
 }
 
 // ===== Ergonomics: Deref / AsRef / Borrow / Into =====
 
-impl<T: ?Sized> Deref for RcAnchor<T> {
+impl<T> Deref for RcAnchor<T> {
     type Target = Rc<T>;
     #[inline]
     fn deref(&self) -> &Self::Target { &self.0 }
 }
-impl<T: ?Sized> Deref for ArcAnchor<T> {
+impl<T> Deref for ArcAnchor<T> {
     type Target = Arc<T>;
     #[inline]
     fn deref(&self) -> &Self::Target { &self.0 }
 }
-impl<T: ?Sized> AsRef<Rc<T>> for RcAnchor<T> {
+impl<T> AsRef<Rc<T>> for RcAnchor<T> {
     #[inline]
     fn as_ref(&self) -> &Rc<T> { &self.0 }
 }
-impl<T: ?Sized> AsRef<Arc<T>> for ArcAnchor<T> {
+impl<T> AsRef<Arc<T>> for ArcAnchor<T> {
     #[inline]
     fn as_ref(&self) -> &Arc<T> { &self.0 }
 }
-impl<T: ?Sized> Borrow<Rc<T>> for RcAnchor<T> {
+impl<T> Borrow<Rc<T>> for RcAnchor<T> {
     #[inline]
     fn borrow(&self) -> &Rc<T> { &self.0 }
 }
-impl<T: ?Sized> Borrow<Arc<T>> for ArcAnchor<T> {
+impl<T> Borrow<Arc<T>> for ArcAnchor<T> {
     #[inline]
     fn borrow(&self) -> &Arc<T> { &self.0 }
 }
-impl<T: ?Sized> From<RcAnchor<T>> for Rc<T> {
+impl<T> From<RcAnchor<T>> for Rc<T> {
     #[inline]
     fn from(a: RcAnchor<T>) -> Rc<T> { a.0 }
 }
-impl<T: ?Sized> From<ArcAnchor<T>> for Arc<T> {
+impl<T> From<ArcAnchor<T>> for Arc<T> {
     #[inline]
     fn from(a: ArcAnchor<T>) -> Arc<T> { a.0 }
 }
 
 // ===== Weak helpers =====
 
-impl<T: ?Sized> RcWeakAnchor<T> {
+impl<T> RcWeakAnchor<T> {
     /// Try to upgrade the weak reference to [`Rc<T>`].
     /// Returns [`None`] if the value has been dropped.
     #[inline]
@@ -202,7 +218,7 @@ impl<T: ?Sized> RcWeakAnchor<T> {
     #[inline]
     pub fn is_dangling(&self) -> bool { self.0.strong_count() == 0 }
 }
-impl<T: ?Sized> ArcWeakAnchor<T> {
+impl<T> ArcWeakAnchor<T> {
     /// Try to upgrade the weak reference to [`Arc<T>`].
     /// Returns [`None`] if the value has been dropped.
     #[inline]
@@ -215,19 +231,19 @@ impl<T: ?Sized> ArcWeakAnchor<T> {
 
 // ===== Pointer-equality PartialEq/Eq =====
 
-impl<T: ?Sized> PartialEq for RcAnchor<T> {
+impl<T> PartialEq for RcAnchor<T> {
     #[inline]
     fn eq(&self, other: &Self) -> bool { Rc::ptr_eq(&self.0, &other.0) }
 }
-impl<T: ?Sized> Eq for RcAnchor<T> {}
+impl<T> Eq for RcAnchor<T> {}
 
-impl<T: ?Sized> PartialEq for ArcAnchor<T> {
+impl<T> PartialEq for ArcAnchor<T> {
     #[inline]
     fn eq(&self, other: &Self) -> bool { Arc::ptr_eq(&self.0, &other.0) }
 }
-impl<T: ?Sized> Eq for ArcAnchor<T> {}
+impl<T> Eq for ArcAnchor<T> {}
 
-impl<T: ?Sized> PartialEq for RcWeakAnchor<T> {
+impl<T> PartialEq for RcWeakAnchor<T> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         match (self.0.upgrade(), other.0.upgrade()) {
@@ -237,9 +253,9 @@ impl<T: ?Sized> PartialEq for RcWeakAnchor<T> {
         }
     }
 }
-impl<T: ?Sized> Eq for RcWeakAnchor<T> {}
+impl<T> Eq for RcWeakAnchor<T> {}
 
-impl<T: ?Sized> PartialEq for ArcWeakAnchor<T> {
+impl<T> PartialEq for ArcWeakAnchor<T> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         match (self.0.upgrade(), other.0.upgrade()) {
@@ -249,23 +265,23 @@ impl<T: ?Sized> PartialEq for ArcWeakAnchor<T> {
         }
     }
 }
-impl<T: ?Sized> Eq for ArcWeakAnchor<T> {}
+impl<T> Eq for ArcWeakAnchor<T> {}
 
 // ===== Debug =====
 
-impl<T: ?Sized> fmt::Debug for RcAnchor<T> {
+impl<T> fmt::Debug for RcAnchor<T> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "RcAnchor({:p})", Rc::as_ptr(&self.0))
     }
 }
-impl<T: ?Sized> fmt::Debug for ArcAnchor<T> {
+impl<T> fmt::Debug for ArcAnchor<T> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "ArcAnchor({:p})", Arc::as_ptr(&self.0))
     }
 }
-impl<T: ?Sized> fmt::Debug for RcWeakAnchor<T> {
+impl<T> fmt::Debug for RcWeakAnchor<T> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(rc) = self.0.upgrade() {
@@ -275,7 +291,7 @@ impl<T: ?Sized> fmt::Debug for RcWeakAnchor<T> {
         }
     }
 }
-impl<T: ?Sized> fmt::Debug for ArcWeakAnchor<T> {
+impl<T> fmt::Debug for ArcWeakAnchor<T> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(arc) = self.0.upgrade() {
@@ -467,4 +483,5 @@ where
         deserializer.deserialize_newtype_struct("__yaml_arc_weak_anchor", ArcWeakVisitor(PhantomData))
     }
 }
+
 

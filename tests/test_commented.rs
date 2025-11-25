@@ -1,8 +1,7 @@
 use std::collections::HashMap;
-
 use serde::Serialize;
 
-use serde_saphyr::{to_string, Commented, FlowMap, FlowSeq};
+use serde_saphyr::{to_string, Commented, FlowMap, FlowSeq, RcAnchor};
 
 #[test]
 fn commented_scalar_block_style() {
@@ -42,9 +41,9 @@ fn commented_scalar_suppressed_in_flow_map_value() {
 }
 
 #[test]
-fn commented_ignored_for_complex_values() {
-    let y = to_string(&Commented(vec![1, 2], "ignored".into())).unwrap();
-    assert_eq!(y, "- 1\n- 2\n");
+fn commented_complex_values() {
+    let y = to_string(&Commented(vec![1, 2], "commented".into())).unwrap();
+    assert_eq!(y, "[1, 2] # commented\n");
 }
 
 #[test]
@@ -66,4 +65,26 @@ fn commented_deserialize_ignores_comment_and_keeps_value() {
     let v2: Commented<i32> = serde_saphyr::from_str("5\n").unwrap();
     assert_eq!(v2.0, 5);
     assert!(v2.1.is_empty());
+}
+
+#[test]
+fn test_commented_rc() -> anyhow::Result<()> {
+    #[derive(Serialize)]
+    struct Notable {
+        value: usize,
+        notable_value: Commented<RcAnchor<usize>>,
+    }
+
+    let notable = Notable {
+        value: 127,
+        notable_value: Commented(RcAnchor::wrapping(541), "comment".to_string())
+    };
+
+    let yaml = serde_saphyr::to_string(&notable)?;
+
+    println!("{yaml}");
+    assert!(yaml.contains("127"));
+    assert!(yaml.contains("541"));
+    assert!(yaml.contains("comment"));
+    Ok(())
 }
