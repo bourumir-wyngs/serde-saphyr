@@ -1,7 +1,8 @@
+use serde::{Deserialize, Serialize};
 use crate::budget::Budget;
 
 /// Duplicate key handling policy for mappings.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum DuplicateKeyPolicy {
     /// Error out on encountering a duplicate key.
     Error,
@@ -12,7 +13,7 @@ pub enum DuplicateKeyPolicy {
 }
 
 /// Limits applied to alias replay to harden against alias bombs.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct AliasLimits {
     /// Maximum total number of **replayed** events injected from aliases across the entire parse.
     /// When exceeded, deserialization errors (alias replay limit exceeded).
@@ -72,7 +73,7 @@ impl Default for AliasLimits {
 /// let cfg: Config = from_str_with_options(yaml, options).unwrap();
 /// assert_eq!(cfg.name, "My Application");
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Options {
     /// Optional YAML budget to enforce before parsing (counts raw parser events).
     pub budget: Option<Budget>,

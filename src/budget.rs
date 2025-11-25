@@ -7,6 +7,7 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 use ahash::HashSetExt;
 use saphyr_parser::{Event, Parser, ScalarStyle, ScanError};
+use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
 /// Budgets for a streaming YAML scan.
@@ -40,7 +41,7 @@ use smallvec::SmallVec;
 /// let cfg: Config = serde_saphyr::from_str_with_options(yaml, options).unwrap();
 /// assert_eq!(cfg.retries, 5);
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Budget {
     /// Hard cap on the size of the input in bytes.
     /// This limit only applies for the Reader, to prevent resource starving
