@@ -240,6 +240,11 @@ const NAME_TUPLE_COMMENTED: &str = "__yaml_commented";
 // Below this length, block-string wrappers serialize as regular scalars
 // instead of YAML block styles. This keeps short values compact.
 const MIN_FOLD_CHARS: usize = 32;
+/// Maximum width (in characters) for lines inside folded block scalars.
+/// Lines will be wrapped at whitespace so that each emitted line is at most
+/// this many characters long (excluding indentation). If no whitespace is
+/// available within the limit, a hard break is performed.
+const FOLDED_WRAP_COL: usize = 80;
 
 // Top-level newtype wrappers for strong/weak simply wrap the real payloads.
 impl<T: Serialize> Serialize for RcAnchor<T> {
@@ -575,6 +580,56 @@ impl<'a, W: Write> YamlSer<'a, W> {
         Ok(())
     }
 
+    /// Write a folded block string body, wrapping to FOLDED_WRAP_COL characters.
+    /// Preserves blank lines between paragraphs. Each emitted line is indented
+    /// at depth+1. Wrapping prefers breaking at the last whitespace not
+    /// exceeding the limit; if none is present, performs a hard break.
+    fn write_folded_block(&mut self, s: &str) -> Result<()> {
+        for line in s.split('\n') {
+            if line.is_empty() {
+                // Preserve empty lines between paragraphs
+                self.write_indent(self.depth + 1)?;
+                self.newline()?;
+                continue;
+            }
+            let mut start = 0; // byte index
+            let bytes = line.as_bytes();
+            let mut last_space_byte: Option<usize> = None;
+            let mut col = 0usize; // column in chars
+            for (i, ch) in line.char_indices() {
+                // track potential break positions
+                if ch.is_whitespace() {
+                    last_space_byte = Some(i);
+                }
+                col += 1;
+                if col > FOLDED_WRAP_COL {
+                    let break_at = last_space_byte.unwrap_or(i);
+                    // Emit [start, break_at)
+                    self.write_indent(self.depth + 1)?;
+                    // Safety: break_at is on char boundary
+                    let slice = &line[start..break_at];
+                    self.out.write_str(slice)?;
+                    self.newline()?;
+                    // Advance start: skip the whitespace if we broke at space
+                    start = if let Some(sp) = last_space_byte { sp + 1 } else { break_at };
+                    // Reset trackers starting at new segment
+                    last_space_byte = None;
+                    col = 0;
+                    // Recompute col from start to current i
+                    // Count chars between start and i
+                    for ch2 in line[start..i].chars() { let _ = ch2; col += 1; }
+                }
+            }
+            // Emit the tail if any
+            if start <= bytes.len() {
+                self.write_indent(self.depth + 1)?;
+                self.out.write_str(&line[start..])?;
+                self.newline()?;
+            }
+        }
+        Ok(())
+    }
+
     /// Write a scalar either as plain or as double-quoted with minimal escapes.
     /// Called by most `serialize_*` primitive methods.
     fn write_plain_or_quoted(&mut self, s: &str) -> Result<()> {
@@ -853,14 +908,20 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                 self.write_indent(self.depth)?;
             }
             match style {
-                StrStyle::Literal => self.out.write_str("|")?,
-                StrStyle::Folded => self.out.write_str(">")?,
-            }
-            self.newline()?;
-            for line in v.split('\n') {
-                self.write_indent(self.depth + 1)?;
-                self.out.write_str(line)?;
-                self.newline()?;
+                StrStyle::Literal => {
+                    self.out.write_str("|")?;
+                    self.newline()?;
+                    for line in v.split('\n') {
+                        self.write_indent(self.depth + 1)?;
+                        self.out.write_str(line)?;
+                        self.newline()?;
+                    }
+                }
+                StrStyle::Folded => {
+                    self.out.write_str(">")?;
+                    self.newline()?;
+                    self.write_folded_block(v)?;
+                }
             }
             return Ok(());
         }
