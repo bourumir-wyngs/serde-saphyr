@@ -131,10 +131,11 @@ pub struct Commented<T>(pub T, pub String);
 ///
 /// Examples
 ///
-/// Top-level literal block string:
+/// Top-level literal block string (only for sufficiently long content; short strings serialize like normal scalars):
 /// ```rust
-/// let out = serde_saphyr::to_string(&serde_saphyr::LitStr("line 1\nline 2")).unwrap();
-/// assert_eq!(out, "|\n  line 1\n  line 2\n");
+/// let long = "line 1\nline 2\n".repeat(20);
+/// let out = serde_saphyr::to_string(&serde_saphyr::LitStr(&long)).unwrap();
+/// assert!(out.starts_with("|\n  "));
 /// ```
 ///
 /// As a mapping value:
@@ -236,6 +237,10 @@ const NAME_LIT_STR: &str = "__yaml_lit_str";
 const NAME_FOLD_STR: &str = "__yaml_fold_str";
 const NAME_TUPLE_COMMENTED: &str = "__yaml_commented";
 
+// Below this length, block-string wrappers serialize as regular scalars
+// instead of YAML block styles. This keeps short values compact.
+const MIN_FOLD_CHARS: usize = 32;
+
 // Top-level newtype wrappers for strong/weak simply wrap the real payloads.
 impl<T: Serialize> Serialize for RcAnchor<T> {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
@@ -329,21 +334,33 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Commented<T> {
 
 impl<'a> Serialize for LitStr<'a> {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        if self.0.len() < MIN_FOLD_CHARS && !self.0.contains('\n') {
+            return s.serialize_str(self.0);
+        }
         s.serialize_newtype_struct(NAME_LIT_STR, &self.0)
     }
 }
 impl Serialize for LitString {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        if self.0.len() < MIN_FOLD_CHARS && !self.0.contains('\n') {
+            return s.serialize_str(&self.0);
+        }
         s.serialize_newtype_struct(NAME_LIT_STR, &self.0)
     }
 }
 impl<'a> Serialize for FoldStr<'a> {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        if self.0.len() < MIN_FOLD_CHARS && !self.0.contains('\n') {
+            return s.serialize_str(self.0);
+        }
         s.serialize_newtype_struct(NAME_FOLD_STR, &self.0)
     }
 }
 impl Serialize for FoldString {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        if self.0.len() < MIN_FOLD_CHARS && !self.0.contains('\n') {
+            return s.serialize_str(&self.0);
+        }
         s.serialize_newtype_struct(NAME_FOLD_STR, &self.0)
     }
 }
