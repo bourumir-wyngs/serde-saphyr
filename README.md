@@ -51,11 +51,6 @@ The test suite currently includes 656 passing tests, most of them originating fr
 - **serde_json::Value** is supported when parsing without target structure defined.
 - **robotic extensions** to support YAML dialect common in robotics (see below).
 
-## Deserialization
-
-Tagged enums written as `!!EnumName VARIANT` are supported for single-level scalar variants. YAML itself cannot nest such tagged
-enums, so use mapping-based representations if you need to embed enums within other enums.
-
 ### Duplicate keys
 Duplicate key handling is configurable. By default it’s an error; “first wins”  and “last wins” strategies are available via [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). Duplicate key policy applies not just to strings but also to other types (when deserializing into map).
 
@@ -180,6 +175,8 @@ let yaml = r#"
 ```
 There are two variants of the deserialization functions: from_* and from_*_with_options. The latter accepts an [Options](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html)
 object that allows you to configure budget and other aspects of parsing. For larger projects that require consistent parsing behavior, we recommend defining a wrapper function so that all option and budget settings are managed in one place (see examples/wrapper_function.rs).
+
+Tagged enums written as `!!EnumName VARIANT` are also supported, but only for single-level scalar variants. YAML itself cannot nest such tagged enums, so use mapping-based representations (`EnumName: RED`) if you need to embed enums within other enums.
 
 ## Composite keys
 
