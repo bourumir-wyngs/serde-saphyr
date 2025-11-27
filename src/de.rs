@@ -76,6 +76,8 @@ pub(crate) enum Ev {
     Scalar {
         value: String,
         tag: SfTag,
+        /// Original tag string if provided in the YAML source.
+        raw_tag: Option<String>,
         style: ScalarStyle,
         /// Numeric anchor id (0 if none) attached to this scalar node.
         anchor: usize,
@@ -121,6 +123,32 @@ impl Ev {
             | Ev::Taken { location } => *location,
         }
     }
+}
+
+fn simple_tagged_enum_name(raw_tag: &Option<String>, tag: &SfTag) -> Option<String> {
+    if !matches!(tag, SfTag::Other) {
+        return None;
+    }
+
+    let raw = raw_tag.as_deref()?;
+    let mut candidate =
+        if let Some(inner) = raw.strip_prefix("!<").and_then(|s| s.strip_suffix('>')) {
+            inner
+        } else {
+            raw
+        };
+
+    if let Some(stripped) = candidate.strip_prefix("tag:yaml.org,2002:") {
+        candidate = stripped;
+    }
+
+    candidate = candidate.trim_start_matches('!');
+
+    if candidate.is_empty() || candidate.contains([':', '!']) {
+        return None;
+    }
+
+    Some(candidate.to_owned())
 }
 
 /// Canonical fingerprint of a YAML node for duplicate-key detection.
@@ -353,6 +381,7 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
         Ev::Scalar {
             value,
             tag,
+            raw_tag,
             style,
             anchor,
             location,
@@ -360,6 +389,7 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
             let ev = Ev::Scalar {
                 value,
                 tag,
+                raw_tag,
                 style,
                 anchor,
                 location,
@@ -485,7 +515,8 @@ fn pending_entries_from_events(
         }
         Some(Ev::Scalar { location, .. }) => Err(Error::msg(
             "YAML merge value must be mapping or sequence of mappings",
-        ).with_location(*location)),
+        )
+        .with_location(*location)),
         Some(Ev::MapStart { .. }) => collect_entries_from_map(&mut replay),
         Some(Ev::SeqStart { .. }) => {
             let mut batches = Vec::new();
@@ -647,7 +678,8 @@ impl Events for ReplayEvents {
 
     fn last_location(&self) -> Location {
         let last = self.idx.saturating_sub(1);
-        self.buf.get(last)
+        self.buf
+            .get(last)
             .map(|e| e.location())
             .unwrap_or(Location::UNKNOWN)
     }
@@ -1914,10 +1946,20 @@ helper to deserialize into String or Cow<'de, str> instead
             Map(String),
         }
 
+        let mut tagged_enum = None;
+
         let mode = match self.ev.peek()? {
             Some(Ev::Scalar {
-                tag, style, value, ..
+                tag,
+                style,
+                value,
+                raw_tag,
+                location,
+                ..
             }) => {
+                if let Some(tag_name) = simple_tagged_enum_name(raw_tag, tag) {
+                    tagged_enum = Some((tag_name, *location));
+                }
                 if self.cfg.no_schema && *tag != SfTag::String && maybe_not_string(value, style) {
                     let (v, _t, loc) = self.take_scalar_event()?;
                     return Err(Error::quoting_required(&v).with_location(loc));
@@ -1966,6 +2008,16 @@ helper to deserialize into String or Cow<'de, str> instead
             }
             None => return Err(Error::eof().with_location(self.ev.last_location())),
         };
+
+        if let Some((tag_name, location)) = tagged_enum {
+            if tag_name != _name {
+                return Err(Error::msg(format!(
+                    "tagged enum `{}` does not match target enum `{}`",
+                    tag_name, _name
+                ))
+                .with_location(location));
+            }
+        }
 
         struct EA<'e> {
             ev: &'e mut dyn Events,

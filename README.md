@@ -53,12 +53,14 @@ The test suite currently includes 656 passing tests, most of them originating fr
 
 ## Deserialization
 
+Tagged enums written as `!!EnumName VARIANT` are supported for single-level scalar variants. YAML itself cannot nest such tagged
+enums, so use mapping-based representations if you need to embed enums within other enums.
+
 ### Duplicate keys
 Duplicate key handling is configurable. By default it’s an error; “first wins”  and “last wins” strategies are available via [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). Duplicate key policy applies not just to strings but also to other types (when deserializing into map).
 
 ### Unsupported features
-- **Tagged enums** (`!!EnumName RED`) are not supported. Use mapping-based enums (`EnumName: RED`) instead. This also allows you to define nested enums if needed, with tagged enums this is not possible by YAML standard.
-- **Tabs in block scalar** While standard YAML only disallows tabs for indentation, saphyr-parser rejects 
+- **Tabs in block scalar** While standard YAML only disallows tabs for indentation, saphyr-parser rejects
     them also in the body of unquoted scalar. This looks even reasonable (to avoid invisible characters) and looks like implemented deliberately.
 - **Invalid indentation of the closing bracket.** The code like
 ```yaml
