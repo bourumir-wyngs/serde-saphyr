@@ -690,8 +690,9 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
 
 /// Create an iterator over YAML documents from any `std::io::Read` using default options.
 ///
-/// This is a convenience wrapper around [`read_with_options`], equivalent to
-/// `read_with_options(reader, Options::default())`.
+/// This is a convenience wrapper around [`read_with_options`] that uses the
+/// same defaults as [`Options::default`] **except** it disables the
+/// `max_reader_input_bytes` budget to better support long-lived streams.
 ///
 /// - It streams the reader without loading the whole input into memory.
 /// - Each item produced by the returned iterator is one deserialized YAML document of type `T`.
@@ -708,10 +709,10 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
 ///   The iterator cannot outlive the reader it was created from.
 ///
 /// Limits and budget
-/// - Uses `Options::default()`, which enables a YAML parsing budget by default. This enforces
-///   limits such as maximum events, nodes, nesting depth, total scalar bytes
-///   Maximal input size limit is turned to off, as input for the streaming reader may
-///   potentially be indefinite. To customize these, call [`read_with_options`] and set
+/// - Uses the same limits as `Options::default()` (events, nodes, nesting depth, total scalar
+///   bytes) and the default alias-replay caps. The only change is that
+///   `Budget::max_reader_input_bytes` is set to `None` so the streaming iterator can handle
+///   arbitrarily long inputs. To customize these limits, call [`read_with_options`] and set
 ///   `Options::budget.max_reader_input_bytes` in the provided `Options`.
 /// - Alias replay limits are also enforced with their default values to mitigate alias bombs.
 ///

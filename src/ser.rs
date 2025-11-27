@@ -1165,11 +1165,10 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             } else {
                 self.depth
             };
-            // For sequences used as a mapping value, the dash should align under the parent key
-            // (no extra indentation). Keep depth at `base` so the first dash starts at the base.
-            let depth_next = if inline_first {
-                base + 1
-            } else if was_inline_value {
+            // For sequences used as a mapping value, indent them one level deeper so the dash is
+            // nested under the parent key (consistent with serde_yaml's formatting). Keep block
+            // sequences inline only when they immediately follow another dash.
+            let depth_next = if inline_first || was_inline_value {
                 base + 1
             } else {
                 base
