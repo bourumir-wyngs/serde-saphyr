@@ -9,6 +9,13 @@ enum Color {
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "UPPERCASE")]
+enum SimpleTaggedEnum {
+    Red,
+    Blue,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
 struct Paint {
     color: Color,
 }
@@ -18,6 +25,21 @@ fn enum_unit_from_scalar() {
     let y = "color: Green\n";
     let paint: Paint = serde_saphyr::from_str(y).unwrap();
     assert_eq!(paint.color, Color::Green);
+}
+
+#[test]
+fn tagged_enum_from_scalar_tag() {
+    let y = "!!SimpleTaggedEnum RED";
+    let value: SimpleTaggedEnum = serde_saphyr::from_str(y).unwrap();
+    assert_eq!(value, SimpleTaggedEnum::Red);
+}
+
+#[test]
+fn tagged_enum_rejects_nested_container() {
+    let y = "!!SimpleTaggedEnum [RED]";
+    let err = serde_saphyr::from_str::<SimpleTaggedEnum>(y).unwrap_err();
+    let msg = format!("{err}");
+    assert!(msg.contains("tagged enums must be scalars"));
 }
 
 #[derive(Debug, Deserialize, PartialEq)]

@@ -76,17 +76,27 @@ pub(crate) enum Ev {
     Scalar {
         value: String,
         tag: SfTag,
+        /// Original tag URI for this scalar, if provided.
+        raw_tag: Option<String>,
         style: ScalarStyle,
         /// Numeric anchor id (0 if none) attached to this scalar node.
         anchor: usize,
         location: Location,
     },
     /// Start of a sequence (`[` / `-`-list).
-    SeqStart { anchor: usize, location: Location },
+    SeqStart {
+        anchor: usize,
+        tag: Option<String>,
+        location: Location,
+    },
     /// End of a sequence.
     SeqEnd { location: Location },
     /// Start of a mapping (`{` or block mapping).
-    MapStart { anchor: usize, location: Location },
+    MapStart {
+        anchor: usize,
+        tag: Option<String>,
+        location: Location,
+    },
     /// End of a mapping.
     MapEnd { location: Location },
     /// The event have been taken from the array, with only location remaining. This should not
@@ -353,6 +363,7 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
         Ev::Scalar {
             value,
             tag,
+            raw_tag,
             style,
             anchor,
             location,
@@ -360,6 +371,7 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
             let ev = Ev::Scalar {
                 value,
                 tag,
+                raw_tag,
                 style,
                 anchor,
                 location,
@@ -369,8 +381,16 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
                 location,
             })
         }
-        Ev::SeqStart { anchor, location } => {
-            let mut events = vec![Ev::SeqStart { anchor, location }];
+        Ev::SeqStart {
+            anchor,
+            tag,
+            location,
+        } => {
+            let mut events = vec![Ev::SeqStart {
+                anchor,
+                tag: tag.clone(),
+                location,
+            }];
             let mut elements = Vec::new();
             loop {
                 match ev.peek()? {
@@ -399,8 +419,16 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
                 location,
             })
         }
-        Ev::MapStart { anchor, location } => {
-            let mut events = vec![Ev::MapStart { anchor, location }];
+        Ev::MapStart {
+            anchor,
+            tag,
+            location,
+        } => {
+            let mut events = vec![Ev::MapStart {
+                anchor,
+                tag: tag.clone(),
+                location,
+            }];
             let mut entries = Vec::new();
             loop {
                 match ev.peek()? {
@@ -485,7 +513,8 @@ fn pending_entries_from_events(
         }
         Some(Ev::Scalar { location, .. }) => Err(Error::msg(
             "YAML merge value must be mapping or sequence of mappings",
-        ).with_location(*location)),
+        )
+        .with_location(*location)),
         Some(Ev::MapStart { .. }) => collect_entries_from_map(&mut replay),
         Some(Ev::SeqStart { .. }) => {
             let mut batches = Vec::new();
@@ -521,6 +550,22 @@ fn pending_entries_from_events(
         ),
         None => Err(Error::eof().with_location(location)),
     }
+}
+
+/// Check whether a raw tag URI matches the target enum name.
+///
+/// Accepts short (`!Name`/`!!Name`) and long (`tag:yaml.org,2002:Name` or
+/// `tag:yaml.org,2002:!Name`) forms.
+fn enum_tag_matches(raw_tag: &Option<String>, enum_name: &str) -> bool {
+    let Some(tag_uri) = raw_tag.as_deref() else {
+        return false;
+    };
+    let stripped = tag_uri
+        .strip_prefix("tag:yaml.org,2002:!")
+        .or_else(|| tag_uri.strip_prefix("tag:yaml.org,2002:"))
+        .or_else(|| tag_uri.strip_prefix("!!"))
+        .or_else(|| tag_uri.strip_prefix('!'));
+    matches!(stripped, Some(name) if name == enum_name)
 }
 
 /// Collect `(key,value)` entries from a mapping at the current position.
@@ -647,7 +692,8 @@ impl Events for ReplayEvents {
 
     fn last_location(&self) -> Location {
         let last = self.idx.saturating_sub(1);
-        self.buf.get(last)
+        self.buf
+            .get(last)
             .map(|e| e.location())
             .unwrap_or(Location::UNKNOWN)
     }
@@ -1681,12 +1727,15 @@ helper to deserialize into String or Cow<'de, str> instead
                                                 value_events = events.drain(vs..ve).collect();
                                                 // Build empty map events using the first and last from original events
                                                 let start = match events.first() {
-                                                    Some(Ev::MapStart { anchor, location }) => {
-                                                        Ev::MapStart {
-                                                            anchor: *anchor,
-                                                            location: *location,
-                                                        }
-                                                    }
+                                                    Some(Ev::MapStart {
+                                                        anchor,
+                                                        tag,
+                                                        location,
+                                                    }) => Ev::MapStart {
+                                                        anchor: *anchor,
+                                                        tag: tag.clone(),
+                                                        location: *location,
+                                                    },
                                                     Some(other) => other.clone(),
                                                     None => {
                                                         return Err(Error::unexpected(
@@ -1886,7 +1935,7 @@ helper to deserialize into String or Cow<'de, str> instead
     ///
     /// `Visitor` origin: From Serde for the caller’s
     /// Rust struct type (usually generated by `#[derive(Deserialize)]`). That
-    /// visitor expects a `MapAccess` yielding field names/values.  
+    /// visitor expects a `MapAccess` yielding field names/values.
     /// **Where does it go?** We call `visitor.visit_map(..)` via `deserialize_map`,
     /// which streams YAML mapping pairs as struct fields.
     fn deserialize_struct<V: Visitor<'de>>(
@@ -1916,7 +1965,11 @@ helper to deserialize into String or Cow<'de, str> instead
 
         let mode = match self.ev.peek()? {
             Some(Ev::Scalar {
-                tag, style, value, ..
+                tag,
+                style,
+                value,
+                raw_tag: _,
+                ..
             }) => {
                 if self.cfg.no_schema && *tag != SfTag::String && maybe_not_string(value, style) {
                     let (v, _t, loc) = self.take_scalar_event()?;
@@ -1924,13 +1977,17 @@ helper to deserialize into String or Cow<'de, str> instead
                 }
                 Mode::Unit(self.take_scalar()?)
             }
-            Some(Ev::MapStart { .. }) => {
+            Some(Ev::MapStart { tag, location, .. }) => {
+                if enum_tag_matches(tag, _name) {
+                    return Err(Error::msg("tagged enums must be scalars").with_location(*location));
+                }
                 self.expect_map_start()?;
                 match self.ev.next()? {
                     Some(Ev::Scalar {
                         value,
                         tag,
                         style,
+                        raw_tag,
                         location,
                         ..
                     }) => {
@@ -1939,6 +1996,11 @@ helper to deserialize into String or Cow<'de, str> instead
                             && maybe_not_string(&value, &style)
                         {
                             return Err(Error::quoting_required(&value).with_location(location));
+                        }
+                        if enum_tag_matches(&raw_tag, _name) {
+                            return Err(
+                                Error::msg("tagged enums must be scalars").with_location(location)
+                            );
                         }
                         Mode::Map(value)
                     }
@@ -1949,7 +2011,10 @@ helper to deserialize into String or Cow<'de, str> instead
                     None => return Err(Error::eof().with_location(self.ev.last_location())),
                 }
             }
-            Some(Ev::SeqStart { location, .. }) => {
+            Some(Ev::SeqStart { tag, location, .. }) => {
+                if enum_tag_matches(tag, _name) {
+                    return Err(Error::msg("tagged enums must be scalars").with_location(*location));
+                }
                 return Err(
                     Error::msg("externally tagged enum expected scalar or mapping")
                         .with_location(*location),

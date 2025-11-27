@@ -22,7 +22,7 @@
 //! injection is exhausted.
 
 use crate::budget::{BudgetEnforcer, EnforcingPolicy};
-use crate::buffered_input::{buffered_input_from_reader_with_limit, ChunkedChars};
+use crate::buffered_input::{ChunkedChars, buffered_input_from_reader_with_limit};
 use crate::de::{AliasLimits, Budget, Error, Ev, Events, Location};
 use crate::de_error::{budget_error, location_from_span};
 use crate::tags::SfTag;
@@ -212,10 +212,8 @@ impl<'a> LiveEvents<'a> {
                 }
 
                 match ev {
-                    Ev::SeqStart { .. } | Ev::MapStart { .. } => {
-                    }
-                    Ev::SeqEnd { .. } | Ev::MapEnd { .. } => {
-                    }
+                    Ev::SeqStart { .. } | Ev::MapStart { .. } => {}
+                    Ev::SeqEnd { .. } | Ev::MapEnd { .. } => {}
                     Ev::Scalar { .. } => {}
                     Ev::Taken { location } => {
                         return Err(Error::unexpected("consumed event").with_location(location));
@@ -272,6 +270,7 @@ impl<'a> LiveEvents<'a> {
                         Cow::Owned(v) => v,
                     };
                     let tag_s = SfTag::from_optional_cow(&tag);
+                    let raw_tag = tag.as_ref().map(|t| t.to_string());
                     if s.is_empty()
                         && anchor_id != 0
                         && matches!(style, ScalarStyle::SingleQuoted | ScalarStyle::DoubleQuoted)
@@ -282,6 +281,7 @@ impl<'a> LiveEvents<'a> {
                     let ev = Ev::Scalar {
                         value: s,
                         tag: tag_s,
+                        raw_tag,
                         style,
                         anchor: anchor_id,
                         location,
@@ -296,9 +296,10 @@ impl<'a> LiveEvents<'a> {
                     return Ok(Some(ev));
                 }
 
-                Event::SequenceStart(anchor_id, _tag) => {
+                Event::SequenceStart(anchor_id, tag) => {
                     let ev = Ev::SeqStart {
                         anchor: anchor_id,
+                        tag: tag.as_ref().map(|t| t.to_string()),
                         location,
                     };
                     // Existing frames go deeper with this start.
@@ -337,9 +338,10 @@ impl<'a> LiveEvents<'a> {
                     return Ok(Some(ev));
                 }
 
-                Event::MappingStart(anchor_id, _tag) => {
+                Event::MappingStart(anchor_id, tag) => {
                     let ev = Ev::MapStart {
                         anchor: anchor_id,
+                        tag: tag.as_ref().map(|t| t.to_string()),
                         location,
                     };
                     self.bump_depth_on_start();
@@ -455,6 +457,7 @@ impl<'a> LiveEvents<'a> {
             let ev = Ev::Scalar {
                 value: String::new(),
                 tag: SfTag::Null,
+                raw_tag: None,
                 style: ScalarStyle::Plain,
                 anchor: 0,
                 location: self.last_location,
