@@ -1131,10 +1131,13 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
         } else {
             // Block sequence. Decide indentation based on whether this is after a map key or after a list dash.
             let was_inline_value = !self.at_line_start;
-            // For block sequences, never inline the first inner dash after a parent dash.
-            // Style expectation in tests prefers:
-            // -\n  - 1
-            // rather than "- - 1".
+
+            // For block sequences nested under another dash, keep the first inner dash inline.
+            // Style expectations in tests prefer the compact form:
+            // - - 1
+            // instead of:
+            // -
+            //   - 1
             let inline_first = (!self.at_line_start)
                 && self.after_dash_depth.is_some()
                 && !self.pending_space_after_colon;
