@@ -40,9 +40,9 @@ use std::fmt::{self, Write};
 use std::rc::{Rc, Weak as RcWeak};
 use std::sync::{Arc, Weak as ArcWeak};
 
-use crate::serializer_options::{SerializerOptions, FOLDED_WRAP_CHARS, MIN_FOLD_CHARS};
+use crate::serializer_options::{FOLDED_WRAP_CHARS, MIN_FOLD_CHARS, SerializerOptions};
 use crate::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
-use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use nohash_hasher::BuildNoHashHasher;
 
 // ------------------------------------------------------------
@@ -427,6 +427,8 @@ pub struct YamlSer<'a, W: Write> {
     pending_str_style: Option<StrStyle>,
     /// Pending inline comment to be appended after the next scalar (block style only).
     pending_inline_comment: Option<String>,
+    /// If true, emit YAML tags for simple enums that serialize to a single scalar.
+    tagged_enums: bool,
     /// When the previous token was a list item dash ("- ") and the next node is a mapping,
     /// emit the first key inline on the same line ("- key: value").
     pending_inline_map: bool,
@@ -463,6 +465,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
             in_flow: 0,
             pending_str_style: None,
             pending_inline_comment: None,
+            tagged_enums: false,
             pending_inline_map: false,
             pending_space_after_colon: false,
             inline_map_after_dash: false,
@@ -485,6 +488,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
         s.min_fold_chars = options.min_fold_chars;
         s.folded_wrap_col = options.folded_wrap_chars;
         s.anchor_gen = options.anchor_generator.take();
+        s.tagged_enums = options.tagged_enums;
         s
     }
 
@@ -694,6 +698,20 @@ impl<'a, W: Write> YamlSer<'a, W> {
             // Force quoted style for unsafe value tokens (commas/brackets, bool/num-like, etc.).
             self.write_quoted(s)
         }
+    }
+
+    /// Serialize a tagged scalar of the form `!!Type value` using plain or quoted style for
+    /// the value depending on its content.
+    fn serialize_tagged_scalar(&mut self, enum_name: &str, variant: &str) -> Result<()> {
+        self.write_scalar_prefix_if_anchor()?;
+        if self.at_line_start {
+            self.write_indent(self.depth)?;
+        }
+        self.out.write_str("!!")?;
+        self.out.write_str(enum_name)?;
+        self.out.write_char(' ')?;
+        self.write_plain_or_quoted_value(variant)?;
+        self.write_end_of_scalar()
     }
 
     /// If an anchor is pending for the next scalar, emit `&name ` prefix.
@@ -1009,13 +1027,17 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
 
     fn serialize_unit_variant(
         self,
-        _name: &'static str,
+        name: &'static str,
         _variant_index: u32,
         variant: &'static str,
     ) -> Result<()> {
         // If we are in a mapping value position, insert the deferred space after ':'
         self.write_space_if_pending()?;
-        self.serialize_str(variant)
+        if self.tagged_enums {
+            self.serialize_tagged_scalar(name, variant)
+        } else {
+            self.serialize_str(variant)
+        }
     }
 
     fn serialize_newtype_struct<T: ?Sized + Serialize>(

@@ -44,6 +44,10 @@ pub struct SerializerOptions {
     /// characters long (excluding indentation). If no whitespace is present within the
     /// limit, a hard break is performed.
     pub folded_wrap_chars: usize,
+    /// When enabled, serialize simple enums that become a single scalar (unit variants)
+    /// using YAML tags, e.g. `!!Enum Variant` instead of a plain scalar `Variant`.
+    /// Deserializer does not need this setting as both cases will be understood.
+    pub tagged_enums: bool,
 }
 
 // Below this length, block-string wrappers serialize as regular scalars
@@ -63,6 +67,7 @@ impl Default for SerializerOptions {
             anchor_generator: None,
             min_fold_chars: MIN_FOLD_CHARS,
             folded_wrap_chars: FOLDED_WRAP_CHARS,
+            tagged_enums: false,
         }
     }
 }
