@@ -3,12 +3,12 @@
 //! This inspects the parser's event stream and enforces simple budgets to
 //! avoid pathological inputs
 
-use std::borrow::Cow;
-use std::collections::HashSet;
 use ahash::HashSetExt;
 use saphyr_parser::{Event, Parser, ScalarStyle, ScanError};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
+use std::borrow::Cow;
+use std::collections::HashSet;
 
 /// Budgets for a streaming YAML scan.
 ///
@@ -111,8 +111,8 @@ impl Default for Budget {
     fn default() -> Self {
         Self {
             max_reader_input_bytes: Some(256 * 1024 * 1024), // 256 Mb
-            max_events: 1_000_000, // plenty for normal configs
-            max_aliases: 50_000,   // liberal absolute cap
+            max_events: 1_000_000,                           // plenty for normal configs
+            max_aliases: 50_000,                             // liberal absolute cap
             max_anchors: 50_000,
             max_depth: 2_000,                         // protects stack/CPU
             max_documents: 1_024,                     // doc separator storms
@@ -127,7 +127,7 @@ impl Default for Budget {
 }
 
 /// What tripped the budget (if anything).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum BudgetBreach {
     /// The total number of parser events exceeded [`Budget::max_events`].
     Events {
@@ -206,7 +206,7 @@ pub enum BudgetBreach {
 }
 
 /// Summary of the scan (even if no breach).
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct BudgetReport {
     /// `Some(..)` if a limit was exceeded; `None` if all budgets were respected.
     pub breached: Option<BudgetBreach>,
@@ -249,7 +249,6 @@ impl BudgetReport {
     }
 }
 
-
 /// Defines how budget limit policies are enforces (per document or for all content).
 /// Default is for all content, except when streaming from reader to iterator where
 /// it is per document as infinite may be required.
@@ -263,13 +262,13 @@ pub enum EnforcingPolicy {
 type FastHashSet<T> = HashSet<T, ahash::RandomState>;
 
 #[derive(Debug)]
-pub (crate) struct BudgetEnforcer {
+pub(crate) struct BudgetEnforcer {
     budget: Budget,
     report: BudgetReport,
     depth: usize,
     defined_anchors: FastHashSet<usize>,
     containers: SmallVec<ContainerState, 64>,
-    policy: EnforcingPolicy
+    policy: EnforcingPolicy,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -292,7 +291,7 @@ impl BudgetEnforcer {
             depth: 0,
             defined_anchors: FastHashSet::with_capacity(256),
             containers: SmallVec::new(),
-            policy
+            policy,
         }
     }
 
@@ -310,9 +309,8 @@ impl BudgetEnforcer {
         match ev {
             Event::Scalar(value, style, anchor_id, tag_opt) => {
                 self.bump_nodes()?;
-                self.report.total_scalar_bytes = self
-                    .report.total_scalar_bytes
-                    .saturating_add(value.len());
+                self.report.total_scalar_bytes =
+                    self.report.total_scalar_bytes.saturating_add(value.len());
                 if self.report.total_scalar_bytes > self.budget.max_total_scalar_bytes {
                     return Err(BudgetBreach::ScalarBytes {
                         total_scalar_bytes: self.report.total_scalar_bytes,
@@ -547,7 +545,11 @@ impl BudgetEnforcer {
 /// Note:
 /// - This is **streaming** and does not allocate a DOM.
 /// - Depth counts nested `SequenceStart` and `MappingStart`.
-pub fn check_yaml_budget(input: &str, budget: Budget, policy: EnforcingPolicy) -> Result<BudgetReport, ScanError> {
+pub fn check_yaml_budget(
+    input: &str,
+    budget: Budget,
+    policy: EnforcingPolicy,
+) -> Result<BudgetReport, ScanError> {
     let mut parser = Parser::new_from_str(input);
     let mut enforcer = BudgetEnforcer::new(budget, policy);
 

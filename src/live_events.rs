@@ -88,6 +88,8 @@ pub(crate) struct LiveEvents<'a> {
     rec_stack: Vec<RecFrame>,
     /// Budget (raw events); independent of alias replay limits below.
     budget: Option<BudgetEnforcer>,
+    /// Optional reporter to expose budget usage once parsing completes.
+    budget_report: Option<fn(&crate::budget::BudgetReport)>,
 
     /// Location of the last yielded event (for better error reporting).
     last_location: Location,
@@ -111,6 +113,7 @@ impl<'a> LiveEvents<'a> {
     pub(crate) fn from_reader<R: std::io::Read + 'a>(
         inputs: R,
         budget: Option<Budget>,
+        budget_report: Option<fn(&crate::budget::BudgetReport)>,
         alias_limits: AliasLimits,
         stop_at_doc_end: bool,
         policy: EnforcingPolicy,
@@ -128,6 +131,7 @@ impl<'a> LiveEvents<'a> {
             anchors: Vec::with_capacity(8),
             rec_stack: Vec::with_capacity(2),
             budget: budget.map(|budget| BudgetEnforcer::new(budget, policy)),
+            budget_report,
 
             last_location: Location::UNKNOWN,
 
@@ -155,6 +159,7 @@ impl<'a> LiveEvents<'a> {
     pub(crate) fn from_str(
         input: &'a str,
         budget: Option<Budget>,
+        budget_report: Option<fn(&crate::budget::BudgetReport)>,
         alias_limits: AliasLimits,
         stop_at_doc_end: bool,
     ) -> Self {
@@ -167,6 +172,7 @@ impl<'a> LiveEvents<'a> {
             anchors: Vec::with_capacity(8),
             rec_stack: Vec::with_capacity(2),
             budget: budget.map(|budget| BudgetEnforcer::new(budget, EnforcingPolicy::AllContent)),
+            budget_report,
 
             last_location: Location::UNKNOWN,
 
@@ -600,6 +606,9 @@ impl<'a> LiveEvents<'a> {
         self.io_error()?;
         if let Some(budget) = self.budget.take() {
             let report = budget.finalize();
+            if let Some(callback) = self.budget_report {
+                callback(&report);
+            }
             if let Some(breach) = report.breached {
                 return Err(budget_error(breach).with_location(self.last_location));
             }

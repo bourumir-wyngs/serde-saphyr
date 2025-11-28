@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::budget::Budget;
+use serde::{Deserialize, Serialize};
 
 /// Duplicate key handling policy for mappings.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -77,6 +77,10 @@ impl Default for AliasLimits {
 pub struct Options {
     /// Optional YAML budget to enforce before parsing (counts raw parser events).
     pub budget: Option<Budget>,
+    /// Optional callback invoked with the final budget report after parsing.
+    /// It is invoked both when parsing is successful and when budget was breached.
+    #[serde(skip)]
+    pub budget_report: Option<fn(&crate::budget::BudgetReport)>,
     /// Policy for duplicate keys.
     pub duplicate_keys: DuplicateKeyPolicy,
     /// Limits for alias replay to harden against alias bombs.
@@ -110,6 +114,7 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             budget: Some(Budget::default()),
+            budget_report: None,
             duplicate_keys: DuplicateKeyPolicy::Error,
             alias_limits: AliasLimits::default(),
             legacy_octal_numbers: false,

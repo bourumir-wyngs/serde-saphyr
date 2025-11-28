@@ -305,6 +305,7 @@ Legacy octal notation such as `0052` can be enabled via `Options`, but it is dis
 
 Fuzzing shows that certain adversarial inputs can make YAML parsers consume excessive time or memory, enabling denial-of-service scenarios. To counter this, `serde-saphyr` offers a fast, configurable pre-check via a [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html), available through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). Defaults are conservative; tighten them when you know your input shape, or disable the budget if you only parse YAML you generate yourself.
 During [reader](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.from_reader_with_options.html)-based deserialization, serde-saphyr does not buffer the entire payload; it parses incrementally, counting bytes and enforcing configured budgets. This design blocks denial-of-service attempts via excessively large inputs. When [streaming](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.read_with_options.html) from the reader through the iterator, other budget limits apply on a per-document basis, since such a reader may be expected to stream indefinitely. The total size of input is not limited in this case.
+To find the typical budget requirements for you file, run the main() executable of this library, providing a YAML file path as the program parameter. You can also fetch the budget programmatically by registering a handle in Options.
 
 ## Serialization
 

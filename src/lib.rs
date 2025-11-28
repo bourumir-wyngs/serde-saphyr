@@ -226,7 +226,13 @@ pub fn from_str_with_options<T: DeserializeOwned>(
 
     let cfg = crate::de::Cfg::from_options(&options);
     // Do not stop at DocumentEnd; we'll probe for trailing content/errors explicitly.
-    let mut src = LiveEvents::from_str(input, options.budget, options.alias_limits, false);
+    let mut src = LiveEvents::from_str(
+        input,
+        options.budget,
+        options.budget_report,
+        options.alias_limits,
+        false,
+    );
     let value_res = crate::anchor_store::with_document_scope(|| {
         T::deserialize(crate::de::Deser::new(&mut src, cfg))
     });
@@ -349,7 +355,13 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
         input
     };
     let cfg = crate::de::Cfg::from_options(&options);
-    let mut src = LiveEvents::from_str(input, options.budget, options.alias_limits, false);
+    let mut src = LiveEvents::from_str(
+        input,
+        options.budget,
+        options.budget_report,
+        options.alias_limits,
+        false,
+    );
     let mut values = Vec::new();
 
     loop {
@@ -643,6 +655,7 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
     let mut src = LiveEvents::from_reader(
         reader,
         options.budget,
+        options.budget_report,
         options.alias_limits,
         false,
         EnforcingPolicy::AllContent,
@@ -752,10 +765,10 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
 /// - Each `next()` yields either `Ok(T)` for a successfully deserialized document or `Err(Error)`
 ///   if parsing fails or a limit is exceeded. After an error, the iterator ends.
 /// - Empty/null-like documents are skipped and produce no items.
-/// 
-/// *Note* Some content of the next document is read before the current parsed document is emitted. 
-/// Hence, while streaming is good for safely parsing large files with multiple documents without 
-/// loading it into RAM in advance, it does not emit each document exactly 
+///
+/// *Note* Some content of the next document is read before the current parsed document is emitted.
+/// Hence, while streaming is good for safely parsing large files with multiple documents without
+/// loading it into RAM in advance, it does not emit each document exactly
 /// after `---`  is encountered.
 pub fn read<'a, R, T>(reader: &'a mut R) -> Box<dyn Iterator<Item = Result<T, Error>> + 'a>
 where
@@ -895,6 +908,7 @@ where
     let src = LiveEvents::from_reader(
         reader,
         options.budget,
+        options.budget_report,
         options.alias_limits,
         false,
         EnforcingPolicy::PerDocument,
