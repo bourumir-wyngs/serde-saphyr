@@ -14,7 +14,6 @@ fn test_comment_like_string() -> anyhow::Result<()> {
     "##;
 
     let r: CommentLikes = serde_saphyr::from_str(&yaml)?;
-    println!("{:?}", r);
     assert_eq!(r.s1, None);
     assert_eq!(r.s2, Some("#a".to_string()));
     Ok(())
