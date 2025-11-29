@@ -13,6 +13,7 @@ struct Scalars {
     literal: String,
     literal_strip: String,
     literal_keep: String,
+    with_tab: String,
 }
 
 #[test]
@@ -39,6 +40,8 @@ fn test_block_scalars() {
           line1
           line2
 
+        with_tab: |
+          one\ttwo\ttw\ttz
         "
     };
 
@@ -49,6 +52,7 @@ fn test_block_scalars() {
         literal: "line1\nline2\n".to_owned(),
         literal_strip: "line1\nline2".to_owned(),
         literal_keep: "line1\nline2\n\n".to_owned(),
+        with_tab: "one\ttwo\ttw\ttz\n".to_owned(),
     };
 
     let result: Scalars = serde_saphyr::from_str(yaml).unwrap();
@@ -76,6 +80,8 @@ fn test_block_scalars_2() {
         folded_strip: >-
           foo
           bar
+        with_tab: |
+          one\ttwo\ttw\ttz
         folded_keep: >+
           foo
           bar
@@ -88,4 +94,5 @@ fn test_block_scalars_2() {
     assert_eq!(data.get("folded_clip").unwrap(), "foo bar\n");
     assert_eq!(data.get("folded_strip").unwrap(), "foo bar");
     assert_eq!(data.get("folded_keep").unwrap(), "foo bar\n");
+    assert_eq!(data.get("with_tab").unwrap(), "one\ttwo\ttw\ttz\n");
 }

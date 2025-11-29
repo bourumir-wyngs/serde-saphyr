@@ -3,7 +3,6 @@
 
 // saphyr-parser 0.0.6 does not emit closing event.
 #[test]
-#[ignore]
 fn yaml_4h7k_extra_closing_bracket_should_fail() {
     let y = "---\n[ a, b, c ] ]\n";
     let result: Result<Vec<String>, _> = serde_saphyr::from_str(y);
