@@ -112,6 +112,7 @@ fn verdanta_case_fold() -> anyhow::Result<()> {
     pub struct Node2 {
         /// Id of this node, used in annotations.
         #[serde(skip)]
+        #[allow(dead_code)]
         pub id: usize,
 
         /// Name of the node, this can be arbitrary string.
@@ -146,7 +147,7 @@ fn verdanta_case_fold() -> anyhow::Result<()> {
                 id: 0,
                 name: "".to_string(),
                 description: RcAnchor::wrapping(Some(FoldString(
-                    "03This is very very very long description. \
+                    "02This is very very very long description. \
         This is very very very long description. This is very very very long description."
                         .to_string(),
                 ))),
@@ -158,8 +159,10 @@ fn verdanta_case_fold() -> anyhow::Result<()> {
     let object = RcAnchor::wrapping(node);
 
     let yaml = to_string(&object)?;
-    println!("{}", yaml);
+    //println!("{}", yaml);
 
-    assert!(yaml.contains("  00This is"), "Must be indentation");
+    assert!(yaml.contains("  00This is"), "Must be indentation 1");
+    assert!(yaml.contains("    01This is"), "Must be indentation 2");
+    assert!(yaml.contains("      02This is"), "Must be indentation 3");
     Ok(())
 }

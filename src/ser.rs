@@ -582,13 +582,13 @@ impl<'a, W: Write> YamlSer<'a, W> {
 
     /// Write a folded block string body, wrapping to FOLDED_WRAP_COL characters.
     /// Preserves blank lines between paragraphs. Each emitted line is indented
-    /// at depth+1. Wrapping prefers breaking at the last whitespace not
+    /// exactly at `indent` depth. Wrapping prefers breaking at the last whitespace not
     /// exceeding the limit; if none is present, performs a hard break.
-    fn write_folded_block(&mut self, s: &str) -> Result<()> {
+    fn write_folded_block(&mut self, s: &str, indent: usize) -> Result<()> {
         for line in s.split('\n') {
             if line.is_empty() {
                 // Preserve empty lines between paragraphs
-                self.write_indent(self.depth + 1)?;
+                self.write_indent(indent)?;
                 self.newline()?;
                 continue;
             }
@@ -604,7 +604,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
                 if col > self.folded_wrap_col {
                     let break_at = last_space_byte.unwrap_or(i);
                     // Emit [start, break_at)
-                    self.write_indent(self.depth + 1)?;
+                    self.write_indent(indent)?;
                     // Safety: break_at is on char boundary
                     let slice = &line[start..break_at];
                     self.out.write_str(slice)?;
@@ -625,12 +625,12 @@ impl<'a, W: Write> YamlSer<'a, W> {
             }
             // Emit the tail if any
             if start < line.len() {
-                self.write_indent(self.depth + 1)?;
+                self.write_indent(indent)?;
                 self.out.write_str(&line[start..])?;
                 self.newline()?;
             } else {
                 // If start == line.len(), the line ended exactly at a wrap boundary; still emit an empty line
-                self.write_indent(self.depth + 1)?;
+                self.write_indent(indent)?;
                 self.newline()?;
             }
         }
@@ -925,13 +925,21 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             // Emit block string. If we are a mapping value, YAML requires a space after ':'.
             // Insert it now if pending.
             self.write_space_if_pending()?;
+            // Determine base indentation for block scalar body.
+            // Prefer aligning under an enclosing sequence dash if present; otherwise under the parent mapping's base.
+            let base = if let Some(d) = self.after_dash_depth {
+                d
+            } else {
+                self.current_map_depth.unwrap_or(self.depth)
+            };
             if self.at_line_start {
-                self.write_indent(self.depth)?;
+                self.write_indent(base)?;
             }
             match style {
                 StrStyle::Literal => {
                     self.out.write_str("|")?;
                     self.newline()?;
+                    // Literal block body always indents one level deeper than the serializer depth
                     for line in v.split('\n') {
                         self.write_indent(self.depth + 1)?;
                         self.out.write_str(line)?;
@@ -941,7 +949,14 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                 StrStyle::Folded => {
                     self.out.write_str(">")?;
                     self.newline()?;
-                    self.write_folded_block(v)?;
+                    // For folded scalars used as mapping values, indent body under the parent map's base.
+                    // Top-level mapping (current_map_depth == 0): use one extra level; nested mappings: align to current_map_depth.
+                    let body_base = if self.current_map_depth.unwrap_or(0) == 0 {
+                        self.depth + 1
+                    } else {
+                        self.current_map_depth.unwrap_or(self.depth)
+                    };
+                    self.write_folded_block(v, body_base)?;
                 }
             }
             return Ok(());
