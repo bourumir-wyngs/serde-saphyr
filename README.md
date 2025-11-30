@@ -63,7 +63,7 @@ Duplicate key handling is configurable. By default it’s an error; “first win
 ```
 is not a valid YAML, closing bracket must be moved more to the right. 
 
-Some parsers allow this deviation from thes rules, serde-saphyr does not. For those who want to retain very strict compatibility with serde-yaml, serde-yaml-bw can be better choice. This crate uses saphyr-parser for budget pre-check only when unsafe-libyaml later does the final parsing. 
+Some parsers allow this deviation from thes rules, serde-saphyr does not. For those who want to retain compatibility with serde-yaml, serde-yaml-bw can be better choice. This crate uses saphyr-parser for budget pre-check only when unsafe-libyaml later does the final parsing. 
 
 ## Usage
 
