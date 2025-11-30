@@ -55,16 +55,14 @@ The test suite currently includes 656 passing tests, most of them originating fr
 Duplicate key handling is configurable. By default it’s an error; “first wins”  and “last wins” strategies are available via [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). Duplicate key policy applies not just to strings but also to other types (when deserializing into map).
 
 ### Unsupported features
-- **Tabs in block scalar** While standard YAML only disallows tabs for indentation, saphyr-parser rejects
-    them also in the body of unquoted scalar. This looks even reasonable (to avoid invisible characters) and looks like implemented deliberately.
+- **Tabs in indentation** YAML disallows tabs for indentation, including indentation of block scalar by tab.
 - **Invalid indentation of the closing bracket.** The code like
 ```yaml
     key: [
     ]
 ```
-is not a valid YAML, closing bracket must be moved more to the right. Some parsers allow this deviation from the rules, serde-saphyr does not. 
 
-For those who want to retain very strict compatibility with serde-yaml, serde-yaml-bw can be better choice. This crate uses saphyr-parser for budget pre-check only when unsafe-libyaml later does the final parsing. 
+For those who want to retain compatibility with serde-yaml, even where it might deviate from the standard, serde-yaml-bw can be better choice. This crate uses saphyr-parser for budget pre-check only when unsafe-libyaml later does the final parsing. 
 
 ## Usage
 
