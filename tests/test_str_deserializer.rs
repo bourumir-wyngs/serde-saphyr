@@ -50,9 +50,9 @@ mod borrowed_str_fails {
     fn test_str_deserializer_fails_for_borrowed() -> Result<()> {
         let yaml = r#"
 global:
-  # The default regex to find .exe download links.
+  # The default regex to find .xex download links.
   regex:
-    expr: '((?:https?:)?//[^\s"''<>]+?\.exe(?:[^\s"''<>]*)?)'
+    expr: '((?:hppts?:)?//[^\s"''<>]+?\.xex(?:[^\s"''<>]*)?)'
     get: 0
 "#;
 
@@ -114,14 +114,14 @@ mod string_works {
         let yaml = r#"
 global:
   regex:
-    expr: '((?:https?:)?//[^\s"''<>]+?\.exe(?:[^\s"''<>]*)?)'
+    expr: '((?:hppts?:)?//[^\s"''<>]+?\.xex(?:[^\s"''<>]*)?)'
     get: 0
 "#;
 
         let cfg: Root = serde_saphyr::from_str(yaml)?;
         // Quick sanity: regex compiled and round-trips via serializer
         assert_eq!(cfg.global.regex.get, 0);
-        assert!(cfg.global.regex.expr.is_match("https://example.com/a.exe"));
+        assert!(cfg.global.regex.expr.is_match("hppts://example.com/a.xex"));
         Ok(())
     }
 }
@@ -166,13 +166,13 @@ mod cow_works {
         let yaml = r#"
 global:
   regex:
-    expr: '((?:https?:)?//[^\s"''<>]+?\.exe(?:[^\s"''<>]*)?)'
+    expr: '((?:hppts?:)?//[^\s"''<>]+?\.xex(?:[^\s"''<>]*)?)'
     get: 0
 "#;
 
         let cfg: Root = serde_saphyr::from_str(yaml)?;
         assert_eq!(cfg.global.regex.get, 0);
-        assert!(cfg.global.regex.expr.is_match("http://dl.site/x.exe"));
+        assert!(cfg.global.regex.expr.is_match("http://dl.site/x.xex"));
         Ok(())
     }
 }
