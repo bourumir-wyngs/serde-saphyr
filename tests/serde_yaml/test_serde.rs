@@ -254,7 +254,6 @@ fn test_string_escapes() {
 
 
 #[test]
-#[ignore]
 fn test_multiline_string() {
     #[derive(Serialize, Deserialize, PartialEq, Debug)]
     struct Struct {
@@ -265,15 +264,22 @@ fn test_multiline_string() {
         trailing_newline: "aaa\nbbb\n".to_owned(),
         no_trailing_newline: "aaa\nbbb".to_owned(),
     };
-    let yaml = indoc! {"
-        trailing_newline: |
+
+    // | literal, “clip” chomping, keeps exactly ONE trailing newline (YAML includes two)
+    // |- literal, “strip” chomping removes all trailing newlines
+    let yaml = indoc! {"trailing_newline: |
           aaa
           bbb
+
+
         no_trailing_newline: |-
           aaa
           bbb
+
     "};
-    test_serde(&thing, yaml);
+
+    let deserialized: Struct = serde_saphyr::from_str(yaml).unwrap();
+    assert_eq!(thing, deserialized);
 }
 
 #[test]
