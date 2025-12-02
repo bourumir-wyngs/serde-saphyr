@@ -77,7 +77,7 @@ bools:
 
         assert_eq!(
             yaml,
-            // NOTE: serde_saphyr can't parse the output this resulted yet
+            // NOTE: serde_saphyr can't parse this yet; this will need to be changed after a fix for #31 is incorporated
             r#"formats:
        - name: CBOR
               deacronymization:
