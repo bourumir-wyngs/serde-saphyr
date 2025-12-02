@@ -23,6 +23,10 @@
 pub struct SerializerOptions {
     /// Number of spaces to indent per nesting level when emitting block-style collections.
     pub indent_step: usize,
+    /// Number of spaces to indent array items (sequences). If `None`, uses `indent_step`.
+    /// This allows reproducing Go's YAML behavior where arrays are indented 2 spaces
+    /// while objects are indented 4 spaces.
+    pub indent_array: Option<usize>,
     /// Optional custom anchor-name generator.
     ///
     /// Receives a monotonically increasing `usize` id (starting at 1) and returns the
@@ -64,6 +68,7 @@ impl Default for SerializerOptions {
         // Defaults mirror internal constants used by the serializer.
         Self {
             indent_step: 2,
+            indent_array: None,
             anchor_generator: None,
             min_fold_chars: MIN_FOLD_CHARS,
             folded_wrap_chars: FOLDED_WRAP_CHARS,

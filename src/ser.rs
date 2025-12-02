@@ -397,6 +397,8 @@ pub struct YamlSer<'a, W: Write> {
     out: &'a mut W,
     /// Spaces per indentation level for block-style collections.
     indent_step: usize,
+    /// Spaces per indentation level for sequences (arrays). If None, uses indent_step.
+    indent_array: Option<usize>,
     /// Threshold for downgrading block-string wrappers to plain scalars.
     min_fold_chars: usize,
     /// Wrap width for folded block scalars ('>').
@@ -443,6 +445,8 @@ pub struct YamlSer<'a, W: Write> {
     after_dash_depth: Option<usize>,
     /// Current block map indentation depth (for aligning sequences under a map key).
     current_map_depth: Option<usize>,
+    /// Extra spaces to add to indentation (used for aligning inline map fields after array dash when indent doesn't divide evenly).
+    indent_offset: usize,
 }
 
 impl<'a, W: Write> YamlSer<'a, W> {
@@ -452,6 +456,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
         Self {
             out,
             indent_step: 2,
+            indent_array: None,
             min_fold_chars: MIN_FOLD_CHARS,
             folded_wrap_col: FOLDED_WRAP_CHARS,
             depth: 0,
@@ -471,6 +476,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
             inline_map_after_dash: false,
             after_dash_depth: None,
             current_map_depth: None,
+            indent_offset: 0,
         }
     }
     /// Construct a `YamlSer` with a specific indentation step.
@@ -478,6 +484,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
     pub fn with_indent(out: &'a mut W, indent_step: usize) -> Self {
         let mut s = Self::new(out);
         s.indent_step = indent_step;
+        s.indent_array = None;
         s
     }
     /// Construct a `YamlSer` from user-supplied [`SerializerOptions`].
@@ -485,6 +492,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
     pub fn with_options(out: &'a mut W, options: &mut SerializerOptions) -> Self {
         let mut s = Self::new(out);
         s.indent_step = options.indent_step;
+        s.indent_array = options.indent_array;
         s.min_fold_chars = options.min_fold_chars;
         s.folded_wrap_col = options.folded_wrap_chars;
         s.anchor_gen = options.anchor_generator.take();
@@ -563,7 +571,30 @@ impl<'a, W: Write> YamlSer<'a, W> {
     #[inline]
     fn write_indent(&mut self, depth: usize) -> Result<()> {
         if self.at_line_start {
-            for _k in 0..self.indent_step * depth {
+            for _k in 0..(self.indent_step * depth + self.indent_offset) {
+                self.out.write_char(' ')?;
+            }
+            self.at_line_start = false;
+        }
+        Ok(())
+    }
+
+    /// Ensure indentation is written for sequences (arrays) if we are at the start of a line.
+    /// Uses indent_array if set, otherwise falls back to indent_step.
+    /// When indent_array is 0, uses indent_step for base indentation (no additional array nesting).
+    #[inline]
+    fn write_indent_seq(&mut self, depth: usize) -> Result<()> {
+        if self.at_line_start {
+            let step = match self.indent_array {
+                Some(0) => {
+                    // When indent_array is 0, use indent_step for the base indentation
+                    // This means array items align with their parent context
+                    self.indent_step
+                }
+                Some(n) => n,
+                None => self.indent_step,
+            };
+            for _k in 0..step * depth {
                 self.out.write_char(' ')?;
             }
             self.at_line_start = false;
@@ -1208,8 +1239,13 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             // For sequences used as a mapping value, indent them one level deeper so the dash is
             // nested under the parent key (consistent with serde_yaml's formatting). Keep block
             // sequences inline only when they immediately follow another dash.
+            // Exception: when indent_array is explicitly 0, keep array at same level as parent.
             let depth_next = if inline_first || was_inline_value {
-                base + 1
+                if self.indent_array == Some(0) {
+                    base
+                } else {
+                    base + 1
+                }
             } else {
                 base
             };
@@ -1315,7 +1351,27 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             } else {
                 self.depth
             };
-            let depth_next = if inline_first || was_inline_value {
+            let depth_next = if inline_first {
+                // When a map is inline after a dash, subsequent fields should align with the first field
+                // The first field is at position: (array_indent * base) + 2 (for "- ")
+                // We need: (indent_step * depth_next) + offset = array_indent * base + 2
+                let array_step = match self.indent_array {
+                    Some(0) => self.indent_step, // When indent_array is 0, use indent_step for base
+                    Some(n) => n,
+                    None => self.indent_step,
+                };
+                let target_spaces = array_step * base + 2;
+                // Calculate depth and offset to achieve target_spaces
+                let depth = target_spaces / self.indent_step;
+                let offset = target_spaces % self.indent_step;
+                // Clear any previous offset first
+                self.indent_offset = 0;
+                // Only set offset for immediate inline map fields after dash
+                if offset > 0 {
+                    self.indent_offset = offset;
+                }
+                depth
+            } else if was_inline_value {
                 base + 1
             } else {
                 base
@@ -1435,7 +1491,7 @@ impl<'a, 'b, W: Write> SerializeSeq for SeqSer<'a, 'b, W> {
                 // (either we are already mid-line, or the parent staged inline via pending_inline_map).
                 // Do not write indentation here.
             } else {
-                self.ser.write_indent(self.depth)?;
+                self.ser.write_indent_seq(self.depth)?;
             }
             self.ser.out.write_str("- ")?;
             self.ser.at_line_start = false;
@@ -1574,7 +1630,7 @@ impl<'a, 'b, W: Write> SerializeTupleStruct for TupleSer<'a, 'b, W> {
                         self.ser.newline()?;
                     }
                 }
-                self.ser.write_indent(self.ser.depth + 1)?;
+                self.ser.write_indent_seq(self.ser.depth + 1)?;
                 self.ser.out.write_str("- ")?;
                 self.ser.at_line_start = false;
                 value.serialize(&mut *self.ser)?;
@@ -1705,7 +1761,7 @@ impl<'a, 'b, W: Write> SerializeTupleVariant for TupleVariantSer<'a, 'b, W> {
     type Error = Error;
 
     fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<()> {
-        self.ser.write_indent(self.depth)?;
+        self.ser.write_indent_seq(self.depth)?;
         self.ser.out.write_str("- ")?;
         self.ser.at_line_start = false;
         value.serialize(&mut *self.ser)
@@ -1815,8 +1871,13 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
                 self.ser.depth = self.depth;
             }
             let prev_map_depth = self.ser.current_map_depth.replace(self.depth);
+            // Save and clear indent_offset for nested structures
+            let prev_offset = self.ser.indent_offset;
+            self.ser.indent_offset = 0;
             let result = value.serialize(&mut *self.ser);
             self.ser.current_map_depth = prev_map_depth;
+            // Restore offset only if we're still at the same map level
+            self.ser.indent_offset = prev_offset;
             // Always restore the parent's pending_inline_map to avoid leaking inline hints
             // across sibling values (e.g., after finishing a sequence value like `groups`).
             self.ser.pending_inline_map = saved_pending_inline_map;
@@ -1839,6 +1900,8 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
         } else if self.first {
             self.ser.newline()?;
         }
+        // Clear indent offset when exiting map
+        self.ser.indent_offset = 0;
         Ok(())
     }
 }
