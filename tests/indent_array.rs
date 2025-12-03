@@ -249,7 +249,7 @@ spec:
     triggers:
         - metadata:
             metric_name: test
-            threshold: "100"
+            threshold: '100'
           name: test
           trigger_type: prometheus
     min_replica_count: 1

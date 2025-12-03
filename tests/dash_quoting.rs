@@ -73,8 +73,10 @@ fn test_dash_space_prefix_is_quoted() {
 
     let yaml = serde_saphyr::to_string(&c).unwrap();
     // Dash-space prefix should be quoted (would be sequence indicator)
+    // Accepts either single or double quotes (Go's yaml.v3 prefers single)
     assert!(
-        yaml.contains("\"- starts with dash space\""),
+        yaml.contains("\"- starts with dash space\"")
+            || yaml.contains("'- starts with dash space'"),
         "Dash-space prefix should be quoted:\n{}",
         yaml
     );
@@ -185,7 +187,12 @@ fn test_question_mark_space_is_quoted() {
     };
 
     let yaml = serde_saphyr::to_string(&c).unwrap();
-    assert!(yaml.contains('"'), "?-space should be quoted:\n{}", yaml);
+    // Accepts either single or double quotes (Go's yaml.v3 prefers single)
+    assert!(
+        yaml.contains('"') || yaml.contains('\''),
+        "?-space should be quoted:\n{}",
+        yaml
+    );
 }
 
 // =============================================================================

@@ -26,6 +26,10 @@ fn test_comment_like_string_quoted() -> anyhow::Result<()> {
         s2: None,
     };
     let yaml = serde_saphyr::to_string(&t)?;
-    assert!(yaml.contains("\"# like comment\""), "String starting from # must be quoted");
+    // Accepts either single or double quotes (Go's yaml.v3 prefers single)
+    assert!(
+        yaml.contains("\"# like comment\"") || yaml.contains("'# like comment'"),
+        "String starting from # must be quoted: {yaml}"
+    );
     Ok(())
 }

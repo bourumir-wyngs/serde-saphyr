@@ -692,43 +692,74 @@ impl<'a, W: Write> YamlSer<'a, W> {
         }
     }
 
-    /// Write a double-quoted string with necessary escapes.
+    /// Write a quoted string, preferring single quotes when possible (matching Go's yaml.v3).
+    /// Falls back to double quotes when the string contains single quotes or needs escaping.
     fn write_quoted(&mut self, s: &str) -> Result<()> {
-        self.out.write_char('"')?;
-        for ch in s.chars() {
-            match ch {
-                '\\' => self.out.write_str("\\\\")?,
-                '"' => self.out.write_str("\\\"")?,
-                // YAML named escapes for common control characters
-                '\0' => self.out.write_str("\\0")?,
-                '\u{7}' => self.out.write_str("\\a")?,
-                '\u{8}' => self.out.write_str("\\b")?,
-                '\t' => self.out.write_str("\\t")?,
-                '\n' => self.out.write_str("\\n")?,
-                '\u{b}' => self.out.write_str("\\v")?,
-                '\u{c}' => self.out.write_str("\\f")?,
-                '\r' => self.out.write_str("\\r")?,
-                '\u{1b}' => self.out.write_str("\\e")?,
-                // Unicode BOM should use the standard \u escape rather than Rust's \u{...}
-                '\u{FEFF}' => self.out.write_str("\\uFEFF")?,
-                // YAML named escapes for Unicode separators
-                '\u{0085}' => self.out.write_str("\\N")?,
-                '\u{2028}' => self.out.write_str("\\L")?,
-                '\u{2029}' => self.out.write_str("\\P")?,
-                c if (c as u32) <= 0xFF
-                    && (c.is_control() || (0x7F..=0x9F).contains(&(c as u32))) =>
-                {
-                    write!(self.out, "\\x{:02X}", c as u32)?
+        // Prefer single quotes if:
+        // 1. String doesn't contain single quotes
+        // 2. String doesn't contain characters that need escaping (control chars, newlines, etc.)
+        let needs_escaping = s.chars().any(|c| {
+            c.is_control()
+                || matches!(
+                    c,
+                    '\n' | '\r'
+                        | '\t'
+                        | '\0'
+                        | '\u{7}'
+                        | '\u{8}'
+                        | '\u{b}'
+                        | '\u{c}'
+                        | '\u{1b}'
+                        | '\u{FEFF}'
+                        | '\u{0085}'
+                        | '\u{2028}'
+                        | '\u{2029}'
+                )
+        });
+
+        if !s.contains('\'') && !needs_escaping {
+            // Use single quotes - no escaping needed
+            self.out.write_char('\'')?;
+            self.out.write_str(s)?;
+            self.out.write_char('\'')?;
+        } else {
+            // Use double quotes with escaping
+            self.out.write_char('"')?;
+            for ch in s.chars() {
+                match ch {
+                    '\\' => self.out.write_str("\\\\")?,
+                    '"' => self.out.write_str("\\\"")?,
+                    // YAML named escapes for common control characters
+                    '\0' => self.out.write_str("\\0")?,
+                    '\u{7}' => self.out.write_str("\\a")?,
+                    '\u{8}' => self.out.write_str("\\b")?,
+                    '\t' => self.out.write_str("\\t")?,
+                    '\n' => self.out.write_str("\\n")?,
+                    '\u{b}' => self.out.write_str("\\v")?,
+                    '\u{c}' => self.out.write_str("\\f")?,
+                    '\r' => self.out.write_str("\\r")?,
+                    '\u{1b}' => self.out.write_str("\\e")?,
+                    // Unicode BOM should use the standard \u escape rather than Rust's \u{...}
+                    '\u{FEFF}' => self.out.write_str("\\uFEFF")?,
+                    // YAML named escapes for Unicode separators
+                    '\u{0085}' => self.out.write_str("\\N")?,
+                    '\u{2028}' => self.out.write_str("\\L")?,
+                    '\u{2029}' => self.out.write_str("\\P")?,
+                    c if (c as u32) <= 0xFF
+                        && (c.is_control() || (0x7F..=0x9F).contains(&(c as u32))) =>
+                    {
+                        write!(self.out, "\\x{:02X}", c as u32)?
+                    }
+                    c if (c as u32) <= 0xFFFF
+                        && (c.is_control() || (0x7F..=0x9F).contains(&(c as u32))) =>
+                    {
+                        write!(self.out, "\\u{:04X}", c as u32)?
+                    }
+                    c => self.out.write_char(c)?,
                 }
-                c if (c as u32) <= 0xFFFF
-                    && (c.is_control() || (0x7F..=0x9F).contains(&(c as u32))) =>
-                {
-                    write!(self.out, "\\u{:04X}", c as u32)?
-                }
-                c => self.out.write_char(c)?,
             }
+            self.out.write_char('"')?;
         }
-        self.out.write_char('"')?;
         Ok(())
     }
 
@@ -1303,8 +1334,15 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                 self.pending_space_after_colon = false;
             }
             // Track if we need to defer the newline for potential empty sequences
-            let deferred_newline = was_inline_value && had_pending_space && !self.at_line_start && self.empty_array_as_brackets;
-            if was_inline_value && had_pending_space && !self.at_line_start && !self.empty_array_as_brackets {
+            let deferred_newline = was_inline_value
+                && had_pending_space
+                && !self.at_line_start
+                && self.empty_array_as_brackets;
+            if was_inline_value
+                && had_pending_space
+                && !self.at_line_start
+                && !self.empty_array_as_brackets
+            {
                 self.newline()?;
             }
             // Indentation policy mirrors serialize_map:

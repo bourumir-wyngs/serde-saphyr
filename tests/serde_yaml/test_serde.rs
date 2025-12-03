@@ -252,7 +252,6 @@ fn test_string_escapes() {
     test_serde(&"\u{1f389}".to_owned(), yaml);
 }
 
-
 #[test]
 fn test_multiline_string() {
     #[derive(Serialize, Deserialize, PartialEq, Debug)]
@@ -301,11 +300,11 @@ fn test_strings_needing_quote() {
         leading_zeros: "007".to_owned(),
         ok: "OK".to_owned(), // does not need quote
     };
-    let yaml = r#"boolean: "true"
-integer: "1"
-void: "null"
-nan: "NaN"
-leading_zeros: "007"
+    let yaml = r#"boolean: 'true'
+integer: '1'
+void: 'null'
+nan: 'NaN'
+leading_zeros: '007'
 ok: OK
 "#;
     test_serde(&thing, yaml);
@@ -391,7 +390,6 @@ fn test_newtype_struct() {
     "};
     test_serde(&thing, yaml);
 }
-
 
 #[test]
 fn test_long_string() {
@@ -495,7 +493,9 @@ fn test_leaf_enum() {
     #[derive(Deserialize, Debug, PartialEq)]
     #[allow(dead_code)]
     enum Simple {
-        A, B, C,
+        A,
+        B,
+        C,
     }
     // This YAML has identation misplaced to Struct becomes an empty map
     let yaml = indoc! {
