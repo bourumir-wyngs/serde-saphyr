@@ -9,6 +9,15 @@ fn litstr_top_level() {
 }
 
 #[test]
+fn litstr_trailing_nl_top_level() {
+    // When the source string ends with a trailing \n, default literal '|' (clip) must not
+    // emit an extra visually empty line. The block should contain exactly the lines
+    // before the final newline.
+    let out = to_string(&LitStr("hello\nworld\n")).unwrap();
+    assert_eq!(out, "|\n  hello\n  world\n");
+}
+
+#[test]
 fn litstr_as_map_value() {
     #[derive(Serialize)]
     struct Doc<'a> {
@@ -19,6 +28,15 @@ fn litstr_as_map_value() {
     };
     let out = to_string(&d).unwrap();
     assert_eq!(out, "note: |\n  a\n  b\n");
+}
+
+#[test]
+fn litstr_trailing_nl_as_map_value() {
+    #[derive(Serialize)]
+    struct Doc<'a> { note: LitStr<'a> }
+    let d = Doc { note: LitStr("hello\nworld\n") };
+    let out = to_string(&d).unwrap();
+    assert_eq!(out, "note: |\n  hello\n  world\n");
 }
 
 #[test]
