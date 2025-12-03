@@ -457,3 +457,151 @@ fn test_kubernetes_args_with_commas() {
     let parsed: Container = serde_saphyr::from_str(&yaml).unwrap();
     assert_eq!(c, parsed);
 }
+
+// =============================================================================
+// Block scalar tests (prefer_block_scalars option)
+// =============================================================================
+
+#[test]
+fn test_prefer_block_scalars_multiline_string() {
+    use serde_saphyr::{SerializerOptions, to_fmt_writer_with_options};
+
+    #[derive(Serialize)]
+    struct Config {
+        data: String,
+    }
+
+    let c = Config {
+        data: "line1\nline2\nline3".to_string(),
+    };
+
+    // Without the option (default)
+    let yaml_default = serde_saphyr::to_string(&c).unwrap();
+    assert!(
+        yaml_default.contains("\"line1\\nline2\\nline3\"") || yaml_default.contains("'"),
+        "Default should use escaped/quoted string:\n{}",
+        yaml_default
+    );
+
+    // With the option enabled
+    let opts = SerializerOptions {
+        prefer_block_scalars: true,
+        ..Default::default()
+    };
+    let mut buf = String::new();
+    to_fmt_writer_with_options(&mut buf, &c, opts).unwrap();
+    assert!(
+        buf.contains("data: |"),
+        "Should use block scalar style:\n{}",
+        buf
+    );
+    assert!(
+        buf.contains("  line1\n"),
+        "Should contain indented lines:\n{}",
+        buf
+    );
+}
+
+#[test]
+fn test_prefer_block_scalars_single_line_unchanged() {
+    use serde_saphyr::{SerializerOptions, to_fmt_writer_with_options};
+
+    #[derive(Serialize)]
+    struct Config {
+        data: String,
+    }
+
+    let c = Config {
+        data: "single line value".to_string(),
+    };
+
+    let opts = SerializerOptions {
+        prefer_block_scalars: true,
+        ..Default::default()
+    };
+    let mut buf = String::new();
+    to_fmt_writer_with_options(&mut buf, &c, opts).unwrap();
+
+    // Single-line strings should not use block scalar
+    assert!(
+        !buf.contains("|"),
+        "Single-line string should not use block scalar:\n{}",
+        buf
+    );
+    assert!(
+        buf.contains("data: single line value"),
+        "Should use plain style:\n{}",
+        buf
+    );
+}
+
+// =============================================================================
+// Empty map tests (empty_map_as_braces option)
+// =============================================================================
+
+#[test]
+fn test_empty_map_as_braces() {
+    use serde_saphyr::{SerializerOptions, to_fmt_writer_with_options};
+
+    #[derive(Serialize)]
+    struct Volume {
+        #[serde(rename = "emptyDir")]
+        empty_dir: HashMap<String, String>,
+        name: String,
+    }
+
+    let v = Volume {
+        empty_dir: HashMap::new(),
+        name: "data".to_string(),
+    };
+
+    // Without the option (default)
+    let yaml_default = serde_saphyr::to_string(&v).unwrap();
+    // Default behavior: emptyDir followed by newline (empty/null)
+    assert!(
+        yaml_default.contains("emptyDir:\nname:") || yaml_default.contains("emptyDir:\n"),
+        "Default should leave empty map as empty:\n{}",
+        yaml_default
+    );
+
+    // With the option enabled
+    let opts = SerializerOptions {
+        empty_map_as_braces: true,
+        ..Default::default()
+    };
+    let mut buf = String::new();
+    to_fmt_writer_with_options(&mut buf, &v, opts).unwrap();
+    assert!(
+        buf.contains("emptyDir: {}"),
+        "Should use {{}} for empty map:\n{}",
+        buf
+    );
+}
+
+#[test]
+fn test_non_empty_map_unchanged_with_braces_option() {
+    use serde_saphyr::{SerializerOptions, to_fmt_writer_with_options};
+
+    #[derive(Serialize)]
+    struct Volume {
+        data: HashMap<String, String>,
+    }
+
+    let mut map = HashMap::new();
+    map.insert("key".to_string(), "value".to_string());
+    let v = Volume { data: map };
+
+    let opts = SerializerOptions {
+        empty_map_as_braces: true,
+        ..Default::default()
+    };
+    let mut buf = String::new();
+    to_fmt_writer_with_options(&mut buf, &v, opts).unwrap();
+
+    // Non-empty map should still use block style
+    assert!(
+        buf.contains("data:\n  key: value"),
+        "Non-empty map should use block style:\n{}",
+        buf
+    );
+}

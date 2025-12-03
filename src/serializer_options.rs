@@ -52,6 +52,17 @@ pub struct SerializerOptions {
     /// using YAML tags, e.g. `!!Enum Variant` instead of a plain scalar `Variant`.
     /// Deserializer does not need this setting as both cases will be understood.
     pub tagged_enums: bool,
+    /// When enabled, strings containing newlines are automatically serialized using
+    /// YAML literal block scalar style (`|`) instead of quoted strings with escape sequences.
+    /// This matches Go's yaml.v3 behavior.
+    ///
+    /// Default: `false` (preserves backwards compatibility)
+    pub prefer_block_scalars: bool,
+    /// When enabled, empty maps are serialized as `{}` instead of being left empty/null.
+    /// This matches Go's yaml.v3 behavior.
+    ///
+    /// Default: `false` (preserves backwards compatibility)
+    pub empty_map_as_braces: bool,
 }
 
 // Below this length, block-string wrappers serialize as regular scalars
@@ -73,6 +84,8 @@ impl Default for SerializerOptions {
             min_fold_chars: MIN_FOLD_CHARS,
             folded_wrap_chars: FOLDED_WRAP_CHARS,
             tagged_enums: false,
+            prefer_block_scalars: false,
+            empty_map_as_braces: false,
         }
     }
 }
