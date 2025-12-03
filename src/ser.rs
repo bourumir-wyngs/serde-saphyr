@@ -40,9 +40,9 @@ use std::fmt::{self, Write};
 use std::rc::{Rc, Weak as RcWeak};
 use std::sync::{Arc, Weak as ArcWeak};
 
-use crate::serializer_options::{FOLDED_WRAP_CHARS, MIN_FOLD_CHARS, SerializerOptions};
+use crate::serializer_options::{SerializerOptions, FOLDED_WRAP_CHARS, MIN_FOLD_CHARS};
 use crate::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
-use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
+use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use nohash_hasher::BuildNoHashHasher;
 
 // ------------------------------------------------------------
@@ -1283,6 +1283,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                 flow: true,
                 first: true,
                 last_key_complex: false,
+                align_after_dash: false,
             })
         } else {
             let inline_first = self.pending_inline_map;
@@ -1326,6 +1327,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                 flow: false,
                 first: true,
                 last_key_complex: false,
+                align_after_dash: inline_first,
             })
         }
     }
@@ -1734,6 +1736,8 @@ pub struct MapSer<'a, 'b, W: Write> {
     first: bool,
     /// Whether the most recently serialized key was a complex (non-scalar) node.
     last_key_complex: bool,
+    /// Align continuation lines under an inline-after-dash first key by adding 2 spaces.
+    align_after_dash: bool,
 }
 
 impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
@@ -1756,7 +1760,18 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
                     if !self.ser.at_line_start {
                         self.ser.write_space_if_pending()?;
                     }
-                    self.ser.write_indent(self.depth)?;
+                    // Indent continuation lines. If this map started inline after a dash,
+                    // align under the first key by adding two spaces instead of a full indent step.
+                    if self.align_after_dash && self.ser.at_line_start {
+                        let base = self.depth.saturating_sub(1);
+                        for _ in 0..self.ser.indent_step * base {
+                            self.ser.out.write_char(' ')?;
+                        }
+                        self.ser.out.write_str("  ")?; // width of "- "
+                        self.ser.at_line_start = false;
+                    } else {
+                        self.ser.write_indent(self.depth)?;
+                    }
                     self.ser.out.write_str(&text)?;
                     // Defer the decision to put a space vs. newline until we see the value type.
                     self.ser.out.write_str(":")?;
@@ -1807,7 +1822,16 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
             let saved_pending_inline_map = self.ser.pending_inline_map;
             let saved_depth = self.ser.depth;
             if self.last_key_complex {
-                self.ser.write_indent(self.depth)?;
+                if self.align_after_dash && self.ser.at_line_start {
+                    let base = self.depth.saturating_sub(1);
+                    for _ in 0..self.ser.indent_step * base {
+                        self.ser.out.write_char(' ')?;
+                    }
+                    self.ser.out.write_str("  ")?;
+                    self.ser.at_line_start = false;
+                } else {
+                    self.ser.write_indent(self.depth)?;
+                }
                 self.ser.out.write_str(":")?;
                 self.ser.pending_space_after_colon = true;
                 self.ser.pending_inline_map = true;
