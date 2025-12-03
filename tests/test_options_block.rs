@@ -7,7 +7,7 @@ fn lit_wrappers_respect_min_fold_chars_option() {
     // Default: threshold 32, so a short single-line becomes plain scalar.
     let mut s = String::new();
     to_fmt_writer_with_options(&mut s, &LitStr("short"), SerializerOptions::default()).unwrap();
-    assert_eq!(s, "short\n");
+    assert_eq!(s, "|-\n  short\n");
 
     // With min_fold_chars = 0, even a short single-line should use block style `|`.
     let opts = SerializerOptions {
@@ -16,7 +16,7 @@ fn lit_wrappers_respect_min_fold_chars_option() {
     };
     s.clear();
     to_fmt_writer_with_options(&mut s, &LitStr("short"), opts).unwrap();
-    assert_eq!(s, "|\n  short\n");
+    assert_eq!(s, "|-\n  short\n");
 
     // Newlines always force block style regardless of threshold.
     s.clear();
@@ -29,7 +29,7 @@ fn lit_wrappers_respect_min_fold_chars_option() {
         },
     )
     .unwrap();
-    assert_eq!(s, "|\n  a\n  b\n");
+    assert_eq!(s, "|-\n  a\n  b\n");
 }
 
 #[test]
@@ -40,7 +40,7 @@ fn lit_owned_variant_also_respects_option() {
         ..SerializerOptions::default()
     };
     to_fmt_writer_with_options(&mut s, &LitString("ok".to_string()), opts).unwrap();
-    assert_eq!(s, "|\n  ok\n");
+    assert_eq!(s, "|-\n  ok\n");
 }
 
 #[test]

@@ -133,7 +133,7 @@ pub struct Commented<T>(pub T, pub String);
 ///
 /// Examples
 ///
-/// Top-level literal block string (only for sufficiently long content; short strings serialize like normal scalars):
+/// Top-level literal block string:
 /// ```rust
 /// let long = "line 1\nline 2\n".repeat(20);
 /// let out = serde_saphyr::to_string(&serde_saphyr::LitStr(&long)).unwrap();
@@ -147,7 +147,7 @@ pub struct Commented<T>(pub T, pub String);
 /// struct S { note: serde_saphyr::LitStr<'static> }
 /// let s = S { note: serde_saphyr::LitStr("a\nb") };
 /// let out = serde_saphyr::to_string(&s).unwrap();
-/// assert_eq!(out, "note: |\n  a\n  b\n");
+/// assert_eq!(out, "note: |-\n  a\n  b\n");
 /// ```
 #[derive(Clone, Copy)]
 pub struct LitStr<'a>(pub &'a str);
@@ -162,7 +162,7 @@ pub struct LitStr<'a>(pub &'a str);
 /// Example
 /// ```rust
 /// let out = serde_saphyr::to_string(&serde_saphyr::LitString("line 1\nline 2".to_string())).unwrap();
-/// assert_eq!(out, "|\n  line 1\n  line 2\n");
+/// assert_eq!(out, "|-\n  line 1\n  line 2\n");
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LitString(pub String);
@@ -937,13 +937,41 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             }
             match style {
                 StrStyle::Literal => {
-                    self.out.write_str("|")?;
+                    // Determine trailing newline count to select chomp indicator:
+                    //  - 0 → "|-" (strip)
+                    //  - 1 → "|" (clip)
+                    //  - >=2 → "|+" (keep)
+                    let content = v.trim_end_matches('\n');
+                    let trailing_nl = v.len() - content.len();
+                    match trailing_nl {
+                        0 => self.out.write_str("|-")?,
+                        1 => self.out.write_str("|")?,
+                        _ => self.out.write_str("|+")?,
+                    }
                     self.newline()?;
-                    // Literal block body always indents one level deeper than the serializer depth
-                    for line in v.split('\n') {
-                        self.write_indent(self.depth + 1)?;
-                        self.out.write_str(line)?;
-                        self.newline()?;
+
+                    // Emit body lines. For non-empty content, write each line exactly once.
+                    // For keep chomping (>=2), append (trailing_nl - 1) visual empty lines.
+                    // Special case: empty original content with at least one trailing newline
+                    // should produce a single empty content line (tests expect this for "\n").
+                    if content.is_empty() {
+                        if trailing_nl >= 1 {
+                            self.write_indent(self.depth + 1)?;
+                            // write a single empty content line
+                            self.newline()?;
+                        }
+                    } else {
+                        for line in content.split('\n') {
+                            self.write_indent(self.depth + 1)?;
+                            self.out.write_str(line)?;
+                            self.newline()?;
+                        }
+                        if trailing_nl >= 2 {
+                            for _ in 0..(trailing_nl - 1) {
+                                self.write_indent(self.depth + 1)?;
+                                self.newline()?;
+                            }
+                        }
                     }
                 }
                 StrStyle::Folded => {
@@ -1071,16 +1099,12 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                 return value.serialize(self);
             }
             NAME_LIT_STR => {
-                // Decide plain vs block based on options and content length/newlines.
+                // Always use literal block style for LitStr/LitString wrappers.
+                // Choose chomping based on trailing newlines during actual emission.
                 // Capture the inner string first.
                 let mut cap = StrCapture::default();
                 value.serialize(&mut cap)?;
                 let s = cap.finish()?;
-                let is_multiline = s.contains('\n');
-                if !is_multiline && s.len() < self.min_fold_chars {
-                    // Emit as a normal scalar (no block style)
-                    return self.serialize_str(&s);
-                }
                 self.pending_str_style = Some(StrStyle::Literal);
                 return self.serialize_str(&s);
             }
