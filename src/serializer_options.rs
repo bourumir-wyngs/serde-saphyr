@@ -63,6 +63,11 @@ pub struct SerializerOptions {
     ///
     /// Default: `false` (preserves backwards compatibility)
     pub empty_map_as_braces: bool,
+    /// When enabled, empty arrays/sequences are serialized as `[]` instead of being left empty.
+    /// This matches Go's yaml.v3 behavior.
+    ///
+    /// Default: `false` (preserves backwards compatibility)
+    pub empty_array_as_brackets: bool,
 }
 
 // Below this length, block-string wrappers serialize as regular scalars
@@ -86,6 +91,7 @@ impl Default for SerializerOptions {
             tagged_enums: false,
             prefer_block_scalars: false,
             empty_map_as_braces: false,
+            empty_array_as_brackets: false,
         }
     }
 }

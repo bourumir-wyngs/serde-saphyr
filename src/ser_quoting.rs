@@ -72,6 +72,10 @@ pub(crate) fn is_plain_value_safe(s: &str) -> bool {
     if s == "~" || s.eq_ignore_ascii_case("null") {
         return false;
     }
+    // ISO8601 timestamps need quoting to avoid being parsed as dates
+    if looks_like_timestamp(s) {
+        return false;
+    }
     // Numeric-looking tokens: quote them to preserve strings
     // Use parsing as a heuristic; if it parses as a number, don't allow plain style
     if parse_int_signed::<i64>(s, "i64", Location::UNKNOWN, true).is_ok() {
@@ -150,6 +154,11 @@ pub(crate) fn is_plain_block_value_safe(s: &str) -> bool {
     if s == "~" || s.eq_ignore_ascii_case("null") {
         return false;
     }
+    // ISO8601 timestamps need quoting to avoid being parsed as dates
+    // Matches patterns like: 2025-07-03T15:30:00Z, 2025-07-03T15:30:00+00:00
+    if looks_like_timestamp(s) {
+        return false;
+    }
     // Numeric-looking tokens: quote them to preserve strings
     if parse_int_signed::<i64>(s, "i64", Location::UNKNOWN, true).is_ok() {
         return false;
@@ -216,4 +225,30 @@ fn contains_any_or_is_control(string: &str, values: &[char]) -> bool {
     string
         .chars()
         .any(|x| values.iter().any(|v| &x == v || x.is_control()))
+}
+
+/// Returns true if `s` looks like an ISO8601 timestamp that YAML parsers might
+/// interpret as a date/time. These need to be quoted to preserve them as strings.
+/// Matches patterns like: 2025-07-03T15:30:00Z, 2025-07-03T15:30:00+00:00
+#[inline]
+fn looks_like_timestamp(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    // Must be at least "YYYY-MM-DDTHH:MM:SS" (19 chars)
+    if bytes.len() < 19 {
+        return false;
+    }
+    // Check for YYYY-MM-DDTHH:MM:SS pattern
+    // Position: 0123456789...
+    //           YYYY-MM-DDTHH:MM:SS
+    bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes[10] == b'T'
+        && bytes[13] == b':'
+        && bytes[16] == b':'
+        && bytes[0..4].iter().all(|b| b.is_ascii_digit())
+        && bytes[5..7].iter().all(|b| b.is_ascii_digit())
+        && bytes[8..10].iter().all(|b| b.is_ascii_digit())
+        && bytes[11..13].iter().all(|b| b.is_ascii_digit())
+        && bytes[14..16].iter().all(|b| b.is_ascii_digit())
+        && bytes[17..19].iter().all(|b| b.is_ascii_digit())
 }

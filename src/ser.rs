@@ -140,14 +140,14 @@ pub struct Commented<T>(pub T, pub String);
 /// assert!(out.starts_with("|\n  "));
 /// ```
 ///
-/// As a mapping value:
+/// As a mapping value (string without trailing newline uses strip indicator `|-`):
 /// ```rust
 /// use serde::Serialize;
 /// #[derive(Serialize)]
 /// struct S { note: serde_saphyr::LitStr<'static> }
 /// let s = S { note: serde_saphyr::LitStr("a\nb") };
 /// let out = serde_saphyr::to_string(&s).unwrap();
-/// assert_eq!(out, "note: |\n  a\n  b\n");
+/// assert_eq!(out, "note: |-\n  a\n  b\n");
 /// ```
 #[derive(Clone, Copy)]
 pub struct LitStr<'a>(pub &'a str);
@@ -159,10 +159,10 @@ pub struct LitStr<'a>(pub &'a str);
 ///
 /// See also: [FoldStr], [FoldString].
 ///
-/// Example
+/// Example (string without trailing newline uses strip indicator `|-`):
 /// ```rust
 /// let out = serde_saphyr::to_string(&serde_saphyr::LitString("line 1\nline 2".to_string())).unwrap();
-/// assert_eq!(out, "|\n  line 1\n  line 2\n");
+/// assert_eq!(out, "|-\n  line 1\n  line 2\n");
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LitString(pub String);
@@ -452,6 +452,8 @@ pub struct YamlSer<'a, W: Write> {
     prefer_block_scalars: bool,
     /// When true, empty maps are serialized as `{}` instead of being left empty/null.
     empty_map_as_braces: bool,
+    /// When true, empty arrays are serialized as `[]` instead of being left empty.
+    empty_array_as_brackets: bool,
 }
 
 impl<'a, W: Write> YamlSer<'a, W> {
@@ -484,6 +486,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
             indent_offset: 0,
             prefer_block_scalars: false,
             empty_map_as_braces: false,
+            empty_array_as_brackets: false,
         }
     }
     /// Construct a `YamlSer` with a specific indentation step.
@@ -506,6 +509,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
         s.tagged_enums = options.tagged_enums;
         s.prefer_block_scalars = options.prefer_block_scalars;
         s.empty_map_as_braces = options.empty_map_as_braces;
+        s.empty_array_as_brackets = options.empty_array_as_brackets;
         s
     }
 
@@ -987,7 +991,13 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             }
             match style {
                 StrStyle::Literal => {
-                    self.out.write_str("|")?;
+                    // Use strip indicator (|-) if string doesn't end with newline,
+                    // otherwise use clip (|) which preserves one trailing newline
+                    if v.ends_with('\n') {
+                        self.out.write_str("|")?;
+                    } else {
+                        self.out.write_str("|-")?;
+                    }
                     self.newline()?;
                     // Literal block body always indents one level deeper than the serializer depth
                     // Skip trailing empty string if original ends with \n (the newline is implicit in block scalars)
@@ -996,7 +1006,10 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                         if i == lines.len() - 1 && line.is_empty() {
                             continue;
                         }
-                        self.write_indent(self.depth + 1)?;
+                        // Empty lines should have no indentation (just the newline)
+                        if !line.is_empty() {
+                            self.write_indent(self.depth + 1)?;
+                        }
                         self.out.write_str(line)?;
                         self.newline()?;
                     }
@@ -1029,7 +1042,13 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             if self.at_line_start {
                 self.write_indent(base)?;
             }
-            self.out.write_str("|")?;
+            // Use strip indicator (|-) if string doesn't end with newline,
+            // otherwise use clip (|) which preserves one trailing newline
+            if v.ends_with('\n') {
+                self.out.write_str("|")?;
+            } else {
+                self.out.write_str("|-")?;
+            }
             self.newline()?;
             // Literal block body indents one level deeper than the base indentation
             // Use current_map_depth + 1 when available to match Go's yaml.v3 behavior
@@ -1043,7 +1062,10 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                 if i == lines.len() - 1 && line.is_empty() {
                     continue;
                 }
-                self.write_indent(body_depth)?;
+                // Empty lines should have no indentation (just the newline)
+                if !line.is_empty() {
+                    self.write_indent(body_depth)?;
+                }
                 self.out.write_str(line)?;
                 self.newline()?;
             }
@@ -1253,6 +1275,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                 depth: depth_next,
                 flow: true,
                 first: true,
+                deferred_newline: false,
             })
         } else {
             // Block sequence. Decide indentation based on whether this is after a map key or after a list dash.
@@ -1278,9 +1301,11 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                 // Mid-line start. If we are here due to a map value (after ':'), move to next line.
                 // If we are here due to a list dash, keep inline.
                 self.pending_space_after_colon = false;
-                if had_pending_space && !self.at_line_start {
-                    self.newline()?;
-                }
+            }
+            // Track if we need to defer the newline for potential empty sequences
+            let deferred_newline = was_inline_value && had_pending_space && !self.at_line_start && self.empty_array_as_brackets;
+            if was_inline_value && had_pending_space && !self.at_line_start && !self.empty_array_as_brackets {
+                self.newline()?;
             }
             // Indentation policy mirrors serialize_map:
             // - After a list dash inline_first: base is dash depth; indent one level deeper.
@@ -1314,6 +1339,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                 depth: depth_next,
                 flow: false,
                 first: true,
+                deferred_newline,
             })
         }
     }
@@ -1524,6 +1550,8 @@ pub struct SeqSer<'a, 'b, W: Write> {
     flow: bool,
     /// Whether the next element is the first (comma handling in flow style).
     first: bool,
+    /// Whether we deferred writing a newline for empty sequence detection (when empty_array_as_brackets is true).
+    deferred_newline: bool,
 }
 
 impl<'a, 'b, W: Write> SerializeTuple for SeqSer<'a, 'b, W> {
@@ -1544,6 +1572,11 @@ impl<'a, 'b, W: Write> SerializeSeq for SeqSer<'a, 'b, W> {
     type Error = Error;
 
     fn serialize_element<T: ?Sized + Serialize>(&mut self, v: &T) -> Result<()> {
+        // If we deferred a newline for empty sequence detection, write it now since the sequence isn't empty
+        if self.deferred_newline {
+            self.ser.newline()?;
+            self.deferred_newline = false;
+        }
         if self.flow {
             if !self.first {
                 self.ser.out.write_str(", ")?;
@@ -1584,6 +1617,10 @@ impl<'a, 'b, W: Write> SerializeSeq for SeqSer<'a, 'b, W> {
             if me.ser.in_flow == 0 {
                 me.ser.newline()?;
             }
+        } else if self.first && self.ser.empty_array_as_brackets {
+            // Empty block sequence: emit [] when option is enabled
+            self.ser.out.write_str(" []")?;
+            self.ser.newline()?;
         }
         Ok(())
     }
