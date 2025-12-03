@@ -50,7 +50,7 @@ use nohash_hasher::BuildNoHashHasher;
 // ------------------------------------------------------------
 
 pub use crate::ser_error::Error;
-use crate::ser_quoting::{is_plain_safe, is_plain_value_safe};
+use crate::ser_quoting::{is_plain_block_value_safe, is_plain_safe, is_plain_value_safe};
 
 /// Result alias.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -447,6 +447,11 @@ pub struct YamlSer<'a, W: Write> {
     current_map_depth: Option<usize>,
     /// Extra spaces to add to indentation (used for aligning inline map fields after array dash when indent doesn't divide evenly).
     indent_offset: usize,
+    /// When true, strings containing newlines are automatically serialized using
+    /// YAML literal block scalar style (`|`) instead of quoted strings with escape sequences.
+    prefer_block_scalars: bool,
+    /// When true, empty maps are serialized as `{}` instead of being left empty/null.
+    empty_map_as_braces: bool,
 }
 
 impl<'a, W: Write> YamlSer<'a, W> {
@@ -477,6 +482,8 @@ impl<'a, W: Write> YamlSer<'a, W> {
             after_dash_depth: None,
             current_map_depth: None,
             indent_offset: 0,
+            prefer_block_scalars: false,
+            empty_map_as_braces: false,
         }
     }
     /// Construct a `YamlSer` with a specific indentation step.
@@ -497,6 +504,8 @@ impl<'a, W: Write> YamlSer<'a, W> {
         s.folded_wrap_col = options.folded_wrap_chars;
         s.anchor_gen = options.anchor_generator.take();
         s.tagged_enums = options.tagged_enums;
+        s.prefer_block_scalars = options.prefer_block_scalars;
+        s.empty_map_as_braces = options.empty_map_as_braces;
         s
     }
 
@@ -720,13 +729,23 @@ impl<'a, W: Write> YamlSer<'a, W> {
     }
 
     /// Like `write_plain_or_quoted`, but intended for VALUE position where ':' is allowed.
+    /// Uses stricter quoting in flow style (commas/brackets are structural) and more
+    /// permissive quoting in block style (matching Go's yaml.v3 behavior).
     #[inline]
     fn write_plain_or_quoted_value(&mut self, s: &str) -> Result<()> {
-        if is_plain_value_safe(s) {
+        // In block style, we can be more permissive (commas and brackets are allowed)
+        // In flow style, we need stricter quoting
+        let is_safe = if self.in_flow == 0 {
+            is_plain_block_value_safe(s)
+        } else {
+            is_plain_value_safe(s)
+        };
+
+        if is_safe {
             self.out.write_str(s)?;
             Ok(())
         } else {
-            // Force quoted style for unsafe value tokens (commas/brackets, bool/num-like, etc.).
+            // Force quoted style for unsafe value tokens
             self.write_quoted(s)
         }
     }
@@ -992,6 +1011,35 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             }
             return Ok(());
         }
+
+        // Auto-detect block scalars for multi-line strings when prefer_block_scalars is enabled
+        // and we're not inside a flow context (flow style doesn't support block scalars)
+        if self.prefer_block_scalars && self.in_flow == 0 && v.contains('\n') {
+            self.write_space_if_pending()?;
+            let base = if let Some(d) = self.after_dash_depth {
+                d
+            } else {
+                self.current_map_depth.unwrap_or(self.depth)
+            };
+            if self.at_line_start {
+                self.write_indent(base)?;
+            }
+            self.out.write_str("|")?;
+            self.newline()?;
+            // Literal block body indents one level deeper than the base indentation
+            // Use current_map_depth + 1 when available to match Go's yaml.v3 behavior
+            let body_depth = self
+                .current_map_depth
+                .map(|d| d + 1)
+                .unwrap_or(self.depth + 1);
+            for line in v.split('\n') {
+                self.write_indent(body_depth)?;
+                self.out.write_str(line)?;
+                self.newline()?;
+            }
+            return Ok(());
+        }
+
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
         if self.at_line_start {
@@ -1319,11 +1367,14 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                 flow: true,
                 first: true,
                 last_key_complex: false,
+                deferred_newline: false,
             })
         } else {
             let inline_first = self.pending_inline_map;
             let was_inline_value = !self.at_line_start;
             self.write_anchor_for_complex_node()?;
+            // Track if we need to defer the newline for potential empty maps
+            let mut deferred_newline = false;
             if inline_first {
                 // Suppress newline after a list dash for inline map first key.
                 self.pending_inline_map = false;
@@ -1335,7 +1386,13 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                 // Only add a newline if we are not already at line start (i.e., no anchor emitted).
                 self.pending_space_after_colon = false;
                 if !self.at_line_start {
-                    self.newline()?;
+                    // If empty_map_as_braces is enabled, defer the newline until we know
+                    // if the map has entries. Empty maps should emit {} on the same line.
+                    if self.empty_map_as_braces {
+                        deferred_newline = true;
+                    } else {
+                        self.newline()?;
+                    }
                 }
             }
             // Indentation rules:
@@ -1382,6 +1439,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                 flow: false,
                 first: true,
                 last_key_complex: false,
+                deferred_newline,
             })
         }
     }
@@ -1790,6 +1848,8 @@ pub struct MapSer<'a, 'b, W: Write> {
     first: bool,
     /// Whether the most recently serialized key was a complex (non-scalar) node.
     last_key_complex: bool,
+    /// Whether we deferred writing a newline for empty map detection (when empty_map_as_braces is true).
+    deferred_newline: bool,
 }
 
 impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
@@ -1797,6 +1857,11 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
     type Error = Error;
 
     fn serialize_key<T: ?Sized + Serialize>(&mut self, key: &T) -> Result<()> {
+        // If we deferred a newline for empty map detection, write it now since the map isn't empty
+        if self.deferred_newline {
+            self.ser.newline()?;
+            self.deferred_newline = false;
+        }
         if self.flow {
             if !self.first {
                 self.ser.out.write_str(", ")?;
@@ -1898,7 +1963,25 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
                 self.ser.newline()?;
             }
         } else if self.first {
-            self.ser.newline()?;
+            // Empty block map: emit {} when option is enabled, otherwise just newline
+            if self.ser.empty_map_as_braces {
+                // If we deferred a newline (value position after "key:"), we're still on the same line
+                // So we can emit " {}" directly after the colon
+                if self.deferred_newline {
+                    // Write space after the pending colon, then {}
+                    self.ser.out.write_str(" {}")?;
+                    self.ser.pending_space_after_colon = false;
+                    self.ser.newline()?;
+                } else {
+                    // Top-level or other position: emit {} on its own line
+                    self.ser.write_space_if_pending()?;
+                    self.ser.out.write_str("{}")?;
+                    self.ser.newline()?;
+                }
+            } else {
+                // Original behavior: empty map ends with a newline
+                self.ser.newline()?;
+            }
         }
         // Clear indent offset when exiting map
         self.ser.indent_offset = 0;
