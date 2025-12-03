@@ -50,7 +50,7 @@ use nohash_hasher::BuildNoHashHasher;
 // ------------------------------------------------------------
 
 pub use crate::ser_error::Error;
-use crate::ser_quoting::{is_plain_safe, is_plain_value_safe};
+use crate::ser_quoting::{is_plain_block_value_safe, is_plain_safe, is_plain_value_safe};
 
 /// Result alias.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -720,13 +720,23 @@ impl<'a, W: Write> YamlSer<'a, W> {
     }
 
     /// Like `write_plain_or_quoted`, but intended for VALUE position where ':' is allowed.
+    /// Uses stricter quoting in flow style (commas/brackets are structural) and more
+    /// permissive quoting in block style (matching Go's yaml.v3 behavior).
     #[inline]
     fn write_plain_or_quoted_value(&mut self, s: &str) -> Result<()> {
-        if is_plain_value_safe(s) {
+        // In block style, we can be more permissive (commas and brackets are allowed)
+        // In flow style, we need stricter quoting
+        let is_safe = if self.in_flow == 0 {
+            is_plain_block_value_safe(s)
+        } else {
+            is_plain_value_safe(s)
+        };
+
+        if is_safe {
             self.out.write_str(s)?;
             Ok(())
         } else {
-            // Force quoted style for unsafe value tokens (commas/brackets, bool/num-like, etc.).
+            // Force quoted style for unsafe value tokens
             self.write_quoted(s)
         }
     }
