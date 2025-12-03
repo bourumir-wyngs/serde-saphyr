@@ -990,7 +990,12 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                     self.out.write_str("|")?;
                     self.newline()?;
                     // Literal block body always indents one level deeper than the serializer depth
-                    for line in v.split('\n') {
+                    // Skip trailing empty string if original ends with \n (the newline is implicit in block scalars)
+                    let lines: Vec<&str> = v.split('\n').collect();
+                    for (i, line) in lines.iter().enumerate() {
+                        if i == lines.len() - 1 && line.is_empty() {
+                            continue;
+                        }
                         self.write_indent(self.depth + 1)?;
                         self.out.write_str(line)?;
                         self.newline()?;
@@ -1032,7 +1037,12 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                 .current_map_depth
                 .map(|d| d + 1)
                 .unwrap_or(self.depth + 1);
-            for line in v.split('\n') {
+            // Skip trailing empty string if original ends with \n (the newline is implicit in block scalars)
+            let lines: Vec<&str> = v.split('\n').collect();
+            for (i, line) in lines.iter().enumerate() {
+                if i == lines.len() - 1 && line.is_empty() {
+                    continue;
+                }
                 self.write_indent(body_depth)?;
                 self.out.write_str(line)?;
                 self.newline()?;
