@@ -9,7 +9,7 @@
 [![Fuzz & Audit](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/ci.yml/badge.svg)](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/ci.yml)
 
 **serde-saphyr** is a strongly typed YAML deserializer built on
-[`saphyr-parser`](https://crates.io/crates/saphyr-parser). It aims to be **panic-free** on malformed input and to avoid `unsafe` code in library code. The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.” It is not a fork of the older [`serde-yaml`](https://crates.io/crates/serde_yaml) and does not share any code with it (some tests are reused). It provides both serializer and deserializer.
+[`saphyr-parser`](https://crates.io/crates/saphyr-parser). It aims to be **panic-free** on malformed input and to avoid `unsafe` code in library code. The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.” 
 
 ### Why this approach?
 
@@ -17,6 +17,11 @@
 - **Also simpler:** No code to support intermediate Values of all kinds.
 - **Type-driven parsing:** YAML that doesn’t match the expected Rust types is rejected early.
 - **Safer by construction:** No dynamic “any” objects; common YAML-based code-execution [exploits](https://www.arp242.net/yaml-config.html) do not apply.
+
+### Project relationship
+`serde-saphyr` is not a fork of the older [`serde-yaml`](https://crates.io/crates/serde_yaml) crate and shares no code with it (apart from some reused tests). It is also not part of the [`saphyr`](https://crates.io/crates/saphyr) project. The crate simply builds a Serde-based YAML (de)serialization layer **around** Saphyr’s public parser and is maintained independently.
+
+The name was historically chosen to reflect the use of Saphyr’s parser at a time when the Saphyr project did not provide its own Serde integration.
 
 ### Benchmarking
 
