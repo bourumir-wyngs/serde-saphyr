@@ -19,9 +19,14 @@
 //! serde_saphyr::to_fmt_writer_with_options(&mut buf, &Item { a: 1, b: true }, opts).unwrap();
 //! assert!(buf.contains("a: 1"));
 //! ```
+
+use crate::ser_error::Error;
+
 #[derive(Clone, Copy)]
 pub struct SerializerOptions {
     /// Number of spaces to indent per nesting level when emitting block-style collections.
+    /// 0 value is invalid and will result and error when trying to deserialize, because
+    /// no indentation would produce invalid YAML otherwise.
     pub indent_step: usize,
     /// Optional custom anchor-name generator.
     ///
@@ -58,6 +63,15 @@ pub(crate) const MIN_FOLD_CHARS: usize = 32;
 /// this many characters long (excluding indentation). If no whitespace is
 /// available within the limit, a hard break is performed.
 pub(crate) const FOLDED_WRAP_CHARS: usize = 80;
+
+impl SerializerOptions {
+    pub(crate) fn consistent(&self) -> Result<(), Error> {
+        if self.indent_step == 0 {
+            return Err(Error::InvalidOptions("Invalid indent step must be positive".to_string()));
+        }
+        Ok(())
+    }
+}
 
 impl Default for SerializerOptions {
     fn default() -> Self {

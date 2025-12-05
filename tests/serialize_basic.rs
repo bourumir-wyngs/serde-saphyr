@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+use serde_saphyr::SerializerOptions;
 
 // 1. A structure with int, float, boolean, string fields
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -164,4 +165,19 @@ fn serialize_array_of_empty_maps_to_io() {
     let s = String::from_utf8(buf).expect("valid utf-8");
     let v2: VecOfMaps = serde_saphyr::from_str(&s).expect("deserialize just serialized data");
     assert_eq!(v, v2);
+}
+
+#[test]
+fn test_invalid_options() {
+    let mut out = String::new();
+    let mut ovec = Vec::new();
+    let invalid_options = SerializerOptions {
+        indent_step: 0,
+        ..SerializerOptions::default()
+    };
+
+    let object = VecOfMaps { vec: vec![] };
+
+    assert!(serde_saphyr::to_io_writer_with_options(&mut ovec, &object, invalid_options).is_err());
+    assert!(serde_saphyr::to_fmt_writer_with_options(&mut out, &object, invalid_options).is_err());
 }

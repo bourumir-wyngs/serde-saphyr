@@ -92,6 +92,7 @@ pub fn to_fmt_writer_with_options<W: std::fmt::Write, T: serde::Serialize>(
     value: &T,
     mut options: SerializerOptions,
 ) -> std::result::Result<(), crate::ser::Error> {
+    options.consistent()?;
     let mut ser = crate::ser::YamlSer::with_options(output, &mut options);
     value.serialize(&mut ser)
 }
@@ -103,6 +104,7 @@ pub fn to_io_writer_with_options<W: std::io::Write, T: serde::Serialize>(
     value: &T,
     mut options: SerializerOptions,
 ) -> std::result::Result<(), crate::ser::Error> {
+    options.consistent()?;
     struct Adapter<'a, W: std::io::Write> {
         output: &'a mut W,
         last_err: Option<std::io::Error>,

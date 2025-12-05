@@ -26,7 +26,9 @@ pub enum Error {
     /// Wrapper for I/O errors.
     IO { error: io::Error },
     /// This is used with anchors and should normally not surface, please report bug if it does.
-    Unexpected { msg: String }
+    Unexpected { msg: String },
+    /// Options used would produce invalid YAML (0 indentation, etc)
+    InvalidOptions(String),
 }
 
 impl serde::ser::Error for Error {
@@ -91,6 +93,7 @@ impl fmt::Display for Error {
             Error::Format { error } => write!(f, "formatting error: {error}"),
             Error::IO { error } => write!(f, "I/O error: {error}"),
             Error::Unexpected { msg } => write!(f, "unexpected internal error: {msg}"),
+            Error::InvalidOptions(msg) => write!(f, "invalid serialization options: {msg}"),
         }
     }
 }
@@ -102,6 +105,7 @@ impl std::error::Error for Error {
             Error::Unexpected { .. } => None,
             Error::Format { error } => Some(error),
             Error::IO { error } => Some(error),
+            Error::InvalidOptions(_) => None,
         }
     }
 }
