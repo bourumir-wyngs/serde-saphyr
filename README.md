@@ -19,7 +19,7 @@
 - **Safer by construction:** No dynamic “any” objects; common YAML-based code-execution [exploits](https://www.arp242.net/yaml-config.html) do not apply.
 
 ### Project relationship
-`serde-saphyr` is not a fork of the older [`serde-yaml`](https://crates.io/crates/serde_yaml) crate and shares no code with it (apart from some reused tests). It is also not part of the [`saphyr`](https://crates.io/crates/saphyr) project. The crate simply builds a Serde-based YAML (de)serialization layer **around** Saphyr’s public parser and is maintained independently. The name was historically chosen to reflect the use of Saphyr’s parser at a time when the Saphyr project did not provide its own Serde integration.
+`serde-saphyr` is not a fork of the older [`serde-yaml`](https://crates.io/crates/serde_yaml) crate and shares no code with it (apart from some reused tests). It is also not part of the [`saphyr`](https://crates.io/crates/saphyr) project. The crate simply builds a Serde-based YAML deserialization layer **around** Saphyr’s public parser and is maintained independently. The name was historically chosen to reflect the use of Saphyr’s parser at a time when the Saphyr project did not provide its own Serde integration.
 
 ### Benchmarking
 
