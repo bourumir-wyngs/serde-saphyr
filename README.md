@@ -380,6 +380,7 @@ To support round trip, library can also deserialize into these anchor structures
 
 ### Controlling text deserialization ###
 To make long text blocks look tidy, you can use wrappers such as FoldString to enable YAML scalar presentation. You can also use Commented to append a comment string after a scalar or an anchor reference. For LitStr, the serializer will automatically pick between |- (string with no \n at the end), | (\n) and |+ (multiple \n's).
+Empty maps are serialized as {} by default. This can be changed in SerializerOptions.
 
 ## Robotics ##
 The feature-gated "robotics" capability enables parsing of YAML extensions commonly used in robotics ([ROS](https://www.ros.org/blog/why-ros/) These extensions support conversion functions (deg, rad) and simple mathematical expressions such as deg(180), rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). This capability is gated behind the [robotics] feature and is not enabled by default. Additionally, **angle_conversions** must be set to true in the [Options](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). Just adding robotics feature is not sufficient to activate this mode of parsing. This parser is still just a simple expression calculator implemented directly in Rust, not a some hook to a language interpreter.

@@ -408,7 +408,7 @@ pub struct YamlSer<'a, W: Write> {
 
     // Anchors:
     /// Map from pointer identity to anchor id.
-    anchors: HashMap<usize, AnchorId, BuildNoHashHasher<usize>>,
+    anchors: HashMap<usize, AnchorId, BuildNoHashHasher<usize>>, 
     /// Next numeric id to use when generating anchor names (1-based).
     next_anchor_id: AnchorId,
     /// If set, the next scalar/complex node to be emitted will be prefixed with this `&anchor`.
@@ -429,6 +429,8 @@ pub struct YamlSer<'a, W: Write> {
     pending_inline_comment: Option<String>,
     /// If true, emit YAML tags for simple enums that serialize to a single scalar.
     tagged_enums: bool,
+    /// If true, empty maps are emitted as {}
+    empty_map_as_braces: bool,
     /// When the previous token was a list item dash ("- ") and the next node is a mapping,
     /// emit the first key inline on the same line ("- key: value").
     pending_inline_map: bool,
@@ -466,6 +468,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
             pending_str_style: None,
             pending_inline_comment: None,
             tagged_enums: false,
+                        empty_map_as_braces: true,
             pending_inline_map: false,
             pending_space_after_colon: false,
             inline_map_after_dash: false,
@@ -489,6 +492,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
         s.folded_wrap_col = options.folded_wrap_chars;
         s.anchor_gen = options.anchor_generator.take();
         s.tagged_enums = options.tagged_enums;
+        s.empty_map_as_braces = options.empty_map_as_braces;
         s
     }
 
@@ -1308,23 +1312,28 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                 first: true,
                 last_key_complex: false,
                 align_after_dash: false,
+                inline_value_start: false,
             })
         } else {
             let inline_first = self.pending_inline_map;
-            let was_inline_value = !self.at_line_start;
+            // We only consider "value position" when immediately after a mapping colon.
+            let was_inline_value = self.pending_space_after_colon;
             self.write_anchor_for_complex_node()?;
             if inline_first {
                 // Suppress newline after a list dash for inline map first key.
                 self.pending_inline_map = false;
                 // Mark that this sequence element is a mapping printed inline after a dash.
                 self.inline_map_after_dash = true;
-            } else if was_inline_value {
-                // Map used as a value after "key: ". If an anchor was emitted, we are already at
-                // the start of a new line due to write_anchor_for_complex_node() -> newline().
-                // Only add a newline if we are not already at line start (i.e., no anchor emitted).
-                self.pending_space_after_colon = false;
-                if !self.at_line_start {
-                    self.newline()?;
+            } else if self.pending_space_after_colon {
+                // Map used as a value after "key: ". If emitting braces for empty maps,
+                // keep this mapping on the same line so that an empty map renders as "{}".
+                if !self.empty_map_as_braces {
+                    // Legacy behavior: move the mapping body to the next line.
+                    // If an anchor was emitted, we are already at the start of a new line.
+                    self.pending_space_after_colon = false;
+                    if !self.at_line_start {
+                        self.newline()?;
+                    }
                 }
             }
             // Indentation rules:
@@ -1345,6 +1354,8 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             } else {
                 base
             };
+            let inline_value_start_flag = was_inline_value && self.empty_map_as_braces && 
+                !inline_first;
             Ok(MapSer {
                 ser: self,
                 depth: depth_next,
@@ -1352,6 +1363,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                 first: true,
                 last_key_complex: false,
                 align_after_dash: inline_first,
+                inline_value_start: inline_value_start_flag,
             })
         }
     }
@@ -1762,6 +1774,10 @@ pub struct MapSer<'a, 'b, W: Write> {
     last_key_complex: bool,
     /// Align continuation lines under an inline-after-dash first key by adding 2 spaces.
     align_after_dash: bool,
+    /// If true, this mapping began in a value position and stayed inline (after `key:`)
+    /// so that an empty map can be serialized as `{}` right there. When the first key arrives,
+    /// we must break the line and indent appropriately.
+    inline_value_start: bool,
 }
 
 impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
@@ -1781,7 +1797,18 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
         } else {
             match scalar_key_to_string(key) {
                 Ok(text) => {
-                    if !self.ser.at_line_start {
+                    // If this mapping started inline as a value (after "key:"), but now we
+                    // are about to emit the first entry, move to the next line before the key.
+                    if self.inline_value_start {
+                        // Cancel a pending space after ':' and break the line.
+                        if self.ser.pending_space_after_colon {
+                            self.ser.pending_space_after_colon = false;
+                        }
+                        if !self.ser.at_line_start {
+                            self.ser.newline()?;
+                        }
+                        self.inline_value_start = false;
+                    } else if !self.ser.at_line_start {
                         self.ser.write_space_if_pending()?;
                     }
                     // Indent continuation lines. If this map started inline after a dash,
@@ -1804,7 +1831,16 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
                     self.last_key_complex = false;
                 }
                 Err(Error::Unexpected { msg }) if msg == "non-scalar key" => {
-                    if !self.ser.at_line_start {
+                    // Same handling for the first key when starting inline: break the line first.
+                    if self.inline_value_start {
+                        if self.ser.pending_space_after_colon {
+                            self.ser.pending_space_after_colon = false;
+                        }
+                        if !self.ser.at_line_start {
+                            self.ser.newline()?;
+                        }
+                        self.inline_value_start = false;
+                    } else if !self.ser.at_line_start {
                         self.ser.write_space_if_pending()?;
                     }
                     self.ser.write_anchor_for_complex_node()?;
@@ -1885,7 +1921,33 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
                 self.ser.newline()?;
             }
         } else if self.first {
-            self.ser.newline()?;
+            // Empty block-style map.
+            if self.ser.empty_map_as_braces {
+                // If we were pending a space after a colon (map value position), write it now.
+                if self.ser.pending_space_after_colon {
+                    self.ser.out.write_str(" ")?;
+                    self.ser.pending_space_after_colon = false;
+                }
+                // If at line start, indent appropriately.
+                if self.ser.at_line_start {
+                    // If we are aligning after a dash, mimic the indentation logic used for keys.
+                    if self.align_after_dash {
+                        let base = self.depth.saturating_sub(1);
+                        for _ in 0..self.ser.indent_step * base {
+                            self.ser.out.write_char(' ')?;
+                        }
+                        self.ser.out.write_str("  ")?; // width of "- "
+                        self.ser.at_line_start = false;
+                    } else {
+                        self.ser.write_indent(self.depth)?;
+                    }
+                }
+                self.ser.out.write_str("{}")?;
+                self.ser.newline()?;
+            } else {
+                // Preserve legacy behavior: just emit a newline (empty body).
+                self.ser.newline()?;
+            }
         }
         Ok(())
     }

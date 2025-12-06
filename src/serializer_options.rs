@@ -24,6 +24,9 @@ use crate::ser_error::Error;
 
 #[derive(Clone, Copy)]
 pub struct SerializerOptions {
+    /// If true, empty maps are emitted as braces (this is the default). Such form is
+    /// equally valid YAML and may be easier for a human to grasp.
+    pub empty_map_as_braces: bool,
     /// Number of spaces to indent per nesting level when emitting block-style collections.
     /// 0 value is invalid and will result and error when trying to deserialize, because
     /// no indentation would produce invalid YAML otherwise.
@@ -82,6 +85,7 @@ impl Default for SerializerOptions {
             min_fold_chars: MIN_FOLD_CHARS,
             folded_wrap_chars: FOLDED_WRAP_CHARS,
             tagged_enums: false,
+            empty_map_as_braces: true,
         }
     }
 }
