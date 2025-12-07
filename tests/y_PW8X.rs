@@ -8,30 +8,55 @@ use std::collections::BTreeMap;
 enum Item {
     // A scalar which may be null or a string (e.g., null anchored as &a, or "a")
     Scalar(Option<String>),
-    // A mapping with string keys and optional string values (some values are null)
-    Map(BTreeMap<String, Option<String>>),
+    // A mapping whose keys and values may be null (explicit-key with empty/null scalars)
+    Map(BTreeMap<Option<String>, Option<String>>),
+}
+
+#[derive(Debug, Deserialize)]
+struct CaseEnvelope {
+    // Only the field we care about; extra fields in the wrapper are ignored by default.
+    yaml: String,
 }
 
 #[test]
-#[ignore]
 fn yaml_pw8x_anchors_on_empty_scalars() {
-    // Unescaped YAML sequence directly embedded
-    let y = r#"- &a
-- a
--
-  &a : a
-  b: &b
--
-  &c : &a
--
-  ? &d
--
-  ? &e
-  : &a
+    // This is the yaml-test-suite wrapper document. We must first deserialize the
+    // outer envelope to extract the inner YAML under the `yaml:` literal block.
+    let yaml = r#"---
+- name: Anchors on Empty Scalars
+  from: NimYAML tests
+  tags: anchor explicit-key
+  yaml: |
+    - &a
+    - a
+    -
+      &a : a
+      b: &b
+    -
+      &c : &a
+    -
+      ? &d
+    -
+      ? &e
+      : &a
+  dump: |
+    - &a
+    - a
+    - &a : a
+      b: &b
+    - &c : &a
+    - &d :
+    - &e : &a
 "#;
 
-    let v: Vec<Item> = serde_saphyr::from_str(y)
-        .unwrap_or_else(|e| panic!("failed to parse PW8X: {e}"));
+    // First, parse the outer test-suite wrapper.
+    let cases: Vec<CaseEnvelope> = serde_saphyr::from_str(&yaml)
+        .unwrap_or_else(|e| panic!("failed to parse PW8X wrapper: {e}"));
+    assert_eq!(cases.len(), 1, "expected exactly one case in the wrapper");
+
+    // Now parse the inner YAML content into the intended structure.
+    let v: Vec<Item> = serde_saphyr::from_str(&cases[0].yaml)
+        .unwrap_or_else(|e| panic!("failed to parse PW8X inner YAML: {e}"));
 
     assert_eq!(v.len(), 6, "expected 6 elements");
 
@@ -47,35 +72,35 @@ fn yaml_pw8x_anchors_on_empty_scalars() {
         other => panic!("second element should be string 'a', got: {:?}", other),
     }
 
-    // 3) third is map with empty key "" -> "a", and key "b" -> null
+    // 3) third is map with null key -> "a", and key "b" -> null
     match &v[2] {
         Item::Map(m) => {
-            assert_eq!(m.get("").and_then(|o| o.as_ref().map(String::as_str)), Some("a"));
-            assert!(m.get("b").is_some() && m.get("b").unwrap().is_none());
+            assert_eq!(m.get(&None).cloned().flatten().as_deref(), Some("a"));
+            assert!(m.get(&Some("b".to_string())).is_some() && m.get(&Some("b".to_string())).unwrap().is_none());
         }
         other => panic!("third element should be a map, got: {:?}", other),
     }
 
-    // 4) fourth: map with empty key -> null (alias to first null)
+    // 4) fourth: map with null key -> null (alias to first null)
     match &v[3] {
         Item::Map(m) => {
-            assert!(m.get("").is_some() && m.get("").unwrap().is_none());
+            assert!(m.get(&None).is_some() && m.get(&None).unwrap().is_none());
         }
         other => panic!("fourth element should be a map, got: {:?}", other),
     }
 
-    // 5) fifth: map with empty key -> null
+    // 5) fifth: map with null key -> null
     match &v[4] {
         Item::Map(m) => {
-            assert!(m.get("").is_some() && m.get("").unwrap().is_none());
+            assert!(m.get(&None).is_some() && m.get(&None).unwrap().is_none());
         }
         other => panic!("fifth element should be a map, got: {:?}", other),
     }
 
-    // 6) sixth: map with empty key -> null (alias to first null)
+    // 6) sixth: map with null key -> null (alias to first null)
     match &v[5] {
         Item::Map(m) => {
-            assert!(m.get("").is_some() && m.get("").unwrap().is_none());
+            assert!(m.get(&None).is_some() && m.get(&None).unwrap().is_none());
         }
         other => panic!("sixth element should be a map, got: {:?}", other),
     }
