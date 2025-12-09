@@ -7,6 +7,9 @@ struct HasStrings {
     nan: String,
     colon: String,
     comment: String,
+    ending_colon: String,
+    trim_ending_colon: String
+
 }
 
 #[test]
@@ -15,7 +18,10 @@ fn strings_that_look_special_are_quoted() -> Result<()>{
         zero: "0".to_string(),
         nan: "nan".to_string(),
         colon: "a: b".to_string(),
-        comment: "# hi".to_string()
+        comment: "# hi".to_string(),
+        ending_colon: "hi:".to_string(),
+        trim_ending_colon: "hey:\n".to_string()
+
     };
 
     let out = serde_saphyr::to_string(&v).expect("serialize");
@@ -26,6 +32,8 @@ fn strings_that_look_special_are_quoted() -> Result<()>{
     assert!(out.contains("nan: \"nan\""), "'nan' must be quoted: {out}");
     assert!(out.contains("\"# hi\""), "comment must be quoted: {out}");
     assert!(out.contains("colon: \"a: b\""), "'a: b' must be quoted: {out}");
+    assert!(out.contains("ending_colon: \"hi:\""), "ending colon must be quoted: {out}");
+    assert!(out.contains("trim_ending_colon: \"hey:\\n\""), "ending colon must be quoted: {out}");
 
     let r = serde_saphyr::from_str(&out)?;
     assert_eq!(v, r);

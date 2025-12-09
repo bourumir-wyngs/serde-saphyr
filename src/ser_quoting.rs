@@ -103,7 +103,7 @@ pub(crate) fn is_plain_value_safe(s: &str) -> bool {
     }
 
     // Yet while colon is ok, colon after whitespace is not.
-    if s.contains(": ") {
+    if s.contains(": ") || s.trim().ends_with(':') {
         // We only need to check for space as CR, LF and TAB are control characters and will
         // trigger escape on their own anyway.
         return false;
