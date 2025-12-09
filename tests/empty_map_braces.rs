@@ -29,7 +29,7 @@ fn struct_with_empty_map_renders_exact() {
     assert_eq!(s, "m: {}\n");
 
     let options = SerializerOptions {
-        empty_map_as_braces: false,
+        empty_as_braces: false,
         ..Default::default()
     };
 
@@ -59,7 +59,7 @@ non_empty:
     assert_eq!(yaml, expected);
 
     let mut opts = SerializerOptions::default();
-    opts.empty_map_as_braces = false;
+    opts.empty_as_braces = false;
     let yaml_legacy = {
         let mut out = String::new();
         serde_saphyr::to_fmt_writer_with_options(&mut out, &o, opts).unwrap();
@@ -77,7 +77,7 @@ non_empty:
     assert_eq!(or2, o);
 
     opts.indent_step = 3;
-    opts.empty_map_as_braces = true;
+    opts.empty_as_braces = true;
     let yaml = {
         let mut out = String::new();
         serde_saphyr::to_fmt_writer_with_options(&mut out, &o, opts).unwrap();
@@ -91,7 +91,7 @@ non_empty:
 "#;
     assert_eq!(yaml, expected);
 
-    opts.empty_map_as_braces = false;
+    opts.empty_as_braces = false;
     let yaml_legacy = {
         let mut out = String::new();
         serde_saphyr::to_fmt_writer_with_options(&mut out, &o, opts).unwrap();
@@ -134,7 +134,7 @@ fn disable_empty_map_as_braces_restores_legacy() {
     // position where previously an empty body produced just a newline after the key.
     let v = WrapMap { m: BTreeMap::new() };
     let mut opts = SerializerOptions::default();
-    opts.empty_map_as_braces = false;
+    opts.empty_as_braces = false;
     let s = {
         let mut out = String::new();
         serde_saphyr::to_fmt_writer_with_options(&mut out, &v, opts).unwrap();

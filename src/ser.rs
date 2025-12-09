@@ -429,8 +429,8 @@ pub struct YamlSer<'a, W: Write> {
     pending_inline_comment: Option<String>,
     /// If true, emit YAML tags for simple enums that serialize to a single scalar.
     tagged_enums: bool,
-    /// If true, empty maps are emitted as {}
-    empty_map_as_braces: bool,
+    /// If true, empty maps are emitted as {} and lists as []
+    empty_as_braces: bool,
     /// When the previous token was a list item dash ("- ") and the next node is a mapping,
     /// emit the first key inline on the same line ("- key: value").
     pending_inline_map: bool,
@@ -468,7 +468,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
             pending_str_style: None,
             pending_inline_comment: None,
             tagged_enums: false,
-                        empty_map_as_braces: true,
+                        empty_as_braces: true,
             pending_inline_map: false,
             pending_space_after_colon: false,
             inline_map_after_dash: false,
@@ -492,7 +492,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
         s.folded_wrap_col = options.folded_wrap_chars;
         s.anchor_gen = options.anchor_generator.take();
         s.tagged_enums = options.tagged_enums;
-        s.empty_map_as_braces = options.empty_map_as_braces;
+        s.empty_as_braces = options.empty_as_braces;
         s
     }
 
@@ -1325,7 +1325,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             } else if self.pending_space_after_colon {
                 // Map used as a value after "key: ". If emitting braces for empty maps,
                 // keep this mapping on the same line so that an empty map renders as "{}".
-                if !self.empty_map_as_braces {
+                if !self.empty_as_braces {
                     // Legacy behavior: move the mapping body to the next line.
                     // If an anchor was emitted, we are already at the start of a new line.
                     self.pending_space_after_colon = false;
@@ -1352,7 +1352,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             } else {
                 base
             };
-            let inline_value_start_flag = was_inline_value && self.empty_map_as_braces && 
+            let inline_value_start_flag = was_inline_value && self.empty_as_braces &&
                 !inline_first;
             Ok(MapSer {
                 ser: self,
@@ -1506,7 +1506,7 @@ impl<'a, 'b, W: Write> SerializeSeq for SeqSer<'a, 'b, W> {
             }
         } else if self.first {
             // Empty block-style sequence.
-            if self.ser.empty_map_as_braces {
+            if self.ser.empty_as_braces {
                 // If we were pending a space after a colon (map value position), write it now.
                 if self.ser.pending_space_after_colon {
                     self.ser.out.write_str(" ")?;
@@ -1946,7 +1946,7 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
             }
         } else if self.first {
             // Empty block-style map.
-            if self.ser.empty_map_as_braces {
+            if self.ser.empty_as_braces {
                 // If we were pending a space after a colon (map value position), write it now.
                 if self.ser.pending_space_after_colon {
                     self.ser.out.write_str(" ")?;
