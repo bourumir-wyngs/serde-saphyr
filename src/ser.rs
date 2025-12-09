@@ -1206,20 +1206,18 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             let inline_first = (!self.at_line_start)
                 && self.after_dash_depth.is_some()
                 && !self.pending_space_after_colon;
-            // Remember if we are a mapping value (space after colon was pending) to handle newline correctly.
-            let had_pending_space = self.pending_space_after_colon;
+            // If we are a mapping value (space after colon was pending), we will handle
+            // the newline later in SeqSer::serialize_element to keep empty sequences inline.
             self.write_anchor_for_complex_node()?;
             if inline_first {
                 // Keep staged inline (pending_inline_map) so the child can inline its first dash.
                 // Ensure we stay mid-line so the child can emit its first dash inline.
                 self.at_line_start = false;
             } else if was_inline_value {
-                // Mid-line start. If we are here due to a map value (after ':'), move to next line.
-                // If we are here due to a list dash, keep inline.
-                self.pending_space_after_colon = false;
-                if had_pending_space && !self.at_line_start {
-                    self.newline()?;
-                }
+                // Mid-line start. If we are here due to a map value (after ':'), defer the newline
+                // decision until the first element is emitted so that empty sequences can stay inline
+                // as `key: []`. If we are here due to a list dash, keep inline.
+                // Intentionally do not clear `pending_space_after_colon` and do not newline here.
             }
             // Indentation policy mirrors serialize_map:
             // - After a list dash inline_first: base is dash depth; indent one level deeper.
@@ -1464,6 +1462,14 @@ impl<'a, 'b, W: Write> SerializeSeq for SeqSer<'a, 'b, W> {
             }
             self.ser.with_in_flow(|s| v.serialize(s))?;
         } else {
+            // If we are the value of a mapping key, we deferred the newline until we knew the
+            // sequence is non-empty. Insert it now before emitting the first dash.
+            if self.first && self.ser.pending_space_after_colon {
+                self.ser.pending_space_after_colon = false;
+                if !self.ser.at_line_start {
+                    self.ser.newline()?;
+                }
+            }
             // If previous element was an inline map after a dash, just clear the flag; do not change depth.
             if !self.first && self.ser.inline_map_after_dash {
                 self.ser.inline_map_after_dash = false;
@@ -1497,6 +1503,24 @@ impl<'a, 'b, W: Write> SerializeSeq for SeqSer<'a, 'b, W> {
             me.ser.out.write_str("]")?;
             if me.ser.in_flow == 0 {
                 me.ser.newline()?;
+            }
+        } else if self.first {
+            // Empty block-style sequence.
+            if self.ser.empty_map_as_braces {
+                // If we were pending a space after a colon (map value position), write it now.
+                if self.ser.pending_space_after_colon {
+                    self.ser.out.write_str(" ")?;
+                    self.ser.pending_space_after_colon = false;
+                }
+                // If at line start, indent appropriately.
+                if self.ser.at_line_start {
+                    self.ser.write_indent(self.depth)?;
+                }
+                self.ser.out.write_str("[]")?;
+                self.ser.newline()?;
+            } else {
+                // Preserve legacy behavior: just emit a newline (empty body).
+                self.ser.newline()?;
             }
         }
         Ok(())
