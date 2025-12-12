@@ -8,13 +8,13 @@ struct Doc {
     x: Vec<String>,
 }
 
-// The error is "while scanning a plain scalar, found a tab"
-// Tabs are okay in scalar body
-// Submitted https://github.com/saphyr-rs/saphyr/issues/89
-#[ignore]
 #[test]
 fn yaml_uv7q_tab_after_indentation() {
-    let y = "x:\n - x\n \tx\n";
-    let v: Doc = serde_saphyr::from_str(y).expect("failed to parse UV7Q");
+    // `   \tx` starts with 3 *spaces* (valid indentation). The tab is *after* indentation, so it’s allowed
+    // as scalar whitespace. The indented line continues the plain scalar from `- x`, and plain scalars fold
+    // the newline to a space => `"x x"`.
+    let yaml = "x:\n - x\n   \tx\n";
+
+    let v: Doc = serde_saphyr::from_str(yaml).expect("failed to parse UV7Q");
     assert_eq!(v.x, vec!["x x".to_string()]);
 }
