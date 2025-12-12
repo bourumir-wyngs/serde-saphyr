@@ -30,7 +30,7 @@ mod tags;
 pub(crate) mod ser_quoting;
 
 #[cfg(feature = "robotics")]
-pub mod angles_conversions;
+pub mod robotics;
 mod buffered_input;
 // ---------------- Serialization (public API) ----------------
 

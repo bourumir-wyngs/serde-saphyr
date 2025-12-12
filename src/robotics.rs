@@ -659,7 +659,7 @@ mod tests {
     use crate::{Error, Location};
 use crate::tags::SfTag;
     use core::f64::consts::PI;
-    use crate::angles_conversions::{parse_yaml12_float_angle_converting, DEG2RAD};
+    use crate::robotics::{parse_yaml12_float_angle_converting, DEG2RAD};
 
     // helpers
     fn loc() -> Location {

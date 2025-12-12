@@ -218,11 +218,11 @@ fn radix_and_digits(legacy_octal: bool, rest: &str) -> (u32, &str) {
 #[cfg(feature = "robotics")]
 pub(crate) fn parse_yaml12_float<T>(s: &str, location: Location, tag: SfTag, angle_conversions: bool) -> Result<T, Error>
 where
-    T: FromStr + crate::angles_conversions::FromF64,
+    T: FromStr + crate::robotics::FromF64,
     T: num_traits::Float,
 {
     if angle_conversions {
-        return crate::angles_conversions::parse_yaml12_float_angle_converting(s, location, tag);
+        return crate::robotics::parse_yaml12_float_angle_converting(s, location, tag);
     }
     let t = s.trim();
     let lower = t.to_ascii_lowercase();
