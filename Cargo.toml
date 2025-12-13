@@ -42,3 +42,6 @@ nalgebra = { version = "0.34", features = ["serde-serialize"] }
 
 [package.metadata]
 status = "actively developed"
+
+[lints.rust]
+unsafe_code = "forbid"

@@ -720,7 +720,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
             self.out.write_str(s)?;
             Ok(())
         } else {
-            // Force quoted style for unsafe value tokens (commas/brackets, bool/num-like, etc.).
+            // Force quoted style for problematic value tokens (commas/brackets, bool/num-like, etc.).
             self.write_quoted(s)
         }
     }
