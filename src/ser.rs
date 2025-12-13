@@ -425,12 +425,19 @@ pub struct YamlSer<'a, W: Write> {
     in_flow: usize,
     /// Pending block-string style hint (literal `|` or folded `>`).
     pending_str_style: Option<StrStyle>,
+    /// Whether the pending block-string style was selected automatically (prefer_block_scalars)
+    /// as opposed to being requested explicitly by wrapper types (LitStr/FoldStr variants).
+    pending_str_from_auto: bool,
     /// Pending inline comment to be appended after the next scalar (block style only).
     pending_inline_comment: Option<String>,
     /// If true, emit YAML tags for simple enums that serialize to a single scalar.
     tagged_enums: bool,
     /// If true, empty maps are emitted as {} and lists as []
     empty_as_braces: bool,
+    /// If true, automatically prefer YAML block scalars for plain strings:
+    ///  - Strings containing newlines use literal style `|`.
+    ///  - Single-line strings longer than `folded_wrap_col` use folded style `>`.
+    prefer_block_scalars: bool,
     /// When the previous token was a list item dash ("- ") and the next node is a mapping,
     /// emit the first key inline on the same line ("- key: value").
     pending_inline_map: bool,
@@ -469,11 +476,13 @@ impl<'a, W: Write> YamlSer<'a, W> {
             pending_inline_comment: None,
             tagged_enums: false,
                         empty_as_braces: true,
+            prefer_block_scalars: true,
             pending_inline_map: false,
             pending_space_after_colon: false,
             inline_map_after_dash: false,
             after_dash_depth: None,
             current_map_depth: None,
+            pending_str_from_auto: false,
         }
     }
     /// Construct a `YamlSer` with a specific indentation step.
@@ -493,6 +502,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
         s.anchor_gen = options.anchor_generator.take();
         s.tagged_enums = options.tagged_enums;
         s.empty_as_braces = options.empty_as_braces;
+        s.prefer_block_scalars = options.prefer_block_scalars;
         s
     }
 
@@ -925,6 +935,38 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
     }
 
     fn serialize_str(self, v: &str) -> Result<()> {
+        // If no explicit style pending, and option is enabled, auto-select block style
+        // similar to LitStr/FoldStr wrappers to improve compatibility with Go's yaml.v3.
+        // However, DISABLE auto block scalars when the string needs quoting as a value
+        // (per ser_quoting::is_plain_value_safe), unless the only reason it needs quoting
+        // is the presence of newlines themselves. This ensures cases like "hey:\n" remain
+        // quoted (because trimmed value ends with ':'), even when prefer_block_scalars=true.
+        if self.pending_str_style.is_none() && self.prefer_block_scalars && self.in_flow == 0 {
+            use crate::ser_quoting::is_plain_value_safe;
+
+            if v.contains('\n') {
+                // If removing newlines makes it plain-safe, then the only problem was newlines →
+                // allow literal block style. Otherwise, don't auto-select block style so that
+                // quoting logic handles it (e.g., values ending with ':').
+                let trimmed = v.trim_end_matches('\n');
+                let normalized = trimmed.replace('\n', " ");
+                if is_plain_value_safe(&normalized) {
+                    self.pending_str_style = Some(StrStyle::Literal);
+                    self.pending_str_from_auto = true;
+                }
+            } else {
+                // Single-line string. If it needs quoting as a value, don't auto-fold.
+                let needs_quoting = !is_plain_value_safe(v);
+                if !needs_quoting {
+                    // Measure in characters, not bytes.
+                    let char_len = v.chars().count();
+                    if char_len > self.folded_wrap_col {
+                        self.pending_str_style = Some(StrStyle::Folded);
+                        self.pending_str_from_auto = true;
+                    }
+                }
+            }
+        }
         if let Some(style) = self.pending_str_style.take() {
             // Emit block string. If we are a mapping value, YAML requires a space after ':'.
             // Insert it now if pending.
@@ -958,39 +1000,55 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                     // For keep chomping (>=2), append (trailing_nl - 1) visual empty lines.
                     // Special case: empty original content with at least one trailing newline
                     // should produce a single empty content line (tests expect this for "\n").
+                    // Determine indentation base for the body relative to the header line base.
+                    // The block scalar body must be indented at least one more level than the
+                    // header line. Compute the same base used for the header and add one level.
+                    // Body must be one indentation level deeper than the header line.
+                    let body_base = base + 1;
                     if content.is_empty() {
                         if trailing_nl >= 1 {
-                            self.write_indent(self.depth + 1)?;
+                            self.write_indent(body_base)?;
                             // write a single empty content line
                             self.newline()?;
                         }
                     } else {
                         for line in content.split('\n') {
-                            self.write_indent(self.depth + 1)?;
+                            self.write_indent(body_base)?;
                             self.out.write_str(line)?;
                             self.newline()?;
                         }
                         if trailing_nl >= 2 {
                             for _ in 0..(trailing_nl - 1) {
-                                self.write_indent(self.depth + 1)?;
+                                self.write_indent(body_base)?;
                                 self.newline()?;
                             }
                         }
                     }
                 }
                 StrStyle::Folded => {
-                    self.out.write_str(">")?;
-                    self.newline()?;
-                    // For folded scalars used as mapping values, indent body under the parent map's base.
-                    // Top-level mapping (current_map_depth == 0): use one extra level; nested mappings: align to current_map_depth.
-                    let body_base = if self.current_map_depth.unwrap_or(0) == 0 {
-                        self.depth + 1
+                    if self.pending_str_from_auto {
+                        // Auto-selected folded style: choose chomping based on trailing newlines
+                        // to preserve exact content on round-trip.
+                        let content = v.trim_end_matches('\n');
+                        let trailing_nl = v.len() - content.len();
+                        match trailing_nl {
+                            0 => self.out.write_str(">-")?,
+                            1 => self.out.write_str(">")?,
+                            _ => self.out.write_str(">+")?,
+                        }
                     } else {
-                        self.current_map_depth.unwrap_or(self.depth)
-                    };
+                        // Explicit FoldStr/FoldString wrappers historically used plain '>'
+                        // regardless of trailing newline; keep that behavior for compatibility.
+                        self.out.write_str(">")?;
+                    }
+                    self.newline()?;
+                    // Same body indentation rule as literal: one level deeper than the header base.
+                    let body_base = base + 1;
                     self.write_folded_block(v, body_base)?;
                 }
             }
+            // reset auto flag after using pending style
+            self.pending_str_from_auto = false;
             return Ok(());
         }
         self.write_space_if_pending()?;

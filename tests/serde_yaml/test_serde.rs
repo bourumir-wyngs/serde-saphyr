@@ -394,7 +394,7 @@ fn test_newtype_struct() {
 
 
 #[test]
-fn test_long_string() {
+fn test_long_string() -> anyhow::Result<()> {
     #[derive(Serialize, Deserialize, PartialEq, Debug)]
     struct Data {
         pub string: String,
@@ -403,12 +403,17 @@ fn test_long_string() {
     let thing = Data {
         string: iter::repeat(["word", " "]).flatten().take(69).collect(),
     };
+    let yaml = serde_saphyr::to_string(&thing)?;
 
-    let yaml = indoc! {"
-        string: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word
-    "};
 
-    test_serde(&thing, yaml);
+    let yaml_2 = r#"string: >-
+  word word word word word word word word word word word word word word word word
+  word word word word word word word word word word word word word word word word
+  word word word
+"#;
+    assert_eq!(yaml, yaml_2);
+    test_serde(&thing, &yaml);
+    Ok(())
 }
 
 #[test]

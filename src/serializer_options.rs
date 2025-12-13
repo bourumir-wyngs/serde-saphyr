@@ -57,6 +57,11 @@ pub struct SerializerOptions {
     /// using YAML tags, e.g. `!!Enum Variant` instead of a plain scalar `Variant`.
     /// Deserializer does not need this setting as both cases will be understood.
     pub tagged_enums: bool,
+
+    /// When enabled, strings containing more than folded_wrap_chars (80 by default) are written
+    /// in wrapped multistring folded form (>), and strings containing new lines are written in
+    /// literal form (|), selecting format depending on the number of empty lines at the end.
+    pub prefer_block_scalars: bool,
 }
 
 // Below this length, block-string wrappers serialize as regular scalars
@@ -87,6 +92,7 @@ impl Default for SerializerOptions {
             folded_wrap_chars: FOLDED_WRAP_CHARS,
             tagged_enums: false,
             empty_as_braces: true,
+            prefer_block_scalars: true
         }
     }
 }
