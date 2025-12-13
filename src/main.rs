@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 use serde_json::Value;
 use serde_saphyr::{Options, from_str_with_options};
 

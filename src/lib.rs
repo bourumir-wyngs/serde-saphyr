@@ -1,4 +1,6 @@
+#![forbid(unsafe_code)]
 /// Serialization public API is defined at crate root
+
 pub use anchors::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
 pub use de::{Budget, DuplicateKeyPolicy, Error, Location, Options};
 pub use ser::{Commented, FlowMap, FlowSeq, FoldStr, FoldString, LitStr, LitString};
