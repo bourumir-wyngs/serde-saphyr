@@ -599,10 +599,22 @@ impl<'a, W: Write> YamlSer<'a, W> {
     /// exactly at `indent` depth. Wrapping prefers breaking at the last whitespace not
     /// exceeding the limit; if none is present, performs a hard break.
     fn write_folded_block(&mut self, s: &str, indent: usize) -> Result<()> {
+        // Precompute indent prefix for this block body and reuse it for each emitted line.
+        let mut indent_buf: String = String::new();
+        let spaces = self.indent_step * indent;
+        if spaces > 0 {
+            indent_buf.reserve(spaces);
+            for _ in 0..spaces {
+                indent_buf.push(' ');
+            }
+        }
+        let indent_str = indent_buf.as_str();
+
         for line in s.split('\n') {
             if line.is_empty() {
                 // Preserve empty lines between paragraphs
-                self.write_indent(indent)?;
+                self.out.write_str(indent_str)?;
+                self.at_line_start = false;
                 self.newline()?;
                 continue;
             }
@@ -618,17 +630,14 @@ impl<'a, W: Write> YamlSer<'a, W> {
                 if col > self.folded_wrap_col {
                     let break_at = last_space_byte.unwrap_or(i);
                     // Emit [start, break_at)
-                    self.write_indent(indent)?;
+                    self.out.write_str(indent_str)?;
+                    self.at_line_start = false;
                     // Safety: break_at is on char boundary
                     let slice = &line[start..break_at];
                     self.out.write_str(slice)?;
                     self.newline()?;
                     // Advance start: skip the whitespace if we broke at space
-                    start = if let Some(sp) = last_space_byte {
-                        sp + 1
-                    } else {
-                        break_at
-                    };
+                    start = if let Some(sp) = last_space_byte { sp + 1 } else { break_at };
                     // Reset trackers starting at new segment. We intentionally do not try
                     // to recompute `col` relative to the current `i` because `start` may
                     // have advanced past `i` when we broke at the current whitespace.
@@ -639,12 +648,14 @@ impl<'a, W: Write> YamlSer<'a, W> {
             }
             // Emit the tail if any
             if start < line.len() {
-                self.write_indent(indent)?;
+                self.out.write_str(indent_str)?;
+                self.at_line_start = false;
                 self.out.write_str(&line[start..])?;
                 self.newline()?;
             } else {
                 // If start == line.len(), the line ended exactly at a wrap boundary; still emit an empty line
-                self.write_indent(indent)?;
+                self.out.write_str(indent_str)?;
+                self.at_line_start = false;
                 self.newline()?;
             }
         }
@@ -959,8 +970,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                 let needs_quoting = !is_plain_value_safe(v);
                 if !needs_quoting {
                     // Measure in characters, not bytes.
-                    let char_len = v.chars().count();
-                    if char_len > self.folded_wrap_col {
+                    if v.len() > self.folded_wrap_col {
                         self.pending_str_style = Some(StrStyle::Folded);
                         self.pending_str_from_auto = true;
                     }
@@ -1005,21 +1015,33 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                     // header line. Compute the same base used for the header and add one level.
                     // Body must be one indentation level deeper than the header line.
                     let body_base = base + 1;
+                    // Precompute body indent string once for the entire block
+                    let mut indent_buf: String = String::new();
+                    let spaces = self.indent_step * body_base;
+                    if spaces > 0 {
+                        indent_buf.reserve(spaces);
+                        for _ in 0..spaces { indent_buf.push(' '); }
+                    }
+                    let indent_str = indent_buf.as_str();
+
                     if content.is_empty() {
                         if trailing_nl >= 1 {
-                            self.write_indent(body_base)?;
+                            self.out.write_str(indent_str)?;
+                            self.at_line_start = false;
                             // write a single empty content line
                             self.newline()?;
                         }
                     } else {
                         for line in content.split('\n') {
-                            self.write_indent(body_base)?;
+                            self.out.write_str(indent_str)?;
+                            self.at_line_start = false;
                             self.out.write_str(line)?;
                             self.newline()?;
                         }
                         if trailing_nl >= 2 {
                             for _ in 0..(trailing_nl - 1) {
-                                self.write_indent(body_base)?;
+                                self.out.write_str(indent_str)?;
+                                self.at_line_start = false;
                                 self.newline()?;
                             }
                         }
