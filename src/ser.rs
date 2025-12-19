@@ -2743,9 +2743,11 @@ impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
     fn serialize_newtype_struct<T: ?Sized + Serialize>(
         self,
         _name: &'static str,
-        _value: &T,
+        value: &T,
     ) -> Result<()> {
-        non_scalar_key_e()
+        // Treat newtype structs transparently. This allows common key wrappers like
+        // `struct Key(String);` / `struct Id(u64);` to be emitted as scalar keys.
+        value.serialize(self)
     }
     fn serialize_newtype_variant<T: ?Sized + Serialize>(
         self,
