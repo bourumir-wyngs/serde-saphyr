@@ -24,7 +24,8 @@
 use crate::budget::{BudgetEnforcer, EnforcingPolicy};
 use crate::buffered_input::{ChunkedChars, buffered_input_from_reader_with_limit};
 use crate::de::{AliasLimits, Budget, Error, Ev, Events, Location};
-use crate::de_error::{budget_error, location_from_span};
+use crate::de_error::budget_error;
+use crate::location::location_from_span;
 use crate::tags::SfTag;
 use saphyr_parser::{BufferedInput, Event, Parser, ScalarStyle, ScanError, Span, StrInput};
 use smallvec::SmallVec;
@@ -78,8 +79,7 @@ pub(crate) struct LiveEvents<'a> {
     /// Single-item lookahead buffer (peeked event not yet consumed).
     look: Option<Ev>,
     /// For alias replay: a stack of injected buffers; we always read from the top first.
-    /// Holds (anchor_id, current_index).
-    inject: Vec<(usize, usize)>,
+    inject: Vec<InjectFrame>,
     /// Recorded buffers for anchors (index = anchor_id).
     /// `None` means the id is not recorded (e.g., never anchored or cleared).
     /// Saphyr's parser anchor_id is the sequential counter.
@@ -107,6 +107,41 @@ pub(crate) struct LiveEvents<'a> {
 
     /// Error reference that is checked at the end of parsing.
     error: Rc<RefCell<Option<std::io::Error>>>,
+}
+
+/// A single alias-replay stack frame (one active `*alias` expansion).
+#[derive(Clone, Copy, Debug)]
+struct InjectFrame {
+    /// Anchor id being replayed.
+    ///
+    /// This is the numeric anchor id produced by `saphyr_parser` (dense, increasing).
+    /// It indexes into [`LiveEvents::anchors`], which stores the recorded event buffer
+    /// for each anchored node.
+    anchor_id: usize,
+
+    /// Index of the next event to yield from the recorded anchor buffer.
+    ///
+    /// Invariant:
+    /// - `idx <= anchors[anchor_id].len()`.
+    /// - When `idx == len`, the frame is considered exhausted and will be popped,
+    ///   but *not immediately* (see below).
+    idx: usize,
+
+    /// Use-site (reference) location of the alias token that caused this replay.
+    ///
+    /// Why do we need this:
+    /// - While replaying an alias (`*a`), we yield events captured from the *anchored
+    ///   definition*. Those events carry definition-site locations in [`Ev::location`].
+    /// - For `Spanned<T>` we also want the use-site (“where the value was referenced in
+    ///   the YAML”), so [`Events::reference_location`] needs to return the location of
+    ///   the alias token rather than the replayed events' own locations.
+    ///
+    /// Lifetime/scope:
+    /// - This location applies to the *next node* being deserialized from the replay.
+    /// - We intentionally keep an exhausted frame on the stack until the next pump
+    ///   in [`LiveEvents::next_impl`], so consumers can still query
+    ///   `reference_location()` while deserializing the last yielded node.
+    reference_location: Location,
 }
 
 impl<'a> LiveEvents<'a> {
@@ -201,21 +236,23 @@ impl<'a> LiveEvents<'a> {
     /// Returns Some(event) when an event is produced, or Ok(None) on true EOF.
     fn next_impl(&mut self) -> Result<Option<Ev>, Error> {
         // 1) Serve from injected buffers first (alias replay)
-        if let Some((anchor_id, idx)) = self.inject.last_mut() {
+        if let Some(frame) = self.inject.last_mut() {
+            let anchor_id = frame.anchor_id;
+            let idx = &mut frame.idx;
             let buf = self
                 .anchors
-                .get(*anchor_id)
+                .get(anchor_id)
                 .and_then(|o| o.as_ref())
                 .ok_or_else(|| {
-                    Error::unknown_anchor(*anchor_id).with_location(self.last_location)
+                    Error::unknown_anchor(anchor_id).with_location(self.last_location)
                 })?;
 
             if *idx < buf.len() {
                 let ev = buf[*idx].clone();
                 *idx += 1;
-                if *idx == buf.len() {
-                    self.inject.pop();
-                }
+                // Do not pop the injection frame yet. `Spanned<T>` (and other consumers)
+                // may query `reference_location()` while deserializing this just-yielded
+                // node. We pop empty frames on the next `next_impl()` call.
 
                 match ev {
                     Ev::SeqStart { .. } | Ev::MapStart { .. } => {}
@@ -412,7 +449,11 @@ impl<'a> LiveEvents<'a> {
                     if !exists {
                         return Err(Error::unknown_anchor(anchor_id).with_location(location));
                     }
-                    self.inject.push((anchor_id, 0));
+                    self.inject.push(InjectFrame {
+                        anchor_id,
+                        idx: 0,
+                        reference_location: location,
+                    });
                     return self.next_impl();
                 }
 
@@ -652,6 +693,16 @@ impl<'a> Events for LiveEvents<'a> {
     }
     fn last_location(&self) -> Location {
         self.last_location
+    }
+
+    fn reference_location(&self) -> Location {
+        if let Some(frame) = self.inject.last() {
+            return frame.reference_location;
+        }
+        self.look
+            .as_ref()
+            .map(|e| e.location())
+            .unwrap_or(self.last_location)
     }
 }
 

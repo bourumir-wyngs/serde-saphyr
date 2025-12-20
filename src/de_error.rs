@@ -6,65 +6,9 @@ use crate::parse_scalars::{
     parse_int_signed, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish,
 };
 use crate::tags::SfTag;
-use saphyr_parser::{ScalarStyle, ScanError, Span};
+use crate::Location;
+use saphyr_parser::{ScalarStyle, ScanError};
 use serde::de::{self};
-
-/// Row/column location within the source YAML document (1-indexed).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Location {
-    /// 1-indexed row number in the input stream.
-    pub(crate) row: u32,
-    /// 1-indexed column number in the input stream.
-    pub(crate) column: u32,
-}
-
-impl Location {
-    /// serde_yaml-compatible line information
-    pub fn line(&self) -> u64 {
-        self.row as u64
-    }
-
-    /// serde_yaml-compatible column information
-    pub fn column(&self) -> u64 {
-        self.column as u64
-    }
-}
-
-impl Location {
-    /// Sentinel value meaning "location unknown".
-    ///
-    /// Used when a precise position is not yet available at error creation time.
-    pub const UNKNOWN: Self = Self { row: 0, column: 0 };
-
-    /// Create a new location record.
-    ///
-    /// Arguments:
-    /// - `row`: 1-indexed row.
-    /// - `column`: 1-indexed column.
-    ///
-    /// Returns:
-    /// - `Location` with the provided coordinates.
-    ///
-    /// Called by:
-    /// - Parser/scan adapters that convert upstream spans to `Location`.
-    pub(crate) const fn new(row: usize, column: usize) -> Self {
-        // 4 Gb is larger than any YAML document I can imagine, and also this is
-        // error reporting only.
-        Self {
-            row: row as u32,
-            column: column as u32,
-        }
-    }
-}
-
-/// Convert a `saphyr_parser::Span` to a 1-indexed `Location`.
-///
-/// Called by:
-/// - The live events adapter for each raw parser event.
-pub(crate) fn location_from_span(span: &Span) -> Location {
-    let start = &span.start;
-    Location::new(start.line(), start.col() + 1)
-}
 
 /// Error type compatible with `serde::de::Error`.
 #[derive(Debug)]
@@ -309,7 +253,7 @@ fn fmt_with_location(f: &mut fmt::Formatter<'_>, msg: &str, location: &Location)
         write!(
             f,
             "{msg} at line {}, column {}",
-            location.row, location.column
+            location.line, location.column
         )
     } else {
         write!(f, "{msg}")

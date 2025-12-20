@@ -342,7 +342,7 @@ mod tests {
     use super::*;
 
     fn sample_location() -> Location {
-        Location { row: 42, column: 7 }
+        Location { line: 42, column: 7 }
     }
 
     #[test]
@@ -417,7 +417,7 @@ mod tests {
 
     fn loc() -> Location {
         // Replace with how you construct Location in your code
-        Location { row: 1, column: 1 }
+        Location { line: 1, column: 1 }
     }
 
     #[test]

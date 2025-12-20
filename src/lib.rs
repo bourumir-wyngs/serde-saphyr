@@ -2,8 +2,10 @@
 /// Serialization public API is defined at crate root
 
 pub use anchors::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
-pub use de::{Budget, DuplicateKeyPolicy, Error, Location, Options};
+pub use de::{Budget, DuplicateKeyPolicy, Error, Options};
+pub use location::Location;
 pub use ser::{Commented, FlowMap, FlowSeq, FoldStr, FoldString, LitStr, LitString};
+pub use spanned::Spanned;
 
 use crate::budget::EnforcingPolicy;
 use crate::de::{Ev, Events};
@@ -23,6 +25,7 @@ mod live_events;
 pub mod options;
 mod parse_scalars;
 mod ser;
+mod spanned;
 
 pub mod ser_error;
 
@@ -34,6 +37,7 @@ pub(crate) mod ser_quoting;
 #[cfg(feature = "robotics")]
 pub mod robotics;
 mod buffered_input;
+mod location;
 // ---------------- Serialization (public API) ----------------
 
 /// Serialize a value to a YAML `String`.
