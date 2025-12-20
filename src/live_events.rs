@@ -236,7 +236,16 @@ impl<'a> LiveEvents<'a> {
     /// Returns Some(event) when an event is produced, or Ok(None) on true EOF.
     fn next_impl(&mut self) -> Result<Option<Ev>, Error> {
         // 1) Serve from injected buffers first (alias replay)
-        if let Some(frame) = self.inject.last_mut() {
+        //
+        // Important subtlety: we keep an exhausted injection frame on the stack until
+        // the *next* pump so `reference_location()` remains valid while deserializing
+        // the last replayed node. That means the top of the stack may contain frames
+        // with `idx == buf.len()`. Before we consider pulling from the real parser,
+        // we must pop any such exhausted frames.
+        loop {
+            let Some(frame) = self.inject.last_mut() else {
+                break;
+            };
             let anchor_id = frame.anchor_id;
             let idx = &mut frame.idx;
             let buf = self
@@ -247,44 +256,45 @@ impl<'a> LiveEvents<'a> {
                     Error::unknown_anchor(anchor_id).with_location(self.last_location)
                 })?;
 
-            if *idx < buf.len() {
-                let ev = buf[*idx].clone();
-                *idx += 1;
-                // Do not pop the injection frame yet. `Spanned<T>` (and other consumers)
-                // may query `reference_location()` while deserializing this just-yielded
-                // node. We pop empty frames on the next `next_impl()` call.
-
-                match ev {
-                    Ev::SeqStart { .. } | Ev::MapStart { .. } => {}
-                    Ev::SeqEnd { .. } | Ev::MapEnd { .. } => {}
-                    Ev::Scalar { .. } => {}
-                    Ev::Taken { location } => {
-                        return Err(Error::unexpected("consumed event").with_location(location));
-                    }
-                }
-                // Count replayed events for alias-bomb hardening.
-                self.total_replayed_events = self
-                    .total_replayed_events
-                    .checked_add(1)
-                    .ok_or_else(|| Error::msg("alias replay counter overflow"))
-                    .map_err(|err| err.with_location(ev.location()))?;
-                if self.total_replayed_events > self.alias_limits.max_total_replayed_events {
-                    return Err(Error::msg(format!(
-                        "alias replay limit exceeded: total_replayed_events={} > {}",
-                        self.total_replayed_events, self.alias_limits.max_total_replayed_events
-                    ))
-                    .with_location(ev.location()));
-                }
-                self.observe_budget_for_replay(&ev)?;
-                self.record(
-                    &ev, /*is_start*/ false, /*seeded_new_frame*/ false,
-                );
-                self.last_location = ev.location();
-                self.produced_any_in_doc = true;
-                return Ok(Some(ev));
-            } else {
+            if *idx >= buf.len() {
+                // Exhausted: pop and continue (there may be another injected frame beneath).
                 self.inject.pop();
+                continue;
             }
+
+            let ev = buf[*idx].clone();
+            *idx += 1;
+            // Do not pop the injection frame yet. `Spanned<T>` (and other consumers)
+            // may query `reference_location()` while deserializing this just-yielded
+            // node. We will pop the frame at the top of the next `next_impl()` call
+            // if it is exhausted.
+
+            match ev {
+                Ev::SeqStart { .. } | Ev::MapStart { .. } => {}
+                Ev::SeqEnd { .. } | Ev::MapEnd { .. } => {}
+                Ev::Scalar { .. } => {}
+                Ev::Taken { location } => {
+                    return Err(Error::unexpected("consumed event").with_location(location));
+                }
+            }
+            // Count replayed events for alias-bomb hardening.
+            self.total_replayed_events = self
+                .total_replayed_events
+                .checked_add(1)
+                .ok_or_else(|| Error::msg("alias replay counter overflow"))
+                .map_err(|err| err.with_location(ev.location()))?;
+            if self.total_replayed_events > self.alias_limits.max_total_replayed_events {
+                return Err(Error::msg(format!(
+                    "alias replay limit exceeded: total_replayed_events={} > {}",
+                    self.total_replayed_events, self.alias_limits.max_total_replayed_events
+                ))
+                .with_location(ev.location()));
+            }
+            self.observe_budget_for_replay(&ev)?;
+            self.record(&ev, /*is_start*/ false, /*seeded_new_frame*/ false);
+            self.last_location = ev.location();
+            self.produced_any_in_doc = true;
+            return Ok(Some(ev));
         }
 
         // 2) Pull from the real parser

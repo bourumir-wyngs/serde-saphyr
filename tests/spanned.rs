@@ -229,3 +229,68 @@ base_map: &m
     assert_eq!(cfg.merged_host.defined.line(), 5);
     assert_eq!(cfg.merged_host.defined.column(), 16);
 }
+
+
+/// KEMN = Key Empty Map Node
+#[derive(Debug, Deserialize)]
+struct KeyEmptyMapNoneAliasCfg {
+    m: std::collections::BTreeMap<Option<String>, Spanned<u64>>,
+}
+
+#[test]
+fn spanned_preserves_use_site_for_alias_values_in_kemn_slow_path() {
+    // This YAML uses a complex mapping key whose shape triggers the “KEMN one-entry nullish”
+    // slow-path in `deserialize_map`.
+    //
+    // The value is also an alias (`*a`). When the value is captured as a node, the captured
+    // events come from the anchor definition (definition-site), but `Spanned<T>.referenced`
+    // must point at the alias token (use-site).
+    let yaml = indoc! {"base: &a 123
+m:
+  ? { null: *a }
+  : *a
+"};
+
+    let cfg: KeyEmptyMapNoneAliasCfg = serde_saphyr::from_str(yaml).unwrap();
+    let v = cfg.m.get(&None).expect("expected a None key entry");
+
+    assert_eq!(v.value, 123);
+
+    // Use-site: the alias token on line 4 (`: *a`).
+    assert_eq!(v.referenced.line(), 4);
+    assert_eq!(v.referenced.column(), 5);
+
+    // Definition-site: where the anchored scalar is defined (`&a 123`).
+    assert_eq!(v.defined.line(), 1);
+    assert_eq!(v.defined.column(), 10);
+}
+
+#[derive(Debug, Deserialize)]
+struct SeqMergeCfg {
+    a: Spanned<String>,
+    b: Spanned<String>,
+}
+
+#[test]
+fn spanned_tracks_use_site_per_element_for_sequence_merges() {
+    let yaml = indoc! {"base1: &m1
+  a: A
+base2: &m2
+  b: B
+<<: [*m1, *m2]
+"};
+
+    let cfg: SeqMergeCfg = serde_saphyr::from_str(yaml).unwrap();
+
+    assert_eq!(cfg.a.value, "A");
+    assert_eq!(cfg.a.referenced.line(), 5);
+    assert_eq!(cfg.a.referenced.column(), 6); // *m1
+    assert_eq!(cfg.a.defined.line(), 2);
+    assert_eq!(cfg.a.defined.column(), 6); // "  a: A"
+
+    assert_eq!(cfg.b.value, "B");
+    assert_eq!(cfg.b.referenced.line(), 5);
+    assert_eq!(cfg.b.referenced.column(), 11); // *m2
+    assert_eq!(cfg.b.defined.line(), 4);
+    assert_eq!(cfg.b.defined.column(), 6); // "  b: B"
+}

@@ -34,6 +34,8 @@ use std::mem;
 
 type FastHashSet<T> = HashSet<T, RandomState>;
 
+mod spanned_deser;
+
 // Re-export moved Options and related enums from the options module to preserve
 // the public path serde_saphyr::sf_serde::*.
 pub use crate::options::{AliasLimits, DuplicateKeyPolicy, Options};
@@ -534,11 +536,16 @@ fn pending_entries_from_events(
                         break;
                     }
                     Some(_) => {
+                        // Preserve per-element use-site location. If the element comes from alias
+                        // replay (`*m1`), its events are definition-site, but `referenced` should
+                        // point at the alias token.
+                        let _ = replay.peek()?;
+                        let element_ref_loc = replay.reference_location();
                         let mut element = capture_node(&mut replay)?;
                         batches.push(pending_entries_from_events(
                             element.take_events(),
                             element.location(),
-                            element.location(),
+                            element_ref_loc,
                         )?); // recursive
                     }
                     None => {
@@ -558,6 +565,71 @@ fn pending_entries_from_events(
                 .with_location(other.location()),
         ),
         None => Err(Error::eof().with_location(location)),
+    }
+}
+
+/// Expand a merge value node directly from a live `Events` source.
+///
+/// This is used for `<<: value` handling in streaming map deserialization. Unlike
+/// `pending_entries_from_events` (which works over a pre-recorded buffer), this
+/// function can preserve per-element use-site locations for sequence merges like:
+///
+/// ```yaml
+/// <<: [*m1, *m2]
+/// ```
+///
+/// because `Events::reference_location()` can still observe the alias token
+/// locations while the replay injection frame is active.
+fn pending_entries_from_live_events(
+    ev: &mut dyn Events,
+    merge_reference_location: Location,
+) -> Result<Vec<PendingEntry>, Error> {
+    match ev.peek()? {
+        Some(Ev::Scalar { value, style, .. }) if scalar_is_nullish(value.as_str(), style) => {
+            let _ = ev.next()?;
+            Ok(Vec::new())
+        }
+        Some(Ev::Scalar { location, .. }) => Err(Error::msg(
+            "YAML merge value must be mapping or sequence of mappings",
+        )
+        .with_location(*location)),
+        Some(Ev::MapStart { .. }) => {
+            let mut node = capture_node(ev)?;
+            pending_entries_from_events(node.take_events(), node.location(), merge_reference_location)
+        }
+        Some(Ev::SeqStart { .. }) => {
+            let _ = ev.next()?; // consume SeqStart
+            let mut batches = Vec::new();
+            loop {
+                match ev.peek()? {
+                    Some(Ev::SeqEnd { .. }) => {
+                        let _ = ev.next()?;
+                        break;
+                    }
+                    Some(_) => {
+                        let _ = ev.peek()?;
+                        let element_ref_loc = ev.reference_location();
+                        let mut element = capture_node(ev)?;
+                        batches.push(pending_entries_from_events(
+                            element.take_events(),
+                            element.location(),
+                            element_ref_loc,
+                        )?);
+                    }
+                    None => return Err(Error::eof().with_location(ev.last_location())),
+                }
+            }
+            let mut merged = Vec::new();
+            while let Some(mut nested) = batches.pop() {
+                merged.append(&mut nested);
+            }
+            Ok(merged)
+        }
+        Some(other) => Err(
+            Error::msg("YAML merge value must be mapping or sequence of mappings")
+                .with_location(other.location()),
+        ),
+        None => Err(Error::eof().with_location(ev.last_location())),
     }
 }
 
@@ -599,12 +671,7 @@ fn collect_entries_from_map(
                     // we want `referenced` to point at the alias token.
                     let _ = ev.peek()?;
                     let merge_ref_loc = ev.reference_location();
-                    let mut value = capture_node(ev)?;
-                    merges.push(pending_entries_from_events(
-                        value.take_events(),
-                        value.location(),
-                        merge_ref_loc,
-                    )?);
+                    merges.push(pending_entries_from_live_events(ev, merge_ref_loc)?);
                 } else {
                     let value = capture_node(ev)?;
                     fields.push(PendingEntry {
@@ -1464,187 +1531,7 @@ helper to deserialize into String or Cow<'de, str> instead
         match n {
             // Internal wrapper types use `__yaml_*` names (see `__yaml_rc_anchor`, etc.).
             "__yaml_spanned" => {
-                // Capture the location of the next node *without consuming it*.
-                // This is what users want to attach to validation errors.
-                let loc = match self.ev.peek()? {
-                    Some(ev) => ev.location(),
-                    None => self.ev.last_location(),
-                };
-                let defined: Location = loc;
-                let referenced: Location = self.ev.reference_location();
-
-                struct SpannedDeser<'a> {
-                    de: Deser<'a>,
-                    referenced: Location,
-                    defined: Location,
-                    state: u8,
-                }
-
-                impl<'de> de::Deserializer<'de> for SpannedDeser<'_> {
-                    type Error = Error;
-
-                    fn deserialize_any<Vv: Visitor<'de>>(
-                        self,
-                        visitor: Vv,
-                    ) -> Result<Vv::Value, Self::Error> {
-                        self.deserialize_struct(
-                            "Spanned",
-                            &["value", "referenced", "defined"],
-                            visitor,
-                        )
-                    }
-
-                    fn deserialize_struct<Vv: Visitor<'de>>(
-                        self,
-                        _name: &'static str,
-                        _fields: &'static [&'static str],
-                        visitor: Vv,
-                    ) -> Result<Vv::Value, Self::Error> {
-                        struct MA<'a> {
-                            de: Deser<'a>,
-                            referenced: Location,
-                            defined: Location,
-                            state: u8,
-                        }
-
-                        struct LocationDeser {
-                            location: Location,
-                        }
-
-                        impl<'de> de::Deserializer<'de> for LocationDeser {
-                            type Error = Error;
-
-                            fn deserialize_any<Vv: Visitor<'de>>(
-                                self,
-                                visitor: Vv,
-                            ) -> Result<Vv::Value, Self::Error> {
-                                self.deserialize_struct("Location", &["line", "column"], visitor)
-                            }
-
-                            fn deserialize_struct<Vv: Visitor<'de>>(
-                                self,
-                                _name: &'static str,
-                                _fields: &'static [&'static str],
-                                visitor: Vv,
-                            ) -> Result<Vv::Value, Self::Error> {
-                                struct MA {
-                                    location: Location,
-                                    state: u8,
-                                }
-
-                                impl<'de> de::MapAccess<'de> for MA {
-                                    type Error = Error;
-
-                                    fn next_key_seed<K>(
-                                        &mut self,
-                                        seed: K,
-                                    ) -> Result<Option<K::Value>, Error>
-                                    where
-                                        K: de::DeserializeSeed<'de>,
-                                    {
-                                        let key = match self.state {
-                                            0 => "line",
-                                            1 => "column",
-                                            _ => return Ok(None),
-                                        };
-                                        self.state += 1;
-                                        seed.deserialize(key.into_deserializer()).map(Some)
-                                    }
-
-                                    fn next_value_seed<Vv>(
-                                        &mut self,
-                                        seed: Vv,
-                                    ) -> Result<Vv::Value, Error>
-                                    where
-                                        Vv: de::DeserializeSeed<'de>,
-                                    {
-                                        match self.state {
-                                            1 => seed.deserialize(self.location.line.into_deserializer()),
-                                            2 => {
-                                                seed.deserialize(self.location.column.into_deserializer())
-                                            }
-                                            _ => Err(Error::msg("invalid Location internal state")),
-                                        }
-                                    }
-                                }
-
-                                visitor.visit_map(MA {
-                                    location: self.location,
-                                    state: 0,
-                                })
-                            }
-
-                            serde::forward_to_deserialize_any! {
-                                bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
-                                bytes byte_buf option unit unit_struct newtype_struct seq tuple
-                                tuple_struct map enum identifier ignored_any
-                            }
-                        }
-
-                        impl<'de> de::MapAccess<'de> for MA<'_> {
-                            type Error = Error;
-
-                            fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Error>
-                            where
-                                K: de::DeserializeSeed<'de>,
-                            {
-                                let key = match self.state {
-                                    0 => "value",
-                                    1 => "referenced",
-                                    2 => "defined",
-                                    _ => return Ok(None),
-                                };
-                                self.state += 1;
-                                seed.deserialize(key.into_deserializer()).map(Some)
-                            }
-
-                            fn next_value_seed<Vv>(&mut self, seed: Vv) -> Result<Vv::Value, Error>
-                            where
-                                Vv: de::DeserializeSeed<'de>,
-                            {
-                                match self.state {
-                                    1 => {
-                                        // value
-                                        seed.deserialize(Deser::new(self.de.ev, self.de.cfg))
-                                    }
-                                    2 => {
-                                        // referenced
-                                        seed.deserialize(LocationDeser {
-                                            location: self.referenced,
-                                        })
-                                    }
-                                    3 => {
-                                        // defined
-                                        seed.deserialize(LocationDeser {
-                                            location: self.defined,
-                                        })
-                                    }
-                                    _ => Err(Error::msg("invalid Spanned<T> internal state")),
-                                }
-                            }
-                        }
-
-                        visitor.visit_map(MA {
-                            de: self.de,
-                            referenced: self.referenced,
-                            defined: self.defined,
-                            state: self.state,
-                        })
-                    }
-
-                    serde::forward_to_deserialize_any! {
-                        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
-                        bytes byte_buf option unit unit_struct newtype_struct seq tuple
-                        tuple_struct map enum identifier ignored_any
-                    }
-                }
-
-                visitor.visit_newtype_struct(SpannedDeser {
-                    de: self,
-                    referenced,
-                    defined,
-                    state: 0,
-                })
+                spanned_deser::deserialize_yaml_spanned(self, visitor)
             }
             "__yaml_rc_anchor" => {
                 let anchor = self.peek_anchor_id()?;
@@ -2072,13 +1959,7 @@ helper to deserialize into String or Cow<'de, str> instead
                                 // to point at the alias token.
                                 let _ = self.ev.peek()?;
                                 let merge_ref_loc = self.ev.reference_location();
-                                let mut value_node = capture_node(self.ev)?;
-                                let merge_defined_loc = value_node.location();
-                                let entries = pending_entries_from_events(
-                                    value_node.take_events(),
-                                    merge_defined_loc,
-                                    merge_ref_loc,
-                                )?;
+                                let entries = pending_entries_from_live_events(self.ev, merge_ref_loc)?;
                                 if !entries.is_empty() {
                                     self.merge_stack.push(entries);
                                 }
@@ -2136,8 +2017,14 @@ helper to deserialize into String or Cow<'de, str> instead
                             if kemn_one_entry_nullish {
                                 // Slow path needed: capture value and enqueue so pending branch can
                                 // swap inner value to outer and treat key as None.
+                                // IMPORTANT: preserve where the value is *referenced* (use-site).
+                                // If the value is an alias (`*a`), `capture_node` will record events
+                                // from the anchor definition, so `value_node.location()` would point
+                                // at the definition-site. `Spanned<T>` wants the alias token location
+                                // in `referenced`, so take it from `Events::reference_location()`.
+                                let _ = self.ev.peek()?;
+                                let reference_location = self.ev.reference_location();
                                 let value_node = capture_node(self.ev)?;
-                                let reference_location = value_node.location();
                                 self.enqueue_entries(vec![PendingEntry {
                                     key: key_node,
                                     value: value_node,
