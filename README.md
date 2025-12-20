@@ -51,56 +51,9 @@ The test suite currently includes 743 passing tests, most of them originating fr
 ## Other features
 - **Configurable budgets:** Enforce input limits to mitigate resource exhaustion (e.g., deeply nested structures or very large arrays); see [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
 - **Serializer supports emitting anchors** (Rc, Arc, Weak) if they properly wrapped (see below).
-- **`Spanned<T>` for precise source locations:** Deserialize values together with their YAML line/column, useful for validation errors.
+- **[`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html) for precise source locations:** Deserialize values together with their YAML line/column, useful for validation errors.
 - **serde_json::Value** is supported when parsing without target structure defined.
 - **robotic extensions** to support YAML dialect common in robotics (see below).
-
-### Spanned values (source locations)
-
-When validating a config, the YAML is often valid but the *config* is not (out of range, missing required fields, mutually exclusive options, ...). This gets more complicated when anchors or merge keys are used. To make error messages point to the exact location in the YAML, wrap fields in [`Spanned<T>`].
-
-```rust
-use serde::Deserialize;
-
-#[derive(Debug, Deserialize)]
-struct Cfg {
-    base_scalar: serde_saphyr::Spanned<u64>,
-    x: serde_saphyr::Spanned<u64>,
-}
-
-fn main() {
-    let yaml = r#"
-    base_scalar: &a 123 # we define it at line 2
-    x: *a               # we reference it at line 3
-"#;
-
-    let cfg: Cfg = serde_saphyr::from_str(yaml).unwrap();
-    assert_eq!(cfg.base_scalar.value, 123);
-    assert_eq!(cfg.base_scalar.referenced, cfg.base_scalar.defined);
-
-    assert_eq!(cfg.x.value, 123);
-    assert_eq!(cfg.x.referenced.line(), 3);
-    assert_eq!(cfg.x.defined.line(), 2);
-}
-```
-
-`Spanned<T>` provides two locations:
-
-- `referenced`: where the value is referenced/used in the YAML.
-- `defined`: where the value is defined (for non-alias values this equals `referenced`).
-
-### Duplicate keys
-Duplicate key handling is configurable. By default it’s an error; “first wins”  and “last wins” strategies are available via [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). Duplicate key policy applies not just to strings but also to other types (when deserializing into map).
-
-### Unsupported features
-- **Tabs in indentation** YAML disallows tabs for indentation, including indentation of block scalar by tab.
-- **Invalid indentation of the closing bracket.** The code like
-```yaml
-    key: [
-    ]
-```
-
-For those who want to retain compatibility with serde-yaml, even where it might deviate from the standard, serde-yaml-bw can be better choice. This crate uses saphyr-parser for budget pre-check only when unsafe-libyaml later does the final parsing. 
 
 ## Usage
 
@@ -137,6 +90,45 @@ let yaml_input = r#"
     }
 }
 ```
+
+### Spanned values (source locations)
+
+When validating a config, the YAML is often valid but the *config* is not (out of range, missing required fields, mutually exclusive options, ...). This gets more complicated when anchors or merge keys are used. To make error messages point to the exact location in the YAML, wrap fields in [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html).
+
+```rust
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
+struct Cfg {
+    base_scalar: serde_saphyr::Spanned<u64>,
+    x: serde_saphyr::Spanned<u64>,
+}
+
+fn main() {
+    let yaml = r#"
+    base_scalar: &a 123 # we define it at line 2
+    x: *a               # we reference it at line 3
+"#;
+
+    let cfg: Cfg = serde_saphyr::from_str(yaml).unwrap();
+    assert_eq!(cfg.base_scalar.value, 123);
+    assert_eq!(cfg.base_scalar.referenced, cfg.base_scalar.defined);
+
+    assert_eq!(cfg.x.value, 123);
+    assert_eq!(cfg.x.referenced.line(), 3);
+    assert_eq!(cfg.x.defined.line(), 2);
+}
+```
+
+`Spanned<T>` provides two locations:
+
+- `referenced`: where the value is referenced/used in the YAML.
+- `defined`: where the value is defined (for non-alias values this equals `referenced`).
+
+Apart more clear error messages when loading configurations, `Spanned` also provides base for editors to highlight also logical errors, not just invalid syntax.
+
+### Duplicate keys
+Duplicate key handling is configurable. By default it’s an error; “first wins”  and “last wins” strategies are available via [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). Duplicate key policy applies not just to strings but also to other types (when deserializing into map).
 
 ## Multiple documents
 YAML streams can contain several documents separated by `---`/`...` markers. When deserializing with [serde_saphyr::from_multiple](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.from_multiple.html)`, you still need to supply the vector element type up front (`Vec<T>`). That does **not** lock you into a single shape: make the element an enum and each document will deserialize into the matching variant. This lets you mix different payloads in one stream while retaining strong typing on the Rust side.
@@ -443,3 +435,13 @@ let options = Options {
 let v: RoboFloats = from_str_with_options(yaml, options).expect("parse robotics YAML");
 ```
 Safety hardening with this feature enabled include (maximal expression depth, maximal number of digits, strict underscore placement and fraction parsing limits to precision-relevant digit).
+
+### Unsupported features
+- **Tabs in indentation** YAML disallows tabs for indentation, including indentation of block scalar by tab.
+- **Invalid indentation of the closing bracket.** The code like
+```yaml
+    key: [
+    ]
+```
+
+For those who want to retain compatibility with serde-yaml, even where it might deviate from the standard, serde-yaml-bw can be better choice. This crate uses saphyr-parser for budget pre-check only when unsafe-libyaml later does the final parsing. 
