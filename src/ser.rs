@@ -980,13 +980,26 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
         if let Some(style) = self.pending_str_style.take() {
             // Emit block string. If we are a mapping value, YAML requires a space after ':'.
             // Insert it now if pending.
+            //
+            // IMPORTANT: capture whether we were in a map-value position *before* clearing
+            // `pending_space_after_colon`, as that context influences indentation.
+            let was_map_value = self.pending_space_after_colon;
             self.write_space_if_pending()?;
-            // Determine base indentation for block scalar body.
-            // Prefer aligning under an enclosing sequence dash if present; otherwise under the parent mapping's base.
-            let base = if let Some(d) = self.after_dash_depth {
-                d
-            } else {
+            // Determine base indentation for the block scalar header/body.
+            //
+            // Important: `after_dash_depth` is only meaningful for the immediate node that
+            // follows a sequence dash ("- "). It must NOT affect nested scalars inside a
+            // mapping that happens to be a sequence element, otherwise block scalar bodies
+            // become under-indented (invalid YAML).
+            //
+            // For map values (we are mid-line after `key:`), prefer the mapping depth.
+            // Otherwise, if we are starting a new node right after a dash, use that depth.
+            let base = if was_map_value {
                 self.current_map_depth.unwrap_or(self.depth)
+            } else if self.at_line_start {
+                self.after_dash_depth.unwrap_or(self.depth)
+            } else {
+                self.depth
             };
             if self.at_line_start {
                 self.write_indent(base)?;

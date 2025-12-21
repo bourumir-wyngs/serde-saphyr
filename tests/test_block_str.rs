@@ -286,10 +286,17 @@ fn verdanta_case_fold() -> anyhow::Result<()> {
     let object = RcAnchor::wrapping(node);
 
     let yaml = to_string(&object)?;
-    //println!("{}", yaml);
+    println!("{}", yaml);
 
-    assert!(yaml.contains("  00This is"), "Must be indentation 1");
-    assert!(yaml.contains("    01This is"), "Must be indentation 2");
-    assert!(yaml.contains("      02This is"), "Must be indentation 3");
+    // Block scalar bodies must be indented deeper than the `description: >` header.
+    assert!(yaml.contains("description: >\n  00This is"), "Top-level description body must be indented");
+    assert!(
+        yaml.contains("    description: >\n      01This is"),
+        "Nested description body must be indented deeper than its header"
+    );
+    assert!(
+        yaml.contains("        description: >\n          02This is"),
+        "Deeply nested description body must be indented deeper than its header"
+    );
     Ok(())
 }
