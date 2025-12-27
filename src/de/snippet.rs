@@ -19,27 +19,35 @@ pub(crate) fn fmt_with_snippet_or_fallback(
         return write!(f, "{msg}");
     }
 
-    // `Location` is 1-based.
+    // `Location` is 1-based and uses *character* columns (not byte offsets).
     let row = location.line as usize;
     let col = location.column as usize;
 
-    let Some(start) = line_col_to_byte_offset(text, row, col) else {
+    let line_starts = line_starts(text);
+    if line_starts.is_empty() {
+        return fmt_with_location(f, msg, location);
+    }
+
+    let Some(start) = line_col_to_byte_offset_with_starts(text, &line_starts, row, col) else {
         return fmt_with_location(f, msg, location);
     };
-    let end = next_char_boundary(text, start).unwrap_or(start);
+
+    // Create a minimal span for the primary annotation:
+    // - usually one character
+    // - for EOL (pointing at '\n') or EOF, use an empty span (caret-like).
+    let end = match text.as_bytes().get(start) {
+        Some(b'\n') | Some(b'\r') => start,
+        _ => next_char_boundary(text, start).unwrap_or(start),
+    };
 
     // Render a small window around the error location:
     // - two lines before
     // - the error line
     // - two lines after
     // clipped to input boundaries.
-    let line_starts = line_starts(text);
-    if line_starts.is_empty() {
-        return fmt_with_location(f, msg, location);
-    }
     let total_lines = line_starts.len();
     let window_start_row = row.saturating_sub(2).max(1);
-    let window_end_row = (row + 2).min(total_lines);
+    let window_end_row = row.saturating_add(2).min(total_lines);
     let window_start_row = window_start_row.min(window_end_row);
 
     let window_start = line_starts[window_start_row - 1];
@@ -97,11 +105,13 @@ fn fmt_with_location(f: &mut fmt::Formatter<'_>, msg: &str, location: &Location)
     }
 }
 
-/// Horizontally crop the snippet window by character columns.
+/// Horizontally crop the snippet window by character columns and normalize CRLF.
 ///
-/// Crops *all* lines of `window_text` to the same `[left_col, right_col]` window around the
-/// reported error column so that context remains vertically aligned, and rebases the primary
-/// annotation span (`local_start..local_end`) to the new, cropped text.
+/// - Crops *all* lines of `window_text` to the same `[left_col, right_col]` window around the
+///   reported error column so that context remains vertically aligned.
+/// - Rebases the primary annotation span (`local_start..local_end`) to the new, cropped text.
+/// - Strips a trailing `\r` from each line (CRLF normalization) to avoid column skew and
+///   terminal rendering issues.
 fn crop_window_text(
     window_text: &str,
     window_start_row: usize,
@@ -111,10 +121,12 @@ fn crop_window_text(
     local_start: usize,
     local_end: usize,
 ) -> (String, usize, usize) {
-    if crop_radius == 0 {
+    // Fast path: no horizontal cropping and no CRs to strip.
+    if crop_radius == 0 && !window_text.as_bytes().contains(&b'\r') {
         return (window_text.to_owned(), local_start, local_end);
     }
 
+    let do_crop = crop_radius != 0;
     let left_col = error_col.saturating_sub(crop_radius).max(1);
     let right_col = error_col.saturating_add(crop_radius);
 
@@ -122,40 +134,74 @@ fn crop_window_text(
     let mut old_pos = 0usize;
     let mut new_local_start = local_start;
     let mut new_local_end = local_end;
+    let mut rebased = false;
 
-    // Iterate over lines while preserving line endings.
+    // Iterate over lines while preserving '\n' endings (and normalizing away '\r').
     let mut row = window_start_row;
     while old_pos < window_text.len() {
         let next_nl = window_text[old_pos..].find('\n').map(|i| old_pos + i);
-        let (line, had_nl, consumed) = match next_nl {
+        let (line_raw, had_nl, consumed) = match next_nl {
             Some(nl) => (&window_text[old_pos..nl], true, (nl - old_pos) + 1),
-            None => (&window_text[old_pos..], false, window_text.len() - old_pos),
+            None => (
+                &window_text[old_pos..],
+                false,
+                window_text.len() - old_pos,
+            ),
         };
+
+        // Normalize CRLF: strip a trailing '\r' from the line content if present.
+        let line = line_raw.strip_suffix('\r').unwrap_or(line_raw);
 
         let line_start_old = old_pos;
         let line_start_new = out.len();
 
-        let (cropped_line, crop) = crop_line_by_cols(line, left_col, right_col);
-        out.push_str(&cropped_line);
+        let (rendered_line, crop) = if do_crop {
+            crop_line_by_cols(line, left_col, right_col)
+        } else {
+            (
+                line.to_owned(),
+                LineCrop {
+                    start_byte: 0,
+                    prefix_bytes: 0,
+                },
+            )
+        };
+
+        out.push_str(&rendered_line);
         if had_nl {
             out.push('\n');
         }
 
         if row == error_row {
-            // Rebase annotation span from the old window_text to the cropped output.
-            let old_in_line_start = local_start.saturating_sub(line_start_old).min(line.len());
-            let old_in_line_end = local_end.saturating_sub(line_start_old).min(line.len());
+            // Rebase annotation span from the old window_text to the new output.
+            //
+            // local_start/local_end are byte offsets into the original `window_text`.
+            // Clamp into the (possibly CR-stripped) `line` slice so EOL/CRLF cases remain valid.
+            let mut old_in_line_start = local_start.saturating_sub(line_start_old);
+            let mut old_in_line_end = local_end.saturating_sub(line_start_old);
 
-            let old_in_line_start = old_in_line_start.saturating_sub(crop.start_byte);
-            let old_in_line_end = old_in_line_end.saturating_sub(crop.start_byte);
+            // `line_raw` can be longer than `line` by exactly 1 byte (a trailing '\r').
+            // Clamping to `line.len()` maps any reference to '\r' or '\n' (EOL) to the
+            // end of the visible line, which matches user-facing columns.
+            old_in_line_start = old_in_line_start.min(line.len());
+            old_in_line_end = old_in_line_end.min(line.len());
+
+            // Apply horizontal cropping rebase.
+            old_in_line_start = old_in_line_start.saturating_sub(crop.start_byte);
+            old_in_line_end = old_in_line_end.saturating_sub(crop.start_byte);
 
             new_local_start = line_start_new + crop.prefix_bytes + old_in_line_start;
             new_local_end = line_start_new + crop.prefix_bytes + old_in_line_end;
 
-            // Clamp to produced line to avoid out-of-bounds spans.
-            let max = line_start_new + cropped_line.len();
+            // Clamp to the produced line (exclude the pushed '\n').
+            let max = line_start_new + rendered_line.len();
             new_local_start = new_local_start.min(max);
             new_local_end = new_local_end.min(max);
+            if new_local_end < new_local_start {
+                new_local_end = new_local_start;
+            }
+
+            rebased = true;
         }
 
         old_pos += consumed;
@@ -163,6 +209,23 @@ fn crop_window_text(
         if !had_nl {
             break;
         }
+    }
+
+    // If the window ends with '\n', there is an implicit trailing empty line.
+    // If the error location is on that empty line (common for EOF errors), rebase the
+    // annotation span to the new end of output.
+    if !rebased && window_text.ends_with('\n') && row == error_row {
+        new_local_start = out.len();
+        new_local_end = out.len();
+        rebased = true;
+    }
+
+    // Final safety clamp.
+    let max = out.len();
+    new_local_start = new_local_start.min(max);
+    new_local_end = new_local_end.min(max);
+    if new_local_end < new_local_start {
+        new_local_end = new_local_start;
     }
 
     (out, new_local_start, new_local_end)
@@ -255,39 +318,78 @@ fn col_to_byte_offset_in_line(line: &str, col_1: usize) -> Option<usize> {
 ///
 /// Returns a vector of indices such that `starts[i]` is the byte offset of the first character
 /// of line `i + 1`.
+///
+/// Notes:
+/// - For non-empty input, this always contains at least `0`.
+/// - If `source` ends with `\n`, the returned vector includes an extra start at `source.len()`
+///   to represent the trailing empty line.
+/// - For empty input, returns an empty vector.
 fn line_starts(source: &str) -> Vec<usize> {
+    if source.is_empty() {
+        return Vec::new();
+    }
+
     let mut starts = vec![0usize];
-    for (i, ch) in source.char_indices() {
-        if ch == '\n' {
+    for (i, b) in source.as_bytes().iter().enumerate() {
+        if *b == b'\n' {
+            // Safe UTF-8 boundary: '\n' is ASCII (1 byte).
             starts.push(i + 1);
         }
-    }
-    // Ensure a last line start exists even if the input ends with a newline.
-    if starts.last().copied() == Some(source.len()) {
-        starts.pop();
     }
     starts
 }
 
 /// Convert a 1-based (row, col) to a byte offset within `source`.
 fn line_col_to_byte_offset(source: &str, row_1: usize, col_1: usize) -> Option<usize> {
+    let starts = line_starts(source);
+    line_col_to_byte_offset_with_starts(source, &starts, row_1, col_1)
+}
+
+/// Convert a 1-based (row, col) to a byte offset within `source`, given precomputed line starts.
+///
+/// Parameters:
+/// - `source`: Full source text.
+/// - `starts`: Output of [`line_starts`], i.e. byte indices of each line start.
+/// - `row_1`: 1-based line number.
+/// - `col_1`: 1-based character column within that line (Unicode scalar values; not bytes).
+///
+/// Returns:
+/// - `Some(byte_offset)` into `source` if the coordinates are valid.
+/// - `None` if `row_1`/`col_1` are invalid.
+///
+/// CRLF handling:
+/// - If the line ends with `\r\n`, the `\r` is stripped for column computation so that columns
+///   match what users typically see (and so that column `len+1` means "EOL before newline").
+fn line_col_to_byte_offset_with_starts(
+    source: &str,
+    starts: &[usize],
+    row_1: usize,
+    col_1: usize,
+) -> Option<usize> {
     if row_1 == 0 || col_1 == 0 {
         return None;
     }
-    let starts = line_starts(source);
     if starts.is_empty() {
         return None;
     }
+
     let row_idx = row_1 - 1;
     if row_idx >= starts.len() {
         return None;
     }
+
     let line_start = starts[row_idx];
-    let line_end = if row_idx + 1 < starts.len() {
+    let mut line_end = if row_idx + 1 < starts.len() {
         starts[row_idx + 1].saturating_sub(1) // strip '\n'
     } else {
         source.len()
     };
+
+    // Handle CRLF: strip '\r' too so columns match what users see.
+    if line_end > line_start && source.as_bytes().get(line_end - 1) == Some(&b'\r') {
+        line_end -= 1;
+    }
+
     let line = &source[line_start..line_end];
     col_to_byte_offset_in_line(line, col_1).map(|off| line_start + off)
 }
