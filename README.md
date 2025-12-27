@@ -92,42 +92,6 @@ let yaml_input = r#"
 }
 ```
 
-### Spanned values (source locations)
-
-When validating a config, the YAML is often valid but the *config* is not (out of range, missing required fields, mutually exclusive options, ...). This gets more complicated when anchors or merge keys are used. To make error messages point to the exact location in the YAML, wrap fields in [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html).
-
-```rust
-use serde::Deserialize;
-
-#[derive(Debug, Deserialize)]
-struct Cfg {
-    base_scalar: serde_saphyr::Spanned<u64>,
-    x: serde_saphyr::Spanned<u64>,
-}
-
-fn main() {
-    let yaml = r#"
-    base_scalar: &a 123 # we define it at line 2
-    x: *a               # we reference it at line 3
-"#;
-
-    let cfg: Cfg = serde_saphyr::from_str(yaml).unwrap();
-    assert_eq!(cfg.base_scalar.value, 123);
-    assert_eq!(cfg.base_scalar.referenced, cfg.base_scalar.defined);
-
-    assert_eq!(cfg.x.value, 123);
-    assert_eq!(cfg.x.referenced.line(), 3);
-    assert_eq!(cfg.x.defined.line(), 2);
-}
-```
-
-`Spanned<T>` provides two locations:
-
-- `referenced`: where the value is referenced/used in the YAML.
-- `defined`: where the value is defined (for non-alias values this equals `referenced`).
-
-Apart more clear error messages when loading configurations, `Spanned` also provides base for editors to highlight also logical errors, not just invalid syntax.
-
 ### Garde integration
 
 This crate optionally integrates with [`garde`](https://crates.io/crates/garde) to run declarative validation. serde-saphyr error will print the snippet, providing location information. If the invalid value comes from the YAML anchor, serde-saphyr will also tell where this anchor has been defined.
@@ -176,7 +140,7 @@ error: line 2 column 4: (invalid here): validation error: length is lower than 2
   |
 ```
 
-The integration is controlled by the Cargo feature `garde` (enabled by default).
+The integration is controlled by the Cargo feature `garde` (enabled by default). If you prefer to validate without garde, [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html) is also available.
 
 ### Duplicate keys
 Duplicate key handling is configurable. By default it’s an error; “first wins”  and “last wins” strategies are available via [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). Duplicate key policy applies not just to strings but also to other types (when deserializing into map).
