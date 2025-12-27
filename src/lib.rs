@@ -532,9 +532,8 @@ where
     T: DeserializeOwned + garde::Validate,
     <T as garde::Validate>::Context: Default,
 {
-    // Incremental implementation: validated entry points currently just delegate to
-    // the non-validating versions.
-    from_slice_multiple_with_options(bytes, options)
+    let s = std::str::from_utf8(bytes).map_err(|_| Error::msg("input is not valid UTF-8"))?;
+    from_multiple_with_options_valid(s, options)
 }
 
 /// Deserialize a single YAML document from a reader and validate it with `garde`.
@@ -624,8 +623,8 @@ where
 }
 
 /// Create an iterator over validated YAML documents from a reader.
-///
-/// Note: this implementation buffers the whole reader to enable snippet rendering.
+/// As there is no access to the full text of the document, the error message will not contain
+/// a snippet.
 #[cfg(feature = "garde")]
 pub fn read_valid<'a, R, T>(reader: &'a mut R) -> impl Iterator<Item = Result<T, Error>> + 'a
 where
@@ -637,8 +636,8 @@ where
 }
 
 /// Create an iterator over validated YAML documents from a reader with configurable options.
-///
-/// Note: this implementation buffers the whole reader to enable snippet rendering.
+/// As there is no access to the full text of the document, the error message will not contain
+/// a snippet.
 #[cfg(feature = "garde")]
 pub fn read_with_options_valid<'a, R, T>(
     reader: &'a mut R,

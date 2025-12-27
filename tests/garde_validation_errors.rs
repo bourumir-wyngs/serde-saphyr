@@ -112,6 +112,32 @@ fn from_multiple_with_options_valid_returns_all_validation_errors() {
     );
 }
 
+#[test]
+fn from_slice_multiple_with_options_valid_validates_each_document() {
+    // Same as `from_multiple_with_options_valid_validates_each_document`, but through the bytes API.
+    let yaml = concat!(
+        "a: \"ok\"\n",
+        "---\n",
+        "a: \"\"\n",
+    );
+
+    let err = serde_saphyr::from_slice_multiple_with_options_valid::<Root>(
+        yaml.as_bytes(),
+        Default::default(),
+    )
+    .expect_err("second document must fail validation");
+
+    let rendered = err.to_string();
+    assert!(
+        rendered.contains("line 3 column 4"),
+        "expected validation error location in second document, got: {rendered}"
+    );
+    assert!(
+        rendered.contains("for `a`"),
+        "expected garde path in output, got: {rendered}"
+    );
+}
+
 
 #[test]
 fn validation_error_shows_referenced_and_defined_snippets_for_aliases() {
