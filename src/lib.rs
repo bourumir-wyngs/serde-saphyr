@@ -367,20 +367,6 @@ fn from_str_with_options_and_path_recorder<T: DeserializeOwned>(
     Ok((value, recorder))
 }
 
-/// Deserialize a single YAML document with configurable [`Options`], and also
-/// return a map from `garde` validation paths to source [`Location`]s.
-///
-/// The returned map uses the same “use-site” semantics as the validation error rendering:
-/// it points to the location where the value is referenced/used in the YAML.
-#[cfg(feature = "garde")]
-pub fn from_str_with_options_and_path_map<T: DeserializeOwned>(
-    input: &str,
-    options: Options,
-) -> Result<(T, std::collections::HashMap<garde::error::Path, Location>), Error> {
-    let (v, recorder) = from_str_with_options_and_path_recorder::<T>(input, options)?;
-    Ok((v, recorder.map.map))
-}
-
 /// Deserialize a single YAML document from a YAML string and validate it with `garde`.
 /// The error message will contain a snippet with exact location information, and if the
 /// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
