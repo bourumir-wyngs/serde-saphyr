@@ -155,10 +155,16 @@ fn unexpected_mapping_on_second_line_with_indent() {
 #[test]
 fn error_with_snippet_renders_diagnostic_and_preserves_message() {
     let yaml = "*missing";
-    let err = from_str::<String>(yaml).expect_err("unknown anchor should error");
+    // Render a plain error message (snippet disabled).
+    let mut opts = Options::default();
+    opts.with_snippet = false;
+    let err_plain = serde_saphyr::from_str_with_options::<String>(yaml, opts)
+        .expect_err("unknown anchor should error");
+    let plain = err_plain.to_string();
 
-    let plain = err.to_string();
-    let rendered = err.with_snippet(yaml).to_string();
+    // And compare to the default-rendered error (snippet enabled by default).
+    let err = from_str::<String>(yaml).expect_err("unknown anchor should error");
+    let rendered = err.to_string();
 
     assert!(
         rendered.contains(&plain),
@@ -223,6 +229,41 @@ fn crop_radius_zero_disables_snippet_wrapping() {
         msg.contains("unknown anchor"),
         "message should still contain the original error.\nmsg: {msg}"
     );
+}
+
+#[test]
+fn with_snippet_does_not_retain_full_input_for_large_documents() {
+    // The error wrapper should store only a small, cropped, pre-rendered snippet.
+    // This protects users from accidentally retaining huge YAML inputs in memory
+    // via the error value.
+    let mut yaml = String::new();
+    yaml.push_str("prefix: ok\n");
+    yaml.push_str("marker_far_away: DO_NOT_INCLUDE\n");
+    // Make the input large.
+    for i in 0..50_000 {
+        yaml.push_str(&format!("k{i}: v{i}\n"));
+    }
+    // Trigger an error at the end.
+    yaml.push_str("bad: *missing\n");
+
+    let err = serde_saphyr::from_str::<std::collections::HashMap<String, String>>(&yaml)
+        .expect_err("unknown anchor should error");
+
+    match err {
+        Error::WithSnippet { text, .. } => {
+            assert!(
+                text.contains("<input>"),
+                "expected snippet output header, got: {text}"
+            );
+            assert!(
+                !text.contains("marker_far_away: DO_NOT_INCLUDE"),
+                "snippet output should not include far-away content"
+            );
+            // Heuristic bound: the formatted snippet should be small compared to the input.
+            assert!(text.len() < 20_000, "snippet output unexpectedly large");
+        }
+        other => panic!("expected WithSnippet wrapper, got: {other:?}"),
+    }
 }
 
 #[test]

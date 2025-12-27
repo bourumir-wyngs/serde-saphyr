@@ -23,9 +23,13 @@ nohash-hasher = "0.2.0"
 encoding_rs_io = "0.1.7"
 ahash = "0.8.12"
 annotate-snippets = "0.12"
+garde = { version = "0.22", optional = true, features = ["derive"] }
 
 [features]
-default = []
+default = ["garde"]
+
+# Enables integration with the `garde` validation crate.
+garde = ["dep:garde"]
 
 # Adds YAML conventions common in robotics: conversion functions (deg, rad) and simple mathematical expressions such
 # as deg(180), rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). angle_conversions must be set to true in the Options.

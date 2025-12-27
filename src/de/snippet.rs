@@ -10,9 +10,11 @@ use crate::Location;
 /// simpler `"{msg} at line X, column Y"` style message.
 pub(crate) fn fmt_with_snippet_or_fallback(
     f: &mut fmt::Formatter<'_>,
+    level: Level,
     msg: &str,
     location: &Location,
     text: &str,
+    path: &str,
     crop_radius: usize,
 ) -> fmt::Result {
     if location == &Location::UNKNOWN {
@@ -75,19 +77,127 @@ pub(crate) fn fmt_with_snippet_or_fallback(
     );
 
     // Keep the previous error message in the new output.
-    let report = &[Level::ERROR
-        .primary_title(format!("<input>:{row}:{col}: {msg}"))
+    let report = &[level
+        .primary_title(format!("line {row} column {col}: {msg}"))
         .element(
             Snippet::source(&window_text)
                 .line_start(window_start_row)
-                .path("<input>")
+                .path(path)
                 .fold(false)
                 .annotation(AnnotationKind::Primary.span(local_start..local_end).label(msg)),
         )];
 
-    // Prefer rustc-like caret markers in plain console output.
-    let renderer = Renderer::styled().decor_style(DecorStyle::Ascii);
+    // Prefer rustc-like caret markers and avoid ANSI colors in `Display` output.
+    // This keeps error strings stable (e.g. for tests) and avoids emitting escape
+    // sequences when the output is not a TTY.
+    let renderer = Renderer::plain().decor_style(DecorStyle::Ascii);
     write!(f, "{}", renderer.render(report))
+}
+
+/// Render only the snippet source window (no `error:` / `note:` title line).
+///
+/// This is used for secondary context in garde validation errors (e.g. anchors), where we want to
+/// print a custom explanatory line and then show just the relevant source window.
+#[cfg(feature = "garde")]
+pub(crate) fn fmt_snippet_window_or_fallback(
+    f: &mut fmt::Formatter<'_>,
+    location: &Location,
+    text: &str,
+    msg: &str,
+    crop_radius: usize,
+) -> fmt::Result {
+    if location == &Location::UNKNOWN {
+        return Ok(());
+    }
+
+    // `Location` is 1-based and uses *character* columns (not byte offsets).
+    let row = location.line as usize;
+    let col = location.column as usize;
+
+    let line_starts = line_starts(text);
+    if line_starts.is_empty() {
+        return Ok(());
+    }
+
+    let Some(start) = line_col_to_byte_offset_with_starts(text, &line_starts, row, col) else {
+        return Ok(());
+    };
+
+    // Minimal span for caret placement.
+    let end = match text.as_bytes().get(start) {
+        Some(b'\n') | Some(b'\r') => start,
+        _ => next_char_boundary(text, start).unwrap_or(start),
+    };
+
+    // Same vertical window policy as `fmt_with_snippet_or_fallback`.
+    let total_lines = line_starts.len();
+    let window_start_row = row.saturating_sub(2).max(1);
+    let window_end_row = row.saturating_add(2).min(total_lines);
+    let window_start_row = window_start_row.min(window_end_row);
+
+    let window_start = line_starts[window_start_row - 1];
+    let window_end = if window_end_row < total_lines {
+        line_starts[window_end_row]
+    } else {
+        text.len()
+    };
+    let window_text = &text[window_start..window_end];
+
+    let local_start = start.saturating_sub(window_start).min(window_text.len());
+    let local_end = end.saturating_sub(window_start).min(window_text.len());
+
+    let (window_text, local_start, _local_end) = crop_window_text(
+        window_text,
+        window_start_row,
+        row,
+        col,
+        crop_radius,
+        local_start,
+        local_end,
+    );
+
+    let gutter_width = window_end_row.to_string().len();
+    writeln!(f, "  |")?;
+
+    let mut cur_row = window_start_row;
+    for line in window_text.split_inclusive('\n') {
+        let mut line = line;
+        if let Some(stripped) = line.strip_suffix('\n') {
+            line = stripped;
+        }
+        if let Some(stripped) = line.strip_suffix('\r') {
+            line = stripped;
+        }
+
+        writeln!(f, "{cur_row:>gutter_width$} | {line}")?;
+
+        if cur_row == row {
+            // Compute caret column within the window line by counting chars from the start of the
+            // error line to `local_start`.
+            let line_byte_start = window_text[..local_start]
+                .rfind('\n')
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            let caret_chars = window_text[line_byte_start..local_start].chars().count();
+            if msg.is_empty() {
+                writeln!(f, "  | {space:>caret_chars$}^", space = "")?;
+            } else {
+                writeln!(
+                    f,
+                    "  | {space:>caret_chars$}^ {msg}",
+                    space = "",
+                    msg = msg
+                )?;
+            }
+        }
+
+        cur_row += 1;
+        if cur_row > window_end_row {
+            break;
+        }
+    }
+
+    writeln!(f, "  |")
 }
 
 /// Print a message optionally suffixed with `"at line X, column Y"`.
@@ -217,7 +327,6 @@ fn crop_window_text(
     if !rebased && window_text.ends_with('\n') && row == error_row {
         new_local_start = out.len();
         new_local_end = out.len();
-        rebased = true;
     }
 
     // Final safety clamp.
@@ -337,12 +446,6 @@ fn line_starts(source: &str) -> Vec<usize> {
         }
     }
     starts
-}
-
-/// Convert a 1-based (row, col) to a byte offset within `source`.
-fn line_col_to_byte_offset(source: &str, row_1: usize, col_1: usize) -> Option<usize> {
-    let starts = line_starts(source);
-    line_col_to_byte_offset_with_starts(source, &starts, row_1, col_1)
 }
 
 /// Convert a 1-based (row, col) to a byte offset within `source`, given precomputed line starts.

@@ -24,7 +24,9 @@ fn main() {
 
         }
         Err(err) => {
-            eprintln!("{}", err.with_snippet(yaml));
+            // By default, `from_str` wraps errors with snippet rendering.
+            // Customize via `Options { with_snippet: false, .. }` if needed.
+            eprintln!("{err}");
         }
     }
 }

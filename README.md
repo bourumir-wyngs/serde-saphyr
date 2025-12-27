@@ -25,14 +25,15 @@
 
 In our [benchmarking project](https://github.com/bourumir-wyngs/serde-saphyr-benchmark), we tested the following crates:
 
-| Crate | Version | Merge Keys | Nested Enums | Duplicate key rejection | Notes |
-|------:|:---------|:-----------|:--------------|:------------------------|:-------|
-| [serde-saphyr](https://crates.io/crates/serde-saphyr) | 0.0.4 | ✅ Native | ✅ | ✅ Configurable          | No `unsafe`, no [unsafe-libyaml](https://crates.io/crates/unsafe-libyaml) |
-| [serde-yaml-bw](https://crates.io/crates/serde-yaml_bw) | 2.4.1 | ✅ Native | ✅ | ✅ Configurable          | Slow due Saphyr doing budget check first upfront of libyaml |
-| [serde-yaml-ng](https://crates.io/crates/serde-yaml-ng) | 0.10.0 | ⚠️ partial | ❌ | ❌                       |  |
-| [serde-yaml](https://crates.io/crates/serde-yaml) | 0.9.34 + deprecated | ⚠️ partial | ❌ | ❌                       | Original, deprecated, repo archived |
-| [serde-norway](https://crates.io/crates/serde-norway) | 0.9 | ⚠️ partial | ❌ | ❌                       |  |
-| [serde-yml](https://crates.io/crates/serde-yml) | 0.0.12 | ⚠️ partial | ❌ | ❌                       | Repo archived |
+| Crate | Version | Merge Keys | Nested Enums | Duplicate key rejection | [`garde`](https://crates.io/crates/garde) | Notes |
+|------:|:---------|:-----------|:--------------|:------------------------|:-----:|:-------|
+| [serde-saphyr](https://crates.io/crates/serde-saphyr) | 0.0.4 | ✅ Native | ✅ | ✅ Configurable          |✅  | No `unsafe`, no [unsafe-libyaml](https://crates.io/crates/unsafe-libyaml) |
+| [serde-yaml-bw](https://crates.io/crates/serde-yaml_bw) | 2.4.1 | ✅ Native | ✅ | ✅ Configurable          |❌  | Slow due Saphyr doing budget check first upfront of libyaml |
+| [serde-yaml-ng](https://crates.io/crates/serde-yaml-ng) | 0.10.0 | ⚠️ partial | ❌ | ❌                       |❌  |  |
+| [serde-yaml](https://crates.io/crates/serde-yaml) | 0.9.34 + deprecated | ⚠️ partial | ❌ | ❌                       |❌  | Original, deprecated, repo archived |
+| [serde-norway](https://crates.io/crates/serde-norway) | 0.9 | ⚠️ partial | ❌ | ❌                       |❌ | |
+| [serde-yml](https://crates.io/crates/serde-yml) | 0.0.12 | ⚠️ partial | ❌ | ❌                       |❌  | Repo archived |
+
 
 
 Benchmarking was done with [Criterion](https://crates.io/crates/criterion), giving the following results:
@@ -51,7 +52,7 @@ The test suite currently includes 743 passing tests, most of them originating fr
 ## Notable features
 - **Configurable budgets:** Enforce input limits to mitigate resource exhaustion (e.g., deeply nested structures or very large arrays); see [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
 - **Serializer supports emitting anchors** (Rc, Arc, Weak) if they properly wrapped (see below).
-- **[`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html) for precise source locations:** Deserialize values together with their YAML line/column, useful for validation errors.
+- **First class [`garde`](https://crates.io/crates/garde) integration:** Declarative validation of parsed YAML documents, reporting location with snippet directly in YAML document.  
 - **serde_json::Value** is supported when parsing without target structure defined.
 - **robotic extensions** to support YAML dialect common in robotics (see below).
 
@@ -126,6 +127,56 @@ fn main() {
 - `defined`: where the value is defined (for non-alias values this equals `referenced`).
 
 Apart more clear error messages when loading configurations, `Spanned` also provides base for editors to highlight also logical errors, not just invalid syntax.
+
+### Garde integration
+
+This crate optionally integrates with [`garde`](https://crates.io/crates/garde) to run declarative validation. serde-saphyr error will print the snippet, providing location information. If the invalid value comes from the YAML anchor, serde-saphyr will also tell where this anchor has been defined.
+
+```rust
+use garde::Validate;
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize, Validate)]
+struct AB {
+    // Just defined here (we validate `b`, not `a`).
+    #[garde(skip)]
+    a: String,
+
+    #[garde(length(min = 2))]
+    b: String,
+}
+
+fn main() {
+    let yaml = r#"
+a: &A "x"
+b: *A
+"#;
+
+    let err = serde_saphyr::from_str_with_options_valid::<AB>(yaml, Default::default())
+        .expect_err("must fail validation");
+
+    eprintln!("{err}");
+}
+```
+
+A typical output looks like:
+
+```text
+error: line 2 column 4: (invalid here): validation error: length is lower than 2 for `b`
+ --> the value is used here:2:4
+  |
+1 | a: &A "x"
+2 | b: *A
+  |    ^ (invalid here): validation error: length is lower than 2 for `b`
+  | This value comes indirectly from the anchor at line 1 column 7:
+  |
+1 | a: &A "x"
+  |       ^ defined here
+2 | b: *A
+  |
+```
+
+The integration is controlled by the Cargo feature `garde` (enabled by default).
 
 ### Duplicate keys
 Duplicate key handling is configurable. By default it’s an error; “first wins”  and “last wins” strategies are available via [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). Duplicate key policy applies not just to strings but also to other types (when deserializing into map).

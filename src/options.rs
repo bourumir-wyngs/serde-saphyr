@@ -110,8 +110,8 @@ pub struct Options {
     pub no_schema: bool,
 
     /// If true (default), public APIs that have access to the original YAML input
-    /// will wrap returned errors with [`crate::Error::with_snippet`], enabling
-    /// rustc-like snippet rendering when a location is available.
+    /// will wrap returned errors with a snippet wrapper, enabling rustc-like snippet
+    /// rendering when a location is available.
     pub with_snippet: bool,
 
     /// Horizontal crop radius (in character columns) when rendering snippet diagnostics.

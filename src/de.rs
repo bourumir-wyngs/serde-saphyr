@@ -41,6 +41,9 @@ mod spanned_deser;
 pub use crate::options::{AliasLimits, DuplicateKeyPolicy, Options};
 use crate::tags::SfTag;
 
+#[cfg(feature = "garde")]
+use crate::path_map::PathRecorder;
+
 /// Small immutable runtime configuration that `Deser` needs.
 #[derive(Clone, Copy)]
 pub(crate) struct Cfg {
@@ -196,7 +199,7 @@ impl KeyFingerprint {
     }
 }
 
-/// A captured YAML node used to buffer keys/values and process merge keys.
+/// from_slice_multiple captured YAML node used to buffer keys/values and process merge keys.
 ///
 /// Fields:
 /// - `fingerprint`: canonical representation for duplicate detection.
@@ -266,7 +269,7 @@ impl KeyNode {
     }
 }
 
-/// A pending key/value pair to be injected into the current mapping.
+/// from_slice_multiple pending key/value pair to be injected into the current mapping.
 ///
 /// Produced by:
 /// - Merge (`<<`) processing and by scanning the current mapping fields.
@@ -694,7 +697,7 @@ fn collect_entries_from_map(
     Ok(entries)
 }
 
-/// A location-free representation of events for duplicate-key comparison.
+/// from_slice_multiple location-free representation of events for duplicate-key comparison.
 /// Source of events with lookahead and alias-injection.
 pub(crate) trait Events {
     /// Pull the next event from the stream.
@@ -861,6 +864,9 @@ pub(crate) struct Deser<'e> {
     in_key: bool,
     /// True when the recorded key node was exactly an empty mapping (MapStart followed by MapEnd).
     key_empty_map_node: bool,
+
+    #[cfg(feature = "garde")]
+    garde: Option<&'e mut PathRecorder>,
 }
 
 impl<'e> Deser<'e> {
@@ -881,6 +887,24 @@ impl<'e> Deser<'e> {
             cfg,
             in_key: false,
             key_empty_map_node: false,
+
+            #[cfg(feature = "garde")]
+            garde: None,
+        }
+    }
+
+    #[cfg(feature = "garde")]
+    pub(crate) fn new_with_path_recorder(
+        ev: &'e mut dyn Events,
+        cfg: Cfg,
+        garde: &'e mut PathRecorder,
+    ) -> Self {
+        Self {
+            ev,
+            cfg,
+            in_key: false,
+            key_empty_map_node: false,
+            garde: Some(garde),
         }
     }
 
@@ -1627,6 +1651,11 @@ helper to deserialize into String or Cow<'de, str> instead
         struct SA<'e> {
             ev: &'e mut dyn Events,
             cfg: Cfg,
+
+            #[cfg(feature = "garde")]
+            garde: Option<&'e mut PathRecorder>,
+            #[cfg(feature = "garde")]
+            idx: usize,
         }
         impl<'de, 'e> de::SeqAccess<'de> for SA<'e> {
             type Error = Error;
@@ -1639,6 +1668,42 @@ helper to deserialize into String or Cow<'de, str> instead
                 match peeked {
                     Some(Ev::SeqEnd { .. }) => Ok(None),
                     Some(_) => {
+                        #[cfg(feature = "garde")]
+                        {
+                            if let Some(garde_ref) = self.garde.as_mut() {
+                                let recorder: &mut PathRecorder = &mut **garde_ref;
+
+                                // Definition-site location: where the node is defined in the YAML.
+                                // For aliases, this will point at the anchor definition.
+                                // Extract definition-site location immediately so we don't hold
+                                // the `peek()` borrow across the `reference_location()` call.
+                                let defined_location = peeked
+                                    .as_ref()
+                                    .map(|ev| ev.location())
+                                    .unwrap_or_else(|| self.ev.last_location());
+
+                                // Use-site location, consistent with `Spanned<T>` semantics.
+                                let reference_location = self.ev.reference_location();
+
+                                let prev = recorder.current.clone();
+                                recorder.current = recorder.current.join(self.idx);
+                                recorder
+                                    .map
+                                    .insert(recorder.current.clone(), reference_location);
+                                recorder
+                                    .defined
+                                    .insert(recorder.current.clone(), defined_location);
+
+                                let de =
+                                    Deser::new_with_path_recorder(self.ev, self.cfg, recorder);
+                                let res = seed.deserialize(de).map(Some);
+
+                                recorder.current = prev;
+                                self.idx += 1;
+                                return res;
+                            }
+                        }
+
                         let de = Deser::new(self.ev, self.cfg);
                         seed.deserialize(de).map(Some)
                     }
@@ -1646,9 +1711,18 @@ helper to deserialize into String or Cow<'de, str> instead
                 }
             }
         }
+
+        #[cfg(feature = "garde")]
+        let garde = self.garde;
+
         let result = visitor.visit_seq(SA {
             ev: self.ev,
             cfg: self.cfg,
+
+            #[cfg(feature = "garde")]
+            garde,
+            #[cfg(feature = "garde")]
+            idx: 0,
         })?;
         if let Some(Ev::SeqEnd { .. }) = self.ev.peek()? {
             let _ = self.ev.next()?;
@@ -1720,6 +1794,12 @@ helper to deserialize into String or Cow<'de, str> instead
             ev: &'e mut dyn Events,
             cfg: Cfg,
             have_key: bool,
+
+            #[cfg(feature = "garde")]
+            garde: Option<&'e mut PathRecorder>,
+            #[cfg(feature = "garde")]
+            pending_path_segment: Option<String>,
+
             // For duplicate-key detection for arbitrary keys.
             seen: FastHashSet<KeyFingerprint>,
             pending: VecDeque<PendingEntry>,
@@ -1781,6 +1861,9 @@ helper to deserialize into String or Cow<'de, str> instead
                     cfg: self.cfg,
                     in_key: true,
                     key_empty_map_node: kemn,
+
+                    #[cfg(feature = "garde")]
+                    garde: None,
                 };
                 seed.deserialize(de)
             }
@@ -1826,6 +1909,7 @@ helper to deserialize into String or Cow<'de, str> instead
                         let fingerprint = key.take_fingerprint();
                         let location = key.location();
                         let mut events = key.take_events();
+
                         let is_duplicate = self.seen.contains(&fingerprint);
                         if self.flushing_merges {
                             if is_duplicate {
@@ -1925,6 +2009,14 @@ helper to deserialize into String or Cow<'de, str> instead
                         let key_value = self.deserialize_recorded_key(key_seed, events, kemn)?;
                         self.have_key = true;
                         self.pending_value = Some((value_events, reference_location));
+
+                        #[cfg(feature = "garde")]
+                        {
+                            self.pending_path_segment = fingerprint
+                                .stringy_scalar_value()
+                                .map(|s| s.to_owned());
+                        }
+
                         self.seen.insert(fingerprint);
                         return Ok(Some(key_value));
                     }
@@ -2033,6 +2125,7 @@ helper to deserialize into String or Cow<'de, str> instead
                                 continue;
                             } else {
                                 // Fast path: deserialize key now from recorded events, do not buffer value.
+
                                 let fingerprint = fingerprint.into_owned();
                                 let location = key_node.location();
                                 let events = key_node.take_events();
@@ -2049,6 +2142,12 @@ helper to deserialize into String or Cow<'de, str> instead
                                     self.deserialize_recorded_key(key_seed, events, kemn_direct)?;
                                 self.have_key = true;
                                 self.pending_value = None; // value will be read live
+
+                                #[cfg(feature = "garde")]
+                                {
+                                    self.pending_path_segment =
+                                        fingerprint.stringy_scalar_value().map(|s| s.to_owned());
+                                }
 
                                 self.seen.insert(fingerprint);
                                 return Ok(Some(key_value));
@@ -2069,22 +2168,97 @@ helper to deserialize into String or Cow<'de, str> instead
                         .with_location(self.ev.last_location()));
                 }
                 self.have_key = false;
+
+                #[cfg(feature = "garde")]
+                let pending_segment = self.pending_path_segment.take();
+
                 if let Some(events) = self.pending_value.take() {
                     let (events, reference_location) = events;
                     let mut replay = ReplayEvents::with_reference(events, reference_location);
+
+                    #[cfg(feature = "garde")]
+                    {
+                        if let (Some(seg), Some(garde_ref)) = (pending_segment, self.garde.as_mut())
+                        {
+                            let recorder: &mut PathRecorder = &mut **garde_ref;
+
+                            // Definition-site location: where the node is defined in the YAML.
+                            // For aliases, this will point at the anchor definition.
+                            let defined_location = replay
+                                .peek()?
+                                .map(|ev| ev.location())
+                                .unwrap_or_else(|| replay.last_location());
+
+                            let prev = recorder.current.clone();
+                            recorder.current = recorder.current.join(seg.as_str());
+                            recorder
+                                .map
+                                .insert(recorder.current.clone(), reference_location);
+                            recorder
+                                .defined
+                                .insert(recorder.current.clone(), defined_location);
+
+                            let de =
+                                Deser::new_with_path_recorder(&mut replay, self.cfg, recorder);
+                            let res = seed.deserialize(de);
+                            recorder.current = prev;
+                            return res;
+                        }
+                    }
+
                     let de = Deser::new(&mut replay, self.cfg);
                     seed.deserialize(de)
                 } else {
+                    #[cfg(feature = "garde")]
+                    {
+                        // Live stream: record reference location (use-site) if garde recorder is enabled.
+                        let defined_location = self
+                            .ev
+                            .peek()?
+                            .map(|ev| ev.location())
+                            .unwrap_or_else(|| self.ev.last_location());
+
+                        let reference_location = self.ev.reference_location();
+
+                        if let (Some(seg), Some(garde_ref)) = (pending_segment, self.garde.as_mut())
+                        {
+                            let recorder: &mut PathRecorder = &mut **garde_ref;
+                            let prev = recorder.current.clone();
+                            recorder.current = recorder.current.join(seg.as_str());
+                            recorder
+                                .map
+                                .insert(recorder.current.clone(), reference_location);
+                            recorder
+                                .defined
+                                .insert(recorder.current.clone(), defined_location);
+
+                            let de =
+                                Deser::new_with_path_recorder(self.ev, self.cfg, recorder);
+                            let res = seed.deserialize(de);
+                            recorder.current = prev;
+                            return res;
+                        }
+                    }
+
                     let de = Deser::new(self.ev, self.cfg);
                     seed.deserialize(de)
                 }
             }
         }
 
+        #[cfg(feature = "garde")]
+        let garde = self.garde;
+
         visitor.visit_map(MA {
             ev: self.ev,
             cfg: self.cfg,
             have_key: false,
+
+            #[cfg(feature = "garde")]
+            garde,
+            #[cfg(feature = "garde")]
+            pending_path_segment: None,
+
             seen: FastHashSet::with_capacity(8),
             pending: VecDeque::new(),
             merge_stack: Vec::new(),

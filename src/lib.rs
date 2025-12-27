@@ -15,6 +15,9 @@ pub use crate::serializer_options::SerializerOptions;
 use serde::de::DeserializeOwned;
 use std::io::Read;
 
+#[cfg(feature = "garde")]
+use garde::Validate;
+
 mod anchor_store;
 mod anchors;
 mod base64;
@@ -28,6 +31,9 @@ pub mod options;
 mod parse_scalars;
 mod ser;
 mod spanned;
+
+#[cfg(feature = "garde")]
+mod path_map;
 
 pub mod ser_error;
 
@@ -290,9 +296,468 @@ pub fn from_str_with_options<T: DeserializeOwned>(
     Ok(value)
 }
 
+/// Deserialize a single YAML document with configurable [`Options`], and also
+/// return a map from `garde` validation paths to source [`Location`]s.
+#[cfg(feature = "garde")]
+fn from_str_with_options_and_path_recorder<T: DeserializeOwned>(
+    input: &str,
+    options: Options,
+) -> Result<(T, crate::path_map::PathRecorder), Error> {
+    // Normalize: ignore a single leading UTF-8 BOM if present.
+    let input = if let Some(rest) = input.strip_prefix('\u{FEFF}') {
+        rest
+    } else {
+        input
+    };
+
+    let with_snippet = options.with_snippet;
+    let crop_radius = options.crop_radius;
+
+    let cfg = crate::de::Cfg::from_options(&options);
+    let mut src = LiveEvents::from_str(
+        input,
+        options.budget,
+        options.budget_report,
+        options.alias_limits,
+        false,
+    );
+
+    let mut recorder = crate::path_map::PathRecorder::new();
+
+    let value_res = crate::anchor_store::with_document_scope(|| {
+        T::deserialize(crate::de::Deser::new_with_path_recorder(
+            &mut src,
+            cfg,
+            &mut recorder,
+        ))
+    });
+    let value = match value_res {
+        Ok(v) => v,
+        Err(e) => {
+            if src.synthesized_null_emitted() {
+                let err = Error::eof().with_location(src.last_location());
+                return Err(maybe_with_snippet(err, input, with_snippet, crop_radius));
+            } else {
+                return Err(maybe_with_snippet(e, input, with_snippet, crop_radius));
+            }
+        }
+    };
+
+    match src.peek() {
+        Ok(Some(_)) => {
+            let err = Error::msg(
+                "multiple YAML documents detected; use from_multiple or from_multiple_with_options",
+            )
+            .with_location(src.last_location());
+            return Err(maybe_with_snippet(err, input, with_snippet, crop_radius));
+        }
+        Ok(None) => {}
+        Err(e) => {
+            if src.seen_doc_end() {
+                // ignore trailing garbage
+            } else {
+                return Err(maybe_with_snippet(e, input, with_snippet, crop_radius));
+            }
+        }
+    }
+
+    src.finish()
+        .map_err(|e| maybe_with_snippet(e, input, with_snippet, crop_radius))?;
+
+    Ok((value, recorder))
+}
+
+/// Deserialize a single YAML document with configurable [`Options`], and also
+/// return a map from `garde` validation paths to source [`Location`]s.
+///
+/// The returned map uses the same “use-site” semantics as the validation error rendering:
+/// it points to the location where the value is referenced/used in the YAML.
+#[cfg(feature = "garde")]
+pub fn from_str_with_options_and_path_map<T: DeserializeOwned>(
+    input: &str,
+    options: Options,
+) -> Result<(T, std::collections::HashMap<garde::error::Path, Location>), Error> {
+    let (v, recorder) = from_str_with_options_and_path_recorder::<T>(input, options)?;
+    Ok((v, recorder.map.map))
+}
+
+/// Deserialize a single YAML document from a YAML string and validate it with `garde`.
+/// The error message will contain a snippet with exact location information, and if the
+/// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
+#[cfg(feature = "garde")]
+pub fn from_str_valid<T>(input: &str) -> Result<T, Error>
+where
+    T: DeserializeOwned + garde::Validate,
+    <T as garde::Validate>::Context: Default,
+{
+    from_str_with_options_valid(&input, Options::default())
+}
+
+/// Deserialize a single YAML document with configurable [`Options`] and validate it with `garde`.
+/// The error message will contain a snippet with exact location information, and if the
+/// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
+#[cfg(feature = "garde")]
+pub fn from_str_with_options_valid<T>(input: &str, options: Options) -> Result<T, Error>
+where
+    T: DeserializeOwned + garde::Validate,
+    <T as garde::Validate>::Context: Default,
+{
+    let with_snippet = options.with_snippet;
+    let crop_radius = options.crop_radius;
+
+    let (v, recorder) = from_str_with_options_and_path_recorder::<T>(input, options)?;
+    match Validate::validate(&v) {
+        Ok(()) => Ok(v),
+        Err(report) => {
+            let err = Error::ValidationError {
+                report,
+                referenced: recorder.map.map,
+                defined: recorder.defined.map,
+            };
+            Err(maybe_with_snippet(err, input, with_snippet, crop_radius))
+        }
+    }
+}
+
+/// Deserialize multiple YAML documents from a YAML string and validate each with `garde`.
+/// The error message will contain a snippet with exact location information, and if the
+/// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
+#[cfg(feature = "garde")]
+pub fn from_multiple_valid<T: DeserializeOwned + garde::Validate>(input: &str) -> Result<Vec<T>, Error>
+where
+    <T as garde::Validate>::Context: Default,
+{
+    from_multiple_with_options_valid(input, Options::default())
+}
+
+/// Deserialize multiple YAML documents with configurable [`Options`] and validate each with `garde`.
+/// The error message will contain a snippet with exact location information, and if the
+/// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
+#[cfg(feature = "garde")]
+pub fn from_multiple_with_options_valid<T>(input: &str, options: Options) -> Result<Vec<T>, Error>
+where
+    T: DeserializeOwned + garde::Validate,
+    <T as garde::Validate>::Context: Default,
+{
+    let with_snippet = options.with_snippet;
+    let crop_radius = options.crop_radius;
+
+    let cfg = crate::de::Cfg::from_options(&options);
+    let mut src = LiveEvents::from_str(
+        input,
+        options.budget,
+        options.budget_report,
+        options.alias_limits,
+        false,
+    );
+    let mut values = Vec::new();
+    let mut validation_errors: Vec<Error> = Vec::new();
+
+    loop {
+        match src.peek()? {
+            // Skip documents that are explicit null-like scalars ("", "~", or "null").
+            Some(Ev::Scalar {
+                value: s, style, ..
+            }) if scalar_is_nullish(s, style) => {
+                let _ = src.next()?; // consume the null scalar document
+                continue;
+            }
+            Some(_) => {
+                let mut recorder = crate::path_map::PathRecorder::new();
+                let value_res = crate::anchor_store::with_document_scope(|| {
+                    T::deserialize(crate::de::Deser::new_with_path_recorder(
+                        &mut src,
+                        cfg,
+                        &mut recorder,
+                    ))
+                });
+                let value = match value_res {
+                    Ok(v) => v,
+                    Err(e) => return Err(maybe_with_snippet(e, input, with_snippet, crop_radius)),
+                };
+
+                match Validate::validate(&value) {
+                    Ok(()) => {
+                        values.push(value);
+                    }
+                    Err(report) => {
+                        let err = Error::ValidationError {
+                            report,
+                            referenced: recorder.map.map,
+                            defined: recorder.defined.map,
+                        };
+                        validation_errors.push(maybe_with_snippet(
+                            err,
+                            input,
+                            with_snippet,
+                            crop_radius,
+                        ));
+                    }
+                }
+            }
+            None => break,
+        }
+    }
+
+    src.finish()
+        .map_err(|e| maybe_with_snippet(e, input, with_snippet, crop_radius))?;
+
+    if validation_errors.is_empty() {
+        Ok(values)
+    } else {
+        Err(Error::ValidationErrors {
+            errors: validation_errors,
+        })
+    }
+}
+
+/// Deserialize a single YAML document from bytes and validate it with `garde`.
+/// The error message will contain a snippet with exact location information, and if the
+/// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
+#[cfg(feature = "garde")]
+pub fn from_slice_valid<T: DeserializeOwned + garde::Validate>(bytes: &[u8]) -> Result<T, Error>
+where
+    <T as garde::Validate>::Context: Default,
+{
+    from_slice_with_options_valid(bytes, Options::default())
+}
+
+/// Deserialize a single YAML document from bytes and validate it with `garde`.
+/// The error message will contain a snippet with exact location information, and if the
+/// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
+#[cfg(feature = "garde")]
+pub fn from_slice_with_options_valid<T: DeserializeOwned + garde::Validate>(bytes: &[u8], options: Options) -> Result<T, Error>
+where
+    <T as garde::Validate>::Context: Default,
+{
+    let s = std::str::from_utf8(bytes).map_err(|_| Error::msg("input is not valid UTF-8"))?;
+    from_str_with_options_valid(s, options)
+}
+
+/// Deserialize multiple YAML documents from bytes with options and validate each with `garde`.
+/// The error message will contain a snippet with exact location information, and if the
+/// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
+#[cfg(feature = "garde")]
+pub fn from_slice_multiple_with_options_valid<T>(
+    bytes: &[u8],
+    options: Options,
+) -> Result<Vec<T>, Error>
+where
+    T: DeserializeOwned + garde::Validate,
+    <T as garde::Validate>::Context: Default,
+{
+    // Incremental implementation: validated entry points currently just delegate to
+    // the non-validating versions.
+    from_slice_multiple_with_options(bytes, options)
+}
+
+/// Deserialize a single YAML document from a reader and validate it with `garde`.
+/// As there is no access to the full text of the document, the error message will not contain
+/// a snippet.
+#[cfg(feature = "garde")]
+pub fn from_reader_valid<R: std::io::Read, T>(reader: R) -> Result<T, Error>
+where
+    T: DeserializeOwned + garde::Validate,
+    <T as garde::Validate>::Context: Default,
+{
+    from_reader_with_options_valid(reader, Options::default())
+}
+
+/// Deserialize a single YAML document from a reader with options and validate it with `garde`.
+/// As there is no access to the full text of the document, the error message will not contain
+/// a snippet.
+#[cfg(feature = "garde")]
+pub fn from_reader_with_options_valid<R: std::io::Read, T>(reader: R, options: Options) -> Result<T, Error>
+where
+    T: DeserializeOwned + garde::Validate,
+    <T as garde::Validate>::Context: Default,
+{
+    let cfg = crate::de::Cfg::from_options(&options);
+    let mut src = LiveEvents::from_reader(
+        reader,
+        options.budget,
+        options.budget_report,
+        options.alias_limits,
+        false,
+        EnforcingPolicy::AllContent,
+    );
+
+    let mut recorder = crate::path_map::PathRecorder::new();
+
+    let value_res = crate::anchor_store::with_document_scope(|| {
+        T::deserialize(crate::de::Deser::new_with_path_recorder(
+            &mut src,
+            cfg,
+            &mut recorder,
+        ))
+    });
+    let value = match value_res {
+        Ok(v) => v,
+        Err(e) => {
+            if src.synthesized_null_emitted() {
+                // If the only thing in the input was an empty document (synthetic null),
+                // surface this as an EOF error to preserve expected error semantics
+                // for incompatible target types (e.g., bool).
+                return Err(Error::eof().with_location(src.last_location()));
+            } else {
+                return Err(e);
+            }
+        }
+    };
+
+    if let Err(report) = Validate::validate(&value) {
+        return Err(Error::ValidationError {
+            report,
+            referenced: recorder.map.map,
+            defined: recorder.defined.map,
+        });
+    }
+
+    // After finishing first document, peek ahead to detect either another document/content
+    // or trailing garbage. If a scan error occurs but we have seen a DocumentEnd ("..."),
+    // ignore the trailing garbage. Otherwise, surface the error.
+    match src.peek() {
+        Ok(Some(_)) => {
+            return Err(Error::msg(
+                "multiple YAML documents detected; use read or read_with_options to obtain the iterator",
+            )
+            .with_location(src.last_location()));
+        }
+        Ok(None) => {}
+        Err(e) => {
+            if src.seen_doc_end() {
+                // Trailing garbage after a proper document end marker is ignored.
+            } else {
+                return Err(e);
+            }
+        }
+    }
+
+    src.finish()?;
+    Ok(value)
+}
+
+/// Create an iterator over validated YAML documents from a reader.
+///
+/// Note: this implementation buffers the whole reader to enable snippet rendering.
+#[cfg(feature = "garde")]
+pub fn read_valid<'a, R, T>(reader: &'a mut R) -> impl Iterator<Item = Result<T, Error>> + 'a
+where
+    R: Read + 'a,
+    T: DeserializeOwned + garde::Validate + 'a,
+    <T as garde::Validate>::Context: Default,
+{
+    read_with_options_valid(reader, Default::default())
+}
+
+/// Create an iterator over validated YAML documents from a reader with configurable options.
+///
+/// Note: this implementation buffers the whole reader to enable snippet rendering.
+#[cfg(feature = "garde")]
+pub fn read_with_options_valid<'a, R, T>(
+    reader: &'a mut R,
+    options: Options,
+) -> impl Iterator<Item = Result<T, Error>> + 'a
+where
+    R: Read + 'a,
+    T: DeserializeOwned + garde::Validate + 'a,
+    <T as garde::Validate>::Context: Default,
+{
+    struct ReadValidIter<'a, T> {
+        src: LiveEvents<'a>, // borrows from `reader`
+        cfg: crate::de::Cfg,
+        finished: bool,
+        _marker: std::marker::PhantomData<T>,
+    }
+
+    impl<'a, T> Iterator for ReadValidIter<'a, T>
+    where
+        T: DeserializeOwned + garde::Validate + 'a,
+        <T as garde::Validate>::Context: Default,
+    {
+        type Item = Result<T, Error>;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            if self.finished {
+                return None;
+            }
+            loop {
+                match self.src.peek() {
+                    Ok(Some(Ev::Scalar { value, style, .. }))
+                        if scalar_is_nullish(value, style) =>
+                    {
+                        let _ = self.src.next();
+                        continue;
+                    }
+                    Ok(Some(_)) => {
+                        let mut recorder = crate::path_map::PathRecorder::new();
+                        let value_res = crate::anchor_store::with_document_scope(|| {
+                            T::deserialize(crate::de::Deser::new_with_path_recorder(
+                                &mut self.src,
+                                self.cfg,
+                                &mut recorder,
+                            ))
+                        });
+                        let value = match value_res {
+                            Ok(v) => v,
+                            Err(e) => {
+                                self.finished = true;
+                                let _ = self.src.finish();
+                                return Some(Err(e));
+                            }
+                        };
+
+                        match Validate::validate(&value) {
+                            Ok(()) => return Some(Ok(value)),
+                            Err(report) => {
+                                self.finished = true;
+                                let _ = self.src.finish();
+                                return Some(Err(Error::ValidationError {
+                                    report,
+                                    referenced: recorder.map.map,
+                                    defined: recorder.defined.map,
+                                }));
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        self.finished = true;
+                        if let Err(e) = self.src.finish() {
+                            return Some(Err(e));
+                        }
+                        return None;
+                    }
+                    Err(e) => {
+                        self.finished = true;
+                        let _ = self.src.finish();
+                        return Some(Err(e));
+                    }
+                }
+            }
+        }
+    }
+
+    let cfg = crate::de::Cfg::from_options(&options);
+    let src = LiveEvents::from_reader(
+        reader,
+        options.budget,
+        options.budget_report,
+        options.alias_limits,
+        false,
+        EnforcingPolicy::PerDocument,
+    );
+
+    ReadValidIter::<T> {
+        src,
+        cfg,
+        finished: false,
+        _marker: std::marker::PhantomData,
+    }
+}
+
 fn maybe_with_snippet(err: Error, input: &str, with_snippet: bool, crop_radius: usize) -> Error {
     if with_snippet && crop_radius > 0 && err.location().is_some() {
-        err.with_snippet_with_crop_radius(input, crop_radius)
+        err.with_snippet(input, crop_radius)
     } else {
         err
     }
@@ -646,7 +1111,7 @@ pub fn from_reader<'a, R: std::io::Read + 'a, T: DeserializeOwned>(reader: R) ->
 /// - Parsing limits: Use [`Options::budget`] to constrain YAML complexity (events, nodes,
 ///   nesting depth, total scalar bytes, number of documents, anchors, aliases, etc.). These
 ///   limits are enforced during parsing and are enabled by default via `Options::default()`.
-/// - Byte-level input cap: A hard cap on input bytes is enforced via `Options::budget.max_reader_input_bytes`.
+/// - Byte-level input cap: from_slice_multiple hard cap on input bytes is enforced via `Options::budget.max_reader_input_bytes`.
 ///   The default budget sets this to 256 MiB. You can override it by customizing `Options::budget`.
 ///   When the cap is exceeded, deserialization fails early with a budget error.
 ///
@@ -839,7 +1304,7 @@ where
 ///
 /// Limits and budget
 /// - All parsing limits configured via [`Options::budget`] (such as maximum events, nodes,
-///   nesting depth, total scalar bytes) are enforced while streaming. A hard input-byte cap
+///   nesting depth, total scalar bytes) are enforced while streaming. from_slice_multiple hard input-byte cap
 ///   is also enforced via `Budget::max_reader_input_bytes` (256 MiB by default), set this
 ///   to None if you need a streamer to exist for arbitrary long time.
 /// - Alias replay limits from [`Options::alias_limits`] are also enforced to mitigate alias bombs.
