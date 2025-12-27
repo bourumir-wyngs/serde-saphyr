@@ -8,6 +8,13 @@ mod tests {
     use serde_saphyr::budget::BudgetBreach;
     use std::collections::HashMap;
 
+    fn unwrap_snippet(err: &Error) -> &Error {
+        match err {
+            Error::WithSnippet { error, .. } => error,
+            other => other,
+        }
+    }
+
     #[derive(Debug, Deserialize, PartialEq)]
     struct Details {
         city: String,
@@ -72,7 +79,13 @@ mod tests {
 
         let yaml = "a: 1\n";
         let err = from_str_with_options::<HashMap<String, String>>(yaml, options).unwrap_err();
-        assert!(matches!(err, Error::Budget { breach: BudgetBreach::Nodes { .. }, .. }));
+        assert!(matches!(
+            unwrap_snippet(&err),
+            Error::Budget {
+                breach: BudgetBreach::Nodes { .. },
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -86,7 +99,13 @@ mod tests {
 
         let yaml = "a: 1\n---\nb: 2\n";
         let err = from_multiple_with_options::<HashMap<String, String>>(yaml, options).unwrap_err();
-        assert!(matches!(err, Error::Budget { breach: BudgetBreach::Nodes { .. }, .. }));
+        assert!(matches!(
+            unwrap_snippet(&err),
+            Error::Budget {
+                breach: BudgetBreach::Nodes { .. },
+                ..
+            }
+        ));
     }
 
     #[test]

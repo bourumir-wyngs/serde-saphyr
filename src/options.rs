@@ -108,6 +108,19 @@ pub struct Options {
     /// The default is false (a number or boolean will be stored in the string
     /// field exactly as provided, without quoting).
     pub no_schema: bool,
+
+    /// If true (default), public APIs that have access to the original YAML input
+    /// will wrap returned errors with [`crate::Error::with_snippet`], enabling
+    /// rustc-like snippet rendering when a location is available.
+    pub with_snippet: bool,
+
+    /// Horizontal crop radius (in character columns) when rendering snippet diagnostics.
+    ///
+    /// The renderer crops all displayed lines (including the context lines) to the same
+    /// column window around the reported error column, so they stay vertically aligned.
+    ///
+    /// If set to `0`, snippet wrapping is disabled (the original, unwrapped error is returned).
+    pub crop_radius: usize,
 }
 
 impl Default for Options {
@@ -122,6 +135,8 @@ impl Default for Options {
             angle_conversions: false,
             ignore_binary_tag_for_string: false,
             no_schema: false,
+            with_snippet: true,
+            crop_radius: 64,
         }
     }
 }

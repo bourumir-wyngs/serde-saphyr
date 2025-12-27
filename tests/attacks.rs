@@ -194,15 +194,11 @@ key: !!binary |
 user: []
 "#;
     let err = serde_saphyr::from_str::<ServerStrict>(yaml).expect_err("multi-doc must fail");
-    match err {
-        serde_saphyr::Error::Message { msg, .. } => {
-            assert!(
-                msg.contains("from_multiple"),
-                "error should point users to from_multiple, got: {msg}"
-            );
-        }
-        other => panic!("unexpected error variant: {:?}", other),
-    }
+    let msg = err.to_string();
+    assert!(
+        msg.contains("from_multiple"),
+        "error should point users to from_multiple, got: {msg}"
+    );
 }
 
 /// 5) Invalid base64 in `!!binary` must be rejected, preventing garbage in byte vectors.

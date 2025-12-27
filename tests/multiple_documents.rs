@@ -50,8 +50,10 @@ fn multiple_documents_cross_document_anchor_error() {
     let y = "name: &a John\n---\nname: *a\n";
     let err = serde_saphyr::from_multiple::<Person>(y)
         .expect_err("expected cross-document alias to fail");
-    match err {
+    match &err {
         serde_saphyr::Error::UnknownAnchor { .. } => {}
+        serde_saphyr::Error::WithSnippet { error, .. }
+            if matches!(error.as_ref(), serde_saphyr::Error::UnknownAnchor { .. }) => {}
         other => panic!("expected unknown anchor error, got {other:?}"),
     }
 }

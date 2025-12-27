@@ -443,5 +443,6 @@ Safety hardening with this feature enabled include (maximal expression depth, ma
     key: [
     ]
 ```
+is not a valid YAML (the closing bracket is not indented enough). Some parsers allow this, saphyr-parser does not hence serde-saphyr does not either.
 
 For those who want to retain compatibility with serde-yaml, even where it might deviate from the standard, serde-yaml-bw can be better choice. This crate uses saphyr-parser for budget pre-check only when unsafe-libyaml later does the final parsing. 

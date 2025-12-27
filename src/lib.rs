@@ -21,6 +21,8 @@ mod base64;
 pub mod budget;
 mod de;
 mod de_error;
+#[path = "de/snippet.rs"]
+mod de_snipped;
 mod live_events;
 pub mod options;
 mod parse_scalars;
@@ -232,6 +234,9 @@ pub fn from_str_with_options<T: DeserializeOwned>(
         input
     };
 
+    let with_snippet = options.with_snippet;
+    let crop_radius = options.crop_radius;
+
     let cfg = crate::de::Cfg::from_options(&options);
     // Do not stop at DocumentEnd; we'll probe for trailing content/errors explicitly.
     let mut src = LiveEvents::from_str(
@@ -251,9 +256,10 @@ pub fn from_str_with_options<T: DeserializeOwned>(
                 // If the only thing in the input was an empty document (synthetic null),
                 // surface this as an EOF error to preserve expected error semantics
                 // for incompatible target types (e.g., bool).
-                return Err(Error::eof().with_location(src.last_location()));
+                let err = Error::eof().with_location(src.last_location());
+                return Err(maybe_with_snippet(err, input, with_snippet, crop_radius));
             } else {
-                return Err(e);
+                return Err(maybe_with_snippet(e, input, with_snippet, crop_radius));
             }
         }
     };
@@ -263,23 +269,33 @@ pub fn from_str_with_options<T: DeserializeOwned>(
     // ignore the trailing garbage. Otherwise, surface the error.
     match src.peek() {
         Ok(Some(_)) => {
-            return Err(Error::msg(
+            let err = Error::msg(
                 "multiple YAML documents detected; use from_multiple or from_multiple_with_options",
             )
-            .with_location(src.last_location()));
+            .with_location(src.last_location());
+            return Err(maybe_with_snippet(err, input, with_snippet, crop_radius));
         }
         Ok(None) => {}
         Err(e) => {
             if src.seen_doc_end() {
                 // Trailing garbage after a proper document end marker is ignored.
             } else {
-                return Err(e);
+                return Err(maybe_with_snippet(e, input, with_snippet, crop_radius));
             }
         }
     }
 
-    src.finish()?;
+    src.finish()
+        .map_err(|e| maybe_with_snippet(e, input, with_snippet, crop_radius))?;
     Ok(value)
+}
+
+fn maybe_with_snippet(err: Error, input: &str, with_snippet: bool, crop_radius: usize) -> Error {
+    if with_snippet && crop_radius > 0 && err.location().is_some() {
+        err.with_snippet_with_crop_radius(input, crop_radius)
+    } else {
+        err
+    }
 }
 
 /// Deserialize multiple YAML documents from a single string into a vector of `T`.
@@ -362,6 +378,9 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
     } else {
         input
     };
+    let with_snippet = options.with_snippet;
+    let crop_radius = options.crop_radius;
+
     let cfg = crate::de::Cfg::from_options(&options);
     let mut src = LiveEvents::from_str(
         input,
@@ -383,16 +402,21 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
                 continue;
             }
             Some(_) => {
-                let value = crate::anchor_store::with_document_scope(|| {
+                let value_res = crate::anchor_store::with_document_scope(|| {
                     T::deserialize(crate::de::Deser::new(&mut src, cfg))
-                })?;
+                });
+                let value = match value_res {
+                    Ok(v) => v,
+                    Err(e) => return Err(maybe_with_snippet(e, input, with_snippet, crop_radius)),
+                };
                 values.push(value);
             }
             None => break,
         }
     }
 
-    src.finish()?;
+    src.finish()
+        .map_err(|e| maybe_with_snippet(e, input, with_snippet, crop_radius))?;
     Ok(values)
 }
 

@@ -6,6 +6,13 @@ use serde_saphyr::{
 use std::io::ErrorKind;
 use serde_saphyr::budget::BudgetBreach;
 
+fn unwrap_snippet(err: &Error) -> &Error {
+    match err {
+        Error::WithSnippet { error, .. } => error,
+        other => other,
+    }
+}
+
 #[derive(Debug, Deserialize, PartialEq)]
 struct Simple {
     a1: i32,
@@ -127,7 +134,7 @@ fn read_limits_are_per_document() {
     let deserialized: Result<Vec<Simple>, Error> = from_multiple_with_options(&yaml, opts);
     match deserialized {
         Ok(_) => panic!("limit should have been hit and produced an error"),
-        Err(error) => match &error {
+        Err(error) => match unwrap_snippet(&error) {
             Error::Budget { breach, .. } =>
                 match breach {
                     BudgetBreach::Nodes { nodes } => { assert_eq!(nodes, &31)},
@@ -145,7 +152,7 @@ fn from_reader_limits_are_per_all_content() {
     let deserialized: Result<Vec<Simple>, Error> = from_multiple_with_options(&yaml, opts);
     match deserialized {
         Ok(_) => panic!("limit should have been hit and produced an error"),
-        Err(error) => match &error {
+        Err(error) => match unwrap_snippet(&error) {
             Error::Budget { breach, .. } =>
               match breach {
                   BudgetBreach::Nodes { nodes } => { assert_eq!(nodes, &3001)},

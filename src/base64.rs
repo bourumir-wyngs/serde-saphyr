@@ -25,8 +25,12 @@ pub(crate) fn decode_base64_yaml(s: &str) -> Result<Vec<u8>, Error> {
 
     let mut out = Vec::with_capacity(cleaned.len() / 4 * 3);
 
-    for chunk in cleaned.chunks_exact(4) {
+    let total_chunks = cleaned.len() / 4;
+    for (idx, chunk) in cleaned.chunks_exact(4).enumerate() {
         let pad = chunk.iter().rev().take_while(|&&c| c == b'=').count();
+        if pad > 0 && idx + 1 != total_chunks {
+            return Err(Error::msg("invalid !!binary base64"));
+        }
         let a = decode_val(chunk[0])? as u32;
         let b = decode_val(chunk[1])? as u32;
 
@@ -49,6 +53,13 @@ pub(crate) fn decode_base64_yaml(s: &str) -> Result<Vec<u8>, Error> {
             }
             byte => decode_val(byte)? as u32,
         };
+
+        if pad == 2 && (b & 0x0F) != 0 {
+            return Err(Error::msg("invalid !!binary base64"));
+        }
+        if pad == 1 && (c & 0x03) != 0 {
+            return Err(Error::msg("invalid !!binary base64"));
+        }
 
         let triple = (a << 18) | (b << 12) | (c << 6) | d;
 
@@ -108,6 +119,15 @@ mod tests {
 
         // Character outside the base64 alphabet
         assert!(decode_base64_yaml("AQ?=").is_err());
+
+        // Invalid padding bits for a single-byte output
+        assert!(decode_base64_yaml("AB==").is_err());
+
+        // Invalid padding bits for a two-byte output
+        assert!(decode_base64_yaml("AAB=").is_err());
+
+        // Padding is only allowed in the final chunk
+        assert!(decode_base64_yaml("TQ==TQ==").is_err());
 
         // Too much padding in a chunk
         assert!(decode_base64_yaml("A===").is_err());

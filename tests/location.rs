@@ -1,5 +1,12 @@
 use serde_saphyr::from_str;
-use serde_saphyr::{Error};
+use serde_saphyr::{Error, Options};
+
+fn unwrap_snippet(err: &Error) -> &Error {
+    match err {
+        Error::WithSnippet { error, .. } => error,
+        other => other,
+    }
+}
 
 fn expect_location(err: &Error, line: u64, column: u64) {
     if let Some(loc) = err.location() {
@@ -19,35 +26,35 @@ fn expect_location(err: &Error, line: u64, column: u64) {
 fn parser_scan_error_carries_span() {
     let err = from_str::<Vec<String>>("[1, 2").expect_err("scan error expected");
     expect_location(&err, 2, 1);
-    assert!(matches!(err, Error::Message { .. }));
+    assert!(matches!(unwrap_snippet(&err), Error::Message { .. }));
 }
 
 #[test]
 fn scalar_conversion_error_carries_span() {
     let err = from_str::<bool>("definitely").expect_err("bool parse error expected");
     expect_location(&err, 1, 1);
-    assert!(matches!(err, Error::Message { .. }));
+    assert!(matches!(unwrap_snippet(&err), Error::Message { .. }));
 }
 
 #[test]
 fn unexpected_event_error_uses_event_location() {
     let err = from_str::<String>("- entry").expect_err("sequence cannot deserialize into string");
     expect_location(&err, 1, 1);
-    assert!(matches!(err, Error::Unexpected { .. }));
+    assert!(matches!(unwrap_snippet(&err), Error::Unexpected { .. }));
 }
 
 #[test]
 fn eof_error_reports_last_seen_position() {
     let err = from_str::<bool>("").expect_err("empty input should error");
     expect_location(&err, 1, 1);
-    assert!(matches!(err, Error::Eof { .. }));
+    assert!(matches!(unwrap_snippet(&err), Error::Eof { .. }));
 }
 
 #[test]
 fn parser_unknown_anchor_error_reports_location() {
     let err = from_str::<String>("*missing").expect_err("unknown anchor should error");
     expect_location(&err, 1, 1);
-    assert!(matches!(err, Error::Message { .. }));
+    assert!(matches!(unwrap_snippet(&err), Error::Message { .. }));
 }
 
 #[test]
@@ -59,7 +66,7 @@ definitely"#,
     )
     .expect_err("bool parse error expected");
     expect_location(&err, 2, 1);
-    assert!(matches!(err, Error::Message { .. }));
+    assert!(matches!(unwrap_snippet(&err), Error::Message { .. }));
 }
 
 #[test]
@@ -71,7 +78,7 @@ fn unexpected_event_error_uses_event_location_multiline() {
     )
     .expect_err("sequence cannot deserialize into string");
     expect_location(&err, 2, 1);
-    assert!(matches!(err, Error::Unexpected { .. }));
+    assert!(matches!(unwrap_snippet(&err), Error::Unexpected { .. }));
 }
 
 #[test]
@@ -83,7 +90,7 @@ fn parser_unknown_anchor_error_reports_location_multiline() {
     )
     .expect_err("unknown anchor should error");
     expect_location(&err, 2, 1);
-    assert!(matches!(err, Error::Message { .. }));
+    assert!(matches!(unwrap_snippet(&err), Error::Message { .. }));
 }
 
 // Additional diverse error cases
@@ -93,7 +100,7 @@ fn scalar_conversion_error_with_indent_reports_column() {
     // Two leading spaces before an invalid bool should point to column 3.
     let err = from_str::<bool>(r#"  definitely"#).expect_err("bool parse error expected");
     expect_location(&err, 1, 3);
-    assert!(matches!(err, Error::Message { .. }));
+    assert!(matches!(unwrap_snippet(&err), Error::Message { .. }));
 }
 
 #[test]
@@ -102,7 +109,7 @@ fn unexpected_sequence_with_indent_reports_column() {
     let err =
         from_str::<String>(r#"  - entry"#).expect_err("sequence cannot deserialize into string");
     expect_location(&err, 1, 3);
-    assert!(matches!(err, Error::Unexpected { .. }));
+    assert!(matches!(unwrap_snippet(&err), Error::Unexpected { .. }));
 }
 
 #[test]
@@ -110,7 +117,7 @@ fn unexpected_mapping_when_string_expected() {
     // Mapping cannot be deserialized into a String.
     let err = from_str::<String>(r#"{k: v}"#).expect_err("mapping cannot deserialize into string");
     expect_location(&err, 1, 1);
-    assert!(matches!(err, Error::Unexpected { .. }));
+    assert!(matches!(unwrap_snippet(&err), Error::Unexpected { .. }));
 }
 
 #[test]
@@ -118,7 +125,7 @@ fn unexpected_scalar_when_sequence_expected() {
     // Scalar cannot be deserialized into a Vec<_>.
     let err = from_str::<Vec<i32>>(r#"42"#).expect_err("scalar cannot deserialize into sequence");
     expect_location(&err, 1, 1);
-    assert!(matches!(err, Error::Unexpected { .. }));
+    assert!(matches!(unwrap_snippet(&err), Error::Unexpected { .. }));
 }
 
 #[test]
@@ -130,7 +137,7 @@ fn eof_after_single_newline_reports_row2_col1() {
     )
     .expect_err("empty input should error");
     expect_location(&err, 2, 1);
-    assert!(matches!(err, Error::Eof { .. }));
+    assert!(matches!(unwrap_snippet(&err), Error::Eof { .. }));
 }
 
 #[test]
@@ -142,5 +149,91 @@ fn unexpected_mapping_on_second_line_with_indent() {
     )
     .expect_err("mapping cannot deserialize into string");
     expect_location(&err, 2, 3);
-    assert!(matches!(err, Error::Unexpected { .. }));
+    assert!(matches!(unwrap_snippet(&err), Error::Unexpected { .. }));
+}
+
+#[test]
+fn error_with_snippet_renders_diagnostic_and_preserves_message() {
+    let yaml = "*missing";
+    let err = from_str::<String>(yaml).expect_err("unknown anchor should error");
+
+    let plain = err.to_string();
+    let rendered = err.with_snippet(yaml).to_string();
+
+    assert!(
+        rendered.contains(&plain),
+        "rendered output must include the original message.\nplain: {plain}\nrendered: {rendered}"
+    );
+    assert!(
+        rendered.contains("<input>:1:1"),
+        "rendered output should include origin and coordinates.\nrendered: {rendered}"
+    );
+}
+
+#[test]
+fn with_snippet_enabled_by_default_in_from_str() {
+    let yaml = "*missing";
+    let err = from_str::<String>(yaml).expect_err("unknown anchor should error");
+    let rendered = err.to_string();
+
+    assert!(
+        rendered.contains("<input>:1:1"),
+        "default error rendering should include snippet origin/coordinates.\nrendered: {rendered}"
+    );
+}
+
+#[test]
+fn with_snippet_can_be_disabled_in_options() {
+    let yaml = "*missing";
+
+    let mut opts = Options::default();
+    opts.with_snippet = false;
+
+    let err = serde_saphyr::from_str_with_options::<String>(yaml, opts)
+        .expect_err("unknown anchor should error");
+    let msg = err.to_string();
+
+    assert!(
+        !msg.contains("<input>:"),
+        "snippet rendering should be disabled when Options::with_snippet is false.\nmsg: {msg}"
+    );
+    assert!(
+        msg.contains("unknown anchor"),
+        "message should still contain the original error.\nmsg: {msg}"
+    );
+}
+
+#[test]
+fn crop_radius_zero_disables_snippet_wrapping() {
+    let yaml = "*missing";
+
+    let mut opts = Options::default();
+    // Even when with_snippet is true, a radius of 0 means "no snippet".
+    opts.crop_radius = 0;
+
+    let err = serde_saphyr::from_str_with_options::<String>(yaml, opts)
+        .expect_err("unknown anchor should error");
+    let msg = err.to_string();
+
+    assert!(
+        !msg.contains("<input>:"),
+        "snippet rendering should be disabled when Options::crop_radius is 0.\nmsg: {msg}"
+    );
+    assert!(
+        msg.contains("unknown anchor"),
+        "message should still contain the original error.\nmsg: {msg}"
+    );
+}
+
+#[test]
+fn with_snippet_enabled_for_from_slice_with_options() {
+    let yaml = "*missing";
+    let err = serde_saphyr::from_slice_with_options::<String>(yaml.as_bytes(), Options::default())
+        .expect_err("unknown anchor should error");
+    let rendered = err.to_string();
+
+    assert!(
+        rendered.contains("<input>:1:1"),
+        "from_slice_with_options should include snippet origin/coordinates by default.\nrendered: {rendered}"
+    );
 }

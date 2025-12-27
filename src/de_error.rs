@@ -56,9 +56,50 @@ pub enum Error {
         value: String, // sanitized (checked) value that must be quoted
         location: Location,
     },
+
+    /// Wrap an error with the full input text, enabling rustc-like snippet rendering.
+    WithSnippet {
+        text: String,
+        crop_radius: usize,
+        error: Box<Error>,
+    },
 }
 
 impl Error {
+    /// Attach the full YAML input text to this error so it can be rendered with a snippet.
+    ///
+    /// If the error is already wrapped, the snippet text is replaced.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use serde_saphyr::from_str;
+    ///
+    /// let yaml = "*missing";
+    /// let err = from_str::<String>(yaml).expect_err("unknown anchor should error");
+    ///
+    /// let rendered = err.with_snippet(yaml).to_string();
+    /// assert!(rendered.contains("<input>:1:1"));
+    /// ```
+    pub fn with_snippet(self, text: &str) -> Self {
+        // Default crop radius used for manual `with_snippet` wrapping.
+        self.with_snippet_with_crop_radius(text, 64)
+    }
+
+    pub(crate) fn with_snippet_with_crop_radius(self, text: &str, crop_radius: usize) -> Self {
+        match self {
+            Error::WithSnippet { error, .. } => Error::WithSnippet {
+                text: text.to_owned(),
+                crop_radius,
+                error,
+            },
+            other => Error::WithSnippet {
+                text: text.to_owned(),
+                crop_radius,
+                error: Box::new(other),
+            },
+        }
+    }
     /// Construct a `Message` error with no known location.
     ///
     /// Arguments:
@@ -156,6 +197,10 @@ impl Error {
                 *location = set_location;
             }
             Error::IOError { .. } => {} // this error does not support location
+            Error::WithSnippet { error, .. } => {
+                let inner = *std::mem::replace(error, Box::new(Error::eof()));
+                *error = Box::new(inner.with_location(set_location));
+            }
         }
         self
     }
@@ -184,6 +229,7 @@ impl Error {
                 }
             }
             Error::IOError { cause: _ } => None,
+            Error::WithSnippet { error, .. } => error.location(),
         }
     }
 
@@ -204,6 +250,28 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Error::WithSnippet {
+                text,
+                crop_radius,
+                error,
+            } => {
+                if *crop_radius == 0 {
+                    // Treat as "snippet disabled".
+                    return write!(f, "{}", error);
+                }
+                // Preserve existing error message behavior if we cannot render a snippet.
+                let msg = error.to_string();
+                let Some(location) = error.location() else {
+                    return write!(f, "{msg}");
+                };
+                return crate::de_snipped::fmt_with_snippet_or_fallback(
+                    f,
+                    &msg,
+                    &location,
+                    text,
+                    *crop_radius,
+                );
+            }
             Error::Message { msg, location } => fmt_with_location(f, msg, location),
             Error::HookError { msg, location } => fmt_with_location(f, msg, location),
             Error::Eof { location } => fmt_with_location(f, "unexpected end of input", location),

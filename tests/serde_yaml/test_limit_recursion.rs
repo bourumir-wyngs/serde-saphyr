@@ -7,7 +7,7 @@ fn test_recursion_limit_exceeded() {
     let yaml = "[".repeat(depth) + &"]".repeat(depth);
     let err = serde_saphyr::from_str::<Value>(&yaml).unwrap_err();
     assert!(
-        err.to_string().starts_with("recursion limit exceeded"),
+        err.to_string().contains("recursion limit exceeded"),
         "unexpected error: {}",
         err
     );
