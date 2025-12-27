@@ -47,12 +47,12 @@ width="60%">
 As seen, serde-saphyr exceeds others by performance, even with budget check enabled. 
 
 ## Testing
-The test suite currently includes 743 passing tests, most of them originating from the fully converted [yaml-test-suite](https://github.com/yaml/yaml-test-suite), with additional cases taken from the original serde-yaml tests. The remaining 6 failing corner cases (marked as ignored) have been reviewed, and their causes are well understood. To the best of our assessment, these failures stem from the saphyr parser. They represent extremely rare edge cases that are unlikely to appear in real-world use.
+The test suite currently includes 769 passing tests, most of them originating from the fully converted [yaml-test-suite](https://github.com/yaml/yaml-test-suite), with additional cases taken from the original serde-yaml tests. The remaining 6 failing corner cases (marked as ignored) have been reviewed, and their causes are well understood. To the best of our assessment, these failures stem from the saphyr parser. They represent extremely rare edge cases that are unlikely to appear in real-world use.
 
 ## Notable features
 - **Configurable budgets:** Enforce input limits to mitigate resource exhaustion (e.g., deeply nested structures or very large arrays); see [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
 - **Serializer supports emitting anchors** (Rc, Arc, Weak) if they properly wrapped (see below).
-- **First class [`garde`](https://crates.io/crates/garde) integration:** Declarative validation of parsed YAML documents, reporting location with snippet directly in YAML document.  
+- **First class [`garde`](https://crates.io/crates/garde) integration:** Declarative validation of parsed YAML documents, reporting location with snippet directly from YAML document.  
 - **serde_json::Value** is supported when parsing without target structure defined.
 - **robotic extensions** to support YAML dialect common in robotics (see below).
 
