@@ -11,14 +11,14 @@ fn default_sign_corrections() -> Vec<i8> {
     vec![1; 6]
 }
 
-fn validate_finite_f64(v: &f64, _ctx: &()) -> garde::Result {
+fn opw_geometry_parameter(v: &f64, _ctx: &()) -> garde::Result {
     if !v.is_finite() {
         return Err(garde::Error::new("must be finite"));
     }
     Ok(())
 }
 
-fn validate_offset_f64(v: &f64, _ctx: &()) -> garde::Result {
+fn joint_offset(v: &f64, _ctx: &()) -> garde::Result {
     if !v.is_finite() {
         return Err(garde::Error::new("must be finite"));
     }
@@ -29,7 +29,7 @@ fn validate_offset_f64(v: &f64, _ctx: &()) -> garde::Result {
     Ok(())
 }
 
-fn validate_sign_correction_i8(v: &i8, _ctx: &()) -> garde::Result {
+fn sign_correction(v: &i8, _ctx: &()) -> garde::Result {
     if *v != -1 && *v != 1 {
         return Err(garde::Error::new("must be -1 or 1"));
     }
@@ -38,19 +38,19 @@ fn validate_sign_correction_i8(v: &i8, _ctx: &()) -> garde::Result {
 
 #[derive(Deserialize, Validate)]
 struct GeometricParameters {
-    #[garde(custom(validate_finite_f64))]
+    #[garde(custom(opw_geometry_parameter))]
     pub a1: f64,
-    #[garde(custom(validate_finite_f64))]
+    #[garde(custom(opw_geometry_parameter))]
     pub a2: f64,
-    #[garde(custom(validate_finite_f64))]
+    #[garde(custom(opw_geometry_parameter))]
     pub b: f64,
-    #[garde(custom(validate_finite_f64))]
+    #[garde(custom(opw_geometry_parameter))]
     pub c1: f64,
-    #[garde(custom(validate_finite_f64))]
+    #[garde(custom(opw_geometry_parameter))]
     pub c2: f64,
-    #[garde(custom(validate_finite_f64))]
+    #[garde(custom(opw_geometry_parameter))]
     pub c3: f64,
-    #[garde(custom(validate_finite_f64))]
+    #[garde(custom(opw_geometry_parameter))]
     pub c4: f64,
     /// Optional here; top-level `dof` overrides if also present
     #[serde(default)]
@@ -62,17 +62,18 @@ struct GeometricParameters {
 struct Root {
     #[garde(dive)]
     pub opw_kinematics_geometric_parameters: GeometricParameters,
-    #[serde(default = "default_offsets", rename = "opw_kinematics_joint_offsets")]
-    #[garde(length(min = 5, max = 6), inner(custom(validate_offset_f64)))]
-    pub offsets: Vec<f64>,
+    #[serde(default = "default_offsets")]
+    #[garde(length(min = 5, max = 6), inner(custom(joint_offset)))]
+    pub opw_kinematics_joint_offsets: Vec<f64>,
     #[serde(default = "default_sign_corrections")]
-    #[garde(length(min = 5, max = 6), inner(custom(validate_sign_correction_i8)))]
+    #[garde(length(min = 5, max = 6), inner(custom(sign_correction)))]
     pub opw_kinematics_joint_sign_corrections: Vec<i8>,
-    /// Optional; overrides gp.dof if present
+    /// Optional; overrides opw_kinematics_geometric_parameters.dof if present
     #[serde(default)]
     #[garde(range(min = 5, max = 6))]
     pub dof: Option<i8>,
 }
+
 
 #[test]
 fn test_nan_in_conf() {
