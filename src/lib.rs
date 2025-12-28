@@ -604,7 +604,7 @@ where
     match src.peek() {
         Ok(Some(_)) => {
             return Err(Error::msg(
-                "multiple YAML documents detected; use read or read_with_options to obtain the iterator",
+                "multiple YAML documents detected; use read_valid or read_with_options_valid to obtain the iterator",
             )
             .with_location(src.last_location()));
         }
