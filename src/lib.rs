@@ -18,61 +18,6 @@ use std::io::Read;
 #[cfg(feature = "garde")]
 use garde::Validate;
 
-#[cfg(feature = "garde")]
-fn augment_garde_path_locations_from_unique_prefix(
-    report: &garde::Report,
-    referenced: &mut std::collections::HashMap<garde::error::Path, Location>,
-    defined: &mut std::collections::HashMap<garde::error::Path, Location>,
-) {
-    fn find_unique_prefix_match(
-        target: &garde::error::Path,
-        map: &std::collections::HashMap<garde::error::Path, Location>,
-    ) -> Option<Location> {
-        if target.len() == 0 {
-            return None;
-        }
-
-        let target_prefix: Vec<(garde::error::Kind, &str)> = target
-            .__iter()
-            .take(target.len().saturating_sub(1))
-            .map(|(k, s)| (k, s.as_str()))
-            .collect();
-        let target_len = target.len();
-
-        let mut found: Option<Location> = None;
-        for (candidate, loc) in map.iter() {
-            if candidate.len() != target_len {
-                continue;
-            }
-            let cand_prefix: Vec<(garde::error::Kind, &str)> = candidate
-                .__iter()
-                .take(target_len.saturating_sub(1))
-                .map(|(k, s)| (k, s.as_str()))
-                .collect();
-            if cand_prefix == target_prefix {
-                if found.is_some() {
-                    return None; // ambiguous
-                }
-                found = Some(*loc);
-            }
-        }
-        found
-    }
-
-    for (path, _) in report.iter() {
-        if !referenced.contains_key(path) {
-            if let Some(loc) = find_unique_prefix_match(path, referenced) {
-                referenced.insert(path.clone(), loc);
-            }
-        }
-        if !defined.contains_key(path) {
-            if let Some(loc) = find_unique_prefix_match(path, defined) {
-                defined.insert(path.clone(), loc);
-            }
-        }
-    }
-}
-
 mod anchor_store;
 mod anchors;
 mod base64;
@@ -88,7 +33,7 @@ mod ser;
 mod spanned;
 
 #[cfg(feature = "garde")]
-mod path_map;
+pub mod path_map;
 
 pub mod ser_error;
 
@@ -450,13 +395,10 @@ where
     match Validate::validate(&v) {
         Ok(()) => Ok(v),
         Err(report) => {
-            let mut referenced = recorder.map.map;
-            let mut defined = recorder.defined.map;
-            augment_garde_path_locations_from_unique_prefix(&report, &mut referenced, &mut defined);
             let err = Error::ValidationError {
                 report,
-                referenced,
-                defined,
+                referenced: recorder.map,
+                defined: recorder.defined,
             };
             Err(maybe_with_snippet(err, input, with_snippet, crop_radius))
         }
@@ -525,17 +467,10 @@ where
                         values.push(value);
                     }
                     Err(report) => {
-                        let mut referenced = recorder.map.map;
-                        let mut defined = recorder.defined.map;
-                        augment_garde_path_locations_from_unique_prefix(
-                            &report,
-                            &mut referenced,
-                            &mut defined,
-                        );
                         let err = Error::ValidationError {
                             report,
-                            referenced,
-                            defined,
+                            referenced: recorder.map,
+                            defined: recorder.defined,
                         };
                         validation_errors.push(maybe_with_snippet(
                             err,
@@ -656,13 +591,10 @@ where
     };
 
     if let Err(report) = Validate::validate(&value) {
-        let mut referenced = recorder.map.map;
-        let mut defined = recorder.defined.map;
-        augment_garde_path_locations_from_unique_prefix(&report, &mut referenced, &mut defined);
         return Err(Error::ValidationError {
             report,
-            referenced,
-            defined,
+            referenced: recorder.map,
+            defined: recorder.defined,
         });
     }
 
@@ -765,17 +697,10 @@ where
                             Err(report) => {
                                 self.finished = true;
                                 let _ = self.src.finish();
-                                let mut referenced = recorder.map.map;
-                                let mut defined = recorder.defined.map;
-                                augment_garde_path_locations_from_unique_prefix(
-                                    &report,
-                                    &mut referenced,
-                                    &mut defined,
-                                );
                                 return Some(Err(Error::ValidationError {
                                     report,
-                                    referenced,
-                                    defined,
+                                    referenced: recorder.map,
+                                    defined: recorder.defined,
                                 }));
                             }
                         }

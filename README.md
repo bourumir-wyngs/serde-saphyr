@@ -101,24 +101,26 @@ use garde::Validate;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Validate)]
+#[serde(rename_all = "camelCase")] // Rust in snake_case, YAML in camelCase.
 struct AB {
-    // Just defined here (we validate `b`, not `a`).
+    // Just defined here (we validate `second_string` only).
     #[garde(skip)]
-    a: String,
+    first_string: String,
 
     #[garde(length(min = 2))]
-    b: String,
+    second_string: String,
 }
 
 fn main() {
     let yaml = r#"
-a: &A "x"
-b: *A
-"#;
+        firstString: &A "x"
+        secondString: *A
+   "#;
 
     let err = serde_saphyr::from_str_with_options_valid::<AB>(yaml, Default::default())
         .expect_err("must fail validation");
 
+    // Field in error message in camelCase (as in YAML).
     eprintln!("{err}");
 }
 ```
@@ -126,21 +128,28 @@ b: *A
 A typical output looks like:
 
 ```text
-error: line 2 column 4: (invalid here): validation error: length is lower than 2 for `b`
- --> the value is used here:2:4
+error: line 3 column 23: invalid here, validation error: length is lower than 2 for `secondString`
+ --> the value is used here:3:23
   |
-1 | a: &A "x"
-2 | b: *A
-  |    ^ (invalid here): validation error: length is lower than 2 for `b`
-  | This value comes indirectly from the anchor at line 1 column 7:
+1 |
+2 |         firstString: &A "x"
+3 |         secondString: *A
+  |                       ^ invalid here, validation error: length is lower than 2 for `secondString`
+4 |    
   |
-1 | a: &A "x"
-  |       ^ defined here
-2 | b: *A
+  | This value comes indirectly from the anchor at line 2 column 25:
+  |
+1 | 
+2 |         firstString: &A "x"
+  |                         ^ defined here
+3 |         secondString: *A
+4 |    
   |
 ```
 
-The integration is controlled by the Cargo feature `garde` (enabled by default). If you prefer to validate without garde, [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html) is also available.
+Common Serde renames made to follow naming conventions (case changes, snake_case, kebab-case) are supported, as long as they do not introduce ambiguity. Arbitrary renames are not. Parsing and validation will still work, but error messages may be less informative. 
+The integration is controlled by the Cargo feature `garde` (enabled by default). 
+If you prefer to validate without `garde` and want to ensure that location information is always available, use the heavier approach with [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html) wrapper instead.
 
 ### Duplicate keys
 Duplicate key handling is configurable. By default it’s an error; “first wins”  and “last wins” strategies are available via [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). Duplicate key policy applies not just to strings but also to other types (when deserializing into map).

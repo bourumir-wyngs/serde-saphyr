@@ -72,23 +72,44 @@ fn from_str_with_options_valid_runs_garde_validation() {
     assert_eq!(rendered, expected);
 }
 
+
+
 #[test]
 fn serde_rename() {
-    let yaml = "renamed_a: \"\"\n";
+    // We support only style-preserving renames for location lookup:
+    // - case-only differences
+    // - snake_case <-> camelCase differences (underscore stripping + case-insensitive match)
+    // This test exercises snake_case <-> camelCase.
 
-    let err = serde_saphyr::from_str_with_options_valid::<RenamedFieldRoot>(yaml, Default::default())
+    #[derive(Debug, Deserialize, Validate)]
+    struct StyleRenamedRoot {
+        // External key is camelCase, but garde path is Rust field `my_field`.
+        #[serde(rename = "myField")]
+        #[garde(length(min = 1))]
+        my_field: String,
+    }
+
+    let yaml = "myField: \"\"\n";
+
+    let err = serde_saphyr::from_str_with_options_valid::<StyleRenamedRoot>(yaml, Default::default())
         .expect_err("must fail validation");
     let rendered = err.to_string();
 
-    // Garde paths are based on Rust field names, so the message should mention `a`.
+    // We print the resolved leaf name (YAML spelling) when location lookup bridges a rename.
     assert!(
-        rendered.contains("for `a`"),
-        "expected garde path `a` in output, got: {rendered}"
+        rendered.contains("for `myField`"),
+        "expected resolved leaf name `myField` in output, got: {rendered}"
     );
-    assert!(
-        rendered.contains("^"),
-        ""
+
+    // Location lookup should still find the YAML location of `myField`'s value.
+    let expected = concat!(
+        "error: line 1 column 10: validation error: length is lower than 1 for `myField`\n",
+        " --> (defined):1:10\n",
+        "  |\n",
+        "1 | myField: \"\"\n",
+        "  |          ^ validation error: length is lower than 1 for `myField`",
     );
+    assert_eq!(rendered, expected);
 }
 
 #[test]

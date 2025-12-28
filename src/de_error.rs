@@ -1,8 +1,5 @@
 //! Defines error and its location
 use std::fmt;
-
-#[cfg(feature = "garde")]
-use std::collections::HashMap;
 use annotate_snippets::Level;
 use crate::budget::BudgetBreach;
 use crate::parse_scalars::{
@@ -10,6 +7,8 @@ use crate::parse_scalars::{
 };
 use crate::tags::SfTag;
 use crate::Location;
+#[cfg(feature = "garde")]
+use crate::path_map::PathMap;
 use saphyr_parser::{ScalarStyle, ScanError};
 use serde::de::{self};
 
@@ -75,8 +74,8 @@ pub enum Error {
     #[cfg(feature = "garde")]
     ValidationError {
         report: garde::Report,
-        referenced: HashMap<garde::error::Path, Location>,
-        defined: HashMap<garde::error::Path, Location>,
+        referenced: PathMap,
+        defined: PathMap,
     },
 
     /// Garde validation failures (multiple, when working with multiple documents)
@@ -245,11 +244,13 @@ impl Error {
             Error::ValidationError {
                 referenced, defined, ..
             } => referenced
+                .map
                 .values()
                 .copied()
                 .find(|l| *l != Location::UNKNOWN)
                 .or_else(|| {
                     defined
+                        .map
                         .values()
                         .copied()
                         .find(|l| *l != Location::UNKNOWN)
@@ -362,8 +363,8 @@ fn render_error_with_snippets(inner: &Error, text: &str, crop_radius: usize) -> 
         {
             struct ValidationSnippetDisplay<'a> {
                 report: &'a garde::Report,
-                referenced: &'a HashMap<garde::error::Path, Location>,
-                defined: &'a HashMap<garde::error::Path, Location>,
+                referenced: &'a PathMap,
+                defined: &'a PathMap,
                 text: &'a str,
                 crop_radius: usize,
             }
@@ -449,8 +450,8 @@ fn render_error_with_snippets(inner: &Error, text: &str, crop_radius: usize) -> 
 fn fmt_validation_error_plain(
     f: &mut fmt::Formatter<'_>,
     report: &garde::Report,
-    referenced: &HashMap<garde::error::Path, Location>,
-    defined: &HashMap<garde::error::Path, Location>,
+    referenced: &PathMap,
+    defined: &PathMap,
 ) -> fmt::Result {
     let mut first = true;
     for (path, entry) in report.iter() {
@@ -458,12 +459,15 @@ fn fmt_validation_error_plain(
             writeln!(f)?;
         }
         first = false;
-        let msg = format!("validation error at {path}: {entry}");
-        let loc = referenced
-            .get(path)
-            .or_else(|| defined.get(path))
-            .copied()
-            .unwrap_or(Location::UNKNOWN);
+        let original_leaf = garde_leaf_segment(path).unwrap_or("<root>").to_owned();
+
+        let (loc, resolved_leaf) = referenced
+            .search(path)
+            .or_else(|| defined.search(path))
+            .unwrap_or((Location::UNKNOWN, original_leaf));
+
+        let resolved_path = format_garde_path_with_resolved_leaf(path, &resolved_leaf);
+        let msg = format!("validation error at {resolved_path}: {entry}");
         fmt_with_location(f, &msg, &loc)?;
     }
     Ok(())
@@ -473,8 +477,8 @@ fn fmt_validation_error_plain(
 fn fmt_validation_error_with_snippets(
     f: &mut fmt::Formatter<'_>,
     report: &garde::Report,
-    referenced: &HashMap<garde::error::Path, Location>,
-    defined: &HashMap<garde::error::Path, Location>,
+    referenced: &PathMap,
+    defined: &PathMap,
     text: &str,
     crop_radius: usize,
 ) -> fmt::Result {
@@ -485,16 +489,31 @@ fn fmt_validation_error_with_snippets(
         }
         first = false;
 
-        let base_msg = format!("validation error: {entry} for `{path}`");
+        let original_leaf = garde_leaf_segment(path).unwrap_or("<root>").to_owned();
 
-        let ref_loc = referenced.get(path).unwrap_or(&Location::UNKNOWN);
-        let def_loc = defined.get(path).unwrap_or(&Location::UNKNOWN);
+        let (ref_loc, ref_leaf) = referenced
+            .search(path)
+            .unwrap_or((Location::UNKNOWN, original_leaf.clone()));
+        let (def_loc, def_leaf) = defined
+            .search(path)
+            .unwrap_or((Location::UNKNOWN, original_leaf.clone()));
+
+        let resolved_leaf = if ref_loc != Location::UNKNOWN {
+            ref_leaf
+        } else if def_loc != Location::UNKNOWN {
+            def_leaf
+        } else {
+            original_leaf
+        };
+
+        let resolved_path = format_garde_path_with_resolved_leaf(path, &resolved_leaf);
+        let base_msg = format!("validation error: {entry} for `{resolved_path}`");
 
         match (ref_loc, def_loc) {
-            (&Location::UNKNOWN, &Location::UNKNOWN) => {
+            (Location::UNKNOWN, Location::UNKNOWN) => {
                 write!(f, "{base_msg}")?;
             }
-            (r, d) if r != &Location::UNKNOWN && (d == &Location::UNKNOWN || d == r) => {
+            (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
                 crate::de_snipped::fmt_with_snippet_or_fallback(
                     f,
                     Level::ERROR,
@@ -505,7 +524,7 @@ fn fmt_validation_error_with_snippets(
                     crop_radius,
                 )?;
             }
-            (r, d) if r == &Location::UNKNOWN && d != &Location::UNKNOWN => {
+            (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
                 crate::de_snipped::fmt_with_snippet_or_fallback(
                     f,
                     Level::ERROR,
@@ -544,6 +563,45 @@ fn fmt_validation_error_with_snippets(
         }
     }
     Ok(())
+}
+
+#[cfg(feature = "garde")]
+fn garde_leaf_segment(path: &garde::error::Path) -> Option<&str> {
+    // garde `Path::__iter()` yields segments leaf-first.
+    path.__iter().next().map(|(_k, s)| s.as_str())
+}
+
+#[cfg(feature = "garde")]
+fn format_garde_path_with_resolved_leaf(path: &garde::error::Path, resolved_leaf: &str) -> String {
+    use garde::error::Kind;
+
+    let mut segs: Vec<(Kind, String)> = path
+        .__iter()
+        .map(|(k, s)| (k, s.as_str().to_owned()))
+        .collect();
+    segs.reverse(); // root -> leaf
+
+    if let Some((_k, s)) = segs.last_mut() {
+        *s = resolved_leaf.to_owned();
+    }
+
+    let mut out = String::new();
+    for (i, (k, s)) in segs.iter().enumerate() {
+        match k {
+            Kind::Index => {
+                out.push('[');
+                out.push_str(s);
+                out.push(']');
+            }
+            _ => {
+                if i > 0 {
+                    out.push('.');
+                }
+                out.push_str(s);
+            }
+        }
+    }
+    out
 }
 impl std::error::Error for Error {}
 impl de::Error for Error {
