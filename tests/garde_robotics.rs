@@ -60,18 +60,14 @@ struct GeometricParameters {
 
 #[derive(Deserialize, Validate)]
 struct Root {
-    #[serde(rename = "opw_kinematics_geometric_parameters")]
     #[garde(dive)]
-    pub gp: GeometricParameters,
+    pub opw_kinematics_geometric_parameters: GeometricParameters,
     #[serde(default = "default_offsets", rename = "opw_kinematics_joint_offsets")]
     #[garde(length(min = 5, max = 6), inner(custom(validate_offset_f64)))]
     pub offsets: Vec<f64>,
-    #[serde(
-        default = "default_sign_corrections",
-        rename = "opw_kinematics_joint_sign_corrections"
-    )]
+    #[serde(default = "default_sign_corrections")]
     #[garde(length(min = 5, max = 6), inner(custom(validate_sign_correction_i8)))]
-    pub sign_corrections: Vec<i8>,
+    pub opw_kinematics_joint_sign_corrections: Vec<i8>,
     /// Optional; overrides gp.dof if present
     #[serde(default)]
     #[garde(range(min = 5, max = 6))]
@@ -79,7 +75,7 @@ struct Root {
 }
 
 #[test]
-fn test_opw_conf() {
+fn test_nan_in_conf() {
     let contents = r#"
 opw_kinematics_geometric_parameters:
   a1: .nan
@@ -102,11 +98,47 @@ dof: 6
         },
     );
     match root {
-        Ok(root) => {
+        Ok(_root) => {
             assert!(false, "Validation must fail - a1 is nan")
         }
         Err(err) => {
-            println!("Error: {}", err);
+            assert!(err.to_string().contains(
+                "^ validation error: must be finite for `opw_kinematics_geometric_parameters.a1`"),
+                    "Expected substring not found: {}", err);
+        }
+    }
+}
+
+#[test]
+fn test_invalid_sign_correction() {
+    let contents = r#"
+opw_kinematics_geometric_parameters:
+    a1: 0.15
+    a2: -0.10
+    b: 0.0
+    c1: 0.525
+    c2: 0.77
+    c3: 0.74
+    c4: 0.10
+opw_kinematics_joint_offsets: [0.0, 0.0, deg(-90.0), 0.0, 0.0, deg(180.0)]
+opw_kinematics_joint_sign_corrections: [1, 1, 0, -1, -1, -1]
+dof: 6    "#;
+
+    let root: Result<Root, Error> = serde_saphyr::from_str_with_options_valid(
+        &contents,
+        Options {
+            angle_conversions: true,
+            ..Default::default()
+        },
+    );
+    match root {
+        Ok(_root) => {
+            assert!(false, "Validation must fail - a1 is nan")
+        }
+        Err(err) => {
+            assert!(err.to_string().contains(
+                "^ validation error: must be -1 or 1 for `opw_kinematics_joint_sign_corrections[2]`"),
+                    "Expected substring not found: {}", err);
         }
     }
 }
