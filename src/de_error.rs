@@ -487,11 +487,6 @@ fn fmt_validation_error_with_snippets(
 
         let base_msg = format!("validation error: {entry} for `{path}`");
 
-        writeln!(f, "Path: {}", path)?;
-        for k in defined.keys() {
-            writeln!(f, "path: {}", k)?;
-        }
-
         let ref_loc = referenced.get(path).unwrap_or(&Location::UNKNOWN);
         let def_loc = defined.get(path).unwrap_or(&Location::UNKNOWN);
 
