@@ -26,7 +26,7 @@ annotate-snippets = "0.12"
 garde = { version = "0.22", optional = true, features = ["derive"] }
 
 [features]
-default = ["garde"]
+default = ["garde", "robotics"]
 
 # Enables integration with the `garde` validation crate.
 garde = ["dep:garde"]

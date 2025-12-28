@@ -487,14 +487,19 @@ fn fmt_validation_error_with_snippets(
 
         let base_msg = format!("validation error: {entry} for `{path}`");
 
-        let ref_loc = referenced.get(path).copied().unwrap_or(Location::UNKNOWN);
-        let def_loc = defined.get(path).copied().unwrap_or(Location::UNKNOWN);
+        writeln!(f, "Path: {}", path)?;
+        for k in defined.keys() {
+            writeln!(f, "path: {}", k)?;
+        }
+
+        let ref_loc = referenced.get(path).unwrap_or(&Location::UNKNOWN);
+        let def_loc = defined.get(path).unwrap_or(&Location::UNKNOWN);
 
         match (ref_loc, def_loc) {
-            (Location::UNKNOWN, Location::UNKNOWN) => {
+            (&Location::UNKNOWN, &Location::UNKNOWN) => {
                 write!(f, "{base_msg}")?;
             }
-            (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
+            (r, d) if r != &Location::UNKNOWN && (d == &Location::UNKNOWN || d == r) => {
                 crate::de_snipped::fmt_with_snippet_or_fallback(
                     f,
                     Level::ERROR,
@@ -505,7 +510,7 @@ fn fmt_validation_error_with_snippets(
                     crop_radius,
                 )?;
             }
-            (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
+            (r, d) if r == &Location::UNKNOWN && d != &Location::UNKNOWN => {
                 crate::de_snipped::fmt_with_snippet_or_fallback(
                     f,
                     Level::ERROR,

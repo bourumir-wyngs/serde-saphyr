@@ -44,6 +44,14 @@ struct Inner {
     b: String,
 }
 
+#[derive(Debug, Deserialize, Validate)]
+#[allow(dead_code)]
+struct RenamedFieldRoot {
+    #[serde(rename = "renamed_a")]
+    #[garde(length(min = 1))]
+    a: String,
+}
+
 #[test]
 fn from_str_with_options_valid_runs_garde_validation() {
     let yaml = "a: \"\"\n";
@@ -61,8 +69,26 @@ fn from_str_with_options_valid_runs_garde_validation() {
         "  |    ^ validation error: length is lower than 1 for `a`",
     );
     //println!("{rendered}");
-
     assert_eq!(rendered, expected);
+}
+
+#[test]
+fn serde_rename() {
+    let yaml = "renamed_a: \"\"\n";
+
+    let err = serde_saphyr::from_str_with_options_valid::<RenamedFieldRoot>(yaml, Default::default())
+        .expect_err("must fail validation");
+    let rendered = err.to_string();
+
+    // Garde paths are based on Rust field names, so the message should mention `a`.
+    assert!(
+        rendered.contains("for `a`"),
+        "expected garde path `a` in output, got: {rendered}"
+    );
+    assert!(
+        rendered.contains("^"),
+        ""
+    );
 }
 
 #[test]
