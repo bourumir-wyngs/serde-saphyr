@@ -19,8 +19,12 @@ LOG="miri-logs/miri-${TS}.log"
 export RUST_BACKTRACE=1
 export MIRI_BACKTRACE=1
 
-# Extra pointer tracking tends to improve diagnostics when Miri finds UB.
-export MIRIFLAGS="${MIRIFLAGS:-}-Zmiri-tag-raw-pointers -Zmiri-track-raw-pointers"
+# Note: Miri flags are unstable and change across nightly versions.
+# Do not enable extra flags by default; allow callers/CI to provide MIRIFLAGS.
+#
+# Example (opt-in):
+#   MIRIFLAGS="-Zmiri-track-raw-pointers" ./miri.sh
+export MIRIFLAGS="${MIRIFLAGS:-}"
 
 {
   echo "=== Miri run: ${TS} ==="
@@ -44,7 +48,7 @@ export MIRIFLAGS="${MIRIFLAGS:-}-Zmiri-tag-raw-pointers -Zmiri-track-raw-pointer
 # Run all tests under Miri; force serial execution and keep output.
 (
   set -x
-  cargo +nightly miri test --all-features \
+  cargo +nightly miri test --all-features "$@" \
     -- -Zunstable-options --report-time --test-threads=1 --nocapture
 ) 2>&1 | tee -a "$LOG"
 
