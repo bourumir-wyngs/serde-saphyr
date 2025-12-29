@@ -149,7 +149,7 @@ error: line 3 column 23: invalid here, validation error: length is lower than 2 
 4 |  
 ```
 
-Common Serde renames made to follow naming conventions (case changes, snake_case, kebab-case, r# stripping) are supported, as long as they do not introduce ambiguity. Arbitrary renames are not. Parsing and validation will still work, but error messages may be less informative. The integration is controlled by the Cargo feature `garde` (enabled by default).
+Common Serde renames made to follow naming conventions (case changes, snake_case, kebab-case, r# stripping) are supported, as long as they do not introduce ambiguity. Arbitrary renames are not. Parsing and validation will still work, but error messages for arbitrarily renamed fields are less informative. The integration of garde is controlled by the Cargo feature `garde` (enabled by default).
 
 
 If you prefer to validate without `garde` and want to ensure that location information is always available, use the heavier approach with [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html) wrapper instead.
