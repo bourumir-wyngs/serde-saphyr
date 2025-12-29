@@ -9,6 +9,15 @@ fn yaml_6xdy_two_null_documents() {
         return;
     }
     // Alternatively, parsers may keep empty docs as `None` when T = Option<_>.
-    assert_eq!(docs.len(), 2, "Expected two entries for two empty docs or none at all, got: {:?}", docs);
-    assert!(docs.iter().all(|d| d.is_none()), "Expected all entries to be None for empty docs, got: {:?}", docs);
+    assert_eq!(
+        docs.len(),
+        2,
+        "Expected two entries for two empty docs or none at all, got: {:?}",
+        docs
+    );
+    assert!(
+        docs.iter().all(|d| d.is_none()),
+        "Expected all entries to be None for empty docs, got: {:?}",
+        docs
+    );
 }

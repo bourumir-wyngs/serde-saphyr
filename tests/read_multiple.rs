@@ -1,7 +1,9 @@
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, PartialEq)]
-struct Simple { id: usize }
+struct Simple {
+    id: usize,
+}
 
 #[test]
 fn read_multiple_documents_iterator_skips_null_and_reads_values() {
@@ -11,10 +13,15 @@ fn read_multiple_documents_iterator_skips_null_and_reads_values() {
 
     let iter = serde_saphyr::read::<_, Simple>(&mut reader);
 
-    let values: Vec<Simple> = iter.map(|r| r.expect("unexpected error while reading docs"))
-                                  .collect();
+    let values: Vec<Simple> = iter
+        .map(|r| r.expect("unexpected error while reading docs"))
+        .collect();
 
-    assert_eq!(values.len(), 3, "iterator should skip null-like/empty documents");
+    assert_eq!(
+        values.len(),
+        3,
+        "iterator should skip null-like/empty documents"
+    );
     assert_eq!(values[0], Simple { id: 1 });
     assert_eq!(values[1], Simple { id: 2 });
     assert_eq!(values[2], Simple { id: 3 });
@@ -28,8 +35,9 @@ fn read_with_options_iterator_works_the_same() {
     let opts = serde_saphyr::Options::default();
     let iter = serde_saphyr::read_with_options::<_, Simple>(&mut reader, opts);
 
-    let values: Vec<Simple> = iter.map(|r| r.expect("unexpected error while reading docs"))
-                                  .collect();
+    let values: Vec<Simple> = iter
+        .map(|r| r.expect("unexpected error while reading docs"))
+        .collect();
 
     assert_eq!(values.len(), 2);
     assert_eq!(values[0], Simple { id: 10 });

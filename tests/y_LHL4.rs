@@ -11,5 +11,8 @@ fn yaml_lhl4_invalid_tag_should_fail() {
 !invalid{}tag scalar
 "#;
     let result: Result<Dummy, _> = serde_saphyr::from_str(y);
-    assert!(result.is_err(), "LHL4 should fail to parse due to invalid tag");
+    assert!(
+        result.is_err(),
+        "LHL4 should fail to parse due to invalid tag"
+    );
 }

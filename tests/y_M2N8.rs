@@ -140,7 +140,11 @@ impl std::fmt::Display for Canon {
                 f.write_str("[")?;
                 let mut first = true;
                 for item in items {
-                    if !first { f.write_str(", ")?; } else { first = false; }
+                    if !first {
+                        f.write_str(", ")?;
+                    } else {
+                        first = false;
+                    }
                     write!(f, "{}", item)?;
                 }
                 f.write_str("]")
@@ -149,7 +153,11 @@ impl std::fmt::Display for Canon {
                 f.write_str("{")?;
                 let mut first = true;
                 for (k, v) in entries {
-                    if !first { f.write_str(", ")?; } else { first = false; }
+                    if !first {
+                        f.write_str(", ")?;
+                    } else {
+                        first = false;
+                    }
                     write!(f, "{}: {}", k, v)?;
                 }
                 f.write_str("}")
@@ -172,8 +180,7 @@ fn yaml_m2n8_case1_sequence_with_explicit_empty_key_parses() {
 
     // Concretely assert the parsed structure: map key should be None (empty/null scalar) and value "x".
     type Item = std::collections::HashMap<Option<String>, String>;
-    let docs: Vec<Item> = serde_saphyr::from_str(y1)
-        .expect("M2N8 case1 should parse");
+    let docs: Vec<Item> = serde_saphyr::from_str(y1).expect("M2N8 case1 should parse");
 
     assert_eq!(docs.len(), 1, "expected one sequence element");
     let map = &docs[0];
@@ -191,8 +198,7 @@ fn yaml_m2n8_case2_mapping_with_complex_key_shape() {
     let y2 = "? []: x\n:\n";
 
     use std::collections::HashMap;
-    let doc: HashMap<Canon, Canon> = serde_saphyr::from_str(y2)
-        .expect("M2N8 case2 should parse");
+    let doc: HashMap<Canon, Canon> = serde_saphyr::from_str(y2).expect("M2N8 case2 should parse");
 
     // Build the expected complex key: a mapping with one pair: [] -> "x"
     let complex_key = Canon::Map(vec![(Canon::Seq(vec![]), Canon::String("x".to_string()))]);
@@ -201,17 +207,23 @@ fn yaml_m2n8_case2_mapping_with_complex_key_shape() {
     // Others may also include a second entry with an explicit empty key mapping to null.
     match doc.len() {
         1 => {
-            let v1 = doc.get(&complex_key).expect("expected complex mapping key {[]: x}");
+            let v1 = doc
+                .get(&complex_key)
+                .expect("expected complex mapping key {[]: x}");
             // The value side is empty in the YAML after the complex key, which is YAML null.
             // We assert it is deserialized as Canon::Null.
             assert_eq!(v1, &Canon::Null, "value for complex key should be null");
         }
         2 => {
-            let v1 = doc.get(&complex_key).expect("expected complex mapping key {[]: x}");
+            let v1 = doc
+                .get(&complex_key)
+                .expect("expected complex mapping key {[]: x}");
             // The value side is empty after the complex key -> YAML null.
             assert_eq!(v1, &Canon::Null, "value for complex key should be null");
             // Some parser event shapes also surface an additional empty key with empty value: null: null.
-            let v2 = doc.get(&Canon::Null).expect("expected empty (null) key present");
+            let v2 = doc
+                .get(&Canon::Null)
+                .expect("expected empty (null) key present");
             assert_eq!(v2, &Canon::Null, "value for empty key should be null");
         }
         n => panic!("unexpected number of entries: {}", n),

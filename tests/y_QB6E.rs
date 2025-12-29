@@ -16,5 +16,8 @@ b
 c""#;
 
     let r: Result<Doc, _> = serde_saphyr::from_str(y);
-    assert!(r.is_err(), "Parser accepted malformed multiline double-quoted scalar; per test-suite this should fail. If this keeps passing, mark as #[ignore] and note parser limitation.");
+    assert!(
+        r.is_err(),
+        "Parser accepted malformed multiline double-quoted scalar; per test-suite this should fail. If this keeps passing, mark as #[ignore] and note parser limitation."
+    );
 }

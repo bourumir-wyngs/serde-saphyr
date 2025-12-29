@@ -10,11 +10,14 @@ fn yaml_le5a_flow_nodes_with_tags_and_alias() {
 - !!str
 "#;
     let v: Vec<String> = serde_saphyr::from_str(y).expect("failed to parse LE5A");
-    assert_eq!(v, vec![
-        "a".to_string(),
-        "b".to_string(),
-        "c".to_string(),
-        "c".to_string(),
-        "".to_string(),
-    ]);
+    assert_eq!(
+        v,
+        vec![
+            "a".to_string(),
+            "b".to_string(),
+            "c".to_string(),
+            "c".to_string(),
+            "".to_string(),
+        ]
+    );
 }

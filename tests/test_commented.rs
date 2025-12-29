@@ -1,7 +1,7 @@
-use std::collections::HashMap;
 use serde::Serialize;
+use std::collections::HashMap;
 
-use serde_saphyr::{to_string, Commented, FlowMap, FlowSeq, RcAnchor};
+use serde_saphyr::{Commented, FlowMap, FlowSeq, RcAnchor, to_string};
 
 #[test]
 fn commented_scalar_block_style() {
@@ -15,7 +15,9 @@ fn commented_scalar_as_map_value_inline() {
     struct Wrap {
         k: Commented<i32>,
     }
-    let v = Wrap { k: Commented(5, "hi".into()) };
+    let v = Wrap {
+        k: Commented(5, "hi".into()),
+    };
     let y = to_string(&v).unwrap();
     assert_eq!(y, "k: 5 # hi\n");
 }
@@ -77,7 +79,7 @@ fn test_commented_rc() -> anyhow::Result<()> {
 
     let notable = Notable {
         value: 127,
-        notable_value: Commented(RcAnchor::wrapping(541), "comment".to_string())
+        notable_value: Commented(RcAnchor::wrapping(541), "comment".to_string()),
     };
 
     let yaml = serde_saphyr::to_string(&notable)?;

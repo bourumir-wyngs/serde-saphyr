@@ -10,7 +10,14 @@ fn y_qt73() {
 
     let res: Result<Value, _> = serde_saphyr::from_str(yaml);
     match res {
-        Ok(val) => assert_eq!(val, Value::Null, "Empty stream should deserialize into JSON null"),
-        Err(e) => panic!("Expected Ok(Value::Null) for empty stream, got error: {}", e),
+        Ok(val) => assert_eq!(
+            val,
+            Value::Null,
+            "Empty stream should deserialize into JSON null"
+        ),
+        Err(e) => panic!(
+            "Expected Ok(Value::Null) for empty stream, got error: {}",
+            e
+        ),
     }
 }

@@ -33,7 +33,9 @@ fn yaml_9mmw_single_pair_implicit_entries() {
     }
     match &v[2][0] {
         OnePairMap::Struct(m) => {
-            let key = Sk { json: "like".to_string() };
+            let key = Sk {
+                json: "like".to_string(),
+            };
             assert_eq!(m.get(&key).map(String::as_str), Some("adjacent"));
         }
         _ => panic!("expected struct key for third entry"),

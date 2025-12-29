@@ -1,8 +1,8 @@
 use indoc::indoc;
 use serde::Deserialize;
 
-use std::fmt::Debug;
 use serde_saphyr::Error;
+use std::fmt::Debug;
 
 fn test_de<T>(yaml: &str, expected: &T)
 where
@@ -11,7 +11,6 @@ where
     let deserialized: T = serde_saphyr::from_str(yaml).unwrap();
     assert_eq!(*expected, deserialized);
 }
-
 
 #[derive(Deserialize, PartialEq, Debug)]
 enum Inner {
@@ -38,8 +37,12 @@ fn test_alias_in_struct_variant() {
         "
     };
     let expected = Wrapper {
-        first: Inner::A { val: "shared".to_owned() },
-        second: Inner::A { val: "shared".to_owned() },
+        first: Inner::A {
+            val: "shared".to_owned(),
+        },
+        second: Inner::A {
+            val: "shared".to_owned(),
+        },
     };
     test_de(yaml, &expected);
 }
@@ -66,7 +69,10 @@ fn test_alias_in_tuple_variant() {
         num: *first
         "
     };
-    let expected = TupleEnumWrapper { item: TupleEnum::Variant(1, 2), num: 1 };
+    let expected = TupleEnumWrapper {
+        item: TupleEnum::Variant(1, 2),
+        num: 1,
+    };
     test_de(yaml, &expected);
 }
 
@@ -95,7 +101,11 @@ fn test_nested_enum_alias_error() {
     };
     let result: Result<Outer, Error> = serde_saphyr::from_str(yaml);
     let msg = result.unwrap_err().to_string();
-    assert!(msg.contains("unknown variant"), "unexpected message: {}", msg);
+    assert!(
+        msg.contains("unknown variant"),
+        "unexpected message: {}",
+        msg
+    );
 }
 
 #[derive(Deserialize, Debug)]
@@ -104,5 +114,3 @@ struct StructWithOuter {
     outer: Outer,
     alias: u8,
 }
-
-

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use annotate_snippets::{renderer::DecorStyle, AnnotationKind, Level, Renderer, Snippet};
+use annotate_snippets::{AnnotationKind, Level, Renderer, Snippet, renderer::DecorStyle};
 
 use crate::Location;
 
@@ -84,7 +84,11 @@ pub(crate) fn fmt_with_snippet_or_fallback(
                 .line_start(window_start_row)
                 .path(path)
                 .fold(false)
-                .annotation(AnnotationKind::Primary.span(local_start..local_end).label(msg)),
+                .annotation(
+                    AnnotationKind::Primary
+                        .span(local_start..local_end)
+                        .label(msg),
+                ),
         )];
 
     // Prefer rustc-like caret markers and avoid ANSI colors in `Display` output.
@@ -182,12 +186,7 @@ pub(crate) fn fmt_snippet_window_or_fallback(
             if msg.is_empty() {
                 writeln!(f, "  | {space:>caret_chars$}^", space = "")?;
             } else {
-                writeln!(
-                    f,
-                    "  | {space:>caret_chars$}^ {msg}",
-                    space = "",
-                    msg = msg
-                )?;
+                writeln!(f, "  | {space:>caret_chars$}^ {msg}", space = "", msg = msg)?;
             }
         }
 
@@ -252,11 +251,7 @@ fn crop_window_text(
         let next_nl = window_text[old_pos..].find('\n').map(|i| old_pos + i);
         let (line_raw, had_nl, consumed) = match next_nl {
             Some(nl) => (&window_text[old_pos..nl], true, (nl - old_pos) + 1),
-            None => (
-                &window_text[old_pos..],
-                false,
-                window_text.len() - old_pos,
-            ),
+            None => (&window_text[old_pos..], false, window_text.len() - old_pos),
         };
 
         // Normalize CRLF: strip a trailing '\r' from the line content if present.

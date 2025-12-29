@@ -1,10 +1,10 @@
 #[cfg(test)]
 mod tests {
     use serde_json::Value;
-    use std::collections::BTreeMap;
-    use serde_saphyr::{from_str_with_options, Options};
-    use serde_saphyr::options::DuplicateKeyPolicy;
     use serde_saphyr::Error;
+    use serde_saphyr::options::DuplicateKeyPolicy;
+    use serde_saphyr::{Options, from_str_with_options};
+    use std::collections::BTreeMap;
 
     /// Parse a YAML mapping into a BTreeMap<String, serde_json::Value>,
     /// configuring the deserializer to use DuplicateKeyPolicy::FirstWins.
@@ -108,10 +108,7 @@ a: null
 b: ok
 "#;
         let map = parse_first_wins_map(yaml).expect("parse ok");
-        assert_eq!(
-            map.get("a"),
-            Some(&serde_json::json!({ "keep": true }))
-        );
+        assert_eq!(map.get("a"), Some(&serde_json::json!({ "keep": true })));
         assert_eq!(map.get("b"), Some(&Value::from("ok")));
         assert_eq!(map.len(), 2);
     }

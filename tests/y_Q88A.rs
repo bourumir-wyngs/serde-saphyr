@@ -125,7 +125,10 @@ mod tests {
 
         // 2) Assert exact 'from' and 'tree' contents.
         assert_eq!(case.from, FROM_EXPECTED, "'from' must match exactly");
-        assert_eq!(case.tree, TREE_EXPECTED, "'tree' block scalar must match exactly");
+        assert_eq!(
+            case.tree, TREE_EXPECTED,
+            "'tree' block scalar must match exactly"
+        );
 
         // 3) Basic metadata checks.
         assert_eq!(case.name, "Spec Example 7.23. Flow Content");

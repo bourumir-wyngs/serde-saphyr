@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 /// Serialization public API is defined at crate root
-
 pub use anchors::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
 pub use de::{Budget, DuplicateKeyPolicy, Error, Options};
 pub use location::Location;
@@ -42,10 +41,10 @@ mod tags;
 
 pub(crate) mod ser_quoting;
 
-#[cfg(feature = "robotics")]
-pub mod robotics;
 mod buffered_input;
 mod location;
+#[cfg(feature = "robotics")]
+pub mod robotics;
 // ---------------- Serialization (public API) ----------------
 
 /// Serialize a value to a YAML `String`.
@@ -138,7 +137,7 @@ pub fn to_io_writer_with_options<W: std::io::Write, T: serde::Serialize>(
         }
     }
     let mut adapter = Adapter {
-        output: output,
+        output,
         last_err: None,
     };
     let mut ser = crate::ser::YamlSer::with_options(&mut adapter, &mut options);
@@ -376,7 +375,7 @@ where
     T: DeserializeOwned + garde::Validate,
     <T as garde::Validate>::Context: Default,
 {
-    from_str_with_options_valid(&input, Options::default())
+    from_str_with_options_valid(input, Options::default())
 }
 
 /// Deserialize a single YAML document with configurable [`Options`] and validate it with `garde`.
@@ -409,7 +408,9 @@ where
 /// The error message will contain a snippet with exact location information, and if the
 /// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
 #[cfg(feature = "garde")]
-pub fn from_multiple_valid<T: DeserializeOwned + garde::Validate>(input: &str) -> Result<Vec<T>, Error>
+pub fn from_multiple_valid<T: DeserializeOwned + garde::Validate>(
+    input: &str,
+) -> Result<Vec<T>, Error>
 where
     <T as garde::Validate>::Context: Default,
 {
@@ -512,7 +513,10 @@ where
 /// The error message will contain a snippet with exact location information, and if the
 /// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
 #[cfg(feature = "garde")]
-pub fn from_slice_with_options_valid<T: DeserializeOwned + garde::Validate>(bytes: &[u8], options: Options) -> Result<T, Error>
+pub fn from_slice_with_options_valid<T: DeserializeOwned + garde::Validate>(
+    bytes: &[u8],
+    options: Options,
+) -> Result<T, Error>
 where
     <T as garde::Validate>::Context: Default,
 {
@@ -552,7 +556,10 @@ where
 /// As there is no access to the full text of the document, the error message will not contain
 /// a snippet.
 #[cfg(feature = "garde")]
-pub fn from_reader_with_options_valid<R: std::io::Read, T>(reader: R, options: Options) -> Result<T, Error>
+pub fn from_reader_with_options_valid<R: std::io::Read, T>(
+    reader: R,
+    options: Options,
+) -> Result<T, Error>
 where
     T: DeserializeOwned + garde::Validate,
     <T as garde::Validate>::Context: Default,

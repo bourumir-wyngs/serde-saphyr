@@ -40,9 +40,9 @@ use std::fmt::{self, Write};
 use std::rc::{Rc, Weak as RcWeak};
 use std::sync::{Arc, Weak as ArcWeak};
 
-use crate::serializer_options::{SerializerOptions, FOLDED_WRAP_CHARS, MIN_FOLD_CHARS};
+use crate::serializer_options::{FOLDED_WRAP_CHARS, MIN_FOLD_CHARS, SerializerOptions};
 use crate::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
-use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use nohash_hasher::BuildNoHashHasher;
 
 // ------------------------------------------------------------
@@ -250,7 +250,7 @@ impl<T: Serialize> Serialize for RcAnchor<T> {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
         // delegate to tuple-struct the serializer knows how to intercept
         let mut ts = s.serialize_tuple_struct(NAME_TUPLE_ANCHOR, 2)?;
-        let ptr = Rc::as_ptr(&self.0) as *const T as usize;
+        let ptr = Rc::as_ptr(&self.0) as usize;
         ts.serialize_field(&ptr)?;
         ts.serialize_field(&*self.0)?;
         ts.end()
@@ -259,7 +259,7 @@ impl<T: Serialize> Serialize for RcAnchor<T> {
 impl<T: Serialize> Serialize for ArcAnchor<T> {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
         let mut ts = s.serialize_tuple_struct(NAME_TUPLE_ANCHOR, 2)?;
-        let ptr = Arc::as_ptr(&self.0) as *const T as usize;
+        let ptr = Arc::as_ptr(&self.0) as usize;
         ts.serialize_field(&ptr)?;
         ts.serialize_field(&*self.0)?;
         ts.end()
@@ -269,7 +269,7 @@ impl<T: Serialize> Serialize for RcWeakAnchor<T> {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
         let up = self.0.upgrade();
         let mut ts = s.serialize_tuple_struct(NAME_TUPLE_WEAK, 3)?;
-        let ptr = self.0.as_ptr() as *const T as usize;
+        let ptr = self.0.as_ptr() as usize;
         ts.serialize_field(&ptr)?;
         ts.serialize_field(&up.is_some())?;
         if let Some(rc) = up {
@@ -284,7 +284,7 @@ impl<T: Serialize> Serialize for ArcWeakAnchor<T> {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
         let up = self.0.upgrade();
         let mut ts = s.serialize_tuple_struct(NAME_TUPLE_WEAK, 3)?;
-        let ptr = self.0.as_ptr() as *const T as usize;
+        let ptr = self.0.as_ptr() as usize;
         ts.serialize_field(&ptr)?;
         ts.serialize_field(&up.is_some())?;
         if let Some(arc) = up {
@@ -408,7 +408,7 @@ pub struct YamlSer<'a, W: Write> {
 
     // Anchors:
     /// Map from pointer identity to anchor id.
-    anchors: HashMap<usize, AnchorId, BuildNoHashHasher<usize>>, 
+    anchors: HashMap<usize, AnchorId, BuildNoHashHasher<usize>>,
     /// Next numeric id to use when generating anchor names (1-based).
     next_anchor_id: AnchorId,
     /// If set, the next scalar/complex node to be emitted will be prefixed with this `&anchor`.
@@ -475,7 +475,7 @@ impl<'a, W: Write> YamlSer<'a, W> {
             pending_str_style: None,
             pending_inline_comment: None,
             tagged_enums: false,
-                        empty_as_braces: true,
+            empty_as_braces: true,
             prefer_block_scalars: true,
             pending_inline_map: false,
             pending_space_after_colon: false,
@@ -637,7 +637,11 @@ impl<'a, W: Write> YamlSer<'a, W> {
                     self.out.write_str(slice)?;
                     self.newline()?;
                     // Advance start: skip the whitespace if we broke at space
-                    start = if let Some(sp) = last_space_byte { sp + 1 } else { break_at };
+                    start = if let Some(sp) = last_space_byte {
+                        sp + 1
+                    } else {
+                        break_at
+                    };
                     // Reset trackers starting at new segment. We intentionally do not try
                     // to recompute `col` relative to the current `i` because `start` may
                     // have advanced past `i` when we broke at the current whitespace.
@@ -1033,7 +1037,9 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
                     let spaces = self.indent_step * body_base;
                     if spaces > 0 {
                         indent_buf.reserve(spaces);
-                        for _ in 0..spaces { indent_buf.push(' '); }
+                        for _ in 0..spaces {
+                            indent_buf.push(' ');
+                        }
                     }
                     let indent_str = indent_buf.as_str();
 
@@ -1093,16 +1099,15 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
         }
         // Special-case: prefer single-quoted style for select 1-char punctuation to
         // match expected YAML output in tests ('.', '#', '-').
-        if v.len() == 1 {
-            if let Some(ch) = v.chars().next() {
-                if ch == '.' || ch == '#' || ch == '-' {
-                    self.out.write_char('\'')?;
-                    self.out.write_char(ch)?;
-                    self.out.write_char('\'')?;
-                    self.write_end_of_scalar()?;
-                    return Ok(());
-                }
-            }
+        if v.len() == 1
+            && let Some(ch) = v.chars().next()
+            && (ch == '.' || ch == '#' || ch == '-')
+        {
+            self.out.write_char('\'')?;
+            self.out.write_char(ch)?;
+            self.out.write_char('\'')?;
+            self.write_end_of_scalar()?;
+            return Ok(());
         }
         self.write_plain_or_quoted_value(v)?;
         self.write_end_of_scalar()?;
@@ -1445,8 +1450,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
             } else {
                 base
             };
-            let inline_value_start_flag = was_inline_value && self.empty_as_braces &&
-                !inline_first;
+            let inline_value_start_flag = was_inline_value && self.empty_as_braces && !inline_first;
             Ok(MapSer {
                 ser: self,
                 depth: depth_next,
@@ -2135,7 +2139,7 @@ impl<'a, 'b, W: Write> SerializeStructVariant for StructVariantSer<'a, 'b, W> {
 struct UsizeCapture {
     v: Option<usize>,
 }
-impl<'a> Serializer for &'a mut UsizeCapture {
+impl Serializer for &mut UsizeCapture {
     type Ok = ();
     type Error = Error;
 
@@ -2293,7 +2297,7 @@ impl UsizeCapture {
 struct BoolCapture {
     v: Option<bool>,
 }
-impl<'a> Serializer for &'a mut BoolCapture {
+impl Serializer for &mut BoolCapture {
     type Ok = ();
     type Error = Error;
 
@@ -2440,7 +2444,7 @@ impl BoolCapture {
 struct StrCapture {
     s: Option<String>,
 }
-impl<'a> Serializer for &'a mut StrCapture {
+impl Serializer for &mut StrCapture {
     type Ok = ();
     type Error = Error;
 

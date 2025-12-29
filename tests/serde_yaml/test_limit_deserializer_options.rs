@@ -10,7 +10,7 @@ fn custom_recursion_limit_exceeded() {
     let options = Options {
         budget: Some(Budget {
             max_depth: 2,
-            .. Budget::default()
+            ..Budget::default()
         }),
         ..Options::default()
     };
@@ -29,7 +29,7 @@ fn custom_alias_limit_exceeded() {
     let options = Options {
         budget: Some(Budget {
             max_aliases: 2,
-            .. Budget::default()
+            ..Budget::default()
         }),
         ..Options::default()
     };

@@ -23,7 +23,10 @@ fn internally_tagged_enum_sequence_parses() {
         shapes,
         vec![
             Shape::Circle { radius: 2.5 },
-            Shape::Rectangle { width: 3.0, height: 4.0 },
+            Shape::Rectangle {
+                width: 3.0,
+                height: 4.0
+            },
         ]
     );
 }
@@ -85,7 +88,10 @@ items:
             name: "sample".to_string(),
             items: vec![
                 Shape::Circle { radius: 1.25 },
-                Shape::Rectangle { width: 2.0, height: 3.0 },
+                Shape::Rectangle {
+                    width: 2.0,
+                    height: 3.0
+                },
             ],
         }
     );

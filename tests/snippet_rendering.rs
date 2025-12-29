@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use serde_saphyr::{from_str, from_str_with_options, Options};
+use serde_saphyr::{Options, from_str, from_str_with_options};
 
 /// Specialized regression test for snippet rendering.
 ///
@@ -156,8 +156,7 @@ fn snippet_crops_very_long_lines_around_error_column() {
     let mut opts = Options::default();
     opts.crop_radius = 10;
 
-    let err =
-        from_str_with_options::<Doc>(yaml, opts).expect_err("unknown anchor should error");
+    let err = from_str_with_options::<Doc>(yaml, opts).expect_err("unknown anchor should error");
     let rendered = err.to_string();
 
     assert!(
@@ -197,4 +196,3 @@ fn snippet_crops_very_long_lines_around_error_column() {
         "expected cropped snippet to omit the full long 'after' string, got:\n{rendered}"
     );
 }
-

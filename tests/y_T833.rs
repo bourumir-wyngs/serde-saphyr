@@ -5,5 +5,9 @@
 fn y_t833_flow_mapping_missing_comma_should_error() {
     let y = "---\n{\n foo: 1\n bar: 2 }\n";
     let r: Result<serde::de::IgnoredAny, _> = serde_saphyr::from_str(y);
-    assert!(r.is_err(), "Parser unexpectedly accepted flow mapping without comma: {:?}", r);
+    assert!(
+        r.is_err(),
+        "Parser unexpectedly accepted flow mapping without comma: {:?}",
+        r
+    );
 }

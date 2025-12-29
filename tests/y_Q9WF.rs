@@ -1,5 +1,5 @@
-use std::collections::BTreeMap;
 use serde::Deserialize;
+use std::collections::BTreeMap;
 
 // Q9WF: Separation Spaces with complex key (flow mapping used as a mapping key)
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
@@ -29,11 +29,19 @@ fn yaml_q9wf_complex_key_flow_mapping_as_key() {
 
     assert_eq!(map.len(), 1);
 
-    let expected_key = PlayerKey { first: "Sammy".into(), last: "Sosa".into() };
-    let stats = map.get(&expected_key)
+    let expected_key = PlayerKey {
+        first: "Sammy".into(),
+        last: "Sosa".into(),
+    };
+    let stats = map
+        .get(&expected_key)
         .expect("expected key { first: Sammy, last: Sosa } to exist");
 
     assert_eq!(stats.hr, 65);
     // Floating point comparison allowing minor representation differences.
-    assert!((stats.avg - 0.278).abs() < 1e-12, "expected avg ~= 0.278, got {}", stats.avg);
+    assert!(
+        (stats.avg - 0.278).abs() < 1e-12,
+        "expected avg ~= 0.278, got {}",
+        stats.avg
+    );
 }

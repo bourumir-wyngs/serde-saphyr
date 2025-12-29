@@ -1,5 +1,5 @@
 use serde::Serialize;
-use serde_saphyr::{to_string, FlowMap};
+use serde_saphyr::{FlowMap, to_string};
 use std::collections::BTreeMap;
 
 #[derive(Serialize)]
@@ -39,8 +39,10 @@ fn test_flow_map_round_trip() -> Result<(), Box<dyn std::error::Error>> {
 
     assert_eq!(from_yaml, f, "Deserialized value should equal the original");
 
-    assert!(yaml.trim_start().starts_with('{'),
-        "Expected flow-style YAML mapping, got:\n{yaml}");
+    assert!(
+        yaml.trim_start().starts_with('{'),
+        "Expected flow-style YAML mapping, got:\n{yaml}"
+    );
 
     Ok(())
 }

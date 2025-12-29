@@ -1,6 +1,6 @@
 // Q8AD: Double Quoted Line Breaks [1.3]
 #[test]
-fn yaml_q8ad_double_quoted_line_breaks() -> anyhow::Result<()>{
+fn yaml_q8ad_double_quoted_line_breaks() -> anyhow::Result<()> {
     let yaml: &str = "\
 ---\n\
 \"folded \n\

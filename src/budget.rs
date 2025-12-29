@@ -7,7 +7,6 @@ use ahash::HashSetExt;
 use saphyr_parser::{Event, Parser, ScalarStyle, ScanError};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
-use std::borrow::Cow;
 use std::collections::HashSet;
 
 /// Budgets for a streaming YAML scan.
@@ -409,13 +408,11 @@ impl BudgetEnforcer {
     }
 
     fn record_anchor(&mut self, anchor_id: usize) -> Result<(), BudgetBreach> {
-        if anchor_id != 0 {
-            if self.defined_anchors.insert(anchor_id) {
-                let count = self.defined_anchors.len();
-                if count > self.budget.max_anchors {
-                    self.report.anchors = count;
-                    return Err(BudgetBreach::Anchors { anchors: count });
-                }
+        if anchor_id != 0 && self.defined_anchors.insert(anchor_id) {
+            let count = self.defined_anchors.len();
+            if count > self.budget.max_anchors {
+                self.report.anchors = count;
+                return Err(BudgetBreach::Anchors { anchors: count });
             }
         }
         self.report.anchors = self.defined_anchors.len();
@@ -424,13 +421,13 @@ impl BudgetEnforcer {
 
     fn handle_scalar(
         &mut self,
-        value: &Cow<'_, str>,
+        value: &str,
         style: &ScalarStyle,
         has_tag: bool,
     ) -> Result<(), BudgetBreach> {
         if let Some(ContainerState::Mapping { expecting_key, .. }) = self.containers.last_mut() {
             if *expecting_key {
-                if !has_tag && matches!(style, ScalarStyle::Plain) && value.as_ref() == "<<" {
+                if !has_tag && matches!(style, ScalarStyle::Plain) && value == "<<" {
                     self.report.merge_keys += 1;
                     if self.report.merge_keys > self.budget.max_merge_keys {
                         return Err(BudgetBreach::MergeKeys {
@@ -515,16 +512,14 @@ impl BudgetEnforcer {
 
         if self.budget.enforce_alias_anchor_ratio
             && self.report.aliases >= self.budget.alias_anchor_min_aliases
-        {
-            if self.report.anchors == 0
+            && (self.report.anchors == 0
                 || self.report.aliases
-                    > self.budget.alias_anchor_ratio_multiplier * self.report.anchors
-            {
-                self.report.breached = Some(BudgetBreach::AliasAnchorRatio {
-                    aliases: self.report.aliases,
-                    anchors: self.report.anchors,
-                });
-            }
+                    > self.budget.alias_anchor_ratio_multiplier * self.report.anchors)
+        {
+            self.report.breached = Some(BudgetBreach::AliasAnchorRatio {
+                aliases: self.report.aliases,
+                anchors: self.report.anchors,
+            });
         }
 
         self.report
@@ -550,10 +545,10 @@ pub fn check_yaml_budget(
     budget: Budget,
     policy: EnforcingPolicy,
 ) -> Result<BudgetReport, ScanError> {
-    let mut parser = Parser::new_from_str(input);
+    let parser = Parser::new_from_str(input);
     let mut enforcer = BudgetEnforcer::new(budget, policy);
 
-    while let Some(item) = parser.next() {
+    for item in parser {
         let (ev, _span) = item?;
         if let Err(breach) = enforcer.observe(&ev) {
             let mut report = enforcer.into_report();

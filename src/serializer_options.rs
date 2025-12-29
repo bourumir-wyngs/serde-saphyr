@@ -24,8 +24,8 @@ use crate::ser_error::Error;
 
 #[derive(Clone, Copy)]
 pub struct SerializerOptions {
-    /// If true, empty maps are emitted as braces {} and empty lists as []  (this is the default). 
-    /// Such form is equally valid YAML, allows to tell empty from null and may be easier for a 
+    /// If true, empty maps are emitted as braces {} and empty lists as []  (this is the default).
+    /// Such form is equally valid YAML, allows to tell empty from null and may be easier for a
     /// human to grasp.
     pub empty_as_braces: bool,
     /// Number of spaces to indent per nesting level when emitting block-style collections.
@@ -76,7 +76,9 @@ pub(crate) const FOLDED_WRAP_CHARS: usize = 80;
 impl SerializerOptions {
     pub(crate) fn consistent(&self) -> Result<(), Error> {
         if self.indent_step == 0 {
-            return Err(Error::InvalidOptions("Invalid indent step must be positive".to_string()));
+            return Err(Error::InvalidOptions(
+                "Invalid indent step must be positive".to_string(),
+            ));
         }
         Ok(())
     }
@@ -92,7 +94,7 @@ impl Default for SerializerOptions {
             folded_wrap_chars: FOLDED_WRAP_CHARS,
             tagged_enums: false,
             empty_as_braces: true,
-            prefer_block_scalars: true
+            prefer_block_scalars: true,
         }
     }
 }

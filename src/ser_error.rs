@@ -51,17 +51,13 @@ impl From<io::Error> for Error {
     }
 }
 
-impl From<String> for Error
-{
+impl From<String> for Error {
     fn from(message: String) -> Self {
-        Error::Message {
-            msg: message,
-        }
+        Error::Message { msg: message }
     }
 }
 
-impl From<&String> for Error
-{
+impl From<&String> for Error {
     fn from(message: &String) -> Self {
         Error::Message {
             msg: message.clone(),
@@ -69,8 +65,7 @@ impl From<&String> for Error
     }
 }
 
-impl From<&str> for Error
-{
+impl From<&str> for Error {
     fn from(message: &str) -> Self {
         Error::Message {
             msg: message.to_string(),

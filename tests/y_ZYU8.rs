@@ -8,7 +8,7 @@
 // serde-saphyr does not support lots of directives anyway as saphyr-parser does not surface them.
 #[ignore]
 #[test]
-fn yaml_zyu8_directive_variant_yaml11_null_document() -> anyhow::Result<()>{
+fn yaml_zyu8_directive_variant_yaml11_null_document() -> anyhow::Result<()> {
     let y = "%YAML1.1\n---\n";
     let v: Option<i32> = serde_saphyr::from_str(y)?;
     assert!(v.is_none(), "Expected null document to deserialize to None");

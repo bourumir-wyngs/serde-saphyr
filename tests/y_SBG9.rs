@@ -29,6 +29,8 @@ fn flow_sequence_in_flow_value() {
 
     // Assert the mapping has a single entry: key "a" -> value ["b", "c"]
     assert_eq!(fm.r.len(), 1);
-    assert_eq!(fm.r.get("a").cloned(), Some(vec!["b".to_string(), "c".to_string()]));
+    assert_eq!(
+        fm.r.get("a").cloned(),
+        Some(vec!["b".to_string(), "c".to_string()])
+    );
 }
-

@@ -7,5 +7,9 @@ use serde_json::Value;
 fn y_sr86_anchor_plus_alias_should_fail() {
     let y = "key1: &a value\nkey2: &b *a\n";
     let r: Result<Value, _> = serde_saphyr::from_str(y);
-    assert!(r.is_err(), "Parser accepted anchor+alias combination in a value: {:?}", r);
+    assert!(
+        r.is_err(),
+        "Parser accepted anchor+alias combination in a value: {:?}",
+        r
+    );
 }

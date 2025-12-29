@@ -1,6 +1,6 @@
+use serde::Serialize;
 use std::io;
 use std::io::Write;
-use serde::Serialize;
 
 #[derive(Serialize)]
 struct Payload {
@@ -34,13 +34,13 @@ fn to_io_writer_propagates_io_error() {
             let msg = error.to_string();
             assert!(msg.contains("boom"), "unexpected IO error message: {msg}");
         }
-        other => panic!(
-            "expected IO error variant, got: {} ({other:?})",
-            other
-        ),
+        other => panic!("expected IO error variant, got: {} ({other:?})", other),
     }
 
     // Also check Display of top-level error includes the IO message prefix
     let display = format!("{}", err);
-    assert!(display.starts_with("I/O error:"), "unexpected display: {display}");
+    assert!(
+        display.starts_with("I/O error:"),
+        "unexpected display: {display}"
+    );
 }

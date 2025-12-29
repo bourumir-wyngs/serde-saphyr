@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_saphyr::{to_string, from_str};
+use serde_saphyr::{from_str, to_string};
 use std::borrow::Cow;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -9,7 +9,7 @@ struct BuiltInTypes {
     // Rc and Arc require "rc" feature that is in dev dependencies of this library.
     rc: Rc<String>,
     arc: Arc<Vec<u8>>,
-    
+
     boxed: Box<i32>,
     opt_some: Option<String>,
     opt_none: Option<String>,
@@ -37,7 +37,8 @@ fn test_serde_saphyr_builtin_types() {
     let serialized = to_string(&original).expect("Serialization failed");
 
     // Deserialize
-    let deserialized: BuiltInTypes = from_str(&serialized).expect(&format!("Deserialization failed: {}", serialized));
+    let deserialized: BuiltInTypes =
+        from_str(&serialized).expect(&format!("Deserialization failed: {}", serialized));
 
     // Verify entire struct equality
     assert_eq!(original, deserialized, "YAML: {serialized}");

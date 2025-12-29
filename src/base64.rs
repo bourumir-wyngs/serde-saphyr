@@ -19,7 +19,7 @@ pub(crate) fn decode_base64_yaml(s: &str) -> Result<Vec<u8>, Error> {
     // YAML allows ASCII whitespace inside the base64 text.
     let cleaned: Vec<u8> = s.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
 
-    if cleaned.len() % 4 != 0 {
+    if !cleaned.len().is_multiple_of(4) {
         return Err(Error::msg("invalid !!binary base64"));
     }
 
@@ -87,9 +87,9 @@ mod tests {
     fn is_binary_tag(tag: Option<&str>) -> bool {
         match tag {
             Some(t) => matches!(
-            t,
-            "!!binary" | "!binary" | "tag:yaml.org,2002:binary" | "tag:yaml.org,2002:!binary"
-        ),
+                t,
+                "!!binary" | "!binary" | "tag:yaml.org,2002:binary" | "tag:yaml.org,2002:!binary"
+            ),
             None => false,
         }
     }
@@ -109,7 +109,10 @@ mod tests {
         assert_eq!(decode_base64_yaml("AQID").unwrap(), vec![1, 2, 3]);
 
         let with_whitespace = "SG Vs\nbG8h";
-        assert_eq!(decode_base64_yaml(with_whitespace).unwrap(), b"Hello!".to_vec());
+        assert_eq!(
+            decode_base64_yaml(with_whitespace).unwrap(),
+            b"Hello!".to_vec()
+        );
     }
 
     #[test]

@@ -5,7 +5,7 @@ use serde_saphyr::Error;
 #[allow(dead_code)]
 struct Cfg {
     base_scalar: serde_saphyr::Spanned<u64>,
-    key: Vec<usize>
+    key: Vec<usize>,
 }
 
 fn main() {
@@ -21,7 +21,6 @@ fn main() {
         Ok(cfg) => {
             // Keep the value used to avoid "unused" warnings if this example is copy-pasted.
             println!("{:?}", cfg);
-
         }
         Err(err) => {
             // By default, `from_str` wraps errors with snippet rendering.

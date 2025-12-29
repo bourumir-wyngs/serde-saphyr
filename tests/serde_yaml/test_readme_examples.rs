@@ -91,8 +91,7 @@ struct Move {
     constraints: Vec<Constraint>,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
-#[derive(PartialEq)]
+#[derive(Deserialize, Serialize, Debug, PartialEq)]
 #[allow(dead_code)]
 enum Constraint {
     StayWithin { x: f32, y: f32, r: f32 },
@@ -143,6 +142,7 @@ fn serialize_robot_moves() {
         },
     ];
     let yaml = serde_saphyr::to_string(&robot_moves).unwrap();
-    let deserialized_robot_moves: Vec<Move> = serde_saphyr::from_str(&yaml).expect(&format!("Failed to deserialize robot moves, yaml:\n{yaml}"));
+    let deserialized_robot_moves: Vec<Move> = serde_saphyr::from_str(&yaml)
+        .expect(&format!("Failed to deserialize robot moves, yaml:\n{yaml}"));
     assert_eq!(deserialized_robot_moves, robot_moves);
 }

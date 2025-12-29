@@ -33,6 +33,11 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+type StreamReader<'a> = Box<dyn std::io::Read + 'a>;
+type StreamBufReader<'a> = std::io::BufReader<StreamReader<'a>>;
+type StreamInput<'a> = BufferedInput<ChunkedChars<StreamBufReader<'a>>>;
+type StreamParser<'a> = Parser<'a, StreamInput<'a>>;
+
 /// This is enough to hold a single scalar that is common  case in YAML anchors.
 const SMALLVECT_INLINE: usize = 8;
 
@@ -50,9 +55,7 @@ struct RecFrame {
 /// Handle input polymorphism
 pub(crate) enum SaphyrParser<'a> {
     StringParser(Parser<'a, StrInput<'a>>),
-    StreamParser(
-        Parser<'a, BufferedInput<ChunkedChars<std::io::BufReader<Box<dyn std::io::Read + 'a>>>>>,
-    ),
+    StreamParser(StreamParser<'a>),
 }
 
 impl<'input> SaphyrParser<'input> {
@@ -154,7 +157,7 @@ impl<'a> LiveEvents<'a> {
         policy: EnforcingPolicy,
     ) -> Self {
         // Build a streaming character iterator from the byte reader, honoring input byte cap if configured
-        let max_bytes = budget.as_ref().map(|b| b.max_reader_input_bytes).flatten();
+        let max_bytes = budget.as_ref().and_then(|b| b.max_reader_input_bytes);
         let (input, error) = buffered_input_from_reader_with_limit(inputs, max_bytes);
         let parser = Parser::new(input);
         Self {
@@ -291,7 +294,9 @@ impl<'a> LiveEvents<'a> {
                 .with_location(ev.location()));
             }
             self.observe_budget_for_replay(&ev)?;
-            self.record(&ev, /*is_start*/ false, /*seeded_new_frame*/ false);
+            self.record(
+                &ev, /*is_start*/ false, /*seeded_new_frame*/ false,
+            );
             self.last_location = ev.location();
             self.produced_any_in_doc = true;
             return Ok(Some(ev));
@@ -302,10 +307,10 @@ impl<'a> LiveEvents<'a> {
             let (raw, span) = item.map_err(Error::from_scan_error)?;
             let location = location_from_span(&span);
 
-            if let Some(ref mut budget) = self.budget {
-                if let Err(breach) = budget.observe(&raw) {
-                    return Err(budget_error(breach).with_location(location));
-                }
+            if let Some(ref mut budget) = self.budget
+                && let Err(breach) = budget.observe(&raw)
+            {
+                return Err(budget_error(breach).with_location(location));
             }
 
             match raw {
@@ -482,13 +487,14 @@ impl<'a> LiveEvents<'a> {
                         // One-step lookahead to distinguish multi-doc streams from garbage
                         // after an explicit end marker. If the very next token is a
                         // DocumentStart, signal multi-doc error; otherwise ignore anything else.
-                        if let Some(item2) = self.parser.next() {
-                            if let Ok((raw2, span2)) = item2 {
-                                if let Event::DocumentStart(_) = raw2 {
-                                    let loc2 = location_from_span(&span2);
-                                    return Err(Error::msg("multiple YAML documents detected; use from_multiple or from_multiple_with_options").with_location(loc2));
-                                }
-                            }
+                        if let Some(Ok((Event::DocumentStart(_), span2))) = self.parser.next() {
+                            let loc2 = location_from_span(&span2);
+                            return Err(
+                                Error::msg(
+                                    "multiple YAML documents detected; use from_multiple or from_multiple_with_options",
+                                )
+                                .with_location(loc2),
+                            );
                         }
                         return Ok(None);
                     }

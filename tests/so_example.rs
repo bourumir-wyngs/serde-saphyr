@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::rc::Rc;
 use serde_saphyr::RcAnchor;
+use std::rc::Rc;
 
 #[derive(Serialize, Deserialize, Clone)]
 struct Node {
@@ -17,7 +17,14 @@ fn test_so_example() {
         name: "node two".to_string(),
     }));
 
-    let data = vec![n1.clone(), n1.clone(), n1.clone(), n2.clone(), n1.clone(), n2.clone()];
+    let data = vec![
+        n1.clone(),
+        n1.clone(),
+        n1.clone(),
+        n2.clone(),
+        n1.clone(),
+        n2.clone(),
+    ];
     let serialized = serde_saphyr::to_string(&data).expect("Must serialize");
     // println!("{}", serialized);
 
@@ -29,5 +36,3 @@ fn test_so_example() {
     // they point to the same object
     assert!(std::rc::Rc::ptr_eq(&first, &second));
 }
-
-

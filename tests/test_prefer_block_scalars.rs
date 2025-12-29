@@ -17,7 +17,10 @@ fn prefer_block_scalars_literal_newlines_and_trailing() {
     let s2 = "a\nb\n\n".to_string();
     let out2 = serde_saphyr::to_string(&s2).unwrap();
     let expected2 = "|+\n  a\n  b\n  \n";
-    assert_eq!(out2, expected2, "Unexpected YAML for 2 trailing newlines: {out2}");
+    assert_eq!(
+        out2, expected2,
+        "Unexpected YAML for 2 trailing newlines: {out2}"
+    );
     let r2: String = serde_saphyr::from_str(&out2).unwrap();
     assert_eq!(s2, r2);
 
@@ -25,7 +28,10 @@ fn prefer_block_scalars_literal_newlines_and_trailing() {
     let s3 = "a\nb\n\n\n\n".to_string();
     let out3 = serde_saphyr::to_string(&s3).unwrap();
     let expected3 = "|+\n  a\n  b\n  \n  \n  \n";
-    assert_eq!(out3, expected3, "Unexpected YAML for 4 trailing newlines: {out3}");
+    assert_eq!(
+        out3, expected3,
+        "Unexpected YAML for 4 trailing newlines: {out3}"
+    );
     let r3: String = serde_saphyr::from_str(&out3).unwrap();
     assert_eq!(s3, r3);
 }
@@ -50,10 +56,12 @@ fn prefer_block_scalars_folded_for_long_single_line() {
             continue;
         }
         let len = content.chars().count();
-        assert!(len <= SerializerOptions::default().folded_wrap_chars,
+        assert!(
+            len <= SerializerOptions::default().folded_wrap_chars,
             "line exceeds wrap width ({}): {:?}",
             SerializerOptions::default().folded_wrap_chars,
-            line);
+            line
+        );
     }
 
     // Round-trip must preserve the original string

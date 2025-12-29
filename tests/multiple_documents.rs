@@ -8,10 +8,7 @@ struct Person {
 #[derive(Debug, Deserialize, PartialEq)]
 enum Document {
     #[serde(rename = "person")]
-    Person {
-        name: String,
-        age: u8
-    },
+    Person { name: String, age: u8 },
     #[serde(rename = "pet")]
     Pet { kind: String },
 }

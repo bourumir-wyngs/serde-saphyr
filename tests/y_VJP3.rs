@@ -17,9 +17,7 @@ struct Inner {
 #[test]
 fn yaml_vjp3_flow_collections_multiline_valid() {
     // Valid case (second in the YAML file)
-    let y = indoc::indoc!(
-        "k: {\n k\n :\n v\n }\n"
-    );
+    let y = indoc::indoc!("k: {\n k\n :\n v\n }\n");
 
     let v: Outer = serde_saphyr::from_str(y).expect("failed to parse VJP3 valid case");
     assert_eq!(v.k.k, "v");

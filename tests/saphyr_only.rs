@@ -1,4 +1,4 @@
-use saphyr_parser::{Parser};
+use saphyr_parser::Parser;
 
 // test --package serde-saphyr --test parser_misplaced_sequence_close -- --nocapture
 #[test]

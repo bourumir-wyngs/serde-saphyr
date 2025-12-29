@@ -2,9 +2,9 @@
 //! we do not degrade the performance when working on features.
 
 use serde::Deserialize;
+use serde_saphyr::Error;
 use serde_saphyr::Options;
 use serde_saphyr::budget::Budget;
-use serde_saphyr::Error;
 use std::time::Instant;
 
 #[derive(Debug, Deserialize)]
@@ -78,7 +78,8 @@ fn main() -> Result<(), Error> {
     let document: Document = serde_saphyr::from_str_with_options(
         &yaml,
         Options {
-            budget: Some(Budget { max_reader_input_bytes: None,
+            budget: Some(Budget {
+                max_reader_input_bytes: None,
                 max_events: many,
                 max_aliases: many,
                 max_anchors: many,

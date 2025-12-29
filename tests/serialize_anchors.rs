@@ -6,12 +6,12 @@ use indoc::indoc;
 use serde::Serialize;
 
 // Bring helpers into scope
-use serde_saphyr::{to_string, ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
+use serde_saphyr::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor, to_string};
 
 #[derive(Clone, Serialize)]
 struct Node {
     name: String,
-    next: Option<RcAnchor<Node>>, // allow cycles/shared via RcAnchor
+    next: Option<RcAnchor<Node>>,     // allow cycles/shared via RcAnchor
     prev: Option<RcWeakAnchor<Node>>, // demonstrate weak back-reference
     unique: Option<RcAnchor<Node>>,   // an additional RcAnchor that may be unshared
 }
@@ -166,23 +166,44 @@ fn struct_with_rcanchor_of_rc_string_serializes_with_anchor_and_alias() {
 
     // Create two holders that share the same outer Rc to trigger anchor + alias
     let v = vec![
-        Holder { field: RcAnchor(outer.clone()) },
-        Holder { field: RcAnchor(outer) },
+        Holder {
+            field: RcAnchor(outer.clone()),
+        },
+        Holder {
+            field: RcAnchor(outer),
+        },
     ];
 
     let yaml = to_string(&v).expect("serialize Holder with RcAnchor<Rc<String>>");
     println!("Holder YAML:\n{}", yaml);
 
     // Avoid brittle formatting; ensure the important bits are present
-    assert!(yaml.contains("&a1"), "Expected an anchor to be emitted, got: {}", yaml);
-    assert!(yaml.contains("*a1"), "Expected an alias to be emitted, got: {}", yaml);
-    assert!(yaml.contains("hello"), "Expected the string value to be present, got: {}", yaml);
+    assert!(
+        yaml.contains("&a1"),
+        "Expected an anchor to be emitted, got: {}",
+        yaml
+    );
+    assert!(
+        yaml.contains("*a1"),
+        "Expected an alias to be emitted, got: {}",
+        yaml
+    );
+    assert!(
+        yaml.contains("hello"),
+        "Expected the string value to be present, got: {}",
+        yaml
+    );
 }
 
 #[test]
 fn node_with_unique_unshared_and_present_weak() {
     // strong target for weak field
-    let target = Rc::new(Node { name: "target".into(), next: None, prev: None, unique: None });
+    let target = Rc::new(Node {
+        name: "target".into(),
+        next: None,
+        prev: None,
+        unique: None,
+    });
     let weak_to_target = Rc::downgrade(&target);
 
     // parent has a weak ref to target and a unique unshared RcAnchor
@@ -190,7 +211,12 @@ fn node_with_unique_unshared_and_present_weak() {
         name: "parent".into(),
         next: None,
         prev: Some(RcWeakAnchor(weak_to_target)),
-        unique: Some(RcAnchor(Rc::new(Node { name: "unique".into(), next: None, prev: None, unique: None }))),
+        unique: Some(RcAnchor(Rc::new(Node {
+            name: "unique".into(),
+            next: None,
+            prev: None,
+            unique: None,
+        }))),
     };
 
     let yaml = to_string(&parent).expect("serialize parent node with weak and unique");
@@ -199,10 +225,22 @@ fn node_with_unique_unshared_and_present_weak() {
     // We expect two anchors emitted (&a1 for target via weak, &a2 for unique), but no aliases
     // Accept either form depending on formatter: inline after colon (preferred) or on next line.
     let prev_ok = yaml.contains("prev: &a1") || yaml.contains("prev:\n  &a1");
-    assert!(prev_ok, "prev should contain anchored target, got: {}", yaml);
+    assert!(
+        prev_ok,
+        "prev should contain anchored target, got: {}",
+        yaml
+    );
     let unique_ok = yaml.contains("unique: &a2") || yaml.contains("unique:\n  &a2");
-    assert!(unique_ok, "unique should contain its own anchor, got: {}", yaml);
+    assert!(
+        unique_ok,
+        "unique should contain its own anchor, got: {}",
+        yaml
+    );
     assert!(yaml.contains("name: target"));
     assert!(yaml.contains("name: unique"));
-    assert!(!yaml.contains("*a2"), "unique is not shared, alias should not appear: {}", yaml);
+    assert!(
+        !yaml.contains("*a2"),
+        "unique is not shared, alias should not appear: {}",
+        yaml
+    );
 }

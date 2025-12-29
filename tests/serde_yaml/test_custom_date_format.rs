@@ -1,5 +1,5 @@
-use chrono::{DateTime, Utc, TimeZone};
-use serde::{Serialize, Deserialize};
+use chrono::{DateTime, TimeZone, Utc};
+use serde::{Deserialize, Serialize};
 
 // This test requires chrono that is in development dependencies.
 
@@ -12,8 +12,8 @@ pub struct StructWithDate {
 }
 
 mod some_date_format {
-    use chrono::{DateTime, Utc, NaiveDateTime};
-    use serde::{self, Deserialize, Serializer, Deserializer};
+    use chrono::{DateTime, NaiveDateTime, Utc};
+    use serde::{self, Deserialize, Deserializer, Serializer};
 
     const FORMAT: &str = "%Y-%m-%d %H:%M:%S";
 
@@ -43,10 +43,14 @@ fn test_custom_date_serialization() {
 
     // Serialize struct to JSON
     let serialized = serde_saphyr::to_string(&original).expect("Serialization failed");
-    assert_eq!(serialized, "timestamp: 2025-07-25 11:32:42\ntester: Bourumir\n");
+    assert_eq!(
+        serialized,
+        "timestamp: 2025-07-25 11:32:42\ntester: Bourumir\n"
+    );
 
     // Deserialize back from JSON
-    let deserialized: StructWithDate = serde_saphyr::from_str(&serialized).expect("Deserialization failed");
+    let deserialized: StructWithDate =
+        serde_saphyr::from_str(&serialized).expect("Deserialization failed");
 
     // Assert equality
     assert_eq!(original, deserialized);

@@ -1,10 +1,10 @@
 use serde::Deserialize;
+use serde_saphyr::budget::BudgetBreach;
 use serde_saphyr::{
-    from_multiple_with_options, from_reader, from_reader_with_options, read, read_with_options, Budget
-    , Error, Options,
+    Budget, Error, Options, from_multiple_with_options, from_reader, from_reader_with_options,
+    read, read_with_options,
 };
 use std::io::ErrorKind;
-use serde_saphyr::budget::BudgetBreach;
 
 fn unwrap_snippet(err: &Error) -> &Error {
     match err {
@@ -135,11 +135,12 @@ fn read_limits_are_per_document() {
     match deserialized {
         Ok(_) => panic!("limit should have been hit and produced an error"),
         Err(error) => match unwrap_snippet(&error) {
-            Error::Budget { breach, .. } =>
-                match breach {
-                    BudgetBreach::Nodes { nodes } => { assert_eq!(nodes, &31)},
-                    _ => assert!(false, "Unexpected kind of breach: {:?}", error),
+            Error::Budget { breach, .. } => match breach {
+                BudgetBreach::Nodes { nodes } => {
+                    assert_eq!(nodes, &31)
                 }
+                _ => assert!(false, "Unexpected kind of breach: {:?}", error),
+            },
             _ => assert!(false, "Unexpected error: {:?}", error),
         },
     }
@@ -153,11 +154,12 @@ fn from_reader_limits_are_per_all_content() {
     match deserialized {
         Ok(_) => panic!("limit should have been hit and produced an error"),
         Err(error) => match unwrap_snippet(&error) {
-            Error::Budget { breach, .. } =>
-              match breach {
-                  BudgetBreach::Nodes { nodes } => { assert_eq!(nodes, &3001)},
-                  _ => assert!(false, "Unexpected kind of breach: {:?}", error),
-              }
+            Error::Budget { breach, .. } => match breach {
+                BudgetBreach::Nodes { nodes } => {
+                    assert_eq!(nodes, &3001)
+                }
+                _ => assert!(false, "Unexpected kind of breach: {:?}", error),
+            },
             _ => assert!(false, "Unexpected error: {:?}", error),
         },
     }

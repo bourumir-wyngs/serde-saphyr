@@ -1,4 +1,4 @@
-use serde_saphyr::budget::{Budget, BudgetBreach, check_yaml_budget, EnforcingPolicy};
+use serde_saphyr::budget::{Budget, BudgetBreach, EnforcingPolicy, check_yaml_budget};
 
 fn billion_laughs_yaml(levels: usize, fan_out: usize) -> String {
     assert!(levels > 0, "need at least one level");

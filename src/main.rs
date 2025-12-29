@@ -14,7 +14,7 @@ fn report_budget(report: &serde_saphyr::budget::BudgetReport) {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = std::env::args()
         .nth(1)
-        .ok_or_else(|| "expected a path to a YAML file as the first argument")?;
+        .ok_or("expected a path to a YAML file as the first argument")?;
 
     let content = std::fs::read_to_string(&path)?;
 

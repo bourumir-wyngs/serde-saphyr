@@ -75,7 +75,10 @@ fn struct_with_enum() -> anyhow::Result<()> {
         area: 51,
     };
     serde_saphyr::to_fmt_writer_with_options(&mut yaml, &s, opts)?;
-    assert_eq!("shape: !!Shape SQUARE\ncolor: !!Color GREEN\narea: 51\n", yaml);
+    assert_eq!(
+        "shape: !!Shape SQUARE\ncolor: !!Color GREEN\narea: 51\n",
+        yaml
+    );
     println!("yaml: {:#?}", yaml);
     let d: MyStruct = serde_saphyr::from_str(&yaml)?;
     assert_eq!(d, s);

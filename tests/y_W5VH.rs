@@ -20,4 +20,3 @@ b: *:@*!$"<foo>:
     assert_eq!(v.a, "scalar a");
     assert_eq!(v.b, "scalar a");
 }
-

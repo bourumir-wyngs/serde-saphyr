@@ -9,7 +9,6 @@ use serde::de::{Error as _, Visitor};
 
 use crate::anchor_store;
 
-
 /// A wrapper around [`Rc<T>`] that opt-ins a field for **anchor emission** (e.g. serialization by reference).
 ///
 /// This type behaves like a normal [`Rc<T>`] but signals that the value
@@ -119,18 +118,19 @@ pub struct ArcWeakAnchor<T>(pub ArcWeak<T>);
 // ===== From conversions (strong -> anchor) =====
 
 impl<T> From<Rc<T>> for RcAnchor<T> {
-    fn from(rc: Rc<T>) -> Self { RcAnchor(rc) }
-
+    fn from(rc: Rc<T>) -> Self {
+        RcAnchor(rc)
+    }
 }
 
-impl <T> RcAnchor<T> {
+impl<T> RcAnchor<T> {
     /// Create inner Rc (takes arbitrary value Rc can take)
     pub fn wrapping(x: T) -> Self {
         RcAnchor(Rc::new(x))
     }
 }
 
-impl <T> ArcAnchor<T> {
+impl<T> ArcAnchor<T> {
     /// Create inner Rc (takes arbitrary value Rc can take)
     pub fn wrapping(x: T) -> Self {
         ArcAnchor(Arc::new(x))
@@ -139,34 +139,48 @@ impl <T> ArcAnchor<T> {
 
 impl<T> From<Arc<T>> for ArcAnchor<T> {
     #[inline]
-    fn from(arc: Arc<T>) -> Self { ArcAnchor(arc) }
+    fn from(arc: Arc<T>) -> Self {
+        ArcAnchor(arc)
+    }
 }
 
 // ===== From conversions (strong -> weak anchor) =====
 
 impl<T> From<&Rc<T>> for RcWeakAnchor<T> {
     #[inline]
-    fn from(rc: &Rc<T>) -> Self { RcWeakAnchor(Rc::downgrade(rc)) }
+    fn from(rc: &Rc<T>) -> Self {
+        RcWeakAnchor(Rc::downgrade(rc))
+    }
 }
 impl<T> From<Rc<T>> for RcWeakAnchor<T> {
     #[inline]
-    fn from(rc: Rc<T>) -> Self { RcWeakAnchor(Rc::downgrade(&rc)) }
+    fn from(rc: Rc<T>) -> Self {
+        RcWeakAnchor(Rc::downgrade(&rc))
+    }
 }
 impl<T> From<&RcAnchor<T>> for RcWeakAnchor<T> {
     #[inline]
-    fn from(rca: &RcAnchor<T>) -> Self { RcWeakAnchor(Rc::downgrade(&rca.0)) }
+    fn from(rca: &RcAnchor<T>) -> Self {
+        RcWeakAnchor(Rc::downgrade(&rca.0))
+    }
 }
 impl<T> From<&Arc<T>> for ArcWeakAnchor<T> {
     #[inline]
-    fn from(arc: &Arc<T>) -> Self { ArcWeakAnchor(Arc::downgrade(arc)) }
+    fn from(arc: &Arc<T>) -> Self {
+        ArcWeakAnchor(Arc::downgrade(arc))
+    }
 }
 impl<T> From<Arc<T>> for ArcWeakAnchor<T> {
     #[inline]
-    fn from(arc: Arc<T>) -> Self { ArcWeakAnchor(Arc::downgrade(&arc)) }
+    fn from(arc: Arc<T>) -> Self {
+        ArcWeakAnchor(Arc::downgrade(&arc))
+    }
 }
 impl<T> From<&ArcAnchor<T>> for ArcWeakAnchor<T> {
     #[inline]
-    fn from(ara: &ArcAnchor<T>) -> Self { ArcWeakAnchor(Arc::downgrade(&ara.0)) }
+    fn from(ara: &ArcAnchor<T>) -> Self {
+        ArcWeakAnchor(Arc::downgrade(&ara.0))
+    }
 }
 
 // ===== Ergonomics: Deref / AsRef / Borrow / Into =====
@@ -174,36 +188,52 @@ impl<T> From<&ArcAnchor<T>> for ArcWeakAnchor<T> {
 impl<T> Deref for RcAnchor<T> {
     type Target = Rc<T>;
     #[inline]
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 impl<T> Deref for ArcAnchor<T> {
     type Target = Arc<T>;
     #[inline]
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 impl<T> AsRef<Rc<T>> for RcAnchor<T> {
     #[inline]
-    fn as_ref(&self) -> &Rc<T> { &self.0 }
+    fn as_ref(&self) -> &Rc<T> {
+        &self.0
+    }
 }
 impl<T> AsRef<Arc<T>> for ArcAnchor<T> {
     #[inline]
-    fn as_ref(&self) -> &Arc<T> { &self.0 }
+    fn as_ref(&self) -> &Arc<T> {
+        &self.0
+    }
 }
 impl<T> Borrow<Rc<T>> for RcAnchor<T> {
     #[inline]
-    fn borrow(&self) -> &Rc<T> { &self.0 }
+    fn borrow(&self) -> &Rc<T> {
+        &self.0
+    }
 }
 impl<T> Borrow<Arc<T>> for ArcAnchor<T> {
     #[inline]
-    fn borrow(&self) -> &Arc<T> { &self.0 }
+    fn borrow(&self) -> &Arc<T> {
+        &self.0
+    }
 }
 impl<T> From<RcAnchor<T>> for Rc<T> {
     #[inline]
-    fn from(a: RcAnchor<T>) -> Rc<T> { a.0 }
+    fn from(a: RcAnchor<T>) -> Rc<T> {
+        a.0
+    }
 }
 impl<T> From<ArcAnchor<T>> for Arc<T> {
     #[inline]
-    fn from(a: ArcAnchor<T>) -> Arc<T> { a.0 }
+    fn from(a: ArcAnchor<T>) -> Arc<T> {
+        a.0
+    }
 }
 
 // ===== Weak helpers =====
@@ -212,34 +242,46 @@ impl<T> RcWeakAnchor<T> {
     /// Try to upgrade the weak reference to [`Rc<T>`].
     /// Returns [`None`] if the value has been dropped.
     #[inline]
-    pub fn upgrade(&self) -> Option<Rc<T>> { self.0.upgrade() }
+    pub fn upgrade(&self) -> Option<Rc<T>> {
+        self.0.upgrade()
+    }
 
     /// Returns `true` if the underlying value has been dropped (no strong refs remain).
     #[inline]
-    pub fn is_dangling(&self) -> bool { self.0.strong_count() == 0 }
+    pub fn is_dangling(&self) -> bool {
+        self.0.strong_count() == 0
+    }
 }
 impl<T> ArcWeakAnchor<T> {
     /// Try to upgrade the weak reference to [`Arc<T>`].
     /// Returns [`None`] if the value has been dropped.
     #[inline]
-    pub fn upgrade(&self) -> Option<Arc<T>> { self.0.upgrade() }
+    pub fn upgrade(&self) -> Option<Arc<T>> {
+        self.0.upgrade()
+    }
 
     /// Returns `true` if the underlying value has been dropped (no strong refs remain).
     #[inline]
-    pub fn is_dangling(&self) -> bool { self.0.strong_count() == 0 }
+    pub fn is_dangling(&self) -> bool {
+        self.0.strong_count() == 0
+    }
 }
 
 // ===== Pointer-equality PartialEq/Eq =====
 
 impl<T> PartialEq for RcAnchor<T> {
     #[inline]
-    fn eq(&self, other: &Self) -> bool { Rc::ptr_eq(&self.0, &other.0) }
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
 }
 impl<T> Eq for RcAnchor<T> {}
 
 impl<T> PartialEq for ArcAnchor<T> {
     #[inline]
-    fn eq(&self, other: &Self) -> bool { Arc::ptr_eq(&self.0, &other.0) }
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
 }
 impl<T> Eq for ArcAnchor<T> {}
 
@@ -306,10 +348,14 @@ impl<T> fmt::Debug for ArcWeakAnchor<T> {
 
 impl<T: Default> Default for RcAnchor<T> {
     #[inline]
-    fn default() -> Self { RcAnchor(Rc::new(T::default())) }
+    fn default() -> Self {
+        RcAnchor(Rc::new(T::default()))
+    }
 }
 impl<T: Default> Default for ArcAnchor<T> {
-    fn default() -> Self { ArcAnchor(Arc::new(T::default())) }
+    fn default() -> Self {
+        ArcAnchor(Arc::new(T::default()))
+    }
 }
 
 // -------------------------------
@@ -341,7 +387,9 @@ where
             {
                 let anchor_id = anchor_store::current_rc_anchor();
                 let existing = match anchor_id {
-                    Some(id) => Some((id, anchor_store::get_rc::<T>(id).map_err(D::Error::custom)?)),
+                    Some(id) => {
+                        Some((id, anchor_store::get_rc::<T>(id).map_err(D::Error::custom)?))
+                    }
                     None => None,
                 };
 
@@ -389,7 +437,10 @@ where
             {
                 let anchor_id = anchor_store::current_arc_anchor();
                 let existing = match anchor_id {
-                    Some(id) => Some((id, anchor_store::get_arc::<T>(id).map_err(D::Error::custom)?)),
+                    Some(id) => Some((
+                        id,
+                        anchor_store::get_arc::<T>(id).map_err(D::Error::custom)?,
+                    )),
                     None => None,
                 };
 
@@ -429,20 +480,29 @@ where
         {
             type Value = RcWeakAnchor<T>;
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("an RcWeakAnchor referring to a previously defined strong anchor (via alias)")
+                f.write_str(
+                    "an RcWeakAnchor referring to a previously defined strong anchor (via alias)",
+                )
             }
             fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
             where
                 D: serde::de::Deserializer<'de>,
             {
                 // Anchor context is established by de.rs when the special name is used.
-                let id = anchor_store::current_rc_anchor().ok_or_else(|| D::Error::custom("weak Rc anchor must refer to an existing strong anchor via alias"))?;
+                let id = anchor_store::current_rc_anchor().ok_or_else(|| {
+                    D::Error::custom(
+                        "weak Rc anchor must refer to an existing strong anchor via alias",
+                    )
+                })?;
                 // Consume and ignore the inner node to keep the stream in sync (alias replay injects the full target node).
-                let _ = <serde::de::IgnoredAny as serde::de::Deserialize>::deserialize(deserializer)?;
+                let _ =
+                    <serde::de::IgnoredAny as serde::de::Deserialize>::deserialize(deserializer)?;
                 // Look up the strong reference by id and downgrade.
                 match anchor_store::get_rc::<T>(id).map_err(D::Error::custom)? {
                     Some(rc) => Ok(RcWeakAnchor(Rc::downgrade(&rc))),
-                    None => Err(D::Error::custom("weak Rc anchor refers to unknown anchor id; strong anchor must be defined before weak")),
+                    None => Err(D::Error::custom(
+                        "weak Rc anchor refers to unknown anchor id; strong anchor must be defined before weak",
+                    )),
                 }
             }
         }
@@ -465,23 +525,31 @@ where
         {
             type Value = ArcWeakAnchor<T>;
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("an ArcWeakAnchor referring to a previously defined strong anchor (via alias)")
+                f.write_str(
+                    "an ArcWeakAnchor referring to a previously defined strong anchor (via alias)",
+                )
             }
             fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
             where
                 D: serde::de::Deserializer<'de>,
             {
-                let id = anchor_store::current_arc_anchor().ok_or_else(|| D::Error::custom("weak Arc anchor must refer to an existing strong anchor via alias"))?;
+                let id = anchor_store::current_arc_anchor().ok_or_else(|| {
+                    D::Error::custom(
+                        "weak Arc anchor must refer to an existing strong anchor via alias",
+                    )
+                })?;
                 // Consume and ignore the inner node (alias replay injects the target node events).
-                let _ = <serde::de::IgnoredAny as serde::de::Deserialize>::deserialize(deserializer)?;
+                let _ =
+                    <serde::de::IgnoredAny as serde::de::Deserialize>::deserialize(deserializer)?;
                 match anchor_store::get_arc::<T>(id).map_err(D::Error::custom)? {
                     Some(arc) => Ok(ArcWeakAnchor(Arc::downgrade(&arc))),
-                    None => Err(D::Error::custom("weak Arc anchor refers to unknown anchor id; strong anchor must be defined before weak")),
+                    None => Err(D::Error::custom(
+                        "weak Arc anchor refers to unknown anchor id; strong anchor must be defined before weak",
+                    )),
                 }
             }
         }
-        deserializer.deserialize_newtype_struct("__yaml_arc_weak_anchor", ArcWeakVisitor(PhantomData))
+        deserializer
+            .deserialize_newtype_struct("__yaml_arc_weak_anchor", ArcWeakVisitor(PhantomData))
     }
 }
-
-

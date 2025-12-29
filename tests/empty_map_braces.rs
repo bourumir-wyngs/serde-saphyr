@@ -19,7 +19,11 @@ struct WrapMap {
 fn empty_map_value_braces_by_default() {
     let v = WrapMap { m: BTreeMap::new() };
     let s = serde_saphyr::to_string(&v).unwrap();
-    assert!(s.contains("m: {}\n") || s.ends_with("m: {}\n"), "yaml: {}", s);
+    assert!(
+        s.contains("m: {}\n") || s.ends_with("m: {}\n"),
+        "yaml: {}",
+        s
+    );
 }
 
 #[test]
@@ -34,7 +38,7 @@ fn struct_with_empty_map_renders_exact() {
     };
 
     let mut s: String = String::new();
-    serde_saphyr::to_fmt_writer_with_options(& mut s, &v, options).unwrap();
+    serde_saphyr::to_fmt_writer_with_options(&mut s, &v, options).unwrap();
     assert_eq!(s, "m:\n\n");
 }
 
@@ -48,7 +52,7 @@ fn test_struct_empty_and_not() {
 
     let o = OneOne {
         empty: HashMap::new(),
-        non_empty: HashMap::from([("is".to_string(), 7)])
+        non_empty: HashMap::from([("is".to_string(), 7)]),
     };
 
     let yaml = serde_saphyr::to_string(&o).unwrap();
@@ -101,7 +105,6 @@ non_empty:
     // Just one space more
     let legacy_expected = "empty:\n\nnon_empty:\n   is: 7\n";
     assert_eq!(legacy_expected, yaml_legacy);
-
 }
 
 #[test]
@@ -122,7 +125,9 @@ struct WrapSeq {
 
 #[test]
 fn empty_map_in_sequence_braces_by_default() {
-    let v = WrapSeq { v: vec![BTreeMap::new()] };
+    let v = WrapSeq {
+        v: vec![BTreeMap::new()],
+    };
     let s = serde_saphyr::to_string(&v).unwrap();
     // Allow either "- {}" or inline after key with potential spaces/newline nuances.
     assert!(s.contains("- {}\n") || s.ends_with("- {}\n"), "yaml: {}", s);

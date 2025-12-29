@@ -9,7 +9,8 @@ fn yaml_qf4y_single_pair_flow_mapping_in_sequence() {
 foo: bar
 ]"#;
 
-    let docs: Vec<BTreeMap<String, String>> = serde_saphyr::from_str(y).expect("failed to parse QF4Y");
+    let docs: Vec<BTreeMap<String, String>> =
+        serde_saphyr::from_str(y).expect("failed to parse QF4Y");
     assert_eq!(docs.len(), 1);
     let m = &docs[0];
     assert_eq!(m.get("foo").map(String::as_str), Some("bar"));

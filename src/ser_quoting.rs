@@ -1,9 +1,9 @@
+use crate::Location;
 use crate::parse_scalars::{parse_int_signed, parse_yaml11_bool, parse_yaml12_float};
 use crate::tags::SfTag;
-use crate::Location;
 
 /// Controls quoting behavior of the serializer.
-
+///
 /// Returns true if `s` can be emitted as a plain scalar without quoting.
 /// Internal heuristic used by `write_plain_or_quoted`.
 #[inline]
@@ -44,7 +44,7 @@ pub(crate) fn is_plain_safe(s: &str) -> bool {
         return false;
     }
 
-    !contains_any_or_is_control(s, &[':' , '#' , ','])
+    !contains_any_or_is_control(s, &[':', '#', ','])
 }
 
 /// Returns true if `s` can be emitted as a plain scalar in VALUE position without quoting.
@@ -58,9 +58,7 @@ pub(crate) fn is_plain_value_safe(s: &str) -> bool {
         return false;
     }
     // Nulls and YAML 1.2 booleans
-    if s == "~"
-        || s.eq_ignore_ascii_case("null")
-    {
+    if s == "~" || s.eq_ignore_ascii_case("null") {
         return false;
     }
     // Special float tokens (ASCII case-insensitive) should not be plain, to avoid
@@ -68,16 +66,22 @@ pub(crate) fn is_plain_value_safe(s: &str) -> bool {
     // Accept common forms with optional leading sign and optional leading dot.
     // Examples: "NaN", ".nan", ".inf", "-.inf", "+inf". No allocation.
     #[inline]
-    fn is_ascii_lower(b: u8) -> u8 { b | 0x20 }
+    fn is_ascii_lower(b: u8) -> u8 {
+        b | 0x20
+    }
     #[inline]
     fn is_special_inf_nan_ascii(s: &str) -> bool {
         let bytes = s.as_bytes();
         let mut i = 0usize;
-        if let Some(&c) = bytes.get(0) {
-            if c == b'+' || c == b'-' { i = 1; }
+        if let Some(&c) = bytes.first()
+            && (c == b'+' || c == b'-')
+        {
+            i = 1;
         }
-        if let Some(&c) = bytes.get(i) {
-            if c == b'.' { i += 1; }
+        if let Some(&c) = bytes.get(i)
+            && c == b'.'
+        {
+            i += 1;
         }
         if bytes.len() == i + 3 {
             let a = is_ascii_lower(bytes[i]);
@@ -108,7 +112,8 @@ pub(crate) fn is_plain_value_safe(s: &str) -> bool {
     } else {
         // For alphabetic starters, attempt boolean parsing only when it could plausibly be a YAML 1.1 boolean
         if b0.is_ascii_alphabetic() {
-            match b0 | 0x20 { // to lowercase
+            match b0 | 0x20 {
+                // to lowercase
                 b't' | b'f' | b'y' | b'n' | b'o' => {
                     if parse_yaml11_bool(s).is_ok() {
                         return false;

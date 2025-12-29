@@ -4,5 +4,8 @@
 fn yaml_9mag_flow_sequence_invalid_leading_comma_should_fail() {
     let y = "---\n[ , a, b, c ]\n";
     let result: Result<Vec<String>, _> = serde_saphyr::from_str(y);
-    assert!(result.is_err(), "9MAG should fail due to leading comma in flow sequence");
+    assert!(
+        result.is_err(),
+        "9MAG should fail due to leading comma in flow sequence"
+    );
 }

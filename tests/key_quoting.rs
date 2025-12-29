@@ -38,8 +38,8 @@ mod tests {
         h.insert("null".to_string(), " ".to_string()); // null key
 
         // Serialize with the same FlowSeq wrapper as in the original snippet.
-        let yaml = to_string(&serde_saphyr::FlowSeq(h.clone()))
-            .expect("serialize FlowSeq<HashMap<..>>");
+        let yaml =
+            to_string(&serde_saphyr::FlowSeq(h.clone())).expect("serialize FlowSeq<HashMap<..>>");
 
         // It must deserialize back to the identical map.
         let parsed: HashMap<String, String> =

@@ -15,7 +15,7 @@ pub fn empty_maps() {
     let mut string = String::default();
     to_fmt_writer(&mut string, &map4).unwrap();
     print!("{}", string);
-    let expected = indoc!{r#"
+    let expected = indoc! {r#"
 key4:
   key3:
     key2:

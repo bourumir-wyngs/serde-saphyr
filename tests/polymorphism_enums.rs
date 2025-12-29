@@ -14,7 +14,9 @@ enum Tree {
     Birch,
 }
 
-fn default_birch() -> Tree { Tree::Birch }
+fn default_birch() -> Tree {
+    Tree::Birch
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 enum Direction {
@@ -65,20 +67,30 @@ fn read_iterator_over_polymorphic_enum_documents() {
     let mut reader = std::io::Cursor::new(yaml.as_bytes());
 
     let iter = serde_saphyr::read::<_, Command>(&mut reader);
-    let cmds: Vec<Command> = iter.map(|r| r.expect("failed to read enum doc"))
-                                 .collect();
+    let cmds: Vec<Command> = iter.map(|r| r.expect("failed to read enum doc")).collect();
 
     assert_eq!(cmds.len(), 5);
     assert_eq!(cmds[0], Command::Go { distance: 3 });
     assert_eq!(cmds[1], Command::Plant(None)); // null/empty plant
-    assert_eq!(cmds[2], Command::Plant(Some(PlantArgs { tree: Tree::Acer })));
-    assert_eq!(cmds[3], Command::Turn { direction: Direction::Left });
+    assert_eq!(
+        cmds[2],
+        Command::Plant(Some(PlantArgs { tree: Tree::Acer }))
+    );
+    assert_eq!(
+        cmds[3],
+        Command::Turn {
+            direction: Direction::Left
+        }
+    );
 
     match &cmds[4] {
         Command::MultiStep { steps } => {
             assert_eq!(steps.len(), 2);
             assert_eq!(steps[0], Command::Go { distance: 1 });
-            assert_eq!(steps[1], Command::Plant(Some(PlantArgs { tree: Tree::Oak })));
+            assert_eq!(
+                steps[1],
+                Command::Plant(Some(PlantArgs { tree: Tree::Oak }))
+            );
         }
         other => panic!("expected MultiStep, got {other:?}"),
     }
@@ -97,7 +109,12 @@ plant:
     let cmds: Vec<Command> = serde_saphyr::from_multiple(yaml).expect("from_multiple failed");
     assert_eq!(cmds.len(), 3);
     assert_eq!(cmds[0], Command::Go { distance: 42 });
-    assert_eq!(cmds[1], Command::Turn { direction: Direction::Right });
+    assert_eq!(
+        cmds[1],
+        Command::Turn {
+            direction: Direction::Right
+        }
+    );
     // Plant with no args yields Some(default) or None depending on our enum definition; here
     // we defined Plant(Option<PlantArgs>) so absent args map to None.
     assert_eq!(cmds[2], Command::Plant(None));

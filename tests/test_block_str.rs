@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use serde_saphyr::{to_string, FoldStr, FoldString, LitStr, LitString, RcAnchor};
+use serde_saphyr::{FoldStr, FoldString, LitStr, LitString, RcAnchor, to_string};
 
 #[test]
 fn litstr_top_level() {
@@ -13,10 +13,11 @@ fn litstr_no_trailing_newline() {
     #[derive(Serialize)]
     struct Doc<'a> {
         note: LitStr<'a>,
-        other: usize
+        other: usize,
     }
     let d = Doc {
-        note: LitStr("a\nb"), other: 0
+        note: LitStr("a\nb"),
+        other: 0,
     };
     let out = to_string(&d).unwrap();
     assert_eq!(out, "note: |-\n  a\n  b\nother: 0\n");
@@ -27,9 +28,12 @@ fn litstr_trailing_newline() {
     #[derive(Serialize)]
     struct Doc<'a> {
         note: LitStr<'a>,
-        other: usize
+        other: usize,
     }
-    let d = Doc { note: LitStr("hello\nworld\n"), other: 0 };
+    let d = Doc {
+        note: LitStr("hello\nworld\n"),
+        other: 0,
+    };
     let out = to_string(&d).unwrap();
     assert_eq!(out, "note: |\n  hello\n  world\nother: 0\n");
 }
@@ -289,7 +293,10 @@ fn verdanta_case_fold() -> anyhow::Result<()> {
     println!("{}", yaml);
 
     // Block scalar bodies must be indented deeper than the `description: >` header.
-    assert!(yaml.contains("description: >\n  00This is"), "Top-level description body must be indented");
+    assert!(
+        yaml.contains("description: >\n  00This is"),
+        "Top-level description body must be indented"
+    );
     assert!(
         yaml.contains("    description: >\n      01This is"),
         "Nested description body must be indented deeper than its header"

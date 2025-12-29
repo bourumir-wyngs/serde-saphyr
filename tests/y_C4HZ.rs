@@ -9,10 +9,20 @@ struct Point {
 
 #[derive(Debug, Deserialize, PartialEq)]
 enum Item {
-    Circle { center: Point, radius: i32 },
-    Line { start: Point, finish: Point },
+    Circle {
+        center: Point,
+        radius: i32,
+    },
+    Line {
+        start: Point,
+        finish: Point,
+    },
     // Keep color as String because YAML 0xFFEEBB is not parsed as an integer by our deserializer.
-    Label { start: Point, color: String, text: String },
+    Label {
+        start: Point,
+        color: String,
+        text: String,
+    },
 }
 
 #[test]

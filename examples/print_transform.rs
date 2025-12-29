@@ -16,14 +16,19 @@
 //
 // Related tests: see tests/serde_yaml/test_composite_keys.rs
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-struct Point { x: i32, y: i32 }
+struct Point {
+    x: i32,
+    y: i32,
+}
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
-struct Transform { map: HashMap<Point, Point> }
+struct Transform {
+    map: HashMap<Point, Point>,
+}
 
 fn main() {
     let mut map = HashMap::new();

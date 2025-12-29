@@ -24,7 +24,7 @@ chomping: |
 
 "#;
 
-    let _d: Error= serde_saphyr::from_str::<Doc>(y_wrong).expect_err("This should fail");
+    let _d: Error = serde_saphyr::from_str::<Doc>(y_wrong).expect_err("This should fail");
 
     // Line break in quoted scalar must be folded in one space
     let y = r#"

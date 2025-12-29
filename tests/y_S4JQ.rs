@@ -14,6 +14,10 @@ fn yaml_s4jq_non_specific_tags_types() {
     assert_eq!(a.len(), 3);
 
     assert_eq!(a[0], Value::String("12".into()));
-    assert!(a[1].is_number(), "second element should be a number, got {:?}", a[1]);
+    assert!(
+        a[1].is_number(),
+        "second element should be a number, got {:?}",
+        a[1]
+    );
     assert_eq!(a[2], Value::String("12".into()));
 }

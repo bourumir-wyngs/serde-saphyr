@@ -1,5 +1,5 @@
 use serde::Serialize;
-use serde_saphyr::{to_string, FlowSeq};
+use serde_saphyr::{FlowSeq, to_string};
 
 #[derive(Serialize)]
 struct Data {

@@ -6,5 +6,8 @@ key2: "quoted2" trailing content
 key3: "quoted3"
 "#;
     let res: Result<std::collections::BTreeMap<String, String>, _> = serde_saphyr::from_str(&y);
-    assert!(res.is_err(), "Q4CL must fail to parse due to trailing content after quoted scalar");
+    assert!(
+        res.is_err(),
+        "Q4CL must fail to parse due to trailing content after quoted scalar"
+    );
 }

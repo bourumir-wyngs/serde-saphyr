@@ -1,7 +1,7 @@
-use serde_saphyr;
-use std::collections::HashMap;
 use serde::Deserialize;
 use serde_json::Value;
+use serde_saphyr;
+use std::collections::HashMap;
 
 #[test]
 fn test_recursive_yaml_references_fail() {
@@ -22,7 +22,6 @@ fn test_non_string_keys_fail() {
     let res: Result<Data, _> = serde_saphyr::from_str(yaml);
     assert!(res.is_err(), "Non-string keys should fail");
 }
-
 
 #[test]
 fn test_large_integer_overflow_fail() {
@@ -55,7 +54,10 @@ fn test_unexpected_type_fail() {
 
     let yaml = "config: John";
     let res: Result<HashMap<String, Config>, _> = serde_saphyr::from_str(yaml);
-    assert!(res.is_err(), "Unexpected scalar instead of struct should fail");
+    assert!(
+        res.is_err(),
+        "Unexpected scalar instead of struct should fail"
+    );
 }
 
 #[test]
@@ -70,4 +72,3 @@ fn test_invalid_base64_fail() {
     let res: Result<Data, _> = serde_saphyr::from_str(yaml);
     assert!(res.is_err(), "Invalid base64 should fail");
 }
-

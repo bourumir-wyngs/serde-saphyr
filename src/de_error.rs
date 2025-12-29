@@ -1,16 +1,16 @@
 //! Defines error and its location
-use std::fmt;
-use annotate_snippets::Level;
+use crate::Location;
 use crate::budget::BudgetBreach;
 use crate::parse_scalars::{
     parse_int_signed, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish,
 };
-use crate::tags::SfTag;
-use crate::Location;
 #[cfg(feature = "garde")]
 use crate::path_map::PathMap;
+use crate::tags::SfTag;
+use annotate_snippets::Level;
 use saphyr_parser::{ScalarStyle, ScanError};
 use serde::de::{self};
+use std::fmt;
 
 /// Error type compatible with `serde::de::Error`.
 #[derive(Debug)]
@@ -201,7 +201,7 @@ impl Error {
             Error::IOError { .. } => {} // this error does not support location
             Error::WithSnippet { error, .. } => {
                 let inner = *std::mem::replace(error, Box::new(Error::eof()));
-                *error = Box::new(inner.with_location(set_location));
+                **error = inner.with_location(set_location);
             }
             #[cfg(feature = "garde")]
             Error::ValidationError { .. } => {
@@ -242,7 +242,9 @@ impl Error {
             Error::WithSnippet { error, .. } => error.location(),
             #[cfg(feature = "garde")]
             Error::ValidationError {
-                referenced, defined, ..
+                referenced,
+                defined,
+                ..
             } => referenced
                 .map
                 .values()
@@ -277,7 +279,11 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::WithSnippet { text, crop_radius, error } => {
+            Error::WithSnippet {
+                text,
+                crop_radius,
+                error,
+            } => {
                 if *crop_radius == 0 {
                     // Treat as "snippet disabled".
                     return write!(f, "{}", error);
@@ -345,7 +351,6 @@ fn render_error_with_snippets(inner: &Error, text: &str, crop_radius: usize) -> 
     if crop_radius == 0 {
         return inner.to_string();
     }
-
 
     #[cfg(feature = "garde")]
     {
@@ -549,8 +554,7 @@ fn fmt_validation_error_with_snippets(
                 writeln!(
                     f,
                     "  | This value comes indirectly from the anchor at line {} column {}:",
-                    d.line,
-                    d.column
+                    d.line, d.column
                 )?;
                 crate::de_snipped::fmt_snippet_window_or_fallback(
                     f,

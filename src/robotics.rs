@@ -32,7 +32,6 @@
 use core::f64::consts::PI;
 use core::str::FromStr;
 
-
 // small constants / guards
 const DEG2RAD: f64 = PI / 180.0;
 const MAX_EXPR_DEPTH: u32 = 256; // guard against deeply nested parentheses/functions
@@ -656,10 +655,10 @@ fn is_ident_cont(c: u8) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::robotics::{DEG2RAD, parse_yaml12_float_angle_converting};
+    use crate::tags::SfTag;
     use crate::{Error, Location};
-use crate::tags::SfTag;
     use core::f64::consts::PI;
-    use crate::robotics::{parse_yaml12_float_angle_converting, DEG2RAD};
 
     // helpers
     fn loc() -> Location {

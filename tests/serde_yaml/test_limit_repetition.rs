@@ -1,7 +1,7 @@
 use serde::de::{Deserialize, SeqAccess, Visitor};
+use serde_saphyr::Error;
 use std::collections::BTreeMap;
 use std::fmt;
-use serde_saphyr::Error;
 
 #[cfg(not(miri))]
 #[test]

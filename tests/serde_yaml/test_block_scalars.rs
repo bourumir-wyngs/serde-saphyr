@@ -1,9 +1,9 @@
 #![allow(clippy::derive_partial_eq_without_eq)]
 
-use std::collections::BTreeMap;
 use indoc::indoc;
 use serde::Deserialize;
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct Scalars {
@@ -54,7 +54,6 @@ fn test_block_scalars() {
     let result: Scalars = serde_saphyr::from_str(yaml).unwrap();
     assert_eq!(expected, result);
 }
-
 
 #[test]
 fn test_block_scalars_2() {

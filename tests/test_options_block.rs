@@ -1,5 +1,5 @@
 use serde_saphyr::{
-    to_fmt_writer_with_options, FoldStr, FoldString, LitStr, LitString, SerializerOptions,
+    FoldStr, FoldString, LitStr, LitString, SerializerOptions, to_fmt_writer_with_options,
 };
 
 #[test]

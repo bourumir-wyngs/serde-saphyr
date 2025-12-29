@@ -12,5 +12,8 @@ fn yaml_jkf3_multiline_unindented_double_quoted_block_key_should_fail() {
 bar": x
 "#;
     let result: Result<Dummy, _> = serde_saphyr::from_str(y);
-    assert!(result.is_err(), "JKF3 should fail to parse due to unindented continuation of quoted key");
+    assert!(
+        result.is_err(),
+        "JKF3 should fail to parse due to unindented continuation of quoted key"
+    );
 }

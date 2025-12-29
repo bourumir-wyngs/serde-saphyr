@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use indoc::indoc;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Point {

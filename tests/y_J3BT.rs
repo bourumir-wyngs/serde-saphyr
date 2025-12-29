@@ -24,5 +24,8 @@ block: |
     assert_eq!(v.quoted, "Quoted \t");
 
     // Block scalar: YAML preserves \t literally (two chars '\' and 't')
-    assert_eq!(v.block, "void main() {\n\\tprintf(\"Hello, world!\\\\n\");\n}\n");
+    assert_eq!(
+        v.block,
+        "void main() {\n\\tprintf(\"Hello, world!\\\\n\");\n}\n"
+    );
 }

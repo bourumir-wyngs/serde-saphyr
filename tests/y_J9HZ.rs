@@ -18,6 +18,12 @@ rbi:
   - Ken Griffey
 "#;
     let v: Stats = serde_saphyr::from_str(y).expect("failed to parse J9HZ");
-    assert_eq!(v.hr, vec!["Mark McGwire".to_string(), "Sammy Sosa".to_string()]);
-    assert_eq!(v.rbi, vec!["Sammy Sosa".to_string(), "Ken Griffey".to_string()]);
+    assert_eq!(
+        v.hr,
+        vec!["Mark McGwire".to_string(), "Sammy Sosa".to_string()]
+    );
+    assert_eq!(
+        v.rbi,
+        vec!["Sammy Sosa".to_string(), "Ken Griffey".to_string()]
+    );
 }

@@ -1,7 +1,7 @@
 use crate::de::{Error, Location};
+use crate::tags::SfTag;
 use saphyr_parser::ScalarStyle;
 use std::str::FromStr;
-use crate::tags::SfTag;
 
 /// Parse a YAML 1.1 boolean from a &str (handles the "Norway problem").
 ///
@@ -216,7 +216,12 @@ fn radix_and_digits(legacy_octal: bool, rest: &str) -> (u32, &str) {
 }
 
 #[cfg(feature = "robotics")]
-pub(crate) fn parse_yaml12_float<T>(s: &str, location: Location, tag: SfTag, angle_conversions: bool) -> Result<T, Error>
+pub(crate) fn parse_yaml12_float<T>(
+    s: &str,
+    location: Location,
+    tag: SfTag,
+    angle_conversions: bool,
+) -> Result<T, Error>
 where
     T: FromStr + crate::robotics::FromF64,
     T: num_traits::Float,
@@ -240,8 +245,13 @@ where
     }
 }
 
-#[cfg(not(feature="robotics"))]
-pub(crate) fn parse_yaml12_float<T>(s: &str, location: Location, _tag: SfTag, _angle_conversions: bool) -> Result<T, Error>
+#[cfg(not(feature = "robotics"))]
+pub(crate) fn parse_yaml12_float<T>(
+    s: &str,
+    location: Location,
+    _tag: SfTag,
+    _angle_conversions: bool,
+) -> Result<T, Error>
 where
     T: FromStr,
     T: num_traits::Float,
@@ -257,25 +267,20 @@ where
                 "invalid floating point ({} value)",
                 std::any::type_name::<T>()
             ))
-                .with_location(location)
+            .with_location(location)
         }),
     }
 }
 
 /// If we are not using Rust struct as schema, check if we should not be quoting the value.
-pub (crate) fn maybe_not_string(s: &str, style: &ScalarStyle) -> bool {
+pub(crate) fn maybe_not_string(s: &str, style: &ScalarStyle) -> bool {
     let location = Location::UNKNOWN;
-    if style == &ScalarStyle::Plain {
-        if parse_yaml12_float::<f64>(s, location, SfTag::None, false).is_ok() ||
-            parse_int_signed::<i128>(s, "i128", location, false).is_ok() ||
-            parse_yaml11_bool(s).is_ok() ||
-            scalar_is_nullish(s, &ScalarStyle::Plain) {
-            return true;
-        };
-    }
-    false
+    style == &ScalarStyle::Plain
+        && (parse_yaml12_float::<f64>(s, location, SfTag::None, false).is_ok()
+            || parse_int_signed::<i128>(s, "i128", location, false).is_ok()
+            || parse_yaml11_bool(s).is_ok()
+            || scalar_is_nullish(s, &ScalarStyle::Plain))
 }
-
 
 /// True if a scalar is a YAML "null-like" value in non-`Option` contexts.
 ///
@@ -342,7 +347,10 @@ mod tests {
     use super::*;
 
     fn sample_location() -> Location {
-        Location { line: 42, column: 7 }
+        Location {
+            line: 42,
+            column: 7,
+        }
     }
 
     #[test]
@@ -422,7 +430,10 @@ mod tests {
 
     #[test]
     fn test_normal_values() {
-        assert_eq!(parse_yaml12_float::<f32>("1.5", loc(), SfTag::None, false).unwrap(), 1.5f32);
+        assert_eq!(
+            parse_yaml12_float::<f32>("1.5", loc(), SfTag::None, false).unwrap(),
+            1.5f32
+        );
         assert_eq!(
             parse_yaml12_float::<f32>("-123.456", loc(), SfTag::None, false).unwrap(),
             -123.456f32
@@ -431,8 +442,14 @@ mod tests {
 
     #[test]
     fn test_zero_values() {
-        assert_eq!(parse_yaml12_float::<f32>("0", loc(), SfTag::None, false).unwrap(), 0.0f32);
-        assert_eq!(parse_yaml12_float::<f32>("-0", loc(), SfTag::None, false).unwrap(), -0.0f32);
+        assert_eq!(
+            parse_yaml12_float::<f32>("0", loc(), SfTag::None, false).unwrap(),
+            0.0f32
+        );
+        assert_eq!(
+            parse_yaml12_float::<f32>("-0", loc(), SfTag::None, false).unwrap(),
+            -0.0f32
+        );
     }
 
     #[test]
@@ -451,7 +468,8 @@ mod tests {
     fn test_subnormal_preserved() {
         // Smallest positive subnormal f32
         let smallest = f32::from_bits(1) as f64;
-        let val: f32 = parse_yaml12_float(&format!("{}", smallest), loc(), SfTag::None, false).unwrap();
+        let val: f32 =
+            parse_yaml12_float(&format!("{}", smallest), loc(), SfTag::None, false).unwrap();
         assert_eq!(val, f32::from_bits(1));
     }
 

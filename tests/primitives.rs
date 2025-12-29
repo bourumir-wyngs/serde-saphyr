@@ -77,7 +77,8 @@ f32_val: 3.1415927
 f64_val: 2.718281828459045
 "#;
 
-    let parsed = serde_saphyr::from_str::<PrimitiveStruct>(yaml).expect("failed to deserialize YAML");
+    let parsed =
+        serde_saphyr::from_str::<PrimitiveStruct>(yaml).expect("failed to deserialize YAML");
 
     let expected = PrimitiveStruct {
         text: "Hello Serde".to_string(),
@@ -247,8 +248,8 @@ fn deserialize_btreemap_with_tuple_keys() {
 : 6
 "#;
 
-    let parsed =
-        serde_saphyr::from_str::<BTreeMap<(i32, i32), i32>>(yaml).expect("failed to deserialize map");
+    let parsed = serde_saphyr::from_str::<BTreeMap<(i32, i32), i32>>(yaml)
+        .expect("failed to deserialize map");
 
     let mut expected = BTreeMap::new();
     expected.insert((1, 2), 3);

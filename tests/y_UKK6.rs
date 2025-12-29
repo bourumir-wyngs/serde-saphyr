@@ -11,7 +11,11 @@ fn y_ukk6_syntax_character_edge_cases() {
     assert_eq!(v1.len(), 1);
     let m = &v1[0];
     assert_eq!(m.len(), 1);
-    assert!(m.get(&None).is_some(), "expected a null key in the map, got: {:?}", m);
+    assert!(
+        m.get(&None).is_some(),
+        "expected a null key in the map, got: {:?}",
+        m
+    );
     assert_eq!(m.get(&None).unwrap(), &None);
 
     // Case 2: "::" -> expected object { ":": null }
@@ -19,8 +23,15 @@ fn y_ukk6_syntax_character_edge_cases() {
     let v2: J = serde_saphyr::from_str(yaml2).expect("UKK6 part 2 should parse");
     let obj = v2.as_object().expect("expected mapping for '::'");
     assert_eq!(obj.len(), 1);
-    assert!(obj.get(":").is_some(), "expected key ':' in mapping, got: {:?}", obj);
-    assert!(obj.get(":").unwrap().is_null(), "expected null value for key ':'");
+    assert!(
+        obj.get(":").is_some(),
+        "expected key ':' in mapping, got: {:?}",
+        obj
+    );
+    assert!(
+        obj.get(":").unwrap().is_null(),
+        "expected null value for key ':'"
+    );
 
     // Case 3: "!" -> null
     let yaml3 = "!\n";

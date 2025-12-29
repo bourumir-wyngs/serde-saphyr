@@ -1,8 +1,8 @@
 use indoc::indoc;
 use serde::Deserialize as Derive;
+use serde_json::Value;
 use serde_saphyr::Error;
 use std::fmt::Debug;
-use serde_json::Value;
 
 #[derive(Derive, Debug)]
 #[allow(dead_code)]
@@ -54,7 +54,6 @@ fn test_enum_billion_laughs() {
     println!("{:?}", parsed);
     assert!(format!("{}", parsed.unwrap_err()).contains("budget breached"));
 }
-
 
 #[test]
 fn test_smaller_with_tags() {

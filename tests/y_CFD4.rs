@@ -28,7 +28,10 @@ fn yaml_cfd4_empty_implicit_key_in_single_pair_flow_sequences() {
     match &v[1][0] {
         One::Map(m) => {
             assert_eq!(m.len(), 1);
-            assert_eq!(m.values().next().map(String::as_str), Some("another empty key"));
+            assert_eq!(
+                m.values().next().map(String::as_str),
+                Some("another empty key")
+            );
         }
     }
 }

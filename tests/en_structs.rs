@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-
-
 #[test]
 fn test_enum_struct_1() -> anyhow::Result<()> {
     #[derive(Serialize, Deserialize, PartialEq, Debug)]
@@ -54,5 +52,3 @@ fn test_enum_struct_2() -> anyhow::Result<()> {
 
     Ok(())
 }
-
-

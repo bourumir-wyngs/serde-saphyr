@@ -3,8 +3,8 @@
 use indoc::indoc;
 use serde::{Deserialize, Serialize};
 use serde_saphyr;
-use std::fmt::Debug;
 use serde_saphyr::from_str;
+use std::fmt::Debug;
 
 fn test_serde<T>(thing: &T, yaml: &str)
 where
@@ -34,7 +34,11 @@ fn test_enum_with_fields() {
     enum Variant {
         Color { r: u8, g: u8, b: u8 },
     }
-    let thing = Variant::Color { r: 32, g: 64, b: 96 };
+    let thing = Variant::Color {
+        r: 32,
+        g: 64,
+        b: 96,
+    };
     let yaml = indoc! {r#"
         Color:
           r: 32
@@ -62,18 +66,12 @@ fn test_nested_enum() {
     test_serde(&thing, yaml);
 }
 
-
 #[test]
 fn parse_mixed_item_list_yaml() {
-
     #[derive(Serialize, Deserialize, Debug, PartialEq)]
     enum Debut {
-        Shown {
-            cinema: String,
-        },
-        Bookstore {
-            address: String,
-        }
+        Shown { cinema: String },
+        Bookstore { address: String },
     }
 
     #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -82,12 +80,12 @@ fn parse_mixed_item_list_yaml() {
             title: String,
             publisher: String,
             published_at: String,
-            debut: Debut
+            debut: Debut,
         },
         Movie {
             title: String,
             director: String,
-            debut: Debut
+            debut: Debut,
         },
     }
 

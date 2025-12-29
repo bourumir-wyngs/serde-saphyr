@@ -1,5 +1,5 @@
-use serde::de::Deserializer;
 use serde::Deserialize;
+use serde::de::Deserializer;
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct OptTest {

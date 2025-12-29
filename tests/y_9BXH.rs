@@ -6,7 +6,8 @@ use std::collections::HashMap;
 #[test]
 fn yaml_9bxh_multiline_doublequoted_flow_mapping_key_without_value() {
     let y = "---\n- { \"single line\", a: b}\n- { \"multi\n  line\", a: b}\n";
-    let v: Vec<HashMap<String, Option<String>>> = serde_saphyr::from_str(y).expect("failed to parse 9BXH");
+    let v: Vec<HashMap<String, Option<String>>> =
+        serde_saphyr::from_str(y).expect("failed to parse 9BXH");
     assert_eq!(v.len(), 2);
     // First map
     let m0 = &v[0];

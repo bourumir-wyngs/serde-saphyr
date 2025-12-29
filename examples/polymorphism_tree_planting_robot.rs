@@ -14,7 +14,6 @@
 // BB.....BB.
 // ..........
 
-
 use serde::Deserialize;
 
 #[derive(Clone, Copy, Deserialize)]
@@ -30,7 +29,9 @@ impl Default for Tree {
     }
 }
 
-fn default_birch() -> Tree { Tree::Birch }
+fn default_birch() -> Tree {
+    Tree::Birch
+}
 
 #[derive(Clone, Copy, Deserialize)]
 enum Direction {
@@ -48,7 +49,7 @@ enum Command {
     #[serde(rename = "plant")]
     Plant(#[serde(default)] Option<PlantArgs>),
     #[serde(rename = "multistep")]
-    MultiStep { steps: Vec<Command> }
+    MultiStep { steps: Vec<Command> },
 }
 
 // Here we complicate a bit to show we can use a structure rather than enum variant

@@ -80,5 +80,3 @@ mod tests {
         aligned_keys_have_same_indentation(&vv);
     }
 }
-
-

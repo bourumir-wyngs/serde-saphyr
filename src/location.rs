@@ -1,7 +1,7 @@
 //! Source location utilities.
 
-use serde::Deserialize;
 use saphyr_parser::Span;
+use serde::Deserialize;
 
 /// Row/column location within the source YAML document (1-indexed).
 ///
@@ -11,9 +11,9 @@ use saphyr_parser::Span;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
 pub struct Location {
     /// 1-indexed row number in the input stream.
-    pub (crate) line: u32,
+    pub(crate) line: u32,
     /// 1-indexed column number in the input stream.
-    pub (crate) column: u32,
+    pub(crate) column: u32,
 }
 
 impl Location {

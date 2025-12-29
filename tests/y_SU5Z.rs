@@ -6,5 +6,9 @@ use serde_json::Value;
 fn y_su5z_comment_without_whitespace_should_fail() {
     let y = "key: \"value\"# invalid comment\n";
     let r: Result<Value, _> = serde_saphyr::from_str(y);
-    assert!(r.is_err(), "Parser accepted a comment without preceding whitespace after a double-quoted scalar: {:?}", r);
+    assert!(
+        r.is_err(),
+        "Parser accepted a comment without preceding whitespace after a double-quoted scalar: {:?}",
+        r
+    );
 }

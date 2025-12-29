@@ -3,21 +3,21 @@
 mod tests {
     use core::f64::consts::PI;
     use serde::Deserialize;
-    use serde_saphyr::{from_str_with_options, Options};
+    use serde_saphyr::{Options, from_str_with_options};
 
     #[derive(Debug, Deserialize)]
     struct RoboFloats {
         // Plain and tagged numbers
         plain: f64,
-        rad_tag: f64,     // !radians 0.15 => 0.15
-        deg_tag: f64,     // !degrees 180 => PI
+        rad_tag: f64, // !radians 0.15 => 0.15
+        deg_tag: f64, // !degrees 180 => PI
 
         // Constants and expressions
         pi_const: f64,
         tau_const: f64,
-        expr_mul: f64,    // 2*pi
-        expr_div: f64,    // pi/2
-        expr_complex: f64,// 1 + 2*(3 - 4/5)
+        expr_mul: f64,     // 2*pi
+        expr_div: f64,     // pi/2
+        expr_complex: f64, // 1 + 2*(3 - 4/5)
 
         // YAML special floats
         inf1: f64,
@@ -26,8 +26,8 @@ mod tests {
         nan1: f64,
 
         // Functions (explicit units)
-        func_deg: f64,    // deg(180) => PI
-        func_rad: f64,    // rad(pi) => PI
+        func_deg: f64, // deg(180) => PI
+        func_rad: f64, // rad(pi) => PI
 
         // Quoted functions should also be parsed (typed target is f64)
         quoted_deg: f64,
@@ -42,7 +42,7 @@ mod tests {
         // Angle via sexagesimal should be explicit using deg(...)
         angle_from_sexagesimal: f64,
         angle_from_sexagesimal_2: f64,
-        angle_from_sexagesimal_rad: f64
+        angle_from_sexagesimal_rad: f64,
     }
 
     #[test]
@@ -75,7 +75,7 @@ angle_from_sexagesimal_rad: !radians 8:32:53.2
 
         let options = Options {
             angle_conversions: true, // enable robotics angle parsing
-            .. Options::default()
+            ..Options::default()
         };
 
         let v: RoboFloats = from_str_with_options(yaml, options).expect("parse robotics YAML");
@@ -114,7 +114,7 @@ angle_from_sexagesimal_rad: !radians 8:32:53.2
         assert!((v.time_secs as f64 - (-3723.0)).abs() < 1e-6 as f64);
 
         // Angle from sexagesimal explicitly via deg(...)
-        let degs = 8.0 + 32.0/60.0 + 53.2/3600.0;
+        let degs = 8.0 + 32.0 / 60.0 + 53.2 / 3600.0;
         let expected_rad = degs * (PI / 180.0);
         assert!((v.angle_from_sexagesimal - expected_rad).abs() < 1e-12);
         assert!((v.angle_from_sexagesimal_2 - expected_rad).abs() < 1e-12);

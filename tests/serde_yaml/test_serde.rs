@@ -252,7 +252,6 @@ fn test_string_escapes() {
     test_serde(&"\u{1f389}".to_owned(), yaml);
 }
 
-
 #[test]
 fn test_multiline_string() {
     #[derive(Serialize, Deserialize, PartialEq, Debug)]
@@ -392,7 +391,6 @@ fn test_newtype_struct() {
     test_serde(&thing, yaml);
 }
 
-
 #[test]
 fn test_long_string() -> anyhow::Result<()> {
     #[derive(Serialize, Deserialize, PartialEq, Debug)]
@@ -404,7 +402,6 @@ fn test_long_string() -> anyhow::Result<()> {
         string: iter::repeat(["word", " "]).flatten().take(69).collect(),
     };
     let yaml = serde_saphyr::to_string(&thing)?;
-
 
     let yaml_2 = r#"string: >-
   word word word word word word word word word word word word word word word word
@@ -500,7 +497,9 @@ fn test_leaf_enum() {
     #[derive(Deserialize, Debug, PartialEq)]
     #[allow(dead_code)]
     enum Simple {
-        A, B, C,
+        A,
+        B,
+        C,
     }
     // This YAML has identation misplaced to Struct becomes an empty map
     let yaml = indoc! {

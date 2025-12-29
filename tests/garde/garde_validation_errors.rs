@@ -70,8 +70,6 @@ fn from_str_with_options_valid_runs_garde_validation() {
     assert_eq!(rendered, expected);
 }
 
-
-
 #[test]
 fn serde_rename() {
     #[derive(Debug, Deserialize, Validate)]
@@ -84,8 +82,9 @@ fn serde_rename() {
 
     let yaml = "myField: \"\"\n";
 
-    let err = serde_saphyr::from_str_with_options_valid::<StyleRenamedRoot>(yaml, Default::default())
-        .expect_err("must fail validation");
+    let err =
+        serde_saphyr::from_str_with_options_valid::<StyleRenamedRoot>(yaml, Default::default())
+            .expect_err("must fail validation");
     let rendered = err.to_string();
 
     // We print the resolved leaf name (YAML spelling) when location lookup bridges a rename.
@@ -124,8 +123,11 @@ fn from_str_validated_converts_garde_report_into_error() {
         serde_saphyr::Error::ValidationError { .. } => {}
         other => panic!("expected validation error, got: {other:?}"),
     }
-    assert!(rendered.contains("defined"), "expected snippet output, got: {rendered}");
- }
+    assert!(
+        rendered.contains("defined"),
+        "expected snippet output, got: {rendered}"
+    );
+}
 
 #[test]
 fn from_multiple_with_options_valid_returns_all_validation_errors() {
@@ -155,11 +157,7 @@ fn from_multiple_with_options_valid_returns_all_validation_errors() {
 #[test]
 fn from_slice_multiple_with_options_valid_validates_each_document() {
     // Same as `from_multiple_with_options_valid_validates_each_document`, but through the bytes API.
-    let yaml = concat!(
-        "a: \"ok\"\n",
-        "---\n",
-        "a: \"\"\n",
-    );
+    let yaml = concat!("a: \"ok\"\n", "---\n", "a: \"\"\n",);
 
     let err = serde_saphyr::from_slice_multiple_with_options_valid::<Root>(
         yaml.as_bytes(),
@@ -177,7 +175,6 @@ fn from_slice_multiple_with_options_valid_validates_each_document() {
         "expected garde path in output, got: {rendered}"
     );
 }
-
 
 #[test]
 fn validation_error_shows_referenced_and_defined_snippets_for_aliases() {
@@ -204,7 +201,7 @@ fn validation_error_shows_referenced_and_defined_snippets_for_aliases() {
         rendered.contains("This value comes indirectly from the anchor at line 1 column 7:"),
         "expected anchor context line, got: {rendered}"
     );
-    
+
     // And ensure the failing path is mentioned.
     assert!(
         rendered.contains("for `b`"),
@@ -216,15 +213,11 @@ fn validation_error_shows_referenced_and_defined_snippets_for_aliases() {
 fn validation_error_shows_longer_garde_path_for_nested_structures() {
     // Same anchor/alias scenario as `validation_error_shows_referenced_and_defined_snippets_for_aliases`,
     // but nested inside structures so garde produces a longer path like `outer.inner.b`.
-    let yaml = concat!(
-        "outer:\n",
-        "  inner:\n",
-        "    a: &A \"x\"\n",
-        "    b: *A\n",
-    );
+    let yaml = concat!("outer:\n", "  inner:\n", "    a: &A \"x\"\n", "    b: *A\n",);
 
-    let err = serde_saphyr::from_str_with_options_valid::<NestedAnchorRoot>(yaml, Default::default())
-        .expect_err("must fail validation");
+    let err =
+        serde_saphyr::from_str_with_options_valid::<NestedAnchorRoot>(yaml, Default::default())
+            .expect_err("must fail validation");
     let rendered = err.to_string();
     //println!("{rendered}");
 
@@ -249,11 +242,7 @@ fn validation_error_shows_longer_garde_path_for_nested_structures() {
 
 #[test]
 fn from_multiple_with_options_valid_validates_each_document() {
-    let yaml = concat!(
-        "a: \"ok\"\n",
-        "---\n",
-        "a: \"\"\n",
-    );
+    let yaml = concat!("a: \"ok\"\n", "---\n", "a: \"\"\n",);
 
     let err = serde_saphyr::from_multiple_with_options_valid::<Root>(yaml, Default::default())
         .expect_err("second document must fail validation");
@@ -298,16 +287,15 @@ fn from_reader_with_options_valid_runs_garde_validation_without_snippets() {
 
 #[test]
 fn read_with_options_valid_validates_each_document_in_iterator() {
-    let yaml = concat!(
-        "a: \"ok\"\n",
-        "---\n",
-        "a: \"\"\n",
-    );
+    let yaml = concat!("a: \"ok\"\n", "---\n", "a: \"\"\n",);
     let mut reader = std::io::Cursor::new(yaml.as_bytes());
 
     let mut it = serde_saphyr::read_with_options_valid::<_, Root>(&mut reader, Default::default());
 
-    let first = it.next().expect("must yield first document").expect("first doc should be valid");
+    let first = it
+        .next()
+        .expect("must yield first document")
+        .expect("first doc should be valid");
     assert_eq!(first.a, "ok");
 
     let err = it

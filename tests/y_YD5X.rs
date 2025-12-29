@@ -23,12 +23,12 @@ fn yaml_yd5x_sequence_of_sequences() {
     assert_eq!(
         rows,
         vec![
-            vec![Cell::S("name".into()), Cell::S("hr".into()), Cell::S("avg".into())],
             vec![
-                Cell::S("Mark McGwire".into()),
-                Cell::I(65),
-                Cell::F(0.278),
+                Cell::S("name".into()),
+                Cell::S("hr".into()),
+                Cell::S("avg".into())
             ],
+            vec![Cell::S("Mark McGwire".into()), Cell::I(65), Cell::F(0.278),],
             vec![Cell::S("Sammy Sosa".into()), Cell::I(63), Cell::F(0.288)],
         ]
     );

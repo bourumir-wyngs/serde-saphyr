@@ -15,9 +15,13 @@ fn yaml_2ebw_allowed_chars_in_keys() {
         "this is#not: a comment\n",
     );
 
-    let map: HashMap<String, String> = serde_saphyr::from_str(yaml).expect("failed to parse 2EBW YAML");
+    let map: HashMap<String, String> =
+        serde_saphyr::from_str(yaml).expect("failed to parse 2EBW YAML");
 
-    assert_eq!(map.get("a!\"#$%&'()*+,-./09:;<=>?@AZ[\\]^_`az{|}~"), Some(&"safe".to_string()));
+    assert_eq!(
+        map.get("a!\"#$%&'()*+,-./09:;<=>?@AZ[\\]^_`az{|}~"),
+        Some(&"safe".to_string())
+    );
     assert_eq!(map.get("?foo"), Some(&"safe question mark".to_string()));
     assert_eq!(map.get(":foo"), Some(&"safe colon".to_string()));
     assert_eq!(map.get("-foo"), Some(&"safe dash".to_string()));

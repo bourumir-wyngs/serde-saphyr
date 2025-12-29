@@ -18,14 +18,12 @@ national:
   - Atlanta Braves
 "#;
     let v: Leagues = serde_saphyr::from_str(y).expect("failed to parse PBJ2");
-    assert_eq!(v.american, vec![
-        "Boston Red Sox",
-        "Detroit Tigers",
-        "New York Yankees",
-    ]);
-    assert_eq!(v.national, vec![
-        "New York Mets",
-        "Chicago Cubs",
-        "Atlanta Braves",
-    ]);
+    assert_eq!(
+        v.american,
+        vec!["Boston Red Sox", "Detroit Tigers", "New York Yankees",]
+    );
+    assert_eq!(
+        v.national,
+        vec!["New York Mets", "Chicago Cubs", "Atlanta Braves",]
+    );
 }

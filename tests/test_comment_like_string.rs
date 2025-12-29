@@ -26,6 +26,9 @@ fn test_comment_like_string_quoted() -> anyhow::Result<()> {
         s2: None,
     };
     let yaml = serde_saphyr::to_string(&t)?;
-    assert!(yaml.contains("\"# like comment\""), "String starting from # must be quoted");
+    assert!(
+        yaml.contains("\"# like comment\""),
+        "String starting from # must be quoted"
+    );
     Ok(())
 }

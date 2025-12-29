@@ -10,7 +10,7 @@ fn serialize_empty_vec() -> anyhow::Result<()> {
 
     let ea = Ea {
         value_vec: Vec::new(),
-        value_array: []
+        value_array: [],
     };
 
     let mut s: String = String::new();

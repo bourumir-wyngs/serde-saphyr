@@ -158,7 +158,7 @@ fn simple_tagged_enum_name(raw_tag: &Option<String>, tag: &SfTag) -> Option<Stri
 }
 
 /// Canonical fingerprint of a YAML node for duplicate-key detection.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 enum KeyFingerprint {
     /// Scalar fingerprint (value plus optional tag).
     Scalar { value: String, tag: SfTag },
@@ -167,13 +167,8 @@ enum KeyFingerprint {
     /// Mapping fingerprint (ordered list of `(key, value)` fingerprints).
     Mapping(Vec<(KeyFingerprint, KeyFingerprint)>),
     /// Should not be used, arises after taking the value away
+    #[default]
     Default,
-}
-
-impl Default for KeyFingerprint {
-    fn default() -> Self {
-        KeyFingerprint::Default
-    }
 }
 
 impl KeyFingerprint {
@@ -222,16 +217,11 @@ impl KeyNode {
         match self {
             KeyNode::Fingerprinted { fingerprint, .. } => Cow::Borrowed(fingerprint),
             KeyNode::Scalar { events, .. } => {
-                if let Some(first_event) = events.first() {
-                    match first_event {
-                        Ev::Scalar { tag, value, .. } => Cow::Owned(KeyFingerprint::Scalar {
-                            tag: *tag,
-                            value: value.clone(),
-                        }),
-                        _ => {
-                            unreachable!()
-                        }
-                    }
+                if let Some(Ev::Scalar { tag, value, .. }) = events.first() {
+                    Cow::Owned(KeyFingerprint::Scalar {
+                        tag: *tag,
+                        value: value.clone(),
+                    })
                 } else {
                     unreachable!()
                 }
@@ -241,8 +231,8 @@ impl KeyNode {
 
     fn events(&self) -> &[Ev] {
         match self {
-            KeyNode::Fingerprinted { events, .. } => &events,
-            KeyNode::Scalar { events, .. } => &events,
+            KeyNode::Fingerprinted { events, .. } => events,
+            KeyNode::Scalar { events, .. } => events,
         }
     }
 
@@ -598,7 +588,11 @@ fn pending_entries_from_live_events(
         .with_location(*location)),
         Some(Ev::MapStart { .. }) => {
             let mut node = capture_node(ev)?;
-            pending_entries_from_events(node.take_events(), node.location(), merge_reference_location)
+            pending_entries_from_events(
+                node.take_events(),
+                node.location(),
+                merge_reference_location,
+            )
         }
         Some(Ev::SeqStart { .. }) => {
             let _ = ev.next()?; // consume SeqStart
@@ -1254,25 +1248,22 @@ impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
     ///   must be quoted; this check uses scalar style to avoid flagging quoted scalars.
     fn deserialize_char<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Mirror deserialize_string pre-checks to leverage tag/style and maybe_not_string.
-        if let Some(next) = self.ev.peek()? {
-            if let Ev::Scalar {
-                tag, style, value, ..
-            } = next
-            {
-                if tag != &SfTag::String {
-                    // Reject YAML null for char (allow quoted values like "null").
-                    if tag == &SfTag::Null || scalar_is_nullish(value, style) {
-                        let (_value, _tag, location) = self.take_scalar_event()?;
-                        return Err(Error::msg(
-                            "invalid char: cannot deserialize null; use Option<char>",
-                        )
-                        .with_location(location));
-                    } else if self.cfg.no_schema && maybe_not_string(value, style) {
-                        // Require quoting for ambiguous plain scalars in no_schema mode.
-                        let (value, _tag, location) = self.take_scalar_event()?;
-                        return Err(Error::quoting_required(&value).with_location(location));
-                    }
-                }
+        if let Some(Ev::Scalar {
+            tag, style, value, ..
+        }) = self.ev.peek()?
+            && tag != &SfTag::String
+        {
+            // Reject YAML null for char (allow quoted values like "null").
+            if tag == &SfTag::Null || scalar_is_nullish(value, style) {
+                let (_value, _tag, location) = self.take_scalar_event()?;
+                return Err(
+                    Error::msg("invalid char: cannot deserialize null; use Option<char>")
+                        .with_location(location),
+                );
+            } else if self.cfg.no_schema && maybe_not_string(value, style) {
+                // Require quoting for ambiguous plain scalars in no_schema mode.
+                let (value, _tag, location) = self.take_scalar_event()?;
+                return Err(Error::quoting_required(&value).with_location(location));
             }
         }
 
@@ -1335,26 +1326,23 @@ helper to deserialize into String or Cow<'de, str> instead
     /// **From/To:** scalar text (or base64-decoded bytes) → `Visitor::visit_string`.
     fn deserialize_string<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Reject YAML null when deserializing into String. Allow quoted forms.
-        if let Some(next) = self.ev.peek()? {
-            if let Ev::Scalar {
-                tag, style, value, ..
-            } = next
-            {
-                // If explicitly tagged as null, or plain null-like, this is not a valid String.
-                if tag != &SfTag::String {
-                    if tag == &SfTag::Null || scalar_is_nullish(value, style) {
-                        // Consume the scalar to anchor the error at the correct location.
-                        let (_value, _tag, location) = self.take_scalar_event()?;
-                        return Err(Error::msg(
-                            "cannot deserialize null into string; use Option<String>",
-                        )
-                        .with_location(location));
-                    } else if self.cfg.no_schema && maybe_not_string(value, style) {
-                        // Consume the scalar to anchor the error at the correct location.
-                        let (value, _tag, location) = self.take_scalar_event()?;
-                        return Err(Error::quoting_required(&value).with_location(location));
-                    }
-                }
+        if let Some(Ev::Scalar {
+            tag, style, value, ..
+        }) = self.ev.peek()?
+            && tag != &SfTag::String
+        {
+            // If explicitly tagged as null, or plain null-like, this is not a valid String.
+            if tag == &SfTag::Null || scalar_is_nullish(value, style) {
+                // Consume the scalar to anchor the error at the correct location.
+                let (_value, _tag, location) = self.take_scalar_event()?;
+                return Err(
+                    Error::msg("cannot deserialize null into string; use Option<String>")
+                        .with_location(location),
+                );
+            } else if self.cfg.no_schema && maybe_not_string(value, style) {
+                // Consume the scalar to anchor the error at the correct location.
+                let (value, _tag, location) = self.take_scalar_event()?;
+                return Err(Error::quoting_required(&value).with_location(location));
             }
         }
         visitor.visit_string(self.take_string_scalar()?)
@@ -1554,9 +1542,7 @@ helper to deserialize into String or Cow<'de, str> instead
     ) -> Result<V::Value, Self::Error> {
         match n {
             // Internal wrapper types use `__yaml_*` names (see `__yaml_rc_anchor`, etc.).
-            "__yaml_spanned" => {
-                spanned_deser::deserialize_yaml_spanned(self, visitor)
-            }
+            "__yaml_spanned" => spanned_deser::deserialize_yaml_spanned(self, visitor),
             "__yaml_rc_anchor" => {
                 let anchor = self.peek_anchor_id()?;
                 anchor_store::with_anchor_context(AnchorKind::Rc, anchor, || {
@@ -1671,7 +1657,7 @@ helper to deserialize into String or Cow<'de, str> instead
                         #[cfg(feature = "garde")]
                         {
                             if let Some(garde_ref) = self.garde.as_mut() {
-                                let recorder: &mut PathRecorder = &mut **garde_ref;
+                                let recorder: &mut PathRecorder = garde_ref;
 
                                 // Definition-site location: where the node is defined in the YAML.
                                 // For aliases, this will point at the anchor definition.
@@ -1694,8 +1680,7 @@ helper to deserialize into String or Cow<'de, str> instead
                                     .defined
                                     .insert(recorder.current.clone(), defined_location);
 
-                                let de =
-                                    Deser::new_with_path_recorder(self.ev, self.cfg, recorder);
+                                let de = Deser::new_with_path_recorder(self.ev, self.cfg, recorder);
                                 let res = seed.deserialize(de).map(Some);
 
                                 recorder.current = prev;
@@ -1766,27 +1751,26 @@ helper to deserialize into String or Cow<'de, str> instead
             style,
             ..
         }) = self.ev.peek()?
+            && (tag == &SfTag::Null || scalar_is_nullish(s, style))
         {
-            if tag == &SfTag::Null || scalar_is_nullish(s, style) {
-                let _ = self.ev.next()?; // consume the null-like scalar
-                struct EmptyMap;
-                impl<'de> de::MapAccess<'de> for EmptyMap {
-                    type Error = Error;
-                    fn next_key_seed<K>(&mut self, _seed: K) -> Result<Option<K::Value>, Error>
-                    where
-                        K: de::DeserializeSeed<'de>,
-                    {
-                        Ok(None)
-                    }
-                    fn next_value_seed<Vv>(&mut self, _seed: Vv) -> Result<Vv::Value, Error>
-                    where
-                        Vv: de::DeserializeSeed<'de>,
-                    {
-                        unreachable!("no values in empty map")
-                    }
+            let _ = self.ev.next()?; // consume the null-like scalar
+            struct EmptyMap;
+            impl<'de> de::MapAccess<'de> for EmptyMap {
+                type Error = Error;
+                fn next_key_seed<K>(&mut self, _seed: K) -> Result<Option<K::Value>, Error>
+                where
+                    K: de::DeserializeSeed<'de>,
+                {
+                    Ok(None)
                 }
-                return visitor.visit_map(EmptyMap);
+                fn next_value_seed<Vv>(&mut self, _seed: Vv) -> Result<Vv::Value, Error>
+                where
+                    Vv: de::DeserializeSeed<'de>,
+                {
+                    unreachable!("no values in empty map")
+                }
             }
+            return visitor.visit_map(EmptyMap);
         }
         self.expect_map_start()?;
         /// Streaming `MapAccess` over the underlying `Events`.
@@ -1941,61 +1925,50 @@ helper to deserialize into String or Cow<'de, str> instead
                         let kemn_direct =
                             matches!(fingerprint, KeyFingerprint::Mapping(ref v) if v.is_empty());
                         let mut kemn = kemn_direct;
-                        if !kemn {
-                            if let KeyFingerprint::Mapping(ref pairs) = fingerprint {
-                                if pairs.len() == 1 {
-                                    if let (
-                                        KeyFingerprint::Scalar {
-                                            value: sv,
-                                            tag: stag,
+                        if !kemn
+                            && let KeyFingerprint::Mapping(ref pairs) = fingerprint
+                            && pairs.len() == 1
+                            && let (
+                                KeyFingerprint::Scalar {
+                                    value: sv,
+                                    tag: stag,
+                                },
+                                _,
+                            ) = &pairs[0]
+                        {
+                            let is_nullish = *stag == SfTag::Null
+                                || sv.is_empty()
+                                || sv == "~"
+                                || sv.eq_ignore_ascii_case("null");
+                            if is_nullish {
+                                // Zero-copy probe over recorded events to extract inner key/value spans
+                                if let Some((_ks, _ke, vs, ve)) = one_entry_map_spans(&events) {
+                                    // Replace value_events with inner value events and key events with empty map
+                                    value_events = events.drain(vs..ve).collect();
+                                    // Build empty map events using the first and last from original events
+                                    let start = match events.first() {
+                                        Some(Ev::MapStart { anchor, location }) => Ev::MapStart {
+                                            anchor: *anchor,
+                                            location: *location,
                                         },
-                                        _,
-                                    ) = &pairs[0]
-                                    {
-                                        let is_nullish = *stag == SfTag::Null
-                                            || sv.is_empty()
-                                            || sv == "~"
-                                            || sv.eq_ignore_ascii_case("null");
-                                        if is_nullish {
-                                            // Zero-copy probe over recorded events to extract inner key/value spans
-                                            if let Some((_ks, _ke, vs, ve)) =
-                                                one_entry_map_spans(&events)
-                                            {
-                                                // Replace value_events with inner value events and key events with empty map
-                                                value_events = events.drain(vs..ve).collect();
-                                                // Build empty map events using the first and last from original events
-                                                let start = match events.first() {
-                                                    Some(Ev::MapStart { anchor, location }) => {
-                                                        Ev::MapStart {
-                                                            anchor: *anchor,
-                                                            location: *location,
-                                                        }
-                                                    }
-                                                    Some(other) => other.clone(),
-                                                    None => {
-                                                        return Err(Error::unexpected(
-                                                            "mapping start",
-                                                        )
-                                                        .with_location(location));
-                                                    }
-                                                };
-                                                let end = match events.last() {
-                                                    Some(Ev::MapEnd { location }) => Ev::MapEnd {
-                                                        location: *location,
-                                                    },
-                                                    Some(other) => other.clone(),
-                                                    None => {
-                                                        return Err(Error::unexpected(
-                                                            "mapping end",
-                                                        )
-                                                        .with_location(location));
-                                                    }
-                                                };
-                                                events = vec![start, end];
-                                                kemn = true;
-                                            }
+                                        Some(other) => other.clone(),
+                                        None => {
+                                            return Err(Error::unexpected("mapping start")
+                                                .with_location(location));
                                         }
-                                    }
+                                    };
+                                    let end = match events.last() {
+                                        Some(Ev::MapEnd { location }) => Ev::MapEnd {
+                                            location: *location,
+                                        },
+                                        Some(other) => other.clone(),
+                                        None => {
+                                            return Err(Error::unexpected("mapping end")
+                                                .with_location(location));
+                                        }
+                                    };
+                                    events = vec![start, end];
+                                    kemn = true;
                                 }
                             }
                         }
@@ -2012,9 +1985,8 @@ helper to deserialize into String or Cow<'de, str> instead
 
                         #[cfg(feature = "garde")]
                         {
-                            self.pending_path_segment = fingerprint
-                                .stringy_scalar_value()
-                                .map(|s| s.to_owned());
+                            self.pending_path_segment =
+                                fingerprint.stringy_scalar_value().map(|s| s.to_owned());
                         }
 
                         self.seen.insert(fingerprint);
@@ -2051,7 +2023,8 @@ helper to deserialize into String or Cow<'de, str> instead
                                 // to point at the alias token.
                                 let _ = self.ev.peek()?;
                                 let merge_ref_loc = self.ev.reference_location();
-                                let entries = pending_entries_from_live_events(self.ev, merge_ref_loc)?;
+                                let entries =
+                                    pending_entries_from_live_events(self.ev, merge_ref_loc)?;
                                 if !entries.is_empty() {
                                     self.merge_stack.push(entries);
                                 }
@@ -2180,7 +2153,7 @@ helper to deserialize into String or Cow<'de, str> instead
                     {
                         if let (Some(seg), Some(garde_ref)) = (pending_segment, self.garde.as_mut())
                         {
-                            let recorder: &mut PathRecorder = &mut **garde_ref;
+                            let recorder: &mut PathRecorder = garde_ref;
 
                             // Definition-site location: where the node is defined in the YAML.
                             // For aliases, this will point at the anchor definition.
@@ -2198,8 +2171,7 @@ helper to deserialize into String or Cow<'de, str> instead
                                 .defined
                                 .insert(recorder.current.clone(), defined_location);
 
-                            let de =
-                                Deser::new_with_path_recorder(&mut replay, self.cfg, recorder);
+                            let de = Deser::new_with_path_recorder(&mut replay, self.cfg, recorder);
                             let res = seed.deserialize(de);
                             recorder.current = prev;
                             return res;
@@ -2222,7 +2194,7 @@ helper to deserialize into String or Cow<'de, str> instead
 
                         if let (Some(seg), Some(garde_ref)) = (pending_segment, self.garde.as_mut())
                         {
-                            let recorder: &mut PathRecorder = &mut **garde_ref;
+                            let recorder: &mut PathRecorder = garde_ref;
                             let prev = recorder.current.clone();
                             recorder.current = recorder.current.join(seg.as_str());
                             recorder
@@ -2232,8 +2204,7 @@ helper to deserialize into String or Cow<'de, str> instead
                                 .defined
                                 .insert(recorder.current.clone(), defined_location);
 
-                            let de =
-                                Deser::new_with_path_recorder(self.ev, self.cfg, recorder);
+                            let de = Deser::new_with_path_recorder(self.ev, self.cfg, recorder);
                             let res = seed.deserialize(de);
                             recorder.current = prev;
                             return res;
@@ -2362,14 +2333,14 @@ helper to deserialize into String or Cow<'de, str> instead
             None => return Err(Error::eof().with_location(self.ev.last_location())),
         };
 
-        if let Some((tag_name, location)) = tagged_enum {
-            if tag_name != _name {
-                return Err(Error::msg(format!(
-                    "tagged enum `{}` does not match target enum `{}`",
-                    tag_name, _name
-                ))
-                .with_location(location));
-            }
+        if let Some((tag_name, location)) = tagged_enum
+            && tag_name != _name
+        {
+            return Err(Error::msg(format!(
+                "tagged enum `{}` does not match target enum `{}`",
+                tag_name, _name
+            ))
+            .with_location(location));
         }
 
         struct EA<'e> {

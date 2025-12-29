@@ -13,5 +13,9 @@ fn yaml_yjv2_dash_in_flow_sequence_should_fail() {
 "#;
 
     let result: Result<Vec<String>, _> = serde_saphyr::from_str(y);
-    assert!(result.is_err(), "YJV2 should be invalid YAML for this parser; it unexpectedly parsed as: {:?}", result);
+    assert!(
+        result.is_err(),
+        "YJV2 should be invalid YAML for this parser; it unexpectedly parsed as: {:?}",
+        result
+    );
 }

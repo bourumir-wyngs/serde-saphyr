@@ -22,7 +22,10 @@ fn yaml_mus6_invalid_yaml_1_1_with_trailing() {
 fn yaml_mus6_two_yaml_1_2_directives_should_fail() {
     let y = "%YAML 1.2\n---\n%YAML 1.2\n---\n";
     let r: Result<Vec<serde::de::IgnoredAny>, _> = serde_saphyr::from_multiple(y);
-    assert!(r.is_err(), "MUS6 case2 should fail to parse due to repeated directives");
+    assert!(
+        r.is_err(),
+        "MUS6 case2 should fail to parse due to repeated directives"
+    );
 }
 
 // Case 3: "%YAML  1.1" — extra space, then an empty doc. Expect None.

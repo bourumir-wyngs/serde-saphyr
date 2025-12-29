@@ -31,7 +31,10 @@ fn nested_mapping_block_scalar_body_is_correctly_indented() -> anyhow::Result<()
     //     line A
     //     line B
     //   city: Town
-    assert!(yaml.contains("address:\n  lines: |\n    line A\n    line B\n  city: Town\n"), "Unexpected YAML:\n{yaml}");
+    assert!(
+        yaml.contains("address:\n  lines: |\n    line A\n    line B\n  city: Town\n"),
+        "Unexpected YAML:\n{yaml}"
+    );
 
     // And ensure it round-trips
     let w2: Wrapper = serde_saphyr::from_str(&yaml)?;

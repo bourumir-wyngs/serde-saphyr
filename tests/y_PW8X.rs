@@ -76,7 +76,10 @@ fn yaml_pw8x_anchors_on_empty_scalars() {
     match &v[2] {
         Item::Map(m) => {
             assert_eq!(m.get(&None).cloned().flatten().as_deref(), Some("a"));
-            assert!(m.get(&Some("b".to_string())).is_some() && m.get(&Some("b".to_string())).unwrap().is_none());
+            assert!(
+                m.get(&Some("b".to_string())).is_some()
+                    && m.get(&Some("b".to_string())).unwrap().is_none()
+            );
         }
         other => panic!("third element should be a map, got: {:?}", other),
     }

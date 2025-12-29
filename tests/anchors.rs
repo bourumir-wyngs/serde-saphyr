@@ -51,7 +51,7 @@ seq:
     // ---------------------------------------------------------------------
     use indoc::indoc;
     use serde::Serialize;
-    use serde_saphyr::{from_str, to_string, ArcAnchor, RcAnchor, RcWeakAnchor};
+    use serde_saphyr::{ArcAnchor, RcAnchor, RcWeakAnchor, from_str, to_string};
     use std::rc::Rc;
     use std::sync::Arc;
 
@@ -155,7 +155,6 @@ seq:
         assert!(Arc::ptr_eq(&doc.a.0, &doc.b.0)); // same object
     }
 
-
     #[test]
     fn anchor_struct_deserialize() -> anyhow::Result<()> {
         #[derive(Deserialize, Serialize)]
@@ -185,15 +184,17 @@ seq:
         };
 
         let serialized = serde_saphyr::to_string(&data)?;
-        assert_eq!(serialized, String::from(
-            indoc! {
+        assert_eq!(
+            serialized,
+            String::from(indoc! {
             r#"primary_a: &a1
                   name: primary_a
                 doc:
                   a: *a1
                   b: &a2
                     name: the_b
-            "#}));
+            "#})
+        );
 
         let deserialized: Bigger = serde_saphyr::from_str(&serialized)?;
 
@@ -203,5 +204,4 @@ seq:
 
         Ok(())
     }
-
 }

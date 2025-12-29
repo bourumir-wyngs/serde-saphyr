@@ -230,7 +230,6 @@ base_map: &m
     assert_eq!(cfg.merged_host.defined.column(), 16);
 }
 
-
 /// KEMN = Key Empty Map Node
 #[derive(Debug, Deserialize)]
 struct KeyEmptyMapNoneAliasCfg {

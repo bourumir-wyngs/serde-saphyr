@@ -12,6 +12,11 @@ use std::cell::RefCell;
 use std::io::{self, BufReader, Error, Read};
 use std::rc::Rc;
 
+type DynReader<'a> = Box<dyn Read + 'a>;
+type DynBufReader<'a> = BufReader<DynReader<'a>>;
+pub type ReaderInput<'a> = BufferedInput<ChunkedChars<DynBufReader<'a>>>;
+pub type ReaderInputError = Rc<RefCell<Option<Error>>>;
+
 pub struct ChunkedChars<R: Read> {
     /// Optional hard cap on total decoded UTF-8 bytes yielded by this iterator.
     max_bytes: Option<usize>,
@@ -26,11 +31,7 @@ pub struct ChunkedChars<R: Read> {
 }
 
 impl<R: Read> ChunkedChars<R> {
-    pub fn new(
-        reader: R,
-        max_bytes: Option<usize>,
-        err: Rc<RefCell<Option<Error>>>,
-    ) -> Self {
+    pub fn new(reader: R, max_bytes: Option<usize>, err: Rc<RefCell<Option<Error>>>) -> Self {
         Self {
             max_bytes,
             total_bytes: 0,
@@ -118,7 +119,8 @@ impl<R: Read> Iterator for ChunkedChars<R> {
         match std::str::from_utf8(&buf[..needed]) {
             Ok(s) => s.chars().next(),
             Err(e) => {
-                self.err.replace(Some(io::Error::new(io::ErrorKind::InvalidData, e)));
+                self.err
+                    .replace(Some(io::Error::new(io::ErrorKind::InvalidData, e)));
                 None
             }
         }
@@ -130,18 +132,15 @@ impl<R: Read> Iterator for ChunkedChars<R> {
 pub fn buffered_input_from_reader_with_limit<'a, R: Read + 'a>(
     reader: R,
     max_bytes: Option<usize>,
-) -> (
-    BufferedInput<ChunkedChars<BufReader<Box<dyn Read + 'a>>>>,
-    Rc<RefCell<Option<Error>>>,
-) {
+) -> (ReaderInput<'a>, ReaderInputError) {
     // Auto-detect encoding (BOM or guess), decode to UTF-8 on the fly.
     let decoder = DecodeReaderBytesBuilder::new()
         .encoding(None) // None = sniff BOM / use heuristics; set Some(encoding) to force
         .build(reader);
 
-    let error: Rc<RefCell<Option<Error>>> = Rc::new(RefCell::new(None));
+    let error: ReaderInputError = Rc::new(RefCell::new(None));
 
-    let br = BufReader::new(Box::new(decoder) as Box<dyn Read + 'a>);
+    let br = BufReader::new(Box::new(decoder) as DynReader<'a>);
     let char_iter = ChunkedChars::new(br, max_bytes, error.clone());
 
     (BufferedInput::new(char_iter), error)
@@ -149,7 +148,7 @@ pub fn buffered_input_from_reader_with_limit<'a, R: Read + 'a>(
 
 #[cfg(test)]
 mod tests {
-    use crate::buffered_input::{buffered_input_from_reader_with_limit, ChunkedChars};
+    use crate::buffered_input::{ChunkedChars, buffered_input_from_reader_with_limit};
     use saphyr_parser::{BufferedInput, Event, Parser};
     use std::io::{BufReader, Cursor, Read};
 

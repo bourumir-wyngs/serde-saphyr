@@ -7,11 +7,13 @@ use serde::Deserialize;
 // Expected: mapping with key "block mapping" -> nested map { key: "value" }
 
 #[derive(Debug, Deserialize)]
-struct Inner { key: String }
+struct Inner {
+    key: String,
+}
 
 #[derive(Debug, Deserialize)]
 struct Root {
-    #[serde(rename = "block mapping")] 
+    #[serde(rename = "block mapping")]
     block_mapping: Inner,
 }
 

@@ -4,5 +4,8 @@
 fn yaml_c2sp_flow_mapping_key_on_two_lines_should_fail() {
     let y = "[23\n]: 42\n";
     let result: Result<std::collections::HashMap<String, i32>, _> = serde_saphyr::from_str(y);
-    assert!(result.is_err(), "C2SP should fail to parse due to split flow key across lines");
+    assert!(
+        result.is_err(),
+        "C2SP should fail to parse due to split flow key across lines"
+    );
 }

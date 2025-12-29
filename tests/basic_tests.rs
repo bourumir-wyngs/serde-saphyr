@@ -1,11 +1,11 @@
 #[cfg(test)]
 mod tests {
     use serde::Deserialize;
-    use serde_saphyr::{from_reader, DuplicateKeyPolicy, Error};
+    use serde_saphyr::budget::BudgetBreach;
+    use serde_saphyr::{DuplicateKeyPolicy, Error, from_reader};
     use serde_saphyr::{
         Options, from_multiple, from_multiple_with_options, from_str, from_str_with_options,
     };
-    use serde_saphyr::budget::BudgetBreach;
     use std::collections::HashMap;
 
     fn unwrap_snippet(err: &Error) -> &Error {

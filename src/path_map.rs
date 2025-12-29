@@ -35,7 +35,9 @@ pub struct PathMap {
 
 impl PathMap {
     pub(crate) fn new() -> Self {
-        Self { map: HashMap::new() }
+        Self {
+            map: HashMap::new(),
+        }
     }
 
     pub(crate) fn insert(&mut self, path: PathKey, location: Location) {
@@ -73,7 +75,7 @@ impl PathMap {
         target: &PathKey,
         mut matches: impl FnMut(&PathKey, &PathKey) -> bool,
     ) -> Option<(Location, String)> {
-        if target.len() == 0 {
+        if target.is_empty() {
             return None;
         }
 
@@ -96,7 +98,9 @@ fn leaf_segment_string(path: &PathKey) -> Option<String> {
     iter_segments(path).next().map(|(_k, s)| s.to_owned())
 }
 
-fn iter_segments<'a>(path: &'a garde::error::Path) -> impl Iterator<Item = (garde::error::Kind, &'a str)> + 'a {
+fn iter_segments<'a>(
+    path: &'a garde::error::Path,
+) -> impl Iterator<Item = (garde::error::Kind, &'a str)> + 'a {
     path.__iter().map(|(k, s)| (k, s.as_str()))
 }
 
@@ -134,13 +138,13 @@ fn segments_equal_collapsed_case_insensitive(target: &PathKey, candidate: &PathK
         return false;
     }
 
-    iter_segments(target).zip(iter_segments(candidate)).all(
-        |((tk, ts), (ck, cs))| {
+    iter_segments(target)
+        .zip(iter_segments(candidate))
+        .all(|((tk, ts), (ck, cs))| {
             tk == ck
                 && collapse_non_alnum_ascii_lower(strip_raw_identifier_prefix(ts))
                     == collapse_non_alnum_ascii_lower(strip_raw_identifier_prefix(cs))
-        },
-    )
+        })
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -193,7 +197,9 @@ fn tokenize_segment(s: &str) -> Vec<String> {
                 (CharClass::Digit, CharClass::Lower | CharClass::Upper) => true,
                 (CharClass::Lower | CharClass::Upper, CharClass::Digit) => true,
                 // HTTPServer: split before the S in Server (Acronym + Word)
-                (CharClass::Upper, CharClass::Upper) if matches!(next, Some(CharClass::Lower)) => true,
+                (CharClass::Upper, CharClass::Upper) if matches!(next, Some(CharClass::Lower)) => {
+                    true
+                }
                 _ => false,
             };
 

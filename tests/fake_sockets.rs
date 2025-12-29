@@ -1,5 +1,5 @@
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use serde::{Serialize, Deserialize};
 
 #[test]
 fn test() {
@@ -27,12 +27,9 @@ fn test() {
 
     #[derive(Serialize, Deserialize)]
     pub enum EndpointItem {
-        PCT {
-            platz: OcketPlatz,
-        },
+        PCT { platz: OcketPlatz },
         Unknown,
     }
-
 
     let ep = Listener {
         endpoint: vec![Endpoint {
@@ -40,14 +37,16 @@ fn test() {
             tag: None,
             item: EndpointItem::PCT {
                 platz: OcketPlatz::V4 {
-                    pi: Ivp4Platz { octets: [127, 0, 0, 1] },
+                    pi: Ivp4Platz {
+                        octets: [127, 0, 0, 1],
+                    },
                 },
             },
         }],
     };
 
     let s = serde_saphyr::to_string(&ep).unwrap();
-    
+
     // Round trip: deserialize back from string and assert values
     let ep2: Listener = serde_saphyr::from_str(&s).unwrap();
 

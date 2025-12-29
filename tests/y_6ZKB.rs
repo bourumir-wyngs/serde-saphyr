@@ -20,10 +20,15 @@ fn yaml_6zkb_stream_multiple_documents() {
     // This should parse fine and demonstrate that untagged enums handle
     // mixed document types (string, optional empty, mapping).
     let y = "Document\n---\n# Empty\n...\n%YAML 1.2\n---\nmatches %: 20\n";
-    let docs: Vec<Doc> = serde_saphyr::from_multiple(y).expect("failed to parse 6ZKB without directive");
+    let docs: Vec<Doc> =
+        serde_saphyr::from_multiple(y).expect("failed to parse 6ZKB without directive");
 
     // Empty document may be skipped; accept 2 docs, or 3 if the empty doc surfaces.
-    assert!(docs.len() == 2 || docs.len() == 3, "expected 2 non-empty docs or 3 with an empty in the middle, got: {:?}", docs);
+    assert!(
+        docs.len() == 2 || docs.len() == 3,
+        "expected 2 non-empty docs or 3 with an empty in the middle, got: {:?}",
+        docs
+    );
 
     match &docs[0] {
         Doc::S(s) => assert_eq!(s, "Document"),

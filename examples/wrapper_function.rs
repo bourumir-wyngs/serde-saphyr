@@ -1,5 +1,5 @@
-use serde::de::DeserializeOwned;
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 
 pub fn from_str<T: DeserializeOwned>(s: &str) -> Result<T, serde_saphyr::Error> {
     let options = serde_saphyr::Options {
@@ -22,13 +22,16 @@ struct Config {
     retries: i32,
 }
 
-fn main() -> anyhow::Result<()>{
+fn main() -> anyhow::Result<()> {
     let yaml_input = r#"
   name: "My Application"
   enabled: true
   retries: 5
 "#;
     let config: Config = from_str(yaml_input)?;
-    println!("Config: {}, {}, {}", config.name, config.enabled, config.retries);
+    println!(
+        "Config: {}, {}, {}",
+        config.name, config.enabled, config.retries
+    );
     Ok(())
 }

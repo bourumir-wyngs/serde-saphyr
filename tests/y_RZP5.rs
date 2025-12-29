@@ -30,7 +30,8 @@ block: > # lala
 
     // We parse into a BTreeMap with a flexible Key that can be either a String or a sequence of strings,
     // and serde_json::Value for values (sufficient for verifying shapes and leaf scalars here).
-    let map: BTreeMap<Key, serde_json::Value> = serde_saphyr::from_str(yaml).expect("parse YAML with structured key");
+    let map: BTreeMap<Key, serde_json::Value> =
+        serde_saphyr::from_str(yaml).expect("parse YAML with structured key");
 
     // a: "double quotes"
     assert_eq!(
@@ -59,7 +60,9 @@ block: > # lala
     // ? - seq1 : - seq2  => key is a one-element sequence ["seq1"], value is sequence ["seq2"]
     let k = Key::Seq(vec!["seq1".into()]);
     let v = map.get(&k).expect("sequence key present");
-    let arr = v.as_array().expect("value under sequence key is a sequence/array");
+    let arr = v
+        .as_array()
+        .expect("value under sequence key is a sequence/array");
     assert_eq!(arr.len(), 1);
     assert_eq!(arr[0].as_str().unwrap(), "seq2");
 
@@ -71,9 +74,16 @@ block: > # lala
     assert_eq!(e_map.len(), 1);
     let only_val = e_map.values().next().expect("single value present");
     let ok = only_val.as_str() == Some("y") || only_val.as_bool() == Some(true);
-    assert!(ok, "expected value under 'x' to be 'y' (string) or true (bool), got: {:?}", only_val);
+    assert!(
+        ok,
+        "expected value under 'x' to be 'y' (string) or true (bool), got: {:?}",
+        only_val
+    );
 
     // block: > # lala  abcde  (folded block scalar) — by common YAML rules this becomes "abcde\n"
-    let block = map.get(&Key::Str("block".into())).and_then(|v| v.as_str()).unwrap();
+    let block = map
+        .get(&Key::Str("block".into()))
+        .and_then(|v| v.as_str())
+        .unwrap();
     assert_eq!(block, "abcde\n");
 }

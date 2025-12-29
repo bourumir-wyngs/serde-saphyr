@@ -14,7 +14,8 @@ fn yaml_m6yh_block_sequence_indentation() {
  - 42
 "#;
 
-    let v: (String, HashMap<String, String>, Vec<i32>) = serde_saphyr::from_str(y).expect("failed to parse M6YH");
+    let v: (String, HashMap<String, String>, Vec<i32>) =
+        serde_saphyr::from_str(y).expect("failed to parse M6YH");
     assert_eq!(v.0.as_str(), "x\n");
     assert_eq!(v.1.get("foo").map(String::as_str), Some("bar"));
     assert_eq!(v.2, vec![42]);

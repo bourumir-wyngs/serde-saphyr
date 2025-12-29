@@ -1,7 +1,9 @@
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, PartialEq)]
-struct Doc { aaa: String }
+struct Doc {
+    aaa: String,
+}
 
 // S4T7: Document with footer ("...")
 #[test]

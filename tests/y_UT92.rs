@@ -15,14 +15,16 @@ enum Doc {
 
 #[test]
 fn yaml_ut92_explicit_documents() {
-    let y = indoc::indoc!(
-        "---\n{ matches\n% : 20 }\n...\n---\n# Empty\n...\n"
-    );
+    let y = indoc::indoc!("---\n{ matches\n% : 20 }\n...\n---\n# Empty\n...\n");
 
     let docs: Vec<Doc> = serde_saphyr::from_multiple(y).expect("failed to parse UT92");
 
     // from_multiple() may skip empty docs; accept either 1 (only mapping) or 2 (mapping + Null)
-    assert!(docs.len() == 1 || docs.len() == 2, "unexpected docs: {:?}", docs);
+    assert!(
+        docs.len() == 1 || docs.len() == 2,
+        "unexpected docs: {:?}",
+        docs
+    );
 
     match &docs[0] {
         Doc::MapI(m) => assert_eq!(m.get("matches %"), Some(&20)),
