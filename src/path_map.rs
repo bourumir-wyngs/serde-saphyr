@@ -1,19 +1,38 @@
-#[cfg(feature = "garde")]
+//! This module records YAML key paths (as seen during deserialization) and later tries to map
+//! [`garde::error::Path`] values back to those YAML locations.
+//!
+//! The key problem is that garde paths are derived from Rust field identifiers (typically
+//! `snake_case`), while YAML keys can use different spellings (`camelCase`, `kebab-case`, etc.).
+//! The parser has no direct access to Rust field names as reported by garde.
+//!
+//! We apply a small, ordered set of comparison strategies and only accept a match when it is
+//! **unique**.
+//!
+//! Matching rules:
+//! - Paths must have the same length and the same per-segment [`garde::error::Kind`].
+//! - Segment names are first normalized by stripping Rust raw-identifier prefixes (`r#type` →
+//!   `type`) to work around reserved-keyword field names.
+//! - `PathMap::search` runs multiple passes from most exact to most fuzzy:
+//!   1. Direct lookup (exact `Path` equality).
+//!   2. Whole-path ASCII case-insensitive match.
+//!   3. Token-sequence match: split on separators and common casing/digit boundaries
+//!      (`user_id`, `userId`, `user-id` → tokens `user`, `id`).
+//!   4. Collapsed match: drop all non-alphanumeric characters and compare ASCII-lowercased.
+//!
+//! Any non-direct pass succeeds only if it yields exactly one candidate; otherwise the result is
+//! considered ambiguous.
+
 use crate::Location;
 
-#[cfg(feature = "garde")]
-use std::collections::{HashMap};
+use std::collections::HashMap;
 
-#[cfg(feature = "garde")]
 pub(crate) type PathKey = garde::error::Path;
 
-#[cfg(feature = "garde")]
 #[derive(Debug)]
 pub struct PathMap {
     pub(crate) map: HashMap<PathKey, Location>,
 }
 
-#[cfg(feature = "garde")]
 impl PathMap {
     pub(crate) fn new() -> Self {
         Self { map: HashMap::new() }
@@ -71,19 +90,21 @@ impl PathMap {
     }
 }
 
-#[cfg(feature = "garde")]
 fn leaf_segment_string(path: &PathKey) -> Option<String> {
     // Note: garde's `Path::__iter()` yields segments leaf-first.
     // We want the most-leaf item in the path.
     iter_segments(path).next().map(|(_k, s)| s.to_owned())
 }
 
-#[cfg(feature = "garde")]
 fn iter_segments<'a>(path: &'a garde::error::Path) -> impl Iterator<Item = (garde::error::Kind, &'a str)> + 'a {
     path.__iter().map(|(k, s)| (k, s.as_str()))
 }
 
-#[cfg(feature = "garde")]
+fn strip_raw_identifier_prefix(s: &str) -> &str {
+    // Rust raw identifiers are formatted like `r#type`.
+    s.strip_prefix("r#").unwrap_or(s)
+}
+
 fn segments_equal_case_insensitive(target: &PathKey, candidate: &PathKey) -> bool {
     if target.len() != candidate.len() {
         return false;
@@ -91,10 +112,13 @@ fn segments_equal_case_insensitive(target: &PathKey, candidate: &PathKey) -> boo
 
     iter_segments(target)
         .zip(iter_segments(candidate))
-        .all(|((tk, ts), (ck, cs))| tk == ck && ts.eq_ignore_ascii_case(cs))
+        .all(|((tk, ts), (ck, cs))| {
+            tk == ck
+                && strip_raw_identifier_prefix(ts)
+                    .eq_ignore_ascii_case(strip_raw_identifier_prefix(cs))
+        })
 }
 
-#[cfg(feature = "garde")]
 fn collapse_non_alnum_ascii_lower(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     out.extend(
@@ -105,18 +129,20 @@ fn collapse_non_alnum_ascii_lower(s: &str) -> String {
     out
 }
 
-#[cfg(feature = "garde")]
 fn segments_equal_collapsed_case_insensitive(target: &PathKey, candidate: &PathKey) -> bool {
     if target.len() != candidate.len() {
         return false;
     }
 
     iter_segments(target).zip(iter_segments(candidate)).all(
-        |((tk, ts), (ck, cs))| tk == ck && collapse_non_alnum_ascii_lower(ts) == collapse_non_alnum_ascii_lower(cs),
+        |((tk, ts), (ck, cs))| {
+            tk == ck
+                && collapse_non_alnum_ascii_lower(strip_raw_identifier_prefix(ts))
+                    == collapse_non_alnum_ascii_lower(strip_raw_identifier_prefix(cs))
+        },
     )
 }
 
-#[cfg(feature = "garde")]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum CharClass {
     Lower,
@@ -125,7 +151,6 @@ enum CharClass {
     Other,
 }
 
-#[cfg(feature = "garde")]
 fn classify_ascii(c: char) -> CharClass {
     if c.is_ascii_lowercase() {
         CharClass::Lower
@@ -138,7 +163,6 @@ fn classify_ascii(c: char) -> CharClass {
     }
 }
 
-#[cfg(feature = "garde")]
 fn tokenize_segment(s: &str) -> Vec<String> {
     // 1) Split on any non-alphanumeric separator.
     // 2) Further split each piece on:
@@ -201,7 +225,6 @@ fn tokenize_segment(s: &str) -> Vec<String> {
     tokens
 }
 
-#[cfg(feature = "garde")]
 fn segments_equal_tokenized_case_insensitive(target: &PathKey, candidate: &PathKey) -> bool {
     if target.len() != candidate.len() {
         return false;
@@ -209,10 +232,14 @@ fn segments_equal_tokenized_case_insensitive(target: &PathKey, candidate: &PathK
 
     iter_segments(target)
         .zip(iter_segments(candidate))
-        .all(|((tk, ts), (ck, cs))| tk == ck && tokenize_segment(ts) == tokenize_segment(cs))
+        .all(|((tk, ts), (ck, cs))| {
+            tk == ck
+                && tokenize_segment(strip_raw_identifier_prefix(ts))
+                    == tokenize_segment(strip_raw_identifier_prefix(cs))
+        })
 }
 
-#[cfg(all(test, feature = "garde"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -351,9 +378,20 @@ mod tests {
             Some((Location::new(1, 10), "myField".to_string()))
         );
     }
+
+    #[test]
+    fn search_strips_raw_identifier_prefix() {
+        let mut m = PathMap::new();
+        // Rust reserved keywords use raw identifiers in paths (`r#type`), but YAML keys are plain.
+        m.insert(PathKey::empty().join("type"), Location::new(9, 3));
+
+        assert_eq!(
+            m.search(&PathKey::empty().join("r#type")),
+            Some((Location::new(9, 3), "type".to_string()))
+        );
+    }
 }
 
-#[cfg(feature = "garde")]
 pub(crate) struct PathRecorder {
     pub(crate) current: PathKey,
     /// Use-site (reference) locations, consistent with `Events::reference_location()`.
@@ -362,7 +400,6 @@ pub(crate) struct PathRecorder {
     pub(crate) defined: PathMap,
 }
 
-#[cfg(feature = "garde")]
 impl PathRecorder {
     pub(crate) fn new() -> Self {
         Self {
