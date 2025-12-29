@@ -1,5 +1,3 @@
-//! Supports extracting OPW parameters from YAML file (optional)
-
 use garde::Validate;
 use serde::Deserialize;
 use serde_saphyr::{Error, Options};

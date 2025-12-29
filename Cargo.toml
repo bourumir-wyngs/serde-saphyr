@@ -13,7 +13,7 @@ keywords = ["yaml", "serde", "serialization", "config", "ros"]
 [dependencies]
 saphyr-parser = "0.0.6"
 serde = { version = "1", features = ["derive"] }
-# Our 740 tests are all fine with this alpha so far, this will be advanced
+# Our tests are all fine with this alpha so far, this will be advanced
 smallvec = "2.0.0-alpha.12"
 serde_json = { version = "1", features = ["preserve_order"] }
 num-traits = { version = ">=0.2.0, <=0.2.19" }
@@ -26,7 +26,7 @@ annotate-snippets = "0.12"
 garde = { version = "0.22", optional = true, features = ["derive"] }
 
 [features]
-default = ["garde", "robotics"]
+default = ["garde"]
 
 # Enables integration with the `garde` validation crate.
 garde = ["dep:garde"]
@@ -37,16 +37,20 @@ robotics = []
 
 [dev-dependencies]
 indoc = "2.0.6"
-serde_bytes = "0.11.19"
+serde_bytes = "0.11"
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_repr = "0.1.20"
-anyhow = "1.0.100"
-chrono = "0.4.42"
+anyhow = "1.0"
+chrono = "0.4"
 regex = "1.12"
 nalgebra = { version = "0.34", features = ["serde-serialize"] }
 
 [package.metadata]
 status = "actively developed"
+
+[[example]]
+name = "garde_validate"
+required-features = ["garde"]
 
 [lints.rust]
 unsafe_code = "forbid"

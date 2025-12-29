@@ -1,5 +1,3 @@
-#![cfg(feature = "garde")]
-
 use garde::Validate;
 use serde::Deserialize;
 use serde_saphyr::Error;
@@ -76,15 +74,10 @@ fn from_str_with_options_valid_runs_garde_validation() {
 
 #[test]
 fn serde_rename() {
-    // We support only style-preserving renames for location lookup:
-    // - case-only differences
-    // - snake_case <-> camelCase differences (underscore stripping + case-insensitive match)
-    // This test exercises snake_case <-> camelCase.
-
     #[derive(Debug, Deserialize, Validate)]
+    #[serde(rename_all = "camelCase")]
     struct StyleRenamedRoot {
         // External key is camelCase, but garde path is Rust field `my_field`.
-        #[serde(rename = "myField")]
         #[garde(length(min = 1))]
         my_field: String,
     }
