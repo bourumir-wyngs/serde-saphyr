@@ -6,6 +6,7 @@ use serde::Deserialize;
 struct AB {
     // Just defined here (we validate `second_string` only).
     #[garde(skip)]
+    #[allow(dead_code)]
     first_string: String,
 
     #[garde(length(min = 2))]

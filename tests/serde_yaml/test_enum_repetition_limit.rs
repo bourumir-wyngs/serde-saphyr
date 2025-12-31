@@ -1,7 +1,7 @@
 use indoc::indoc;
 use serde::Deserialize as Derive;
 use serde_json::Value;
-use serde_saphyr::{Budget, Error, Options};
+use serde_saphyr::{Error};
 use std::fmt::Debug;
 use crate::serde_yaml::adapt_to_miri;
 
