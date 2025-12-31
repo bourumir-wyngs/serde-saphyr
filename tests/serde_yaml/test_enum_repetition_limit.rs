@@ -1,8 +1,9 @@
 use indoc::indoc;
 use serde::Deserialize as Derive;
 use serde_json::Value;
-use serde_saphyr::Error;
+use serde_saphyr::{Budget, Error, Options};
 use std::fmt::Debug;
+use crate::serde_yaml::adapt_to_miri;
 
 #[derive(Derive, Debug)]
 #[allow(dead_code)]
@@ -11,7 +12,6 @@ enum Node {
     List(Vec<Node>),
 }
 
-#[cfg(not(miri))]
 #[test]
 fn test_enum_billion_laughs_with_tags() {
     let yaml = indoc! {
@@ -27,13 +27,12 @@ fn test_enum_billion_laughs_with_tags() {
         i: &i !List [*h,*h,*h,*h,*h,*h,*h,*h,*h]
         "
     };
-    let parsed: Result<Value, Error> = serde_saphyr::from_str(&yaml);
+    let parsed: Result<Value, Error> = serde_saphyr::from_str_with_options(&yaml, adapt_to_miri());
     assert!(parsed.is_err());
     println!("{:?}", parsed);
     assert!(format!("{}", parsed.unwrap_err()).contains("budget breached"));
 }
 
-#[cfg(not(miri))]
 #[test]
 fn test_enum_billion_laughs() {
     let yaml = indoc! {
@@ -49,7 +48,7 @@ fn test_enum_billion_laughs() {
         i: &i  [*h,*h,*h,*h,*h,*h,*h,*h,*h]
         "
     };
-    let parsed: Result<Value, Error> = serde_saphyr::from_str(&yaml);
+    let parsed: Result<Value, Error> = serde_saphyr::from_str_with_options(&yaml, adapt_to_miri());
     assert!(parsed.is_err());
     println!("{:?}", parsed);
     assert!(format!("{}", parsed.unwrap_err()).contains("budget breached"));

@@ -9,9 +9,10 @@
 use indoc::indoc;
 use serde::Deserialize;
 use serde_json::Value;
-use serde_saphyr::Error;
+use serde_saphyr::{Budget, Error, Options};
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
+use crate::serde_yaml::adapt_to_miri;
 
 fn test_de<T>(yaml: &str, expected: &T)
 where
@@ -373,7 +374,7 @@ fn test_bomb() {
         expected: string
     "};
     // Budget breach
-    let result: Result<Data, Error> = serde_saphyr::from_str(yaml);
+    let result: Result<Data, Error> = serde_saphyr::from_str_with_options(yaml, adapt_to_miri());
     assert!(result.is_err());
 }
 

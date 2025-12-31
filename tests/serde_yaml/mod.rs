@@ -1,3 +1,5 @@
+use serde_saphyr::{Budget, Options};
+
 mod test_anchor_only;
 mod test_binary;
 mod test_block_scalars;
@@ -31,3 +33,19 @@ mod test_writer_reader;
 // This test takes too long in "test" configuration. If must only run in "release"
 // and the fuzz folder is currently too many large files to be practical to commit.
 //mod test_repro_fuzz_targets;
+
+
+pub fn adapt_to_miri() -> Options{
+    // Tighten limits for miri that otherwise takes very long
+    if cfg!(miri) {
+        Options {
+            budget: Some(Budget {
+                max_nodes: 250,
+                ..Budget::default()
+            }),
+            ..Options::default()
+        }
+    } else {
+        Options::default()
+    }
+}
