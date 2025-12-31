@@ -1,6 +1,7 @@
 # serde-saphyr
 
 [![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](https://github.com/rust-secure-code/safety-dance/)
+[![miri: passing](https://img.shields.io/badge/miri-passing-brightgreen)](https://verdanta.tech/miri-nextest-20251229-161120.log)
 ![panic-free](https://img.shields.io/badge/panic--free-%E2%9C%94%EF%B8%8F-brightgreen)
 [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/bourumir-wyngs/serde-saphyr/rust.yml)](https://github.com/bourumir-wyngs/serde-saphyr/actions)
 [![crates.io](https://img.shields.io/crates/v/serde-saphyr.svg)](https://crates.io/crates/serde-saphyr)
@@ -28,14 +29,14 @@
 In our [benchmarking project](https://github.com/bourumir-wyngs/serde-saphyr-benchmark), we tested the following crates:
 
 
-|                                                   Crate | Version             | Merge Keys   | Nested Enums | Duplicate key rejection | [`garde`](https://crates.io/crates/garde) | Notes                                                                    |
-| ------------------------------------------------------: | :------------------ | :----------- | :----------- | :---------------------- | :---------------------------------------: | :----------------------------------------------------------------------- |
-|   [serde-saphyr](https://crates.io/crates/serde-saphyr) | 0.0.4               | ✅ Native    | ✅           | ✅ Configurable         |                    ✅                    | No`unsafe`, no [unsafe-libyaml](https://crates.io/crates/unsafe-libyaml) |
-| [serde-yaml-bw](https://crates.io/crates/serde-yaml_bw) | 2.4.1               | ✅ Native    | ✅           | ✅ Configurable         |                    ❌                    | Slow due Saphyr doing budget check first upfront of libyaml              |
-| [serde-yaml-ng](https://crates.io/crates/serde-yaml-ng) | 0.10.0              | ⚠️ partial | ❌           | ❌                      |                    ❌                    |                                                                          |
-|       [serde-yaml](https://crates.io/crates/serde-yaml) | 0.9.34 + deprecated | ⚠️ partial | ❌           | ❌                      |                    ❌                    | Original, deprecated, repo archived                                      |
-|   [serde-norway](https://crates.io/crates/serde-norway) | 0.9                 | ⚠️ partial | ❌           | ❌                      |                    ❌                    |                                                                          |
-|         [serde-yml](https://crates.io/crates/serde-yml) | 0.0.12              | ⚠️ partial | ❌           | ❌                      |                    ❌                    | Repo archived                                                            |
+|                                                   Crate | Version             | Merge Keys   | Nested Enums | Duplicate key rejection | Validation | Notes                                                                    |
+| ------------------------------------------------------: | :------------------ | :----------- | :----------- | :---------------------- |:----------:| :----------------------------------------------------------------------- |
+|   [serde-saphyr](https://crates.io/crates/serde-saphyr) | 0.0.4               | ✅ Native    | ✅           | ✅ Configurable         |     ✅ [`garde`](https://crates.io/crates/garde)     | No`unsafe`, no [unsafe-libyaml](https://crates.io/crates/unsafe-libyaml) |
+| [serde-yaml-bw](https://crates.io/crates/serde-yaml_bw) | 2.4.1               | ✅ Native    | ✅           | ✅ Configurable         |     ❌      | Slow due Saphyr doing budget check first upfront of libyaml              |
+| [serde-yaml-ng](https://crates.io/crates/serde-yaml-ng) | 0.10.0              | ⚠️ partial | ❌           | ❌                      |     ❌      |                                                                          |
+|       [serde-yaml](https://crates.io/crates/serde-yaml) | 0.9.34 + deprecated | ⚠️ partial | ❌           | ❌                      |     ❌      | Original, deprecated, repo archived                                      |
+|   [serde-norway](https://crates.io/crates/serde-norway) | 0.9                 | ⚠️ partial | ❌           | ❌                      |     ❌      |                                                                          |
+|         [serde-yml](https://crates.io/crates/serde-yml) | 0.0.12              | ⚠️ partial | ❌           | ❌                      |     ❌      | Repo archived                                                            |
 
 Benchmarking was done with [Criterion](https://crates.io/crates/criterion), giving the following results:
 
