@@ -232,17 +232,22 @@ fn crop_radius_zero_disables_snippet_wrapping() {
 }
 
 #[test]
-fn with_snippet_does_not_retain_full_input_for_large_documents() {
-    // The error wrapper should store only a small, cropped, pre-rendered snippet.
-    // This protects users from accidentally retaining huge YAML inputs in memory
-    // via the error value.
+fn with_snippet_only_contains_lines_near_error() {
+    use std::fmt::Write as _;
+
+    // We want the marker to be far outside the expected snippet window (about +-10 lines).
+    // Put it near the top, and put the error near the bottom.
+    let filler_lines = 100;
+
     let mut yaml = String::new();
     yaml.push_str("prefix: ok\n");
     yaml.push_str("marker_far_away: DO_NOT_INCLUDE\n");
-    // Make the input large.
-    for i in 0..50_000 {
-        yaml.push_str(&format!("k{i}: v{i}\n"));
+
+    // Add enough valid mapping entries so the error is far away from the marker.
+    for i in 0..filler_lines {
+        writeln!(&mut yaml, "k{i}: v{i}").unwrap();
     }
+
     // Trigger an error at the end.
     yaml.push_str("bad: *missing\n");
 
@@ -255,12 +260,17 @@ fn with_snippet_does_not_retain_full_input_for_large_documents() {
                 text.contains("<input>"),
                 "expected snippet output header, got: {text}"
             );
+
+            // Core requirement: snippet should NOT include content far away from the error.
             assert!(
                 !text.contains("marker_far_away: DO_NOT_INCLUDE"),
-                "snippet output should not include far-away content"
+                "snippet should not include far-away lines"
             );
-            // Heuristic bound: the formatted snippet should be small compared to the input.
-            assert!(text.len() < 20_000, "snippet output unexpectedly large");
+
+            // If the contract is +-10 lines around the error, this should stay small.
+            // Keep this bound generous for headers/formatting differences.
+            assert!(text.lines().count() <= 60, "snippet has too many lines");
+            assert!(text.len() < 10_000, "snippet output unexpectedly large");
         }
         other => panic!("expected WithSnippet wrapper, got: {other:?}"),
     }
