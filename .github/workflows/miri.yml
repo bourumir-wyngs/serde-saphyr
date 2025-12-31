@@ -1,22 +1,82 @@
 name: Miri
 
 on:
-  push:
-    branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
+  schedule:
+    - cron: '33 5 12 * *'  # Runs once a month on the 12th at 00:33 EST (05:33 UTC)
+  workflow_dispatch:     # Allows manual triggering
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+  MIRI_BACKTRACE: "1"
+  NEXTEST_PROFILE: default
+  # Optional: set this in repo/org variables if you want.
+  # MIRIFLAGS: ""
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchains (stable + nightly with Miri)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rustup set profile minimal
+
+          # Stable for normal build/test (optional but keeps your existing flow)
+          rustup toolchain install stable --profile minimal
+
+          # Nightly required for Miri
+          rustup toolchain install nightly --profile minimal
+
+          # Miri + rust-src are needed for `cargo +nightly miri setup`
+          rustup component add miri rust-src --toolchain nightly
+
+          # Make sure stable is the default unless explicitly overridden with +nightly
+          rustup default stable
+
+          echo "=== Versions ==="
+          rustc -V
+          cargo -V
+          cargo +nightly -V
+          cargo +nightly miri --version
+
+      - name: Install cargo-nextest
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! cargo nextest --version >/dev/null 2>&1; then
+            # Build from crates.io (no external installer/actions)
+            cargo install cargo-nextest --locked
+          fi
+
+          cargo nextest --version
+
+      - name: Build (stable)
+        run: cargo build --verbose
+
+      - name: Run tests (stable)
+        run: cargo test --verbose
+
+      - name: Miri setup (nightly)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo +nightly miri setup
+
+      - name: Run tests under Miri using nextest (nightly)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          jobs="$(nproc || echo 1)"
+
+          cargo +nightly miri nextest run \
+            --profile "${NEXTEST_PROFILE}" \
+            --all-features \
+            -j "${jobs}"
