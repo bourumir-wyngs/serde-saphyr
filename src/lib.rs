@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 /// Serialization public API is defined at crate root
-
 pub use anchors::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
 pub use de::{Budget, DuplicateKeyPolicy, Error, Options};
 pub use location::Location;
@@ -39,6 +38,12 @@ pub mod ser_error;
 
 pub use ser::YamlSerializer as Serializer;
 pub use de::YamlDeserializer as Deserializer;
+
+pub use de::{
+    with_deserializer_from_reader, with_deserializer_from_reader_with_options,
+    with_deserializer_from_slice, with_deserializer_from_slice_with_options,
+    with_deserializer_from_str, with_deserializer_from_str_with_options,
+};
 
 mod serializer_options;
 mod tags;
@@ -751,7 +756,12 @@ where
     }
 }
 
-fn maybe_with_snippet(err: Error, input: &str, with_snippet: bool, crop_radius: usize) -> Error {
+pub(crate) fn maybe_with_snippet(
+    err: Error,
+    input: &str,
+    with_snippet: bool,
+    crop_radius: usize,
+) -> Error {
     if with_snippet && crop_radius > 0 && err.location().is_some() {
         err.with_snippet(input, crop_radius)
     } else {

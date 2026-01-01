@@ -32,6 +32,13 @@ use std::borrow::Cow;
 use std::collections::{HashSet, VecDeque};
 use std::mem;
 
+pub mod with_deserializer;
+pub use with_deserializer::{
+    with_deserializer_from_reader, with_deserializer_from_reader_with_options,
+    with_deserializer_from_slice, with_deserializer_from_slice_with_options,
+    with_deserializer_from_str, with_deserializer_from_str_with_options,
+};
+
 type FastHashSet<T> = HashSet<T, RandomState>;
 
 mod spanned_deser;

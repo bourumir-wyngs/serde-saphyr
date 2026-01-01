@@ -1,6 +1,15 @@
 #[cfg(test)]
 mod tests {
+    use serde::Deserialize;
     use serde_saphyr::SerializerOptions;
+
+    fn transcode_yaml_to_json(yaml: &str) -> String {
+        serde_saphyr::with_deserializer_from_str(yaml, |de| {
+            let v = serde_json::Value::deserialize(de)?;
+            serde_json::to_string(&v).map_err(|e| serde::de::Error::custom(e.to_string()))
+        })
+        .unwrap()
+    }
 
     fn assert_json_eq(actual_json: &str, expected_json: &str) {
         let actual: serde_json::Value = serde_json::from_str(actual_json).unwrap();
@@ -125,8 +134,7 @@ bools:
   - false
 "#;
 
-        let v: serde_json::Value = serde_saphyr::from_str(yaml).unwrap();
-        let json = serde_json::to_string(&v).unwrap();
+        let json = transcode_yaml_to_json(yaml);
 
         assert_json_eq(
             &json,
@@ -163,8 +171,7 @@ bools:
     self-describing: true
 "#;
 
-        let v: serde_json::Value = serde_saphyr::from_str(yaml).unwrap();
-        let json = serde_json::to_string(&v).unwrap();
+        let json = transcode_yaml_to_json(yaml);
 
         assert_json_eq(
             &json,

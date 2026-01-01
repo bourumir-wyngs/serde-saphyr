@@ -45,6 +45,8 @@ chrono = "0.4"
 regex = "1.12"
 nalgebra = { version = "0.34", features = ["serde-serialize"] }
 serde-transcode = "1.1.1" # we only use in tests
+serde_ignored = "0.1"
+serde_path_to_error = "0.1"
 
 [package.metadata]
 status = "actively developed"
