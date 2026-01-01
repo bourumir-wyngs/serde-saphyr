@@ -29,13 +29,15 @@ mod de_snipped;
 mod live_events;
 pub mod options;
 mod parse_scalars;
-mod ser;
+pub mod ser;
 mod spanned;
 
 #[cfg(feature = "garde")]
 pub mod path_map;
 
 pub mod ser_error;
+
+pub use ser::YamlSer;
 
 mod serializer_options;
 mod tags;

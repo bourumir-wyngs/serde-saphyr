@@ -68,7 +68,7 @@ bools:
 
         let mut yaml = String::new();
         let mut yaml_serializer_options = SerializerOptions {
-            indent_step: 7,
+            indent_step: 2,
             ..Default::default()
         };
         let mut yaml_serializer =
@@ -77,28 +77,27 @@ bools:
 
         assert_eq!(
             yaml,
-            // NOTE: serde_saphyr can't parse this yet; this will need to be changed after a fix for #31 is incorporated
             r#"formats:
-       - name: CBOR
-              deacronymization:
-                     - Concise
-                     - Binary
-                     - Object
-                     - Representation
-              self-describing: false
-       - name: JSON
-              deacronymization:
-                     - JavaScript
-                     - Object
-                     - Notation
-              self-describing: true
-       - name: YAML
-              deacronymization:
-                     - YAML
-                     - Ain't
-                     - Markup
-                     - Language
-              self-describing: true
+  - name: CBOR
+    deacronymization:
+      - Concise
+      - Binary
+      - Object
+      - Representation
+    self-describing: false
+  - name: JSON
+    deacronymization:
+      - JavaScript
+      - Object
+      - Notation
+    self-describing: true
+  - name: YAML
+    deacronymization:
+      - YAML
+      - Ain't
+      - Markup
+      - Language
+    self-describing: true
 "#
         );
     }
