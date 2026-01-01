@@ -24,7 +24,6 @@ encoding_rs_io = "0.1.7"
 ahash = "0.8.12"
 annotate-snippets = "0.12"
 garde = { version = ">= 0.19.0, < 0.23", optional = true, features = ["derive"] }
-serde-transcode = "1.1.1"
 
 [features]
 default = []
@@ -46,6 +45,7 @@ anyhow = "1.0"
 chrono = "0.4"
 regex = "1.12"
 nalgebra = { version = "0.34", features = ["serde-serialize"] }
+serde-transcode = "1.1.1" # we only use in tests
 
 [package.metadata]
 status = "actively developed"
