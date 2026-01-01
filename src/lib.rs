@@ -37,8 +37,8 @@ pub mod path_map;
 
 pub mod ser_error;
 
-pub use ser::YamlSerializer;
-pub use de::YamlDeserializer;
+pub use ser::YamlSerializer as Serializer;
+pub use de::YamlDeserializer as Deserializer;
 
 mod serializer_options;
 mod tags;

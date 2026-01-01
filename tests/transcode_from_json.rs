@@ -18,7 +18,7 @@ mod tests {
         let mut json_deserializer = serde_json::Deserializer::from_str(json);
 
         let mut yaml = String::new();
-        let mut yaml_serializer = serde_saphyr::YamlSerializer::new(&mut yaml);
+        let mut yaml_serializer = serde_saphyr::Serializer::new(&mut yaml);
         serde_transcode::transcode(&mut json_deserializer, &mut yaml_serializer).unwrap();
 
         assert_eq!(
@@ -72,7 +72,7 @@ bools:
             ..Default::default()
         };
         let mut yaml_serializer =
-            serde_saphyr::YamlSerializer::with_options(&mut yaml, &mut yaml_serializer_options);
+            serde_saphyr::Serializer::with_options(&mut yaml, &mut yaml_serializer_options);
         serde_transcode::transcode(&mut json_deserializer, &mut yaml_serializer).unwrap();
 
         assert_eq!(

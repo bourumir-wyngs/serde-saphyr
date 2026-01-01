@@ -455,7 +455,7 @@ pub struct YamlSerializer<'a, W: Write> {
 }
 
 impl<'a, W: Write> YamlSerializer<'a, W> {
-    /// Construct a `YamlSer` that writes to `out`.
+    /// Construct a `YamlSerializer` that writes to `out`.
     /// Called by `to_writer`/`to_string` entry points.
     pub fn new(out: &'a mut W) -> Self {
         Self {
@@ -485,14 +485,14 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
             pending_str_from_auto: false,
         }
     }
-    /// Construct a `YamlSer` with a specific indentation step.
+    /// Construct a `YamlSerializer` with a specific indentation step.
     /// Typically used internally by tests or convenience wrappers.
     pub fn with_indent(out: &'a mut W, indent_step: usize) -> Self {
         let mut s = Self::new(out);
         s.indent_step = indent_step;
         s
     }
-    /// Construct a `YamlSer` from user-supplied [`SerializerOptions`].
+    /// Construct a `YamlSerializer` from user-supplied [`SerializerOptions`].
     /// Used by `to_writer_with_options`.
     pub fn with_options(out: &'a mut W, options: &mut SerializerOptions) -> Self {
         let mut s = Self::new(out);
@@ -822,7 +822,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
 }
 
 // ------------------------------------------------------------
-// Impl Serializer for YamlSer
+// Impl Serializer for YamlSerializer
 // ------------------------------------------------------------
 
 impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
@@ -1522,7 +1522,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
 
 /// Serializer for sequences and tuples.
 ///
-/// Created by `YamlSer::serialize_seq`/`serialize_tuple`. Holds a mutable
+/// Created by `YamlSerializer::serialize_seq`/`serialize_tuple`. Holds a mutable
 /// reference to the parent serializer and formatting state for the sequence.
 pub struct SeqSer<'a, 'b, W: Write> {
     /// Parent YAML serializer.
@@ -1851,7 +1851,7 @@ impl<'a, 'b, W: Write> SerializeTupleStruct for TupleSer<'a, 'b, W> {
 // Tuple variant (enum Variant: ( ... ))
 /// Serializer for tuple variants (enum Variant: ( ... )).
 ///
-/// Created by `YamlSer::serialize_tuple_variant` to emit the variant name
+/// Created by `YamlSerializer::serialize_tuple_variant` to emit the variant name
 /// followed by a block sequence of fields.
 pub struct TupleVariantSer<'a, 'b, W: Write> {
     /// Parent YAML serializer.
@@ -1880,7 +1880,7 @@ impl<'a, 'b, W: Write> SerializeTupleVariant for TupleVariantSer<'a, 'b, W> {
 
 /// Serializer for maps and structs.
 ///
-/// Created by `YamlSer::serialize_map`/`serialize_struct`. Manages indentation
+/// Created by `YamlSerializer::serialize_map`/`serialize_struct`. Manages indentation
 /// and flow/block style for key-value pairs.
 pub struct MapSer<'a, 'b, W: Write> {
     /// Parent YAML serializer.
@@ -2092,7 +2092,7 @@ impl<'a, 'b, W: Write> SerializeStruct for MapSer<'a, 'b, W> {
 
 /// Serializer for struct variants (enum Variant: { ... }).
 ///
-/// Created by `YamlSer::serialize_struct_variant` to emit the variant name
+/// Created by `YamlSerializer::serialize_struct_variant` to emit the variant name
 /// followed by a block mapping of fields.
 pub struct StructVariantSer<'a, 'b, W: Write> {
     /// Parent YAML serializer.
