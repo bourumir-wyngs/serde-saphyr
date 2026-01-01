@@ -59,7 +59,7 @@ The test suite currently includes 783 passing tests, most of them originating fr
 - **First class [`garde`](https://crates.io/crates/garde) integration:** Declarative validation of parsed YAML documents, reporting location with snippet directly from YAML document.
 - **serde_json::Value** is supported when parsing without target structure defined.
 - **robotic extensions** to support YAML dialect common in robotics (see below).
-- **[Serializer](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Serializer.html) and [Deserializer](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Deserializer.html) are now public (due how its implemented, Deserializer is available in the closure only.
+- **[Serializer](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Serializer.html)** and **[Deserializer](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Deserializer.html)** are now public (due how its implemented, Deserializer is available in the closure only.
 
 ## Usage
 
