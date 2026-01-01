@@ -1,5 +1,6 @@
 use serde_saphyr::from_str;
 use serde_saphyr::{Error, Options};
+use serde::Deserialize;
 
 fn unwrap_snippet(err: &Error) -> &Error {
     match err {
@@ -22,6 +23,19 @@ fn expect_location(err: &Error, line: u64, column: u64) {
     }
 }
 
+fn expect_byte_offset(err: &Error, byte_offset: usize) {
+    if let Some(loc) = err.location() {
+        assert_eq!(
+            loc.byte_offset(),
+            byte_offset,
+            "Invalid byte offset, expected {byte_offset} reported {reported}",
+            reported = loc.byte_offset()
+        );
+    } else {
+        assert!(false, "Location was not provided");
+    }
+}
+
 #[test]
 fn parser_scan_error_carries_span() {
     let err = from_str::<Vec<String>>("[1, 2").expect_err("scan error expected");
@@ -33,7 +47,21 @@ fn parser_scan_error_carries_span() {
 fn scalar_conversion_error_carries_span() {
     let err = from_str::<bool>("definitely").expect_err("bool parse error expected");
     expect_location(&err, 1, 1);
+    expect_byte_offset(&err, "definitely".find("definitely").unwrap());
     assert!(matches!(unwrap_snippet(&err), Error::Message { .. }));
+}
+
+#[test]
+fn scalar_conversion_error_carries_byte_offset_in_mapping_value() {
+    #[derive(Debug, Deserialize)]
+    struct T {
+        b: bool,
+    }
+
+    let yaml = "b: definitely\n";
+    let err = from_str::<T>(yaml).expect_err("bool parse error expected");
+    expect_location(&err, 1, 4);
+    expect_byte_offset(&err, yaml.find("definitely").unwrap());
 }
 
 #[test]

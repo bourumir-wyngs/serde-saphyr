@@ -268,7 +268,7 @@ impl Error {
     /// - The live events adapter when the underlying parser fails.
     pub(crate) fn from_scan_error(err: ScanError) -> Self {
         let mark = err.marker();
-        let location = Location::new(mark.line(), mark.col() + 1);
+        let location = Location::new(mark.line(), mark.col() + 1).with_byte_offset(mark.index());
         Error::Message {
             msg: err.info().to_owned(),
             location,

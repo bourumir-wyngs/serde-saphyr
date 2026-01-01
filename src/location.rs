@@ -14,6 +14,11 @@ pub struct Location {
     pub(crate) line: u32,
     /// 1-indexed column number in the input stream.
     pub(crate) column: u32,
+    /// Byte offset from the start of the document.
+    ///
+    /// This is populated when the location originates from a `saphyr_parser::Marker`/`Span`.
+    #[serde(default)]
+    pub(crate) byte_offset: usize,
 }
 
 impl Location {
@@ -28,13 +33,23 @@ impl Location {
     pub fn column(&self) -> u64 {
         self.column as u64
     }
+
+    /// Byte offset from the start of the document.
+    #[inline]
+    pub fn byte_offset(&self) -> usize {
+        self.byte_offset
+    }
 }
 
 impl Location {
     /// Sentinel value meaning "location unknown".
     ///
     /// Used when a precise position is not yet available at error creation time.
-    pub const UNKNOWN: Self = Self { line: 0, column: 0 };
+    pub const UNKNOWN: Self = Self {
+        line: 0,
+        column: 0,
+        byte_offset: 0,
+    };
 
     /// Create a new location record.
     ///
@@ -47,7 +62,13 @@ impl Location {
         Self {
             line: line as u32,
             column: column as u32,
+            byte_offset: 0,
         }
+    }
+
+    pub(crate) const fn with_byte_offset(mut self, byte_offset: usize) -> Self {
+        self.byte_offset = byte_offset;
+        self
     }
 }
 
@@ -57,5 +78,5 @@ impl Location {
 /// - The live events adapter for each raw parser event.
 pub(crate) fn location_from_span(span: &Span) -> Location {
     let start = &span.start;
-    Location::new(start.line(), start.col() + 1)
+    Location::new(start.line(), start.col() + 1).with_byte_offset(start.index())
 }

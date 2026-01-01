@@ -350,6 +350,7 @@ mod tests {
         Location {
             line: 42,
             column: 7,
+            byte_offset: 0,
         }
     }
 
@@ -425,7 +426,11 @@ mod tests {
 
     fn loc() -> Location {
         // Replace with how you construct Location in your code
-        Location { line: 1, column: 1 }
+        Location {
+            line: 1,
+            column: 1,
+            byte_offset: 0,
+        }
     }
 
     #[test]
