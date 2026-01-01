@@ -58,11 +58,15 @@ nested: { threshold: 0.25, flags: [fast, safe], inner: { enabled: true, note: nu
     assert_eq!(cfg.name.value, "bar");
     assert_eq!(cfg.name.referenced.line(), 2);
     assert_eq!(cfg.name.referenced.column(), 7);
+    assert_eq!(cfg.name.referenced.span().offset(), yaml.find("bar #").unwrap());
+    assert!(cfg.name.referenced.span().len() > 0);
     assert_eq!(cfg.name.defined, cfg.name.referenced);
 
     assert_eq!(cfg.timeout.value, 5);
     assert_eq!(cfg.timeout.referenced.line(), 3);
     assert_eq!(cfg.timeout.referenced.column(), 10);
+    assert_eq!(cfg.timeout.referenced.span().offset(), yaml.find("5\n").unwrap());
+    assert!(cfg.timeout.referenced.span().len() > 0);
     assert_eq!(cfg.timeout.defined, cfg.timeout.referenced);
 
     assert_eq!(cfg.mode.value, Mode::Prod);

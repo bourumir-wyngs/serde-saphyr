@@ -153,7 +153,7 @@ impl<'de> de::MapAccess<'de> for SpannedMapAccess<'_> {
     }
 }
 
-/// Internal deserializer that exposes a [`Location`] as `{ line, column }`.
+/// Internal deserializer that exposes a [`Location`] as `{ line, column, span }`.
 ///
 /// This is used by `SpannedMapAccess` to emit `referenced` and `defined` fields
 /// without requiring `Location` to be represented in the YAML input.
@@ -166,7 +166,7 @@ impl<'de> de::Deserializer<'de> for LocationDeser {
     type Error = Error;
 
     fn deserialize_any<Vv: Visitor<'de>>(self, visitor: Vv) -> Result<Vv::Value, Self::Error> {
-        self.deserialize_struct("Location", &["line", "column"], visitor)
+        self.deserialize_struct("Location", &["line", "column", "span"], visitor)
     }
 
     fn deserialize_struct<Vv: Visitor<'de>>(
@@ -190,13 +190,14 @@ impl<'de> de::Deserializer<'de> for LocationDeser {
 
 /// Map-access state machine for [`LocationDeser`].
 ///
-/// Yields two fields in a fixed order:
+/// Yields fields in a fixed order:
 /// 1) `line`
 /// 2) `column`
+/// 3) `span`
 struct LocationMapAccess {
     /// Location being projected.
     location: Location,
-    /// 0..=2 field state cursor.
+    /// 0..=3 field state cursor.
     state: u8,
 }
 
@@ -210,6 +211,7 @@ impl<'de> de::MapAccess<'de> for LocationMapAccess {
         let key = match self.state {
             0 => "line",
             1 => "column",
+            2 => "span",
             _ => return Ok(None),
         };
         self.state += 1;
@@ -223,7 +225,74 @@ impl<'de> de::MapAccess<'de> for LocationMapAccess {
         match self.state {
             1 => seed.deserialize(self.location.line.into_deserializer()),
             2 => seed.deserialize(self.location.column.into_deserializer()),
+            3 => seed.deserialize(SpanDeser {
+                span: self.location.span,
+            }),
             _ => Err(Error::msg("invalid Location internal state")),
+        }
+    }
+}
+
+/// Internal deserializer that exposes a [`crate::Span`] as `{ offset, len }`.
+struct SpanDeser {
+    span: crate::Span,
+}
+
+impl<'de> de::Deserializer<'de> for SpanDeser {
+    type Error = Error;
+
+    fn deserialize_any<Vv: Visitor<'de>>(self, visitor: Vv) -> Result<Vv::Value, Self::Error> {
+        self.deserialize_struct("Span", &["offset", "len"], visitor)
+    }
+
+    fn deserialize_struct<Vv: Visitor<'de>>(
+        self,
+        _name: &'static str,
+        _fields: &'static [&'static str],
+        visitor: Vv,
+    ) -> Result<Vv::Value, Self::Error> {
+        visitor.visit_map(SpanMapAccess {
+            span: self.span,
+            state: 0,
+        })
+    }
+
+    serde::forward_to_deserialize_any! {
+        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
+        bytes byte_buf option unit unit_struct newtype_struct seq tuple
+        tuple_struct map enum identifier ignored_any
+    }
+}
+
+struct SpanMapAccess {
+    span: crate::Span,
+    state: u8,
+}
+
+impl<'de> de::MapAccess<'de> for SpanMapAccess {
+    type Error = Error;
+
+    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Error>
+    where
+        K: de::DeserializeSeed<'de>,
+    {
+        let key = match self.state {
+            0 => "offset",
+            1 => "len",
+            _ => return Ok(None),
+        };
+        self.state += 1;
+        seed.deserialize(key.into_deserializer()).map(Some)
+    }
+
+    fn next_value_seed<Vv>(&mut self, seed: Vv) -> Result<Vv::Value, Error>
+    where
+        Vv: de::DeserializeSeed<'de>,
+    {
+        match self.state {
+            1 => seed.deserialize(self.span.offset.into_deserializer()),
+            2 => seed.deserialize(self.span.len.into_deserializer()),
+            _ => Err(Error::msg("invalid Span internal state")),
         }
     }
 }

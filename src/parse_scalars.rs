@@ -350,7 +350,7 @@ mod tests {
         Location {
             line: 42,
             column: 7,
-            byte_offset: 0,
+            span: crate::location::Span::UNKNOWN,
         }
     }
 
@@ -429,7 +429,7 @@ mod tests {
         Location {
             line: 1,
             column: 1,
-            byte_offset: 0,
+            span: crate::location::Span::UNKNOWN,
         }
     }
 

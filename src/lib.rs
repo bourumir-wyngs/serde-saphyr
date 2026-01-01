@@ -3,7 +3,7 @@
 
 pub use anchors::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
 pub use de::{Budget, DuplicateKeyPolicy, Error, Options};
-pub use location::Location;
+pub use location::{Location, Span};
 pub use ser::{Commented, FlowMap, FlowSeq, FoldStr, FoldString, LitStr, LitString};
 pub use spanned::Spanned;
 

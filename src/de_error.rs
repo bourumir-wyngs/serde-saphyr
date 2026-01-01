@@ -53,7 +53,7 @@ pub enum Error {
         cause: std::io::Error,
     },
     /// The value is targeted to the string field but can be interpreted as a number or boolean.
-    /// This error can only happens if no_schema set true.
+    /// This error can only happen if no_schema set true.
     QuotingRequired {
         value: String, // sanitized (checked) value that must be quoted
         location: Location,
@@ -78,7 +78,7 @@ pub enum Error {
         defined: PathMap,
     },
 
-    /// Garde validation failures (multiple, when working with multiple documents)
+    /// Garde validation failures (multiple, if multiple validations fail)
     #[cfg(feature = "garde")]
     ValidationErrors {
         errors: Vec<Error>,
@@ -279,7 +279,10 @@ impl Error {
     /// - The live events adapter when the underlying parser fails.
     pub(crate) fn from_scan_error(err: ScanError) -> Self {
         let mark = err.marker();
-        let location = Location::new(mark.line(), mark.col() + 1).with_byte_offset(mark.index());
+        let location = Location::new(mark.line(), mark.col() + 1).with_span(crate::location::Span {
+            offset: mark.index(),
+            len: 1,
+        });
         Error::Message {
             msg: err.info().to_owned(),
             location,

@@ -1,7 +1,32 @@
 //! Source location utilities.
 
-use saphyr_parser::Span;
+use saphyr_parser::Span as ParserSpan;
 use serde::Deserialize;
+
+/// A byte span within the source YAML document.
+///
+/// This is intended for future first-class `miette` integration, which is
+/// primarily offset/length based.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize, Default)]
+pub struct Span {
+    pub(crate) offset: usize,
+    pub(crate) len: usize,
+}
+
+impl Span {
+    /// Sentinel span meaning "unknown".
+    pub const UNKNOWN: Self = Self { offset: 0, len: 0 };
+
+    #[inline]
+    pub fn offset(&self) -> usize {
+        self.offset
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.len
+    }
+}
 
 /// Row/column location within the source YAML document (1-indexed).
 ///
@@ -14,11 +39,9 @@ pub struct Location {
     pub(crate) line: u32,
     /// 1-indexed column number in the input stream.
     pub(crate) column: u32,
-    /// Byte offset from the start of the document.
-    ///
-    /// This is populated when the location originates from a `saphyr_parser::Marker`/`Span`.
+    /// Byte span within the document.
     #[serde(default)]
-    pub(crate) byte_offset: usize,
+    pub(crate) span: Span,
 }
 
 impl Location {
@@ -34,10 +57,10 @@ impl Location {
         self.column as u64
     }
 
-    /// Byte offset from the start of the document.
+    /// Byte span within the source document.
     #[inline]
-    pub fn byte_offset(&self) -> usize {
-        self.byte_offset
+    pub fn span(&self) -> Span {
+        self.span
     }
 }
 
@@ -48,7 +71,7 @@ impl Location {
     pub const UNKNOWN: Self = Self {
         line: 0,
         column: 0,
-        byte_offset: 0,
+        span: Span::UNKNOWN,
     };
 
     /// Create a new location record.
@@ -62,12 +85,12 @@ impl Location {
         Self {
             line: line as u32,
             column: column as u32,
-            byte_offset: 0,
+            span: Span::UNKNOWN,
         }
     }
 
-    pub(crate) const fn with_byte_offset(mut self, byte_offset: usize) -> Self {
-        self.byte_offset = byte_offset;
+    pub(crate) const fn with_span(mut self, span: Span) -> Self {
+        self.span = span;
         self
     }
 }
@@ -76,7 +99,10 @@ impl Location {
 ///
 /// Called by:
 /// - The live events adapter for each raw parser event.
-pub(crate) fn location_from_span(span: &Span) -> Location {
+pub(crate) fn location_from_span(span: &ParserSpan) -> Location {
     let start = &span.start;
-    Location::new(start.line(), start.col() + 1).with_byte_offset(start.index())
+    Location::new(start.line(), start.col() + 1).with_span(Span {
+        offset: start.index(),
+        len: span.len(),
+    })
 }

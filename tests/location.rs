@@ -20,13 +20,13 @@ fn expect_location(err: &Error, line: u64, column: u64) {
     }
 }
 
-fn expect_byte_offset(err: &Error, byte_offset: usize) {
+fn expect_span_offset(err: &Error, offset: usize) {
     if let Some(loc) = err.location() {
         assert_eq!(
-            loc.byte_offset(),
-            byte_offset,
-            "Invalid byte offset, expected {byte_offset} reported {reported}",
-            reported = loc.byte_offset()
+            loc.span().offset(),
+            offset,
+            "Invalid span offset, expected {offset} reported {reported}",
+            reported = loc.span().offset()
         );
     } else {
         assert!(false, "Location was not provided");
@@ -44,12 +44,12 @@ fn parser_scan_error_carries_span() {
 fn scalar_conversion_error_carries_span() {
     let err = from_str::<bool>("definitely").expect_err("bool parse error expected");
     expect_location(&err, 1, 1);
-    expect_byte_offset(&err, "definitely".find("definitely").unwrap());
+    expect_span_offset(&err, "definitely".find("definitely").unwrap());
     assert!(matches!(unwrap_snippet(&err), Error::Message { .. }));
 }
 
 #[test]
-fn scalar_conversion_error_carries_byte_offset_in_mapping_value() {
+fn scalar_conversion_error_carries_span_offset_in_mapping_value() {
     #[derive(Debug, Deserialize)]
     #[allow(dead_code)]
     struct T {
@@ -59,7 +59,7 @@ fn scalar_conversion_error_carries_byte_offset_in_mapping_value() {
     let yaml = "b: definitely\n";
     let err = from_str::<T>(yaml).expect_err("bool parse error expected");
     expect_location(&err, 1, 4);
-    expect_byte_offset(&err, yaml.find("definitely").unwrap());
+    expect_span_offset(&err, yaml.find("definitely").unwrap());
 }
 
 #[test]
