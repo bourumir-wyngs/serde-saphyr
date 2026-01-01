@@ -1,7 +1,4 @@
 fn main() {
-    // Minimal example: convert a serde-saphyr error into a structured miette report.
-    //
-    // Run:
     //   cargo run --example miette --features miette
     let yaml = "definitely\n";
 
@@ -11,10 +8,8 @@ fn main() {
     // `Debug` formatting uses miette's graphical reporter.
     eprintln!("{report:?}");
 
-    // Optional: show a garde validation error too.
-    //
-    // Run:
-    //   cargo run --example miette --features "garde miette"
+    // Show a garde validation error too.
+    // cargo run --example miette --features "garde miette"
     #[cfg(feature = "garde")]
     {
         use serde::Deserialize;
