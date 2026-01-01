@@ -32,6 +32,13 @@ use std::borrow::Cow;
 use std::collections::{HashSet, VecDeque};
 use std::mem;
 
+pub mod with_deserializer;
+pub use with_deserializer::{
+    with_deserializer_from_reader, with_deserializer_from_reader_with_options,
+    with_deserializer_from_slice, with_deserializer_from_slice_with_options,
+    with_deserializer_from_str, with_deserializer_from_str_with_options,
+};
+
 type FastHashSet<T> = HashSet<T, RandomState>;
 
 mod spanned_deser;
@@ -44,7 +51,7 @@ use crate::tags::SfTag;
 #[cfg(feature = "garde")]
 use crate::path_map::PathRecorder;
 
-/// Small immutable runtime configuration that `Deser` needs.
+/// Small immutable runtime configuration that `YamlDeserializer` needs.
 #[derive(Clone, Copy)]
 pub(crate) struct Cfg {
     /// Policy to apply for duplicate mapping keys.
@@ -842,16 +849,48 @@ impl Events for ReplayEvents {
     }
 }
 
-/// The streaming Serde deserializer over `Events`.
+/// The streaming Serde deserializer
 ///
-/// Where do values come from: From an `Events` stream (typically [`LiveEvents`])
-/// that yields simplified YAML events.  
-/// Where do values go: Into a Serde `Visitor` provided by the caller's
-/// `T: Deserialize`, which drives how we walk the event stream and construct `T`.
+/// ## Important: this deserializer is *borrowing* and is only available in a closure
+///
+/// `YamlDeserializer` borrows internal parsing state (the underlying `Events` source).
+/// Because of that, you generally cannot construct and return it as a standalone value.
+/// Instead, obtain it through the `with_deserializer_from_*` helpers, which give you a
+/// `crate::Deserializer` (an alias for `YamlDeserializer`) **inside a closure**.
+///
+/// This is useful when you want to wrap the deserializer (e.g. to collect
+/// ignored fields or add error context) while still deserializing into your target type.
+///
+/// ## Example
+///
+/// ```rust
+/// use serde::Deserialize;
+///
+/// #[derive(Debug, Deserialize)]
+/// struct Config {
+///     host: String,
+///     port: u16,
+/// }
+///
+/// let yaml = "host: localhost\nport: 8080\n";
+///
+/// let cfg: Config = serde_saphyr::with_deserializer_from_str(yaml,
+///     |de: serde_saphyr::Deserializer| {
+///         Config::deserialize(de)
+/// })?;
+///
+/// assert_eq!(cfg.port, 8080);
+/// # Ok::<(), serde_saphyr::Error>(())
+/// ```
 ///
 /// This type is *stateless* with respect to ownership: it borrows the event source
 /// (`'e`) and forwards requests into it, translating YAML shapes into Serde calls.
-pub(crate) struct Deser<'e> {
+// Where do values come from: From an `Events` stream (typically [`LiveEvents`])
+// that yields simplified YAML events.
+// Where do values go: Into a Serde `Visitor` provided by the caller's
+// `T: Deserialize`, which drives how we walk the event stream and construct `T`.
+pub struct YamlDeserializer<'e> {
+
     ev: &'e mut dyn Events,
     cfg: Cfg,
     /// True when deserializing a map key.
@@ -863,7 +902,7 @@ pub(crate) struct Deser<'e> {
     garde: Option<&'e mut PathRecorder>,
 }
 
-impl<'e> Deser<'e> {
+impl<'e> YamlDeserializer<'e> {
     /// Construct a new streaming deserializer over an `Events` source.
     ///
     /// Arguments:
@@ -1004,7 +1043,7 @@ impl<'e> Deser<'e> {
     }
 }
 
-impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
+impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'e> {
     type Error = Error;
 
     /// Fallback entry point when the caller's type has no specific expectation.
@@ -1380,7 +1419,7 @@ helper to deserialize into String or Cow<'de, str> instead
                         }
                         Some(_) => {
                             // Deserialize each element as u8 using our own Deser
-                            let b: u8 = <u8 as serde::Deserialize>::deserialize(Deser::new(
+                            let b: u8 = <u8 as serde::Deserialize>::deserialize(YamlDeserializer::new(
                                 self.ev, self.cfg,
                             ))?;
                             out.push(b);
@@ -1680,7 +1719,7 @@ helper to deserialize into String or Cow<'de, str> instead
                                     .defined
                                     .insert(recorder.current.clone(), defined_location);
 
-                                let de = Deser::new_with_path_recorder(self.ev, self.cfg, recorder);
+                                let de = YamlDeserializer::new_with_path_recorder(self.ev, self.cfg, recorder);
                                 let res = seed.deserialize(de).map(Some);
 
                                 recorder.current = prev;
@@ -1689,7 +1728,7 @@ helper to deserialize into String or Cow<'de, str> instead
                             }
                         }
 
-                        let de = Deser::new(self.ev, self.cfg);
+                        let de = YamlDeserializer::new(self.ev, self.cfg);
                         seed.deserialize(de).map(Some)
                     }
                     None => Err(Error::eof().with_location(self.ev.last_location())),
@@ -1840,7 +1879,7 @@ helper to deserialize into String or Cow<'de, str> instead
                 K: de::DeserializeSeed<'de>,
             {
                 let mut replay = ReplayEvents::new(events);
-                let de = Deser {
+                let de = YamlDeserializer {
                     ev: &mut replay,
                     cfg: self.cfg,
                     in_key: true,
@@ -2171,14 +2210,14 @@ helper to deserialize into String or Cow<'de, str> instead
                                 .defined
                                 .insert(recorder.current.clone(), defined_location);
 
-                            let de = Deser::new_with_path_recorder(&mut replay, self.cfg, recorder);
+                            let de = YamlDeserializer::new_with_path_recorder(&mut replay, self.cfg, recorder);
                             let res = seed.deserialize(de);
                             recorder.current = prev;
                             return res;
                         }
                     }
 
-                    let de = Deser::new(&mut replay, self.cfg);
+                    let de = YamlDeserializer::new(&mut replay, self.cfg);
                     seed.deserialize(de)
                 } else {
                     #[cfg(feature = "garde")]
@@ -2204,14 +2243,14 @@ helper to deserialize into String or Cow<'de, str> instead
                                 .defined
                                 .insert(recorder.current.clone(), defined_location);
 
-                            let de = Deser::new_with_path_recorder(self.ev, self.cfg, recorder);
+                            let de = YamlDeserializer::new_with_path_recorder(self.ev, self.cfg, recorder);
                             let res = seed.deserialize(de);
                             recorder.current = prev;
                             return res;
                         }
                     }
 
-                    let de = Deser::new(self.ev, self.cfg);
+                    let de = YamlDeserializer::new(self.ev, self.cfg);
                     seed.deserialize(de)
                 }
             }
@@ -2421,7 +2460,7 @@ helper to deserialize into String or Cow<'de, str> instead
             where
                 T: de::DeserializeSeed<'de>,
             {
-                let value = seed.deserialize(Deser::new(self.ev, self.cfg))?;
+                let value = seed.deserialize(YamlDeserializer::new(self.ev, self.cfg))?;
                 if self.map_mode {
                     self.expect_map_end()?;
                 }
@@ -2433,7 +2472,7 @@ helper to deserialize into String or Cow<'de, str> instead
             where
                 Vv: Visitor<'de>,
             {
-                let result = Deser::new(self.ev, self.cfg).deserialize_tuple(len, visitor)?;
+                let result = YamlDeserializer::new(self.ev, self.cfg).deserialize_tuple(len, visitor)?;
                 if self.map_mode {
                     self.expect_map_end()?;
                 }
@@ -2450,7 +2489,7 @@ helper to deserialize into String or Cow<'de, str> instead
                 Vv: Visitor<'de>,
             {
                 let result =
-                    Deser::new(self.ev, self.cfg).deserialize_struct("", fields, visitor)?;
+                    YamlDeserializer::new(self.ev, self.cfg).deserialize_struct("", fields, visitor)?;
                 if self.map_mode {
                     self.expect_map_end()?;
                 }

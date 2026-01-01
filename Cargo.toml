@@ -1,6 +1,6 @@
 [package]
 name = "serde-saphyr"
-version = "0.0.12"
+version = "0.0.13"
 edition = "2024"
 license = "MIT"
 description = "YAML (de)serializer for Serde, built on top of Saphyr, emphasizing panic-free parsing."
@@ -44,6 +44,9 @@ anyhow = "1.0"
 chrono = "0.4"
 regex = "1.12"
 nalgebra = { version = "0.34", features = ["serde-serialize"] }
+serde-transcode = "1.1.1" # we only use in tests
+serde_ignored = "0.1"
+serde_path_to_error = "0.1"
 
 [package.metadata]
 status = "actively developed"

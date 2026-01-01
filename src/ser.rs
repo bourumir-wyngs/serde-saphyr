@@ -392,7 +392,28 @@ type AnchorId = u32;
 ///
 /// This type implements `serde::Serializer` and writes YAML to a `fmt::Write`.
 /// It manages indentation, flow/block styles, and YAML anchors/aliases.
-pub struct YamlSer<'a, W: Write> {
+///
+/// This type is also re-exported from the crate root as [`serde_saphyr::Serializer`].
+///
+/// ## Example
+///
+/// ```rust
+/// use serde::Serialize;
+///
+/// #[derive(Serialize)]
+/// struct Foo {
+///     a: i32,
+///     b: bool,
+/// }
+///
+/// let mut out = String::new();
+/// let mut ser = serde_saphyr::Serializer::new(&mut out);
+/// Foo { a: 1, b: true }.serialize(&mut ser)?;
+///
+/// assert!(out.contains("a: 1"));
+/// # Ok::<(), serde_saphyr::ser::Error>(())
+/// ```
+pub struct YamlSerializer<'a, W: Write> {
     /// Destination writer where YAML text is emitted.
     out: &'a mut W,
     /// Spaces per indentation level for block-style collections.
@@ -454,8 +475,8 @@ pub struct YamlSer<'a, W: Write> {
     current_map_depth: Option<usize>,
 }
 
-impl<'a, W: Write> YamlSer<'a, W> {
-    /// Construct a `YamlSer` that writes to `out`.
+impl<'a, W: Write> YamlSerializer<'a, W> {
+    /// Construct a `YamlSerializer` that writes to `out`.
     /// Called by `to_writer`/`to_string` entry points.
     pub fn new(out: &'a mut W) -> Self {
         Self {
@@ -485,14 +506,14 @@ impl<'a, W: Write> YamlSer<'a, W> {
             pending_str_from_auto: false,
         }
     }
-    /// Construct a `YamlSer` with a specific indentation step.
+    /// Construct a `YamlSerializer` with a specific indentation step.
     /// Typically used internally by tests or convenience wrappers.
     pub fn with_indent(out: &'a mut W, indent_step: usize) -> Self {
         let mut s = Self::new(out);
         s.indent_step = indent_step;
         s
     }
-    /// Construct a `YamlSer` from user-supplied [`SerializerOptions`].
+    /// Construct a `YamlSerializer` from user-supplied [`SerializerOptions`].
     /// Used by `to_writer_with_options`.
     pub fn with_options(out: &'a mut W, options: &mut SerializerOptions) -> Self {
         let mut s = Self::new(out);
@@ -822,10 +843,10 @@ impl<'a, W: Write> YamlSer<'a, W> {
 }
 
 // ------------------------------------------------------------
-// Impl Serializer for YamlSer
+// Impl Serializer for YamlSerializer
 // ------------------------------------------------------------
 
-impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
+impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     type Ok = ();
     type Error = Error;
 
@@ -1522,11 +1543,11 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSer<'b, W> {
 
 /// Serializer for sequences and tuples.
 ///
-/// Created by `YamlSer::serialize_seq`/`serialize_tuple`. Holds a mutable
+/// Created by `YamlSerializer::serialize_seq`/`serialize_tuple`. Holds a mutable
 /// reference to the parent serializer and formatting state for the sequence.
 pub struct SeqSer<'a, 'b, W: Write> {
     /// Parent YAML serializer.
-    ser: &'a mut YamlSer<'b, W>,
+    ser: &'a mut YamlSerializer<'b, W>,
     /// Target indentation depth for block-style items.
     depth: usize,
     /// Whether the sequence is being written in flow style (`[a, b]`).
@@ -1633,7 +1654,7 @@ impl<'a, 'b, W: Write> SerializeSeq for SeqSer<'a, 'b, W> {
 /// - Internal weak-anchor payloads (`__yaml_weak_anchor`).
 pub struct TupleSer<'a, 'b, W: Write> {
     /// Parent YAML serializer.
-    ser: &'a mut YamlSer<'b, W>,
+    ser: &'a mut YamlSerializer<'b, W>,
     /// Variant describing how to interpret fields.
     kind: TupleKind,
     /// Current field index being serialized.
@@ -1662,7 +1683,7 @@ enum TupleKind {
 }
 impl<'a, 'b, W: Write> TupleSer<'a, 'b, W> {
     /// Create a tuple serializer for normal tuple-structs.
-    fn normal(ser: &'a mut YamlSer<'b, W>) -> Self {
+    fn normal(ser: &'a mut YamlSerializer<'b, W>) -> Self {
         let depth_next = ser.depth + 1;
         Self {
             ser,
@@ -1677,7 +1698,7 @@ impl<'a, 'b, W: Write> TupleSer<'a, 'b, W> {
         }
     }
     /// Create a tuple serializer for internal strong-anchor payloads.
-    fn anchor_strong(ser: &'a mut YamlSer<'b, W>) -> Self {
+    fn anchor_strong(ser: &'a mut YamlSerializer<'b, W>) -> Self {
         Self {
             ser,
             kind: TupleKind::AnchorStrong,
@@ -1691,7 +1712,7 @@ impl<'a, 'b, W: Write> TupleSer<'a, 'b, W> {
         }
     }
     /// Create a tuple serializer for internal weak-anchor payloads.
-    fn anchor_weak(ser: &'a mut YamlSer<'b, W>) -> Self {
+    fn anchor_weak(ser: &'a mut YamlSerializer<'b, W>) -> Self {
         Self {
             ser,
             kind: TupleKind::AnchorWeak,
@@ -1705,7 +1726,7 @@ impl<'a, 'b, W: Write> TupleSer<'a, 'b, W> {
         }
     }
     /// Create a tuple serializer for internal commented wrapper.
-    fn commented(ser: &'a mut YamlSer<'b, W>) -> Self {
+    fn commented(ser: &'a mut YamlSerializer<'b, W>) -> Self {
         Self {
             ser,
             kind: TupleKind::Commented,
@@ -1851,11 +1872,11 @@ impl<'a, 'b, W: Write> SerializeTupleStruct for TupleSer<'a, 'b, W> {
 // Tuple variant (enum Variant: ( ... ))
 /// Serializer for tuple variants (enum Variant: ( ... )).
 ///
-/// Created by `YamlSer::serialize_tuple_variant` to emit the variant name
+/// Created by `YamlSerializer::serialize_tuple_variant` to emit the variant name
 /// followed by a block sequence of fields.
 pub struct TupleVariantSer<'a, 'b, W: Write> {
     /// Parent YAML serializer.
-    ser: &'a mut YamlSer<'b, W>,
+    ser: &'a mut YamlSerializer<'b, W>,
     /// Target indentation depth for the fields.
     depth: usize,
 }
@@ -1880,11 +1901,11 @@ impl<'a, 'b, W: Write> SerializeTupleVariant for TupleVariantSer<'a, 'b, W> {
 
 /// Serializer for maps and structs.
 ///
-/// Created by `YamlSer::serialize_map`/`serialize_struct`. Manages indentation
+/// Created by `YamlSerializer::serialize_map`/`serialize_struct`. Manages indentation
 /// and flow/block style for key-value pairs.
 pub struct MapSer<'a, 'b, W: Write> {
     /// Parent YAML serializer.
-    ser: &'a mut YamlSer<'b, W>,
+    ser: &'a mut YamlSerializer<'b, W>,
     /// Target indentation depth for block-style entries.
     depth: usize,
     /// Whether the mapping is in flow style (`{k: v}`).
@@ -2092,11 +2113,11 @@ impl<'a, 'b, W: Write> SerializeStruct for MapSer<'a, 'b, W> {
 
 /// Serializer for struct variants (enum Variant: { ... }).
 ///
-/// Created by `YamlSer::serialize_struct_variant` to emit the variant name
+/// Created by `YamlSerializer::serialize_struct_variant` to emit the variant name
 /// followed by a block mapping of fields.
 pub struct StructVariantSer<'a, 'b, W: Write> {
     /// Parent YAML serializer.
-    ser: &'a mut YamlSer<'b, W>,
+    ser: &'a mut YamlSerializer<'b, W>,
     /// Target indentation depth for the fields.
     depth: usize,
 }
