@@ -36,7 +36,7 @@ garde = ["dep:garde"]
 robotics = []
 
 [dev-dependencies]
-indoc = "2.0.6"
+indoc = { version = ">= 2.0.6, < 2.1"}
 serde_bytes = "0.11"
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_repr = "0.1.20"
