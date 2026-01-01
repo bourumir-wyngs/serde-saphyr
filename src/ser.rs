@@ -392,6 +392,27 @@ type AnchorId = u32;
 ///
 /// This type implements `serde::Serializer` and writes YAML to a `fmt::Write`.
 /// It manages indentation, flow/block styles, and YAML anchors/aliases.
+///
+/// This type is also re-exported from the crate root as [`serde_saphyr::Serializer`].
+///
+/// ## Example
+///
+/// ```rust
+/// use serde::Serialize;
+///
+/// #[derive(Serialize)]
+/// struct Foo {
+///     a: i32,
+///     b: bool,
+/// }
+///
+/// let mut out = String::new();
+/// let mut ser = serde_saphyr::Serializer::new(&mut out);
+/// Foo { a: 1, b: true }.serialize(&mut ser)?;
+///
+/// assert!(out.contains("a: 1"));
+/// # Ok::<(), serde_saphyr::ser::Error>(())
+/// ```
 pub struct YamlSerializer<'a, W: Write> {
     /// Destination writer where YAML text is emitted.
     out: &'a mut W,

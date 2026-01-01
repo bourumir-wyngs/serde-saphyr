@@ -17,11 +17,13 @@
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct Config {
     server: Server,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct Server {
     host: String,
     port: u16,

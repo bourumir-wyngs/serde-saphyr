@@ -849,16 +849,48 @@ impl Events for ReplayEvents {
     }
 }
 
-/// The streaming Serde deserializer over `Events`.
+/// The streaming Serde deserializer
 ///
-/// Where do values come from: From an `Events` stream (typically [`LiveEvents`])
-/// that yields simplified YAML events.  
-/// Where do values go: Into a Serde `Visitor` provided by the caller's
-/// `T: Deserialize`, which drives how we walk the event stream and construct `T`.
+/// ## Important: this deserializer is *borrowing* and is only available in a closure
+///
+/// `YamlDeserializer` borrows internal parsing state (the underlying `Events` source).
+/// Because of that, you generally cannot construct and return it as a standalone value.
+/// Instead, obtain it through the `with_deserializer_from_*` helpers, which give you a
+/// `crate::Deserializer` (an alias for `YamlDeserializer`) **inside a closure**.
+///
+/// This is useful when you want to wrap the deserializer (e.g. to collect
+/// ignored fields or add error context) while still deserializing into your target type.
+///
+/// ## Example
+///
+/// ```rust
+/// use serde::Deserialize;
+///
+/// #[derive(Debug, Deserialize)]
+/// struct Config {
+///     host: String,
+///     port: u16,
+/// }
+///
+/// let yaml = "host: localhost\nport: 8080\n";
+///
+/// let cfg: Config = serde_saphyr::with_deserializer_from_str(yaml,
+///     |de: serde_saphyr::Deserializer| {
+///         Config::deserialize(de)
+/// })?;
+///
+/// assert_eq!(cfg.port, 8080);
+/// # Ok::<(), serde_saphyr::Error>(())
+/// ```
 ///
 /// This type is *stateless* with respect to ownership: it borrows the event source
 /// (`'e`) and forwards requests into it, translating YAML shapes into Serde calls.
+// Where do values come from: From an `Events` stream (typically [`LiveEvents`])
+// that yields simplified YAML events.
+// Where do values go: Into a Serde `Visitor` provided by the caller's
+// `T: Deserialize`, which drives how we walk the event stream and construct `T`.
 pub struct YamlDeserializer<'e> {
+
     ev: &'e mut dyn Events,
     cfg: Cfg,
     /// True when deserializing a map key.

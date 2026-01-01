@@ -33,6 +33,7 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct Config {
     enabled: bool,
     retries: i32,
@@ -40,6 +41,7 @@ struct Config {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct Server {
     host: String,
     port: u16,
