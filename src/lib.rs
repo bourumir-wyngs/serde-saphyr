@@ -55,6 +55,9 @@ mod buffered_input;
 mod location;
 #[cfg(feature = "robotics")]
 pub mod robotics;
+
+#[cfg(feature = "miette")]
+pub mod miette;
 // ---------------- Serialization (public API) ----------------
 
 /// Serialize a value to a YAML `String`.

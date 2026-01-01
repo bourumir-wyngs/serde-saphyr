@@ -56,7 +56,8 @@ The test suite currently includes 783 passing tests, most of them originating fr
 
 - **Configurable budgets:** Enforce input limits to mitigate resource exhaustion (e.g., deeply nested structures or very large arrays); see [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
 - **Serializer supports emitting anchors** (Rc, Arc, Weak) if they properly wrapped (see below).
-- **First class [`garde`](https://crates.io/crates/garde) integration:** Declarative validation of parsed YAML documents, reporting location with snippet directly from YAML document.
+- **Optional [`garde`](https://crates.io/crates/garde) integration:** Declarative validation of parsed YAML documents, reporting location with snippet directly from YAML document.
+- **Optional [`miette`](https://crates.io/crates/miette)** integration for more advanced error reporting (see [example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/miette.rs)).
 - **serde_json::Value** is supported when parsing without target structure defined.
 - **robotic extensions** to support YAML dialect common in robotics (see below).
 - **[Serializer](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Serializer.html)** and **[Deserializer](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Deserializer.html)** are now public (due how its implemented, Deserializer is available in the closure only).

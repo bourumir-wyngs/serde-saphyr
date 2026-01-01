@@ -24,12 +24,16 @@ encoding_rs_io = "0.1.7"
 ahash = "0.8.12"
 annotate-snippets = "0.12"
 garde = { version = ">= 0.19.0, < 0.23", optional = true, features = ["derive"] }
+miette = { version = "7", optional = true }
 
 [features]
 default = []
 
 # Enables integration with the `garde` validation crate.
 garde = ["dep:garde"]
+
+# Enables structured diagnostics via the `miette` crate.
+miette = ["dep:miette"]
 
 # Adds YAML conventions common in robotics: conversion functions (deg, rad) and simple mathematical expressions such
 # as deg(180), rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). angle_conversions must be set to true in the Options.
@@ -47,6 +51,7 @@ nalgebra = { version = "0.34", features = ["serde-serialize"] }
 serde-transcode = "1.1.1" # we only use in tests
 serde_ignored = "0.1"
 serde_path_to_error = "0.1"
+miette = { version = "7", features = ["fancy"] }
 
 [package.metadata]
 status = "actively developed"
@@ -54,6 +59,10 @@ status = "actively developed"
 [[example]]
 name = "garde_validate"
 required-features = ["garde"]
+
+[[example]]
+name = "miette"
+required-features = ["garde", "miette"]
 
 [lints.rust]
 unsafe_code = "forbid"
