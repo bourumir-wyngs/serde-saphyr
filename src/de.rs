@@ -44,7 +44,7 @@ use crate::tags::SfTag;
 #[cfg(feature = "garde")]
 use crate::path_map::PathRecorder;
 
-/// Small immutable runtime configuration that `Deser` needs.
+/// Small immutable runtime configuration that `YamlDeserializer` needs.
 #[derive(Clone, Copy)]
 pub(crate) struct Cfg {
     /// Policy to apply for duplicate mapping keys.
@@ -851,7 +851,7 @@ impl Events for ReplayEvents {
 ///
 /// This type is *stateless* with respect to ownership: it borrows the event source
 /// (`'e`) and forwards requests into it, translating YAML shapes into Serde calls.
-pub(crate) struct Deser<'e> {
+pub struct YamlDeserializer<'e> {
     ev: &'e mut dyn Events,
     cfg: Cfg,
     /// True when deserializing a map key.
@@ -863,7 +863,7 @@ pub(crate) struct Deser<'e> {
     garde: Option<&'e mut PathRecorder>,
 }
 
-impl<'e> Deser<'e> {
+impl<'e> YamlDeserializer<'e> {
     /// Construct a new streaming deserializer over an `Events` source.
     ///
     /// Arguments:
@@ -1004,7 +1004,7 @@ impl<'e> Deser<'e> {
     }
 }
 
-impl<'de, 'e> de::Deserializer<'de> for Deser<'e> {
+impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'e> {
     type Error = Error;
 
     /// Fallback entry point when the caller's type has no specific expectation.
@@ -1380,7 +1380,7 @@ helper to deserialize into String or Cow<'de, str> instead
                         }
                         Some(_) => {
                             // Deserialize each element as u8 using our own Deser
-                            let b: u8 = <u8 as serde::Deserialize>::deserialize(Deser::new(
+                            let b: u8 = <u8 as serde::Deserialize>::deserialize(YamlDeserializer::new(
                                 self.ev, self.cfg,
                             ))?;
                             out.push(b);
@@ -1680,7 +1680,7 @@ helper to deserialize into String or Cow<'de, str> instead
                                     .defined
                                     .insert(recorder.current.clone(), defined_location);
 
-                                let de = Deser::new_with_path_recorder(self.ev, self.cfg, recorder);
+                                let de = YamlDeserializer::new_with_path_recorder(self.ev, self.cfg, recorder);
                                 let res = seed.deserialize(de).map(Some);
 
                                 recorder.current = prev;
@@ -1689,7 +1689,7 @@ helper to deserialize into String or Cow<'de, str> instead
                             }
                         }
 
-                        let de = Deser::new(self.ev, self.cfg);
+                        let de = YamlDeserializer::new(self.ev, self.cfg);
                         seed.deserialize(de).map(Some)
                     }
                     None => Err(Error::eof().with_location(self.ev.last_location())),
@@ -1840,7 +1840,7 @@ helper to deserialize into String or Cow<'de, str> instead
                 K: de::DeserializeSeed<'de>,
             {
                 let mut replay = ReplayEvents::new(events);
-                let de = Deser {
+                let de = YamlDeserializer {
                     ev: &mut replay,
                     cfg: self.cfg,
                     in_key: true,
@@ -2171,14 +2171,14 @@ helper to deserialize into String or Cow<'de, str> instead
                                 .defined
                                 .insert(recorder.current.clone(), defined_location);
 
-                            let de = Deser::new_with_path_recorder(&mut replay, self.cfg, recorder);
+                            let de = YamlDeserializer::new_with_path_recorder(&mut replay, self.cfg, recorder);
                             let res = seed.deserialize(de);
                             recorder.current = prev;
                             return res;
                         }
                     }
 
-                    let de = Deser::new(&mut replay, self.cfg);
+                    let de = YamlDeserializer::new(&mut replay, self.cfg);
                     seed.deserialize(de)
                 } else {
                     #[cfg(feature = "garde")]
@@ -2204,14 +2204,14 @@ helper to deserialize into String or Cow<'de, str> instead
                                 .defined
                                 .insert(recorder.current.clone(), defined_location);
 
-                            let de = Deser::new_with_path_recorder(self.ev, self.cfg, recorder);
+                            let de = YamlDeserializer::new_with_path_recorder(self.ev, self.cfg, recorder);
                             let res = seed.deserialize(de);
                             recorder.current = prev;
                             return res;
                         }
                     }
 
-                    let de = Deser::new(self.ev, self.cfg);
+                    let de = YamlDeserializer::new(self.ev, self.cfg);
                     seed.deserialize(de)
                 }
             }
@@ -2421,7 +2421,7 @@ helper to deserialize into String or Cow<'de, str> instead
             where
                 T: de::DeserializeSeed<'de>,
             {
-                let value = seed.deserialize(Deser::new(self.ev, self.cfg))?;
+                let value = seed.deserialize(YamlDeserializer::new(self.ev, self.cfg))?;
                 if self.map_mode {
                     self.expect_map_end()?;
                 }
@@ -2433,7 +2433,7 @@ helper to deserialize into String or Cow<'de, str> instead
             where
                 Vv: Visitor<'de>,
             {
-                let result = Deser::new(self.ev, self.cfg).deserialize_tuple(len, visitor)?;
+                let result = YamlDeserializer::new(self.ev, self.cfg).deserialize_tuple(len, visitor)?;
                 if self.map_mode {
                     self.expect_map_end()?;
                 }
@@ -2450,7 +2450,7 @@ helper to deserialize into String or Cow<'de, str> instead
                 Vv: Visitor<'de>,
             {
                 let result =
-                    Deser::new(self.ev, self.cfg).deserialize_struct("", fields, visitor)?;
+                    YamlDeserializer::new(self.ev, self.cfg).deserialize_struct("", fields, visitor)?;
                 if self.map_mode {
                     self.expect_map_end()?;
                 }

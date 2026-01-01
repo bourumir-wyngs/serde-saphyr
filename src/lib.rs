@@ -37,7 +37,8 @@ pub mod path_map;
 
 pub mod ser_error;
 
-pub use ser::YamlSer;
+pub use ser::YamlSerializer;
+pub use de::YamlDeserializer;
 
 mod serializer_options;
 mod tags;
@@ -81,7 +82,7 @@ pub fn to_writer<W: std::fmt::Write, T: serde::Serialize>(
     output: &mut W,
     value: &T,
 ) -> std::result::Result<(), crate::ser::Error> {
-    let mut ser = crate::ser::YamlSer::new(output);
+    let mut ser = crate::ser::YamlSerializer::new(output);
     value.serialize(&mut ser)
 }
 
@@ -109,7 +110,7 @@ pub fn to_fmt_writer_with_options<W: std::fmt::Write, T: serde::Serialize>(
     mut options: SerializerOptions,
 ) -> std::result::Result<(), crate::ser::Error> {
     options.consistent()?;
-    let mut ser = crate::ser::YamlSer::with_options(output, &mut options);
+    let mut ser = crate::ser::YamlSerializer::with_options(output, &mut options);
     value.serialize(&mut ser)
 }
 
@@ -143,7 +144,7 @@ pub fn to_io_writer_with_options<W: std::io::Write, T: serde::Serialize>(
         output,
         last_err: None,
     };
-    let mut ser = crate::ser::YamlSer::with_options(&mut adapter, &mut options);
+    let mut ser = crate::ser::YamlSerializer::with_options(&mut adapter, &mut options);
     match value.serialize(&mut ser) {
         Ok(()) => Ok(()),
         Err(e) => {
@@ -255,7 +256,7 @@ pub fn from_str_with_options<T: DeserializeOwned>(
         false,
     );
     let value_res = crate::anchor_store::with_document_scope(|| {
-        T::deserialize(crate::de::Deser::new(&mut src, cfg))
+        T::deserialize(crate::de::YamlDeserializer::new(&mut src, cfg))
     });
     let value = match value_res {
         Ok(v) => v,
@@ -327,7 +328,7 @@ fn from_str_with_options_and_path_recorder<T: DeserializeOwned>(
     let mut recorder = crate::path_map::PathRecorder::new();
 
     let value_res = crate::anchor_store::with_document_scope(|| {
-        T::deserialize(crate::de::Deser::new_with_path_recorder(
+        T::deserialize(crate::de::YamlDeserializer::new_with_path_recorder(
             &mut src,
             cfg,
             &mut recorder,
@@ -455,7 +456,7 @@ where
             Some(_) => {
                 let mut recorder = crate::path_map::PathRecorder::new();
                 let value_res = crate::anchor_store::with_document_scope(|| {
-                    T::deserialize(crate::de::Deser::new_with_path_recorder(
+                    T::deserialize(crate::de::YamlDeserializer::new_with_path_recorder(
                         &mut src,
                         cfg,
                         &mut recorder,
@@ -580,7 +581,7 @@ where
     let mut recorder = crate::path_map::PathRecorder::new();
 
     let value_res = crate::anchor_store::with_document_scope(|| {
-        T::deserialize(crate::de::Deser::new_with_path_recorder(
+        T::deserialize(crate::de::YamlDeserializer::new_with_path_recorder(
             &mut src,
             cfg,
             &mut recorder,
@@ -687,7 +688,7 @@ where
                     Ok(Some(_)) => {
                         let mut recorder = crate::path_map::PathRecorder::new();
                         let value_res = crate::anchor_store::with_document_scope(|| {
-                            T::deserialize(crate::de::Deser::new_with_path_recorder(
+                            T::deserialize(crate::de::YamlDeserializer::new_with_path_recorder(
                                 &mut self.src,
                                 self.cfg,
                                 &mut recorder,
@@ -863,7 +864,7 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
             }
             Some(_) => {
                 let value_res = crate::anchor_store::with_document_scope(|| {
-                    T::deserialize(crate::de::Deser::new(&mut src, cfg))
+                    T::deserialize(crate::de::YamlDeserializer::new(&mut src, cfg))
                 });
                 let value = match value_res {
                     Ok(v) => v,
@@ -1153,7 +1154,7 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
         EnforcingPolicy::AllContent,
     );
     let value_res = crate::anchor_store::with_document_scope(|| {
-        T::deserialize(crate::de::Deser::new(&mut src, cfg))
+        T::deserialize(crate::de::YamlDeserializer::new(&mut src, cfg))
     });
     let value = match value_res {
         Ok(v) => v,
@@ -1375,7 +1376,7 @@ where
                     }
                     Ok(Some(_)) => {
                         let res = crate::anchor_store::with_document_scope(|| {
-                            T::deserialize(crate::de::Deser::new(&mut self.src, self.cfg))
+                            T::deserialize(crate::de::YamlDeserializer::new(&mut self.src, self.cfg))
                         });
                         return Some(res);
                     }

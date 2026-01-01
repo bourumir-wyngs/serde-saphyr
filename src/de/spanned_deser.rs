@@ -5,14 +5,15 @@
 
 use serde::de::{self, IntoDeserializer, Visitor};
 
-use super::{Cfg, Deser, Error, Events, Location};
+use super::{Cfg, Error, Events, Location};
+use crate::YamlDeserializer;
 
 /// Dispatch for the internal `__yaml_spanned` newtype.
 ///
 /// This captures the current *use-site* (`referenced`) and *definition-site*
 /// (`defined`) locations and then synthesizes a struct-like view:
 /// `{ value: T, referenced: Location, defined: Location }`.
-pub(super) fn deserialize_yaml_spanned<'de, V>(de: Deser<'_>, visitor: V) -> Result<V::Value, Error>
+pub(super) fn deserialize_yaml_spanned<'de, V>(de: YamlDeserializer<'_>, visitor: V) -> Result<V::Value, Error>
 where
     V: Visitor<'de>,
 {
@@ -50,7 +51,7 @@ where
 ///   *reborrow* `&mut dyn Events` from inside `Deser` rather than moving it out.
 struct SpannedDeser<'a> {
     /// The underlying YAML deserializer we delegate `value: T` to.
-    de: Deser<'a>,
+    de: YamlDeserializer<'a>,
     /// Use-site location: where the next node is referenced (e.g. `*a` token).
     referenced: Location,
     /// Definition-site location: where the node is defined (e.g. anchored scalar).
@@ -99,7 +100,7 @@ impl<'de> de::Deserializer<'de> for SpannedDeser<'_> {
 /// struct (`Repr`) with named fields.
 struct SpannedMapAccess<'a> {
     /// Underlying YAML deserializer.
-    de: Deser<'a>,
+    de: YamlDeserializer<'a>,
     /// Use-site location (see [`Events::reference_location`]).
     referenced: Location,
     /// Definition-site location (typically `Ev::location()` from `peek()`).
@@ -133,7 +134,7 @@ impl<'de> de::MapAccess<'de> for SpannedMapAccess<'_> {
             1 => {
                 // value
                 // Reborrow the event source instead of moving `&mut` out of `self.de`.
-                seed.deserialize(Deser::new(&mut *self.de.ev, self.de.cfg))
+                seed.deserialize(YamlDeserializer::new(&mut *self.de.ev, self.de.cfg))
             }
             2 => {
                 // referenced
