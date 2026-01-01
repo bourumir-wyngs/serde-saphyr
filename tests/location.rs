@@ -3,10 +3,7 @@ use serde_saphyr::{Error, Options};
 use serde::Deserialize;
 
 fn unwrap_snippet(err: &Error) -> &Error {
-    match err {
-        Error::WithSnippet { error, .. } => error,
-        other => other,
-    }
+    err.without_snippet()
 }
 
 fn expect_location(err: &Error, line: u64, column: u64) {
@@ -54,6 +51,7 @@ fn scalar_conversion_error_carries_span() {
 #[test]
 fn scalar_conversion_error_carries_byte_offset_in_mapping_value() {
     #[derive(Debug, Deserialize)]
+    #[allow(dead_code)]
     struct T {
         b: bool,
     }

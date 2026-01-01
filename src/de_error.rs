@@ -102,6 +102,17 @@ impl Error {
             error: Box::new(inner),
         }
     }
+
+    /// Provide "no snippet" version for cases when snippet rendering is not  desired.
+    pub fn without_snippet(&self) -> &Self {
+        match self {
+            Error::WithSnippet {error, .. } => {
+                error
+            }
+            other => other,
+        }
+    }
+
     /// Construct a `Message` error with no known location.
     ///
     /// Arguments:
