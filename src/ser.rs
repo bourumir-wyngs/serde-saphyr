@@ -640,16 +640,18 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
                 continue;
             }
             let mut start = 0; // byte index
-            let mut last_space_byte: Option<usize> = None;
+            // (byte_index, utf8_len) of the last whitespace char seen.
+            // We need the utf8 length to advance `start` on a valid UTF-8 boundary.
+            let mut last_space: Option<(usize, usize)> = None;
             let mut col = 0usize; // column in chars
             for (i, ch) in line.char_indices() {
                 // track potential break positions
                 if ch.is_whitespace() {
-                    last_space_byte = Some(i);
+                    last_space = Some((i, ch.len_utf8()));
                 }
                 col += 1;
                 if col > self.folded_wrap_col {
-                    let break_at = last_space_byte.unwrap_or(i);
+                    let break_at = last_space.map(|(sp, _len)| sp).unwrap_or(i);
                     // Emit [start, break_at)
                     self.out.write_str(indent_str)?;
                     self.at_line_start = false;
@@ -658,8 +660,8 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
                     self.out.write_str(slice)?;
                     self.newline()?;
                     // Advance start: skip the whitespace if we broke at space
-                    start = if let Some(sp) = last_space_byte {
-                        sp + 1
+                    start = if let Some((sp, space_len)) = last_space {
+                        sp + space_len
                     } else {
                         break_at
                     };
@@ -667,7 +669,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
                     // to recompute `col` relative to the current `i` because `start` may
                     // have advanced past `i` when we broke at the current whitespace.
                     // Starting a fresh column count avoids invalid slice ranges.
-                    last_space_byte = None;
+                    last_space = None;
                     col = 0;
                 }
             }

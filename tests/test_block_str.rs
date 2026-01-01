@@ -218,6 +218,21 @@ fn fold_string_top_level() {
 }
 
 #[test]
+fn fold_string_wraps_on_unicode_whitespace_without_panic() {
+    // Regression test: wrapping logic must not slice `&str` at non-UTF-8 boundaries.
+    // In particular, U+202F (NARROW NO-BREAK SPACE) is whitespace but is 3 bytes in UTF-8.
+    let s = "The pedicel-fruit junction was sampled from pedicels of LC-8 plants grown at the Zunyi Experimental Station (N 27°44′, E 107°12′) of the Pepper (Chili) Research Institute, the Guizhou\u{202f}Province";
+
+    let out = to_string(&FoldString(s.to_string())).unwrap();
+    assert!(out.starts_with(">\n  "));
+
+    // Ensure the produced YAML is parseable and contains the expected content.
+    let roundtrip: String = serde_saphyr::from_str(&out).unwrap();
+    assert!(roundtrip.contains("Guizhou"));
+    assert!(roundtrip.contains("Province"));
+}
+
+#[test]
 fn fold_string_as_map_value() {
     #[derive(Serialize)]
     struct Doc {
