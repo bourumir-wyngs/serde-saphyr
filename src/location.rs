@@ -10,7 +10,7 @@ use serde::Deserialize;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize, Default)]
 pub struct Span {
     pub(crate) offset: usize,
-    pub(crate) len: usize,
+    pub(crate) len: u32,
 }
 
 impl Span {
@@ -24,7 +24,7 @@ impl Span {
 
     #[inline]
     pub fn len(&self) -> usize {
-        self.len
+        self.len as usize
     }
 }
 
@@ -103,6 +103,6 @@ pub(crate) fn location_from_span(span: &ParserSpan) -> Location {
     let start = &span.start;
     Location::new(start.line(), start.col() + 1).with_span(Span {
         offset: start.index(),
-        len: span.len(),
+        len: span.len() as u32,
     })
 }
