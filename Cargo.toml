@@ -25,12 +25,16 @@ ahash = "0.8.12"
 annotate-snippets = "0.12"
 garde = { version = ">= 0.19.0, < 0.23", optional = true, features = ["derive"] }
 miette = { version = "7", optional = true }
+validator = { version = "0.18", optional = true, features = ["derive"] }
 
 [features]
-default = []
+default = ["validator", "miette"]
 
 # Enables integration with the `garde` validation crate.
 garde = ["dep:garde"]
+
+# Enables integration with the `validator` validation crate.
+validator = ["dep:validator"]
 
 # Enables structured diagnostics via the `miette` crate.
 miette = ["dep:miette"]
@@ -63,6 +67,10 @@ required-features = ["garde"]
 [[example]]
 name = "miette"
 required-features = ["garde", "miette"]
+
+[[example]]
+name = "validator_validate"
+required-features = ["validator"]
 
 [lints.rust]
 unsafe_code = "forbid"

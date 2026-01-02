@@ -31,7 +31,7 @@ In our [benchmarking project](https://github.com/bourumir-wyngs/serde-saphyr-ben
 
 |                                                   Crate | Version             | Merge Keys   | Nested Enums | Duplicate key rejection | Validation | Notes                                                                    |
 | ------------------------------------------------------: | :------------------ | :----------- | :----------- | :---------------------- |:----------:| :----------------------------------------------------------------------- |
-|   [serde-saphyr](https://crates.io/crates/serde-saphyr) | 0.0.4               | ✅ Native    | ✅           | ✅ Configurable         |     ✅ [`garde`](https://crates.io/crates/garde)     | No`unsafe`, no [unsafe-libyaml](https://crates.io/crates/unsafe-libyaml) |
+|   [serde-saphyr](https://crates.io/crates/serde-saphyr) | 0.0.4               | ✅ Native    | ✅           | ✅ Configurable         | ✅ [`garde`](https://crates.io/crates/garde) / [`validator`](https://crates.io/crates/validator) | No`unsafe`, no [unsafe-libyaml](https://crates.io/crates/unsafe-libyaml) |
 | [serde-yaml-bw](https://crates.io/crates/serde-yaml_bw) | 2.4.1               | ✅ Native    | ✅           | ✅ Configurable         |     ❌      | Slow due Saphyr doing budget check first upfront of libyaml              |
 | [serde-yaml-ng](https://crates.io/crates/serde-yaml-ng) | 0.10.0              | ⚠️ partial | ❌           | ❌                      |     ❌      |                                                                          |
 |       [serde-yaml](https://crates.io/crates/serde-yaml) | 0.9.34 + deprecated | ⚠️ partial | ❌           | ❌                      |     ❌      | Original, deprecated, repo archived                                      |
@@ -57,6 +57,7 @@ The test suite currently includes 783 passing tests, most of them originating fr
 - **Configurable budgets:** Enforce input limits to mitigate resource exhaustion (e.g., deeply nested structures or very large arrays); see [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
 - **Serializer supports emitting anchors** (Rc, Arc, Weak) if they properly wrapped (see below).
 - **Optional [`garde`](https://crates.io/crates/garde) integration:** Declarative validation of parsed YAML documents, reporting location with snippet directly from YAML document.
+- **Optional [`validator`](https://crates.io/crates/validator) integration:** Validate parsed YAML documents with `validator` and receive YAML-aware error locations and snippets.
 - **Optional [`miette`](https://crates.io/crates/miette)** integration for more advanced error reporting (see [example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/miette.rs)).
 - **serde_json::Value** is supported when parsing without target structure defined.
 - **robotic extensions** to support YAML dialect common in robotics (see below).
@@ -151,10 +152,6 @@ error: line 3 column 23: invalid here, validation error: length is lower than 2 
 3 |         secondString: *A
 4 |  
 ```
-
-Common Serde renames made to follow naming conventions (case changes, snake_case, kebab-case, r# stripping) are supported, as long as they do not introduce ambiguity. Arbitrary renames are not. Parsing and validation will still work, but error messages for arbitrarily renamed fields only tell Rust path. The integration of garde is gated by the Cargo feature `garde` (disabled by default, use `serde-saphyr = { version = "0.0.13", features = ["garde"] } in Cargo.toml` to enable it).
-
-If you prefer to validate without `garde` and want to ensure that location information is always available, use the heavier approach with [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html) wrapper instead. If you need no snippet, "plain" message is available from [`without_snippet()`](https://docs.rs/serde-saphyr/latest/serde_saphyr/enum.Error.html#method.without_snippet).
 
 ### Duplicate keys
 

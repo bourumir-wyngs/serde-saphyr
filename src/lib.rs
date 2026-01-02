@@ -17,6 +17,8 @@ use std::io::Read;
 
 #[cfg(feature = "garde")]
 use garde::Validate;
+#[cfg(feature = "validator")]
+use validator::Validate as ValidatorValidate;
 
 mod anchor_store;
 mod anchors;
@@ -32,7 +34,7 @@ mod parse_scalars;
 pub mod ser;
 mod spanned;
 
-#[cfg(feature = "garde")]
+#[cfg(any(feature = "garde", feature = "validator"))]
 pub mod path_map;
 
 pub mod ser_error;
@@ -309,8 +311,8 @@ pub fn from_str_with_options<T: DeserializeOwned>(
 }
 
 /// Deserialize a single YAML document with configurable [`Options`], and also
-/// return a map from `garde` validation paths to source [`Location`]s.
-#[cfg(feature = "garde")]
+/// return a map from validation paths to source [`Location`]s.
+#[cfg(any(feature = "garde", feature = "validator"))]
 fn from_str_with_options_and_path_recorder<T: DeserializeOwned>(
     input: &str,
     options: Options,
@@ -753,6 +755,369 @@ where
     );
 
     ReadValidIter::<T> {
+        src,
+        cfg,
+        finished: false,
+        _marker: std::marker::PhantomData,
+    }
+}
+
+/// Deserialize a single YAML document from a YAML string and validate it with `validator`.
+/// The error message will contain a snippet with exact location information, and if the
+/// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
+#[cfg(feature = "validator")]
+pub fn from_str_validate<T>(input: &str) -> Result<T, Error>
+where
+    T: DeserializeOwned + ValidatorValidate,
+{
+    from_str_with_options_validate(input, Options::default())
+}
+
+/// Deserialize a single YAML document with configurable [`Options`] and validate it with `validator`.
+/// The error message will contain a snippet with exact location information, and if the
+/// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
+#[cfg(feature = "validator")]
+pub fn from_str_with_options_validate<T>(input: &str, options: Options) -> Result<T, Error>
+where
+    T: DeserializeOwned + ValidatorValidate,
+{
+    let with_snippet = options.with_snippet;
+    let crop_radius = options.crop_radius;
+
+    let (v, recorder) = from_str_with_options_and_path_recorder::<T>(input, options)?;
+    match ValidatorValidate::validate(&v) {
+        Ok(()) => Ok(v),
+        Err(errors) => {
+            let err = Error::ValidatorError {
+                errors,
+                referenced: recorder.map,
+                defined: recorder.defined,
+            };
+            Err(maybe_with_snippet(err, input, with_snippet, crop_radius))
+        }
+    }
+}
+
+/// Deserialize multiple YAML documents from a YAML string and validate each with `validator`.
+/// The error message will contain a snippet with exact location information, and if the
+/// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
+#[cfg(feature = "validator")]
+pub fn from_multiple_validate<T: DeserializeOwned + ValidatorValidate>(
+    input: &str,
+) -> Result<Vec<T>, Error> {
+    from_multiple_with_options_validate(input, Options::default())
+}
+
+/// Deserialize multiple YAML documents with configurable [`Options`] and validate each with `validator`.
+/// The error message will contain a snippet with exact location information, and if the
+/// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
+#[cfg(feature = "validator")]
+pub fn from_multiple_with_options_validate<T>(input: &str, options: Options) -> Result<Vec<T>, Error>
+where
+    T: DeserializeOwned + ValidatorValidate,
+{
+    let with_snippet = options.with_snippet;
+    let crop_radius = options.crop_radius;
+
+    let cfg = crate::de::Cfg::from_options(&options);
+    let mut src = LiveEvents::from_str(
+        input,
+        options.budget,
+        options.budget_report,
+        options.alias_limits,
+        false,
+    );
+    let mut values = Vec::new();
+    let mut validation_errors: Vec<Error> = Vec::new();
+
+    loop {
+        match src.peek()? {
+            // Skip documents that are explicit null-like scalars ("", "~", or "null").
+            Some(Ev::Scalar {
+                value: s, style, ..
+            }) if scalar_is_nullish(s, style) => {
+                let _ = src.next()?; // consume the null scalar document
+                continue;
+            }
+            Some(_) => {
+                let mut recorder = crate::path_map::PathRecorder::new();
+                let value_res = crate::anchor_store::with_document_scope(|| {
+                    T::deserialize(crate::de::YamlDeserializer::new_with_path_recorder(
+                        &mut src,
+                        cfg,
+                        &mut recorder,
+                    ))
+                });
+                let value = match value_res {
+                    Ok(v) => v,
+                    Err(e) => return Err(maybe_with_snippet(e, input, with_snippet, crop_radius)),
+                };
+
+                match ValidatorValidate::validate(&value) {
+                    Ok(()) => {
+                        values.push(value);
+                    }
+                    Err(errors) => {
+                        let err = Error::ValidatorError {
+                            errors,
+                            referenced: recorder.map,
+                            defined: recorder.defined,
+                        };
+                        validation_errors.push(maybe_with_snippet(
+                            err,
+                            input,
+                            with_snippet,
+                            crop_radius,
+                        ));
+                    }
+                }
+            }
+            None => break,
+        }
+    }
+
+    src.finish()
+        .map_err(|e| maybe_with_snippet(e, input, with_snippet, crop_radius))?;
+
+    if validation_errors.is_empty() {
+        Ok(values)
+    } else {
+        Err(Error::ValidatorErrors {
+            errors: validation_errors,
+        })
+    }
+}
+
+/// Deserialize a single YAML document from bytes and validate it with `validator`.
+/// The error message will contain a snippet with exact location information, and if the
+/// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
+#[cfg(feature = "validator")]
+pub fn from_slice_validate<T: DeserializeOwned + ValidatorValidate>(bytes: &[u8]) -> Result<T, Error> {
+    from_slice_with_options_validate(bytes, Options::default())
+}
+
+/// Deserialize a single YAML document from bytes and validate it with `validator`.
+/// The error message will contain a snippet with exact location information, and if the
+/// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
+#[cfg(feature = "validator")]
+pub fn from_slice_with_options_validate<T: DeserializeOwned + ValidatorValidate>(
+    bytes: &[u8],
+    options: Options,
+) -> Result<T, Error> {
+    let s = std::str::from_utf8(bytes).map_err(|_| Error::msg("input is not valid UTF-8"))?;
+    from_str_with_options_validate(s, options)
+}
+
+/// Deserialize multiple YAML documents from bytes with options and validate each with `validator`.
+/// The error message will contain a snippet with exact location information, and if the
+/// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
+#[cfg(feature = "validator")]
+pub fn from_slice_multiple_with_options_validate<T>(
+    bytes: &[u8],
+    options: Options,
+) -> Result<Vec<T>, Error>
+where
+    T: DeserializeOwned + ValidatorValidate,
+{
+    let s = std::str::from_utf8(bytes).map_err(|_| Error::msg("input is not valid UTF-8"))?;
+    from_multiple_with_options_validate(s, options)
+}
+
+/// Deserialize a single YAML document from a reader and validate it with `validator`.
+/// As there is no access to the full text of the document, the error message will not contain
+/// a snippet.
+#[cfg(feature = "validator")]
+pub fn from_reader_validate<R: std::io::Read, T>(reader: R) -> Result<T, Error>
+where
+    T: DeserializeOwned + ValidatorValidate,
+{
+    from_reader_with_options_validate(reader, Options::default())
+}
+
+/// Deserialize a single YAML document from a reader with options and validate it with `validator`.
+/// As there is no access to the full text of the document, the error message will not contain
+/// a snippet.
+#[cfg(feature = "validator")]
+pub fn from_reader_with_options_validate<R: std::io::Read, T>(
+    reader: R,
+    options: Options,
+) -> Result<T, Error>
+where
+    T: DeserializeOwned + ValidatorValidate,
+{
+    let cfg = crate::de::Cfg::from_options(&options);
+    let mut src = LiveEvents::from_reader(
+        reader,
+        options.budget,
+        options.budget_report,
+        options.alias_limits,
+        false,
+        EnforcingPolicy::AllContent,
+    );
+
+    let mut recorder = crate::path_map::PathRecorder::new();
+
+    let value_res = crate::anchor_store::with_document_scope(|| {
+        T::deserialize(crate::de::YamlDeserializer::new_with_path_recorder(
+            &mut src,
+            cfg,
+            &mut recorder,
+        ))
+    });
+    let value = match value_res {
+        Ok(v) => v,
+        Err(e) => {
+            if src.synthesized_null_emitted() {
+                // If the only thing in the input was an empty document (synthetic null),
+                // surface this as an EOF error to preserve expected error semantics
+                // for incompatible target types (e.g., bool).
+                return Err(Error::eof().with_location(src.last_location()));
+            } else {
+                return Err(e);
+            }
+        }
+    };
+
+    if let Err(errors) = ValidatorValidate::validate(&value) {
+        return Err(Error::ValidatorError {
+            errors,
+            referenced: recorder.map,
+            defined: recorder.defined,
+        });
+    }
+
+    // After finishing first document, peek ahead to detect either another document/content
+    // or trailing garbage. If a scan error occurs but we have seen a DocumentEnd ("..."),
+    // ignore the trailing garbage. Otherwise, surface the error.
+    match src.peek() {
+        Ok(Some(_)) => {
+            return Err(Error::msg(
+                "multiple YAML documents detected; use read_validate or read_with_options_validate to obtain the iterator",
+            )
+            .with_location(src.last_location()));
+        }
+        Ok(None) => {}
+        Err(e) => {
+            if src.seen_doc_end() {
+                // Trailing garbage after a proper document end marker is ignored.
+            } else {
+                return Err(e);
+            }
+        }
+    }
+
+    src.finish()?;
+    Ok(value)
+}
+
+/// Create an iterator over validated YAML documents from a reader.
+/// As there is no access to the full text of the document, the error message will not contain
+/// a snippet.
+#[cfg(feature = "validator")]
+pub fn read_validate<'a, R, T>(reader: &'a mut R) -> impl Iterator<Item = Result<T, Error>> + 'a
+where
+    R: Read + 'a,
+    T: DeserializeOwned + ValidatorValidate + 'a,
+{
+    read_with_options_validate(reader, Default::default())
+}
+
+/// Create an iterator over validated YAML documents from a reader with configurable options.
+/// As there is no access to the full text of the document, the error message will not contain
+/// a snippet.
+#[cfg(feature = "validator")]
+pub fn read_with_options_validate<'a, R, T>(
+    reader: &'a mut R,
+    options: Options,
+) -> impl Iterator<Item = Result<T, Error>> + 'a
+where
+    R: Read + 'a,
+    T: DeserializeOwned + ValidatorValidate + 'a,
+{
+    struct ReadValidateIter<'a, T> {
+        src: LiveEvents<'a>, // borrows from `reader`
+        cfg: crate::de::Cfg,
+        finished: bool,
+        _marker: std::marker::PhantomData<T>,
+    }
+
+    impl<'a, T> Iterator for ReadValidateIter<'a, T>
+    where
+        T: DeserializeOwned + ValidatorValidate + 'a,
+    {
+        type Item = Result<T, Error>;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            if self.finished {
+                return None;
+            }
+            loop {
+                match self.src.peek() {
+                    Ok(Some(Ev::Scalar { value, style, .. }))
+                        if scalar_is_nullish(value, style) =>
+                    {
+                        let _ = self.src.next();
+                        continue;
+                    }
+                    Ok(Some(_)) => {
+                        let mut recorder = crate::path_map::PathRecorder::new();
+                        let value_res = crate::anchor_store::with_document_scope(|| {
+                            T::deserialize(crate::de::YamlDeserializer::new_with_path_recorder(
+                                &mut self.src,
+                                self.cfg,
+                                &mut recorder,
+                            ))
+                        });
+                        let value = match value_res {
+                            Ok(v) => v,
+                            Err(e) => {
+                                self.finished = true;
+                                let _ = self.src.finish();
+                                return Some(Err(e));
+                            }
+                        };
+
+                        match ValidatorValidate::validate(&value) {
+                            Ok(()) => return Some(Ok(value)),
+                            Err(errors) => {
+                                self.finished = true;
+                                let _ = self.src.finish();
+                                return Some(Err(Error::ValidatorError {
+                                    errors,
+                                    referenced: recorder.map,
+                                    defined: recorder.defined,
+                                }));
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        self.finished = true;
+                        if let Err(e) = self.src.finish() {
+                            return Some(Err(e));
+                        }
+                        return None;
+                    }
+                    Err(e) => {
+                        self.finished = true;
+                        let _ = self.src.finish();
+                        return Some(Err(e));
+                    }
+                }
+            }
+        }
+    }
+
+    let cfg = crate::de::Cfg::from_options(&options);
+    let src = LiveEvents::from_reader(
+        reader,
+        options.budget,
+        options.budget_report,
+        options.alias_limits,
+        false,
+        EnforcingPolicy::PerDocument,
+    );
+
+    ReadValidateIter::<T> {
         src,
         cfg,
         finished: false,

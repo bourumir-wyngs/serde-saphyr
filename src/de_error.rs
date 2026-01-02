@@ -4,13 +4,17 @@ use crate::budget::BudgetBreach;
 use crate::parse_scalars::{
     parse_int_signed, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish,
 };
+#[cfg(any(feature = "garde", feature = "validator"))]
+use crate::path_map::{PathKey, PathMap, format_path_with_resolved_leaf};
 #[cfg(feature = "garde")]
-use crate::path_map::PathMap;
+use crate::path_map::path_key_from_garde;
 use crate::tags::SfTag;
 use annotate_snippets::Level;
 use saphyr_parser::{ScalarStyle, ScanError};
 use serde::de::{self};
 use std::fmt;
+#[cfg(feature = "validator")]
+use validator::{ValidationErrors, ValidationErrorsKind};
 
 /// Error type compatible with `serde::de::Error`.
 #[derive(Debug)]
@@ -81,6 +85,20 @@ pub enum Error {
     /// Garde validation failures (multiple, if multiple validations fail)
     #[cfg(feature = "garde")]
     ValidationErrors {
+        errors: Vec<Error>,
+    },
+
+    /// Validator validation failure.
+    #[cfg(feature = "validator")]
+    ValidatorError {
+        errors: ValidationErrors,
+        referenced: PathMap,
+        defined: PathMap,
+    },
+
+    /// Validator validation failures (multiple, if multiple validations fail)
+    #[cfg(feature = "validator")]
+    ValidatorErrors {
         errors: Vec<Error>,
     },
 }
@@ -222,6 +240,14 @@ impl Error {
             Error::ValidationErrors { .. } => {
                 // Aggregate validation errors carry their own per-entry locations.
             }
+            #[cfg(feature = "validator")]
+            Error::ValidatorError { .. } => {
+                // Validation errors carry their own per-path locations.
+            }
+            #[cfg(feature = "validator")]
+            Error::ValidatorErrors { .. } => {
+                // Aggregate validation errors carry their own per-entry locations.
+            }
         }
         self
     }
@@ -270,6 +296,25 @@ impl Error {
                 }),
             #[cfg(feature = "garde")]
             Error::ValidationErrors { errors } => errors.iter().find_map(|e| e.location()),
+            #[cfg(feature = "validator")]
+            Error::ValidatorError {
+                referenced,
+                defined,
+                ..
+            } => referenced
+                .map
+                .values()
+                .copied()
+                .find(|l| *l != Location::UNKNOWN)
+                .or_else(|| {
+                    defined
+                        .map
+                        .values()
+                        .copied()
+                        .find(|l| *l != Location::UNKNOWN)
+                }),
+            #[cfg(feature = "validator")]
+            Error::ValidatorErrors { errors } => errors.iter().find_map(|e| e.location()),
         }
     }
 
@@ -344,6 +389,27 @@ impl fmt::Display for Error {
 
             #[cfg(feature = "garde")]
             Error::ValidationErrors { errors } => {
+                let mut first = true;
+                for err in errors {
+                    if !first {
+                        writeln!(f)?;
+                        writeln!(f)?;
+                    }
+                    first = false;
+                    write!(f, "{err}")?;
+                }
+                Ok(())
+            }
+
+            #[cfg(feature = "validator")]
+            Error::ValidatorError {
+                errors,
+                referenced,
+                defined,
+            } => fmt_validator_error_plain(f, errors, referenced, defined),
+
+            #[cfg(feature = "validator")]
+            Error::ValidatorErrors { errors } => {
                 let mut first = true;
                 for err in errors {
                     if !first {
@@ -430,6 +496,67 @@ fn render_error_with_snippets(inner: &Error, text: &str, crop_radius: usize) -> 
         }
     }
 
+    #[cfg(feature = "validator")]
+    {
+        // Normalize the snippet text to match the coordinate system used by parsing.
+        let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
+
+        if let Error::ValidatorError {
+            errors,
+            referenced,
+            defined,
+        } = inner
+        {
+            struct ValidatorSnippetDisplay<'a> {
+                errors: &'a ValidationErrors,
+                referenced: &'a PathMap,
+                defined: &'a PathMap,
+                text: &'a str,
+                crop_radius: usize,
+            }
+
+            impl fmt::Display for ValidatorSnippetDisplay<'_> {
+                fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    fmt_validator_error_with_snippets(
+                        f,
+                        self.errors,
+                        self.referenced,
+                        self.defined,
+                        self.text,
+                        self.crop_radius,
+                    )
+                }
+            }
+
+            return ValidatorSnippetDisplay {
+                errors,
+                referenced,
+                defined,
+                text,
+                crop_radius,
+            }
+            .to_string();
+        }
+
+        if let Error::ValidatorErrors { errors } = inner {
+            let mut out = String::new();
+            for (i, err) in errors.iter().enumerate() {
+                if i > 0 {
+                    out.push('\n');
+                    out.push('\n');
+                }
+
+                // If the nested error already contains snippet output, keep it.
+                // Otherwise, render it against the shared input text.
+                match err {
+                    Error::WithSnippet { .. } => out.push_str(&err.to_string()),
+                    other => out.push_str(&render_error_with_snippets(other, text, crop_radius)),
+                }
+            }
+            return out;
+        }
+    }
+
     let msg = inner.to_string();
     let Some(location) = inner.location() else {
         return msg;
@@ -478,14 +605,17 @@ fn fmt_validation_error_plain(
             writeln!(f)?;
         }
         first = false;
-        let original_leaf = garde_leaf_segment(path).unwrap_or("<root>").to_owned();
+        let path_key = path_key_from_garde(path);
+        let original_leaf = path_key
+            .leaf_string()
+            .unwrap_or_else(|| "<root>".to_string());
 
         let (loc, resolved_leaf) = referenced
-            .search(path)
-            .or_else(|| defined.search(path))
+            .search(&path_key)
+            .or_else(|| defined.search(&path_key))
             .unwrap_or((Location::UNKNOWN, original_leaf));
 
-        let resolved_path = format_garde_path_with_resolved_leaf(path, &resolved_leaf);
+        let resolved_path = format_path_with_resolved_leaf(&path_key, &resolved_leaf);
         let msg = format!("validation error at {resolved_path}: {entry}");
         fmt_with_location(f, &msg, &loc)?;
     }
@@ -508,13 +638,16 @@ fn fmt_validation_error_with_snippets(
         }
         first = false;
 
-        let original_leaf = garde_leaf_segment(path).unwrap_or("<root>").to_owned();
+        let path_key = path_key_from_garde(path);
+        let original_leaf = path_key
+            .leaf_string()
+            .unwrap_or_else(|| "<root>".to_string());
 
         let (ref_loc, ref_leaf) = referenced
-            .search(path)
+            .search(&path_key)
             .unwrap_or((Location::UNKNOWN, original_leaf.clone()));
         let (def_loc, def_leaf) = defined
-            .search(path)
+            .search(&path_key)
             .unwrap_or((Location::UNKNOWN, original_leaf.clone()));
 
         let resolved_leaf = if ref_loc != Location::UNKNOWN {
@@ -525,7 +658,7 @@ fn fmt_validation_error_with_snippets(
             original_leaf
         };
 
-        let resolved_path = format_garde_path_with_resolved_leaf(path, &resolved_leaf);
+        let resolved_path = format_path_with_resolved_leaf(&path_key, &resolved_leaf);
         let base_msg = format!("validation error: {entry} for `{resolved_path}`");
 
         match (ref_loc, def_loc) {
@@ -583,43 +716,161 @@ fn fmt_validation_error_with_snippets(
     Ok(())
 }
 
-#[cfg(feature = "garde")]
-fn garde_leaf_segment(path: &garde::error::Path) -> Option<&str> {
-    // garde `Path::__iter()` yields segments leaf-first.
-    path.__iter().next().map(|(_k, s)| s.as_str())
-}
+#[cfg(feature = "validator")]
+fn fmt_validator_error_plain(
+    f: &mut fmt::Formatter<'_>,
+    errors: &ValidationErrors,
+    referenced: &PathMap,
+    defined: &PathMap,
+) -> fmt::Result {
+    let entries = collect_validator_entries(errors);
+    let mut first = true;
 
-#[cfg(feature = "garde")]
-fn format_garde_path_with_resolved_leaf(path: &garde::error::Path, resolved_leaf: &str) -> String {
-    use garde::error::Kind;
+    for (path, entry) in entries {
+        if !first {
+            writeln!(f)?;
+        }
+        first = false;
 
-    let mut segs: Vec<(Kind, String)> = path
-        .__iter()
-        .map(|(k, s)| (k, s.as_str().to_owned()))
-        .collect();
-    segs.reverse(); // root -> leaf
+        let original_leaf = path.leaf_string().unwrap_or_else(|| "<root>".to_string());
+        let (loc, resolved_leaf) = referenced
+            .search(&path)
+            .or_else(|| defined.search(&path))
+            .unwrap_or((Location::UNKNOWN, original_leaf));
 
-    if let Some((_k, s)) = segs.last_mut() {
-        *s = resolved_leaf.to_owned();
+        let resolved_path = format_path_with_resolved_leaf(&path, &resolved_leaf);
+        let msg = format!("validation error at {resolved_path}: {entry}");
+        fmt_with_location(f, &msg, &loc)?;
     }
 
-    let mut out = String::new();
-    for (i, (k, s)) in segs.iter().enumerate() {
-        match k {
-            Kind::Index => {
-                out.push('[');
-                out.push_str(s);
-                out.push(']');
+    Ok(())
+}
+
+#[cfg(feature = "validator")]
+fn fmt_validator_error_with_snippets(
+    f: &mut fmt::Formatter<'_>,
+    errors: &ValidationErrors,
+    referenced: &PathMap,
+    defined: &PathMap,
+    text: &str,
+    crop_radius: usize,
+) -> fmt::Result {
+    let entries = collect_validator_entries(errors);
+    let mut first = true;
+
+    for (path, entry) in entries {
+        if !first {
+            writeln!(f)?;
+        }
+        first = false;
+
+        let original_leaf = path.leaf_string().unwrap_or_else(|| "<root>".to_string());
+        let (ref_loc, ref_leaf) = referenced
+            .search(&path)
+            .unwrap_or((Location::UNKNOWN, original_leaf.clone()));
+        let (def_loc, def_leaf) = defined
+            .search(&path)
+            .unwrap_or((Location::UNKNOWN, original_leaf.clone()));
+
+        let resolved_leaf = if ref_loc != Location::UNKNOWN {
+            ref_leaf
+        } else if def_loc != Location::UNKNOWN {
+            def_leaf
+        } else {
+            original_leaf
+        };
+
+        let resolved_path = format_path_with_resolved_leaf(&path, &resolved_leaf);
+        let base_msg = format!("validation error: {entry} for `{resolved_path}`");
+
+        match (ref_loc, def_loc) {
+            (Location::UNKNOWN, Location::UNKNOWN) => {
+                write!(f, "{base_msg}")?;
             }
-            _ => {
-                if i > 0 {
-                    out.push('.');
-                }
-                out.push_str(s);
+            (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
+                crate::de_snipped::fmt_with_snippet_or_fallback(
+                    f,
+                    Level::ERROR,
+                    &base_msg,
+                    &r,
+                    text,
+                    "(defined)",
+                    crop_radius,
+                )?;
+            }
+            (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
+                crate::de_snipped::fmt_with_snippet_or_fallback(
+                    f,
+                    Level::ERROR,
+                    &base_msg,
+                    &d,
+                    text,
+                    "(defined here)",
+                    crop_radius,
+                )?;
+            }
+            (r, d) => {
+                crate::de_snipped::fmt_with_snippet_or_fallback(
+                    f,
+                    Level::ERROR,
+                    &format!("invalid here, {base_msg}"),
+                    &r,
+                    text,
+                    "the value is used here",
+                    crop_radius,
+                )?;
+                writeln!(f)?;
+                writeln!(
+                    f,
+                    "  | This value comes indirectly from the anchor at line {} column {}:",
+                    d.line, d.column
+                )?;
+                crate::de_snipped::fmt_snippet_window_or_fallback(
+                    f,
+                    &d,
+                    text,
+                    "defined here",
+                    crop_radius,
+                )?;
             }
         }
     }
+    Ok(())
+}
+
+#[cfg(feature = "validator")]
+fn collect_validator_entries(errors: &ValidationErrors) -> Vec<(PathKey, String)> {
+    let mut out = Vec::new();
+    let root = PathKey::empty();
+    collect_validator_entries_inner(errors, &root, &mut out);
     out
+}
+
+#[cfg(feature = "validator")]
+fn collect_validator_entries_inner(
+    errors: &ValidationErrors,
+    path: &PathKey,
+    out: &mut Vec<(PathKey, String)>,
+) {
+    for (field, kind) in errors.errors() {
+        let field_path = path.clone().join(*field);
+        match kind {
+            ValidationErrorsKind::Field(entries) => {
+                for entry in entries {
+                    out.push((field_path.clone(), entry.to_string()));
+                }
+            }
+            ValidationErrorsKind::Struct(inner) => {
+                collect_validator_entries_inner(inner, &field_path, out);
+            }
+            ValidationErrorsKind::List(list) => {
+                for (idx, inner) in list {
+                    let index_path = field_path.clone().join(*idx);
+                    collect_validator_entries_inner(inner, &index_path, out);
+                }
+            }
+        }
+    }
 }
 impl std::error::Error for Error {}
 impl de::Error for Error {

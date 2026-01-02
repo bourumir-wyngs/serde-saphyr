@@ -9,6 +9,8 @@ use miette::{Diagnostic, LabeledSpan, NamedSource, SourceSpan};
 
 use crate::Error;
 use crate::Location;
+#[cfg(feature = "garde")]
+use crate::path_map::{format_path_with_resolved_leaf, path_key_from_garde};
 
 /// Convert a deserialization [`Error`] into a `miette::Report`.
 ///
@@ -85,13 +87,16 @@ fn build_diagnostic(err: &Error, src: Arc<NamedSource<String>>) -> ErrorDiagnost
         } => {
             let mut related = Vec::new();
             for (path, entry) in report.iter() {
-                let original_leaf = garde_leaf_segment(path).unwrap_or("<root>").to_owned();
+                let path_key = path_key_from_garde(path);
+                let original_leaf = path_key
+                    .leaf_string()
+                    .unwrap_or_else(|| "<root>".to_string());
 
                 let (ref_loc, ref_leaf) = referenced
-                    .search(path)
+                    .search(&path_key)
                     .unwrap_or((Location::UNKNOWN, original_leaf.clone()));
                 let (def_loc, def_leaf) = defined
-                    .search(path)
+                    .search(&path_key)
                     .unwrap_or((Location::UNKNOWN, original_leaf.clone()));
 
                 let resolved_leaf = if ref_loc != Location::UNKNOWN {
@@ -102,7 +107,7 @@ fn build_diagnostic(err: &Error, src: Arc<NamedSource<String>>) -> ErrorDiagnost
                     original_leaf
                 };
 
-                let resolved_path = format_garde_path_with_resolved_leaf(path, &resolved_leaf);
+                let resolved_path = format_path_with_resolved_leaf(&path_key, &resolved_leaf);
                 let base_msg = format!("validation error: {entry} for `{resolved_path}`");
 
                 let mut labels = Vec::new();
@@ -234,48 +239,16 @@ fn message_without_location(err: &Error) -> String {
         Error::ValidationErrors { errors } => {
             format!("validation failed for {} document(s)", errors.len())
         }
-    }
-}
 
-#[cfg(feature = "garde")]
-fn garde_leaf_segment(path: &garde::error::Path) -> Option<&str> {
-    path.__iter().next().map(|(_k, s)| s.as_str())
-}
-
-#[cfg(feature = "garde")]
-fn format_garde_path_with_resolved_leaf(path: &garde::error::Path, resolved_leaf: &str) -> String {
-    // garde paths are stored leaf-first.
-    let mut segs: Vec<(garde::error::Kind, &str)> =
-        path.__iter().map(|(k, s)| (k, s.as_str())).collect();
-    if let Some((_k, leaf)) = segs.first_mut() {
-        *leaf = resolved_leaf;
-    }
-    segs.reverse();
-
-    let mut out = String::new();
-    for (kind, seg) in segs {
-        match kind {
-            garde::error::Kind::None | garde::error::Kind::Key => {
-                if out.is_empty() {
-                    out.push_str(seg);
-                } else {
-                    out.push('.');
-                    out.push_str(seg);
-                }
-            }
-            garde::error::Kind::Index => {
-                out.push('[');
-                out.push_str(seg);
-                out.push(']');
-            }
+        #[cfg(feature = "validator")]
+        Error::ValidatorError { errors, .. } => format!("validation error: {errors}"),
+        #[cfg(feature = "validator")]
+        Error::ValidatorErrors { errors } => {
+            format!("validation failed for {} document(s)", errors.len())
         }
     }
-    if out.is_empty() {
-        "<root>".to_owned()
-    } else {
-        out
-    }
 }
+
 
 #[cfg(all(test, feature = "miette"))]
 mod tests {

@@ -48,7 +48,7 @@ mod spanned_deser;
 pub use crate::options::{AliasLimits, DuplicateKeyPolicy, Options};
 use crate::tags::SfTag;
 
-#[cfg(feature = "garde")]
+#[cfg(any(feature = "garde", feature = "validator"))]
 use crate::path_map::PathRecorder;
 
 /// Small immutable runtime configuration that `YamlDeserializer` needs.
@@ -898,7 +898,7 @@ pub struct YamlDeserializer<'e> {
     /// True when the recorded key node was exactly an empty mapping (MapStart followed by MapEnd).
     key_empty_map_node: bool,
 
-    #[cfg(feature = "garde")]
+    #[cfg(any(feature = "garde", feature = "validator"))]
     garde: Option<&'e mut PathRecorder>,
 }
 
@@ -921,12 +921,12 @@ impl<'e> YamlDeserializer<'e> {
             in_key: false,
             key_empty_map_node: false,
 
-            #[cfg(feature = "garde")]
+            #[cfg(any(feature = "garde", feature = "validator"))]
             garde: None,
         }
     }
 
-    #[cfg(feature = "garde")]
+    #[cfg(any(feature = "garde", feature = "validator"))]
     pub(crate) fn new_with_path_recorder(
         ev: &'e mut dyn Events,
         cfg: Cfg,
@@ -1677,9 +1677,9 @@ helper to deserialize into String or Cow<'de, str> instead
             ev: &'e mut dyn Events,
             cfg: Cfg,
 
-            #[cfg(feature = "garde")]
+            #[cfg(any(feature = "garde", feature = "validator"))]
             garde: Option<&'e mut PathRecorder>,
-            #[cfg(feature = "garde")]
+            #[cfg(any(feature = "garde", feature = "validator"))]
             idx: usize,
         }
         impl<'de, 'e> de::SeqAccess<'de> for SA<'e> {
@@ -1693,7 +1693,7 @@ helper to deserialize into String or Cow<'de, str> instead
                 match peeked {
                     Some(Ev::SeqEnd { .. }) => Ok(None),
                     Some(_) => {
-                        #[cfg(feature = "garde")]
+                        #[cfg(any(feature = "garde", feature = "validator"))]
                         {
                             if let Some(garde_ref) = self.garde.as_mut() {
                                 let recorder: &mut PathRecorder = garde_ref;
@@ -1711,7 +1711,7 @@ helper to deserialize into String or Cow<'de, str> instead
                                 let reference_location = self.ev.reference_location();
 
                                 let prev = recorder.current.clone();
-                                recorder.current = recorder.current.join(self.idx);
+                                recorder.current = recorder.current.clone().join(self.idx);
                                 recorder
                                     .map
                                     .insert(recorder.current.clone(), reference_location);
@@ -1736,16 +1736,16 @@ helper to deserialize into String or Cow<'de, str> instead
             }
         }
 
-        #[cfg(feature = "garde")]
+        #[cfg(any(feature = "garde", feature = "validator"))]
         let garde = self.garde;
 
         let result = visitor.visit_seq(SA {
             ev: self.ev,
             cfg: self.cfg,
 
-            #[cfg(feature = "garde")]
+            #[cfg(any(feature = "garde", feature = "validator"))]
             garde,
-            #[cfg(feature = "garde")]
+            #[cfg(any(feature = "garde", feature = "validator"))]
             idx: 0,
         })?;
         if let Some(Ev::SeqEnd { .. }) = self.ev.peek()? {
@@ -1818,9 +1818,9 @@ helper to deserialize into String or Cow<'de, str> instead
             cfg: Cfg,
             have_key: bool,
 
-            #[cfg(feature = "garde")]
+            #[cfg(any(feature = "garde", feature = "validator"))]
             garde: Option<&'e mut PathRecorder>,
-            #[cfg(feature = "garde")]
+            #[cfg(any(feature = "garde", feature = "validator"))]
             pending_path_segment: Option<String>,
 
             // For duplicate-key detection for arbitrary keys.
@@ -1885,7 +1885,7 @@ helper to deserialize into String or Cow<'de, str> instead
                     in_key: true,
                     key_empty_map_node: kemn,
 
-                    #[cfg(feature = "garde")]
+                    #[cfg(any(feature = "garde", feature = "validator"))]
                     garde: None,
                 };
                 seed.deserialize(de)
@@ -2022,7 +2022,7 @@ helper to deserialize into String or Cow<'de, str> instead
                         self.have_key = true;
                         self.pending_value = Some((value_events, reference_location));
 
-                        #[cfg(feature = "garde")]
+                        #[cfg(any(feature = "garde", feature = "validator"))]
                         {
                             self.pending_path_segment =
                                 fingerprint.stringy_scalar_value().map(|s| s.to_owned());
@@ -2155,7 +2155,7 @@ helper to deserialize into String or Cow<'de, str> instead
                                 self.have_key = true;
                                 self.pending_value = None; // value will be read live
 
-                                #[cfg(feature = "garde")]
+                                #[cfg(any(feature = "garde", feature = "validator"))]
                                 {
                                     self.pending_path_segment =
                                         fingerprint.stringy_scalar_value().map(|s| s.to_owned());
@@ -2181,14 +2181,14 @@ helper to deserialize into String or Cow<'de, str> instead
                 }
                 self.have_key = false;
 
-                #[cfg(feature = "garde")]
+                #[cfg(any(feature = "garde", feature = "validator"))]
                 let pending_segment = self.pending_path_segment.take();
 
                 if let Some(events) = self.pending_value.take() {
                     let (events, reference_location) = events;
                     let mut replay = ReplayEvents::with_reference(events, reference_location);
 
-                    #[cfg(feature = "garde")]
+                    #[cfg(any(feature = "garde", feature = "validator"))]
                     {
                         if let (Some(seg), Some(garde_ref)) = (pending_segment, self.garde.as_mut())
                         {
@@ -2202,7 +2202,7 @@ helper to deserialize into String or Cow<'de, str> instead
                                 .unwrap_or_else(|| replay.last_location());
 
                             let prev = recorder.current.clone();
-                            recorder.current = recorder.current.join(seg.as_str());
+                            recorder.current = recorder.current.clone().join(seg.as_str());
                             recorder
                                 .map
                                 .insert(recorder.current.clone(), reference_location);
@@ -2220,7 +2220,7 @@ helper to deserialize into String or Cow<'de, str> instead
                     let de = YamlDeserializer::new(&mut replay, self.cfg);
                     seed.deserialize(de)
                 } else {
-                    #[cfg(feature = "garde")]
+                    #[cfg(any(feature = "garde", feature = "validator"))]
                     {
                         // Live stream: record reference location (use-site) if garde recorder is enabled.
                         let defined_location = self
@@ -2235,7 +2235,7 @@ helper to deserialize into String or Cow<'de, str> instead
                         {
                             let recorder: &mut PathRecorder = garde_ref;
                             let prev = recorder.current.clone();
-                            recorder.current = recorder.current.join(seg.as_str());
+                            recorder.current = recorder.current.clone().join(seg.as_str());
                             recorder
                                 .map
                                 .insert(recorder.current.clone(), reference_location);
@@ -2256,7 +2256,7 @@ helper to deserialize into String or Cow<'de, str> instead
             }
         }
 
-        #[cfg(feature = "garde")]
+        #[cfg(any(feature = "garde", feature = "validator"))]
         let garde = self.garde;
 
         visitor.visit_map(MA {
@@ -2264,9 +2264,9 @@ helper to deserialize into String or Cow<'de, str> instead
             cfg: self.cfg,
             have_key: false,
 
-            #[cfg(feature = "garde")]
+            #[cfg(any(feature = "garde", feature = "validator"))]
             garde,
-            #[cfg(feature = "garde")]
+            #[cfg(any(feature = "garde", feature = "validator"))]
             pending_path_segment: None,
 
             seen: FastHashSet::with_capacity(8),

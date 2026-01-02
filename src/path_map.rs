@@ -1,15 +1,15 @@
 //! This module records YAML key paths (as seen during deserialization) and later tries to map
-//! [`garde::error::Path`] values back to those YAML locations.
+//! validation paths back to those YAML locations.
 //!
-//! The key problem is that garde paths are derived from Rust field identifiers (typically
+//! The key problem is that validation paths are derived from Rust field identifiers (typically
 //! `snake_case`), while YAML keys can use different spellings (`camelCase`, `kebab-case`, etc.).
-//! The parser has no direct access to Rust field names as reported by garde.
+//! The parser has no direct access to Rust field names as reported by validation crates.
 //!
 //! We apply a small, ordered set of comparison strategies and only accept a match when it is
 //! **unique**.
 //!
 //! Matching rules:
-//! - Paths must have the same length and the same per-segment [`garde::error::Kind`].
+//! - Paths must have the same length and the same per-segment kind (key vs index).
 //! - Segment names are first normalized by stripping Rust raw-identifier prefixes (`r#type` →
 //!   `type`) to work around reserved-keyword field names.
 //! - `PathMap::search` runs multiple passes from most exact to most fuzzy:
@@ -26,7 +26,133 @@ use crate::Location;
 
 use std::collections::HashMap;
 
-pub(crate) type PathKey = garde::error::Path;
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum PathKind {
+    Key,
+    Index,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct PathSegment {
+    pub(crate) kind: PathKind,
+    pub(crate) name: String,
+}
+
+impl From<&str> for PathSegment {
+    fn from(value: &str) -> Self {
+        Self {
+            kind: PathKind::Key,
+            name: value.to_owned(),
+        }
+    }
+}
+
+impl From<String> for PathSegment {
+    fn from(value: String) -> Self {
+        Self {
+            kind: PathKind::Key,
+            name: value,
+        }
+    }
+}
+
+impl From<usize> for PathSegment {
+    fn from(value: usize) -> Self {
+        Self {
+            kind: PathKind::Index,
+            name: value.to_string(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct PathKey {
+    segments: Vec<PathSegment>,
+}
+
+impl PathKey {
+    pub(crate) fn empty() -> Self {
+        Self {
+            segments: Vec::new(),
+        }
+    }
+
+    pub(crate) fn join<T: Into<PathSegment>>(mut self, seg: T) -> Self {
+        self.segments.push(seg.into());
+        self
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.segments.len()
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.segments.is_empty()
+    }
+
+    pub(crate) fn leaf_string(&self) -> Option<String> {
+        self.segments.last().map(|seg| seg.name.clone())
+    }
+
+    fn iter_segments(&self) -> impl Iterator<Item = (&PathKind, &str)> {
+        self.segments
+            .iter()
+            .map(|seg| (&seg.kind, seg.name.as_str()))
+    }
+}
+
+pub(crate) fn format_path_with_resolved_leaf(path: &PathKey, resolved_leaf: &str) -> String {
+    let mut out = String::new();
+    let last_index = path.segments.len().saturating_sub(1);
+
+    for (idx, seg) in path.segments.iter().enumerate() {
+        match seg.kind {
+            PathKind::Index => {
+                out.push('[');
+                out.push_str(&seg.name);
+                out.push(']');
+            }
+            PathKind::Key => {
+                if idx > 0 {
+                    out.push('.');
+                }
+                if idx == last_index {
+                    out.push_str(resolved_leaf);
+                } else {
+                    out.push_str(&seg.name);
+                }
+            }
+        }
+    }
+
+    if out.is_empty() {
+        "<root>".to_owned()
+    } else {
+        out
+    }
+}
+
+#[cfg(feature = "garde")]
+pub(crate) fn path_key_from_garde(path: &garde::error::Path) -> PathKey {
+    use garde::error::Kind;
+
+    let mut segs: Vec<PathSegment> = path
+        .__iter()
+        .map(|(k, s)| match k {
+            Kind::Index => PathSegment {
+                kind: PathKind::Index,
+                name: s.as_str().to_owned(),
+            },
+            _ => PathSegment {
+                kind: PathKind::Key,
+                name: s.as_str().to_owned(),
+            },
+        })
+        .collect();
+    segs.reverse();
+
+    PathKey { segments: segs }
+}
 
 #[derive(Debug)]
 pub struct PathMap {
@@ -47,14 +173,14 @@ impl PathMap {
     pub(crate) fn search(&self, path: &PathKey) -> Option<(Location, String)> {
         // 1) Direct lookup.
         if let Some(loc) = self.map.get(path) {
-            let leaf = leaf_segment_string(path)?;
+            let leaf = path.leaf_string()?;
             return Some((*loc, leaf));
         }
 
         // Multi-pass matching (more exact -> more fuzzy). Each pass succeeds only if it yields
         // exactly one candidate.
         //
-        // This is used to bridge garde’s Rust field paths (snake_case, etc.) to YAML key spellings
+        // This is used to bridge Rust field paths (snake_case, etc.) to YAML key spellings
         // recorded during deserialization, without attempting arbitrary rename mapping.
 
         // 2) Whole-path case-insensitive match (only if unique).
@@ -85,23 +211,11 @@ impl PathMap {
                 if found.is_some() {
                     return None; // ambiguous
                 }
-                found = Some((*loc, leaf_segment_string(candidate)?));
+                found = Some((*loc, candidate.leaf_string()?));
             }
         }
         found
     }
-}
-
-fn leaf_segment_string(path: &PathKey) -> Option<String> {
-    // Note: garde's `Path::__iter()` yields segments leaf-first.
-    // We want the most-leaf item in the path.
-    iter_segments(path).next().map(|(_k, s)| s.to_owned())
-}
-
-fn iter_segments<'a>(
-    path: &'a garde::error::Path,
-) -> impl Iterator<Item = (garde::error::Kind, &'a str)> + 'a {
-    path.__iter().map(|(k, s)| (k, s.as_str()))
 }
 
 fn strip_raw_identifier_prefix(s: &str) -> &str {
@@ -114,12 +228,16 @@ fn segments_equal_case_insensitive(target: &PathKey, candidate: &PathKey) -> boo
         return false;
     }
 
-    iter_segments(target)
-        .zip(iter_segments(candidate))
+    target
+        .iter_segments()
+        .zip(candidate.iter_segments())
         .all(|((tk, ts), (ck, cs))| {
             tk == ck
-                && strip_raw_identifier_prefix(ts)
-                    .eq_ignore_ascii_case(strip_raw_identifier_prefix(cs))
+                && match tk {
+                    PathKind::Index => ts == cs,
+                    PathKind::Key => strip_raw_identifier_prefix(ts)
+                        .eq_ignore_ascii_case(strip_raw_identifier_prefix(cs)),
+                }
         })
 }
 
@@ -138,12 +256,18 @@ fn segments_equal_collapsed_case_insensitive(target: &PathKey, candidate: &PathK
         return false;
     }
 
-    iter_segments(target)
-        .zip(iter_segments(candidate))
+    target
+        .iter_segments()
+        .zip(candidate.iter_segments())
         .all(|((tk, ts), (ck, cs))| {
             tk == ck
-                && collapse_non_alnum_ascii_lower(strip_raw_identifier_prefix(ts))
-                    == collapse_non_alnum_ascii_lower(strip_raw_identifier_prefix(cs))
+                && match tk {
+                    PathKind::Index => ts == cs,
+                    PathKind::Key => {
+                        collapse_non_alnum_ascii_lower(strip_raw_identifier_prefix(ts))
+                            == collapse_non_alnum_ascii_lower(strip_raw_identifier_prefix(cs))
+                    }
+                }
         })
 }
 
@@ -236,12 +360,18 @@ fn segments_equal_tokenized_case_insensitive(target: &PathKey, candidate: &PathK
         return false;
     }
 
-    iter_segments(target)
-        .zip(iter_segments(candidate))
+    target
+        .iter_segments()
+        .zip(candidate.iter_segments())
         .all(|((tk, ts), (ck, cs))| {
             tk == ck
-                && tokenize_segment(strip_raw_identifier_prefix(ts))
-                    == tokenize_segment(strip_raw_identifier_prefix(cs))
+                && match tk {
+                    PathKind::Index => ts == cs,
+                    PathKind::Key => {
+                        tokenize_segment(strip_raw_identifier_prefix(ts))
+                            == tokenize_segment(strip_raw_identifier_prefix(cs))
+                    }
+                }
         })
 }
 
@@ -376,7 +506,7 @@ mod tests {
     #[test]
     fn search_returns_resolved_leaf_segment_when_leaf_is_renamed() {
         let mut m = PathMap::new();
-        // YAML key spelling is camelCase, garde path might be snake_case.
+        // YAML key spelling is camelCase, path might be snake_case.
         m.insert(PathKey::empty().join("myField"), Location::new(1, 10));
 
         assert_eq!(
@@ -394,6 +524,18 @@ mod tests {
         assert_eq!(
             m.search(&PathKey::empty().join("r#type")),
             Some((Location::new(9, 3), "type".to_string()))
+        );
+    }
+
+    #[test]
+    fn search_handles_index_segments() {
+        let mut m = PathMap::new();
+        let path = PathKey::empty().join("items").join(2usize).join("name");
+        m.insert(path.clone(), Location::new(5, 8));
+
+        assert_eq!(
+            m.search(&PathKey::empty().join("items").join(2usize).join("name")),
+            Some((Location::new(5, 8), "name".to_string()))
         );
     }
 }
