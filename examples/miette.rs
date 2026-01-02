@@ -1,9 +1,19 @@
 fn main() {
+    // Disable serde-saphyr snippet as miette snippet is used.
+    let no_snippet = serde_saphyr::Options {
+        with_snippet: false,
+        ..Default::default()
+    };
+
     eprintln!("Miette alone:");
     //   cargo run --example miette --features miette
     let yaml = "definitely\n";
 
-    let err = serde_saphyr::from_str::<bool>(yaml).expect_err("bool parse error expected");
+    let err = serde_saphyr::from_str_with_options::<bool>(
+        yaml,
+        no_snippet.clone(),
+    )
+    .expect_err("bool parse error expected");
     let report = serde_saphyr::miette::to_miette_report(&err, yaml, "config.yaml");
 
     // `Debug` formatting uses miette's graphical reporter.
@@ -37,8 +47,11 @@ secondString: *A
 "#;
 
         eprintln!("Garde validation:");
-        let err = serde_saphyr::from_str_valid::<Cfg>(yaml)
-            .expect_err("validation error expected");
+        let err = serde_saphyr::from_str_with_options_valid::<Cfg>(
+            yaml,
+            no_snippet.clone(),
+        )
+        .expect_err("validation error expected");
         let report = serde_saphyr::miette::to_miette_report(&err, yaml, "config.yaml");
         eprintln!("{report:?}");
     }
@@ -70,7 +83,11 @@ secondString: *A
 "#;
 
         eprintln!("Validator validation:");
-        let err = serde_saphyr::from_str_validate::<Cfg>(yaml).expect_err("validation error expected");
+        let err = serde_saphyr::from_str_with_options_validate::<Cfg>(
+            yaml,
+            no_snippet,
+        )
+        .expect_err("validation error expected");
         let report = serde_saphyr::miette::to_miette_report(&err, yaml, "config.yaml");
         eprintln!("{report:?}");
     }

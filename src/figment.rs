@@ -1,3 +1,4 @@
+use crate::Options;
 use serde::de::DeserializeOwned;
 use std::path::Path;
 
@@ -27,11 +28,25 @@ impl ::figment::providers::Format for Yaml {
     const NAME: &'static str = "YAML";
 
     fn from_str<'de, T: DeserializeOwned>(string: &'de str) -> Result<T, Self::Error> {
-        crate::from_str(string)
+        // figment does not render out snippet anyway
+        crate::from_str_with_options(
+            string,
+            Options {
+                with_snippet: false,
+                ..Options::default()
+            },
+        )
     }
 
     fn from_path<T: DeserializeOwned>(path: &Path) -> Result<T, Self::Error> {
         let bytes = std::fs::read(path).map_err(|cause| crate::Error::IOError { cause })?;
-        crate::from_slice(&bytes)
+        // figment does not render out snippet anyway
+        crate::from_slice_with_options(
+            &bytes,
+            Options {
+                with_snippet: false,
+                ..Options::default()
+            },
+        )
     }
 }
