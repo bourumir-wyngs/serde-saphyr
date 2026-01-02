@@ -24,6 +24,7 @@
 
 use crate::Location;
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -52,6 +53,15 @@ impl From<String> for PathSegment {
         Self {
             kind: PathKind::Key,
             name: value,
+        }
+    }
+}
+
+impl<'a> From<Cow<'a, str>> for PathSegment {
+    fn from(value: Cow<'a, str>) -> Self {
+        Self {
+            kind: PathKind::Key,
+            name: value.into_owned(),
         }
     }
 }

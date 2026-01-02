@@ -853,7 +853,7 @@ fn collect_validator_entries_inner(
     out: &mut Vec<(PathKey, String)>,
 ) {
     for (field, kind) in errors.errors() {
-        let field_path = path.clone().join(*field);
+        let field_path = path.clone().join(field.as_ref());
         match kind {
             ValidationErrorsKind::Field(entries) => {
                 for entry in entries {
