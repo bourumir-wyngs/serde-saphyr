@@ -56,9 +56,8 @@ The test suite currently includes 783 passing tests, most of them originating fr
 
 - **Configurable budgets:** Enforce input limits to mitigate resource exhaustion (e.g., deeply nested structures or very large arrays); see [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
 - **Serializer supports emitting anchors** (Rc, Arc, Weak) if they properly wrapped (see below).
-- **Optional [`garde`](https://crates.io/crates/garde) integration:** Declarative validation of parsed YAML documents, reporting location with snippet directly from YAML document.
-- **Optional [`validator`](https://crates.io/crates/validator) integration:** Validate parsed YAML documents with `validator` and receive YAML-aware error locations and snippets.
-- **Optional [`miette`](https://crates.io/crates/miette)** integration for more advanced error reporting (see [example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/miette.rs)).
+- **Optional [`garde`](https://crates.io/crates/garde) integration:** Declarative validation of parsed YAML documents, reporting location with snippet directly from YAML document (see [example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/garde_validate.rs)).
+- **Optional [`validator`](https://crates.io/crates/validator) ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/validator_validate.rs))** and **[`miette`](https://crates.io/crates/miette)** ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/miette.rs)) integration for more advanced error reporting.
 - **serde_json::Value** is supported when parsing without target structure defined.
 - **robotic extensions** to support YAML dialect common in robotics (see below).
 - **[Serializer](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Serializer.html)** and **[Deserializer](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Deserializer.html)** are now public (due how its implemented, Deserializer is available in the closure only).
@@ -152,6 +151,8 @@ error: line 3 column 23: invalid here, validation error: length is lower than 2 
 3 |         secondString: *A
 4 |  
 ```
+
+serde-saphyr has native rendering for such snippets (miette is optional).
 
 ### Duplicate keys
 
@@ -361,6 +362,8 @@ To address the “Norway problem,” the target Rust types serve as an explicit 
 Schema based parsing can be disabled by setting `no_schema` to true in  [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). In this case all *unquoted* values that are parsed into strings, but can be understood as something else, are rejected. This can be used for enforcing compatibility with another YAML parser that reads the same content and requires this quoting. Default setting if false.
 
 Legacy octal notation such as `0052` can be enabled via `Options`, but it is disabled by default.
+
+The concept that “Rust code is the schema” naturally extends to implemented support for [`validator`](https://crates.io/crates/validator) and [`garde`](https://crates.io/crates/garde), as these crates allow annotations to be added directly to Rust types, providing even stricter control over permissible values
 
 ## Pathological inputs & budgets
 

@@ -9,8 +9,13 @@ use miette::{Diagnostic, LabeledSpan, NamedSource, SourceSpan};
 
 use crate::Error;
 use crate::Location;
+#[cfg(any(feature = "garde", feature = "validator"))]
+use crate::path_map::{PathKey, PathMap, format_path_with_resolved_leaf};
 #[cfg(feature = "garde")]
-use crate::path_map::{format_path_with_resolved_leaf, path_key_from_garde};
+use crate::path_map::path_key_from_garde;
+
+#[cfg(feature = "validator")]
+use validator::{ValidationErrors, ValidationErrorsKind};
 
 /// Convert a deserialization [`Error`] into a `miette::Report`.
 ///
@@ -88,63 +93,13 @@ fn build_diagnostic(err: &Error, src: Arc<NamedSource<String>>) -> ErrorDiagnost
             let mut related = Vec::new();
             for (path, entry) in report.iter() {
                 let path_key = path_key_from_garde(path);
-                let original_leaf = path_key
-                    .leaf_string()
-                    .unwrap_or_else(|| "<root>".to_string());
-
-                let (ref_loc, ref_leaf) = referenced
-                    .search(&path_key)
-                    .unwrap_or((Location::UNKNOWN, original_leaf.clone()));
-                let (def_loc, def_leaf) = defined
-                    .search(&path_key)
-                    .unwrap_or((Location::UNKNOWN, original_leaf.clone()));
-
-                let resolved_leaf = if ref_loc != Location::UNKNOWN {
-                    ref_leaf
-                } else if def_loc != Location::UNKNOWN {
-                    def_leaf
-                } else {
-                    original_leaf
-                };
-
-                let resolved_path = format_path_with_resolved_leaf(&path_key, &resolved_leaf);
-                let base_msg = format!("validation error: {entry} for `{resolved_path}`");
-
-                let mut labels = Vec::new();
-
-                // Primary label: use-site (alias/merge) if known, otherwise definition.
-                if ref_loc != Location::UNKNOWN {
-                    if let Some(span) = to_source_span(&src, &ref_loc) {
-                        labels.push(LabeledSpan::new_with_span(
-                            Some("the value is used here".to_owned()),
-                            span,
-                        ));
-                    }
-                } else if def_loc != Location::UNKNOWN {
-                    if let Some(span) = to_source_span(&src, &def_loc) {
-                        labels.push(LabeledSpan::new_with_span(
-                            Some("defined here".to_owned()),
-                            span,
-                        ));
-                    }
-                }
-
-                // Secondary label: definition site when it is distinct and known.
-                if def_loc != Location::UNKNOWN && def_loc != ref_loc {
-                    if let Some(span) = to_source_span(&src, &def_loc) {
-                        labels.push(LabeledSpan::new_with_span(
-                            Some("defined here".to_owned()),
-                            span,
-                        ));
-                    }
-                }
-
-                related.push(ErrorDiagnostic {
-                    message: base_msg,
-                    src: Arc::clone(&src),
-                    labels,
-                    related: Vec::new(),
-                });
+                related.push(build_validation_entry_diagnostic(
+                    &src,
+                    &path_key,
+                    &entry.to_string(),
+                    referenced,
+                    defined,
+                ));
             }
 
             ErrorDiagnostic {
@@ -177,6 +132,55 @@ fn build_diagnostic(err: &Error, src: Arc<NamedSource<String>>) -> ErrorDiagnost
             }
         }
 
+        #[cfg(feature = "validator")]
+        Error::ValidatorError {
+            errors,
+            referenced,
+            defined,
+        } => {
+            let entries = collect_validator_entries(errors);
+            let mut related = Vec::new();
+
+            for (path, entry) in entries {
+                related.push(build_validation_entry_diagnostic(
+                    &src,
+                    &path,
+                    &entry,
+                    referenced,
+                    defined,
+                ));
+            }
+
+            ErrorDiagnostic {
+                message: format!(
+                    "validation failed{}",
+                    if related.len() == 1 {
+                        ""
+                    } else {
+                        " (multiple errors)"
+                    }
+                ),
+                src,
+                labels: Vec::new(),
+                related,
+            }
+        }
+
+        #[cfg(feature = "validator")]
+        Error::ValidatorErrors { errors } => {
+            let mut related = Vec::new();
+            for e in errors {
+                related.push(build_diagnostic(e.without_snippet(), Arc::clone(&src)));
+            }
+
+            ErrorDiagnostic {
+                message: format!("validation failed for {} document(s)", errors.len()),
+                src,
+                labels: Vec::new(),
+                related,
+            }
+        }
+
         Error::WithSnippet { error, .. } => build_diagnostic(error.without_snippet(), src),
 
         other => {
@@ -192,6 +196,116 @@ fn build_diagnostic(err: &Error, src: Arc<NamedSource<String>>) -> ErrorDiagnost
                 src,
                 labels,
                 related: Vec::new(),
+            }
+        }
+    }
+}
+
+#[cfg(any(feature = "garde", feature = "validator"))]
+fn build_validation_entry_diagnostic(
+    src: &Arc<NamedSource<String>>,
+    path_key: &PathKey,
+    entry: &str,
+    referenced: &PathMap,
+    defined: &PathMap,
+) -> ErrorDiagnostic {
+    let original_leaf = path_key
+        .leaf_string()
+        .unwrap_or_else(|| "<root>".to_string());
+
+    let (ref_loc, ref_leaf) = referenced
+        .search(path_key)
+        .unwrap_or((Location::UNKNOWN, original_leaf.clone()));
+    let (def_loc, def_leaf) = defined
+        .search(path_key)
+        .unwrap_or((Location::UNKNOWN, original_leaf.clone()));
+
+    let resolved_leaf = if ref_loc != Location::UNKNOWN {
+        ref_leaf
+    } else if def_loc != Location::UNKNOWN {
+        def_leaf
+    } else {
+        original_leaf
+    };
+
+    let resolved_path = format_path_with_resolved_leaf(path_key, &resolved_leaf);
+    let base_msg = format!("validation error: {entry} for `{resolved_path}`");
+
+    let labels = build_validation_labels(src, ref_loc, def_loc);
+
+    ErrorDiagnostic {
+        message: base_msg,
+        src: Arc::clone(src),
+        labels,
+        related: Vec::new(),
+    }
+}
+
+#[cfg(any(feature = "garde", feature = "validator"))]
+fn build_validation_labels(
+    src: &Arc<NamedSource<String>>,
+    ref_loc: Location,
+    def_loc: Location,
+) -> Vec<LabeledSpan> {
+    let mut labels = Vec::new();
+
+    // Primary label: use-site (alias/merge) if known, otherwise definition.
+    if ref_loc != Location::UNKNOWN {
+        if let Some(span) = to_source_span(src, &ref_loc) {
+            labels.push(LabeledSpan::new_with_span(
+                Some("the value is used here".to_owned()),
+                span,
+            ));
+        }
+    } else if def_loc != Location::UNKNOWN {
+        if let Some(span) = to_source_span(src, &def_loc) {
+            labels.push(LabeledSpan::new_with_span(
+                Some("defined here".to_owned()),
+                span,
+            ));
+        }
+    }
+
+    // Secondary label: definition site when it is distinct and known.
+    if def_loc != Location::UNKNOWN && def_loc != ref_loc {
+        if let Some(span) = to_source_span(src, &def_loc) {
+            labels.push(LabeledSpan::new_with_span(Some("defined here".to_owned()), span));
+        }
+    }
+
+    labels
+}
+
+#[cfg(feature = "validator")]
+fn collect_validator_entries(errors: &ValidationErrors) -> Vec<(PathKey, String)> {
+    let mut out = Vec::new();
+    let root = PathKey::empty();
+    collect_validator_entries_inner(errors, &root, &mut out);
+    out
+}
+
+#[cfg(feature = "validator")]
+fn collect_validator_entries_inner(
+    errors: &ValidationErrors,
+    path: &PathKey,
+    out: &mut Vec<(PathKey, String)>,
+) {
+    for (field, kind) in errors.errors() {
+        let field_path = path.clone().join(*field);
+        match kind {
+            ValidationErrorsKind::Field(entries) => {
+                for entry in entries {
+                    out.push((field_path.clone(), entry.to_string()));
+                }
+            }
+            ValidationErrorsKind::Struct(inner) => {
+                collect_validator_entries_inner(inner, &field_path, out);
+            }
+            ValidationErrorsKind::List(list) => {
+                for (idx, inner) in list {
+                    let index_path = field_path.clone().join(*idx);
+                    collect_validator_entries_inner(inner, &index_path, out);
+                }
             }
         }
     }
@@ -276,5 +390,80 @@ mod tests {
         let labels: Vec<_> = diag.labels().unwrap().collect();
         assert_eq!(labels.len(), 1);
         assert_eq!(labels[0].inner().offset(), err.location().unwrap().span().offset());
+    }
+
+    #[cfg(feature = "validator")]
+    #[test]
+    fn validator_validation_error_has_use_and_definition_labels() {
+        use validator::Validate;
+
+        #[derive(Debug, Validate)]
+        struct Cfg {
+            #[validate(length(min = 2))]
+            second_string: String,
+        }
+
+        let cfg = Cfg {
+            second_string: "x".to_owned(),
+        };
+        let errors = cfg.validate().expect_err("validation error expected");
+
+        // Simulate the alias case:
+        // - use-site is at `secondString: *A`
+        // - definition-site is at `firstString: &A "x"`
+        let yaml = "\nfirstString: &A \"x\"\nsecondString: *A\n";
+        let src = Arc::new(NamedSource::new("config.yaml".to_owned(), yaml.to_owned()));
+
+        let use_offset = yaml.find("*A").unwrap();
+        let def_offset = yaml.find("\"x\"").unwrap();
+
+        let referenced_loc = Location {
+            line: 3,
+            column: 15,
+            span: crate::Span {
+                offset: use_offset,
+                len: 2,
+            },
+        };
+        let defined_loc = Location {
+            line: 2,
+            column: 18,
+            span: crate::Span {
+                offset: def_offset,
+                len: 3,
+            },
+        };
+
+        let mut referenced = PathMap::new();
+        let mut defined = PathMap::new();
+
+        // Validation path uses snake_case (`second_string`), but the YAML key is camelCase.
+        // We insert the recorded YAML spelling so `PathMap::search()` resolves the leaf.
+        let yaml_path = PathKey::empty().join("secondString");
+        referenced.insert(yaml_path.clone(), referenced_loc);
+        defined.insert(yaml_path, defined_loc);
+
+        let err = Error::ValidatorError {
+            errors,
+            referenced,
+            defined,
+        };
+
+        let diag = build_diagnostic(&err, Arc::clone(&src));
+        assert_eq!(diag.message, "validation failed");
+        assert_eq!(diag.related.len(), 1);
+
+        let labels = &diag.related[0].labels;
+        assert_eq!(labels.len(), 2, "expected 2 labels, got: {labels:?}");
+
+        let label_debug = format!("{labels:?}");
+        assert!(
+            label_debug.contains("the value is used here"),
+            "expected use-site label, got: {label_debug}"
+        );
+        assert!(
+            label_debug.contains("defined here"),
+            "expected definition-site label, got: {label_debug}"
+        );
     }
 }

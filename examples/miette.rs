@@ -1,4 +1,5 @@
 fn main() {
+    eprintln!("Miette alone:");
     //   cargo run --example miette --features miette
     let yaml = "definitely\n";
 
