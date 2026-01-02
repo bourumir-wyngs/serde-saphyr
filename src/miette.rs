@@ -185,7 +185,7 @@ fn build_diagnostic(err: &Error, src: Arc<NamedSource<String>>) -> ErrorDiagnost
             let mut labels = Vec::new();
             if let Some(loc) = other.location() {
                 if let Some(span) = to_source_span(&src, &loc) {
-                    labels.push(LabeledSpan::new_with_span(None, span));
+                    labels.push(LabeledSpan::new_with_span(Some(other.to_string()), span));
                 }
             }
 
