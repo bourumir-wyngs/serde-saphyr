@@ -49,6 +49,9 @@ pub use crate::options::{AliasLimits, DuplicateKeyPolicy, Options};
 use crate::tags::SfTag;
 
 #[cfg(any(feature = "garde", feature = "validator"))]
+use crate::location::Locations;
+
+#[cfg(any(feature = "garde", feature = "validator"))]
 use crate::path_map::PathRecorder;
 
 /// Small immutable runtime configuration that `YamlDeserializer` needs.
@@ -890,7 +893,6 @@ impl Events for ReplayEvents {
 // Where do values go: Into a Serde `Visitor` provided by the caller's
 // `T: Deserialize`, which drives how we walk the event stream and construct `T`.
 pub struct YamlDeserializer<'e> {
-
     ev: &'e mut dyn Events,
     cfg: Cfg,
     /// True when deserializing a map key.
@@ -1419,9 +1421,9 @@ helper to deserialize into String or Cow<'de, str> instead
                         }
                         Some(_) => {
                             // Deserialize each element as u8 using our own Deser
-                            let b: u8 = <u8 as serde::Deserialize>::deserialize(YamlDeserializer::new(
-                                self.ev, self.cfg,
-                            ))?;
+                            let b: u8 = <u8 as serde::Deserialize>::deserialize(
+                                YamlDeserializer::new(self.ev, self.cfg),
+                            )?;
                             out.push(b);
                         }
                         None => return Err(Error::eof().with_location(self.ev.last_location())),
@@ -1710,16 +1712,19 @@ helper to deserialize into String or Cow<'de, str> instead
                                 // Use-site location, consistent with `Spanned<T>` semantics.
                                 let reference_location = self.ev.reference_location();
 
-                                let prev = recorder.current.clone();
-                                recorder.current = recorder.current.clone().join(self.idx);
-                                recorder
-                                    .map
-                                    .insert(recorder.current.clone(), reference_location);
-                                recorder
-                                    .defined
-                                    .insert(recorder.current.clone(), defined_location);
+                                let prev = recorder.current.take();
+                                let now = prev.clone().join(self.idx);
+                                recorder.current = now.clone();
+                                recorder.map.insert(now, {
+                                    Locations {
+                                        reference_location,
+                                        defined_location,
+                                    }
+                                });
 
-                                let de = YamlDeserializer::new_with_path_recorder(self.ev, self.cfg, recorder);
+                                let de = YamlDeserializer::new_with_path_recorder(
+                                    self.ev, self.cfg, recorder,
+                                );
                                 let res = seed.deserialize(de).map(Some);
 
                                 recorder.current = prev;
@@ -2201,16 +2206,22 @@ helper to deserialize into String or Cow<'de, str> instead
                                 .map(|ev| ev.location())
                                 .unwrap_or_else(|| replay.last_location());
 
-                            let prev = recorder.current.clone();
-                            recorder.current = recorder.current.clone().join(seg.as_str());
-                            recorder
-                                .map
-                                .insert(recorder.current.clone(), reference_location);
-                            recorder
-                                .defined
-                                .insert(recorder.current.clone(), defined_location);
+                            let prev = recorder.current.take();
+                            let now = prev.clone().join(seg.as_str());
+                            recorder.current = now.clone();
+                            recorder.map.insert(
+                                now,
+                                Locations {
+                                    reference_location,
+                                    defined_location,
+                                },
+                            );
 
-                            let de = YamlDeserializer::new_with_path_recorder(&mut replay, self.cfg, recorder);
+                            let de = YamlDeserializer::new_with_path_recorder(
+                                &mut replay,
+                                self.cfg,
+                                recorder,
+                            );
                             let res = seed.deserialize(de);
                             recorder.current = prev;
                             return res;
@@ -2234,16 +2245,20 @@ helper to deserialize into String or Cow<'de, str> instead
                         if let (Some(seg), Some(garde_ref)) = (pending_segment, self.garde.as_mut())
                         {
                             let recorder: &mut PathRecorder = garde_ref;
-                            let prev = recorder.current.clone();
-                            recorder.current = recorder.current.clone().join(seg.as_str());
-                            recorder
-                                .map
-                                .insert(recorder.current.clone(), reference_location);
-                            recorder
-                                .defined
-                                .insert(recorder.current.clone(), defined_location);
+                            let prev = recorder.current.take();
+                            let now = prev.clone().join(seg.as_str());
+                            recorder.current = now.clone();
+                            recorder.map.insert(
+                                now,
+                                Locations {
+                                    reference_location,
+                                    defined_location,
+                                },
+                            );
 
-                            let de = YamlDeserializer::new_with_path_recorder(self.ev, self.cfg, recorder);
+                            let de = YamlDeserializer::new_with_path_recorder(
+                                self.ev, self.cfg, recorder,
+                            );
                             let res = seed.deserialize(de);
                             recorder.current = prev;
                             return res;
@@ -2472,7 +2487,8 @@ helper to deserialize into String or Cow<'de, str> instead
             where
                 Vv: Visitor<'de>,
             {
-                let result = YamlDeserializer::new(self.ev, self.cfg).deserialize_tuple(len, visitor)?;
+                let result =
+                    YamlDeserializer::new(self.ev, self.cfg).deserialize_tuple(len, visitor)?;
                 if self.map_mode {
                     self.expect_map_end()?;
                 }
@@ -2488,8 +2504,8 @@ helper to deserialize into String or Cow<'de, str> instead
             where
                 Vv: Visitor<'de>,
             {
-                let result =
-                    YamlDeserializer::new(self.ev, self.cfg).deserialize_struct("", fields, visitor)?;
+                let result = YamlDeserializer::new(self.ev, self.cfg)
+                    .deserialize_struct("", fields, visitor)?;
                 if self.map_mode {
                     self.expect_map_end()?;
                 }

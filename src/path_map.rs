@@ -22,10 +22,11 @@
 //! Any non-direct pass succeeds only if it yields exactly one candidate; otherwise the result is
 //! considered ambiguous.
 
-use crate::Location;
+use crate::location::Locations;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::mem;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum PathKind {
@@ -75,7 +76,7 @@ impl From<usize> for PathSegment {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub(crate) struct PathKey {
     segments: Vec<PathSegment>,
 }
@@ -84,6 +85,12 @@ impl PathKey {
     pub(crate) fn empty() -> Self {
         Self {
             segments: Vec::new(),
+        }
+    }
+
+    pub(crate) fn take(&mut self) -> Self {
+        Self {
+            segments: mem::take(&mut self.segments),
         }
     }
 
@@ -166,7 +173,7 @@ pub(crate) fn path_key_from_garde(path: &garde::error::Path) -> PathKey {
 
 #[derive(Debug)]
 pub struct PathMap {
-    pub(crate) map: HashMap<PathKey, Location>,
+    pub(crate) map: HashMap<PathKey, Locations>,
 }
 
 impl PathMap {
@@ -176,11 +183,11 @@ impl PathMap {
         }
     }
 
-    pub(crate) fn insert(&mut self, path: PathKey, location: Location) {
-        self.map.insert(path, location);
+    pub(crate) fn insert(&mut self, path: PathKey, locations: Locations) {
+        self.map.insert(path, locations);
     }
 
-    pub(crate) fn search(&self, path: &PathKey) -> Option<(Location, String)> {
+    pub(crate) fn search(&self, path: &PathKey) -> Option<(Locations, String)> {
         // 1) Direct lookup.
         if let Some(loc) = self.map.get(path) {
             let leaf = path.leaf_string()?;
@@ -210,12 +217,12 @@ impl PathMap {
         &self,
         target: &PathKey,
         mut matches: impl FnMut(&PathKey, &PathKey) -> bool,
-    ) -> Option<(Location, String)> {
+    ) -> Option<(Locations, String)> {
         if target.is_empty() {
             return None;
         }
 
-        let mut found: Option<(Location, String)> = None;
+        let mut found: Option<(Locations, String)> = None;
         for (candidate, loc) in self.map.iter() {
             if matches(target, candidate) {
                 if found.is_some() {
@@ -388,6 +395,15 @@ fn segments_equal_tokenized_case_insensitive(target: &PathKey, candidate: &PathK
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Location;
+
+    fn locs(line: usize, column: usize) -> Locations {
+        let l = Location::new(line, column);
+        Locations {
+            reference_location: l,
+            defined_location: l,
+        }
+    }
 
     fn p2(a: &str, b: &str) -> PathKey {
         PathKey::empty().join(a).join(b)
@@ -397,27 +413,27 @@ mod tests {
     fn search_direct_hit() {
         let mut m = PathMap::new();
         let k = p2("gp", "a1");
-        m.insert(k.clone(), Location::new(3, 7));
+        m.insert(k.clone(), locs(3, 7));
 
-        assert_eq!(m.search(&k), Some((Location::new(3, 7), "a1".to_string())));
+        assert_eq!(m.search(&k), Some((locs(3, 7), "a1".to_string())));
     }
 
     #[test]
     fn search_case_insensitive_unique() {
         let mut m = PathMap::new();
-        m.insert(p2("opwKinematics", "a1"), Location::new(10, 2));
+        m.insert(p2("opwKinematics", "a1"), locs(10, 2));
 
         assert_eq!(
             m.search(&p2("OPWKINEMATICS", "A1")),
-            Some((Location::new(10, 2), "a1".to_string()))
+            Some((locs(10, 2), "a1".to_string()))
         );
     }
 
     #[test]
     fn search_case_insensitive_ambiguous() {
         let mut m = PathMap::new();
-        m.insert(p2("FOO", "bar"), Location::new(1, 1));
-        m.insert(p2("foo", "bar"), Location::new(2, 2));
+        m.insert(p2("FOO", "bar"), locs(1, 1));
+        m.insert(p2("foo", "bar"), locs(2, 2));
 
         assert_eq!(m.search(&p2("Foo", "BAR")), None);
     }
@@ -425,11 +441,11 @@ mod tests {
     #[test]
     fn search_tokenized_unique_snake_vs_camel() {
         let mut m = PathMap::new();
-        m.insert(p2("userId", "a1"), Location::new(5, 9));
+        m.insert(p2("userId", "a1"), locs(5, 9));
 
         assert_eq!(
             m.search(&p2("user_id", "a1")),
-            Some((Location::new(5, 9), "a1".to_string()))
+            Some((locs(5, 9), "a1".to_string()))
         );
     }
 
@@ -437,41 +453,41 @@ mod tests {
     fn search_tokenized_unique_separators_equivalent() {
         let mut m = PathMap::new();
         // All of these represent the same token sequence ["user","id"].
-        m.insert(p2("user-id", "a1"), Location::new(7, 3));
+        m.insert(p2("user-id", "a1"), locs(7, 3));
 
         assert_eq!(
             m.search(&p2("user.id", "a1")),
-            Some((Location::new(7, 3), "a1".to_string()))
+            Some((locs(7, 3), "a1".to_string()))
         );
         assert_eq!(
             m.search(&p2("user id", "a1")),
-            Some((Location::new(7, 3), "a1".to_string()))
+            Some((locs(7, 3), "a1".to_string()))
         );
         assert_eq!(
             m.search(&p2("UserID", "a1")),
-            Some((Location::new(7, 3), "a1".to_string()))
+            Some((locs(7, 3), "a1".to_string()))
         );
     }
 
     #[test]
     fn search_tokenized_unique_digit_boundaries() {
         let mut m = PathMap::new();
-        m.insert(p2("sha_256_sum", "a1"), Location::new(9, 4));
+        m.insert(p2("sha_256_sum", "a1"), locs(9, 4));
 
         assert_eq!(
             m.search(&p2("sha256Sum", "a1")),
-            Some((Location::new(9, 4), "a1".to_string()))
+            Some((locs(9, 4), "a1".to_string()))
         );
     }
 
     #[test]
     fn search_tokenized_unique_acronym_boundary() {
         let mut m = PathMap::new();
-        m.insert(p2("http_server", "a1"), Location::new(11, 2));
+        m.insert(p2("http_server", "a1"), locs(11, 2));
 
         assert_eq!(
             m.search(&p2("HTTPServer", "a1")),
-            Some((Location::new(11, 2), "a1".to_string()))
+            Some((locs(11, 2), "a1".to_string()))
         );
     }
 
@@ -479,34 +495,34 @@ mod tests {
     fn search_collapsed_fallback_avoids_token_collision() {
         let mut m = PathMap::new();
         // These collide under fully-collapsed matching ("abc"), but are distinct by tokens.
-        m.insert(p2("ab_c", "x"), Location::new(1, 1));
-        m.insert(p2("a_bc", "x"), Location::new(2, 2));
+        m.insert(p2("ab_c", "x"), locs(1, 1));
+        m.insert(p2("a_bc", "x"), locs(2, 2));
 
         // Target tokenizes to ["ab","c"], so we should pick only the first.
         assert_eq!(
             m.search(&p2("abC", "x")),
-            Some((Location::new(1, 1), "x".to_string()))
+            Some((locs(1, 1), "x".to_string()))
         );
     }
 
     #[test]
     fn search_collapsed_match_unique_after_token_pass_fails() {
         let mut m = PathMap::new();
-        m.insert(p2("userid", "a1"), Location::new(12, 6));
+        m.insert(p2("userid", "a1"), locs(12, 6));
 
         // Tokenization for "userId" yields ["user","id"], while "userid" yields ["userid"].
         // So token pass does not match; collapsed pass should still bridge it.
         assert_eq!(
             m.search(&p2("userId", "a1")),
-            Some((Location::new(12, 6), "a1".to_string()))
+            Some((locs(12, 6), "a1".to_string()))
         );
     }
 
     #[test]
     fn search_collapsed_match_ambiguous() {
         let mut m = PathMap::new();
-        m.insert(p2("ab_c", "x"), Location::new(1, 1));
-        m.insert(p2("a_bc", "x"), Location::new(2, 2));
+        m.insert(p2("ab_c", "x"), locs(1, 1));
+        m.insert(p2("a_bc", "x"), locs(2, 2));
 
         // Target tokenizes to ["abc"], so the token pass does not match either candidate.
         // Collapsed("abc") == "abc" matches both candidates, so the result must be ambiguous.
@@ -517,11 +533,11 @@ mod tests {
     fn search_returns_resolved_leaf_segment_when_leaf_is_renamed() {
         let mut m = PathMap::new();
         // YAML key spelling is camelCase, path might be snake_case.
-        m.insert(PathKey::empty().join("myField"), Location::new(1, 10));
+        m.insert(PathKey::empty().join("myField"), locs(1, 10));
 
         assert_eq!(
             m.search(&PathKey::empty().join("my_field")),
-            Some((Location::new(1, 10), "myField".to_string()))
+            Some((locs(1, 10), "myField".to_string()))
         );
     }
 
@@ -529,11 +545,11 @@ mod tests {
     fn search_strips_raw_identifier_prefix() {
         let mut m = PathMap::new();
         // Rust reserved keywords use raw identifiers in paths (`r#type`), but YAML keys are plain.
-        m.insert(PathKey::empty().join("type"), Location::new(9, 3));
+        m.insert(PathKey::empty().join("type"), locs(9, 3));
 
         assert_eq!(
             m.search(&PathKey::empty().join("r#type")),
-            Some((Location::new(9, 3), "type".to_string()))
+            Some((locs(9, 3), "type".to_string()))
         );
     }
 
@@ -541,21 +557,18 @@ mod tests {
     fn search_handles_index_segments() {
         let mut m = PathMap::new();
         let path = PathKey::empty().join("items").join(2usize).join("name");
-        m.insert(path.clone(), Location::new(5, 8));
+        m.insert(path.clone(), locs(5, 8));
 
         assert_eq!(
             m.search(&PathKey::empty().join("items").join(2usize).join("name")),
-            Some((Location::new(5, 8), "name".to_string()))
+            Some((locs(5, 8), "name".to_string()))
         );
     }
 }
 
 pub(crate) struct PathRecorder {
     pub(crate) current: PathKey,
-    /// Use-site (reference) locations, consistent with `Events::reference_location()`.
     pub(crate) map: PathMap,
-    /// Definition-site locations (typically `Ev::location()` from `peek()`).
-    pub(crate) defined: PathMap,
 }
 
 impl PathRecorder {
@@ -563,7 +576,6 @@ impl PathRecorder {
         Self {
             current: PathKey::empty(),
             map: PathMap::new(),
-            defined: PathMap::new(),
         }
     }
 }

@@ -10,6 +10,8 @@ use miette::{Diagnostic, LabeledSpan, NamedSource, SourceSpan};
 use crate::Error;
 use crate::Location;
 #[cfg(any(feature = "garde", feature = "validator"))]
+use crate::location::Locations;
+#[cfg(any(feature = "garde", feature = "validator"))]
 use crate::path_map::{PathKey, PathMap, format_path_with_resolved_leaf};
 #[cfg(feature = "garde")]
 use crate::path_map::path_key_from_garde;
@@ -87,8 +89,7 @@ fn build_diagnostic(err: &Error, src: Arc<NamedSource<String>>) -> ErrorDiagnost
         #[cfg(feature = "garde")]
         Error::ValidationError {
             report,
-            referenced,
-            defined,
+            locations,
         } => {
             let mut related = Vec::new();
             for (path, entry) in report.iter() {
@@ -97,8 +98,7 @@ fn build_diagnostic(err: &Error, src: Arc<NamedSource<String>>) -> ErrorDiagnost
                     &src,
                     &path_key,
                     &entry.to_string(),
-                    referenced,
-                    defined,
+                    locations,
                 ));
             }
 
@@ -135,8 +135,7 @@ fn build_diagnostic(err: &Error, src: Arc<NamedSource<String>>) -> ErrorDiagnost
         #[cfg(feature = "validator")]
         Error::ValidatorError {
             errors,
-            referenced,
-            defined,
+            locations,
         } => {
             let entries = collect_validator_entries(errors);
             let mut related = Vec::new();
@@ -146,8 +145,7 @@ fn build_diagnostic(err: &Error, src: Arc<NamedSource<String>>) -> ErrorDiagnost
                     &src,
                     &path,
                     &entry,
-                    referenced,
-                    defined,
+                    locations,
                 ));
             }
 
@@ -206,27 +204,18 @@ fn build_validation_entry_diagnostic(
     src: &Arc<NamedSource<String>>,
     path_key: &PathKey,
     entry: &str,
-    referenced: &PathMap,
-    defined: &PathMap,
+    locations: &PathMap,
 ) -> ErrorDiagnostic {
     let original_leaf = path_key
         .leaf_string()
         .unwrap_or_else(|| "<root>".to_string());
 
-    let (ref_loc, ref_leaf) = referenced
+    let (locs, resolved_leaf) = locations
         .search(path_key)
-        .unwrap_or((Location::UNKNOWN, original_leaf.clone()));
-    let (def_loc, def_leaf) = defined
-        .search(path_key)
-        .unwrap_or((Location::UNKNOWN, original_leaf.clone()));
+        .unwrap_or((Locations::UNKNOWN, original_leaf));
 
-    let resolved_leaf = if ref_loc != Location::UNKNOWN {
-        ref_leaf
-    } else if def_loc != Location::UNKNOWN {
-        def_leaf
-    } else {
-        original_leaf
-    };
+    let ref_loc = locs.reference_location;
+    let def_loc = locs.defined_location;
 
     let resolved_path = format_path_with_resolved_leaf(path_key, &resolved_leaf);
     let base_msg = format!("validation error: {entry} for `{resolved_path}`");
@@ -434,19 +423,22 @@ mod tests {
             },
         };
 
-        let mut referenced = PathMap::new();
-        let mut defined = PathMap::new();
+        let mut locations = PathMap::new();
 
         // Validation path uses snake_case (`second_string`), but the YAML key is camelCase.
         // We insert the recorded YAML spelling so `PathMap::search()` resolves the leaf.
         let yaml_path = PathKey::empty().join("secondString");
-        referenced.insert(yaml_path.clone(), referenced_loc);
-        defined.insert(yaml_path, defined_loc);
+        locations.insert(
+            yaml_path,
+            Locations {
+                reference_location: referenced_loc,
+                defined_location: defined_loc,
+            },
+        );
 
         let err = Error::ValidatorError {
             errors,
-            referenced,
-            defined,
+            locations,
         };
 
         let diag = build_diagnostic(&err, Arc::clone(&src));

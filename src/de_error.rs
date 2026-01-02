@@ -1,6 +1,7 @@
 //! Defines error and its location
 use crate::Location;
 use crate::budget::BudgetBreach;
+use crate::location::Locations;
 use crate::parse_scalars::{
     parse_int_signed, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish,
 };
@@ -78,8 +79,7 @@ pub enum Error {
     #[cfg(feature = "garde")]
     ValidationError {
         report: garde::Report,
-        referenced: PathMap,
-        defined: PathMap,
+        locations: PathMap,
     },
 
     /// Garde validation failures (multiple, if multiple validations fail)
@@ -92,8 +92,7 @@ pub enum Error {
     #[cfg(feature = "validator")]
     ValidatorError {
         errors: ValidationErrors,
-        referenced: PathMap,
-        defined: PathMap,
+        locations: PathMap,
     },
 
     /// Validator validation failures (multiple, if multiple validations fail)
@@ -279,42 +278,67 @@ impl Error {
             Error::WithSnippet { error, .. } => error.location(),
             #[cfg(feature = "garde")]
             Error::ValidationError {
-                referenced,
-                defined,
+                locations,
                 ..
-            } => referenced
+            } => locations
                 .map
                 .values()
                 .copied()
-                .find(|l| *l != Location::UNKNOWN)
-                .or_else(|| {
-                    defined
-                        .map
-                        .values()
-                        .copied()
-                        .find(|l| *l != Location::UNKNOWN)
-                }),
+                .find_map(Locations::primary_location),
             #[cfg(feature = "garde")]
             Error::ValidationErrors { errors } => errors.iter().find_map(|e| e.location()),
             #[cfg(feature = "validator")]
             Error::ValidatorError {
-                referenced,
-                defined,
+                locations,
                 ..
-            } => referenced
+            } => locations
                 .map
                 .values()
                 .copied()
-                .find(|l| *l != Location::UNKNOWN)
-                .or_else(|| {
-                    defined
-                        .map
-                        .values()
-                        .copied()
-                        .find(|l| *l != Location::UNKNOWN)
-                }),
+                .find_map(Locations::primary_location),
             #[cfg(feature = "validator")]
             Error::ValidatorErrors { errors } => errors.iter().find_map(|e| e.location()),
+        }
+    }
+
+    /// Return a pair of locations associated with this error.
+    ///
+    /// - For syntax and other errors that carry a single [`Location`], this returns two
+    /// identical locations.
+    /// - For validation errors (when the `garde` / `validator` feature is enabled), this returns
+    ///   the `(reference_location, defined_location)` pair for the *first* validation entry.
+    ///   These two locations may differ when YAML anchors/aliases are involved.
+    /// - Returns `None` when no meaningful location information is available.
+    pub fn locations(&self) -> Option<Locations> {
+        match self {
+            Error::Message { location, .. }
+            | Error::Eof { location }
+            | Error::Unexpected { location, .. }
+            | Error::HookError { location, .. }
+            | Error::ContainerEndMismatch { location, .. }
+            | Error::UnknownAnchor { location, .. }
+            | Error::QuotingRequired { location, .. }
+            | Error::Budget { location, .. } => {
+                Locations::same(&location)
+            }
+            Error::IOError { .. } => None,
+            Error::WithSnippet { error, .. } => error.locations(),
+            #[cfg(feature = "garde")]
+            Error::ValidationError { report, locations } => report
+                .iter()
+                .next()
+                .and_then(|(path, _)| {
+                    let key = path_key_from_garde(path);
+                    locations.search(&key).map(|(locs, _)| locs)
+                }),
+            #[cfg(feature = "garde")]
+            Error::ValidationErrors { errors } => errors.first().and_then(Error::locations),
+            #[cfg(feature = "validator")]
+            Error::ValidatorError { errors, locations } => collect_validator_entries(errors)
+                .first()
+                .and_then(|(path, _)| locations.search(path).map(|(locs, _)| locs)),
+            #[cfg(feature = "validator")]
+            Error::ValidatorErrors { errors } => errors.first().and_then(Error::locations),
         }
     }
 
@@ -379,12 +403,11 @@ impl fmt::Display for Error {
             #[cfg(feature = "garde")]
             Error::ValidationError {
                 report,
-                referenced,
-                defined,
+                locations,
             } => {
                 // No input text available here, so we fall back to a location-suffixed
                 // message format (snippets are only rendered via `Error::WithSnippet`).
-                fmt_validation_error_plain(f, report, referenced, defined)
+                fmt_validation_error_plain(f, report, locations)
             }
 
             #[cfg(feature = "garde")]
@@ -404,9 +427,8 @@ impl fmt::Display for Error {
             #[cfg(feature = "validator")]
             Error::ValidatorError {
                 errors,
-                referenced,
-                defined,
-            } => fmt_validator_error_plain(f, errors, referenced, defined),
+                locations,
+            } => fmt_validator_error_plain(f, errors, locations),
 
             #[cfg(feature = "validator")]
             Error::ValidatorErrors { errors } => {
@@ -440,16 +462,11 @@ fn render_error_with_snippets(inner: &Error, text: &str, crop_radius: usize) -> 
         // the BOM-stripped view. Strip it here as well to keep caret positions aligned.
         let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
 
-        if let Error::ValidationError {
-            report,
-            referenced,
-            defined,
-        } = inner
+        if let Error::ValidationError { report, locations } = inner
         {
             struct ValidationSnippetDisplay<'a> {
                 report: &'a garde::Report,
-                referenced: &'a PathMap,
-                defined: &'a PathMap,
+                locations: &'a PathMap,
                 text: &'a str,
                 crop_radius: usize,
             }
@@ -459,8 +476,7 @@ fn render_error_with_snippets(inner: &Error, text: &str, crop_radius: usize) -> 
                     fmt_validation_error_with_snippets(
                         f,
                         self.report,
-                        self.referenced,
-                        self.defined,
+                        self.locations,
                         self.text,
                         self.crop_radius,
                     )
@@ -469,8 +485,7 @@ fn render_error_with_snippets(inner: &Error, text: &str, crop_radius: usize) -> 
 
             return ValidationSnippetDisplay {
                 report,
-                referenced,
-                defined,
+                locations,
                 text,
                 crop_radius,
             }
@@ -503,14 +518,12 @@ fn render_error_with_snippets(inner: &Error, text: &str, crop_radius: usize) -> 
 
         if let Error::ValidatorError {
             errors,
-            referenced,
-            defined,
+            locations,
         } = inner
         {
             struct ValidatorSnippetDisplay<'a> {
                 errors: &'a ValidationErrors,
-                referenced: &'a PathMap,
-                defined: &'a PathMap,
+                locations: &'a PathMap,
                 text: &'a str,
                 crop_radius: usize,
             }
@@ -520,8 +533,7 @@ fn render_error_with_snippets(inner: &Error, text: &str, crop_radius: usize) -> 
                     fmt_validator_error_with_snippets(
                         f,
                         self.errors,
-                        self.referenced,
-                        self.defined,
+                        self.locations,
                         self.text,
                         self.crop_radius,
                     )
@@ -530,8 +542,7 @@ fn render_error_with_snippets(inner: &Error, text: &str, crop_radius: usize) -> 
 
             return ValidatorSnippetDisplay {
                 errors,
-                referenced,
-                defined,
+                locations,
                 text,
                 crop_radius,
             }
@@ -596,8 +607,7 @@ fn render_error_with_snippets(inner: &Error, text: &str, crop_radius: usize) -> 
 fn fmt_validation_error_plain(
     f: &mut fmt::Formatter<'_>,
     report: &garde::Report,
-    referenced: &PathMap,
-    defined: &PathMap,
+    locations: &PathMap,
 ) -> fmt::Result {
     let mut first = true;
     for (path, entry) in report.iter() {
@@ -610,10 +620,16 @@ fn fmt_validation_error_plain(
             .leaf_string()
             .unwrap_or_else(|| "<root>".to_string());
 
-        let (loc, resolved_leaf) = referenced
-            .search(&path_key)
-            .or_else(|| defined.search(&path_key))
-            .unwrap_or((Location::UNKNOWN, original_leaf));
+        let (locs, resolved_leaf) =
+            locations
+                .search(&path_key)
+                .unwrap_or((Locations::UNKNOWN, original_leaf));
+
+        let loc = if locs.reference_location != Location::UNKNOWN {
+            locs.reference_location
+        } else {
+            locs.defined_location
+        };
 
         let resolved_path = format_path_with_resolved_leaf(&path_key, &resolved_leaf);
         let msg = format!("validation error at {resolved_path}: {entry}");
@@ -626,8 +642,7 @@ fn fmt_validation_error_plain(
 fn fmt_validation_error_with_snippets(
     f: &mut fmt::Formatter<'_>,
     report: &garde::Report,
-    referenced: &PathMap,
-    defined: &PathMap,
+    locations: &PathMap,
     text: &str,
     crop_radius: usize,
 ) -> fmt::Result {
@@ -643,20 +658,12 @@ fn fmt_validation_error_with_snippets(
             .leaf_string()
             .unwrap_or_else(|| "<root>".to_string());
 
-        let (ref_loc, ref_leaf) = referenced
+        let (locs, resolved_leaf) = locations
             .search(&path_key)
-            .unwrap_or((Location::UNKNOWN, original_leaf.clone()));
-        let (def_loc, def_leaf) = defined
-            .search(&path_key)
-            .unwrap_or((Location::UNKNOWN, original_leaf.clone()));
+            .unwrap_or((Locations::UNKNOWN, original_leaf.clone()));
 
-        let resolved_leaf = if ref_loc != Location::UNKNOWN {
-            ref_leaf
-        } else if def_loc != Location::UNKNOWN {
-            def_leaf
-        } else {
-            original_leaf
-        };
+        let ref_loc = locs.reference_location;
+        let def_loc = locs.defined_location;
 
         let resolved_path = format_path_with_resolved_leaf(&path_key, &resolved_leaf);
         let base_msg = format!("validation error: {entry} for `{resolved_path}`");
@@ -701,7 +708,8 @@ fn fmt_validation_error_with_snippets(
                 writeln!(
                     f,
                     "  | This value comes indirectly from the anchor at line {} column {}:",
-                    d.line, d.column
+                    d.line,
+                    d.column
                 )?;
                 crate::de_snipped::fmt_snippet_window_or_fallback(
                     f,
@@ -720,8 +728,7 @@ fn fmt_validation_error_with_snippets(
 fn fmt_validator_error_plain(
     f: &mut fmt::Formatter<'_>,
     errors: &ValidationErrors,
-    referenced: &PathMap,
-    defined: &PathMap,
+    locations: &PathMap,
 ) -> fmt::Result {
     let entries = collect_validator_entries(errors);
     let mut first = true;
@@ -733,10 +740,15 @@ fn fmt_validator_error_plain(
         first = false;
 
         let original_leaf = path.leaf_string().unwrap_or_else(|| "<root>".to_string());
-        let (loc, resolved_leaf) = referenced
+        let (locs, resolved_leaf) = locations
             .search(&path)
-            .or_else(|| defined.search(&path))
-            .unwrap_or((Location::UNKNOWN, original_leaf));
+            .unwrap_or((Locations::UNKNOWN, original_leaf));
+
+        let loc = if locs.reference_location != Location::UNKNOWN {
+            locs.reference_location
+        } else {
+            locs.defined_location
+        };
 
         let resolved_path = format_path_with_resolved_leaf(&path, &resolved_leaf);
         let msg = format!("validation error at {resolved_path}: {entry}");
@@ -750,8 +762,7 @@ fn fmt_validator_error_plain(
 fn fmt_validator_error_with_snippets(
     f: &mut fmt::Formatter<'_>,
     errors: &ValidationErrors,
-    referenced: &PathMap,
-    defined: &PathMap,
+    locations: &PathMap,
     text: &str,
     crop_radius: usize,
 ) -> fmt::Result {
@@ -765,25 +776,14 @@ fn fmt_validator_error_with_snippets(
         first = false;
 
         let original_leaf = path.leaf_string().unwrap_or_else(|| "<root>".to_string());
-        let (ref_loc, ref_leaf) = referenced
+        let (locs, resolved_leaf) = locations
             .search(&path)
-            .unwrap_or((Location::UNKNOWN, original_leaf.clone()));
-        let (def_loc, def_leaf) = defined
-            .search(&path)
-            .unwrap_or((Location::UNKNOWN, original_leaf.clone()));
-
-        let resolved_leaf = if ref_loc != Location::UNKNOWN {
-            ref_leaf
-        } else if def_loc != Location::UNKNOWN {
-            def_leaf
-        } else {
-            original_leaf
-        };
+            .unwrap_or((Locations::UNKNOWN, original_leaf.clone()));
 
         let resolved_path = format_path_with_resolved_leaf(&path, &resolved_leaf);
         let base_msg = format!("validation error: {entry} for `{resolved_path}`");
 
-        match (ref_loc, def_loc) {
+        match (locs.reference_location, locs.defined_location) {
             (Location::UNKNOWN, Location::UNKNOWN) => {
                 write!(f, "{base_msg}")?;
             }
@@ -914,5 +914,72 @@ pub(crate) fn budget_error(breach: BudgetBreach) -> Error {
     Error::Budget {
         breach,
         location: Location::UNKNOWN,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn locations_for_basic_error_duplicates_location() {
+        let l = Location::new(3, 7);
+        let err = Error::Message {
+            msg: "x".to_owned(),
+            location: l,
+        };
+        assert_eq!(
+            err.locations(),
+            Some(Locations {
+                reference_location: l,
+                defined_location: l,
+            })
+        );
+    }
+
+    #[test]
+    fn locations_for_io_error_is_unknown() {
+        let err = Error::IOError {
+            cause: std::io::Error::new(std::io::ErrorKind::Other, "x"),
+        };
+        assert_eq!(err.locations(), None);
+    }
+
+    #[cfg(feature = "validator")]
+    #[test]
+    fn locations_for_validator_error_uses_first_entry() {
+        use validator::Validate;
+
+        #[derive(Debug, Validate)]
+        struct Cfg {
+            #[validate(length(min = 2))]
+            second_string: String,
+        }
+
+        let cfg = Cfg {
+            second_string: "x".to_owned(),
+        };
+        let errors = cfg.validate().expect_err("validation error expected");
+
+        let referenced_loc = Location::new(3, 15);
+        let defined_loc = Location::new(2, 18);
+
+        let mut locations = PathMap::new();
+        locations.insert(
+            PathKey::empty().join("secondString"),
+            Locations {
+                reference_location: referenced_loc,
+                defined_location: defined_loc,
+            },
+        );
+
+        let err = Error::ValidatorError { errors, locations };
+        assert_eq!(
+            err.locations(),
+            Some(Locations {
+                reference_location: referenced_loc,
+                defined_location: defined_loc,
+            })
+        );
     }
 }

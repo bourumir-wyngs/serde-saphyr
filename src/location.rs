@@ -106,3 +106,44 @@ pub(crate) fn location_from_span(span: &ParserSpan) -> Location {
         len: span.len() as u32,
     })
 }
+
+/// Pair of locations for values that may come indirectly from YAML anchors.
+///
+/// - `reference_location`: where the value is *used* (alias/merge site).
+/// - `defined_location`: where the value is *defined* (anchor definition site).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Locations {
+    pub reference_location: Location,
+    pub defined_location: Location,
+}
+
+impl Locations {
+    #[cfg_attr(not(any(feature = "garde", feature = "validator")), allow(dead_code))]
+    pub(crate) const UNKNOWN: Locations = Locations {
+        reference_location: Location::UNKNOWN,
+        defined_location: Location::UNKNOWN,
+    };
+
+    #[inline]
+    pub(crate) fn same(location: &Location) -> Option<Locations> {
+        if location == &Location::UNKNOWN {
+            None
+        } else {
+            Some(Locations {
+                reference_location: *location,
+                defined_location: *location,
+            })
+        }
+    }
+
+    #[inline]
+    pub fn primary_location(self) -> Option<Location> {
+        if self.reference_location != Location::UNKNOWN {
+            Some(self.reference_location)
+        } else if self.defined_location != Location::UNKNOWN {
+            Some(self.defined_location)
+        } else {
+            None
+        }
+    }
+}

@@ -3,7 +3,7 @@
 
 pub use anchors::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
 pub use de::{Budget, DuplicateKeyPolicy, Error, Options};
-pub use location::{Location, Span};
+pub use location::{Location, Locations, Span};
 pub use ser::{Commented, FlowMap, FlowSeq, FoldStr, FoldString, LitStr, LitString};
 pub use spanned::Spanned;
 
@@ -414,8 +414,7 @@ where
         Err(report) => {
             let err = Error::ValidationError {
                 report,
-                referenced: recorder.map,
-                defined: recorder.defined,
+                locations: recorder.map,
             };
             Err(maybe_with_snippet(err, input, with_snippet, crop_radius))
         }
@@ -488,8 +487,7 @@ where
                     Err(report) => {
                         let err = Error::ValidationError {
                             report,
-                            referenced: recorder.map,
-                            defined: recorder.defined,
+                            locations: recorder.map,
                         };
                         validation_errors.push(maybe_with_snippet(
                             err,
@@ -618,8 +616,7 @@ where
     if let Err(report) = Validate::validate(&value) {
         return Err(Error::ValidationError {
             report,
-            referenced: recorder.map,
-            defined: recorder.defined,
+            locations: recorder.map,
         });
     }
 
@@ -724,8 +721,7 @@ where
                                 let _ = self.src.finish();
                                 return Some(Err(Error::ValidationError {
                                     report,
-                                    referenced: recorder.map,
-                                    defined: recorder.defined,
+                                    locations: recorder.map,
                                 }));
                             }
                         }
@@ -793,8 +789,7 @@ where
         Err(errors) => {
             let err = Error::ValidatorError {
                 errors,
-                referenced: recorder.map,
-                defined: recorder.defined,
+                locations: recorder.map,
             };
             Err(maybe_with_snippet(err, input, with_snippet, crop_radius))
         }
@@ -863,8 +858,7 @@ where
                     Err(errors) => {
                         let err = Error::ValidatorError {
                             errors,
-                            referenced: recorder.map,
-                            defined: recorder.defined,
+                            locations: recorder.map,
                         };
                         validation_errors.push(maybe_with_snippet(
                             err,
@@ -984,8 +978,7 @@ where
     if let Err(errors) = ValidatorValidate::validate(&value) {
         return Err(Error::ValidatorError {
             errors,
-            referenced: recorder.map,
-            defined: recorder.defined,
+            locations: recorder.map,
         });
     }
 
@@ -1087,8 +1080,7 @@ where
                                 let _ = self.src.finish();
                                 return Some(Err(Error::ValidatorError {
                                     errors,
-                                    referenced: recorder.map,
-                                    defined: recorder.defined,
+                                    locations: recorder.map,
                                 }));
                             }
                         }
