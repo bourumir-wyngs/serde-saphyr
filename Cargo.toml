@@ -23,6 +23,7 @@ nohash-hasher = "0.2.0"
 encoding_rs_io = "0.1.7"
 ahash = "0.8.12"
 annotate-snippets = "0.12"
+figment = { version = "0.10", optional = true }
 garde = { version = ">= 0.19.0, < 0.23", optional = true, features = ["derive"] }
 miette = { version = "7", optional = true }
 validator = { version = ">= 0.11, < 0.21", optional = true, features = ["derive"] }
@@ -38,6 +39,9 @@ validator = ["dep:validator"]
 
 # Enables structured diagnostics via the `miette` crate.
 miette = ["dep:miette"]
+
+# Enables integration with the `figment` configuration crate.
+figment = ["dep:figment"]
 
 # Adds YAML conventions common in robotics: conversion functions (deg, rad) and simple mathematical expressions such
 # as deg(180), rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). angle_conversions must be set to true in the Options.
@@ -71,6 +75,10 @@ required-features = ["miette", "garde", "validator"]
 [[example]]
 name = "validator_validate"
 required-features = ["validator"]
+
+[[example]]
+name = "figment_yaml"
+required-features = ["figment"]
 
 [lints.rust]
 unsafe_code = "forbid"

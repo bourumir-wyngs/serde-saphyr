@@ -60,6 +60,9 @@ pub mod robotics;
 
 #[cfg(feature = "miette")]
 pub mod miette;
+
+#[cfg(feature = "figment")]
+pub mod figment;
 // ---------------- Serialization (public API) ----------------
 
 /// Serialize a value to a YAML `String`.

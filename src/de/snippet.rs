@@ -102,6 +102,7 @@ pub(crate) fn fmt_with_snippet_or_fallback(
 ///
 /// This is used for secondary context in garde validation errors (e.g. anchors), where we want to
 /// print a custom explanatory line and then show just the relevant source window.
+#[cfg(any(feature = "garde", feature = "validator"))]
 pub(crate) fn fmt_snippet_window_or_fallback(
     f: &mut fmt::Formatter<'_>,
     location: &Location,
