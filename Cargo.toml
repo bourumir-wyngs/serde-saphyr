@@ -7,7 +7,7 @@ description = "YAML (de)serializer for Serde, built on top of Saphyr, emphasizin
 documentation = "https://docs.rs/serde-saphyr/latest/serde-saphyr/"
 repository = "https://github.com/bourumir-wyngs/serde-saphyr"
 readme = "README.md"
-categories = ["encoding", "parser-implementations", "config"]
+categories = ["encoding", "parser-implementations", "config", "command-line-utilities"]
 keywords = ["yaml", "serde", "serialization", "config", "ros"]
 
 [dependencies]
