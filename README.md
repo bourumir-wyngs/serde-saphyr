@@ -183,7 +183,7 @@ error: line 3 column 23: invalid here, validation error: length is lower than 2 
 4 |  
 ```
 
-Common Serde renames made to follow naming conventions (case changes, snake_case, kebab-case, r# stripping) are supported, as long as they do not introduce ambiguity. *Arbitrary renames, flattening, aliases and other complex manipulations possible with serde are not*. Parsing and validation will still work, but error messages for arbitrarily renamed fields only tell Rust path. The integration of garde is gated and disabled by default, use `serde-saphyr = { version = "0.0.12", features = ["garde"] }` (or `features = ["validator"]`) in Cargo.toml` to enable it).
+The integration of garde is gated and disabled by default, use `serde-saphyr = { version = "0.0.12", features = ["garde"] }` (or `features = ["validator"]`) in Cargo.toml` to enable it).
 
 If you prefer to validate without validation crates and want to ensure that location information is always available, use the heavier approach with [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html) wrapper instead.
 
@@ -511,6 +511,7 @@ Safety hardening with this feature enabled include (maximal expression depth, ma
 
 ### Unsupported features
 
+- Common Serde renames made to follow naming conventions (case changes, snake_case, kebab-case, r# stripping) are supported in snippets, as long as they do not introduce ambiguity. Arbitrary renames, flattening, aliases and other complex manipulations possible with serde are not. Parsing and validation will still work, but error messages for arbitrarily renamed fields only tell Rust path.
 - **Tabs in indentation** YAML disallows tabs for indentation, including indentation of block scalar by tab.
 - **Invalid indentation of the closing bracket.** The code like
 
