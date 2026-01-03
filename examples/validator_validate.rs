@@ -18,7 +18,7 @@ fn main() {
         secondString: *A
    "#;
 
-    let err = serde_saphyr::from_str_with_options_validate::<AB>(yaml, Default::default())
+    let err = serde_saphyr::from_str_validate::<AB>(yaml)
         .expect_err("must fail validation");
 
     // Field in error message in camelCase (as in YAML).
