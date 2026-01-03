@@ -534,3 +534,19 @@ cargo install serde-saphyr
 # binary name is the package name by default
 serde-saphyr path/to/file.yaml
 ```
+
+To enable **fancy error reporting** (graphical diagnostics) via the optional `miette` integration, install/build the CLI with the `miette` feature enabled:
+
+```bash
+# install with miette enabled
+cargo install serde-saphyr --features miette
+
+# or run from a git checkout
+cargo run --features miette -- path/to/file.yaml
+```
+
+If you want to keep the previous plain-text error output even when built with `miette`, pass `--plain`:
+
+```bash
+serde-saphyr --plain path/to/file.yaml
+```
