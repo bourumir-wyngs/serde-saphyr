@@ -60,7 +60,7 @@ The test suite currently includes 783 passing tests, most of them originating fr
 - **Optional [`miette`](https://crates.io/crates/miette)** ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/miette.rs)) integration for more advanced error reporting.
 - **serde_json::Value** is supported when parsing without target structure defined.
 - **robotic extensions** to support YAML dialect common in robotics (see below).
-- **[Serializer](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Serializer.html)** and **[Deserializer](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Deserializer.html)** are now public (due how its implemented, Deserializer is available in the closure only).
+- **[Serializer](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Serializer.html)** and **[Deserializer](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Deserializer.html)** are now public (due to how it's implemented, Deserializer is available in the closure only).
 
 ## Usage
 
@@ -98,9 +98,11 @@ let yaml_input = r#"
 }
 ```
 
-### Garde integration
+### Garde and Validator integration
 
-This crate optionally integrates with [`garde`](https://crates.io/crates/garde) to run declarative validation. serde-saphyr error will print the snippet, providing location information. If the invalid value comes from the YAML anchor, serde-saphyr will also tell where this anchor has been defined.
+This crate optionally integrates with [validator](https://crates.io/crates/validator) or [`garde`](https://crates.io/crates/garde) to run declarative validation. serde-saphyr error will print the snippet, providing location information. If the invalid value comes from the YAML anchor, serde-saphyr will also tell where this anchor has been defined.
+
+#### Garde
 
 ```rust
 use garde::Validate;
@@ -131,7 +133,37 @@ fn main() {
 }
 ```
 
-A typical output looks like:
+#### Validator
+```rust
+use serde::Deserialize;
+use validator::Validate;
+
+#[derive(Debug, Deserialize, Validate)]
+#[serde(rename_all = "camelCase")] // Rust in snake_case, YAML in camelCase.
+struct AB {
+    // Just defined here (we validate `second_string` only).
+    #[allow(dead_code)]
+    first_string: String,
+
+    #[validate(length(min = 2))]
+    second_string: String,
+}
+
+fn main() {
+    let yaml = r#"
+        firstString: &A "x"
+        secondString: *A
+   "#;
+
+    let err = serde_saphyr::from_str_with_options_validate::<AB>(yaml, Default::default())
+        .expect_err("must fail validation");
+
+    // Field in error message in camelCase (as in YAML).
+    eprintln!("{err}");
+}
+```
+
+A typical output with serde-saphyr native snippet rendering looks like:
 
 ```text
 error: line 3 column 23: invalid here, validation error: length is lower than 2 for `secondString`
@@ -152,7 +184,9 @@ error: line 3 column 23: invalid here, validation error: length is lower than 2 
 4 |  
 ```
 
-serde-saphyr has native rendering for such snippets (miette is optional).
+Common Serde renames made to follow naming conventions (case changes, snake_case, kebab-case, r# stripping) are supported, as long as they do not introduce ambiguity. *Arbitrary renames, flattening, aliases and other complex manipulations possible with serde are not*. Parsing and validation will still work, but error messages for arbitrarily renamed fields only tell Rust path. The integration of garde is gated and disabled by default, use `serde-saphyr = { version = "0.0.12", features = ["garde"] }` (or `features=["validator"]`) in Cargo.toml` to enable it).
+
+If you prefer to validate without validation crates and want to ensure that location information is always available, use the heavier approach with [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html) wrapper instead.
 
 ### Duplicate keys
 
