@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use std::process::exit;
-use serde_json::Value;
+use serde::de::IgnoredAny;
 use serde_saphyr::{Options, from_str_with_options, Error};
 
 fn report_budget(report: &serde_saphyr::budget::BudgetReport) {
@@ -38,7 +38,7 @@ fn main() {
         ..Options::default()
     };
 
-    let r: Result<Value, Error> = from_str_with_options(&content, options);
+    let r: Result<IgnoredAny, Error> = from_str_with_options(&content, options);
 
     if let Err(err) = r {
         eprintln!("{path} invalid:\n{err}");
