@@ -183,7 +183,7 @@ error: line 3 column 23: invalid here, validation error: length is lower than 2 
 4 |  
 ```
 
-The integration of garde is gated and disabled by default, use `serde-saphyr = { version = "0.0.12", features = ["garde"] }` (or `features = ["validator"]`) in Cargo.toml` to enable it).
+The integration of garde is gated and disabled by default, use `serde-saphyr = { version = "0.0.13", features = ["garde"] }` (or `features = ["validator"]`) in Cargo.toml` to enable it).
 
 If you prefer to validate without validation crates and want to ensure that location information is always available, use the heavier approach with [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html) wrapper instead.
 

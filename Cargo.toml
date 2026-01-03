@@ -2,7 +2,7 @@
 name = "serde-saphyr"
 version = "0.0.13"
 edition = "2024"
-license = "MIT"
+license = "MIT OR Apache-2.0"
 description = "YAML (de)serializer for Serde, built on top of Saphyr, emphasizing panic-free parsing."
 documentation = "https://docs.rs/serde-saphyr/latest/serde-saphyr/"
 repository = "https://github.com/bourumir-wyngs/serde-saphyr"
