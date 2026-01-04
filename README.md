@@ -30,8 +30,8 @@ In our [benchmarking project](https://github.com/bourumir-wyngs/serde-saphyr-ben
 
 
 |                                                   Crate | Version             | Merge Keys   | Nested Enums | Duplicate key rejection | Validation | Notes                                                                    |
-| ------------------------------------------------------: | :------------------ | :----------- | :----------- | :---------------------- |:----------:| :----------------------------------------------------------------------- |
-|   [serde-saphyr](https://crates.io/crates/serde-saphyr) | 0.0.4               | ✅ Native    | ✅           | ✅ Configurable         | ✅ [`garde`](https://crates.io/crates/garde) / [`validator`](https://crates.io/crates/validator) | No`unsafe`, no [unsafe-libyaml](https://crates.io/crates/unsafe-libyaml) |
+| ------------------------------------------------------: |:--------------------| :----------- | :----------- | :---------------------- |:----------:| :----------------------------------------------------------------------- |
+|   [serde-saphyr](https://crates.io/crates/serde-saphyr) | 0.0.13               | ✅ Native    | ✅           | ✅ Configurable         | ✅ [`garde`](https://crates.io/crates/garde) / [`validator`](https://crates.io/crates/validator) | No`unsafe`, no [unsafe-libyaml](https://crates.io/crates/unsafe-libyaml) |
 | [serde-yaml-bw](https://crates.io/crates/serde-yaml_bw) | 2.4.1               | ✅ Native    | ✅           | ✅ Configurable         |     ❌      | Slow due Saphyr doing budget check first upfront of libyaml              |
 | [serde-yaml-ng](https://crates.io/crates/serde-yaml-ng) | 0.10.0              | ⚠️ partial | ❌           | ❌                      |     ❌      |                                                                          |
 |       [serde-yaml](https://crates.io/crates/serde-yaml) | 0.9.34 + deprecated | ⚠️ partial | ❌           | ❌                      |     ❌      | Original, deprecated, repo archived                                      |
