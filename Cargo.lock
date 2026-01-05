@@ -1037,7 +1037,6 @@ dependencies = [
  "nohash-hasher",
  "num-traits",
  "regex",
- "ryu",
  "saphyr-parser",
  "serde",
  "serde-transcode",
@@ -1048,6 +1047,7 @@ dependencies = [
  "serde_repr",
  "smallvec 2.0.0-alpha.12",
  "validator",
+ "zmij",
 ]
 
 [[package]]
@@ -1667,6 +1667,6 @@ dependencies = [
 
 [[package]]
 name = "zmij"
-version = "1.0.6"
+version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aac060176f7020d62c3bcc1cdbcec619d54f48b07ad1963a3f80ce7a0c17755f"
+checksum = "dcb2c125bd7365735bebeb420ccb880265ed2d2bddcbcd49f597fdfe6bd5e577"

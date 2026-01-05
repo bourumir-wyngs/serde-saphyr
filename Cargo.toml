@@ -18,7 +18,7 @@ smallvec = "2.0.0-alpha.12"
 serde_json = { version = "1", features = ["preserve_order"] }
 num-traits = { version = ">=0.2.0, <=0.2.19" }
 base64 = { version = ">=0.21.0, <=0.22.1" }
-ryu = "1.0.20"
+zmij = "1.0.11"
 nohash-hasher = "0.2.0"
 encoding_rs_io = "0.1.7"
 ahash = "0.8.12"

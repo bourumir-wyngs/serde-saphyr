@@ -953,7 +953,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 self.out.write_str("-.inf")?;
             }
         } else {
-            let mut buf = ryu::Buffer::new();
+            let mut buf = zmij::Buffer::new();
             let s = buf.format(v);
             if !s.contains('.') && !s.contains('e') && !s.contains('E') {
                 self.out.write_str(s)?;
@@ -2695,7 +2695,7 @@ impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
                 self.s.push_str("-.inf");
             }
         } else {
-            let mut buf = ryu::Buffer::new();
+            let mut buf = zmij::Buffer::new();
             let s = buf.format(v);
             if !s.contains('.') && !s.contains('e') && !s.contains('E') {
                 self.s.push_str(s);
@@ -2716,7 +2716,7 @@ impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
                 self.s.push_str("-.inf");
             }
         } else {
-            let mut buf = ryu::Buffer::new();
+            let mut buf = zmij::Buffer::new();
             let s = buf.format(v);
             if !s.contains('.') && !s.contains('e') && !s.contains('E') {
                 self.s.push_str(s);
