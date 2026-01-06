@@ -4,7 +4,8 @@
 pub use anchors::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
 pub use de::{Budget, DuplicateKeyPolicy, Error, Options};
 pub use location::{Location, Locations, Span};
-pub use ser::{Commented, FlowMap, FlowSeq, FoldStr, FoldString, LitStr, LitString};
+pub use long_strings::{FoldStr, FoldString, LitStr, LitString};
+pub use ser::{Commented, FlowMap, FlowSeq};
 pub use spanned::Spanned;
 
 use crate::budget::EnforcingPolicy;
@@ -29,6 +30,7 @@ mod de_error;
 #[path = "de/snippet.rs"]
 mod de_snipped;
 mod live_events;
+mod long_strings;
 pub mod options;
 mod parse_scalars;
 pub mod ser;
