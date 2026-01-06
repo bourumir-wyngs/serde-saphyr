@@ -31,7 +31,7 @@ fn yaml_long_strings() {
     .expect("Unable to serialize my struct!");
     println!("Serialized YAML: r#\"\n{serialized}\"#");
 
-    let test: Foo = yaml::from_str(serialized.as_str()).expect("Unable to serialize my struct!");
+    let test: Foo = yaml::from_str(serialized.as_str()).expect("Unable to deserialize my struct!");
     assert_eq!(reference.long, test.long);
 }
 
@@ -55,7 +55,7 @@ fn yaml_long_strings_ls() {
     let serialized = yaml::to_string(&reference).expect("Unable to serialize my struct!");
     println!("Serialized YAML: r#\"\n{serialized}\"#");
 
-    let test: Foo = yaml::from_str(serialized.as_str()).expect("Unable to serialize my struct!");
+    let test: Foo = yaml::from_str(serialized.as_str()).expect("Unable to deserialize my struct!");
     assert_eq!(reference.long.0, test.long);
 }
 
@@ -71,6 +71,6 @@ fn yaml_long_strings_2() {
     let serialized = yaml::to_string(&reference).expect("Unable to serialize my struct!");
     println!("Serialized YAML: r#\"\n{serialized}\"#");
 
-    let test: Foo = yaml::from_str(serialized.as_str()).expect("Unable to serialize my struct!");
+    let test: Foo = yaml::from_str(serialized.as_str()).expect("Unable to deserialize my struct!");
     assert_eq!(reference.long,test.long);
 }
