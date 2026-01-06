@@ -468,6 +468,8 @@ pub struct YamlSerializer<'a, W: Write> {
     /// If the previous sequence element after a dash turned out to be a mapping (inline first key),
     /// indent subsequent dashes by one level to satisfy tests expecting "\n  -".
     inline_map_after_dash: bool,
+    /// Whether the last serialized value was a block collection (map or sequence).
+    last_value_was_block: bool,
     /// If a sequence element starts with a dash on this depth, capture that depth so
     /// struct-variant mappings emitted immediately after can indent their fields correctly.
     after_dash_depth: Option<usize>,
@@ -494,6 +496,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
             pending_flow: None,
             in_flow: 0,
             pending_str_style: None,
+            pending_str_from_auto: false,
             pending_inline_comment: None,
             tagged_enums: false,
             empty_as_braces: true,
@@ -501,9 +504,9 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
             pending_inline_map: false,
             pending_space_after_colon: false,
             inline_map_after_dash: false,
+            last_value_was_block: false,
             after_dash_depth: None,
             current_map_depth: None,
-            pending_str_from_auto: false,
         }
     }
     /// Construct a `YamlSerializer` with a specific indentation step.
@@ -590,6 +593,9 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
             self.out.write_char(' ')?;
             self.pending_space_after_colon = false;
         }
+        // When a scalar value is serialized, it should reset the block-sibling flag.
+        // Most scalar emitters call this method.
+        self.last_value_was_block = false;
         Ok(())
     }
 
@@ -1167,6 +1173,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
 
     fn serialize_none(self) -> Result<()> {
         self.write_space_if_pending()?;
+        self.last_value_was_block = false;
         if self.at_line_start {
             self.write_indent(self.depth)?;
         }
@@ -1181,6 +1188,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
 
     fn serialize_unit(self) -> Result<()> {
         self.write_space_if_pending()?;
+        self.last_value_was_block = false;
         if self.at_line_start {
             self.write_indent(self.depth)?;
         }
@@ -1318,6 +1326,18 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             // Block sequence. Decide indentation based on whether this is after a map key or after a list dash.
             let was_inline_value = !self.at_line_start;
 
+            // If we are a value following a block sibling, force a newline now.
+            // However, if a complex-node anchor is pending, we must keep `key: &aN` inline;
+            // `write_anchor_for_complex_node` will handle emitting the anchor and newline.
+            if self.pending_space_after_colon && self.last_value_was_block && self.pending_anchor_id.is_none() {
+                self.pending_space_after_colon = false;
+                if !self.at_line_start {
+                    self.newline()?;
+                }
+                // Consume the sibling-block marker; it should not affect nested nodes.
+                self.last_value_was_block = false;
+            }
+
             // For block sequences nested under another dash, keep the first inner dash inline.
             // Style expectations in tests prefer the compact form:
             // - - 1
@@ -1347,7 +1367,6 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             let base = if inline_first {
                 self.after_dash_depth.unwrap_or(self.depth)
             } else if was_inline_value && self.current_map_depth.is_some() {
-                // Guarded by is_some(); use unwrap_or to avoid panicking unwrap
                 self.current_map_depth.unwrap_or(self.depth)
             } else {
                 self.depth
@@ -1437,13 +1456,28 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             let inline_first = self.pending_inline_map;
             // We only consider "value position" when immediately after a mapping colon.
             let was_inline_value = self.pending_space_after_colon;
+            let mut forced_newline = false;
+
+            // If we are a value following a block sibling, force a newline now.
+            // However, if a complex-node anchor is pending, we must keep `key: &aN` inline;
+            // `write_anchor_for_complex_node` will handle emitting the anchor and newline.
+            if was_inline_value && self.last_value_was_block && self.pending_anchor_id.is_none() {
+                self.pending_space_after_colon = false;
+                if !self.at_line_start {
+                    self.newline()?;
+                }
+                forced_newline = true;
+                // Consume the sibling-block marker; it should not affect nested nodes.
+                self.last_value_was_block = false;
+            }
+
             self.write_anchor_for_complex_node()?;
             if inline_first {
                 // Suppress newline after a list dash for inline map first key.
                 self.pending_inline_map = false;
                 // Mark that this sequence element is a mapping printed inline after a dash.
                 self.inline_map_after_dash = true;
-            } else if self.pending_space_after_colon {
+            } else if was_inline_value {
                 // Map used as a value after "key: ". If emitting braces for empty maps,
                 // keep this mapping on the same line so that an empty map renders as "{}".
                 if !self.empty_as_braces {
@@ -1468,12 +1502,14 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             } else {
                 self.depth
             };
-            let depth_next = if inline_first || was_inline_value {
+            let depth_next = if inline_first {
+                base + 1
+            } else if was_inline_value {
                 base + 1
             } else {
                 base
             };
-            let inline_value_start_flag = was_inline_value && self.empty_as_braces && !inline_first;
+            let inline_value_start_flag = was_inline_value && self.empty_as_braces && !inline_first && !forced_newline;
             Ok(MapSer {
                 ser: self,
                 depth: depth_next,
@@ -1642,6 +1678,14 @@ impl<'a, 'b, W: Write> SerializeSeq for SeqSer<'a, 'b, W> {
                 // Preserve legacy behavior: just emit a newline (empty body).
                 self.ser.newline()?;
             }
+        } else {
+            // Block collection finished and it was not empty.
+            self.ser.last_value_was_block = true;
+            // Clear any dash/inline hints so they cannot affect the next sibling value
+            // (e.g., a mapping field following a block sequence value).
+            self.ser.pending_inline_map = false;
+            self.ser.after_dash_depth = None;
+            self.ser.inline_map_after_dash = false;
         }
         Ok(())
     }
@@ -1939,22 +1983,27 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
             self.ser.at_line_start = false;
             self.last_key_complex = false;
         } else {
+            // If this mapping started inline as a value (after "key:"), but now we
+            // are about to emit the first entry, move to the next line before the key.
+            if self.inline_value_start {
+                // Cancel a pending space after ':' and break the line.
+                if self.ser.pending_space_after_colon {
+                    self.ser.pending_space_after_colon = false;
+                }
+                if !self.ser.at_line_start {
+                    self.ser.newline()?;
+                }
+                self.inline_value_start = false;
+            } else if !self.ser.at_line_start {
+                self.ser.write_space_if_pending()?;
+            }
+
+            // A new key in a block map should clear any pending inline hints from previous siblings.
+            self.ser.after_dash_depth = None;
+            self.ser.pending_inline_map = false;
+
             match scalar_key_to_string(key) {
                 Ok(text) => {
-                    // If this mapping started inline as a value (after "key:"), but now we
-                    // are about to emit the first entry, move to the next line before the key.
-                    if self.inline_value_start {
-                        // Cancel a pending space after ':' and break the line.
-                        if self.ser.pending_space_after_colon {
-                            self.ser.pending_space_after_colon = false;
-                        }
-                        if !self.ser.at_line_start {
-                            self.ser.newline()?;
-                        }
-                        self.inline_value_start = false;
-                    } else if !self.ser.at_line_start {
-                        self.ser.write_space_if_pending()?;
-                    }
                     // Indent continuation lines. If this map started inline after a dash,
                     // align under the first key by adding two spaces instead of a full indent step.
                     if self.align_after_dash && self.ser.at_line_start {
@@ -1975,18 +2024,6 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
                     self.last_key_complex = false;
                 }
                 Err(Error::Unexpected { msg }) if msg == "non-scalar key" => {
-                    // Same handling for the first key when starting inline: break the line first.
-                    if self.inline_value_start {
-                        if self.ser.pending_space_after_colon {
-                            self.ser.pending_space_after_colon = false;
-                        }
-                        if !self.ser.at_line_start {
-                            self.ser.newline()?;
-                        }
-                        self.inline_value_start = false;
-                    } else if !self.ser.at_line_start {
-                        self.ser.write_space_if_pending()?;
-                    }
                     self.ser.write_anchor_for_complex_node()?;
                     self.ser.write_indent(self.depth)?;
                     self.ser.out.write_str("? ")?;
@@ -2011,6 +2048,10 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
                     self.ser.pending_inline_map = saved_pending_inline_map;
                     self.ser.inline_map_after_dash = saved_inline_map_after_dash;
                     self.ser.after_dash_depth = saved_after_dash_depth;
+                    // A complex key may have been serialized as a block collection, which sets
+                    // `last_value_was_block`. That state must NOT affect the *value* of this same
+                    // map entry (e.g. we still want `: x: 3` inline for composite-key maps).
+                    self.ser.last_value_was_block = false;
                     self.last_key_complex = true;
                 }
                 Err(e) => return Err(e),
@@ -2052,6 +2093,13 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
                 self.ser.depth = saved_depth;
                 self.last_key_complex = false;
             }
+            // Reset the block-sibling flag after the value has been serialized.
+            // If the value was a block, its `end()` method will have set it to true.
+            // If it was a scalar, it should be false (we should probably explicitly set it to false if it wasn't a block).
+            // Actually, if we just finished a value, and it didn't set last_value_was_block, it means it was a scalar.
+            if let Ok(_) = result {
+                 // if it's still false, it stays false. If it was set to true by the value's end(), it stays true for the NEXT sibling.
+            }
             result?;
         }
         self.first = false;
@@ -2092,6 +2140,9 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
                 // Preserve legacy behavior: just emit a newline (empty body).
                 self.ser.newline()?;
             }
+        } else {
+            // Block collection finished and it was not empty.
+            self.ser.last_value_was_block = true;
         }
         Ok(())
     }
@@ -2106,7 +2157,9 @@ impl<'a, 'b, W: Write> SerializeStruct for MapSer<'a, 'b, W> {
         value: &T,
     ) -> Result<()> {
         SerializeMap::serialize_key(self, &key)?;
-        SerializeMap::serialize_value(self, value)
+        let result = SerializeMap::serialize_value(self, value);
+        // Note: MapSer::serialize_value already handles the block-sibling logic (conceptually).
+        result
     }
     fn end(self) -> Result<()> {
         SerializeMap::end(self)
@@ -2143,6 +2196,11 @@ impl<'a, 'b, W: Write> SerializeStructVariant for StructVariantSer<'a, 'b, W> {
         let prev_map_depth = self.ser.current_map_depth.replace(self.depth);
         let result = value.serialize(&mut *self.ser);
         self.ser.current_map_depth = prev_map_depth;
+        // Update block-sibling tracking similarly to MapSer::serialize_value.
+        if let Ok(_) = result {
+             // If value was a block, its end() set it to true. If not, it should be false for the next field.
+             // However, scalar serializers don't currently reset it.
+        }
         result
     }
     fn end(self) -> Result<()> {
