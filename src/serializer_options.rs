@@ -49,9 +49,11 @@ pub struct SerializerOptions {
     pub min_fold_chars: usize,
     /// Maximum width (in characters) for lines in folded block scalars (`>`).
     ///
-    /// Lines are wrapped at whitespace so that each emitted line is at most this many
-    /// characters long (excluding indentation). If no whitespace is present within the
-    /// limit, a hard break is performed.
+    /// Lines are wrapped **only** at whitespace so that each emitted line is at most
+    /// this many characters long (excluding indentation). If no whitespace is present
+    /// within the limit (e.g., a single long token), the line is emitted unwrapped
+    /// to preserve round-trip correctness: YAML folded scalars typically fold inserted
+    /// newlines back as spaces when parsing.
     pub folded_wrap_chars: usize,
     /// When enabled, serialize simple enums that become a single scalar (unit variants)
     /// using YAML tags, e.g. `!!Enum Variant` instead of a plain scalar `Variant`.
@@ -70,7 +72,7 @@ pub(crate) const MIN_FOLD_CHARS: usize = 32;
 /// Maximum width (in characters) for lines inside folded block scalars.
 /// Lines will be wrapped at whitespace so that each emitted line is at most
 /// this many characters long (excluding indentation). If no whitespace is
-/// available within the limit, a hard break is performed.
+/// available within the limit, the line is not wrapped.
 pub(crate) const FOLDED_WRAP_CHARS: usize = 80;
 
 impl SerializerOptions {

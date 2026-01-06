@@ -621,10 +621,14 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         Ok(())
     }
 
-    /// Write a folded block string body, wrapping to FOLDED_WRAP_COL characters.
+    /// Write a folded block string body, wrapping to `folded_wrap_col` characters.
     /// Preserves blank lines between paragraphs. Each emitted line is indented
-    /// exactly at `indent` depth. Wrapping prefers breaking at the last whitespace not
-    /// exceeding the limit; if none is present, performs a hard break.
+    /// exactly at `indent` depth.
+    ///
+    /// Wrapping is only performed at whitespace boundaries. If no whitespace is
+    /// available within the wrap limit, the line is emitted unwrapped to preserve
+    /// round-trip correctness: in YAML folded scalars (`>`), inserted newlines are
+    /// typically folded back as spaces on parse.
     fn write_folded_block(&mut self, s: &str, indent: usize) -> Result<()> {
         // Precompute indent prefix for this block body and reuse it for each emitted line.
         let mut indent_buf: String = String::new();
@@ -650,33 +654,35 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
             // We need the utf8 length to advance `start` on a valid UTF-8 boundary.
             let mut last_space: Option<(usize, usize)> = None;
             let mut col = 0usize; // column in chars
-            for (i, ch) in line.char_indices() {
-                // track potential break positions
+            for (_i, ch) in line.char_indices() {
+                // Track potential break positions.
                 if ch.is_whitespace() {
+                    // Mark the last whitespace we have seen so far.
+                    // Note: we only ever break at whitespace.
+                    let i = _i;
                     last_space = Some((i, ch.len_utf8()));
                 }
                 col += 1;
+
+                // Wrap only when we have a whitespace to break at. If there is no whitespace
+                // within the limit (e.g., a long token), do not hard-break: folded scalars
+                // would turn that inserted newline into a space when parsed.
                 if col > self.folded_wrap_col {
-                    let break_at = last_space.map(|(sp, _len)| sp).unwrap_or(i);
-                    // Emit [start, break_at)
-                    self.out.write_str(indent_str)?;
-                    self.at_line_start = false;
-                    // Safety: break_at is on char boundary
-                    let slice = &line[start..break_at];
-                    self.out.write_str(slice)?;
-                    self.newline()?;
-                    // Advance start: skip the whitespace if we broke at space
-                    start = if let Some((sp, space_len)) = last_space {
-                        sp + space_len
-                    } else {
-                        break_at
-                    };
-                    // Reset trackers starting at new segment. We intentionally do not try
-                    // to recompute `col` relative to the current `i` because `start` may
-                    // have advanced past `i` when we broke at the current whitespace.
-                    // Starting a fresh column count avoids invalid slice ranges.
-                    last_space = None;
-                    col = 0;
+                    if let Some((sp, space_len)) = last_space {
+                        let break_at = sp;
+                        // Emit [start, break_at)
+                        self.out.write_str(indent_str)?;
+                        self.at_line_start = false;
+                        // Safety: break_at is on char boundary
+                        let slice = &line[start..break_at];
+                        self.out.write_str(slice)?;
+                        self.newline()?;
+                        // Advance start: skip the whitespace we broke at.
+                        start = sp + space_len;
+                        // Reset trackers starting at new segment.
+                        last_space = None;
+                        col = 0;
+                    }
                 }
             }
             // Emit the tail if any
