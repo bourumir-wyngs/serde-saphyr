@@ -22,13 +22,14 @@
 
 use crate::ser_error::Error;
 
+/// Serializer options
 #[derive(Clone, Copy)]
 pub struct SerializerOptions {
     /// If true, empty maps are emitted as braces {} and empty lists as []  (this is the default).
     /// Such form is equally valid YAML, allows to tell empty from null and may be easier for a
     /// human to grasp.
     pub empty_as_braces: bool,
-    /// Number of spaces to indent per nesting level when emitting block-style collections.
+    /// Number of spaces to indent per nesting level when emitting block-style collections (2 by default).
     /// 0 value is invalid and will result and error when trying to deserialize, because
     /// no indentation would produce invalid YAML otherwise.
     pub indent_step: usize,
@@ -53,16 +54,17 @@ pub struct SerializerOptions {
     /// this many characters long (excluding indentation). If no whitespace is present
     /// within the limit (e.g., a single long token), the line is emitted unwrapped
     /// to preserve round-trip correctness: YAML folded scalars typically fold inserted
-    /// newlines back as spaces when parsing.
+    /// newlines back as spaces when parsing. 32 default.
     pub folded_wrap_chars: usize,
     /// When enabled, serialize simple enums that become a single scalar (unit variants)
     /// using YAML tags, e.g. `!!Enum Variant` instead of a plain scalar `Variant`.
-    /// Deserializer does not need this setting as both cases will be understood.
+    /// Deserializer does not need this setting as both cases will be understood. Off by default.
     pub tagged_enums: bool,
 
     /// When enabled, strings containing more than folded_wrap_chars (80 by default) are written
     /// in wrapped multistring folded form (>), and strings containing new lines are written in
     /// literal form (|), selecting format depending on the number of empty lines at the end.
+    /// On by default.
     pub prefer_block_scalars: bool,
 }
 
