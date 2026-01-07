@@ -88,6 +88,30 @@ pub fn to_string<T: serde::Serialize>(value: &T) -> std::result::Result<String, 
     Ok(out)
 }
 
+/// Serialize a value to a YAML `String`, with [`SerializerOptions`].
+///
+/// This is like [`to_string`], but lets you control formatting and serialization
+/// behavior through the provided `options`.
+///
+/// Example
+///
+/// ```rust
+/// use serde::Serialize;
+/// use serde_saphyr::SerializerOptions;
+///
+/// #[derive(Serialize)]
+/// struct Foo { a: i32, b: bool }
+///
+/// let options = SerializerOptions::default();
+/// let s = serde_saphyr::to_string_with_options(&Foo { a: 1, b: true }, options).unwrap();
+/// assert!(s.contains("a: 1"));
+/// ```
+pub fn to_string_with_options<T: serde::Serialize>(value: &T, options: SerializerOptions) -> std::result::Result<String, crate::ser::Error> {
+    let mut out = String::new();
+    to_fmt_writer_with_options(&mut out, value, options)?;
+    Ok(out)
+}
+
 /// Deprecated: use `to_fmt_writer` or `to_io_writer`
 /// Kept for a transition release to avoid instant breakage.
 #[deprecated(
