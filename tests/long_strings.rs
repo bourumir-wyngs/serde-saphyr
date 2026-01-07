@@ -119,3 +119,17 @@ fn yaml_long_strings_2() {
     let test: Foo = yaml::from_str(serialized.as_str()).expect("Unable to deserialize my struct!");
     assert_eq!(reference.long,test.long);
 }
+
+#[test]
+fn yaml_long_strings_with_breaks() {
+    let reference = Foo {
+        a: 32,
+        b: true,
+        short: "A".repeat(20),
+        long: "AB CD".repeat(200)
+    };
+    let serialized = yaml::to_string(&reference).expect("Unable to serialize my struct!");
+    println!("{}", serialized);
+    let test: Foo = yaml::from_str(serialized.as_str()).expect("Unable to deserialize my struct!");
+    assert_eq!(reference.long,test.long);
+}
