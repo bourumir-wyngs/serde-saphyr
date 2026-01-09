@@ -1,3 +1,4 @@
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use serde_saphyr as yaml;
 use serde_saphyr::LitString;
@@ -11,7 +12,7 @@ struct Foo {
 }
 
 #[test]
-fn yaml_long_strings() {
+fn yaml_long_strings() -> anyhow::Result<()> {
     let reference = Foo {
         a: 32,
         b: true,
@@ -27,10 +28,10 @@ fn yaml_long_strings() {
             prefer_block_scalars: false,
             ..Default::default()
         },
-    )
-    .expect("Unable to serialize my struct!");
-    let test: Foo = yaml::from_str(serialized.as_str()).expect("Unable to deserialize my struct!");
+    )?;
+    let test: Foo = yaml::from_str(serialized.as_str())?;
     assert_eq!(reference.long, test.long);
+    Ok(())
 }
 
 #[derive(Serialize, Deserialize)]
@@ -42,7 +43,7 @@ struct FooLs {
 }
 
 #[test]
-fn yaml_long_strings_ls() {
+fn yaml_long_strings_ls() -> anyhow::Result<()> {
     let reference = FooLs {
         a: 32,
         b: true,
@@ -50,16 +51,14 @@ fn yaml_long_strings_ls() {
         long: LitString("A".repeat(200)),
     };
 
-    let serialized = yaml::to_string(&reference).expect("Unable to serialize my struct!");
-    let test: Foo = yaml::from_str(serialized.as_str()).expect("Unable to deserialize my struct!");
+    let serialized = yaml::to_string(&reference)?;
+    let test: Foo = yaml::from_str(serialized.as_str())?;
     assert_eq!(reference.long.0, test.long);
+    Ok(())
 }
 
 #[test]
 fn prefer_block_scalars_must_not_hard_break_long_token() -> anyhow::Result<()> {
-    // Regression: with prefer_block_scalars enabled, long single-token strings (no spaces)
-    // must not be hard-broken in folded block style, because YAML folding would insert
-    // spaces on parse and change the value.
     let reference = Foo {
         a: 32,
         b: true,
@@ -91,7 +90,7 @@ fn prefer_block_scalars_must_not_hard_break_long_token() -> anyhow::Result<()> {
         if line.starts_with("long: >") {
             let body = lines
                 .next()
-                .expect("Expected a folded scalar body line after 'long: >'");
+                .context("Expected a folded scalar body line after 'long: >'")?;
             assert_eq!(body, format!("  {}", "A".repeat(200)));
             found = true;
             break;
@@ -108,72 +107,73 @@ fn prefer_block_scalars_must_not_hard_break_long_token() -> anyhow::Result<()> {
 }
 
 #[test]
-fn yaml_long_strings_2() {
+fn yaml_long_strings_2() -> anyhow::Result<()> {
     let reference = Foo {
         a: 32,
         b: true,
         short: "A".repeat(20),
-        long: "A".repeat(200)
+        long: "A".repeat(200),
     };
-    let serialized = yaml::to_string(&reference).expect("Unable to serialize my struct!");
-    let test: Foo = yaml::from_str(serialized.as_str()).expect("Unable to deserialize my struct!");
-    assert_eq!(reference.long,test.long);
+    let serialized = yaml::to_string(&reference)?;
+    let test: Foo = yaml::from_str(serialized.as_str())?;
+    assert_eq!(reference.long, test.long);
+    Ok(())
 }
 
 #[test]
-fn yaml_long_strings_with_breaks() {
+fn yaml_long_strings_with_breaks() -> anyhow::Result<()> {
     let reference = Foo {
         a: 32,
         b: true,
         short: "A".repeat(20),
-        long: "AB CD".repeat(200)
+        long: "AB CD".repeat(200),
     };
-    let serialized = yaml::to_string(&reference).expect("Unable to serialize my struct!");
-    println!("{}", serialized);
-    let test: Foo = yaml::from_str(serialized.as_str()).expect("Unable to deserialize my struct!");
-    assert_eq!(reference.long,test.long);
+    let serialized = yaml::to_string(&reference)?;
+    let test: Foo = yaml::from_str(serialized.as_str())?;
+    assert_eq!(reference.long, test.long);
+    Ok(())
 }
 
 #[test]
-fn yaml_long_strings_with_double_breaks() {
+fn yaml_long_strings_with_double_breaks() -> anyhow::Result<()> {
     let reference = Foo {
         a: 32,
         b: true,
         short: "A".repeat(20),
-        long: "AB  CD".repeat(200)
+        long: "AB  CD".repeat(200),
     };
-    let serialized = yaml::to_string(&reference).expect("Unable to serialize my struct!");
-    println!("{}", serialized);
-    let test: Foo = yaml::from_str(serialized.as_str()).expect("Unable to deserialize my struct!");
-    assert_eq!(reference.long,test.long);
+    let serialized = yaml::to_string(&reference)?;
+    let test: Foo = yaml::from_str(serialized.as_str())?;
+    assert_eq!(reference.long, test.long);
+    Ok(())
 }
 
 #[test]
-fn yaml_long_strings_with_triple_breaks() {
+fn yaml_long_strings_with_triple_breaks() -> anyhow::Result<()> {
     let reference = Foo {
         a: 32,
         b: true,
         short: "A".repeat(20),
-        long: "AB   CD".repeat(200)
+        long: "AB   CD".repeat(200),
     };
-    let serialized = yaml::to_string(&reference).expect("Unable to serialize my struct!");
-    println!("{}", serialized);
-    let test: Foo = yaml::from_str(serialized.as_str()).expect("Unable to deserialize my struct!");
-    assert_eq!(reference.long,test.long);
+    let serialized = yaml::to_string(&reference)?;
+    let test: Foo = yaml::from_str(serialized.as_str())?;
+    assert_eq!(reference.long, test.long);
+    Ok(())
 }
 
 #[test]
-fn yaml_long_strings_with_var_breaks() {
+fn yaml_long_strings_with_var_breaks() -> anyhow::Result<()> {
     let reference = Foo {
         a: 32,
         b: true,
         short: "A".repeat(20),
-        long: "Aaaaaaa Bbbbbbbb  Ccccccc   Dddddd Eeeeee".repeat(200)
+        long: "Aaaaaaa Bbbbbbbb  Ccccccc   Dddddd Eeeeee".repeat(200),
     };
-    let serialized = yaml::to_string(&reference).expect("Unable to serialize my struct!");
-    println!("{}", serialized);
-    let test: Foo = yaml::from_str(serialized.as_str()).expect("Unable to deserialize my struct!");
-    assert_eq!(reference.long,test.long);
+    let serialized = yaml::to_string(&reference)?;
+    let test: Foo = yaml::from_str(serialized.as_str())?;
+    assert_eq!(reference.long, test.long);
+    Ok(())
 }
 
 #[test]
@@ -221,8 +221,10 @@ fn folded_wrap_can_preserve_multi_space_runs_by_emitting_trailing_spaces() -> an
         if !next.starts_with("  ") {
             break;
         }
-        let body_line = lines.next().unwrap();
-        let content = body_line.strip_prefix("  ").unwrap();
+        let body_line = lines.next().context("Expected a folded scalar body line")?;
+        let content = body_line
+            .strip_prefix("  ")
+            .context("Expected folded scalar body line to start with indentation")?;
         if content.starts_with(char::is_whitespace) {
             anyhow::bail!(
                 "Folded scalar body line started with whitespace beyond indentation: {body_line:?}\nYAML:\n{serialized}"
@@ -241,5 +243,3 @@ fn folded_wrap_can_preserve_multi_space_runs_by_emitting_trailing_spaces() -> an
     assert_eq!(decoded.long, reference.long);
     Ok(())
 }
-
-
