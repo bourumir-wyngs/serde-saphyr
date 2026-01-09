@@ -42,7 +42,7 @@ use std::sync::{Arc, Weak as ArcWeak};
 
 use crate::serializer_options::{FOLDED_WRAP_CHARS, MIN_FOLD_CHARS, SerializerOptions};
 use crate::long_strings::{NAME_FOLD_STR, NAME_LIT_STR};
-use crate::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
+use crate::{zmij_format, ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use nohash_hasher::BuildNoHashHasher;
 
@@ -869,43 +869,23 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     }
 
     fn serialize_f32(self, v: f32) -> Result<()> {
-        self.serialize_f64(v as f64)
+        self.write_space_if_pending()?;
+        self.write_scalar_prefix_if_anchor()?;
+        if self.at_line_start {
+            self.write_indent(self.depth)?;
+        }
+        zmij_format::write_float_string(self.out, v)?;
+        self.write_end_of_scalar()
     }
+
     fn serialize_f64(self, v: f64) -> Result<()> {
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
         if self.at_line_start {
             self.write_indent(self.depth)?;
         }
-        if v.is_nan() {
-            self.out.write_str(".nan")?;
-        } else if v.is_infinite() {
-            if v.is_sign_positive() {
-                self.out.write_str(".inf")?;
-            } else {
-                self.out.write_str("-.inf")?;
-            }
-        } else {
-            let mut buf = zmij::Buffer::new();
-            let s = buf.format(v);
-            if !s.contains('.') {
-                if let Some(exp_pos) = s.find('e').or_else(|| s.find('E')) {
-                    // Has exponent but no decimal: insert .0 before the e
-                    // "4e-6" -> "4.0e-6"
-                    self.out.write_str(&s[..exp_pos])?;
-                    self.out.write_str(".0")?;
-                    self.out.write_str(&s[exp_pos..])?;
-                } else {
-                    // No decimal and no exponent: append .0
-                    self.out.write_str(s)?;
-                    self.out.write_str(".0")?;
-                }
-            } else {
-                self.out.write_str(s)?;
-            }
-        }
-        self.write_end_of_scalar()?;
-        Ok(())
+        zmij_format::write_float_string(self.out, v)?;
+        self.write_end_of_scalar()
     }
 
     fn serialize_char(self, v: char) -> Result<()> {
@@ -2679,48 +2659,12 @@ impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
         Ok(())
     }
     fn serialize_f32(self, v: f32) -> Result<()> {
-        let v = v as f64;
-        if v.is_nan() {
-            self.s.push_str(".nan");
-        } else if v.is_infinite() {
-            if v.is_sign_positive() {
-                self.s.push_str(".inf");
-            } else {
-                self.s.push_str("-.inf");
-            }
-        } else {
-            let mut buf = zmij::Buffer::new();
-            let s = buf.format(v);
-            if !s.contains('.') && !s.contains('e') && !s.contains('E') {
-                self.s.push_str(s);
-                self.s.push_str(".0");
-            } else {
-                self.s.push_str(s);
-            }
-        }
-        Ok(())
+        zmij_format::push_float_string(&mut self.s, v)
     }
     fn serialize_f64(self, v: f64) -> Result<()> {
-        if v.is_nan() {
-            self.s.push_str(".nan");
-        } else if v.is_infinite() {
-            if v.is_sign_positive() {
-                self.s.push_str(".inf");
-            } else {
-                self.s.push_str("-.inf");
-            }
-        } else {
-            let mut buf = zmij::Buffer::new();
-            let s = buf.format(v);
-            if !s.contains('.') && !s.contains('e') && !s.contains('E') {
-                self.s.push_str(s);
-                self.s.push_str(".0");
-            } else {
-                self.s.push_str(s);
-            }
-        }
-        Ok(())
+        zmij_format::push_float_string(&mut self.s, v)
     }
+
     fn serialize_char(self, v: char) -> Result<()> {
         let mut buf = [0u8; 4];
         self.serialize_str(v.encode_utf8(&mut buf))

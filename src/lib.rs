@@ -65,6 +65,7 @@ pub mod miette;
 
 #[cfg(feature = "figment")]
 pub mod figment;
+mod zmij_format;
 // ---------------- Serialization (public API) ----------------
 
 /// Serialize a value to a YAML `String`.
