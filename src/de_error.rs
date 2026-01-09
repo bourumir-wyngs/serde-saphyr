@@ -103,6 +103,8 @@ pub enum Error {
 }
 
 impl Error {
+    #[cold]
+    #[inline(never)]
     pub(crate) fn with_snippet(self, text: &str, crop_radius: usize) -> Self {
         // Avoid nesting snippet wrappers: keep the innermost error and rebuild the
         // wrapper with freshly rendered/cropped snippet output.
@@ -140,6 +142,8 @@ impl Error {
     ///
     /// Called by:
     /// - Scalar parsers and helpers throughout this module.
+    #[cold]
+    #[inline(never)]
     pub(crate) fn msg<S: Into<String>>(s: S) -> Self {
         Error::Message {
             msg: s.into(),
@@ -150,6 +154,8 @@ impl Error {
     /// Construct a `QuotingRequired` error with no known location.
     /// Called by:
     /// - Deserializer, when deserializing into string if no_schema set to true.
+    #[cold]
+    #[inline(never)]
     pub(crate) fn quoting_required(value: &str) -> Self {
         // Ensure the value really is like number or boolean (do not reflect back content
         // that may be used for attack)
@@ -176,6 +182,8 @@ impl Error {
     ///
     /// Called by:
     /// - Deserializer methods that validate the next event kind.
+    #[cold]
+    #[inline(never)]
     pub(crate) fn unexpected(what: &'static str) -> Self {
         Error::Unexpected {
             expected: what,
@@ -187,6 +195,8 @@ impl Error {
     ///
     /// Used by:
     /// - Lookahead and pull methods when `None` appears prematurely.
+    #[cold]
+    #[inline(never)]
     pub(crate) fn eof() -> Self {
         Error::Eof {
             location: Location::UNKNOWN,
@@ -197,6 +207,8 @@ impl Error {
     ///
     /// Called by:
     /// - Alias replay logic in the live event source.
+    #[cold]
+    #[inline(never)]
     pub(crate) fn unknown_anchor(id: usize) -> Self {
         Error::UnknownAnchor {
             id,
@@ -214,6 +226,8 @@ impl Error {
     ///
     /// Called by:
     /// - Most error paths once the event position becomes known.
+    #[cold]
+    #[inline(never)]
     pub(crate) fn with_location(mut self, set_location: Location) -> Self {
         match &mut self {
             Error::Message { location, .. }
@@ -346,6 +360,8 @@ impl Error {
     ///
     /// Called by:
     /// - The live events adapter when the underlying parser fails.
+    #[cold]
+    #[inline(never)]
     pub(crate) fn from_scan_error(err: ScanError) -> Self {
         let mark = err.marker();
         let location = Location::new(mark.line(), mark.col() + 1).with_span(crate::location::Span {
@@ -447,6 +463,8 @@ impl fmt::Display for Error {
     }
 }
 
+#[cold]
+#[inline(never)]
 fn render_error_with_snippets(inner: &Error, text: &str, crop_radius: usize) -> String {
     // Safety: snippet rendering is best-effort; if anything goes wrong we fall back
     // to the plain error message.
@@ -888,6 +906,8 @@ impl de::Error for Error {
 ///
 /// Returns:
 /// - `fmt::Result` as required by `Display`.
+#[cold]
+#[inline(never)]
 fn fmt_with_location(f: &mut fmt::Formatter<'_>, msg: &str, location: &Location) -> fmt::Result {
     if location != &Location::UNKNOWN {
         write!(
@@ -910,6 +930,8 @@ fn fmt_with_location(f: &mut fmt::Formatter<'_>, msg: &str, location: &Location)
 ///
 /// Called by:
 /// - The live events layer when enforcing budgets during/after parsing.
+#[cold]
+#[inline(never)]
 pub(crate) fn budget_error(breach: BudgetBreach) -> Error {
     Error::Budget {
         breach,

@@ -74,6 +74,8 @@ impl From<&str> for Error {
 }
 
 impl Error {
+    #[cold]
+    #[inline(never)]
     pub(crate) fn unexpected(message: &str) -> Self {
         Error::Unexpected {
             msg: message.to_string(),

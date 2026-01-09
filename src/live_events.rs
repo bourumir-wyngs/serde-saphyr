@@ -659,6 +659,7 @@ impl<'a> LiveEvents<'a> {
     ///
     /// Should be called after parsing completes to surface any delayed
     /// budget enforcement errors with the last known location.
+    #[cold]
     pub(crate) fn finish(&mut self) -> Result<(), Error> {
         self.io_error()?;
         if let Some(budget) = self.budget.take() {
@@ -673,6 +674,7 @@ impl<'a> LiveEvents<'a> {
         Ok(())
     }
 
+    #[cold]
     fn io_error(&self) -> Result<(), Error> {
         if let Some(error) = self.error.take() {
             Err(Error::IOError { cause: error })
