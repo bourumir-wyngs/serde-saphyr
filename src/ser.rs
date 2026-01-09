@@ -888,9 +888,18 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         } else {
             let mut buf = zmij::Buffer::new();
             let s = buf.format(v);
-            if !s.contains('.') && !s.contains('e') && !s.contains('E') {
-                self.out.write_str(s)?;
-                self.out.write_str(".0")?;
+            if !s.contains('.') {
+                if let Some(exp_pos) = s.find('e').or_else(|| s.find('E')) {
+                    // Has exponent but no decimal: insert .0 before the e
+                    // "4e-6" -> "4.0e-6"
+                    self.out.write_str(&s[..exp_pos])?;
+                    self.out.write_str(".0")?;
+                    self.out.write_str(&s[exp_pos..])?;
+                } else {
+                    // No decimal and no exponent: append .0
+                    self.out.write_str(s)?;
+                    self.out.write_str(".0")?;
+                }
             } else {
                 self.out.write_str(s)?;
             }
