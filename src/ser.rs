@@ -511,18 +511,46 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
                 self.newline()?;
                 continue;
             }
+
             let mut start = 0; // byte index
-            // (byte_index, utf8_len) of the last whitespace char seen.
-            // We need the utf8 length to advance `start` on a valid UTF-8 boundary.
-            let mut last_space: Option<(usize, usize)> = None;
+            // Candidate wrap breakpoint at the start of the last whitespace run seen so far.
+            //
+            // YAML folded block scalars (`>`) fold a single line break into a single space.
+            // If we break inside a run of N whitespace characters, we must ensure that:
+            //   emitted_trailing_ws + folded_space == original_run_ws
+            // and the next emitted line must NOT start with whitespace (to avoid the
+            // "more-indented" rule changing semantics).
+            //
+            // To achieve that, when breaking at a whitespace run of length N:
+            //   - emit N-1 whitespace chars at end of the previous line,
+            //   - consume the entire run,
+            //   - start the next line at the first non-whitespace char.
+            // For N==1, we emit none and just consume the single whitespace.
+            let mut last_ws_run: Option<(usize, usize, usize, usize)> = None;
+            // (run_start_byte, run_end_byte, last_ws_char_len, run_len_in_chars)
+            let mut in_ws_run = false;
+            let mut ws_run_start = 0usize;
+            let mut ws_run_end = 0usize;
+            let mut ws_run_last_len = 0usize;
+            let mut ws_run_len = 0usize;
             let mut col = 0usize; // column in chars
             for (_i, ch) in line.char_indices() {
                 // Track potential break positions.
                 if ch.is_whitespace() {
-                    // Mark the last whitespace we have seen so far.
-                    // Note: we only ever break at whitespace.
-                    let i = _i;
-                    last_space = Some((i, ch.len_utf8()));
+                    if !in_ws_run {
+                        in_ws_run = true;
+                        ws_run_start = _i;
+                        ws_run_len = 0;
+                    }
+                    ws_run_len += 1;
+                    ws_run_last_len = ch.len_utf8();
+                    ws_run_end = _i + ws_run_last_len;
+                } else {
+                    // Commit the completed whitespace run as a possible wrap candidate.
+                    if in_ws_run {
+                        last_ws_run = Some((ws_run_start, ws_run_end, ws_run_last_len, ws_run_len));
+                    }
+                    in_ws_run = false;
                 }
                 col += 1;
 
@@ -530,19 +558,50 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
                 // within the limit (e.g., a long token), do not hard-break: folded scalars
                 // would turn that inserted newline into a space when parsed.
                 if col > self.folded_wrap_col {
-                    if let Some((sp, space_len)) = last_space {
-                        let break_at = sp;
-                        // Emit [start, break_at)
+                    // Prefer breaking at the most recent completed whitespace run. If we are
+                    // currently inside a whitespace run, extend it forward to include the
+                    // entire run so the next emitted line never starts with whitespace.
+                    let mut candidate = last_ws_run;
+                    if in_ws_run {
+                        // Extend the current run to the full run end (including whitespace
+                        // chars we haven't iterated yet).
+                        let base_end = ws_run_end;
+                        let mut run_end = base_end;
+                        let mut run_len = ws_run_len;
+                        let mut last_ws_len = ws_run_last_len;
+                        for (_j, ch2) in line[base_end..].char_indices() {
+                            if !ch2.is_whitespace() {
+                                break;
+                            }
+                            run_len += 1;
+                            last_ws_len = ch2.len_utf8();
+                            run_end = base_end + _j + last_ws_len;
+                        }
+                        candidate = Some((ws_run_start, run_end, last_ws_len, run_len));
+                    }
+
+                    if let Some((run_start, run_end, last_ws_len, run_len)) = candidate
+                        && run_start >= start
+                    {
+                        // Emit content up to the whitespace run.
                         self.out.write_str(indent_str)?;
                         self.at_line_start = false;
-                        // Safety: break_at is on char boundary
-                        let slice = &line[start..break_at];
-                        self.out.write_str(slice)?;
+                        // Safety: run_start is on char boundary
+                        self.out.write_str(&line[start..run_start])?;
+
+                        // Emit N-1 whitespace chars at end-of-line (see comment above).
+                        if run_len > 1 {
+                            let ws_end = run_end - last_ws_len;
+                            self.out.write_str(&line[run_start..ws_end])?;
+                        }
                         self.newline()?;
-                        // Advance start: skip the whitespace we broke at.
-                        start = sp + space_len;
+
+                        // Advance start: skip the entire whitespace run.
+                        start = run_end;
                         // Reset trackers starting at new segment.
-                        last_space = None;
+                        last_ws_run = None;
+                        in_ws_run = false;
+                        ws_run_len = 0;
                         col = 0;
                     }
                 }

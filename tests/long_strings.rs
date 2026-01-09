@@ -133,3 +133,113 @@ fn yaml_long_strings_with_breaks() {
     let test: Foo = yaml::from_str(serialized.as_str()).expect("Unable to deserialize my struct!");
     assert_eq!(reference.long,test.long);
 }
+
+#[test]
+fn yaml_long_strings_with_double_breaks() {
+    let reference = Foo {
+        a: 32,
+        b: true,
+        short: "A".repeat(20),
+        long: "AB  CD".repeat(200)
+    };
+    let serialized = yaml::to_string(&reference).expect("Unable to serialize my struct!");
+    println!("{}", serialized);
+    let test: Foo = yaml::from_str(serialized.as_str()).expect("Unable to deserialize my struct!");
+    assert_eq!(reference.long,test.long);
+}
+
+#[test]
+fn yaml_long_strings_with_triple_breaks() {
+    let reference = Foo {
+        a: 32,
+        b: true,
+        short: "A".repeat(20),
+        long: "AB   CD".repeat(200)
+    };
+    let serialized = yaml::to_string(&reference).expect("Unable to serialize my struct!");
+    println!("{}", serialized);
+    let test: Foo = yaml::from_str(serialized.as_str()).expect("Unable to deserialize my struct!");
+    assert_eq!(reference.long,test.long);
+}
+
+#[test]
+fn yaml_long_strings_with_var_breaks() {
+    let reference = Foo {
+        a: 32,
+        b: true,
+        short: "A".repeat(20),
+        long: "Aaaaaaa Bbbbbbbb  Ccccccc   Dddddd Eeeeee".repeat(200)
+    };
+    let serialized = yaml::to_string(&reference).expect("Unable to serialize my struct!");
+    println!("{}", serialized);
+    let test: Foo = yaml::from_str(serialized.as_str()).expect("Unable to deserialize my struct!");
+    assert_eq!(reference.long,test.long);
+}
+
+#[test]
+fn folded_wrap_can_preserve_multi_space_runs_by_emitting_trailing_spaces() -> anyhow::Result<()> {
+    // When wrapping a folded block scalar (`>`), a single line break is folded into a single
+    // space on parse. To preserve runs of multiple spaces without starting the next YAML line
+    // with spaces (which can trigger YAML "more-indented" semantics), the serializer may emit
+    // (run_len - 1) spaces at end-of-line and consume the entire whitespace run.
+    let reference = Foo {
+        a: 32,
+        b: true,
+        short: "A".repeat(20),
+        long: "AAAAA  BBBBB".repeat(50),
+    };
+
+    let mut serialized = String::new();
+    yaml::to_fmt_writer_with_options(
+        &mut serialized,
+        &reference,
+        yaml::SerializerOptions {
+            prefer_block_scalars: true,
+            folded_wrap_chars: 10,
+            ..Default::default()
+        },
+    )?;
+
+    assert!(
+        serialized.contains("long: >"),
+        "Unexpected YAML (expected folded block scalar):\n{serialized}"
+    );
+
+    // Extract body lines of the folded scalar and verify:
+    // - none of them start with extra whitespace beyond indentation,
+    // - at least one ends with a trailing space (the "extra space before line break").
+    let mut lines = serialized.lines().peekable();
+    while let Some(line) = lines.next() {
+        if line.starts_with("long: >") {
+            break;
+        }
+    }
+
+    let mut saw_trailing_space = false;
+    while let Some(&next) = lines.peek() {
+        // Body lines are indented by two spaces for this struct.
+        if !next.starts_with("  ") {
+            break;
+        }
+        let body_line = lines.next().unwrap();
+        let content = body_line.strip_prefix("  ").unwrap();
+        if content.starts_with(char::is_whitespace) {
+            anyhow::bail!(
+                "Folded scalar body line started with whitespace beyond indentation: {body_line:?}\nYAML:\n{serialized}"
+            );
+        }
+        if content.ends_with(' ') {
+            saw_trailing_space = true;
+        }
+    }
+    assert!(
+        saw_trailing_space,
+        "Expected at least one wrapped folded-scalar line to end with a space. YAML:\n{serialized}"
+    );
+
+    let decoded: Foo = yaml::from_str(&serialized)?;
+    assert_eq!(decoded.long, reference.long);
+    Ok(())
+}
+
+
