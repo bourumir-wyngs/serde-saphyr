@@ -1,9 +1,11 @@
+/// Format as float string, make changes to be sure valid YAML float (zmij may render 4e-6 and not 4.0e-6)
+
 use std::fmt::Write;
 use zmij::Float;
 use num_traits::float::FloatCore;
 use crate::ser;
 
-/// Format as float string, make changes to be sure valid YAML float (zmij may render with no dot)
+/// Format as float string, make changes to be sure valid YAML float
 pub(crate) fn push_float_string<F: Float + FloatCore>(target: & mut String, f: F) -> ser::Result<()> {
     if f.is_nan() {
         target.push_str(".nan");
@@ -36,7 +38,7 @@ pub(crate) fn push_float_string<F: Float + FloatCore>(target: & mut String, f: F
     Ok(())
 }
 
-/// Format as float string, make changes to be sure valid YAML float (zmij may render with no dot)
+/// Format as float string, make changes to be sure valid YAML float
 pub(crate) fn write_float_string<F: Float + FloatCore, W: Write>(target: &mut W, f: F) -> ser::Result<()> {
     if f.is_nan() {
         target.write_str(".nan")?;
