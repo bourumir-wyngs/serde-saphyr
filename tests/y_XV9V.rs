@@ -13,14 +13,12 @@ struct Doc {
 }
 
 #[test]
-#[ignore]
-fn yaml_xv9v_empty_lines_and_chomping() {
-    let y = r#"Folding: "Empty line
-as a line feed"
-Chomping: |
-  Clipped empty lines
-
-"#;
+fn yaml_xv9v_empty_lines_and_chomping_suite_exactish() {
+    // Matches the YAML test-suite structure:
+    // - Folding is a double-quoted scalar with an empty line inside
+    // - Chomping is a literal block scalar
+    // - After the block scalar: a line containing a single space, then final newline
+    let y = "Folding:\n  \"Empty line\n\n  as a line feed\"\nChomping: |\n  Clipped empty lines\n \n";
 
     let d: Doc = serde_saphyr::from_str(y).expect("failed to parse XV9V");
     assert_eq!(d.folding, "Empty line\nas a line feed");
