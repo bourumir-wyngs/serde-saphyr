@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
-#[derive(Deserialize, Serialize, Debug, PartialEq)]
+#[derive(Deserialize, Debug, PartialEq)]
 struct CommentLikes {
     s1: Option<String>,
     s2: Option<String>,
