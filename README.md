@@ -50,7 +50,7 @@ As seen, serde-saphyr exceeds others by performance, even with budget check enab
 
 ## Testing
 
-The test suite currently includes 821 passing tests, most of them originating from the fully converted [yaml-test-suite](https://github.com/yaml/yaml-test-suite), with additional cases taken from the original serde-yaml tests. The remaining 6 failing corner cases (marked as ignored) have been reviewed, and their causes are well understood. To the best of our assessment, these failures stem from the saphyr parser. They represent extremely rare edge cases that are unlikely to appear in real-world use.
+The test suite currently includes over 800 passing tests, most of them originating from the fully converted [yaml-test-suite](https://github.com/yaml/yaml-test-suite), with additional cases taken from the original serde-yaml tests. The remaining 6 failing corner cases (marked as ignored) have been reviewed, and their causes are well understood. To the best of our assessment, these failures stem from the saphyr parser. They represent extremely rare edge cases that are unlikely to appear in real-world use.
 
 ## Notable features
 
@@ -59,9 +59,11 @@ The test suite currently includes 821 passing tests, most of them originating fr
 - **Declarative validation with optional [`validator`](https://crates.io/crates/validator) ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/validator_validate.rs))** or **[`garde`](https://crates.io/crates/garde)** ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/garde_validate.rs)).
 - **Optional [`miette`](https://crates.io/crates/miette)** ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/miette.rs)) integration for more advanced error reporting.
 - **serde_json::Value** is supported when parsing without target structure defined.
-- **robotic extensions** to support YAML dialect common in robotics (see below).
 - **[Serializer](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Serializer.html)** and **[Deserializer](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Deserializer.html)** are now public (due to how it's implemented, Deserializer is available in the closure only).
-
+- Serialized floats are official YAML floats, both [1.1](https://yaml.org/type/float.html) and [1.2](https://yaml.org/spec/1.2.2/), for example `3.0e+18` and not `3e+18` or `3e18`. Some parsers (such as PyYAML, go-yaml, and Psych) do not interpret `3e18` as a number.
+- **Precise error reporting with snippet rendering.
+- **robotic extensions** to support YAML dialect common in robotics (see below).
+ 
 ## Usage
 
 Parse YAML into a Rust structure with proper error handling. The crate name on crates.io is

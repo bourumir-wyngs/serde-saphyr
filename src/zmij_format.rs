@@ -19,18 +19,35 @@ pub(crate) fn push_float_string<F: Float + FloatCore>(target: & mut String, f: F
         let mut buf = zmij::Buffer::new();
         // Branches .is_nan and .is_infinite are already covered above
         let s = buf.format_finite(f);
-        if !s.as_bytes().contains(&b'.') {
-            if let Some(exp_pos) = s.find('e').or_else(|| s.find('E')) {
-                // Has exponent but no decimal: insert .0 before the e
+        target.reserve(s.len() + 3);
+        // YAML 1.1 float requires:
+        // - a decimal point in the mantissa (avoid integers being parsed as int)
+        // - a sign (+ or -) in the exponent (when exponent is present)
+        if let Some(exp_pos) = s.find('e').or_else(|| s.find('E')) {
+            // 1) Write mantissa, ensuring it has a decimal point.
+            if !s[..exp_pos].as_bytes().contains(&b'.') {
                 // "4e-6" -> "4.0e-6"
                 target.push_str(&s[..exp_pos]);
                 target.push_str(".0");
-                target.push_str(&s[exp_pos..]);
             } else {
-                // No decimal and no exponent: append .0
-                target.push_str(s);
-                target.push_str(".0");
+                target.push_str(&s[..exp_pos]);
             }
+
+            // 2) Write exponent marker.
+            target.push_str(&s[exp_pos..=exp_pos]);
+
+            // 3) Ensure exponent sign.
+            if let Some(after_e) = s.as_bytes().get(exp_pos + 1) {
+                if after_e != &b'+' && after_e != &b'-' {
+                    // "1e6" -> "1e+6"
+                    target.push('+');
+                }
+            }
+            target.push_str(&s[exp_pos + 1..]);
+        } else if !s.as_bytes().contains(&b'.') {
+            // No decimal and no exponent: append .0
+            target.push_str(s);
+            target.push_str(".0");
         } else {
             target.push_str(s);
         }
@@ -52,18 +69,34 @@ pub(crate) fn write_float_string<F: Float + FloatCore, W: Write>(target: &mut W,
         let mut buf = zmij::Buffer::new();
         // Branches .is_nan and .is_infinite are already covered above
         let s = buf.format_finite(f);
-        if !s.as_bytes().contains(&b'.') {
-            if let Some(exp_pos) = s.find('e').or_else(|| s.find('E')) {
-                // Has exponent but no decimal: insert .0 before the e
+        // YAML 1.1 float requires:
+        // - a decimal point in the mantissa (avoid integers being parsed as int)
+        // - a sign (+ or -) in the exponent (when exponent is present)
+        if let Some(exp_pos) = s.find('e').or_else(|| s.find('E')) {
+            // 1) Write mantissa, ensuring it has a decimal point.
+            if !s[..exp_pos].as_bytes().contains(&b'.') {
                 // "4e-6" -> "4.0e-6"
                 target.write_str(&s[..exp_pos])?;
                 target.write_str(".0")?;
-                target.write_str(&s[exp_pos..])?;
             } else {
-                // No decimal and no exponent: append .0
-                target.write_str(s)?;
-                target.write_str(".0")?;
+                target.write_str(&s[..exp_pos])?;
             }
+
+            // 2) Write exponent marker.
+            target.write_str(&s[exp_pos..=exp_pos])?;
+
+            // 3) Ensure exponent sign.
+            if let Some(after_e) = s.as_bytes().get(exp_pos + 1) {
+                if after_e != &b'+' && after_e != &b'-' {
+                    // "1e6" -> "1e+6"
+                    target.write_char('+')?;
+                }
+            }
+            target.write_str(&s[exp_pos + 1..])?;
+        } else if !s.as_bytes().contains(&b'.') {
+            // No decimal and no exponent: append .0
+            target.write_str(s)?;
+            target.write_str(".0")?;
         } else {
             target.write_str(s)?;
         }
