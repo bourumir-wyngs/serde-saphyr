@@ -138,7 +138,7 @@ fn test_multiline_array() {
     "#;
 
     let parsed: Result<Data, Error> = serde_saphyr::from_str(yaml_input);
-    assert!(parsed.is_err(), "Multiline array should yield an error.");
+    assert!(parsed.is_ok(), "Multiline array should be now ok.");
 
     let correct_yaml_input = r#"
         multiline_array: [
