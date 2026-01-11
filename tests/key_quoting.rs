@@ -58,15 +58,29 @@ mod tests {
         map.insert("42".to_string(), "value42".to_string());
         map.insert("-5".to_string(), "negative".to_string());
         map.insert("3.14".to_string(), "pi".to_string());
+        // Oversized numeric-looking keys that can exceed common integer/float parsing ranges.
+        let huge_int = "9".repeat(200);
+        let huge_float_exp = "1e99999999".to_string();
+        map.insert(huge_int.clone(), "huge_int".to_string());
+        map.insert(huge_float_exp.clone(), "huge_float_exp".to_string());
 
         let yaml = to_string(&map).expect("serialize HashMap with numeric string keys");
 
         // The keys should be quoted in the YAML output
-        for value in ["1", "2", "42", "-5", "3.14"] {
+        for value in [
+            "1",
+            "2",
+            "42",
+            "-5",
+            "3.14",
+            huge_int.as_str(),
+            huge_float_exp.as_str(),
+        ] {
             assert!(
                 yaml.contains(&format!("\"{value}\"")),
                 "Key '{}' should be quoted in YAML output, got:\n{}",
-                value, yaml
+                value,
+                yaml
             );
         }
         // Verify they round-trip correctly as strings
