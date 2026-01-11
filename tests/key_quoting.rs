@@ -47,4 +47,32 @@ mod tests {
 
         assert_eq!(parsed, h, "Comma key/value did not round-trip as expected");
     }
+
+    /// Ensures that string keys that look like numbers ("1", "2.42") are quoted
+    /// during serialization so they round-trip as strings, not numbers.
+    #[test]
+    fn numeric_string_keys_roundtrip() {
+        let mut map = HashMap::new();
+        map.insert("1".to_string(), "value1".to_string());
+        map.insert("2".to_string(), "value2".to_string());
+        map.insert("42".to_string(), "value42".to_string());
+        map.insert("-5".to_string(), "negative".to_string());
+        map.insert("3.14".to_string(), "pi".to_string());
+
+        let yaml = to_string(&map).expect("serialize HashMap with numeric string keys");
+
+        // The keys should be quoted in the YAML output
+        for value in ["1", "2", "42", "-5", "3.14"] {
+            assert!(
+                yaml.contains(&format!("\"{value}\"")),
+                "Key '{}' should be quoted in YAML output, got:\n{}",
+                value, yaml
+            );
+        }
+        // Verify they round-trip correctly as strings
+        let parsed: HashMap<String, String> =
+            from_str(&yaml).expect(&format!("deserialize [{}] back into HashMap", yaml));
+
+        assert_eq!(parsed, map);
+    }
 }
