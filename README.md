@@ -512,19 +512,7 @@ let v: RoboFloats = from_str_with_options(yaml, options).expect("parse robotics 
 Safety hardening with this feature enabled include (maximal expression depth, maximal number of digits, strict underscore placement and fraction parsing limits to precision-relevant digit).
 
 ### Unsupported features
-
-- Common Serde renames made to follow naming conventions (case changes, snake_case, kebab-case, r# stripping) are supported in snippets, as long as they do not introduce ambiguity. Arbitrary renames, flattening, aliases and other complex manipulations possible with serde are not. Parsing and validation will still work, but error messages for arbitrarily renamed fields only tell Rust path.
-- **Tabs in indentation** YAML disallows tabs for indentation, including indentation of block scalar by tab.
-- **Invalid indentation of the closing bracket.** The code like
-
-```yaml
-    key: [
-    ]
-```
-
-is not a valid YAML (the closing bracket is not indented enough). Some parsers allow this, saphyr-parser does not hence serde-saphyr does not either.
-
-For those who want to retain compatibility with serde-yaml, even where it might deviate from the standard, serde-yaml-bw can be better choice. This crate uses saphyr-parser for budget pre-check only when unsafe-libyaml later does the final parsing.
+Common Serde renames made to follow naming conventions (case changes, snake_case, kebab-case, r# stripping) are supported in snippets, as long as they do not introduce ambiguity. Arbitrary renames, flattening, aliases and other complex manipulations possible with serde are not. Parsing and validation will still work, but error messages for arbitrarily renamed fields only tell Rust path.
 
 ## Executable
 serde-saphyr comes with a simple executable (CLI) that can be used to check the budget of a given YAML file and also used as YAML validator printing YAML error line, column numbers and excerpt.
