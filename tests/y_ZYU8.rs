@@ -6,7 +6,6 @@
 // In YAML 1.2, a directive name is any non‑space, non‑line‑break sequence of characters
 // Serde-saphyr expects only alphabetic characters in a directive name, dot . triggers the error.
 // serde-saphyr does not support lots of directives anyway as saphyr-parser does not surface them.
-#[ignore]
 #[test]
 fn yaml_zyu8_directive_variant_yaml11_null_document() -> anyhow::Result<()> {
     let y = "%YAML1.1\n---\n";

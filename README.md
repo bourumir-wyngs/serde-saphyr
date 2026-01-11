@@ -10,8 +10,8 @@
 [![docs.rs](https://docs.rs/serde-saphyr/badge.svg)](https://docs.rs/serde-saphyr)
 [![Fuzz & Audit](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/ci.yml/badge.svg)](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/ci.yml)
 
-**serde-saphyr** is a strongly typed YAML deserializer built on
-[`saphyr-parser`](https://crates.io/crates/saphyr-parser). It aims to be **panic-free** on malformed input and to avoid `unsafe` code in library code. The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.”
+**serde-saphyr** is a strongly typed YAML deserializer built on the top of slightly modified
+[`saphyr-parser`](https://crates.io/crates/saphyr-parser). It aims to be **panic-free** on malformed input exclude `unsafe` code in library code. The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.”
 
 ### Why this approach?
 
@@ -50,7 +50,7 @@ As seen, serde-saphyr exceeds others by performance, even with budget check enab
 
 ## Testing
 
-The test suite currently includes over 800 passing tests, most of them originating from the fully converted [yaml-test-suite](https://github.com/yaml/yaml-test-suite), with additional cases taken from the original serde-yaml tests. The remaining 6 failing corner cases (marked as ignored) have been reviewed, and their causes are well understood. To the best of our assessment, these failures stem from the saphyr parser. They represent extremely rare edge cases that are unlikely to appear in real-world use.
+The test suite currently includes over 800 passing tests, including the fully converted [yaml-test-suite](https://github.com/yaml/yaml-test-suite), with *all* tests from there passing. To pass last few remaining cases, we needed to for saphyr-parser crate ([saphyr-parser-bw](https://crates.io/crates/saphyr-parser-bw). Some additional cases are taken from the original serde-yaml tests. 
 
 ## Notable features
 
