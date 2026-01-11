@@ -19,9 +19,21 @@ pub(crate) fn is_plain_safe(s: &str) -> bool {
         return false;
     }
     let bytes = s.as_bytes();
-    if bytes[0].is_ascii_whitespace()
+    let b0 = bytes[0];
+
+    // Check if it looks like a number, don't allow plain for this
+    if b0.is_ascii_digit() || matches!(b0, b'+' | b'-' | b'.') {
+        if parse_int_signed::<i64>(s, "i64", Location::UNKNOWN, true).is_ok() {
+            return false;
+        }
+        if parse_yaml12_float::<f64>(s, Location::UNKNOWN, SfTag::Float, false).is_ok() {
+            return false;
+        }
+    }
+
+    if b0.is_ascii_whitespace()
         || matches!(
-            bytes[0],
+            b0,
             b'-' | b'?'
                 | b':'
                 | b'['
