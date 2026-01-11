@@ -50,7 +50,7 @@ As seen, serde-saphyr exceeds others by performance, even with budget check enab
 
 ## Testing
 
-The test suite currently includes over 800 passing tests, including the fully converted [yaml-test-suite](https://github.com/yaml/yaml-test-suite), with *all* tests from there passing. To pass last few remaining cases, we needed to for saphyr-parser crate ([saphyr-parser-bw](https://crates.io/crates/saphyr-parser-bw). Some additional cases are taken from the original serde-yaml tests. 
+The test suite currently includes 832 passing tests, including the fully converted [yaml-test-suite](https://github.com/yaml/yaml-test-suite), with *ALL* tests from there passing with no exceptions. To pass last few remaining cases, we needed to for saphyr-parser crate ([saphyr-parser-bw](https://crates.io/crates/saphyr-parser-bw). Some additional cases are taken from the original serde-yaml tests. 
 
 ## Notable features
 
