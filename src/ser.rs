@@ -1199,6 +1199,9 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             self.out.write_str(":")?;
             self.pending_space_after_colon = true;
             self.at_line_start = false;
+            // Do not let any inline-after-dash hint leak into the variant's inner value.
+            // After `Variant:`, the next node is in value position and must choose its own layout.
+            self.pending_inline_map = false;
             // Ensure that if the value is another variant or a mapping/sequence,
             // it indents under this variant label rather than the parent map key.
             let prev_map_depth = self.current_map_depth.replace(base + 1);
@@ -1215,7 +1218,20 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         self.out.write_str(":")?;
         self.pending_space_after_colon = true;
         self.at_line_start = false;
-        value.serialize(&mut *self)
+        // Do not let SeqSer's "inline first key after dash" hint leak into the variant's inner value.
+        // Without this, a struct/map value can start as `Variant: a: 1`.
+        self.pending_inline_map = false;
+        // If this variant is inside a block sequence element (`- Variant:`), ensure the nested
+        // value indents under the variant label rather than aligning with the list indentation.
+        // SeqSer stores the dash's indentation depth in `after_dash_depth`.
+        if let Some(d) = self.after_dash_depth.take() {
+            let prev_map_depth = self.current_map_depth.replace(d + 1);
+            let res = value.serialize(&mut *self);
+            self.current_map_depth = prev_map_depth;
+            res
+        } else {
+            value.serialize(&mut *self)
+        }
     }
 
     // -------- Collections --------
@@ -1396,13 +1412,24 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             } else if was_inline_value {
                 // Map used as a value after "key: ". If emitting braces for empty maps,
                 // keep this mapping on the same line so that an empty map renders as "{}".
-                if !self.empty_as_braces {
-                    // Legacy behavior: move the mapping body to the next line.
+                //
+                // IMPORTANT: if the map is known to be non-empty (len > 0), we must NOT keep it
+                // inline (otherwise we can end up emitting the first entry as `key: a: 1`).
+                // When len is unknown, we keep the legacy behavior and let MapSer decide once the
+                // first key arrives.
+                let known_empty = matches!(_len, Some(0));
+                let known_non_empty = matches!(_len, Some(n) if n > 0);
+
+                if !self.empty_as_braces || known_non_empty {
+                    // Move the mapping body to the next line.
                     // If an anchor was emitted, we are already at the start of a new line.
                     self.pending_space_after_colon = false;
                     if !self.at_line_start {
                         self.newline()?;
                     }
+                } else if !known_empty {
+                    // len is unknown: keep it inline for now (so empty maps can still render as
+                    // `key: {}`), and let MapSer break the line when the first key arrives.
                 }
             }
             // Indentation rules:
@@ -1425,7 +1452,11 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             } else {
                 base
             };
-            let inline_value_start_flag = was_inline_value && self.empty_as_braces && !inline_first && !forced_newline;
+            let inline_value_start_flag = was_inline_value
+                && self.empty_as_braces
+                && _len.is_none()
+                && !inline_first
+                && !forced_newline;
             Ok(MapSer {
                 ser: self,
                 depth: depth_next,
@@ -1439,7 +1470,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     }
 
     fn serialize_struct(self, _name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
-        self.serialize_map(None)
+        self.serialize_map(Some(_len))
     }
 
     fn serialize_struct_variant(
