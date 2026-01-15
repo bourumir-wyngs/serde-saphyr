@@ -945,10 +945,10 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             // Otherwise, if we are starting a new node right after a dash, use that depth.
             let base = if was_map_value {
                 self.current_map_depth.unwrap_or(self.depth)
-            } else if self.at_line_start {
-                self.after_dash_depth.unwrap_or(self.depth)
             } else {
-                self.depth
+                // Use after_dash_depth when available (we're after a sequence dash),
+                // regardless of at_line_start (which is false after writing "- ").
+                self.after_dash_depth.unwrap_or(self.depth)
             };
             if self.at_line_start {
                 self.write_indent(base)?;
