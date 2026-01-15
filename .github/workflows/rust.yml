@@ -8,44 +8,32 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  CARGO_HOME: ${{ github.workspace }}/.cargo
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
-      # Optional: pin toolchain (recommended for stable caching).
-      # If you already have rust-toolchain.toml, you can remove this step.
+      # Pick toolchain BEFORE rust-cache (cache key includes rustc version).
       - name: Install Rust toolchain
         run: |
-          rustup update stable
+          rustup toolchain install stable --profile minimal
           rustup default stable
           rustc -V
           cargo -V
 
-      - name: Cache cargo registry + git
-        uses: actions/cache@v4
-        with:
-          path: |
-            .cargo/registry
-            .cargo/git
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
 
-      - name: Cache target
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-target-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-target-
+      # Prefetch once (for BOTH feature sets), then run offline to avoid a second network touch.
+      - name: Prefetch deps (both feature sets)
+        run: |
+          cargo fetch --locked
+          cargo fetch --locked --features garde,validator,miette,figment,robotics
 
-      - name: Run tests
-        run: cargo test --verbose
+      - name: Run tests (default)
+        run: cargo test --locked --offline --verbose
 
       - name: Run tests with robotics feature set
-        run: cargo test --features garde,validator,miette,figment,robotics
+        run: cargo test --locked --offline --features garde,validator,miette,figment,robotics
