@@ -84,8 +84,9 @@ fn from_reader_with_options_validate_runs_validator_validation_without_snippets(
     let yaml = "a: \"\"\n";
     let reader = std::io::Cursor::new(yaml.as_bytes());
 
-    let err = serde_saphyr::from_reader_with_options_validate::<_, Root>(reader, Default::default())
-        .expect_err("must fail validation");
+    let err =
+        serde_saphyr::from_reader_with_options_validate::<_, Root>(reader, Default::default())
+            .expect_err("must fail validation");
 
     assert!(matches!(err, Error::ValidatorError { .. }));
 
@@ -109,7 +110,8 @@ fn read_with_options_validate_validates_each_document_in_iterator() {
     let yaml = concat!("a: \"ok\"\n", "---\n", "a: \"\"\n",);
     let mut reader = std::io::Cursor::new(yaml.as_bytes());
 
-    let mut it = serde_saphyr::read_with_options_validate::<_, Root>(&mut reader, Default::default());
+    let mut it =
+        serde_saphyr::read_with_options_validate::<_, Root>(&mut reader, Default::default());
 
     let first = it
         .next()

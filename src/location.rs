@@ -26,6 +26,11 @@ impl Span {
     pub fn len(&self) -> usize {
         self.len as usize
     }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
 }
 
 /// Row/column location within the source YAML document (1-indexed).

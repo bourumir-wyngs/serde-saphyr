@@ -1,4 +1,4 @@
-use figment::{providers::Format, Figment};
+use figment::{Figment, providers::Format};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]

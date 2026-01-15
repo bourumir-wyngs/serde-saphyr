@@ -16,6 +16,14 @@ struct Node {
     unique: Option<RcAnchor<Node>>,   // an additional RcAnchor that may be unshared
 }
 
+#[derive(Clone, Serialize)]
+struct NodeArc {
+    name: String,
+    next: Option<ArcAnchor<NodeArc>>, // allow cycles/shared via ArcAnchor
+    prev: Option<ArcWeakAnchor<NodeArc>>, // demonstrate weak back-reference
+    unique: Option<ArcAnchor<NodeArc>>, // an additional ArcAnchor that may be unshared
+}
+
 #[test]
 fn rc_anchor_shared_in_sequence_has_repeated_anchor_and_values() {
     #[derive(Clone, Serialize)]
@@ -49,8 +57,8 @@ fn rc_anchor_shared_in_sequence_has_repeated_anchor_and_values() {
 #[test]
 fn arc_anchor_shared_in_map_has_repeated_anchor_and_values() {
     #[derive(Clone, Serialize)]
-    struct Wrap(ArcAnchor<Node>);
-    let shared = Arc::new(Node {
+    struct Wrap(ArcAnchor<NodeArc>);
+    let shared = Arc::new(NodeArc {
         name: "shared".into(),
         next: None,
         prev: None,
@@ -107,7 +115,7 @@ fn rc_weak_anchor_present_serializes_under_anchor() {
 
 #[test]
 fn arc_weak_anchor_present_serializes_under_anchor() {
-    let strong = Arc::new(Node {
+    let strong = Arc::new(NodeArc {
         name: "strong".into(),
         next: None,
         prev: None,

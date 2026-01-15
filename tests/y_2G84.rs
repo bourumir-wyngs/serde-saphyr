@@ -11,7 +11,7 @@ fn yaml_2g84_literal_modifiers_valid_cases_parse_to_empty_string() {
     let yaml = "--- |1-\n";
     let s: String = serde_saphyr::from_str(yaml).expect("failed to parse literal with modifiers");
     assert!(
-        s == "" || s == "\n",
+        s.is_empty() || s == "\n",
         "Expected empty or single newline for |1-, got {:?}",
         s
     );
@@ -23,7 +23,7 @@ fn yaml_2g84_literal_modifiers_valid_cases_parse_to_empty_string() {
     let s2: String =
         serde_saphyr::from_str(yaml_plus).expect("failed to parse literal with modifiers (+)");
     assert!(
-        s2 == "\n" || s2 == "",
+        s2 == "\n" || s2.is_empty(),
         "Expected at least one newline (or empty due to parser quirk) for |1+, got {:?}",
         s2
     );

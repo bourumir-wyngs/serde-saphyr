@@ -38,7 +38,7 @@ fn test_serde_saphyr_builtin_types() {
 
     // Deserialize
     let deserialized: BuiltInTypes =
-        from_str(&serialized).expect(&format!("Deserialization failed: {}", serialized));
+        from_str(&serialized).unwrap_or_else(|_| panic!("Deserialization failed: {}", serialized));
 
     // Verify entire struct equality
     assert_eq!(original, deserialized, "YAML: {serialized}");

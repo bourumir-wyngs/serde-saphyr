@@ -8,7 +8,7 @@ fn yaml_p76l_secondary_tag_handle() -> anyhow::Result<()> {
 !!int 1 - 3 # Interval, not integer
 "#;
     // Try parsing as string; if the directive/tag is unsupported by parser, this may fail.
-    let s: String = serde_saphyr::from_str(&y)?;
+    let s: String = serde_saphyr::from_str(y)?;
     assert_eq!(s, "1 - 3");
     Ok(())
 }

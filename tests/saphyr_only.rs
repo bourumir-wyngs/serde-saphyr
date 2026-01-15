@@ -5,8 +5,8 @@ use saphyr_parser::Parser;
 fn saphyr_parser_does_not_emit_misplaced_sequence_closing_event() {
     let yaml = "---\n[ a, b, c ] ]\n";
 
-    let mut parser = Parser::new_from_str(yaml);
-    while let Some(next) = parser.next() {
+    let parser = Parser::new_from_str(yaml);
+    for next in parser {
         println!("{:?}", next);
         if next.is_err() {
             break;
@@ -20,8 +20,8 @@ fn saphyr_parser_does_not_emit_misplaced_sequence_closing_event() {
 fn bs4k_comment_between_plain_scalar_lines_should_fail() {
     let yaml = "word1  # comment\nword2\n";
 
-    let mut parser = Parser::new_from_str(yaml);
-    while let Some(next) = parser.next() {
+    let parser = Parser::new_from_str(yaml);
+    for next in parser {
         println!("{:?}", next);
         if next.is_err() {
             break;

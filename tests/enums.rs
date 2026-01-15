@@ -1,5 +1,4 @@
 use serde::Deserialize;
-use serde_saphyr;
 
 #[derive(Debug, Deserialize, PartialEq)]
 enum Color {

@@ -1,3 +1,5 @@
+#![allow(clippy::upper_case_acronyms)]
+
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -48,14 +50,11 @@ fn test() {
     let s = serde_saphyr::to_string(&ep).unwrap();
 
     // Round trip: deserialize back from string and assert values
-    let ep2: Listener = serde_saphyr::from_str(&s).unwrap();
+    let ep2: Listener = serde_saphyr::from_str(s.as_str()).unwrap();
 
     // Assert endpoints
     assert_eq!(ep2.endpoint.len(), 1);
     let e0 = &ep2.endpoint[0];
-    // Read and assert id and tag fields to avoid unused warnings
-    assert!(e0.id.is_none());
-    assert!(e0.tag.is_none());
     assert!(e0.id.is_none());
     assert!(e0.tag.is_none());
 }

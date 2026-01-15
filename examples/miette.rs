@@ -9,11 +9,8 @@ fn main() {
     //   cargo run --example miette --features miette
     let yaml = "definitely\n";
 
-    let err = serde_saphyr::from_str_with_options::<bool>(
-        yaml,
-        no_snippet.clone(),
-    )
-    .expect_err("bool parse error expected");
+    let err = serde_saphyr::from_str_with_options::<bool>(yaml, no_snippet.clone())
+        .expect_err("bool parse error expected");
     let report = serde_saphyr::miette::to_miette_report(&err, yaml, "config.yaml");
 
     // `Debug` formatting uses miette's graphical reporter.
@@ -23,8 +20,8 @@ fn main() {
     // cargo run --example miette --features "garde miette"
     #[cfg(feature = "garde")]
     {
-        use serde::Deserialize;
         use garde::Validate;
+        use serde::Deserialize;
 
         #[derive(Debug, Deserialize, Validate)]
         #[allow(dead_code)]
@@ -47,11 +44,8 @@ secondString: *A
 "#;
 
         eprintln!("Garde validation:");
-        let err = serde_saphyr::from_str_with_options_valid::<Cfg>(
-            yaml,
-            no_snippet.clone(),
-        )
-        .expect_err("validation error expected");
+        let err = serde_saphyr::from_str_with_options_valid::<Cfg>(yaml, no_snippet.clone())
+            .expect_err("validation error expected");
         let report = serde_saphyr::miette::to_miette_report(&err, yaml, "config.yaml");
         eprintln!("{report:?}");
     }
@@ -83,11 +77,8 @@ secondString: *A
 "#;
 
         eprintln!("Validator validation:");
-        let err = serde_saphyr::from_str_with_options_validate::<Cfg>(
-            yaml,
-            no_snippet,
-        )
-        .expect_err("validation error expected");
+        let err = serde_saphyr::from_str_with_options_validate::<Cfg>(yaml, no_snippet)
+            .expect_err("validation error expected");
         let report = serde_saphyr::miette::to_miette_report(&err, yaml, "config.yaml");
         eprintln!("{report:?}");
     }

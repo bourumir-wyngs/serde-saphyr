@@ -143,6 +143,6 @@ fn serialize_robot_moves() {
     ];
     let yaml = serde_saphyr::to_string(&robot_moves).unwrap();
     let deserialized_robot_moves: Vec<Move> = serde_saphyr::from_str(&yaml)
-        .expect(&format!("Failed to deserialize robot moves, yaml:\n{yaml}"));
+        .unwrap_or_else(|_| panic!("Failed to deserialize robot moves, yaml:\n{yaml}"));
     assert_eq!(deserialized_robot_moves, robot_moves);
 }

@@ -26,7 +26,7 @@ pub(crate) fn parse_yaml11_bool(s: &str) -> Result<bool, String> {
     {
         Ok(false)
     } else {
-        Err(format!("invalid YAML 1.1 bool: `{}`", s)) 
+        Err(format!("invalid YAML 1.1 bool: `{}`", s))
     }
 }
 

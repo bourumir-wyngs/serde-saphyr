@@ -58,7 +58,7 @@ fn flowseq_strings_are_quoted_when_needed() -> anyhow::Result<()> {
 
     assert_eq!(yaml, serialized, "Unexpected YAML output: {yaml}");
 
-    let deserialized: Vec<String> = serde_saphyr::from_str(&serialized)?;
+    let deserialized: Vec<String> = serde_saphyr::from_str(serialized)?;
     assert_eq!(samples, deserialized);
 
     Ok(())

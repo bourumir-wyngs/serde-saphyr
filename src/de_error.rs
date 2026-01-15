@@ -5,10 +5,10 @@ use crate::location::Locations;
 use crate::parse_scalars::{
     parse_int_signed, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish,
 };
-#[cfg(any(feature = "garde", feature = "validator"))]
-use crate::path_map::{PathKey, PathMap, format_path_with_resolved_leaf};
 #[cfg(feature = "garde")]
 use crate::path_map::path_key_from_garde;
+#[cfg(any(feature = "garde", feature = "validator"))]
+use crate::path_map::{PathKey, PathMap, format_path_with_resolved_leaf};
 use crate::tags::SfTag;
 use annotate_snippets::Level;
 use saphyr_parser::{ScalarStyle, ScanError};
@@ -125,9 +125,7 @@ impl Error {
     /// Provide "no snippet" version for cases when snippet rendering is not  desired.
     pub fn without_snippet(&self) -> &Self {
         match self {
-            Error::WithSnippet {error, .. } => {
-                error
-            }
+            Error::WithSnippet { error, .. } => error,
             other => other,
         }
     }
@@ -291,10 +289,7 @@ impl Error {
             Error::IOError { cause: _ } => None,
             Error::WithSnippet { error, .. } => error.location(),
             #[cfg(feature = "garde")]
-            Error::ValidationError {
-                locations,
-                ..
-            } => locations
+            Error::ValidationError { locations, .. } => locations
                 .map
                 .values()
                 .copied()
@@ -302,10 +297,7 @@ impl Error {
             #[cfg(feature = "garde")]
             Error::ValidationErrors { errors } => errors.iter().find_map(|e| e.location()),
             #[cfg(feature = "validator")]
-            Error::ValidatorError {
-                locations,
-                ..
-            } => locations
+            Error::ValidatorError { locations, .. } => locations
                 .map
                 .values()
                 .copied()
@@ -318,9 +310,10 @@ impl Error {
     /// Return a pair of locations associated with this error.
     ///
     /// - For syntax and other errors that carry a single [`Location`], this returns two
-    /// identical locations.
+    ///   identical locations.
     /// - For validation errors (when the `garde` / `validator` feature is enabled), this returns
     ///   the `(reference_location, defined_location)` pair for the *first* validation entry.
+    ///
     ///   These two locations may differ when YAML anchors/aliases are involved.
     /// - Returns `None` when no meaningful location information is available.
     pub fn locations(&self) -> Option<Locations> {
@@ -332,19 +325,16 @@ impl Error {
             | Error::ContainerEndMismatch { location, .. }
             | Error::UnknownAnchor { location, .. }
             | Error::QuotingRequired { location, .. }
-            | Error::Budget { location, .. } => {
-                Locations::same(&location)
-            }
+            | Error::Budget { location, .. } => Locations::same(location),
             Error::IOError { .. } => None,
             Error::WithSnippet { error, .. } => error.locations(),
             #[cfg(feature = "garde")]
-            Error::ValidationError { report, locations } => report
-                .iter()
-                .next()
-                .and_then(|(path, _)| {
+            Error::ValidationError { report, locations } => {
+                report.iter().next().and_then(|(path, _)| {
                     let key = path_key_from_garde(path);
                     locations.search(&key).map(|(locs, _)| locs)
-                }),
+                })
+            }
             #[cfg(feature = "garde")]
             Error::ValidationErrors { errors } => errors.first().and_then(Error::locations),
             #[cfg(feature = "validator")]
@@ -364,10 +354,11 @@ impl Error {
     #[inline(never)]
     pub(crate) fn from_scan_error(err: ScanError) -> Self {
         let mark = err.marker();
-        let location = Location::new(mark.line(), mark.col() + 1).with_span(crate::location::Span {
-            offset: mark.index(),
-            len: 1,
-        });
+        let location =
+            Location::new(mark.line(), mark.col() + 1).with_span(crate::location::Span {
+                offset: mark.index(),
+                len: 1,
+            });
         Error::Message {
             msg: err.info().to_owned(),
             location,
@@ -417,10 +408,7 @@ impl fmt::Display for Error {
             Error::IOError { cause } => write!(f, "IO error: {}", cause),
 
             #[cfg(feature = "garde")]
-            Error::ValidationError {
-                report,
-                locations,
-            } => {
+            Error::ValidationError { report, locations } => {
                 // No input text available here, so we fall back to a location-suffixed
                 // message format (snippets are only rendered via `Error::WithSnippet`).
                 fmt_validation_error_plain(f, report, locations)
@@ -441,10 +429,9 @@ impl fmt::Display for Error {
             }
 
             #[cfg(feature = "validator")]
-            Error::ValidatorError {
-                errors,
-                locations,
-            } => fmt_validator_error_plain(f, errors, locations),
+            Error::ValidatorError { errors, locations } => {
+                fmt_validator_error_plain(f, errors, locations)
+            }
 
             #[cfg(feature = "validator")]
             Error::ValidatorErrors { errors } => {
@@ -480,8 +467,7 @@ fn render_error_with_snippets(inner: &Error, text: &str, crop_radius: usize) -> 
         // the BOM-stripped view. Strip it here as well to keep caret positions aligned.
         let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
 
-        if let Error::ValidationError { report, locations } = inner
-        {
+        if let Error::ValidationError { report, locations } = inner {
             struct ValidationSnippetDisplay<'a> {
                 report: &'a garde::Report,
                 locations: &'a PathMap,
@@ -534,11 +520,7 @@ fn render_error_with_snippets(inner: &Error, text: &str, crop_radius: usize) -> 
         // Normalize the snippet text to match the coordinate system used by parsing.
         let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
 
-        if let Error::ValidatorError {
-            errors,
-            locations,
-        } = inner
-        {
+        if let Error::ValidatorError { errors, locations } = inner {
             struct ValidatorSnippetDisplay<'a> {
                 errors: &'a ValidationErrors,
                 locations: &'a PathMap,
@@ -638,10 +620,9 @@ fn fmt_validation_error_plain(
             .leaf_string()
             .unwrap_or_else(|| "<root>".to_string());
 
-        let (locs, resolved_leaf) =
-            locations
-                .search(&path_key)
-                .unwrap_or((Locations::UNKNOWN, original_leaf));
+        let (locs, resolved_leaf) = locations
+            .search(&path_key)
+            .unwrap_or((Locations::UNKNOWN, original_leaf));
 
         let loc = if locs.reference_location != Location::UNKNOWN {
             locs.reference_location
@@ -726,8 +707,7 @@ fn fmt_validation_error_with_snippets(
                 writeln!(
                     f,
                     "  | This value comes indirectly from the anchor at line {} column {}:",
-                    d.line,
-                    d.column
+                    d.line, d.column
                 )?;
                 crate::de_snipped::fmt_snippet_window_or_fallback(
                     f,
@@ -962,7 +942,7 @@ mod tests {
     #[test]
     fn locations_for_io_error_is_unknown() {
         let err = Error::IOError {
-            cause: std::io::Error::new(std::io::ErrorKind::Other, "x"),
+            cause: std::io::Error::other("x"),
         };
         assert_eq!(err.locations(), None);
     }

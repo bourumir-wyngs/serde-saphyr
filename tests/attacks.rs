@@ -121,7 +121,7 @@ fn baseline_valid_config_parses() {
 }
 
 /// 1) Custom execution-capable tags (e.g., Python/Ruby) must be rejected.
-/// Here we attempt to feed `!!python/object/apply:os.system` into `user`.
+///    Here we attempt to feed `!!python/object/apply:os.system` into `user`.
 #[test]
 fn rejects_custom_exec_tag_on_user() {
     let yaml = r#"
@@ -156,7 +156,7 @@ user: !include "/etc/passwd"
 }
 
 /// 3) Self-referential alias (recursive anchor) should error instead of recursing indefinitely.
-/// This is a safe, tiny "billion-laughs"-style check that does not allocate huge memory.
+///    This is a safe, tiny "billion-laughs"-style check that does not allocate huge memory.
 #[test]
 fn rejects_self_referential_alias_in_sequence() {
     // Note: we use the "Loose" struct to keep focus on alias recursion rather than unknown fields.
@@ -325,7 +325,7 @@ user: []
 }
 
 /// 10) Merge-key injection (`<<`) must not silently introduce unknown fields in strict mode.
-/// This test passes whether the loader expands YAML merges or treats `<<` as a literal key:
+///     This test passes whether the loader expands YAML merges or treats `<<` as a literal key:
 /// - If merges are supported: `extra` becomes a real top-level key -> denied by `deny_unknown_fields`.
 /// - If not: `<<` itself is an unknown key -> also denied by `deny_unknown_fields`.
 #[test]
@@ -348,7 +348,7 @@ user: []
 }
 
 /// 11) Control: safe anchor reuse for repeated objects should still work and remain small.
-/// This demonstrates legitimate anchors are fine (not an attack), and keeps expansion bounded.
+///     This demonstrates legitimate anchors are fine (not an attack), and keeps expansion bounded.
 #[test]
 fn alias_reuse_for_repeated_users_is_ok() {
     let yaml = r#"

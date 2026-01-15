@@ -10,6 +10,6 @@ fn yaml_p94k_multi_line_comments() {
 
 
 "#;
-    let map: BTreeMap<String, String> = serde_saphyr::from_str(&y).expect("failed to parse P94K");
+    let map: BTreeMap<String, String> = serde_saphyr::from_str(y).expect("failed to parse P94K");
     assert_eq!(map.get("key").map(String::as_str), Some("value"));
 }

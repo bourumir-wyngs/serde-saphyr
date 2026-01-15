@@ -1,5 +1,3 @@
-use serde_saphyr;
-
 #[test]
 fn yaml11_truthy_boolean_literals() {
     let cases = ["true", "True", "TRUE", "yes", "Yes", "Y", "on", "ON"];

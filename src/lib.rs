@@ -41,8 +41,8 @@ pub mod path_map;
 
 pub mod ser_error;
 
-pub use ser::YamlSerializer as Serializer;
 pub use de::YamlDeserializer as Deserializer;
+pub use ser::YamlSerializer as Serializer;
 
 pub use de::{
     with_deserializer_from_reader, with_deserializer_from_reader_with_options,
@@ -107,7 +107,10 @@ pub fn to_string<T: serde::Serialize>(value: &T) -> std::result::Result<String, 
 /// let s = serde_saphyr::to_string_with_options(&Foo { a: 1, b: true }, options).unwrap();
 /// assert!(s.contains("a: 1"));
 /// ```
-pub fn to_string_with_options<T: serde::Serialize>(value: &T, options: SerializerOptions) -> std::result::Result<String, crate::ser::Error> {
+pub fn to_string_with_options<T: serde::Serialize>(
+    value: &T,
+    options: SerializerOptions,
+) -> std::result::Result<String, crate::ser::Error> {
     let mut out = String::new();
     to_fmt_writer_with_options(&mut out, value, options)?;
     Ok(out)
@@ -837,7 +840,10 @@ pub fn from_multiple_validate<T: DeserializeOwned + ValidatorValidate>(
 /// The error message will contain a snippet with exact location information, and if the
 /// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
 #[cfg(feature = "validator")]
-pub fn from_multiple_with_options_validate<T>(input: &str, options: Options) -> Result<Vec<T>, Error>
+pub fn from_multiple_with_options_validate<T>(
+    input: &str,
+    options: Options,
+) -> Result<Vec<T>, Error>
 where
     T: DeserializeOwned + ValidatorValidate,
 {
@@ -916,7 +922,9 @@ where
 /// The error message will contain a snippet with exact location information, and if the
 /// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
 #[cfg(feature = "validator")]
-pub fn from_slice_validate<T: DeserializeOwned + ValidatorValidate>(bytes: &[u8]) -> Result<T, Error> {
+pub fn from_slice_validate<T: DeserializeOwned + ValidatorValidate>(
+    bytes: &[u8],
+) -> Result<T, Error> {
     from_slice_with_options_validate(bytes, Options::default())
 }
 
@@ -1777,7 +1785,10 @@ where
                     }
                     Ok(Some(_)) => {
                         let res = crate::anchor_store::with_document_scope(|| {
-                            T::deserialize(crate::de::YamlDeserializer::new(&mut self.src, self.cfg))
+                            T::deserialize(crate::de::YamlDeserializer::new(
+                                &mut self.src,
+                                self.cfg,
+                            ))
                         });
                         return Some(res);
                     }

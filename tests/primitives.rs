@@ -95,8 +95,8 @@ f64_val: 2.718281828459045
         u64_val: 6400000000,
         u128_val: 128000000000000000000,
         usize_val: 123456,
-        f32_val: 3.1415927,
-        f64_val: 2.718281828459045,
+        f32_val: std::f32::consts::PI,
+        f64_val: std::f64::consts::E,
     };
 
     assert_eq!(parsed, expected);

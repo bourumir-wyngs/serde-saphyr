@@ -138,7 +138,10 @@ fn test_multiline_array() {
     "#;
 
     let parsed: Result<Data, Error> = serde_saphyr::from_str(yaml_input);
-    assert!(parsed.is_ok(), "Multiline array with offset ] should now be ok.");
+    assert!(
+        parsed.is_ok(),
+        "Multiline array with offset ] should now be ok."
+    );
 
     let correct_yaml_input = r#"
         multiline_array: [

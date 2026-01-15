@@ -1,6 +1,6 @@
+use serde::Deserialize;
 use serde_saphyr::from_str;
 use serde_saphyr::{Error, Options};
-use serde::Deserialize;
 
 fn unwrap_snippet(err: &Error) -> &Error {
     err.without_snippet()
@@ -8,15 +8,15 @@ fn unwrap_snippet(err: &Error) -> &Error {
 
 fn expect_location(err: &Error, line: u64, column: u64) {
     if let Some(loc) = err.location() {
-        assert!(
-            loc.column() == column && loc.line() == line,
+        assert_eq!(
+            (loc.line(), loc.column()),
+            (line, column),
             "Invalid location, expected line {line} column {column} reported {r_line} {r_column}",
             r_line = loc.line(),
             r_column = loc.column()
         );
-        assert_eq!(loc.line(), line);
     } else {
-        assert!(false, "Location was not provided");
+        panic!("Location was not provided");
     }
 }
 
@@ -29,7 +29,7 @@ fn expect_span_offset(err: &Error, offset: usize) {
             reported = loc.span().offset()
         );
     } else {
-        assert!(false, "Location was not provided");
+        panic!("Location was not provided");
     }
 }
 
@@ -182,8 +182,10 @@ fn unexpected_mapping_on_second_line_with_indent() {
 fn error_with_snippet_renders_diagnostic_and_preserves_message() {
     let yaml = "*missing";
     // Render a plain error message (snippet disabled).
-    let mut opts = Options::default();
-    opts.with_snippet = false;
+    let opts = Options {
+        with_snippet: false,
+        ..Default::default()
+    };
     let err_plain = serde_saphyr::from_str_with_options::<String>(yaml, opts)
         .expect_err("unknown anchor should error");
     let plain = err_plain.to_string();
@@ -218,8 +220,10 @@ fn with_snippet_enabled_by_default_in_from_str() {
 fn with_snippet_can_be_disabled_in_options() {
     let yaml = "*missing";
 
-    let mut opts = Options::default();
-    opts.with_snippet = false;
+    let opts = Options {
+        with_snippet: false,
+        ..Default::default()
+    };
 
     let err = serde_saphyr::from_str_with_options::<String>(yaml, opts)
         .expect_err("unknown anchor should error");
@@ -239,9 +243,11 @@ fn with_snippet_can_be_disabled_in_options() {
 fn crop_radius_zero_disables_snippet_wrapping() {
     let yaml = "*missing";
 
-    let mut opts = Options::default();
     // Even when with_snippet is true, a radius of 0 means "no snippet".
-    opts.crop_radius = 0;
+    let opts = Options {
+        crop_radius: 0,
+        ..Default::default()
+    };
 
     let err = serde_saphyr::from_str_with_options::<String>(yaml, opts)
         .expect_err("unknown anchor should error");

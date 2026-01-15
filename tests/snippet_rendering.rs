@@ -153,8 +153,10 @@ fn snippet_crops_very_long_lines_around_error_column() {
     after_2: "!@#$%^&*()_++_)(*&^%$#@"
 "#;
 
-    let mut opts = Options::default();
-    opts.crop_radius = 10;
+    let opts = Options {
+        crop_radius: 10,
+        ..Default::default()
+    };
 
     let err = from_str_with_options::<Doc>(yaml, opts).expect_err("unknown anchor should error");
     let rendered = err.to_string();

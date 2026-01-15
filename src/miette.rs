@@ -11,10 +11,10 @@ use crate::Error;
 use crate::Location;
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::location::Locations;
-#[cfg(any(feature = "garde", feature = "validator"))]
-use crate::path_map::{PathKey, PathMap, format_path_with_resolved_leaf};
 #[cfg(feature = "garde")]
 use crate::path_map::path_key_from_garde;
+#[cfg(any(feature = "garde", feature = "validator"))]
+use crate::path_map::{PathKey, PathMap, format_path_with_resolved_leaf};
 
 #[cfg(feature = "validator")]
 use validator::{ValidationErrors, ValidationErrorsKind};
@@ -78,19 +78,14 @@ impl Diagnostic for ErrorDiagnostic {
         if self.related.is_empty() {
             return None;
         }
-        Some(Box::new(
-            self.related.iter().map(|d| d as &dyn Diagnostic),
-        ))
+        Some(Box::new(self.related.iter().map(|d| d as &dyn Diagnostic)))
     }
 }
 
 fn build_diagnostic(err: &Error, src: Arc<NamedSource<String>>) -> ErrorDiagnostic {
     match err {
         #[cfg(feature = "garde")]
-        Error::ValidationError {
-            report,
-            locations,
-        } => {
+        Error::ValidationError { report, locations } => {
             let mut related = Vec::new();
             for (path, entry) in report.iter() {
                 let path_key = path_key_from_garde(path);
@@ -133,19 +128,13 @@ fn build_diagnostic(err: &Error, src: Arc<NamedSource<String>>) -> ErrorDiagnost
         }
 
         #[cfg(feature = "validator")]
-        Error::ValidatorError {
-            errors,
-            locations,
-        } => {
+        Error::ValidatorError { errors, locations } => {
             let entries = collect_validator_entries(errors);
             let mut related = Vec::new();
 
             for (path, entry) in entries {
                 related.push(build_validation_entry_diagnostic(
-                    &src,
-                    &path,
-                    &entry,
-                    locations,
+                    &src, &path, &entry, locations,
                 ));
             }
 
@@ -258,7 +247,10 @@ fn build_validation_labels(
     // Secondary label: definition site when it is distinct and known.
     if def_loc != Location::UNKNOWN && def_loc != ref_loc {
         if let Some(span) = to_source_span(src, &def_loc) {
-            labels.push(LabeledSpan::new_with_span(Some("defined here".to_owned()), span));
+            labels.push(LabeledSpan::new_with_span(
+                Some("defined here".to_owned()),
+                span,
+            ));
         }
     }
 
@@ -352,7 +344,6 @@ fn message_without_location(err: &Error) -> String {
     }
 }
 
-
 #[cfg(all(test, feature = "miette"))]
 mod tests {
     use super::*;
@@ -378,7 +369,10 @@ mod tests {
         let diag = build_diagnostic(&err, Arc::clone(&src));
         let labels: Vec<_> = diag.labels().unwrap().collect();
         assert_eq!(labels.len(), 1);
-        assert_eq!(labels[0].inner().offset(), err.location().unwrap().span().offset());
+        assert_eq!(
+            labels[0].inner().offset(),
+            err.location().unwrap().span().offset()
+        );
     }
 
     #[cfg(feature = "validator")]
@@ -436,10 +430,7 @@ mod tests {
             },
         );
 
-        let err = Error::ValidatorError {
-            errors,
-            locations,
-        };
+        let err = Error::ValidatorError { errors, locations };
 
         let diag = build_diagnostic(&err, Arc::clone(&src));
         assert_eq!(diag.message, "validation failed");

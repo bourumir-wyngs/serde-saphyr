@@ -59,8 +59,10 @@ target:
   <<: [*B1, *B2]
 "#;
 
-    let mut options = Options::default();
-    options.duplicate_keys = DuplicateKeyPolicy::FirstWins;
+    let options = Options {
+        duplicate_keys: DuplicateKeyPolicy::FirstWins,
+        ..Default::default()
+    };
 
     let doc: MergeDoc<BTreeMap<String, i32>> =
         from_str_with_options(yaml, options).expect("merge must honor FirstWins");
@@ -77,8 +79,10 @@ target:
   <<: [*B1, *B2]
 "#;
 
-    let mut options = Options::default();
-    options.duplicate_keys = DuplicateKeyPolicy::LastWins;
+    let options = Options {
+        duplicate_keys: DuplicateKeyPolicy::LastWins,
+        ..Default::default()
+    };
 
     let doc: MergeDoc<BTreeMap<String, i32>> =
         from_str_with_options(yaml, options).expect("merge must honor LastWins");
@@ -120,8 +124,10 @@ target:
   <<: *B
 "#;
 
-    let mut options = Options::default();
-    options.duplicate_keys = DuplicateKeyPolicy::FirstWins;
+    let options = Options {
+        duplicate_keys: DuplicateKeyPolicy::FirstWins,
+        ..Default::default()
+    };
 
     let doc: MergeDoc<BTreeMap<String, i32>> =
         from_str_with_options(yaml, options).expect("explicit fields must win");
@@ -142,8 +148,10 @@ target:
   <<: *B3
 "#;
 
-    let mut options = Options::default();
-    options.duplicate_keys = DuplicateKeyPolicy::FirstWins;
+    let options = Options {
+        duplicate_keys: DuplicateKeyPolicy::FirstWins,
+        ..Default::default()
+    };
 
     let doc: MergeDoc<BTreeMap<String, i32>> =
         from_str_with_options(yaml, options).expect("merges must expand");
@@ -160,8 +168,10 @@ target:
   <<: [ { shared: 1, first: 10 }, { shared: 2, second: 20 } ]
 "#;
 
-    let mut options = Options::default();
-    options.duplicate_keys = DuplicateKeyPolicy::FirstWins;
+    let options = Options {
+        duplicate_keys: DuplicateKeyPolicy::FirstWins,
+        ..Default::default()
+    };
 
     let doc: MergeDoc<BTreeMap<String, i32>> =
         from_str_with_options(yaml, options).expect("sequence merges must expand");

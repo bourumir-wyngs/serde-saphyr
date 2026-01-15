@@ -50,7 +50,7 @@ fn yaml_pw8x_anchors_on_empty_scalars() {
 "#;
 
     // First, parse the outer test-suite wrapper.
-    let cases: Vec<CaseEnvelope> = serde_saphyr::from_str(&yaml)
+    let cases: Vec<CaseEnvelope> = serde_saphyr::from_str(yaml)
         .unwrap_or_else(|e| panic!("failed to parse PW8X wrapper: {e}"));
     assert_eq!(cases.len(), 1, "expected exactly one case in the wrapper");
 

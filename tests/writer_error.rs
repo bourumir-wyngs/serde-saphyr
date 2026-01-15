@@ -12,10 +12,10 @@ struct AlwaysErrorWriter;
 
 impl Write for AlwaysErrorWriter {
     fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
-        Err(io::Error::new(io::ErrorKind::Other, "boom from writer"))
+        Err(io::Error::other("boom from writer"))
     }
     fn flush(&mut self) -> io::Result<()> {
-        Err(io::Error::new(io::ErrorKind::Other, "flush boom"))
+        Err(io::Error::other("flush boom"))
     }
 }
 

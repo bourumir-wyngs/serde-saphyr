@@ -77,7 +77,7 @@ a: abc
 b: null
 c: ghi
 "#;
-    let deserialized = serde_saphyr::from_str::<TestStruct>(&value).map_err(|inp| inp.to_string());
+    let deserialized = serde_saphyr::from_str::<TestStruct>(value).map_err(|inp| inp.to_string());
     assert_eq!(
         deserialized,
         Ok(TestStruct {

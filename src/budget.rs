@@ -586,7 +586,7 @@ mod tests {
         let r = check_yaml_budget(y, b, EnforcingPolicy::AllContent).unwrap();
         assert!(r.breached.is_none());
         assert_eq!(r.documents, 1);
-        assert_eq!(r.nodes > 0, true);
+        assert!(r.nodes > 0);
     }
 
     #[test]
@@ -600,8 +600,10 @@ d: *A
 e: *A
 "#;
 
-        let mut b = Budget::default();
-        b.max_aliases = 3; // set a tiny limit for the test
+        let b = Budget {
+            max_aliases: 3, // set a tiny limit for the test
+            ..Default::default()
+        };
 
         let rep = check_yaml_budget(y, b, EnforcingPolicy::AllContent).unwrap();
         assert!(matches!(rep.breached, Some(BudgetBreach::Aliases { .. })));
@@ -619,8 +621,10 @@ e: *A
             y.push(']');
         }
 
-        let mut b = Budget::default();
-        b.max_depth = 150;
+        let b = Budget {
+            max_depth: 150,
+            ..Default::default()
+        };
 
         let rep = check_yaml_budget(&y, b, EnforcingPolicy::AllContent).unwrap();
         assert!(matches!(rep.breached, Some(BudgetBreach::Depth { .. })));
@@ -630,8 +634,10 @@ e: *A
     fn anchors_limit_trips() {
         // Three distinct anchors defined on scalar nodes
         let y = "a: &A 1\nb: &B 2\nc: &C 3\n";
-        let mut b = Budget::default();
-        b.max_anchors = 2;
+        let b = Budget {
+            max_anchors: 2,
+            ..Default::default()
+        };
         let rep = check_yaml_budget(y, b, EnforcingPolicy::AllContent).unwrap();
         assert!(matches!(
             rep.breached,
@@ -646,8 +652,10 @@ e: *A
             y.push_str(&format!("  item{idx}:\n    <<: *B\n    extra: {idx}\n"));
         }
 
-        let mut b = Budget::default();
-        b.max_merge_keys = 2;
+        let b = Budget {
+            max_merge_keys: 2,
+            ..Default::default()
+        };
 
         let rep = check_yaml_budget(&y, b, EnforcingPolicy::AllContent).unwrap();
         assert!(matches!(
@@ -661,9 +669,11 @@ e: *A
     fn alias_anchor_ratio_trips_when_excessive() {
         let yaml = "root: &A [1]\na: *A\nb: *A\nc: *A\n";
 
-        let mut budget = Budget::default();
-        budget.alias_anchor_min_aliases = 1;
-        budget.alias_anchor_ratio_multiplier = 2;
+        let budget = Budget {
+            alias_anchor_min_aliases: 1,
+            alias_anchor_ratio_multiplier: 2,
+            ..Default::default()
+        };
 
         let report = check_yaml_budget(yaml, budget, EnforcingPolicy::AllContent).unwrap();
         assert!(matches!(
@@ -681,9 +691,11 @@ e: *A
     fn alias_anchor_ratio_respects_minimum_alias_threshold() {
         let yaml = "root: &A [1]\na: *A\nb: *A\nc: *A\n";
 
-        let mut budget = Budget::default();
-        budget.alias_anchor_min_aliases = 5;
-        budget.alias_anchor_ratio_multiplier = 1;
+        let budget = Budget {
+            alias_anchor_min_aliases: 5,
+            alias_anchor_ratio_multiplier: 1,
+            ..Default::default()
+        };
 
         let report = check_yaml_budget(yaml, budget, EnforcingPolicy::AllContent).unwrap();
         assert!(report.breached.is_none());

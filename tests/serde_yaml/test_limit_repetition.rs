@@ -1,8 +1,8 @@
+use crate::serde_yaml::adapt_to_miri;
 use serde::de::{Deserialize, SeqAccess, Visitor};
 use serde_saphyr::Error;
 use std::collections::BTreeMap;
 use std::fmt;
-use crate::serde_yaml::adapt_to_miri;
 
 #[test]
 fn test_large_repetition_limit() {
@@ -53,6 +53,7 @@ fn test_large_repetition_limit() {
     }
     writeln!(&mut yaml, "final: *a{}", 1000).unwrap();
 
-    let parsed: Result<BTreeMap<String, X>, Error> = serde_saphyr::from_str_with_options(&yaml, adapt_to_miri());
+    let parsed: Result<BTreeMap<String, X>, Error> =
+        serde_saphyr::from_str_with_options(&yaml, adapt_to_miri());
     assert!(parsed.is_err());
 }

@@ -16,17 +16,12 @@
 
 use serde::Deserialize;
 
-#[derive(Clone, Copy, Deserialize)]
+#[derive(Clone, Copy, Deserialize, Default)]
 enum Tree {
+    #[default]
     Oak,
     Acer,
     Birch,
-}
-
-impl Default for Tree {
-    fn default() -> Self {
-        Tree::Oak
-    }
 }
 
 fn default_birch() -> Tree {
@@ -112,7 +107,7 @@ impl Robot {
             };
             let nx = self.x + dx;
             let ny = self.y + dy;
-            if nx >= 0 && nx <= 9 && ny >= 0 && ny <= 7 {
+            if (0..=9).contains(&nx) && (0..=7).contains(&ny) {
                 self.x = nx;
                 self.y = ny;
             } else {
@@ -136,17 +131,17 @@ impl Robot {
 }
 
 fn print_field(field: &[[char; 10]; 8], rx: i32, ry: i32) {
-    for y in (0..=7).rev() {
-        // print top (y=7) to bottom (y=0)
+    // Print top (y=7) to bottom (y=0)
+    for (y, row) in field.iter().enumerate().rev() {
         let mut line = String::with_capacity(10);
-        for x in 0..=9 {
+        for (x, ch) in row.iter().enumerate() {
             if x as i32 == rx && y as i32 == ry {
                 line.push('R');
             } else {
-                line.push(field[y][x]);
+                line.push(*ch);
             }
         }
-        println!("{}", line);
+        println!("{line}");
     }
 }
 

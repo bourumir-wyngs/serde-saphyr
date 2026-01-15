@@ -8,7 +8,7 @@ a: b
 ---
 "#;
     let docs: Vec<BTreeMap<String, String>> =
-        serde_saphyr::from_multiple(&y).expect("failed to parse PUW8 as multiple documents");
+        serde_saphyr::from_multiple(y).expect("failed to parse PUW8 as multiple documents");
     // Only the first document has content; the trailing '---' alone represents an empty doc which should be skipped.
     assert_eq!(
         docs.len(),

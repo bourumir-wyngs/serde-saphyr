@@ -1,3 +1,5 @@
+#![allow(clippy::upper_case_acronyms)]
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]

@@ -152,6 +152,11 @@ mod tests {
     use saphyr_parser::{BufferedInput, Event, Parser};
     use std::io::{BufReader, Cursor, Read};
 
+    type TestParser = Parser<
+        'static,
+        BufferedInput<super::ChunkedChars<std::io::BufReader<Box<dyn std::io::Read>>>>,
+    >;
+
     pub fn buffered_input_from_reader<'a, R: Read + 'a>(
         reader: R,
     ) -> BufferedInput<ChunkedChars<BufReader<Box<dyn Read + 'a>>>> {
@@ -159,12 +164,7 @@ mod tests {
     }
 
     // Helper to collect a few core events for assertions without being fragile
-    fn gather_core_events(
-        mut p: Parser<
-            'static,
-            BufferedInput<super::ChunkedChars<std::io::BufReader<Box<dyn std::io::Read>>>>,
-        >,
-    ) -> Vec<Event<'static>> {
+    fn gather_core_events(mut p: TestParser) -> Vec<Event<'static>> {
         let mut events = Vec::new();
         for item in &mut p {
             match item {

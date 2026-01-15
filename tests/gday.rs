@@ -48,7 +48,7 @@ settings:
         assert_eq!(settings.limit, 50);
         assert_eq!(settings.site_language, "en");
         assert_eq!(settings.restrict, "all");
-        assert_eq!(settings.match_partial, false);
+        assert!(!settings.match_partial);
         assert_eq!(settings.the_thousand, 1001);
 
         // Languages list equality (order is preserved from YAML)

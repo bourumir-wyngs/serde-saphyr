@@ -20,8 +20,6 @@ fn block_string_wrappers_support_basic_conversions_and_comparisons() {
     assert_eq!(fold_owned, lit_owned);
 
     // Compare to String and str
-    assert!(lit_owned == "hello".to_string());
-    assert!(fold_owned == "hello".to_string());
     assert!(lit_owned == "hello");
     assert!(fold_owned == "hello");
 }

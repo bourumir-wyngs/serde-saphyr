@@ -40,9 +40,9 @@ use std::fmt::{self, Write};
 use std::rc::{Rc, Weak as RcWeak};
 use std::sync::{Arc, Weak as ArcWeak};
 
-use crate::serializer_options::{FOLDED_WRAP_CHARS, MIN_FOLD_CHARS, SerializerOptions};
 use crate::long_strings::{NAME_FOLD_STR, NAME_LIT_STR};
-use crate::{zmij_format, ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
+use crate::serializer_options::{FOLDED_WRAP_CHARS, MIN_FOLD_CHARS, SerializerOptions};
+use crate::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor, zmij_format};
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use nohash_hasher::BuildNoHashHasher;
 
@@ -1261,7 +1261,10 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             // If we are a value following a block sibling, force a newline now.
             // However, if a complex-node anchor is pending, we must keep `key: &aN` inline;
             // `write_anchor_for_complex_node` will handle emitting the anchor and newline.
-            if self.pending_space_after_colon && self.last_value_was_block && self.pending_anchor_id.is_none() {
+            if self.pending_space_after_colon
+                && self.last_value_was_block
+                && self.pending_anchor_id.is_none()
+            {
                 self.pending_space_after_colon = false;
                 if !self.at_line_start {
                     self.newline()?;
@@ -1445,9 +1448,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             } else {
                 self.depth
             };
-            let depth_next = if inline_first {
-                base + 1
-            } else if was_inline_value {
+            let depth_next = if inline_first || was_inline_value {
                 base + 1
             } else {
                 base
@@ -2040,13 +2041,6 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
                 self.ser.depth = saved_depth;
                 self.last_key_complex = false;
             }
-            // Reset the block-sibling flag after the value has been serialized.
-            // If the value was a block, its `end()` method will have set it to true.
-            // If it was a scalar, it should be false (we should probably explicitly set it to false if it wasn't a block).
-            // Actually, if we just finished a value, and it didn't set last_value_was_block, it means it was a scalar.
-            if let Ok(_) = result {
-                 // if it's still false, it stays false. If it was set to true by the value's end(), it stays true for the NEXT sibling.
-            }
             result?;
         }
         self.first = false;
@@ -2104,9 +2098,8 @@ impl<'a, 'b, W: Write> SerializeStruct for MapSer<'a, 'b, W> {
         value: &T,
     ) -> Result<()> {
         SerializeMap::serialize_key(self, &key)?;
-        let result = SerializeMap::serialize_value(self, value);
         // Note: MapSer::serialize_value already handles the block-sibling logic (conceptually).
-        result
+        SerializeMap::serialize_value(self, value)
     }
     fn end(self) -> Result<()> {
         SerializeMap::end(self)
@@ -2143,11 +2136,6 @@ impl<'a, 'b, W: Write> SerializeStructVariant for StructVariantSer<'a, 'b, W> {
         let prev_map_depth = self.ser.current_map_depth.replace(self.depth);
         let result = value.serialize(&mut *self.ser);
         self.ser.current_map_depth = prev_map_depth;
-        // Update block-sibling tracking similarly to MapSer::serialize_value.
-        if let Ok(_) = result {
-             // If value was a block, its end() set it to true. If not, it should be false for the next field.
-             // However, scalar serializers don't currently reset it.
-        }
         result
     }
     fn end(self) -> Result<()> {
@@ -2690,10 +2678,10 @@ impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
         Ok(())
     }
     fn serialize_f32(self, v: f32) -> Result<()> {
-        zmij_format::push_float_string(&mut self.s, v)
+        zmij_format::push_float_string(self.s, v)
     }
     fn serialize_f64(self, v: f64) -> Result<()> {
-        zmij_format::push_float_string(&mut self.s, v)
+        zmij_format::push_float_string(self.s, v)
     }
 
     fn serialize_char(self, v: char) -> Result<()> {

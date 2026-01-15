@@ -209,7 +209,7 @@ fn folded_wrap_can_preserve_multi_space_runs_by_emitting_trailing_spaces() -> an
     // - none of them start with extra whitespace beyond indentation,
     // - at least one ends with a trailing space (the "extra space before line break").
     let mut lines = serialized.lines().peekable();
-    while let Some(line) = lines.next() {
+    for line in lines.by_ref() {
         if line.starts_with("long: >") {
             break;
         }

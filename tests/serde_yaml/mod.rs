@@ -34,8 +34,7 @@ mod test_writer_reader;
 // and the fuzz folder is currently too many large files to be practical to commit.
 //mod test_repro_fuzz_targets;
 
-
-pub fn adapt_to_miri() -> Options{
+pub fn adapt_to_miri() -> Options {
     // Tighten limits for miri that otherwise takes very long
     if cfg!(miri) {
         Options {

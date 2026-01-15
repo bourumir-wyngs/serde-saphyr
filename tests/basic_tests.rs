@@ -154,8 +154,10 @@ mod tests {
     #[test]
     fn duplicate_keys_first_wins_policy() {
         let y = "a: 1\na: 2\nb: 3\n";
-        let mut opt = Options::default();
-        opt.duplicate_keys = DuplicateKeyPolicy::FirstWins;
+        let opt = Options {
+            duplicate_keys: DuplicateKeyPolicy::FirstWins,
+            ..Default::default()
+        };
         let m = from_str_with_options::<HashMap<String, i32>>(y, opt).unwrap();
         assert_eq!(m.get("a"), Some(&1));
         assert_eq!(m.get("b"), Some(&3));
@@ -171,14 +173,19 @@ mod tests {
         let msg = format!("{err}");
         assert!(msg.contains("duplicate mapping key"));
 
-        let mut opt = Options::default();
-        opt.duplicate_keys = DuplicateKeyPolicy::FirstWins;
-        let first = from_str_with_options::<HashMap<Vec<i32>, String>>(y, opt.clone()).unwrap();
+        let opt_first = Options {
+            duplicate_keys: DuplicateKeyPolicy::FirstWins,
+            ..Default::default()
+        };
+        let first = from_str_with_options::<HashMap<Vec<i32>, String>>(y, opt_first).unwrap();
         assert_eq!(first.get(&vec![1, 2]).map(String::as_str), Some("first"));
         assert_eq!(first.len(), 1);
 
-        opt.duplicate_keys = DuplicateKeyPolicy::LastWins;
-        let last = from_str_with_options::<HashMap<Vec<i32>, String>>(y, opt).unwrap();
+        let opt_last = Options {
+            duplicate_keys: DuplicateKeyPolicy::LastWins,
+            ..Default::default()
+        };
+        let last = from_str_with_options::<HashMap<Vec<i32>, String>>(y, opt_last).unwrap();
         assert_eq!(last.get(&vec![1, 2]).map(String::as_str), Some("second"));
         assert_eq!(last.len(), 1);
     }
@@ -197,9 +204,11 @@ mod tests {
         let msg = format!("{err}");
         assert!(msg.contains("duplicate mapping key"));
 
-        let mut opt = Options::default();
-        opt.duplicate_keys = DuplicateKeyPolicy::FirstWins;
-        let first = from_str_with_options::<HashMap<StructKey, i32>>(y, opt.clone()).unwrap();
+        let opt_first = Options {
+            duplicate_keys: DuplicateKeyPolicy::FirstWins,
+            ..Default::default()
+        };
+        let first = from_str_with_options::<HashMap<StructKey, i32>>(y, opt_first).unwrap();
         assert_eq!(
             first.get(&StructKey {
                 a: 1,
@@ -209,8 +218,11 @@ mod tests {
         );
         assert_eq!(first.len(), 1);
 
-        opt.duplicate_keys = DuplicateKeyPolicy::LastWins;
-        let last = from_str_with_options::<HashMap<StructKey, i32>>(y, opt).unwrap();
+        let opt_last = Options {
+            duplicate_keys: DuplicateKeyPolicy::LastWins,
+            ..Default::default()
+        };
+        let last = from_str_with_options::<HashMap<StructKey, i32>>(y, opt_last).unwrap();
         assert_eq!(
             last.get(&StructKey {
                 a: 1,
@@ -232,8 +244,10 @@ mod tests {
         #[test]
         fn duplicate_keys_last_wins_policy() {
             let y = "a: 1\na: 2\nb: 3\n";
-            let mut opt = Options::default();
-            opt.duplicate_keys = DuplicateKeyPolicy::LastWins;
+            let opt = Options {
+                duplicate_keys: DuplicateKeyPolicy::LastWins,
+                ..Default::default()
+            };
             let m = from_str_with_options::<HashMap<String, i32>>(y, opt).unwrap();
             assert_eq!(m.get("a"), Some(&2));
             assert_eq!(m.get("b"), Some(&3));

@@ -6,13 +6,13 @@
     clippy::uninlined_format_args
 )]
 
+use crate::serde_yaml::adapt_to_miri;
 use indoc::indoc;
 use serde::Deserialize;
 use serde_json::Value;
 use serde_saphyr::Error;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
-use crate::serde_yaml::adapt_to_miri;
 
 fn test_de<T>(yaml: &str, expected: &T)
 where

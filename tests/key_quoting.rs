@@ -21,8 +21,8 @@ mod tests {
             // If a key (e.g., ",") requires quoting, the serializer must emit it.
             let yaml = to_string(&serde_saphyr::FlowSeq(h.clone()))
                 .expect("serialize FlowSeq<HashMap<..>>");
-            let parsed: HashMap<String, String> =
-                from_str(&yaml).expect(&format!("deserialize [{}] back into HashMap", yaml));
+            let parsed: HashMap<String, String> = from_str(&yaml)
+                .unwrap_or_else(|_| panic!("deserialize [{}] back into HashMap", yaml));
 
             assert_eq!(parsed, h, "Round-trip failed for key {:?}", s);
         }
@@ -43,7 +43,7 @@ mod tests {
 
         // It must deserialize back to the identical map.
         let parsed: HashMap<String, String> =
-            from_str(&yaml).expect(&format!("deserialize [{}] back into HashMap", yaml));
+            from_str(&yaml).unwrap_or_else(|_| panic!("deserialize [{}] back into HashMap", yaml));
 
         assert_eq!(parsed, h, "Comma key/value did not round-trip as expected");
     }
@@ -85,7 +85,7 @@ mod tests {
         }
         // Verify they round-trip correctly as strings
         let parsed: HashMap<String, String> =
-            from_str(&yaml).expect(&format!("deserialize [{}] back into HashMap", yaml));
+            from_str(&yaml).unwrap_or_else(|_| panic!("deserialize [{}] back into HashMap", yaml));
 
         assert_eq!(parsed, map);
     }

@@ -33,6 +33,6 @@ fn custom_alias_limit_exceeded() {
         }),
         ..Options::default()
     };
-    let result = serde_saphyr::from_str_with_options::<Value>(&yaml, options);
+    let result = serde_saphyr::from_str_with_options::<Value>(yaml, options);
     assert!(result.is_err());
 }

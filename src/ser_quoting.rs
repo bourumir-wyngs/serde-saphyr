@@ -38,7 +38,7 @@ fn is_numeric_looking(s: &str) -> bool {
             )$
             ",
         )
-            .expect("valid numeric-looking regex")
+        .expect("valid numeric-looking regex")
     });
 
     re.is_match(s)
@@ -70,10 +70,14 @@ fn is_ambiguous(s: &str) -> bool {
     fn is_special_inf_nan_ascii(s: &str) -> bool {
         let bytes = s.as_bytes();
         let mut i = 0usize;
-        if let Some(&c) = bytes.first() && (c == b'+' || c == b'-') {
+        if let Some(&c) = bytes.first()
+            && (c == b'+' || c == b'-')
+        {
             i = 1;
         }
-        if let Some(&c) = bytes.get(i) && c == b'.' {
+        if let Some(&c) = bytes.get(i)
+            && c == b'.'
+        {
             i += 1;
         } else {
             return false;

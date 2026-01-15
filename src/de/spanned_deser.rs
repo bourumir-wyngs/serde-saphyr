@@ -13,7 +13,10 @@ use crate::Deserializer;
 /// This captures the current *use-site* (`referenced`) and *definition-site*
 /// (`defined`) locations and then synthesizes a struct-like view:
 /// `{ value: T, referenced: Location, defined: Location }`.
-pub(super) fn deserialize_yaml_spanned<'de, V>(de: Deserializer<'_>, visitor: V) -> Result<V::Value, Error>
+pub(super) fn deserialize_yaml_spanned<'de, V>(
+    de: Deserializer<'_>,
+    visitor: V,
+) -> Result<V::Value, Error>
 where
     V: Visitor<'de>,
 {

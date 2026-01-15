@@ -62,8 +62,10 @@ non_empty:
 "#;
     assert_eq!(yaml, expected);
 
-    let mut opts = SerializerOptions::default();
-    opts.empty_as_braces = false;
+    let mut opts = SerializerOptions {
+        empty_as_braces: false,
+        ..Default::default()
+    };
     let yaml_legacy = {
         let mut out = String::new();
         serde_saphyr::to_fmt_writer_with_options(&mut out, &o, opts).unwrap();
@@ -74,7 +76,7 @@ non_empty:
     assert_eq!(legacy_expected, yaml_legacy);
 
     // Round trip test
-    let or1: OneOne = serde_saphyr::from_str(&yaml).unwrap();
+    let or1: OneOne = serde_saphyr::from_str(yaml.as_str()).unwrap();
     let or2: OneOne = serde_saphyr::from_str(yaml_legacy.as_str()).unwrap();
 
     assert_eq!(or1, o);
@@ -138,8 +140,10 @@ fn disable_empty_map_as_braces_restores_legacy() {
     // When disabled, an empty map in block position should not render braces. We test a map value
     // position where previously an empty body produced just a newline after the key.
     let v = WrapMap { m: BTreeMap::new() };
-    let mut opts = SerializerOptions::default();
-    opts.empty_as_braces = false;
+    let opts = SerializerOptions {
+        empty_as_braces: false,
+        ..Default::default()
+    };
     let s = {
         let mut out = String::new();
         serde_saphyr::to_fmt_writer_with_options(&mut out, &v, opts).unwrap();

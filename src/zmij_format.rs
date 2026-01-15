@@ -1,12 +1,14 @@
+use crate::ser;
+use num_traits::float::FloatCore;
 /// Format as float string, make changes to be sure valid YAML float (zmij may render 4e-6 and not 4.0e-6)
-
 use std::fmt::Write;
 use zmij::Float;
-use num_traits::float::FloatCore;
-use crate::ser;
 
 /// Format as float string, make changes to be sure valid YAML float
-pub(crate) fn push_float_string<F: Float + FloatCore>(target: & mut String, f: F) -> ser::Result<()> {
+pub(crate) fn push_float_string<F: Float + FloatCore>(
+    target: &mut String,
+    f: F,
+) -> ser::Result<()> {
     if f.is_nan() {
         target.push_str(".nan");
     } else if f.is_infinite() {
@@ -25,7 +27,7 @@ pub(crate) fn push_float_string<F: Float + FloatCore>(target: & mut String, f: F
         // - a sign (+ or -) in the exponent (when exponent is present)
         if let Some(exp_pos) = s.find('e').or_else(|| s.find('E')) {
             // 1) Write mantissa, ensuring it has a decimal point.
-            if !s[..exp_pos].as_bytes().contains(&b'.') {
+            if !s[..exp_pos].contains('.') {
                 // "4e-6" -> "4.0e-6"
                 target.push_str(&s[..exp_pos]);
                 target.push_str(".0");
@@ -37,14 +39,12 @@ pub(crate) fn push_float_string<F: Float + FloatCore>(target: & mut String, f: F
             target.push_str(&s[exp_pos..=exp_pos]);
 
             // 3) Ensure exponent sign.
-            if let Some(after_e) = s.as_bytes().get(exp_pos + 1) {
-                if after_e != &b'+' && after_e != &b'-' {
-                    // "1e6" -> "1e+6"
-                    target.push('+');
-                }
+            if !matches!(s.as_bytes().get(exp_pos + 1), Some(b'+' | b'-')) {
+                // "1e6" -> "1e+6"
+                target.push('+');
             }
             target.push_str(&s[exp_pos + 1..]);
-        } else if !s.as_bytes().contains(&b'.') {
+        } else if !s.contains('.') {
             // No decimal and no exponent: append .0
             target.push_str(s);
             target.push_str(".0");
@@ -56,7 +56,10 @@ pub(crate) fn push_float_string<F: Float + FloatCore>(target: & mut String, f: F
 }
 
 /// Format as float string, make changes to be sure valid YAML float
-pub(crate) fn write_float_string<F: Float + FloatCore, W: Write>(target: &mut W, f: F) -> ser::Result<()> {
+pub(crate) fn write_float_string<F: Float + FloatCore, W: Write>(
+    target: &mut W,
+    f: F,
+) -> ser::Result<()> {
     if f.is_nan() {
         target.write_str(".nan")?;
     } else if f.is_infinite() {
@@ -74,7 +77,7 @@ pub(crate) fn write_float_string<F: Float + FloatCore, W: Write>(target: &mut W,
         // - a sign (+ or -) in the exponent (when exponent is present)
         if let Some(exp_pos) = s.find('e').or_else(|| s.find('E')) {
             // 1) Write mantissa, ensuring it has a decimal point.
-            if !s[..exp_pos].as_bytes().contains(&b'.') {
+            if !s[..exp_pos].contains('.') {
                 // "4e-6" -> "4.0e-6"
                 target.write_str(&s[..exp_pos])?;
                 target.write_str(".0")?;
@@ -86,14 +89,12 @@ pub(crate) fn write_float_string<F: Float + FloatCore, W: Write>(target: &mut W,
             target.write_str(&s[exp_pos..=exp_pos])?;
 
             // 3) Ensure exponent sign.
-            if let Some(after_e) = s.as_bytes().get(exp_pos + 1) {
-                if after_e != &b'+' && after_e != &b'-' {
-                    // "1e6" -> "1e+6"
-                    target.write_char('+')?;
-                }
+            if !matches!(s.as_bytes().get(exp_pos + 1), Some(b'+' | b'-')) {
+                // "1e6" -> "1e+6"
+                target.write_char('+')?;
             }
             target.write_str(&s[exp_pos + 1..])?;
-        } else if !s.as_bytes().contains(&b'.') {
+        } else if !s.contains('.') {
             // No decimal and no exponent: append .0
             target.write_str(s)?;
             target.write_str(".0")?;

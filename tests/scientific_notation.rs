@@ -1,4 +1,3 @@
-
 #[test]
 fn serialize_small_float_scientific_notation() {
     let value = 0.000004_f64;
@@ -34,7 +33,6 @@ fn roundtrip_floats() {
     }
 }
 
-
 use regex::Regex;
 
 /// Validate that a plain scalar is recognized as `!!float` by:
@@ -49,19 +47,17 @@ fn assert_yaml11_and_yaml12_float_scalar(s: &str) {
     // YAML 1.1 `!!float` (base 10) regexp (as published in the YAML 1.1 type repo).
     // NOTE: The published regexp has a known issue allowing extra '.' characters,
     // but it's still sufficient for validating our canonical-ish outputs.
-    let yaml11_base10 = Regex::new(r"^[-+]?([0-9][0-9_]*)?\.[0-9.]*([eE][-+][0-9]+)?$")
-        .expect("valid regex");
+    let yaml11_base10 =
+        Regex::new(r"^[-+]?([0-9][0-9_]*)?\.[0-9.]*([eE][-+][0-9]+)?$").expect("valid regex");
 
     // YAML 1.2.2 JSON schema float tag resolution regexp:
     // `-? ( 0 | [1-9] [0-9]* ) ( \. [0-9]* )? ( [eE] [-+]? [0-9]+ )?`
-    let yaml12_json = Regex::new(r"^-?(?:0|[1-9][0-9]*)(?:\.[0-9]*)?(?:[eE][-+]?[0-9]+)?$")
-        .expect("valid regex");
+    let yaml12_json =
+        Regex::new(r"^-?(?:0|[1-9][0-9]*)(?:\.[0-9]*)?(?:[eE][-+]?[0-9]+)?$").expect("valid regex");
 
     // YAML 1.2.2 Core schema float tag resolution regexp (number form):
     // `[-+]? ( \. [0-9]+ | [0-9]+ ( \. [0-9]* )? ) ( [eE] [-+]? [0-9]+ )?`
-    let yaml12_core = Regex::new(
-        r"^[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)(?:[eE][-+]?[0-9]+)?$",
-    )
+    let yaml12_core = Regex::new(r"^[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)(?:[eE][-+]?[0-9]+)?$")
         .expect("valid regex");
 
     assert!(

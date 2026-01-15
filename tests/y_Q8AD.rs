@@ -11,7 +11,7 @@ to a line feed, or \t\\\n\
 
     let expected: &str = "folded to a space,\nto a line feed, or \t \tnon-content";
 
-    let s: String = serde_saphyr::from_str(&yaml)?;
+    let s: String = serde_saphyr::from_str(yaml)?;
     assert_eq!(s, expected);
     Ok(())
 }

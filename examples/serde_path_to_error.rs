@@ -37,16 +37,17 @@ fn main() {
           port: "oops"
     "#;
 
-    let res: Result<Config, serde_saphyr::Error> = serde_saphyr::with_deserializer_from_str(yaml, |de| {
-        match serde_path_to_error::deserialize::<_, Config>(de) {
+    let res: Result<Config, serde_saphyr::Error> = serde_saphyr::with_deserializer_from_str(
+        yaml,
+        |de| match serde_path_to_error::deserialize::<_, Config>(de) {
             Ok(v) => Ok(v),
             Err(e) => Err(<serde_saphyr::Error as serde::de::Error>::custom(format!(
                 "deserialization error at {}: {}",
                 e.path(),
                 e
             ))),
-        }
-    });
+        },
+    );
 
     match res {
         Ok(cfg) => println!("Parsed config: {cfg:?}"),
