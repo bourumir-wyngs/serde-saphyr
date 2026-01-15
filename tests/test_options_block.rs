@@ -1,5 +1,6 @@
 use serde_saphyr::{
     FoldStr, FoldString, LitStr, LitString, SerializerOptions, to_fmt_writer_with_options,
+    to_string_with_options,
 };
 
 #[test]
@@ -87,4 +88,22 @@ fn fold_owned_variant_respects_wrap() {
     // Basic sanity: header + at least two lines due to wrap <=12
     assert!(out.starts_with(">\n  "));
     assert!(out.lines().count() >= 3);
+}
+
+#[test]
+fn foldstr_sequence_under_map_key() {
+    let opts = SerializerOptions {
+        min_fold_chars: 0,
+        ..SerializerOptions::default()
+    };
+
+    #[derive(serde::Serialize)]
+    struct Doc<'a> {
+        items: Vec<FoldStr<'a>>,
+    }
+    let d = Doc {
+        items: vec![FoldStr("a"), FoldStr("b"), FoldStr("c")],
+    };
+    let out = to_string_with_options(&d, opts).unwrap();
+    assert_eq!(out, "items:\n  - >\n    a\n  - >\n    b\n  - >\n    c\n");
 }

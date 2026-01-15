@@ -322,3 +322,16 @@ fn verdanta_case_fold() -> anyhow::Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn litstr_sequence_under_map_key() {
+    #[derive(Serialize)]
+    struct Doc<'a> {
+        items: Vec<LitStr<'a>>,
+    }
+    let d = Doc {
+        items: vec![LitStr("a"), LitStr("b"), LitStr("c")],
+    };
+    let out = to_string(&d).unwrap();
+    assert_eq!(out, "items:\n  - |-\n    a\n  - |-\n    b\n  - |-\n    c\n");
+}
