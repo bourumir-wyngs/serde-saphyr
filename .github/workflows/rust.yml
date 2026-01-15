@@ -2,23 +2,50 @@ name: Rust
 
 on:
   push:
-    branches: [ "master" ]
+    branches: ["master"]
   pull_request:
-    branches: [ "master" ]
+    branches: ["master"]
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_HOME: ${{ github.workspace }}/.cargo
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
+
+      # Optional: pin toolchain (recommended for stable caching).
+      # If you already have rust-toolchain.toml, you can remove this step.
+      - name: Install Rust toolchain
+        run: |
+          rustup update stable
+          rustup default stable
+          rustc -V
+          cargo -V
+
+      - name: Cache cargo registry + git
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cargo/registry
+            .cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Cache target
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-target-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-target-
+
       - name: Run tests
         run: cargo test --verbose
-      - name: Run tests with robotics feature
-        run: cargo test --features garde --features validator --features miette --features figment --features robotics
 
-
+      - name: Run tests with robotics feature set
+        run: cargo test --features garde,validator,miette,figment,robotics
