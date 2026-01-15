@@ -28,9 +28,7 @@ jobs:
 
       # Prefetch once (for BOTH feature sets), then run offline to avoid a second network touch.
       - name: Prefetch deps (both feature sets)
-        run: |
-          cargo fetch --locked
-          cargo fetch --locked --features garde,validator,miette,figment,robotics
+        run: cargo fetch --locked
 
       - name: Run tests (default)
         run: cargo test --locked --offline --verbose
