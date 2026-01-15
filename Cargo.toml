@@ -33,6 +33,10 @@ validator = { version = ">= 0.11, < 0.21", optional = true, features = ["derive"
 [features]
 default = []
 
+# Enables optional integration tests that depend on `nalgebra`.
+# (The actual `nalgebra` dependency is intentionally commented out in dev-dependencies.)
+nalgebra = []
+
 # Enables integration with the `garde` validation crate.
 garde = ["dep:garde"]
 
@@ -57,7 +61,9 @@ serde_repr = "0.1.20"
 anyhow = "1.0"
 chrono = "0.4"
 regex = "1.12"
-nalgebra = { version = "0.34", default-features = false, features = ["std", "serde-serialize"] }
+# nalgebra is only needed for an optional integration test; keep it commented out so
+# the crate builds without pulling nalgebra.
+# nalgebra = { version = "0.34", default-features = false, features = ["std", "serde-serialize"] }
 serde-transcode = "1.1.1" # we only use in tests
 serde_ignored = "0.1"
 serde_path_to_error = "0.1"

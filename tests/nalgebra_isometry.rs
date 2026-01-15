@@ -1,4 +1,6 @@
-#![cfg(test)]
+// This integration test depends on `nalgebra`, which is intentionally not included
+// by default to keep the dependency graph lean.
+#![cfg(feature = "nalgebra")]
 
 use nalgebra::{Isometry3, Translation3, UnitQuaternion, Vector3};
 use serde::{Deserialize, Serialize};
