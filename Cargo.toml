@@ -33,10 +33,6 @@ validator = { version = ">= 0.11, < 0.21", optional = true, features = ["derive"
 [features]
 default = []
 
-# Enables optional integration tests that depend on `nalgebra`.
-# (The actual `nalgebra` dependency is intentionally commented out in dev-dependencies.)
-nalgebra = []
-
 # Enables integration with the `garde` validation crate.
 garde = ["dep:garde"]
 
