@@ -15,14 +15,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Run tests
-      run: cargo test --verbose
-
-  build_robotics:
-    runs-on: ubuntu-latest
-    steps:
       - uses: actions/checkout@v4
+      - name: Run tests
+        run: cargo test --verbose
       - name: Run tests with robotics feature
         run: cargo test --features garde --features validator --features miette --features figment --features robotics
+
 
