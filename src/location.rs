@@ -9,7 +9,9 @@ use serde::Deserialize;
 /// primarily offset/length based.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize, Default)]
 pub struct Span {
+    /// Byte offset within the source YAML document.
     pub(crate) offset: usize,
+    /// Byte length within the source YAML document.
     pub(crate) len: u32,
 }
 
@@ -17,11 +19,13 @@ impl Span {
     /// Sentinel span meaning "unknown".
     pub const UNKNOWN: Self = Self { offset: 0, len: 0 };
 
+    /// Returns the byte offset within the source YAML document.
     #[inline]
     pub fn offset(&self) -> usize {
         self.offset
     }
 
+    /// Returns the byte length within the source YAML document.
     #[inline]
     pub fn len(&self) -> usize {
         self.len as usize
