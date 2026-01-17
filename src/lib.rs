@@ -1474,9 +1474,9 @@ pub fn to_string_multiple<T: serde::Serialize>(
 
 /// Deserialize a single YAML document from any `std::io::Read`.
 ///
-/// The entire reader is read into memory (buffered) and then deserialized
-/// using the same logic as [`from_slice`]. This function is convenient when
-/// your YAML input comes from a file or any other IO stream.
+///
+/// This method parsers as it reads, without loading the entire input into memory first. Hence,
+/// budget limits protect against large (potentially malicious) input.
 ///
 /// Example
 ///
@@ -1512,6 +1512,9 @@ pub fn from_reader<'a, R: std::io::Read + 'a, T: DeserializeOwned>(reader: R) ->
 /// This is the reader-based counterpart to [`from_str_with_options`]. It consumes a
 /// byte-oriented reader, decodes it to UTF-8, and streams events into the deserializer.
 ///
+/// This method parsers as it reads, without loading the entire input into memory first. Hence,
+/// budget limits protect against large (potentially malicious) input.
+///
 /// Notes on limits and large inputs
 /// - Parsing limits: Use [`Options::budget`] to constrain YAML complexity (events, nodes,
 ///   nesting depth, total scalar bytes, number of documents, anchors, aliases, etc.). These
@@ -1532,12 +1535,11 @@ pub fn from_reader<'a, R: std::io::Read + 'a, T: DeserializeOwned>(reader: R) ->
 /// let yaml = "x: 3\ny: 4\n";
 /// let reader = Cursor::new(yaml.as_bytes());
 ///
-/// // Cap the reader to at most 1 KiB of input bytes.
-/// let capped = reader.take(1024);
-///
-/// // Tighten the parsing budget as well (optional).
-/// let mut opts = Options::default();
-/// opts.budget = Some(Budget { max_events: 10_000, ..Budget::default() });
+/// let opts = Options {
+///   budget: Some(Budget {
+///     max_events: 10_000,
+///     ..Budget::default() })
+/// }
 ///
 /// let p: Point = serde_saphyr::from_reader_with_options(capped, opts).unwrap();
 /// assert_eq!(p, Point { x: 3, y: 4 });
