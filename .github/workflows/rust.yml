@@ -15,10 +15,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show disk before
+      # Pick toolchain BEFORE rust-cache (cache key includes rustc version).
+      - name: Install Rust toolchain
         run: |
-          df -h
-          du -h -d 2 "$GITHUB_WORKSPACE" | sort -h | tail -n 40 || true
+          export PATH=$PATH:/home/github-runner/.cargo/bin          
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc -V
+          cargo -V
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
