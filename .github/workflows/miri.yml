@@ -15,7 +15,7 @@ env:
 
 jobs:
   build:
-    runs-on: fram
+    runs-on: [self-hosted, linux, x64]
 
     steps:
       - uses: actions/checkout@v4
@@ -23,6 +23,7 @@ jobs:
       - name: Install Rust toolchains (stable + nightly with Miri)
         shell: bash
         run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin          
           set -euo pipefail
 
           rustup set profile minimal
@@ -48,6 +49,7 @@ jobs:
       - name: Install cargo-nextest
         shell: bash
         run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin          
           set -euo pipefail
 
           if ! cargo nextest --version >/dev/null 2>&1; then
@@ -58,20 +60,26 @@ jobs:
           cargo nextest --version
 
       - name: Build (stable)
-        run: cargo build --verbose
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin          
+          cargo build --verbose
 
       - name: Run tests (stable)
-        run: cargo test --verbose
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin          
+          cargo test --verbose
 
       - name: Miri setup (nightly)
         shell: bash
         run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin          
           set -euo pipefail
           cargo +nightly miri setup
 
       - name: Run tests under Miri using nextest (nightly)
         shell: bash
         run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin          
           set -euo pipefail
 
           jobs="$(nproc || echo 1)"
