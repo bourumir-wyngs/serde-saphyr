@@ -18,7 +18,7 @@ jobs:
       # Pick toolchain BEFORE rust-cache (cache key includes rustc version).
       - name: Install Rust toolchain
         run: |
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"          
+          export PATH=$PATH:/home/github-runner/.cargo/bin          
           rustup toolchain install stable --profile minimal
           rustup default stable
           rustc -V
@@ -29,11 +29,17 @@ jobs:
 
       # Prefetch once (for BOTH feature sets), then run offline to avoid a second network touch.
       - name: Prefetch deps (both feature sets)
-        run: cargo fetch --locked
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin          
+          cargo fetch --locked
 
       - name: Run tests (default)
-        run: cargo test --locked --offline
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin          
+          cargo test --locked --offline
 
       - name: Run tests with robotics feature set
-        run: cargo test --locked --offline --features garde,validator,miette,figment,robotics
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin
+          cargo test --locked --offline --features garde,validator,miette,figment,robotics
 
