@@ -1537,11 +1537,14 @@ pub fn from_reader<'a, R: std::io::Read + 'a, T: DeserializeOwned>(reader: R) ->
 ///
 /// let opts = Options {
 ///   budget: Some(Budget {
-///     max_events: 10_000,
-///     ..Budget::default() })
-/// }
+///       max_events: 10_000,
+///       max_reader_input_bytes: Some(1024),
+///       ..Budget::default()
+///     }),
+///   ..Options::default()
+/// };
 ///
-/// let p: Point = serde_saphyr::from_reader_with_options(capped, opts).unwrap();
+/// let p: Point = serde_saphyr::from_reader_with_options(reader, opts).unwrap();
 /// assert_eq!(p, Point { x: 3, y: 4 });
 /// ```
 ///
