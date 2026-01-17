@@ -35,14 +35,18 @@ use serde::ser::{
     self, Serialize, SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant,
     SerializeTuple, SerializeTupleStruct, SerializeTupleVariant, Serializer,
 };
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{self, Write};
 use std::rc::{Rc, Weak as RcWeak};
-use std::sync::{Arc, Weak as ArcWeak};
+use std::sync::{Arc, Mutex, Weak as ArcWeak};
 
 use crate::long_strings::{NAME_FOLD_STR, NAME_LIT_STR};
 use crate::serializer_options::{FOLDED_WRAP_CHARS, MIN_FOLD_CHARS, SerializerOptions};
-use crate::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor, zmij_format};
+use crate::{
+    ArcAnchor, ArcRecursion, ArcRecursive, ArcWeakAnchor, RcAnchor, RcRecursion, RcRecursive,
+    RcWeakAnchor, zmij_format,
+};
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use nohash_hasher::BuildNoHashHasher;
 
@@ -134,6 +138,35 @@ struct RcWeakPayload<'a, T>(&'a RcWeak<T>);
 #[allow(dead_code)]
 struct ArcWeakPayload<'a, T>(&'a ArcWeak<T>);
 
+// Recursive weak payloads: defer locking/borrowing until actual value serialization.
+struct RcRecursivePayload<'a, T>(&'a Rc<RefCell<Option<T>>>);
+struct ArcRecursivePayload<'a, T>(&'a Arc<Mutex<Option<T>>>);
+
+impl<T: Serialize> Serialize for RcRecursivePayload<'_, T> {
+    fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        let borrowed = self.0.borrow();
+        if let Some(value) = borrowed.as_ref() {
+            value.serialize(s)
+        } else {
+            s.serialize_unit()
+        }
+    }
+}
+
+impl<T: Serialize> Serialize for ArcRecursivePayload<'_, T> {
+    fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        let guard = self
+            .0
+            .lock()
+            .map_err(|_| ser::Error::custom("recursive Arc anchor mutex poisoned"))?;
+        if let Some(value) = guard.as_ref() {
+            value.serialize(s)
+        } else {
+            s.serialize_unit()
+        }
+    }
+}
+
 // Flow hints and block-string hints: we use newtype-struct names.
 const NAME_TUPLE_ANCHOR: &str = "__yaml_anchor";
 const NAME_TUPLE_WEAK: &str = "__yaml_weak_anchor";
@@ -161,6 +194,35 @@ impl<T: Serialize> Serialize for ArcAnchor<T> {
         ts.end()
     }
 }
+impl<T: Serialize> Serialize for RcRecursive<T> {
+    fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        let mut ts = s.serialize_tuple_struct(NAME_TUPLE_ANCHOR, 2)?;
+        let ptr = Rc::as_ptr(&self.0) as usize;
+        ts.serialize_field(&ptr)?;
+        let borrowed = self.0.borrow();
+        let value = borrowed
+            .as_ref()
+            .ok_or_else(|| ser::Error::custom("recursive Rc anchor not initialized"))?;
+        ts.serialize_field(value)?;
+        ts.end()
+    }
+}
+impl<T: Serialize> Serialize for ArcRecursive<T> {
+    fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        let mut ts = s.serialize_tuple_struct(NAME_TUPLE_ANCHOR, 2)?;
+        let ptr = Arc::as_ptr(&self.0) as usize;
+        ts.serialize_field(&ptr)?;
+        let guard = self
+            .0
+            .lock()
+            .map_err(|_| ser::Error::custom("recursive Arc anchor mutex poisoned"))?;
+        let value = guard
+            .as_ref()
+            .ok_or_else(|| ser::Error::custom("recursive Arc anchor not initialized"))?;
+        ts.serialize_field(value)?;
+        ts.end()
+    }
+}
 impl<T: Serialize> Serialize for RcWeakAnchor<T> {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
         let up = self.0.upgrade();
@@ -185,6 +247,36 @@ impl<T: Serialize> Serialize for ArcWeakAnchor<T> {
         ts.serialize_field(&up.is_some())?;
         if let Some(arc) = up {
             ts.serialize_field(&*arc)?;
+        } else {
+            ts.serialize_field(&())?;
+        }
+        ts.end()
+    }
+}
+impl<T: Serialize> Serialize for RcRecursion<T> {
+    fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        let up = self.0.upgrade();
+        let mut ts = s.serialize_tuple_struct(NAME_TUPLE_WEAK, 3)?;
+        let ptr = self.0.as_ptr() as usize;
+        ts.serialize_field(&ptr)?;
+        ts.serialize_field(&up.is_some())?;
+        if let Some(rc) = up {
+            ts.serialize_field(&RcRecursivePayload(&rc))?;
+        } else {
+            ts.serialize_field(&())?;
+        }
+        ts.end()
+    }
+}
+impl<T: Serialize> Serialize for ArcRecursion<T> {
+    fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        let up = self.0.upgrade();
+        let mut ts = s.serialize_tuple_struct(NAME_TUPLE_WEAK, 3)?;
+        let ptr = self.0.as_ptr() as usize;
+        ts.serialize_field(&ptr)?;
+        ts.serialize_field(&up.is_some())?;
+        if let Some(arc) = up {
+            ts.serialize_field(&ArcRecursivePayload(&arc))?;
         } else {
             ts.serialize_field(&())?;
         }

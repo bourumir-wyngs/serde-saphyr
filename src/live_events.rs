@@ -455,6 +455,27 @@ impl<'a> LiveEvents<'a> {
                         .with_location(location));
                     }
 
+                    if self.rec_stack.iter().any(|frame| frame.id == anchor_id) {
+                        if crate::anchor_store::recursive_anchor_in_progress(anchor_id) {
+                            let ev = Ev::Scalar {
+                                value: String::new(),
+                                tag: SfTag::Null,
+                                raw_tag: None,
+                                style: ScalarStyle::Plain,
+                                anchor: anchor_id,
+                                location,
+                            };
+                            self.record(&ev, false, false);
+                            self.last_location = location;
+                            self.produced_any_in_doc = true;
+                            return Ok(Some(ev));
+                        }
+                        return Err(
+                            Error::msg("Recursive references require weak recursion types")
+                                .with_location(location),
+                        );
+                    }
+
                     // Ensure the anchor exists now (fail fast); store only id + idx.
                     let exists = self
                         .anchors

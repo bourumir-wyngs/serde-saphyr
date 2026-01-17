@@ -1,7 +1,10 @@
 #![forbid(unsafe_code)]
 //! Serialization public API is defined at crate root
 
-pub use anchors::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor};
+pub use anchors::{
+    ArcAnchor, ArcRecursion, ArcRecursive, ArcWeakAnchor, RcAnchor, RcRecursion, RcRecursive,
+    RcWeakAnchor,
+};
 pub use de::{Budget, DuplicateKeyPolicy, Error, Options};
 pub use location::{Location, Locations, Span};
 pub use long_strings::{FoldStr, FoldString, LitStr, LitString};

@@ -1596,6 +1596,18 @@ helper to deserialize into String or Cow<'de, str> instead
                     visitor.visit_newtype_struct(self)
                 })
             }
+            "__yaml_rc_recursive" => {
+                let anchor = self.peek_anchor_id()?;
+                anchor_store::with_anchor_context(AnchorKind::RcRecursive, anchor, || {
+                    visitor.visit_newtype_struct(self)
+                })
+            }
+            "__yaml_arc_recursive" => {
+                let anchor = self.peek_anchor_id()?;
+                anchor_store::with_anchor_context(AnchorKind::ArcRecursive, anchor, || {
+                    visitor.visit_newtype_struct(self)
+                })
+            }
             "__yaml_rc_weak_anchor" => {
                 let anchor = self.peek_anchor_id()?;
                 anchor_store::with_anchor_context(AnchorKind::Rc, anchor, || {
@@ -1605,6 +1617,18 @@ helper to deserialize into String or Cow<'de, str> instead
             "__yaml_arc_weak_anchor" => {
                 let anchor = self.peek_anchor_id()?;
                 anchor_store::with_anchor_context(AnchorKind::Arc, anchor, || {
+                    visitor.visit_newtype_struct(self)
+                })
+            }
+            "__yaml_rc_recursion" => {
+                let anchor = self.peek_anchor_id()?;
+                anchor_store::with_anchor_context(AnchorKind::RcRecursive, anchor, || {
+                    visitor.visit_newtype_struct(self)
+                })
+            }
+            "__yaml_arc_recursion" => {
+                let anchor = self.peek_anchor_id()?;
+                anchor_store::with_anchor_context(AnchorKind::ArcRecursive, anchor, || {
                     visitor.visit_newtype_struct(self)
                 })
             }

@@ -422,8 +422,8 @@ assert!(yaml.contains("name: Ada"));
 
 Serde-saphyr can conceptually connect YAML anchors with Rust shared references (Rc, Weak and Arc). You need to use wrappers to activate this feature:
 
-- `RcAnchor<T>` and `ArcAnchor<T>` emit anchors like `&a1` on first occurrence and may emit aliases `*a1` later.
-- `RcWeakAnchor<T>` and `ArcWeakAnchor<T>` serialize a weak ref: if the strong pointer is gone, it becomes `null`.
+- [RcAnchor<T>](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.RcAnchor.html) and [ArcAnchor<T>](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.ArcAnchor.html) emit anchors like `&a1` on first occurrence and may emit aliases `*a1` later.
+- [RcWeakAnchor<T>](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.RcWeakAnchor.html) and [ArcWeakAnchor<T>](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.ArcWeakAnchor.html) serialize a weak ref: if the strong pointer is gone, it becomes `null`.
 
 ```rust
      #[derive(Deserialize, Serialize)]
@@ -476,6 +476,11 @@ Serde-saphyr can conceptually connect YAML anchors with Rust shared references (
 When anchors are highly repetitive and also large, packing them into references can make YAML more human-readable.
 
 To support round trip, library can also deserialize into these anchor structures, this serialization is identity-preserving. A field or structure that is defined once and subsequently referenced will exist as a single instance in memory, with all anchor fields pointing to it. This is crucial when the topology of references itself constitutes important information to be transferred.
+
+### Recursive YAML
+While recursive YAML is unusual, it is not forbidden by the specification. Real world examples and [requests to implement](https://github.com/saphyr-rs/saphyr/issues/24) exist. 
+
+Serde-saphyr supports recursive structures but Rust requires to be about this very explicit. A structure that may hold recursive references to itself must be wrapped in a [RcRecursive<T>](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.RcRecursive.html), and any reference that points to it must be [RcRecursion<T>](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.RcRecursion.html). Arc varieties exist. See also [examples/recursive_yaml.rs](examples/recursive_yaml.rs). 
 
 ### Controlling text deserialization
 
