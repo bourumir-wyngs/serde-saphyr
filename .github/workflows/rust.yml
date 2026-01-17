@@ -18,7 +18,7 @@ jobs:
       # Pick toolchain BEFORE rust-cache (cache key includes rustc version).
       - name: Install Rust toolchain
         run: |
-          export PATH=$PATH:/home/github-runner/.cargo/bin          
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"          
           rustup toolchain install stable --profile minimal
           rustup default stable
           rustc -V
