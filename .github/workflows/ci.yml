@@ -7,7 +7,7 @@ on:
 
 jobs:
   fuzz_test_audit:
-    runs-on: ubuntu-latest
+    runs-on: fram
     steps:
       - uses: actions/checkout@v4
         with:
