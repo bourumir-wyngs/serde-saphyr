@@ -31,16 +31,16 @@ jobs:
         
       # Run all fuzz targets sequentially to keep CI simple and deterministic
       - name: Run fuzz target 'aliases_merges'
-        run: cargo fuzz run aliases_merges -- -max_total_time=20 -rss_limit_mb=1024 -close_fd_mask=3
+        run: cargo fuzz run aliases_merges -- -max_total_time=120 -rss_limit_mb=1024 -close_fd_mask=3
 
       - name: Run fuzz target 'flow_collections'
-        run: cargo fuzz run flow_collections -- -max_total_time=20 -rss_limit_mb=1024 -close_fd_mask=3
+        run: cargo fuzz run flow_collections -- -max_total_time=120 -rss_limit_mb=1024 -close_fd_mask=3
 
       - name: Run fuzz target 'large_scalars'
-        run: cargo fuzz run large_scalars -- -max_total_time=20 -rss_limit_mb=1024 -close_fd_mask=3
+        run: cargo fuzz run large_scalars -- -max_total_time=120 -rss_limit_mb=1024 -close_fd_mask=3
 
       - name: Run fuzz target 'duplicate_keys'
-        run: cargo fuzz run duplicate_keys -- -max_total_time=20 -rss_limit_mb=1024 -close_fd_mask=3
+        run: cargo fuzz run duplicate_keys -- -max_total_time=120 -rss_limit_mb=1024 -close_fd_mask=3
 
       - name: Upload fuzz crash artifacts
         uses: actions/upload-artifact@v4
