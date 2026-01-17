@@ -20,20 +20,6 @@ jobs:
           df -h
           du -h -d 2 "$GITHUB_WORKSPACE" | sort -h | tail -n 40 || true
 
-      - name: Free disk space (optional)
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
-          sudo apt-get clean
-          df -h        
-
-      # Pick toolchain BEFORE rust-cache (cache key includes rustc version).
-      - name: Install Rust toolchain
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-          rustc -V
-          cargo -V
-
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
 
@@ -47,8 +33,3 @@ jobs:
       - name: Run tests with robotics feature set
         run: cargo test --locked --offline --features garde,validator,miette,figment,robotics
 
-      - name: Show disk after
-        if: always()
-        run: |
-          df -h
-          du -h -d 2 "$GITHUB_WORKSPACE/target" | sort -h | tail -n 40 || true
