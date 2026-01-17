@@ -757,9 +757,8 @@ checksum = "a50f4cf475b65d88e057964e0e9bb1f0aa9bbb2036dc65c64596b42932536984"
 
 [[package]]
 name = "saphyr-parser-bw"
-version = "0.0.602"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76f42abc0cb19a78c94b24967c41068b9cee979c1132f9128e42033b2e40814f"
+version = "0.0.603"
+source = "git+https://github.com/bourumir-wyngs/saphyr?branch=dev%2Fsaphyr-parser#467ef9aa750faa6cffed06c4e4cc35c59c2a78bd"
 dependencies = [
  "arraydeque",
  "smallvec 2.0.0-alpha.12",
