@@ -964,17 +964,6 @@ impl<'e> YamlDeserializer<'e> {
         }
     }
 
-    /// Consume a scalar and return `(value, tag)` (dropping location).
-    fn take_scalar_with_tag(&mut self) -> Result<(String, SfTag), Error> {
-        let (value, tag, _) = self.take_scalar_event()?;
-        Ok((value, tag))
-    }
-
-    /// Consume a scalar and return just the value.
-    fn take_scalar(&mut self) -> Result<String, Error> {
-        self.take_scalar_with_tag().map(|(value, _)| value)
-    }
-
     /// Consume a scalar and return `(value, location)` (dropping tag).
     fn take_scalar_with_location(&mut self) -> Result<(String, SfTag, Location), Error> {
         let (value, tag, location) = self.take_scalar_event()?;
@@ -2344,8 +2333,8 @@ helper to deserialize into String or Cow<'de, str> instead
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
         enum Mode {
-            Unit(String),
-            Map(String),
+            Unit(String, Location),
+            Map(String, Location),
         }
 
         let mut tagged_enum = None;
@@ -2366,7 +2355,8 @@ helper to deserialize into String or Cow<'de, str> instead
                     let (v, _t, loc) = self.take_scalar_event()?;
                     return Err(Error::quoting_required(&v).with_location(loc));
                 }
-                Mode::Unit(self.take_scalar()?)
+                let (value, _tag, loc) = self.take_scalar_event()?;
+                Mode::Unit(value, loc)
             }
             Some(Ev::MapStart { .. }) => {
                 self.expect_map_start()?;
@@ -2384,7 +2374,7 @@ helper to deserialize into String or Cow<'de, str> instead
                         {
                             return Err(Error::quoting_required(&value).with_location(location));
                         }
-                        Mode::Map(value)
+                        Mode::Map(value, location)
                     }
                     Some(other) => {
                         return Err(Error::msg("expected string key for externally tagged enum")
@@ -2426,6 +2416,7 @@ helper to deserialize into String or Cow<'de, str> instead
             cfg: Cfg,
             variant: String,
             map_mode: bool,
+            variant_location: Location,
         }
 
         impl<'de, 'e> de::EnumAccess<'de> for EA<'e> {
@@ -2442,8 +2433,13 @@ helper to deserialize into String or Cow<'de, str> instead
                     cfg,
                     variant,
                     map_mode,
+                    variant_location,
                 } = self;
-                let v = seed.deserialize(variant.into_deserializer())?;
+                let v = seed
+                    .deserialize(variant.into_deserializer())
+                    .map_err(|err: serde::de::value::Error| {
+                        Error::msg(err.to_string()).with_location(variant_location)
+                    })?;
                 Ok((v, VA { ev, cfg, map_mode }))
             }
         }
@@ -2538,17 +2534,19 @@ helper to deserialize into String or Cow<'de, str> instead
         }
 
         let access = match mode {
-            Mode::Unit(variant) => EA {
+            Mode::Unit(variant, variant_location) => EA {
                 ev: self.ev,
                 cfg: self.cfg,
                 variant,
                 map_mode: false,
+                variant_location,
             },
-            Mode::Map(variant) => EA {
+            Mode::Map(variant, variant_location) => EA {
                 ev: self.ev,
                 cfg: self.cfg,
                 variant,
                 map_mode: true,
+                variant_location,
             },
         };
 
