@@ -46,3 +46,9 @@ jobs:
 
       - name: Run tests with robotics feature set
         run: cargo test --locked --offline --features garde,validator,miette,figment,robotics
+
+      - name: Show disk after
+        if: always()
+        run: |
+          df -h
+          du -h -d 2 "$GITHUB_WORKSPACE/target" | sort -h | tail -n 40 || true
