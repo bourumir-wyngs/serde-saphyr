@@ -11,7 +11,7 @@
 [![Fuzz & Audit](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/ci.yml/badge.svg)](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/ci.yml)
 
 **serde-saphyr** is a strongly typed YAML deserializer built on the top of slightly modified
-[`saphyr-parser`](https://crates.io/crates/saphyr-parser). It aims to be **panic-free** on malformed input exclude `unsafe` code in library code. The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.”
+[`saphyr-parser`](https://crates.io/crates/saphyr-parser), published as [saphyr-parser-bw](https://crates.io/crates/saphyr-parser-bw). It aims to be **panic-free** on malformed input exclude `unsafe` code in library code. The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.”
 
 ### Why this approach?
 
