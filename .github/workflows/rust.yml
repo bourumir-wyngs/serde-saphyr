@@ -11,7 +11,7 @@ env:
 
 jobs:
   build:
-    runs-on: fram
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v4
 
