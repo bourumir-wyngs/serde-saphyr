@@ -2,7 +2,7 @@ name: Miri
 
 on:
   schedule:
-    - cron: '33 5 12 * *'  # Runs once a month on the 12th at 00:33 EST (05:33 UTC)
+    - cron: '50 5 4,14,24 * *'  # Runs three times a month
   workflow_dispatch:     # Allows manual triggering
 
 env:
