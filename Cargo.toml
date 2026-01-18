@@ -71,6 +71,10 @@ name = "garde_validate"
 required-features = ["garde"]
 
 [[example]]
+name = "garde_validate_context"
+required-features = ["garde"]
+
+[[example]]
 name = "miette"
 required-features = ["miette", "garde", "validator"]
 
