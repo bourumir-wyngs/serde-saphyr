@@ -454,6 +454,30 @@ where
     }
 }
 
+/// Deserialize a single YAML document with configurable [`Options`] and validate it with `garde` in context [`<T as garde::Validate>::Context`].
+/// The error message will contain a snippet with exact location information, and if the
+/// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
+#[cfg(feature = "garde")]
+pub fn from_str_with_options_context_valid<T>(input: &str, options: Options, context: &<T as garde::Validate>::Context) -> Result<T, Error>
+where
+    T: DeserializeOwned + garde::Validate,
+{
+    let with_snippet = options.with_snippet;
+    let crop_radius = options.crop_radius;
+
+    let (v, recorder) = from_str_with_options_and_path_recorder::<T>(input, options)?;
+    match Validate::validate_with(&v, context) {
+        Ok(()) => Ok(v),
+        Err(report) => {
+            let err = Error::ValidationError {
+                report,
+                locations: recorder.map,
+            };
+            Err(maybe_with_snippet(err, input, with_snippet, crop_radius))
+        }
+    }
+}
+
 /// Deserialize multiple YAML documents from a YAML string and validate each with `garde`.
 /// The error message will contain a snippet with exact location information, and if the
 /// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
