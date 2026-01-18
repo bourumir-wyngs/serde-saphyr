@@ -2,72 +2,60 @@ use serde::Deserialize;
 use serde::Deserializer;
 
 #[test]
-fn main() {
-    use garde::Validate;
+fn deserialize_with_type_error_renders_snippet() {
     use std::collections::HashMap;
 
-    #[derive(Clone, Debug, Deserialize, Validate)]
+    #[derive(Clone, Debug, Deserialize)]
     pub struct BaseEntityProperties {
-        #[garde(length(min = 3, max = 100))]
-        id: Option<String>,
-
-        #[garde(length(min = 3, max = 100))]
         name: String,
-        #[garde(length(min = 3, max = 100))]
         platform: String,
+        count: i32,
     }
 
     impl BaseEntityProperties {
         pub fn get_object_id(&self) -> String {
+            // Deterministic key for the test; the exact mapping key is irrelevant.
             "example".to_string()
         }
     }
 
-    #[derive(Clone, Debug, Deserialize, Validate)]
-    #[garde(transparent)]
+    #[derive(Clone, Debug, Deserialize)]
     pub struct BaseEntity {
         #[serde(flatten)]
-        #[garde(dive)]
         pub default: BaseEntityProperties,
     }
 
-    // Simplified deserializer: from a sequence of BaseEntity -> Option<HashMap<String, BaseEntity>>
+    // Custom deserializer: from a YAML sequence of BaseEntity -> Option<HashMap<String, BaseEntity>>.
     fn map_base_entity<'de, D>(de: D) -> Result<Option<HashMap<String, BaseEntity>>, D::Error>
     where
         D: Deserializer<'de>,
     {
-        // If the YAML provides a sequence, deserialize it into a Vec first.
         let items = Vec::<BaseEntity>::deserialize(de)?;
         let mut map = HashMap::with_capacity(items.len());
         for item in items {
             let key = item.default.get_object_id();
             if map.insert(key.clone(), item).is_some() {
-                return Err(serde::de::Error::custom(format!("Duplicate entry {}", key)));
+                return Err(serde::de::Error::custom(format!("Duplicate entry {key}")));
             }
         }
         Ok(Some(map))
     }
 
-    #[derive(Debug, Deserialize, Validate)]
-    #[allow(dead_code)]
+    #[derive(Debug, Deserialize)]
     struct Cfg {
         #[serde(default, deserialize_with = "map_base_entity")]
-        #[garde(dive)]
         pub hash_map: Option<HashMap<String, BaseEntity>>,
-
-        #[garde(dive)]
-        pub array: Option<Vec<BaseEntity>>,
     }
 
-    // Garde validation inside `deserialize_with`: the validation path may not exactly match a
-    // recorded YAML path when the deserializer transforms the YAML shape.
+    // Trigger a plain Serde type error inside the `deserialize_with` inner Vec deserialization.
     let yaml = r#"
 hash_map:
-- platform: "ex"
+- platform: "linux"
   name: "test"
-        "#;
+  count: !!int not-an-int
+"#;
 
-    let err = serde_saphyr::from_str_valid::<Cfg>(yaml).expect_err("must fail");
+    let err = serde_saphyr::from_str::<Cfg>(yaml).expect_err("must fail");
     let rendered = err.to_string();
     println!("{rendered}");
 

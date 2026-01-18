@@ -14,8 +14,34 @@ use annotate_snippets::Level;
 use saphyr_parser::{ScalarStyle, ScanError};
 use serde::de::{self};
 use std::fmt;
+use std::cell::RefCell;
 #[cfg(feature = "validator")]
 use validator::{ValidationErrors, ValidationErrorsKind};
+
+thread_local! {
+    // Best-effort fallback location for Serde structural errors that have no inherent span,
+    // such as `missing_field`. This is set by the deserializer when entering a container.
+    static MISSING_FIELD_FALLBACK: RefCell<Option<Location>> = const { RefCell::new(None) };
+}
+
+pub(crate) struct MissingFieldLocationGuard {
+    prev: Option<Location>,
+}
+
+impl MissingFieldLocationGuard {
+    pub(crate) fn new(location: Location) -> Self {
+        let prev = MISSING_FIELD_FALLBACK.with(|c| c.replace(Some(location)));
+        Self { prev }
+    }
+}
+
+impl Drop for MissingFieldLocationGuard {
+    fn drop(&mut self) {
+        MISSING_FIELD_FALLBACK.with(|c| {
+            c.replace(self.prev.take());
+        });
+    }
+}
 
 /// Error type compatible with `serde::de::Error`.
 #[derive(Debug)]
@@ -888,9 +914,54 @@ fn collect_validator_entries_inner(
     }
 }
 impl std::error::Error for Error {}
+
+fn maybe_attach_fallback_location(mut err: Error) -> Error {
+    let loc = MISSING_FIELD_FALLBACK.with(|c| *c.borrow());
+    if let Some(loc) = loc
+        && loc != Location::UNKNOWN
+    {
+        err = err.with_location(loc);
+    }
+    err
+}
+
 impl de::Error for Error {
     fn custom<T: fmt::Display>(msg: T) -> Self {
+        // Keep custom errors locationless by default; the deserializer should attach an explicit
+        // location when it can. For Serde-generated errors, we override the relevant hooks below
+        // and attach a best-effort fallback location.
         Error::msg(msg.to_string())
+    }
+
+    fn invalid_type(unexp: de::Unexpected, exp: &dyn de::Expected) -> Self {
+        // Mirror serde’s default formatting, but add a best-effort location.
+        maybe_attach_fallback_location(Error::msg(format!(
+            "invalid type: {unexp}, expected {exp}"
+        )))
+    }
+
+    fn invalid_value(unexp: de::Unexpected, exp: &dyn de::Expected) -> Self {
+        maybe_attach_fallback_location(Error::msg(format!(
+            "invalid value: {unexp}, expected {exp}"
+        )))
+    }
+
+    fn unknown_variant(variant: &str, expected: &'static [&'static str]) -> Self {
+        maybe_attach_fallback_location(Error::msg(format!(
+            "unknown variant `{variant}`, expected one of {}",
+            expected.join(", ")
+        )))
+    }
+
+    fn unknown_field(field: &str, expected: &'static [&'static str]) -> Self {
+        maybe_attach_fallback_location(Error::msg(format!(
+            "unknown field `{field}`, expected one of {}",
+            expected.join(", ")
+        )))
+    }
+
+    fn missing_field(field: &'static str) -> Self {
+        maybe_attach_fallback_location(Error::msg(format!("missing field `{field}`")))
     }
 }
 

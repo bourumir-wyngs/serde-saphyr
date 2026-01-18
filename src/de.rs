@@ -25,6 +25,7 @@ use crate::parse_scalars::{
     leading_zero_decimal, maybe_not_string, parse_int_signed, parse_int_unsigned,
     parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish, scalar_is_nullish_for_option,
 };
+use crate::de_error::MissingFieldLocationGuard;
 use ahash::{HashSetExt, RandomState};
 use saphyr_parser::ScalarStyle;
 use serde::de::{self, Deserializer as _, IntoDeserializer, Visitor};
@@ -1704,53 +1705,51 @@ helper to deserialize into String or Cow<'de, str> instead
             where
                 T: de::DeserializeSeed<'de>,
             {
-                let peeked = self.ev.peek()?;
-                match peeked {
-                    Some(Ev::SeqEnd { .. }) => Ok(None),
-                    Some(_) => {
-                        #[cfg(any(feature = "garde", feature = "validator"))]
-                        {
-                            if let Some(garde_ref) = self.garde.as_mut() {
-                                let recorder: &mut PathRecorder = garde_ref;
-
-                                // Definition-site location: where the node is defined in the YAML.
-                                // For aliases, this will point at the anchor definition.
-                                // Extract definition-site location immediately so we don't hold
-                                // the `peek()` borrow across the `reference_location()` call.
-                                let defined_location = peeked
-                                    .as_ref()
-                                    .map(|ev| ev.location())
-                                    .unwrap_or_else(|| self.ev.last_location());
-
-                                // Use-site location, consistent with `Spanned<T>` semantics.
-                                let reference_location = self.ev.reference_location();
-
-                                let prev = recorder.current.take();
-                                let now = prev.clone().join(self.idx);
-                                recorder.current = now.clone();
-                                recorder.map.insert(now, {
-                                    Locations {
-                                        reference_location,
-                                        defined_location,
-                                    }
-                                });
-
-                                let de = YamlDeserializer::new_with_path_recorder(
-                                    self.ev, self.cfg, recorder,
-                                );
-                                let res = seed.deserialize(de).map(Some);
-
-                                recorder.current = prev;
-                                self.idx += 1;
-                                return res;
-                            }
-                        }
-
-                        let de = YamlDeserializer::new(self.ev, self.cfg);
-                        seed.deserialize(de).map(Some)
+                let (is_end, defined_location) = {
+                    let peeked = self.ev.peek()?;
+                    match peeked {
+                        Some(Ev::SeqEnd { .. }) => (true, Location::UNKNOWN),
+                        Some(ev) => (false, ev.location()),
+                        None => return Err(Error::eof().with_location(self.ev.last_location())),
                     }
-                    None => Err(Error::eof().with_location(self.ev.last_location())),
+                };
+
+                if is_end {
+                    return Ok(None);
                 }
+
+                // The peek borrow is now released, so it's safe to query other cursor state.
+                let reference_location = self.ev.reference_location();
+                let _missing_field_guard = MissingFieldLocationGuard::new(reference_location);
+
+                #[cfg(any(feature = "garde", feature = "validator"))]
+                {
+                    if let Some(garde_ref) = self.garde.as_mut() {
+                        let recorder: &mut PathRecorder = garde_ref;
+
+                        let prev = recorder.current.take();
+                        let now = prev.clone().join(self.idx);
+                        recorder.current = now.clone();
+                        recorder.map.insert(
+                            now,
+                            Locations {
+                                reference_location,
+                                defined_location,
+                            },
+                        );
+
+                        let de =
+                            YamlDeserializer::new_with_path_recorder(self.ev, self.cfg, recorder);
+                        let res = seed.deserialize(de).map(Some);
+
+                        recorder.current = prev;
+                        self.idx += 1;
+                        return res;
+                    }
+                }
+
+                let de = YamlDeserializer::new(self.ev, self.cfg);
+                seed.deserialize(de).map(Some)
             }
         }
 
@@ -1830,11 +1829,35 @@ helper to deserialize into String or Cow<'de, str> instead
             return visitor.visit_map(EmptyMap);
         }
         self.expect_map_start()?;
+
+        // Ensure "missing field" errors (which have no natural span) get attributed to the
+        // current container.
+        let _missing_field_guard = MissingFieldLocationGuard::new(self.ev.reference_location());
+
+        #[cfg(any(feature = "garde", feature = "validator"))]
+        if let Some(recorder) = self.garde.as_mut() {
+            // Record the container itself, not just its leaf scalars, so that missing-field
+            // errors can fall back to a parent structure.
+            let path = recorder.current.clone();
+            recorder.map.insert(
+                path,
+                Locations {
+                    reference_location: self.ev.reference_location(),
+                    defined_location: self.ev.last_location(),
+                },
+            );
+        }
+
         /// Streaming `MapAccess` over the underlying `Events`.
         struct MA<'e> {
             ev: &'e mut dyn Events,
             cfg: Cfg,
             have_key: bool,
+
+            // Persist a best-effort “current location” across `next_key_seed` returning to Serde.
+            // This allows Serde-produced structural/type errors (e.g. `unknown_field`) to carry
+            // a useful span even though they are raised outside of this deserializer’s call stack.
+            fallback_guard: Option<MissingFieldLocationGuard>,
 
             #[cfg(any(feature = "garde", feature = "validator"))]
             garde: Option<&'e mut PathRecorder>,
@@ -2040,6 +2063,10 @@ helper to deserialize into String or Cow<'de, str> instead
                         self.have_key = true;
                         self.pending_value = Some((value_events, reference_location));
 
+                        // Keep the current fallback location set to the key span so Serde can
+                        // attribute errors like `unknown_field` to the offending key.
+                        self.fallback_guard = Some(MissingFieldLocationGuard::new(location));
+
                         #[cfg(any(feature = "garde", feature = "validator"))]
                         {
                             self.pending_path_segment =
@@ -2173,6 +2200,10 @@ helper to deserialize into String or Cow<'de, str> instead
                                 self.have_key = true;
                                 self.pending_value = None; // value will be read live
 
+                                // Same as the buffered path above: keep the key location alive
+                                // across the caller boundary.
+                                self.fallback_guard = Some(MissingFieldLocationGuard::new(location));
+
                                 #[cfg(any(feature = "garde", feature = "validator"))]
                                 {
                                     self.pending_path_segment =
@@ -2291,6 +2322,8 @@ helper to deserialize into String or Cow<'de, str> instead
             ev: self.ev,
             cfg: self.cfg,
             have_key: false,
+
+            fallback_guard: None,
 
             #[cfg(any(feature = "garde", feature = "validator"))]
             garde,
