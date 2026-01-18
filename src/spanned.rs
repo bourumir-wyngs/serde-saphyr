@@ -22,7 +22,7 @@
 //! assert_eq!(cfg.timeout.referenced.column(), 10);
 //! ```
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde::de::{self, Deserializer};
 
 use crate::Location;
@@ -113,5 +113,19 @@ where
 
         deserializer
             .deserialize_newtype_struct("__yaml_spanned", SpannedVisitor(std::marker::PhantomData))
+    }
+}
+
+impl<T> Serialize for Spanned<T>
+where
+    T: Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // `Spanned<T>` is a deserialization helper that records source locations.
+        // When serializing, we emit the wrapped value only.
+        self.value.serialize(serializer)
     }
 }
