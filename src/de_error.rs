@@ -332,7 +332,7 @@ impl Error {
             Error::ValidationError { report, locations } => {
                 report.iter().next().and_then(|(path, _)| {
                     let key = path_key_from_garde(path);
-                    locations.search(&key).map(|(locs, _)| locs)
+                    search_locations_with_ancestor_fallback(locations, &key)
                 })
             }
             #[cfg(feature = "garde")]
@@ -364,6 +364,23 @@ impl Error {
             location,
         }
     }
+}
+
+#[cfg(any(feature = "garde", feature = "validator"))]
+fn search_locations_with_ancestor_fallback(locations: &PathMap, path: &PathKey) -> Option<Locations> {
+    if let Some((locs, _)) = locations.search(path) {
+        return Some(locs);
+    }
+
+    let mut p = path.parent();
+    while let Some(cur) = p {
+        if let Some((locs, _)) = locations.search(&cur) {
+            return Some(locs);
+        }
+        p = cur.parent();
+    }
+
+    None
 }
 
 impl fmt::Display for Error {

@@ -201,6 +201,19 @@ fn build_validation_entry_diagnostic(
 
     let (locs, resolved_leaf) = locations
         .search(path_key)
+        .or_else(|| {
+            // If the exact path isn't recorded (common when custom deserialization transforms the
+            // YAML shape, e.g. sequence -> map keyed by derived IDs), fall back to the nearest
+            // ancestor path that has a known location so we can still render a useful snippet.
+            let mut p = path_key.parent();
+            while let Some(cur) = p {
+                if let Some(found) = locations.search(&cur) {
+                    return Some(found);
+                }
+                p = cur.parent();
+            }
+            None
+        })
         .unwrap_or((Locations::UNKNOWN, original_leaf));
 
     let ref_loc = locs.reference_location;

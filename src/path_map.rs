@@ -111,6 +111,21 @@ impl PathKey {
         self.segments.last().map(|seg| seg.name.clone())
     }
 
+    pub(crate) fn truncate(&self, len: usize) -> Self {
+        Self {
+            segments: self.segments.iter().take(len).cloned().collect(),
+        }
+    }
+
+    pub(crate) fn parent(&self) -> Option<Self> {
+        let len = self.segments.len();
+        if len == 0 {
+            None
+        } else {
+            Some(self.truncate(len - 1))
+        }
+    }
+
     fn iter_segments(&self) -> impl Iterator<Item = (&PathKind, &str)> {
         self.segments
             .iter()
@@ -211,6 +226,10 @@ impl PathMap {
             // 4) Loose collapsed match (only if unique): remove all non-alphanumeric characters
             // within each segment and compare case-insensitively.
             .or_else(|| self.find_unique_by(path, segments_equal_collapsed_case_insensitive))
+            // 5) Key-to-index fallback (only if unique): allow garde paths that contain map keys
+            // to resolve to recorded sequence indices when custom deserialization transforms a
+            // YAML sequence into a map keyed by derived IDs.
+            .or_else(|| self.find_unique_by(path, segments_equal_key_to_index_fallback))
     }
 
     fn find_unique_by(
@@ -233,6 +252,26 @@ impl PathMap {
         }
         found
     }
+}
+
+fn segments_equal_key_to_index_fallback(target: &PathKey, candidate: &PathKey) -> bool {
+    if target.len() != candidate.len() {
+        return false;
+    }
+
+    target
+        .iter_segments()
+        .zip(candidate.iter_segments())
+        .all(|((tk, ts), (ck, cs))| match (tk, ck) {
+            (PathKind::Index, PathKind::Index) => ts == cs,
+            (PathKind::Key, PathKind::Key) => strip_raw_identifier_prefix(ts)
+                .eq_ignore_ascii_case(strip_raw_identifier_prefix(cs)),
+            // Fallback: treat a key segment in the target as matching an index segment in the
+            // candidate. This is intentionally loose; we rely on `find_unique_by` to reject
+            // ambiguous matches.
+            (PathKind::Key, PathKind::Index) => !ts.is_empty() && !cs.is_empty(),
+            (PathKind::Index, PathKind::Key) => false,
+        })
 }
 
 fn strip_raw_identifier_prefix(s: &str) -> &str {

@@ -50,6 +50,28 @@ struct RenamedFieldRoot {
     a: String,
 }
 
+// Nested maps for testing garde error path rendering through map entries.
+#[derive(Debug, Deserialize, Validate)]
+#[allow(dead_code)]
+struct MapLeaf {
+    #[garde(length(min = 2))]
+    v: String,
+}
+
+#[derive(Debug, Deserialize, Validate)]
+#[allow(dead_code)]
+struct InnerMap {
+    #[garde(dive)]
+    inner: std::collections::HashMap<String, MapLeaf>,
+}
+
+#[derive(Debug, Deserialize, Validate)]
+#[allow(dead_code)]
+struct NestedMapRoot {
+    #[garde(dive)]
+    outer: std::collections::HashMap<String, InnerMap>,
+}
+
 #[test]
 fn from_str_with_options_valid_runs_garde_validation() {
     let yaml = "a: \"\"\n";
@@ -237,6 +259,30 @@ fn validation_error_shows_longer_garde_path_for_nested_structures() {
     assert!(
         rendered.contains("for `outer.inner.b`"),
         "expected failing path `outer.inner.b` in output, got: {rendered}"
+    );
+}
+
+#[test]
+fn validation_error_shows_path_for_nested_map_entry() {
+    // A nested map structure where an inner entry fails garde validation.
+    // Expected failing path should include both map keys and the leaf field name.
+    let yaml = concat!(
+        "outer:\n",
+        "  group1:\n",
+        "    inner:\n",
+        "      itemA:\n",
+        "        v: \"x\"\n", // length 1 < min 2
+    );
+
+    let err = serde_saphyr::from_str_with_options_valid::<NestedMapRoot>(yaml, Default::default())
+        .expect_err("must fail validation");
+    let rendered = err.to_string();
+    println!("{rendered}");
+
+    // Ensure the failing garde path shows nested map keys and the leaf field.
+    assert!(
+        rendered.contains("^ validation error: length is lower than 2 for `outer.group1.inner.itemA.v`"),
+        "expected failing path `outer.group1.inner.itemA.v` in output, got: {rendered}"
     );
 }
 
