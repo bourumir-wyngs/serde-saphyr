@@ -297,20 +297,52 @@ fn to_source_span(src: &NamedSource<String>, location: &Location) -> Option<Sour
         return None;
     }
 
-    let offset = location.span().offset();
-    let mut len = location.span().len();
-    if len == 0 {
-        len = 1;
+    // The parser provides character-based offsets/lengths, while miette expects
+    // byte offsets into the UTF-8 source. Convert here using the available source.
+    fn char_range_to_byte_range(
+        s: &str,
+        char_offset: usize,
+        char_len: usize,
+    ) -> Option<(usize, usize)> {
+        // Start byte index for the given character offset
+        let start_byte = if char_offset == 0 {
+            0
+        } else {
+            s.char_indices().nth(char_offset).map(|(i, _)| i)?
+        };
+
+        // End in characters (exclusive)
+        let end_char = char_offset.saturating_add(char_len);
+
+        // If end past the last char, clamp to the end of the string in bytes
+        let end_byte = match s.char_indices().nth(end_char) {
+            Some((i, _)) => i,
+            None => s.len(),
+        };
+
+        Some((start_byte, end_byte.saturating_sub(start_byte)))
     }
+
+    let char_off = location.span().offset();
+    let mut char_len = location.span().len();
+    if char_len == 0 {
+        // zero-length spans are hard to see; highlight at least one character
+        char_len = 1;
+    }
+
+    let (byte_off, mut byte_len) = match char_range_to_byte_range(src.inner(), char_off, char_len) {
+        Some(r) => r,
+        None => return None,
+    };
 
     // Clamp to the actual input, to avoid panics and invalid spans.
     let src_len = src.inner().len();
-    if offset > src_len {
+    if byte_off > src_len {
         return None;
     }
-    let len = len.min(src_len.saturating_sub(offset));
+    byte_len = byte_len.min(src_len.saturating_sub(byte_off));
 
-    Some(SourceSpan::new(offset.into(), len.into()))
+    Some(SourceSpan::new(byte_off.into(), byte_len.into()))
 }
 
 fn message_without_location(err: &Error) -> String {
@@ -373,6 +405,137 @@ mod tests {
             labels[0].inner().offset(),
             err.location().unwrap().span().offset()
         );
+    }
+
+    #[test]
+    fn non_ascii_prefix_char_offsets_convert_to_byte_offsets() {
+        // Three Greek letters (non-ASCII, multi-byte in UTF-8) followed by ASCII "def".
+        let yaml = "αβγdef\n";
+        let src = Arc::new(NamedSource::new("input.yaml".to_owned(), yaml.to_owned()));
+
+        let ascii_slice = "def";
+        let byte_off = yaml.find(ascii_slice).expect("substring present");
+        // Character-based offset for the start of "def"
+        let char_off = yaml[..byte_off].chars().count();
+
+        let err = Error::Message {
+            msg: "invalid".to_owned(),
+            location: Location {
+                line: 1,
+                // Column is 1-indexed and character-based; set consistently with the span
+                column: (char_off as u32) + 1,
+                span: crate::Span {
+                    offset: char_off,
+                    len: ascii_slice.len() as u32,
+                },
+            },
+        };
+
+        let diag = build_diagnostic(&err, Arc::clone(&src));
+        let labels: Vec<_> = diag.labels().unwrap().collect();
+        assert_eq!(labels.len(), 1);
+        // miette expects byte offsets; ensure we converted from chars to bytes correctly
+        assert_eq!(labels[0].inner().offset(), byte_off);
+        assert_eq!(labels[0].inner().len(), ascii_slice.len());
+    }
+
+    #[test]
+    fn non_ascii_token_itself_converts_correctly() {
+        let yaml = "a: áé\n"; // value contains two non-ASCII letters
+        let src = Arc::new(NamedSource::new("input.yaml".to_owned(), yaml.to_owned()));
+
+        let value_chars = "áé";
+        let start_byte = yaml.find(value_chars).unwrap();
+        let start_char = yaml[..start_byte].chars().count();
+
+        // Span over the two non-ASCII characters in character units
+        let err = Error::Message {
+            msg: "invalid".to_owned(),
+            location: Location {
+                line: 1,
+                column: (start_char as u32) + 1,
+                span: crate::Span { offset: start_char, len: value_chars.chars().count() as u32 },
+            },
+        };
+
+        let diag = build_diagnostic(&err, Arc::clone(&src));
+        let labels: Vec<_> = diag.labels().unwrap().collect();
+        assert_eq!(labels.len(), 1);
+        assert_eq!(labels[0].inner().offset(), start_byte);
+        assert_eq!(labels[0].inner().len(), value_chars.len()); // bytes
+    }
+
+    #[test]
+    fn zero_length_span_highlights_one_char() {
+        let yaml = "key: value\n";
+        let src = Arc::new(NamedSource::new("input.yaml".to_owned(), yaml.to_owned()));
+        let start_byte = yaml.find("value").unwrap();
+        let start_char = yaml[..start_byte].chars().count();
+
+        // Zero-length in characters
+        let err = Error::Message {
+            msg: "invalid".to_owned(),
+            location: Location {
+                line: 1,
+                column: (start_char as u32) + 1,
+                span: crate::Span { offset: start_char, len: 0 },
+            },
+        };
+
+        let diag = build_diagnostic(&err, Arc::clone(&src));
+        let labels: Vec<_> = diag.labels().unwrap().collect();
+        assert_eq!(labels.len(), 1);
+        assert_eq!(labels[0].inner().offset(), start_byte);
+        assert_eq!(labels[0].inner().len(), 1);
+    }
+
+    #[test]
+    fn span_past_end_is_clamped() {
+        let yaml = "hello"; // 5 bytes, 5 chars
+        let src = Arc::new(NamedSource::new("input.yaml".to_owned(), yaml.to_owned()));
+        // Start at char 3 (the 'l'), but ask for a very long span
+        let start_char = 3usize;
+        let start_byte = yaml.char_indices().nth(start_char).map(|(i, _)| i).unwrap();
+
+        let err = Error::Message {
+            msg: "invalid".to_owned(),
+            location: Location {
+                line: 1,
+                column: (start_char as u32) + 1,
+                span: crate::Span { offset: start_char, len: 1000 },
+            },
+        };
+
+        let diag = build_diagnostic(&err, Arc::clone(&src));
+        let labels: Vec<_> = diag.labels().unwrap().collect();
+        assert_eq!(labels.len(), 1);
+        assert_eq!(labels[0].inner().offset(), start_byte);
+        // Clamped to end of string
+        assert_eq!(labels[0].inner().len(), yaml.len() - start_byte);
+    }
+
+    #[test]
+    fn multiline_offset_after_newline() {
+        let yaml = "α\nβ\nxyz\n"; // 1-char lines, then ascii line
+        let src = Arc::new(NamedSource::new("input.yaml".to_owned(), yaml.to_owned()));
+        let target = "xyz";
+        let start_byte = yaml.find(target).unwrap();
+        let start_char = yaml[..start_byte].chars().count();
+
+        let err = Error::Message {
+            msg: "invalid".to_owned(),
+            location: Location {
+                line: 3,
+                column: 1,
+                span: crate::Span { offset: start_char, len: target.chars().count() as u32 },
+            },
+        };
+
+        let diag = build_diagnostic(&err, Arc::clone(&src));
+        let labels: Vec<_> = diag.labels().unwrap().collect();
+        assert_eq!(labels.len(), 1);
+        assert_eq!(labels[0].inner().offset(), start_byte);
+        assert_eq!(labels[0].inner().len(), target.len());
     }
 
     #[cfg(feature = "validator")]

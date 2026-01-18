@@ -126,6 +126,23 @@ nested: { threshold: 0.25, flags: [fast, safe], inner: { enabled: true, note: nu
 }
 
 #[test]
+fn spanned_offsets_are_character_based_with_non_ascii() {
+    #[derive(Debug, Deserialize)]
+    struct Cfg { value: Spanned<String> }
+
+    let yaml = "value: αβγok\n";
+    let cfg: Cfg = serde_saphyr::from_str(yaml).unwrap();
+
+    assert_eq!(cfg.value.value, "αβγok");
+    // Offsets should point to the start of the scalar value at 'α'
+    let byte_off_scalar = yaml.find("α").unwrap();
+    let char_off = yaml[..byte_off_scalar].chars().count();
+
+    assert_eq!(cfg.value.referenced.span().offset(), char_off);
+    assert_eq!(cfg.value.defined.span().offset(), char_off);
+}
+
+#[test]
 fn spanned_captures_locations_in_block_sequences() {
     let yaml = indoc! {"name: bar
 timeout: 5

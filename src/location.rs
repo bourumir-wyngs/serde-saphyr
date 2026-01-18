@@ -3,15 +3,21 @@
 use saphyr_parser::Span as ParserSpan;
 use serde::Deserialize;
 
-/// A byte span within the source YAML document.
+/// A character-based span within the source YAML document.
 ///
-/// This is intended for future first-class `miette` integration, which is
-/// primarily offset/length based.
+/// Offsets and lengths are reported in characters (Unicode scalar values),
+/// as produced by `saphyr-parser`. These are NOT byte indices.
+///
+/// Notes for consumers:
+/// - Line/column in [`Location`] are also character-based and 1-indexed.
+/// - If you need byte offsets (e.g., for `miette::SourceSpan`), convert the
+///   character range to a byte range against the original UTF-8 source string.
+///   Our `miette` integration performs this conversion at the boundary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize, Default)]
 pub struct Span {
-    /// Byte offset within the source YAML document.
+    /// Character offset within the source YAML document.
     pub(crate) offset: usize,
-    /// Byte length within the source YAML document.
+    /// Character length within the source YAML document.
     pub(crate) len: u32,
 }
 
@@ -19,13 +25,13 @@ impl Span {
     /// Sentinel span meaning "unknown".
     pub const UNKNOWN: Self = Self { offset: 0, len: 0 };
 
-    /// Returns the byte offset within the source YAML document.
+    /// Returns the character offset within the source YAML document.
     #[inline]
     pub fn offset(&self) -> usize {
         self.offset
     }
 
-    /// Returns the byte length within the source YAML document.
+    /// Returns the character length within the source YAML document.
     #[inline]
     pub fn len(&self) -> usize {
         self.len as usize
@@ -37,7 +43,7 @@ impl Span {
     }
 }
 
-/// Row/column location within the source YAML document (1-indexed).
+/// Row/column location within the source YAML document (1-indexed, character-based).
 ///
 /// This type is used for both:
 /// - deserialization error reporting ([`crate::Error`])
@@ -48,7 +54,7 @@ pub struct Location {
     pub(crate) line: u32,
     /// 1-indexed column number in the input stream.
     pub(crate) column: u32,
-    /// Byte span within the document.
+    /// Character-based span within the document.
     #[serde(default)]
     pub(crate) span: Span,
 }
@@ -66,7 +72,7 @@ impl Location {
         self.column as u64
     }
 
-    /// Byte span within the source document.
+    /// Character-based span within the source document.
     #[inline]
     pub fn span(&self) -> Span {
         self.span
@@ -108,6 +114,9 @@ impl Location {
 ///
 /// Called by:
 /// - The live events adapter for each raw parser event.
+///
+/// The resulting [`Location::span`] carries character offsets/lengths (not bytes),
+/// matching what the parser reports.
 pub(crate) fn location_from_span(span: &ParserSpan) -> Location {
     let start = &span.start;
     Location::new(start.line(), start.col() + 1).with_span(Span {

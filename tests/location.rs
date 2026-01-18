@@ -119,6 +119,27 @@ fn parser_unknown_anchor_error_reports_location_multiline() {
     assert!(matches!(unwrap_snippet(&err), Error::Message { .. }));
 }
 
+#[test]
+fn span_offsets_are_in_characters_not_bytes() {
+    // Non-ASCII prefix before ASCII token; expected offset is in characters.
+    // Use a mapping so the error is on the value position, not at document start.
+    #[derive(Debug, Deserialize)]
+    struct T { key: bool }
+
+    let yaml = "key: αβγdef\n";
+    let err = from_str::<T>(yaml).expect_err("bool parse error expected");
+
+    // Location should point to the start of the scalar value (at 'α')
+    let byte_off_scalar = yaml.find("α").unwrap();
+    let char_off = yaml[..byte_off_scalar].chars().count();
+
+    if let Some(loc) = err.location() {
+        assert_eq!(loc.span().offset(), char_off);
+    } else {
+        panic!("Location was not provided");
+    }
+}
+
 // Additional diverse error cases
 
 #[test]

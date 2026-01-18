@@ -38,6 +38,11 @@ jobs:
           export PATH=$PATH:/home/github-runner/.cargo/bin          
           cargo test --locked --offline
 
+      - name: Run tests with miette feature only
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin          
+          cargo test --locked --offline --features miette
+
       - name: Run tests with robotics feature set
         run: |
           export PATH=$PATH:/home/github-runner/.cargo/bin
