@@ -21,11 +21,11 @@ pub use crate::location::Location;
 
 use crate::anchor_store::{self, AnchorKind};
 use crate::base64::decode_base64_yaml;
+use crate::de_error::MissingFieldLocationGuard;
 use crate::parse_scalars::{
     leading_zero_decimal, maybe_not_string, parse_int_signed, parse_int_unsigned,
     parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish, scalar_is_nullish_for_option,
 };
-use crate::de_error::MissingFieldLocationGuard;
 use ahash::{HashSetExt, RandomState};
 use saphyr_parser::ScalarStyle;
 use serde::de::{self, Deserializer as _, IntoDeserializer, Visitor};
@@ -1717,6 +1717,9 @@ helper to deserialize into String or Cow<'de, str> instead
                 if is_end {
                     return Ok(None);
                 }
+
+                #[cfg(not(any(feature = "garde", feature = "validator")))]
+                let _ = defined_location;
 
                 // The peek borrow is now released, so it's safe to query other cursor state.
                 let reference_location = self.ev.reference_location();

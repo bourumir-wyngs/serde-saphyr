@@ -431,6 +431,20 @@ fn segments_equal_tokenized_case_insensitive(target: &PathKey, candidate: &PathK
         })
 }
 
+pub(crate) struct PathRecorder {
+    pub(crate) current: PathKey,
+    pub(crate) map: PathMap,
+}
+
+impl PathRecorder {
+    pub(crate) fn new() -> Self {
+        Self {
+            current: PathKey::empty(),
+            map: PathMap::new(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -602,19 +616,5 @@ mod tests {
             m.search(&PathKey::empty().join("items").join(2usize).join("name")),
             Some((locs(5, 8), "name".to_string()))
         );
-    }
-}
-
-pub(crate) struct PathRecorder {
-    pub(crate) current: PathKey,
-    pub(crate) map: PathMap,
-}
-
-impl PathRecorder {
-    pub(crate) fn new() -> Self {
-        Self {
-            current: PathKey::empty(),
-            map: PathMap::new(),
-        }
     }
 }

@@ -27,7 +27,7 @@ impl ::figment::providers::Format for Yaml {
 
     const NAME: &'static str = "YAML";
 
-    fn from_str<'de, T: DeserializeOwned>(string: &'de str) -> Result<T, Self::Error> {
+    fn from_str<T: DeserializeOwned>(string: &str) -> Result<T, Self::Error> {
         // figment does not render out snippet anyway
         crate::from_str_with_options(
             string,

@@ -7,14 +7,14 @@ use std::sync::Arc;
 
 use miette::{Diagnostic, LabeledSpan, NamedSource, SourceSpan};
 
-use crate::Error;
-use crate::Location;
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::location::Locations;
 #[cfg(feature = "garde")]
 use crate::path_map::path_key_from_garde;
 #[cfg(any(feature = "garde", feature = "validator"))]
-use crate::path_map::{PathKey, PathMap, format_path_with_resolved_leaf};
+use crate::path_map::{format_path_with_resolved_leaf, PathKey, PathMap};
+use crate::Error;
+use crate::Location;
 
 #[cfg(feature = "validator")]
 use validator::{ValidationErrors, ValidationErrorsKind};
@@ -40,7 +40,7 @@ use validator::{ValidationErrors, ValidationErrorsKind};
 ///   This helper owns a copy of `source` to build a standalone `miette::Report`.
 /// - If the error has no known location/span, the report will not include labels.
 pub fn to_miette_report(err: &Error, source: &str, file: &str) -> miette::Report {
-    let src = Arc::new(NamedSource::new(file.to_owned(), source.to_owned()));
+    let src = Arc::new(NamedSource::new(file, source.to_owned()));
     let diag = build_diagnostic(err.without_snippet(), src);
     miette::Report::new(diag)
 }
@@ -172,10 +172,10 @@ fn build_diagnostic(err: &Error, src: Arc<NamedSource<String>>) -> ErrorDiagnost
 
         other => {
             let mut labels = Vec::new();
-            if let Some(loc) = other.location() {
-                if let Some(span) = to_source_span(&src, &loc) {
-                    labels.push(LabeledSpan::new_with_span(Some(other.to_string()), span));
-                }
+            if let Some(loc) = other.location()
+                && let Some(span) = to_source_span(&src, &loc)
+            {
+                labels.push(LabeledSpan::new_with_span(Some(other.to_string()), span));
             }
 
             ErrorDiagnostic {
@@ -248,23 +248,24 @@ fn build_validation_labels(
                 span,
             ));
         }
-    } else if def_loc != Location::UNKNOWN {
-        if let Some(span) = to_source_span(src, &def_loc) {
-            labels.push(LabeledSpan::new_with_span(
-                Some("defined here".to_owned()),
-                span,
-            ));
-        }
+    } else if def_loc != Location::UNKNOWN
+        && let Some(span) = to_source_span(src, &def_loc)
+    {
+        labels.push(LabeledSpan::new_with_span(
+            Some("defined here".to_owned()),
+            span,
+        ));
     }
 
     // Secondary label: definition site when it is distinct and known.
-    if def_loc != Location::UNKNOWN && def_loc != ref_loc {
-        if let Some(span) = to_source_span(src, &def_loc) {
-            labels.push(LabeledSpan::new_with_span(
-                Some("defined here".to_owned()),
-                span,
-            ));
-        }
+    if def_loc != Location::UNKNOWN
+        && def_loc != ref_loc
+        && let Some(span) = to_source_span(src, &def_loc)
+    {
+        labels.push(LabeledSpan::new_with_span(
+            Some("defined here".to_owned()),
+            span,
+        ));
     }
 
     labels
@@ -343,10 +344,7 @@ fn to_source_span(src: &NamedSource<String>, location: &Location) -> Option<Sour
         char_len = 1;
     }
 
-    let (byte_off, mut byte_len) = match char_range_to_byte_range(src.inner(), char_off, char_len) {
-        Some(r) => r,
-        None => return None,
-    };
+    let (byte_off, mut byte_len) = char_range_to_byte_range(src.inner(), char_off, char_len)?;
 
     // Clamp to the actual input, to avoid panics and invalid spans.
     let src_len = src.inner().len();
@@ -355,7 +353,7 @@ fn to_source_span(src: &NamedSource<String>, location: &Location) -> Option<Sour
     }
     byte_len = byte_len.min(src_len.saturating_sub(byte_off));
 
-    Some(SourceSpan::new(byte_off.into(), byte_len.into()))
+    Some(SourceSpan::new(byte_off.into(), byte_len))
 }
 
 fn message_without_location(err: &Error) -> String {
@@ -395,8 +393,8 @@ mod tests {
 
     #[test]
     fn basic_error_has_primary_label_span() {
-        let src = Arc::new(NamedSource::new(
-            "input.yaml".to_owned(),
+        let src: Arc<NamedSource<String>> = Arc::new(NamedSource::new(
+            "input.yaml",
             "a: definitely\n".to_owned(),
         ));
         let err = Error::Message {
@@ -424,7 +422,7 @@ mod tests {
     fn non_ascii_prefix_char_offsets_convert_to_byte_offsets() {
         // Three Greek letters (non-ASCII, multi-byte in UTF-8) followed by ASCII "def".
         let yaml = "αβγdef\n";
-        let src = Arc::new(NamedSource::new("input.yaml".to_owned(), yaml.to_owned()));
+        let src: Arc<NamedSource<String>> = Arc::new(NamedSource::new("input.yaml", yaml.to_owned()));
 
         let ascii_slice = "def";
         let byte_off = yaml.find(ascii_slice).expect("substring present");
@@ -455,7 +453,7 @@ mod tests {
     #[test]
     fn non_ascii_token_itself_converts_correctly() {
         let yaml = "a: áé\n"; // value contains two non-ASCII letters
-        let src = Arc::new(NamedSource::new("input.yaml".to_owned(), yaml.to_owned()));
+        let src: Arc<NamedSource<String>> = Arc::new(NamedSource::new("input.yaml", yaml.to_owned()));
 
         let value_chars = "áé";
         let start_byte = yaml.find(value_chars).unwrap();
@@ -481,7 +479,7 @@ mod tests {
     #[test]
     fn zero_length_span_highlights_one_char() {
         let yaml = "key: value\n";
-        let src = Arc::new(NamedSource::new("input.yaml".to_owned(), yaml.to_owned()));
+        let src: Arc<NamedSource<String>> = Arc::new(NamedSource::new("input.yaml", yaml.to_owned()));
         let start_byte = yaml.find("value").unwrap();
         let start_char = yaml[..start_byte].chars().count();
 
@@ -505,7 +503,7 @@ mod tests {
     #[test]
     fn span_past_end_is_clamped() {
         let yaml = "hello"; // 5 bytes, 5 chars
-        let src = Arc::new(NamedSource::new("input.yaml".to_owned(), yaml.to_owned()));
+        let src: Arc<NamedSource<String>> = Arc::new(NamedSource::new("input.yaml", yaml.to_owned()));
         // Start at char 3 (the 'l'), but ask for a very long span
         let start_char = 3usize;
         let start_byte = yaml.char_indices().nth(start_char).map(|(i, _)| i).unwrap();
@@ -530,7 +528,7 @@ mod tests {
     #[test]
     fn multiline_offset_after_newline() {
         let yaml = "α\nβ\nxyz\n"; // 1-char lines, then ascii line
-        let src = Arc::new(NamedSource::new("input.yaml".to_owned(), yaml.to_owned()));
+        let src: Arc<NamedSource<String>> = Arc::new(NamedSource::new("input.yaml", yaml.to_owned()));
         let target = "xyz";
         let start_byte = yaml.find(target).unwrap();
         let start_char = yaml[..start_byte].chars().count();
@@ -571,7 +569,8 @@ mod tests {
         // - use-site is at `secondString: *A`
         // - definition-site is at `firstString: &A "x"`
         let yaml = "\nfirstString: &A \"x\"\nsecondString: *A\n";
-        let src = Arc::new(NamedSource::new("config.yaml".to_owned(), yaml.to_owned()));
+        let src: Arc<NamedSource<String>> =
+            Arc::new(NamedSource::new("config.yaml", yaml.to_owned()));
 
         let use_offset = yaml.find("*A").unwrap();
         let def_offset = yaml.find("\"x\"").unwrap();

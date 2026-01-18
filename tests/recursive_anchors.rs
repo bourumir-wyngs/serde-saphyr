@@ -42,10 +42,10 @@ struct Kingdom {
 
 fn assert_recursive_outer_arc(outer: &OuterArc) {
     let foo_guard = outer.foo.lock().unwrap();
-    let foo = foo_guard.as_ref().expect("foo should be initialized");
-    assert_eq!(foo.k1, "One");
-    assert_eq!(foo.k2, "Two");
-    let k3 = foo.k3.upgrade().expect("k3 should be alive");
+    let foo_ref = foo_guard.as_ref().expect("foo_ref should be initialized");
+    assert_eq!(foo_ref.k1, "One");
+    assert_eq!(foo_ref.k2, "Two");
+    let k3 = foo_ref.k3.upgrade().expect("k3 should be alive");
     let k3_weak = ArcRecursion::from(&k3);
     drop(foo_guard);
 
@@ -76,16 +76,16 @@ fn assert_recursive_outer_arc(outer: &OuterArc) {
 }
 
 fn assert_recursive_outer(outer: &Outer) {
-    let foo = outer.foo.borrow();
-    assert_eq!(foo.k1, "One");
-    assert_eq!(foo.k2, "Two");
-    let k3 = foo.k3.upgrade().expect("k3 should be alive");
-    let k3_name = foo
+    let foo_ref = outer.foo.borrow();
+    assert_eq!(foo_ref.k1, "One");
+    assert_eq!(foo_ref.k2, "Two");
+    let k3 = foo_ref.k3.upgrade().expect("k3 should be alive");
+    let k3_name = foo_ref
         .k3
         .with(|next| next.k1.clone())
         .expect("k3 should be alive");
     assert_eq!(k3_name, "One");
-    drop(foo);
+    drop(foo_ref);
 
     let k3_ref = k3.borrow();
     assert_eq!(k3_ref.k1, "One");

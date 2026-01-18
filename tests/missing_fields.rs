@@ -1,12 +1,14 @@
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct Item {
     name: String,
     platform: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct Root {
     item: Item,
 }
@@ -28,7 +30,7 @@ fn missing_required_field_in_nested_struct_renders_snippet_at_parent_container()
 
     let err = serde_saphyr::from_str::<Root>(yaml).expect_err("must fail");
     let rendered = err.to_string();
-    println!("{rendered}");
+    // println!("{rendered}");
 
     assert!(
         rendered.contains("missing field `platform`"),
@@ -39,11 +41,11 @@ fn missing_required_field_in_nested_struct_renders_snippet_at_parent_container()
 
 #[test]
 fn missing_required_field_in_sequence_item_renders_snippet_at_item_container() {
-    let yaml = concat!("- name: test\n");
+    let yaml = "- name: test\n";
 
     let err = serde_saphyr::from_str::<Vec<Item>>(yaml).expect_err("must fail");
     let rendered = err.to_string();
-    println!("{rendered}");
+    // println!("{rendered}");
 
     assert!(
         rendered.contains("missing field `platform`"),

@@ -124,6 +124,7 @@ fn span_offsets_are_in_characters_not_bytes() {
     // Non-ASCII prefix before ASCII token; expected offset is in characters.
     // Use a mapping so the error is on the value position, not at document start.
     #[derive(Debug, Deserialize)]
+    #[allow(dead_code)]
     struct T { key: bool }
 
     let yaml = "key: αβγdef\n";

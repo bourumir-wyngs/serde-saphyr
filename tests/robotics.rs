@@ -3,7 +3,7 @@
 mod tests {
     use core::f64::consts::PI;
     use serde::Deserialize;
-    use serde_saphyr::{Options, from_str_with_options};
+    use serde_saphyr::{from_str_with_options, Options};
 
     #[derive(Debug, Deserialize)]
     struct RoboFloats {
@@ -107,11 +107,11 @@ angle_from_sexagesimal_rad: !radians 8:32:53.2
         assert!((v.quoted_rad - (PI / 2.0)).abs() < 1e-12); // rad(pi/2) = PI/2
 
         // f32s
-        assert!((v.f32_from_deg as f64 - (PI / 2.0)).abs() < 1e-6 as f64);
-        assert!((v.f32_plain as f64 - 1.25).abs() < 1e-6 as f64);
+        assert!((v.f32_from_deg as f64 - (PI / 2.0)).abs() < 1e-6_f64);
+        assert!((v.f32_plain as f64 - 1.25).abs() < 1e-6_f64);
 
         // Time default: -01:02:03 => -(1*3600 + 2*60 + 3) seconds
-        assert!((v.time_secs as f64 - (-3723.0)).abs() < 1e-6 as f64);
+        assert!((v.time_secs as f64 - (-3723.0)).abs() < 1e-6_f64);
 
         // Angle from sexagesimal explicitly via deg(...)
         let degs = 8.0 + 32.0 / 60.0 + 53.2 / 3600.0;

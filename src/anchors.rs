@@ -667,12 +667,10 @@ where
                     }
                     None => None,
                 };
-                if let Some((id, None)) = existing {
-                    if anchor_store::rc_anchor_reentrant(id) {
-                        return Err(D::Error::custom(
-                            "Recursive references require weak anchors",
-                        ));
-                    }
+                if let Some((id, None)) = existing && anchor_store::rc_anchor_reentrant(id) {
+                    return Err(D::Error::custom(
+                        "Recursive references require weak anchors",
+                    ));
                 }
 
                 let value = T::deserialize(deserializer)?;
@@ -725,12 +723,10 @@ where
                     )),
                     None => None,
                 };
-                if let Some((id, None)) = existing {
-                    if anchor_store::arc_anchor_reentrant(id) {
-                        return Err(D::Error::custom(
-                            "Recursive references require weak anchors",
-                        ));
-                    }
+                if let Some((id, None)) = existing && anchor_store::arc_anchor_reentrant(id) {
+                    return Err(D::Error::custom(
+                        "Recursive references require weak anchors",
+                    ));
                 }
 
                 let value = T::deserialize(deserializer)?;
@@ -786,12 +782,10 @@ where
                     ),
                     None => None,
                 };
-                if let Some((id, None)) = existing {
-                    if anchor_store::rc_recursive_reentrant(id) {
-                        return Err(D::Error::custom(
-                            "Recursive references require weak recursion types",
-                        ));
-                    }
+                if let Some((id, None)) = existing && anchor_store::rc_recursive_reentrant(id) {
+                    return Err(D::Error::custom(
+                        "Recursive references require weak recursion types",
+                    ));
                 }
 
                 if let Some((_, Some(rc))) = existing {
@@ -853,12 +847,10 @@ where
                     ),
                     None => None,
                 };
-                if let Some((id, None)) = existing {
-                    if anchor_store::arc_recursive_reentrant(id) {
-                        return Err(D::Error::custom(
-                            "Recursive references require weak recursion types",
-                        ));
-                    }
+                if let Some((id, None)) = existing && anchor_store::arc_recursive_reentrant(id) {
+                    return Err(D::Error::custom(
+                        "Recursive references require weak recursion types",
+                    ));
                 }
 
                 if let Some((_, Some(arc))) = existing {

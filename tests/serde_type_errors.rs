@@ -4,6 +4,7 @@ use serde::Deserialize;
 fn unknown_field_error_has_location_and_renders_snippet() {
     #[derive(Debug, Deserialize)]
     #[serde(deny_unknown_fields)]
+    #[allow(dead_code)]
     struct Cfg {
         a: i32,
     }
@@ -31,6 +32,7 @@ fn unknown_field_error_has_location_and_renders_snippet() {
 #[test]
 fn plain_string_into_int_error_has_location_and_renders_snippet() {
     #[derive(Debug, Deserialize)]
+    #[allow(dead_code)]
     struct Cfg {
         a: i32,
     }

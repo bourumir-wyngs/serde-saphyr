@@ -11,10 +11,10 @@ fn validate_extra(value: &String, context: &ValidationContext) -> garde::Result 
     if value == &context.allowed_string {
         return Ok(());
     }
-    return Err(garde::Error::new(format!(
+    Err(garde::Error::new(format!(
         "value '{}' does not match allowed string '{}'",
         value, context.allowed_string
-    )));
+    )))
 }
 
 #[derive(Debug, Deserialize, Validate)]

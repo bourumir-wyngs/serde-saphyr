@@ -89,7 +89,7 @@ dof: 6
     "#;
 
     let root: Result<Root, Error> = serde_saphyr::from_str_with_options_valid(
-        &contents,
+        contents,
         Options {
             angle_conversions: true,
             ..Default::default()
@@ -97,7 +97,7 @@ dof: 6
     );
     match root {
         Ok(_root) => {
-            assert!(false, "Validation must fail - a1 is nan")
+            panic!("Validation must fail - a1 is nan")
         }
         Err(err) => {
             assert!(err.to_string().contains(
@@ -123,7 +123,7 @@ opw_kinematics_joint_sign_corrections: [1, 1, 0, -1, -1, -1]
 dof: 6    "#;
 
     let root: Result<Root, Error> = serde_saphyr::from_str_with_options_valid(
-        &contents,
+        contents,
         Options {
             angle_conversions: true,
             ..Default::default()
@@ -131,7 +131,7 @@ dof: 6    "#;
     );
     match root {
         Ok(_root) => {
-            assert!(false, "Validation must fail - a1 is nan")
+            panic!("Validation must fail - sign correction is invalid")
         }
         Err(err) => {
             assert!(err.to_string().contains(

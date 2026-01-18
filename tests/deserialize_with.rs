@@ -6,6 +6,7 @@ fn deserialize_with_type_error_renders_snippet() {
     use std::collections::HashMap;
 
     #[derive(Clone, Debug, Deserialize)]
+    #[allow(dead_code)]
     pub struct BaseEntityProperties {
         name: String,
         platform: String,
@@ -44,6 +45,7 @@ fn deserialize_with_type_error_renders_snippet() {
     #[derive(Debug, Deserialize)]
     struct Cfg {
         #[serde(default, deserialize_with = "map_base_entity")]
+        #[allow(dead_code)]
         pub hash_map: Option<HashMap<String, BaseEntity>>,
     }
 
