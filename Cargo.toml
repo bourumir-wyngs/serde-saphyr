@@ -11,7 +11,7 @@ categories = ["encoding", "parser-implementations", "config", "command-line-util
 keywords = ["yaml", "serde", "serialization", "config", "ros"]
 
 [dependencies]
-#saphyr-parser = { package = "saphyr-parser-bw", version = "0.0.602"}
+#saphyr-parser = { package = "saphyr-parser-bw", version = "0.0.604"}
 saphyr-parser = { package="saphyr-parser-bw", git = "https://github.com/bourumir-wyngs/saphyr", branch = "dev/saphyr-parser", subdir="parser" }
 serde = { version = "1", features = ["derive"] }
 # Our tests are all fine with this alpha so far, this will be advanced
