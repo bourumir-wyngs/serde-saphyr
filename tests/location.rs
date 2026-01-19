@@ -35,8 +35,8 @@ fn expect_span_offset(err: &Error, offset: usize) {
 
 #[test]
 fn parser_scan_error_carries_span() {
-    let err = from_str::<Vec<String>>("[1, 2").expect_err("scan error expected");
-    expect_location(&err, 2, 1);
+    let err = from_str::<Vec<String>>(" [1, 2\n 3, 4").expect_err("scan error expected");
+    expect_location(&err, 1, 2); // unclose bracket is at position 2, line is 1.
     assert!(matches!(unwrap_snippet(&err), Error::Message { .. }));
 }
 

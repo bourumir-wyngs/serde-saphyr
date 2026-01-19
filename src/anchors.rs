@@ -1,3 +1,38 @@
+//! Support for YAML anchors and aliases using smart pointers.
+//!
+//! This module provides wrappers around [`Rc`] and [`Arc`] (and their weak counterparts)
+//! to enable the serialization and deserialization of shared or recursive structures
+//! in YAML.
+//!
+//! ## Anchor Types
+//!
+//! There are two main categories of anchor types provided:
+//!
+//! 1. **Standard Anchors** ([`RcAnchor`], [`ArcAnchor`], [`RcWeakAnchor`], [`ArcWeakAnchor`]):
+//!    - Designed for **Directed Acyclic Graphs (DAGs)** where multiple fields share ownership
+//!      of the same object.
+//!    - During deserialization, the strong anchor must be fully parsed before any of its aliases
+//!      (weak anchors) are encountered.
+//!    - These types are simpler to use because they implement [`Deref`] directly to the inner type `T`.
+//!
+//! 2. **Recursive Anchors** ([`RcRecursive`], [`ArcRecursive`], [`RcRecursion`], [`ArcRecursion`]):
+//!    - Specifically designed for **circular or recursive graphs** (e.g., an object that
+//!      contains a reference to itself).
+//!    - They allow an object to be referenced via an alias *before* it has been fully deserialized.
+//!
+//! ## Recursive Anchors Are More Complex
+//!
+//! Recursive anchors require a more complex internal structure because they must handle late
+//! initialization. When the deserializer encounters a recursive anchor, it creates a placeholder
+//! and registers it. Once the object's data is fully parsed, the placeholder is updated with the
+//! actual value. This requires interior mutability to fill in the value after the container has
+//! already been shared, and optionality ([`Option`]) to represent the uninitialized state.
+//!
+//! Because of this, you cannot [`Deref`] directly to `T`. Instead, you must use methods like
+//! [`.borrow()`](RcRecursive::borrow) or [`.lock()`](ArcRecursive::lock) to access the underlying data.
+//!
+//! For a complete working example of recursive anchors, see `examples/recursive_yaml.rs`.
+
 use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::fmt;

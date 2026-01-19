@@ -757,8 +757,8 @@ checksum = "a50f4cf475b65d88e057964e0e9bb1f0aa9bbb2036dc65c64596b42932536984"
 
 [[package]]
 name = "saphyr-parser-bw"
-version = "0.0.603"
-source = "git+https://github.com/bourumir-wyngs/saphyr?branch=dev%2Fsaphyr-parser#467ef9aa750faa6cffed06c4e4cc35c59c2a78bd"
+version = "0.0.605"
+source = "git+https://github.com/bourumir-wyngs/saphyr?branch=dev%2Fsaphyr-parser#4af9f4eb9b8303439db6fc15080a23165e12490b"
 dependencies = [
  "arraydeque",
  "smallvec 2.0.0-alpha.12",
