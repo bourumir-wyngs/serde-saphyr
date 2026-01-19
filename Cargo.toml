@@ -21,9 +21,9 @@ num-traits = { version = ">=0.2.0, <=0.2.19" }
 base64 = { version = ">=0.21.0, <=0.22.1" }
 zmij = "1.0"
 regex = { version = ">= 1.0, < 1.13"} # range tested
-nohash-hasher = "0.2.0"
-encoding_rs_io = "0.1.7"
-ahash = "0.8.12"
+nohash-hasher = "0.2"
+encoding_rs_io = "0.1"
+ahash = "0.8"
 annotate-snippets = "0.12"
 figment = { version = "0.10", optional = true }
 garde = { version = ">= 0.19.0, < 0.23", optional = true, features = ["derive"] }
