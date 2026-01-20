@@ -639,4 +639,80 @@ mod tests {
             "expected definition-site label, got: {label_debug}"
         );
     }
+
+    #[cfg(feature = "garde")]
+    #[test]
+    fn garde_validation_error_has_use_and_definition_labels() {
+        use garde::Validate;
+
+        #[derive(Debug, Validate)]
+        struct Cfg {
+            #[garde(length(min = 2))]
+            second_string: String,
+        }
+
+        let cfg = Cfg {
+            second_string: "x".to_owned(),
+        };
+        let report = cfg.validate().expect_err("validation error expected");
+
+        // Simulate the alias case:
+        // - use-site is at `secondString: *A`
+        // - definition-site is at `firstString: &A "x"`
+        let yaml = "\nfirstString: &A \"x\"\nsecondString: *A\n";
+        let src: Arc<NamedSource<String>> =
+            Arc::new(NamedSource::new("config.yaml", yaml.to_owned()));
+
+        let use_offset = yaml.find("*A").unwrap();
+        let def_offset = yaml.find("\"x\"").unwrap();
+
+        let referenced_loc = Location {
+            line: 3,
+            column: 15,
+            span: crate::Span {
+                offset: use_offset,
+                len: 2,
+            },
+        };
+        let defined_loc = Location {
+            line: 2,
+            column: 18,
+            span: crate::Span {
+                offset: def_offset,
+                len: 3,
+            },
+        };
+
+        let mut locations = PathMap::new();
+
+        // Validation path uses snake_case (`second_string`), but the YAML key is camelCase.
+        // We insert the recorded YAML spelling so `PathMap::search()` resolves the leaf.
+        let yaml_path = PathKey::empty().join("secondString");
+        locations.insert(
+            yaml_path,
+            Locations {
+                reference_location: referenced_loc,
+                defined_location: defined_loc,
+            },
+        );
+
+        let err = Error::ValidationError { report, locations };
+
+        let diag = build_diagnostic(&err, Arc::clone(&src));
+        assert_eq!(diag.message, "validation failed");
+        assert_eq!(diag.related.len(), 1);
+
+        let labels = &diag.related[0].labels;
+        assert_eq!(labels.len(), 2, "expected 2 labels, got: {labels:?}");
+
+        let label_debug = format!("{labels:?}");
+        assert!(
+            label_debug.contains("the value is used here"),
+            "expected use-site label, got: {label_debug}"
+        );
+        assert!(
+            label_debug.contains("defined here"),
+            "expected definition-site label, got: {label_debug}"
+        );
+    }
 }
