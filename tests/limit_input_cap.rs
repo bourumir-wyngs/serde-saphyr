@@ -43,7 +43,7 @@ fn from_reader_respects_max_input_bytes_budget() {
     let a: Result<Simple, Error> = from_reader_with_options(rdr.clone(), opts_small);
     match a {
         Ok(_) => panic!("Should be able to limit max_input_bytes_budget"),
-        Err(error) => match error {
+        Err(error) => match unwrap_snippet(&error) {
             Error::IOError { cause } => {
                 assert_eq!(cause.kind(), ErrorKind::FileTooLarge);
             }

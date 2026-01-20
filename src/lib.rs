@@ -68,6 +68,7 @@ pub mod miette;
 
 #[cfg(feature = "figment")]
 pub mod figment;
+pub(crate) mod ring_reader;
 mod zmij_format;
 // ---------------- Serialization (public API) ----------------
 
@@ -458,7 +459,11 @@ where
 /// The error message will contain a snippet with exact location information, and if the
 /// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
 #[cfg(feature = "garde")]
-pub fn from_str_with_options_context_valid<T>(input: &str, options: Options, context: &<T as garde::Validate>::Context) -> Result<T, Error>
+pub fn from_str_with_options_context_valid<T>(
+    input: &str,
+    options: Options,
+    context: &<T as garde::Validate>::Context,
+) -> Result<T, Error>
 where
     T: DeserializeOwned + garde::Validate,
 {
@@ -1586,14 +1591,35 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
     options: Options,
 ) -> Result<T, Error> {
     let cfg = crate::de::Cfg::from_options(&options);
+    let crop_radius = options.crop_radius;
+
+    // Wrap the reader in a SharedRingReader to capture context for error snippets
+    let shared_ring = ring_reader::SharedRingReader::new(reader);
+    let ring_handle = ring_reader::SharedRingReaderHandle::new(&shared_ring);
+
     let mut src = LiveEvents::from_reader(
-        reader,
+        ring_handle,
         options.budget,
         options.budget_report,
         options.alias_limits,
         false,
         EnforcingPolicy::AllContent,
     );
+
+    // Helper to attach snippet to an error using the RingReader's context
+    let attach_snippet = |e: Error| -> Error {
+        if crop_radius == 0 {
+            return e;
+        }
+        match shared_ring.get_recent() {
+            Ok(snapshot) => {
+                let text = String::from_utf8_lossy(&snapshot.bytes);
+                e.with_snippet_offset(&text, snapshot.start_line, crop_radius)
+            }
+            Err(_) => e, // If we can't get the snapshot, return the error as-is
+        }
+    };
+
     let value_res = crate::anchor_store::with_document_scope(|| {
         T::deserialize(crate::de::YamlDeserializer::new(&mut src, cfg))
     });
@@ -1604,9 +1630,11 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
                 // If the only thing in the input was an empty document (synthetic null),
                 // surface this as an EOF error to preserve expected error semantics
                 // for incompatible target types (e.g., bool).
-                return Err(Error::eof().with_location(src.last_location()));
+                return Err(attach_snippet(
+                    Error::eof().with_location(src.last_location()),
+                ));
             } else {
-                return Err(e);
+                return Err(attach_snippet(e));
             }
         }
     };
@@ -1616,22 +1644,24 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
     // ignore the trailing garbage. Otherwise, surface the error.
     match src.peek() {
         Ok(Some(_)) => {
-            return Err(Error::msg(
+            return Err(attach_snippet(Error::msg(
                 "multiple YAML documents detected; use read or read_with_options to obtain the iterator",
             )
-                .with_location(src.last_location()));
+                .with_location(src.last_location())));
         }
         Ok(None) => {}
         Err(e) => {
             if src.seen_doc_end() {
                 // Trailing garbage after a proper document end marker is ignored.
             } else {
-                return Err(e);
+                return Err(attach_snippet(e));
             }
         }
     }
 
-    src.finish()?;
+    if let Err(e) = src.finish() {
+        return Err(attach_snippet(e));
+    }
     Ok(value)
 }
 

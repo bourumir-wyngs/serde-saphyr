@@ -9,8 +9,8 @@ a1:
 a2:
   b: 2
 ";
-    let yaml_value: serde_json::Value = serde_saphyr::from_str(yaml_str)
-        .unwrap_or_else(|e| panic!("{}", e));
+    let yaml_value: serde_json::Value =
+        serde_saphyr::from_str(yaml_str).unwrap_or_else(|e| panic!("{}", e));
 
     let expected = json!({
         "a1": { "b": 1 },
@@ -31,8 +31,8 @@ fn test_non_ascii_comment_start() {
         b: 2
     ";
 
-    let yaml_value: serde_json::Value = serde_saphyr::from_str(yaml_str)
-        .unwrap_or_else(|e| panic!("{}", e));
+    let yaml_value: serde_json::Value =
+        serde_saphyr::from_str(yaml_str).unwrap_or_else(|e| panic!("{}", e));
 
     let expected = json!({
         "a1": { "b": 1 },

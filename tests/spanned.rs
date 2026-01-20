@@ -128,7 +128,9 @@ nested: { threshold: 0.25, flags: [fast, safe], inner: { enabled: true, note: nu
 #[test]
 fn spanned_offsets_are_character_based_with_non_ascii() {
     #[derive(Debug, Deserialize)]
-    struct Cfg { value: Spanned<String> }
+    struct Cfg {
+        value: Spanned<String>,
+    }
 
     let yaml = "value: αβγok\n";
     let cfg: Cfg = serde_saphyr::from_str(yaml).unwrap();

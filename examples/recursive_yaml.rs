@@ -1,6 +1,6 @@
-use std::cell::Ref;
 use serde::{Deserialize, Serialize};
 use serde_saphyr::{RcRecursion, RcRecursive};
+use std::cell::Ref;
 
 #[derive(Deserialize, Serialize, PartialEq, Debug)]
 struct King {
@@ -60,7 +60,8 @@ kings:
     for king in &kingdom.kings {
         // We cannot just call "borrow" after .expect(..), we need to retain this variable.
         // Some optional type declarations added for clarity.
-        let rc_coronator: RcRecursive<King> = king.borrow()
+        let rc_coronator: RcRecursive<King> = king
+            .borrow()
             .crowned_by
             .upgrade()
             .expect("each king has a coronator");
@@ -95,13 +96,13 @@ kings:
             coronator_from = coronator_of_coronator.reign_starts,
             k3k3_name = k3k3_name,
         )
-// Output:
-// 1920: king Aurelian I (Aurelian Markus), crowned by Aurelian Markus, crowned by Aurelian Markus (1920) crowned by Aurelian Markus .
-// 1950: king Benedict I (Benedict Orlan), crowned by Aurelian Markus, crowned by Aurelian Markus (1920) crowned by Aurelian Markus .
-// 1978: king Cassian I (Cassian Valerius), crowned by Benedict Orlan, crowned by Aurelian Markus (1920) crowned by Aurelian Markus .
-// 2009: king Lucian I (Lucian Severin), crowned by Cassian Valerius, crowned by Benedict Orlan (1950) crowned by Aurelian Markus .
-// 2036: king Darius I (Darius Octavian), crowned by Lucian Severin, crowned by Cassian Valerius (1978) crowned by Benedict Orlan .
-// 2064: king Marcus II (Marcus Faelan), crowned by Darius Octavian, crowned by Lucian Severin (2009) crowned by Cassian Valerius .
+        // Output:
+        // 1920: king Aurelian I (Aurelian Markus), crowned by Aurelian Markus, crowned by Aurelian Markus (1920) crowned by Aurelian Markus .
+        // 1950: king Benedict I (Benedict Orlan), crowned by Aurelian Markus, crowned by Aurelian Markus (1920) crowned by Aurelian Markus .
+        // 1978: king Cassian I (Cassian Valerius), crowned by Benedict Orlan, crowned by Aurelian Markus (1920) crowned by Aurelian Markus .
+        // 2009: king Lucian I (Lucian Severin), crowned by Cassian Valerius, crowned by Benedict Orlan (1950) crowned by Aurelian Markus .
+        // 2036: king Darius I (Darius Octavian), crowned by Lucian Severin, crowned by Cassian Valerius (1978) crowned by Benedict Orlan .
+        // 2064: king Marcus II (Marcus Faelan), crowned by Darius Octavian, crowned by Lucian Severin (2009) crowned by Cassian Valerius .
     }
     Ok(())
 }

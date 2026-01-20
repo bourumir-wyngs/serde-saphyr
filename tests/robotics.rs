@@ -3,7 +3,7 @@
 mod tests {
     use core::f64::consts::PI;
     use serde::Deserialize;
-    use serde_saphyr::{from_str_with_options, Options};
+    use serde_saphyr::{Options, from_str_with_options};
 
     #[derive(Debug, Deserialize)]
     struct RoboFloats {

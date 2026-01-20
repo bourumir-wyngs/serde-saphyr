@@ -470,10 +470,10 @@ impl<'a> LiveEvents<'a> {
                             self.produced_any_in_doc = true;
                             return Ok(Some(ev));
                         }
-                        return Err(
-                            Error::msg("Recursive references require weak recursion types")
-                                .with_location(location),
-                        );
+                        return Err(Error::msg(
+                            "Recursive references require weak recursion types",
+                        )
+                        .with_location(location));
                     }
 
                     // Ensure the anchor exists now (fail fast); store only id + idx.

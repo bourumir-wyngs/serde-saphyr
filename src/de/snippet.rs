@@ -98,6 +98,115 @@ pub(crate) fn fmt_with_snippet_or_fallback(
     write!(f, "{}", renderer.render(report))
 }
 
+/// Render a rustc-like diagnostic snippet for an error, where the text fragment
+/// starts at `text_start_line` (1-based) rather than line 1.
+///
+/// This is used for reader-based parsing where we only have a sliding window of the input
+/// (e.g., from `RingReader`). The `location` contains the absolute line/column in the
+/// original stream, and we adjust it relative to the fragment.
+pub(crate) fn fmt_with_snippet_offset_or_fallback(
+    f: &mut fmt::Formatter<'_>,
+    level: Level,
+    msg: &str,
+    location: &Location,
+    text: &str,
+    path: &str,
+    text_start_line: usize,
+    crop_radius: usize,
+) -> fmt::Result {
+    if location == &Location::UNKNOWN {
+        return write!(f, "{msg}");
+    }
+
+    // `Location` is 1-based and uses *character* columns (not byte offsets).
+    let absolute_row = location.line as usize;
+    let col = location.column as usize;
+
+    // Check if the error is within our text fragment
+    if absolute_row < text_start_line {
+        // Error is before our fragment - just show the message with location
+        return fmt_with_location(f, msg, location);
+    }
+
+    // Calculate the relative row within our text fragment (1-based)
+    let relative_row = absolute_row
+        .saturating_sub(text_start_line)
+        .saturating_add(1);
+
+    let line_starts = line_starts(text);
+    if line_starts.is_empty() {
+        return fmt_with_location(f, msg, location);
+    }
+
+    // Check if the relative row is within our fragment
+    if relative_row > line_starts.len() {
+        return fmt_with_location(f, msg, location);
+    }
+
+    let Some(start) = line_col_to_byte_offset_with_starts(text, &line_starts, relative_row, col)
+    else {
+        return fmt_with_location(f, msg, location);
+    };
+
+    // Create a minimal span for the primary annotation
+    let end = match text.as_bytes().get(start) {
+        Some(b'\n') | Some(b'\r') => start,
+        _ => next_char_boundary(text, start).unwrap_or(start),
+    };
+
+    // Render a small window around the error location
+    let total_lines = line_starts.len();
+    let window_start_relative_row = relative_row.saturating_sub(2).max(1);
+    let window_end_relative_row = relative_row.saturating_add(2).min(total_lines);
+    let window_start_relative_row = window_start_relative_row.min(window_end_relative_row);
+
+    let window_start = line_starts[window_start_relative_row - 1];
+    let window_end = if window_end_relative_row < total_lines {
+        line_starts[window_end_relative_row]
+    } else {
+        text.len()
+    };
+    let window_text = &text[window_start..window_end];
+
+    let local_start = start.saturating_sub(window_start).min(window_text.len());
+    let local_end = end.saturating_sub(window_start).min(window_text.len());
+
+    // Horizontal cropping
+    let (window_text, local_start, local_end) = crop_window_text(
+        window_text,
+        window_start_relative_row,
+        relative_row,
+        col,
+        crop_radius,
+        local_start,
+        local_end,
+    );
+
+    // Calculate the absolute line number for display in the snippet
+    // The window starts at window_start_relative_row in the fragment,
+    // which corresponds to (text_start_line + window_start_relative_row - 1) in the original
+    let window_start_absolute_row = text_start_line
+        .saturating_add(window_start_relative_row)
+        .saturating_sub(1);
+
+    let report = &[level
+        .primary_title(format!("line {absolute_row} column {col}: {msg}"))
+        .element(
+            Snippet::source(&window_text)
+                .line_start(window_start_absolute_row)
+                .path(path)
+                .fold(false)
+                .annotation(
+                    AnnotationKind::Primary
+                        .span(local_start..local_end)
+                        .label(msg),
+                ),
+        )];
+
+    let renderer = Renderer::plain().decor_style(DecorStyle::Ascii);
+    write!(f, "{}", renderer.render(report))
+}
+
 /// Render only the snippet source window (no `error:` / `note:` title line).
 ///
 /// This is used for secondary context in garde validation errors (e.g. anchors), where we want to

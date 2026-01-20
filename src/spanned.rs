@@ -22,8 +22,8 @@
 //! assert_eq!(cfg.timeout.referenced.column(), 10);
 //! ```
 
-use serde::{Deserialize, Serialize};
 use serde::de::{self, Deserializer};
+use serde::{Deserialize, Serialize};
 
 use crate::Location;
 

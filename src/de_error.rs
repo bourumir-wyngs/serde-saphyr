@@ -13,8 +13,8 @@ use crate::tags::SfTag;
 use annotate_snippets::Level;
 use saphyr_parser::{ScalarStyle, ScanError};
 use serde::de::{self};
-use std::fmt;
 use std::cell::RefCell;
+use std::fmt;
 #[cfg(feature = "validator")]
 use validator::{ValidationErrors, ValidationErrorsKind};
 
@@ -140,6 +140,33 @@ impl Error {
         };
 
         let rendered = render_error_with_snippets(&inner, text, crop_radius);
+
+        Error::WithSnippet {
+            text: rendered,
+            crop_radius,
+            error: Box::new(inner),
+        }
+    }
+
+    /// Attach a snippet from a partial YAML fragment (e.g., from `RingReader`).
+    ///
+    /// This is similar to `with_snippet`, but the `text` is a fragment that starts
+    /// at `start_line` (1-based) rather than at line 1. The renderer will adjust
+    /// line numbers accordingly.
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn with_snippet_offset(
+        self,
+        text: &str,
+        start_line: usize,
+        crop_radius: usize,
+    ) -> Self {
+        let inner = match self {
+            Error::WithSnippet { error, .. } => *error,
+            other => other,
+        };
+
+        let rendered = render_error_with_snippets_offset(&inner, text, start_line, crop_radius);
 
         Error::WithSnippet {
             text: rendered,
@@ -393,7 +420,10 @@ impl Error {
 }
 
 #[cfg(any(feature = "garde", feature = "validator"))]
-fn search_locations_with_ancestor_fallback(locations: &PathMap, path: &PathKey) -> Option<Locations> {
+fn search_locations_with_ancestor_fallback(
+    locations: &PathMap,
+    path: &PathKey,
+) -> Option<Locations> {
     if let Some((locs, _)) = locations.search(path) {
         return Some(locs);
     }
@@ -641,6 +671,66 @@ fn render_error_with_snippets(inner: &Error, text: &str, crop_radius: usize) -> 
         msg: &msg,
         location: &location,
         text,
+        crop_radius,
+    }
+    .to_string()
+}
+
+/// Render error with snippets, where the text fragment starts at `start_line` (1-based).
+///
+/// This is used for reader-based parsing where we only have a sliding window of the input.
+#[cold]
+#[inline(never)]
+fn render_error_with_snippets_offset(
+    inner: &Error,
+    text: &str,
+    start_line: usize,
+    crop_radius: usize,
+) -> String {
+    if crop_radius == 0 {
+        return inner.to_string();
+    }
+
+    let msg = inner.to_string();
+    let Some(location) = inner.location() else {
+        return msg;
+    };
+
+    // Check if the error location is within our text fragment
+    let error_line = location.line as usize;
+    if error_line < start_line {
+        // Error is before our fragment - just show the message with location
+        return msg;
+    }
+
+    struct SnippetOffsetDisplay<'a> {
+        msg: &'a str,
+        location: &'a Location,
+        text: &'a str,
+        start_line: usize,
+        crop_radius: usize,
+    }
+
+    impl fmt::Display for SnippetOffsetDisplay<'_> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            crate::de_snipped::fmt_with_snippet_offset_or_fallback(
+                f,
+                Level::ERROR,
+                self.msg,
+                self.location,
+                self.text,
+                "<input>",
+                self.start_line,
+                self.crop_radius,
+            )
+        }
+    }
+
+    SnippetOffsetDisplay {
+        msg: &msg,
+        location: &location,
+        text,
+        start_line,
         crop_radius,
     }
     .to_string()
@@ -935,9 +1025,7 @@ impl de::Error for Error {
 
     fn invalid_type(unexp: de::Unexpected, exp: &dyn de::Expected) -> Self {
         // Mirror serde’s default formatting, but add a best-effort location.
-        maybe_attach_fallback_location(Error::msg(format!(
-            "invalid type: {unexp}, expected {exp}"
-        )))
+        maybe_attach_fallback_location(Error::msg(format!("invalid type: {unexp}, expected {exp}")))
     }
 
     fn invalid_value(unexp: de::Unexpected, exp: &dyn de::Expected) -> Self {

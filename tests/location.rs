@@ -125,7 +125,9 @@ fn span_offsets_are_in_characters_not_bytes() {
     // Use a mapping so the error is on the value position, not at document start.
     #[derive(Debug, Deserialize)]
     #[allow(dead_code)]
-    struct T { key: bool }
+    struct T {
+        key: bool,
+    }
 
     let yaml = "key: αβγdef\n";
     let err = from_str::<T>(yaml).expect_err("bool parse error expected");

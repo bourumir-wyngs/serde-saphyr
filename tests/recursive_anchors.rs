@@ -133,8 +133,14 @@ foo: &anchor
 
     let outer = serde_saphyr::from_str::<Outer>(yaml)?;
     let serialized = serde_saphyr::to_string(&outer)?;
-    assert!(serialized.contains("&a1"), "serialized YAML should define an anchor");
-    assert!(serialized.contains("*a1"), "serialized YAML should use an alias");
+    assert!(
+        serialized.contains("&a1"),
+        "serialized YAML should define an anchor"
+    );
+    assert!(
+        serialized.contains("*a1"),
+        "serialized YAML should use an alias"
+    );
 
     let roundtrip = serde_saphyr::from_str::<Outer>(&serialized)?;
     assert_recursive_outer(&roundtrip);
@@ -184,7 +190,10 @@ kings:
     let second = kingdom.kings[1].borrow();
     assert_eq!(second.birth_name, "Benedict Orlan");
     assert_eq!(second.regal_name, "Benedict I");
-    let crowned = second.crowned_by.upgrade().expect("crowned_by should be alive");
+    let crowned = second
+        .crowned_by
+        .upgrade()
+        .expect("crowned_by should be alive");
     drop(second);
 
     let crowned_ref = crowned.borrow();

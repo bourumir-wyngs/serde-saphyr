@@ -281,7 +281,9 @@ fn validation_error_shows_path_for_nested_map_entry() {
 
     // Ensure the failing garde path shows nested map keys and the leaf field.
     assert!(
-        rendered.contains("^ validation error: length is lower than 2 for `outer.group1.inner.itemA.v`"),
+        rendered.contains(
+            "^ validation error: length is lower than 2 for `outer.group1.inner.itemA.v`"
+        ),
         "expected failing path `outer.group1.inner.itemA.v` in output, got: {rendered}"
     );
 }

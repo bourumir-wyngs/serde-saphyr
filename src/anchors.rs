@@ -403,8 +403,7 @@ impl<T> RcRecursive<T> {
     pub fn borrow(&self) -> std::cell::Ref<'_, T> {
         let borrowed = self.0.as_ref().borrow();
         std::cell::Ref::map(borrowed, |opt: &Option<T>| {
-            opt.as_ref()
-                .expect("recursive Rc anchor not initialized")
+            opt.as_ref().expect("recursive Rc anchor not initialized")
         })
     }
 }
@@ -702,7 +701,9 @@ where
                     }
                     None => None,
                 };
-                if let Some((id, None)) = existing && anchor_store::rc_anchor_reentrant(id) {
+                if let Some((id, None)) = existing
+                    && anchor_store::rc_anchor_reentrant(id)
+                {
                     return Err(D::Error::custom(
                         "Recursive references require weak anchors",
                     ));
@@ -758,7 +759,9 @@ where
                     )),
                     None => None,
                 };
-                if let Some((id, None)) = existing && anchor_store::arc_anchor_reentrant(id) {
+                if let Some((id, None)) = existing
+                    && anchor_store::arc_anchor_reentrant(id)
+                {
                     return Err(D::Error::custom(
                         "Recursive references require weak anchors",
                     ));
@@ -808,16 +811,16 @@ where
             {
                 let anchor_id = anchor_store::current_rc_recursive_anchor();
                 let existing = match anchor_id {
-                    Some(id) => Some(
-                        (
-                            id,
-                            anchor_store::get_rc_recursive::<RefCell<Option<T>>>(id)
-                                .map_err(D::Error::custom)?,
-                        ),
-                    ),
+                    Some(id) => Some((
+                        id,
+                        anchor_store::get_rc_recursive::<RefCell<Option<T>>>(id)
+                            .map_err(D::Error::custom)?,
+                    )),
                     None => None,
                 };
-                if let Some((id, None)) = existing && anchor_store::rc_recursive_reentrant(id) {
+                if let Some((id, None)) = existing
+                    && anchor_store::rc_recursive_reentrant(id)
+                {
                     return Err(D::Error::custom(
                         "Recursive references require weak recursion types",
                     ));
@@ -843,7 +846,8 @@ where
             }
         }
 
-        deserializer.deserialize_newtype_struct("__yaml_rc_recursive", RcRecursiveVisitor(PhantomData))
+        deserializer
+            .deserialize_newtype_struct("__yaml_rc_recursive", RcRecursiveVisitor(PhantomData))
     }
 }
 
@@ -873,16 +877,16 @@ where
             {
                 let anchor_id = anchor_store::current_arc_recursive_anchor();
                 let existing = match anchor_id {
-                    Some(id) => Some(
-                        (
-                            id,
-                            anchor_store::get_arc_recursive::<Mutex<Option<T>>>(id)
-                                .map_err(D::Error::custom)?,
-                        ),
-                    ),
+                    Some(id) => Some((
+                        id,
+                        anchor_store::get_arc_recursive::<Mutex<Option<T>>>(id)
+                            .map_err(D::Error::custom)?,
+                    )),
                     None => None,
                 };
-                if let Some((id, None)) = existing && anchor_store::arc_recursive_reentrant(id) {
+                if let Some((id, None)) = existing
+                    && anchor_store::arc_recursive_reentrant(id)
+                {
                     return Err(D::Error::custom(
                         "Recursive references require weak recursion types",
                     ));
@@ -899,7 +903,8 @@ where
                     anchor_store::store_arc_recursive(id, arc.clone());
 
                     let value = T::deserialize(deserializer)?;
-                    *arc.lock().map_err(|_| D::Error::custom("recursive Arc anchor mutex poisoned"))? =
+                    *arc.lock()
+                        .map_err(|_| D::Error::custom("recursive Arc anchor mutex poisoned"))? =
                         Some(value);
                     return Ok(ArcRecursive(arc));
                 }
@@ -952,9 +957,9 @@ where
                 // Look up the strong reference by id and downgrade.
                 match anchor_store::get_rc::<T>(id).map_err(D::Error::custom)? {
                     Some(rc) => Ok(RcWeakAnchor(Rc::downgrade(&rc))),
-                    None if anchor_store::rc_anchor_reentrant(id) => Err(D::Error::custom(
-                        "Recursive references require RcRecursion",
-                    )),
+                    None if anchor_store::rc_anchor_reentrant(id) => {
+                        Err(D::Error::custom("Recursive references require RcRecursion"))
+                    }
                     None => Err(D::Error::custom(
                         "weak Rc anchor refers to unknown anchor id; strong anchor must be defined before weak",
                     )),
@@ -1052,7 +1057,8 @@ where
                 }
             }
         }
-        deserializer.deserialize_newtype_struct("__yaml_rc_recursion", RcRecursionVisitor(PhantomData))
+        deserializer
+            .deserialize_newtype_struct("__yaml_rc_recursion", RcRecursionVisitor(PhantomData))
     }
 }
 

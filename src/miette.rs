@@ -7,14 +7,14 @@ use std::sync::Arc;
 
 use miette::{Diagnostic, LabeledSpan, NamedSource, SourceSpan};
 
+use crate::Error;
+use crate::Location;
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::location::Locations;
 #[cfg(feature = "garde")]
 use crate::path_map::path_key_from_garde;
 #[cfg(any(feature = "garde", feature = "validator"))]
-use crate::path_map::{format_path_with_resolved_leaf, PathKey, PathMap};
-use crate::Error;
-use crate::Location;
+use crate::path_map::{PathKey, PathMap, format_path_with_resolved_leaf};
 
 #[cfg(feature = "validator")]
 use validator::{ValidationErrors, ValidationErrorsKind};
@@ -393,10 +393,8 @@ mod tests {
 
     #[test]
     fn basic_error_has_primary_label_span() {
-        let src: Arc<NamedSource<String>> = Arc::new(NamedSource::new(
-            "input.yaml",
-            "a: definitely\n".to_owned(),
-        ));
+        let src: Arc<NamedSource<String>> =
+            Arc::new(NamedSource::new("input.yaml", "a: definitely\n".to_owned()));
         let err = Error::Message {
             msg: "invalid bool".to_owned(),
             location: Location {
@@ -422,7 +420,8 @@ mod tests {
     fn non_ascii_prefix_char_offsets_convert_to_byte_offsets() {
         // Three Greek letters (non-ASCII, multi-byte in UTF-8) followed by ASCII "def".
         let yaml = "αβγdef\n";
-        let src: Arc<NamedSource<String>> = Arc::new(NamedSource::new("input.yaml", yaml.to_owned()));
+        let src: Arc<NamedSource<String>> =
+            Arc::new(NamedSource::new("input.yaml", yaml.to_owned()));
 
         let ascii_slice = "def";
         let byte_off = yaml.find(ascii_slice).expect("substring present");
@@ -453,7 +452,8 @@ mod tests {
     #[test]
     fn non_ascii_token_itself_converts_correctly() {
         let yaml = "a: áé\n"; // value contains two non-ASCII letters
-        let src: Arc<NamedSource<String>> = Arc::new(NamedSource::new("input.yaml", yaml.to_owned()));
+        let src: Arc<NamedSource<String>> =
+            Arc::new(NamedSource::new("input.yaml", yaml.to_owned()));
 
         let value_chars = "áé";
         let start_byte = yaml.find(value_chars).unwrap();
@@ -465,7 +465,10 @@ mod tests {
             location: Location {
                 line: 1,
                 column: (start_char as u32) + 1,
-                span: crate::Span { offset: start_char, len: value_chars.chars().count() as u32 },
+                span: crate::Span {
+                    offset: start_char,
+                    len: value_chars.chars().count() as u32,
+                },
             },
         };
 
@@ -479,7 +482,8 @@ mod tests {
     #[test]
     fn zero_length_span_highlights_one_char() {
         let yaml = "key: value\n";
-        let src: Arc<NamedSource<String>> = Arc::new(NamedSource::new("input.yaml", yaml.to_owned()));
+        let src: Arc<NamedSource<String>> =
+            Arc::new(NamedSource::new("input.yaml", yaml.to_owned()));
         let start_byte = yaml.find("value").unwrap();
         let start_char = yaml[..start_byte].chars().count();
 
@@ -489,7 +493,10 @@ mod tests {
             location: Location {
                 line: 1,
                 column: (start_char as u32) + 1,
-                span: crate::Span { offset: start_char, len: 0 },
+                span: crate::Span {
+                    offset: start_char,
+                    len: 0,
+                },
             },
         };
 
@@ -503,7 +510,8 @@ mod tests {
     #[test]
     fn span_past_end_is_clamped() {
         let yaml = "hello"; // 5 bytes, 5 chars
-        let src: Arc<NamedSource<String>> = Arc::new(NamedSource::new("input.yaml", yaml.to_owned()));
+        let src: Arc<NamedSource<String>> =
+            Arc::new(NamedSource::new("input.yaml", yaml.to_owned()));
         // Start at char 3 (the 'l'), but ask for a very long span
         let start_char = 3usize;
         let start_byte = yaml.char_indices().nth(start_char).map(|(i, _)| i).unwrap();
@@ -513,7 +521,10 @@ mod tests {
             location: Location {
                 line: 1,
                 column: (start_char as u32) + 1,
-                span: crate::Span { offset: start_char, len: 1000 },
+                span: crate::Span {
+                    offset: start_char,
+                    len: 1000,
+                },
             },
         };
 
@@ -528,7 +539,8 @@ mod tests {
     #[test]
     fn multiline_offset_after_newline() {
         let yaml = "α\nβ\nxyz\n"; // 1-char lines, then ascii line
-        let src: Arc<NamedSource<String>> = Arc::new(NamedSource::new("input.yaml", yaml.to_owned()));
+        let src: Arc<NamedSource<String>> =
+            Arc::new(NamedSource::new("input.yaml", yaml.to_owned()));
         let target = "xyz";
         let start_byte = yaml.find(target).unwrap();
         let start_char = yaml[..start_byte].chars().count();
@@ -538,7 +550,10 @@ mod tests {
             location: Location {
                 line: 3,
                 column: 1,
-                span: crate::Span { offset: start_char, len: target.chars().count() as u32 },
+                span: crate::Span {
+                    offset: start_char,
+                    len: target.chars().count() as u32,
+                },
             },
         };
 

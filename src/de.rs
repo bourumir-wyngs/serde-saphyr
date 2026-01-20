@@ -2205,7 +2205,8 @@ helper to deserialize into String or Cow<'de, str> instead
 
                                 // Same as the buffered path above: keep the key location alive
                                 // across the caller boundary.
-                                self.fallback_guard = Some(MissingFieldLocationGuard::new(location));
+                                self.fallback_guard =
+                                    Some(MissingFieldLocationGuard::new(location));
 
                                 #[cfg(any(feature = "garde", feature = "validator"))]
                                 {
@@ -2471,11 +2472,11 @@ helper to deserialize into String or Cow<'de, str> instead
                     map_mode,
                     variant_location,
                 } = self;
-                let v = seed
-                    .deserialize(variant.into_deserializer())
-                    .map_err(|err: serde::de::value::Error| {
+                let v = seed.deserialize(variant.into_deserializer()).map_err(
+                    |err: serde::de::value::Error| {
                         Error::msg(err.to_string()).with_location(variant_location)
-                    })?;
+                    },
+                )?;
                 Ok((v, VA { ev, cfg, map_mode }))
             }
         }
