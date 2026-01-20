@@ -770,8 +770,11 @@ where
                         let value = match value_res {
                             Ok(v) => v,
                             Err(e) => {
-                                self.finished = true;
-                                let _ = self.src.finish();
+                                // After a deserialization error, skip remaining events in the
+                                // current document and try to recover at the next document boundary.
+                                if !self.src.skip_to_next_document() {
+                                    self.finished = true;
+                                }
                                 return Some(Err(e));
                             }
                         };
@@ -779,8 +782,9 @@ where
                         match Validate::validate(&value) {
                             Ok(()) => return Some(Ok(value)),
                             Err(report) => {
-                                self.finished = true;
-                                let _ = self.src.finish();
+                                // Validation errors occur after successful deserialization,
+                                // so the parser is already at the document boundary.
+                                // No need to skip or mark as finished - continue to next document.
                                 return Some(Err(Error::ValidationError {
                                     report,
                                     locations: recorder.map,
@@ -1134,8 +1138,11 @@ where
                         let value = match value_res {
                             Ok(v) => v,
                             Err(e) => {
-                                self.finished = true;
-                                let _ = self.src.finish();
+                                // After a deserialization error, skip remaining events in the
+                                // current document and try to recover at the next document boundary.
+                                if !self.src.skip_to_next_document() {
+                                    self.finished = true;
+                                }
                                 return Some(Err(e));
                             }
                         };
@@ -1143,8 +1150,9 @@ where
                         match ValidatorValidate::validate(&value) {
                             Ok(()) => return Some(Ok(value)),
                             Err(errors) => {
-                                self.finished = true;
-                                let _ = self.src.finish();
+                                // Validation errors occur after successful deserialization,
+                                // so the parser is already at the document boundary.
+                                // No need to skip or mark as finished - continue to next document.
                                 return Some(Err(Error::ValidatorError {
                                     errors,
                                     locations: recorder.map,
@@ -1810,7 +1818,12 @@ where
 /// ```
 ///
 /// - Each `next()` yields either `Ok(T)` for a successfully deserialized document or `Err(Error)`
-///   if parsing fails or a budget/alias limit is exceeded. After an error, the iterator ends.
+///   if parsing or deserialization fails.
+/// - After a **deserialization error** (e.g., type mismatch, missing field), the iterator
+///   automatically recovers by skipping to the next document boundary (`---`) and continues
+///   iteration. This allows processing subsequent valid documents even when some fail.
+/// - After a **syntax error** or **budget/alias limit exceeded**, the iterator ends because
+///   the parser state may be unrecoverable.
 /// - Empty/null-like documents are skipped and produce no items.
 pub fn read_with_options<'a, R, T>(
     reader: &'a mut R, // iterator must not outlive this borrow
@@ -1852,6 +1865,14 @@ where
                                 self.cfg,
                             ))
                         });
+                        if res.is_err() {
+                            // After a deserialization error, skip remaining events in the
+                            // current document and try to recover at the next document boundary.
+                            // If no next document is found, mark as finished.
+                            if !self.src.skip_to_next_document() {
+                                self.finished = true;
+                            }
+                        }
                         return Some(res);
                     }
                     Ok(None) => {

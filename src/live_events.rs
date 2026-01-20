@@ -752,4 +752,55 @@ impl<'a> LiveEvents<'a> {
     pub(crate) fn synthesized_null_emitted(&self) -> bool {
         self.synthesized_null_emitted
     }
+
+    /// Skip events until the next document boundary or EOF.
+    ///
+    /// This is used for error recovery in the streaming reader: after a deserialization
+    /// error mid-document, we consume remaining events until we see a `DocumentStart`
+    /// (indicating the next document) or reach EOF. This allows the iterator to continue
+    /// with subsequent documents.
+    ///
+    /// Returns `true` if a new document was found, `false` if EOF was reached.
+    /// Syntax errors during skipping cause the method to return `false` (EOF-like).
+    pub(crate) fn skip_to_next_document(&mut self) -> bool {
+        // Clear any peeked event and injection state
+        self.look = None;
+        self.inject.clear();
+        self.rec_stack.clear();
+
+        // Pull raw events from the parser until we see DocumentStart or EOF
+        while let Some(item) = self.parser.next() {
+            let Ok((raw, span)) = item else {
+                // Syntax error while skipping; treat as EOF
+                return false;
+            };
+            let location = location_from_span(&span);
+            self.last_location = location;
+
+            match raw {
+                Event::DocumentStart(_) => {
+                    // Found the start of the next document
+                    self.reset_document_state();
+                    self.produced_any_in_doc = false;
+                    return true;
+                }
+                Event::DocumentEnd => {
+                    // End of current document; reset state and continue looking for next
+                    self.reset_document_state();
+                    self.produced_any_in_doc = false;
+                }
+                Event::StreamEnd => {
+                    // End of stream
+                    return false;
+                }
+                _ => {
+                    // Skip all other events (scalars, mappings, sequences, etc.)
+                    continue;
+                }
+            }
+        }
+
+        // Parser exhausted
+        false
+    }
 }
