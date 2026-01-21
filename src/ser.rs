@@ -84,7 +84,7 @@ pub struct FlowMap<T>(pub T);
 /// let cfg = Config { first: SpaceAfter(1), second: 2 };
 /// let yaml = serde_saphyr::to_string(&cfg).unwrap();
 /// // The output will have an empty line after "first: 1"
-///
+/// ```
 /// **Important: ** Avoid using this wrapper with `LitStr`/`LitString` as it may add the empty
 /// line to the string content. For `FoldStr`/`FoldString` and all other YAML values
 /// (key: value, quoted scalars), extra empty lines are cosmetic.
