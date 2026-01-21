@@ -104,6 +104,7 @@ pub(crate) fn fmt_with_snippet_or_fallback(
 /// This is used for reader-based parsing where we only have a sliding window of the input
 /// (e.g., from `RingReader`). The `location` contains the absolute line/column in the
 /// original stream, and we adjust it relative to the fragment.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn fmt_with_snippet_offset_or_fallback(
     f: &mut fmt::Formatter<'_>,
     level: Level,
