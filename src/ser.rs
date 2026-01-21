@@ -67,6 +67,31 @@ pub struct FlowSeq<T>(pub T);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FlowMap<T>(pub T);
 
+/// Add an empty line after the wrapped value when serializing.
+///
+/// This wrapper is transparent during deserialization and can be nested with
+/// other wrappers like `Commented`, `FlowSeq`, etc.
+/// ```rust
+/// use serde::Serialize;
+/// use serde_saphyr::SpaceAfter;
+///
+/// #[derive(Serialize)]
+/// struct Config {
+///     first: SpaceAfter<i32>,
+///     second: i32,
+/// }
+///
+/// let cfg = Config { first: SpaceAfter(1), second: 2 };
+/// let yaml = serde_saphyr::to_string(&cfg).unwrap();
+/// // The output will have an empty line after "first: 1"
+///
+/// **Important: ** Avoid using this wrapper with `LitStr`/`LitString` as it may add the empty
+/// line to the string content. For `FoldStr`/`FoldString` and all other YAML values
+/// (key: value, quoted scalars), extra empty lines are cosmetic.
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpaceAfter<T>(pub T);
+
 /// Attach an inline YAML comment to a value when serializing.
 ///
 /// This wrapper lets you annotate a scalar with an inline YAML comment that is
@@ -173,6 +198,7 @@ const NAME_TUPLE_WEAK: &str = "__yaml_weak_anchor";
 const NAME_FLOW_SEQ: &str = "__yaml_flow_seq";
 const NAME_FLOW_MAP: &str = "__yaml_flow_map";
 const NAME_TUPLE_COMMENTED: &str = "__yaml_commented";
+const NAME_SPACE_AFTER: &str = "__yaml_space_after";
 
 // Top-level newtype wrappers for strong/weak simply wrap the real payloads.
 impl<T: Serialize> Serialize for RcAnchor<T> {
@@ -295,6 +321,11 @@ impl<T: Serialize> Serialize for FlowMap<T> {
         s.serialize_newtype_struct(NAME_FLOW_MAP, &self.0)
     }
 }
+impl<T: Serialize> Serialize for SpaceAfter<T> {
+    fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        s.serialize_newtype_struct(NAME_SPACE_AFTER, &self.0)
+    }
+}
 
 impl<T: Serialize> Serialize for Commented<T> {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
@@ -321,6 +352,11 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for FlowMap<T> {
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for Commented<T> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
         T::deserialize(deserializer).map(|v| Commented(v, String::new()))
+    }
+}
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for SpaceAfter<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        T::deserialize(deserializer).map(SpaceAfter)
     }
 }
 
@@ -1310,6 +1346,15 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 self.pending_str_style = Some(StrStyle::Folded);
                 return self.serialize_str(&s);
             }
+            NAME_SPACE_AFTER => {
+                // Serialize the value, then emit an empty line after (only in block style).
+                let result = value.serialize(&mut *self);
+                if self.in_flow == 0 {
+                    // Emit an extra blank line after the value
+                    self.newline()?;
+                }
+                return result;
+            }
             _ => {}
         }
         // default: ignore the name, serialize the inner as-is
@@ -2240,7 +2285,6 @@ impl<'a, 'b, W: Write> SerializeStruct for MapSer<'a, 'b, W> {
         value: &T,
     ) -> Result<()> {
         SerializeMap::serialize_key(self, &key)?;
-        // Note: MapSer::serialize_value already handles the block-sibling logic (conceptually).
         SerializeMap::serialize_value(self, value)
     }
     fn end(self) -> Result<()> {

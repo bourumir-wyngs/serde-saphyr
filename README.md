@@ -482,13 +482,14 @@ While recursive YAML is unusual, it is not forbidden by the specification. Real 
 
 Serde-saphyr supports recursive structures but Rust requires to be about this very explicit. A structure that may hold recursive references to itself must be wrapped in a [RcRecursive<T>](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.RcRecursive.html), and any reference that points to it must be [RcRecursion<T>](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.RcRecursion.html). Arc varieties exist. See also [examples/recursive_yaml.rs](examples/recursive_yaml.rs). 
 
-### Controlling text deserialization
+### Controlling deserialization
 
 - Empty maps are serialized as {} and empty lists as [] by default.
 - Strings containing new lines, and very long strings are serialized as appropriate block scalars, except cases where they would need escaping (like ending with :).
 - Indentation is changeable.
 - The wrapper [Commented](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) allows to emit comment next to scalar or reference (handy when reference is far from definition and needs to be explained).
-- It is possible to request that all strings be **quoted** — using single quotes when no escape sequences are present, and double quotes otherwise. This is very explicit and unambiguous, but such YAML may be less readable for humans. Line wrapping is disabled in this mode.   
+- The wrapper [SpaceAfter](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.SpaceAfter.html) adds an empty line after the wrapped value, useful for visually separating sections in the output YAML.
+- It is possible to request that all strings be **quoted** — using single quotes when no escape sequences are present, and double quotes otherwise. This is very explicit and unambiguous, but such YAML may be less readable for humans. Line wrapping is disabled in this mode.
 
 These settings are changeable in [SerializerOptions](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.SerializerOptions.html).
 

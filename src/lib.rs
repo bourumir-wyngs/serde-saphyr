@@ -8,7 +8,7 @@ pub use anchors::{
 pub use de::{Budget, DuplicateKeyPolicy, Error, Options};
 pub use location::{Location, Locations, Span};
 pub use long_strings::{FoldStr, FoldString, LitStr, LitString};
-pub use ser::{Commented, FlowMap, FlowSeq};
+pub use ser::{Commented, FlowMap, FlowSeq, SpaceAfter};
 pub use spanned::Spanned;
 
 use crate::budget::EnforcingPolicy;
