@@ -429,6 +429,9 @@ pub struct YamlSerializer<'a, W: Write> {
     after_dash_depth: Option<usize>,
     /// Current block map indentation depth (for aligning sequences under a map key).
     current_map_depth: Option<usize>,
+    /// If true, quote all string scalars. Uses single quotes by default, but switches to
+    /// double quotes when the string contains escape sequences or single quotes.
+    quote_all: bool,
 }
 
 impl<'a, W: Write> YamlSerializer<'a, W> {
@@ -461,6 +464,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
             last_value_was_block: false,
             after_dash_depth: None,
             current_map_depth: None,
+            quote_all: false,
         }
     }
     /// Construct a `YamlSerializer` with a specific indentation step.
@@ -481,10 +485,37 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         s.tagged_enums = options.tagged_enums;
         s.empty_as_braces = options.empty_as_braces;
         s.prefer_block_scalars = options.prefer_block_scalars;
+        s.quote_all = options.quote_all;
         s
     }
 
     // -------- helpers --------
+
+    /// Determines if a string requires double quotes when `quote_all` is enabled.
+    /// Returns true if the string contains single quotes, backslashes, or control characters
+    /// that need escape processing.
+    #[inline]
+    fn needs_double_quotes(s: &str) -> bool {
+        s.chars().any(|c| {
+            c == '\''       // single quote present - cannot use single-quoted style
+                || c == '\\' // backslash - needs escape processing
+                || c.is_control() // control chars (includes \n, \t, \r, etc.) need escaping
+        })
+    }
+
+    /// Write a single-quoted string. Single quotes inside the string are escaped by doubling them.
+    fn write_single_quoted(&mut self, s: &str) -> Result<()> {
+        self.out.write_char('\'')?;
+        for ch in s.chars() {
+            if ch == '\'' {
+                self.out.write_str("''")?; // escape single quote by doubling
+            } else {
+                self.out.write_char(ch)?;
+            }
+        }
+        self.out.write_char('\'')?;
+        Ok(())
+    }
 
     /// Called at the end of emitting a scalar in block style: appends a pending inline
     /// comment (if any) and then emits a newline. In flow style, comments are suppressed.
@@ -717,7 +748,14 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Write a scalar either as plain or as double-quoted with minimal escapes.
     /// Called by most `serialize_*` primitive methods.
     fn write_plain_or_quoted(&mut self, s: &str) -> Result<()> {
-        if is_plain_safe(s) {
+        if self.quote_all {
+            // In quote_all mode: prefer single quotes, use double quotes when needed
+            if Self::needs_double_quotes(s) {
+                self.write_quoted(s)
+            } else {
+                self.write_single_quoted(s)
+            }
+        } else if is_plain_safe(s) {
             self.out.write_str(s)?;
             Ok(())
         } else {
@@ -768,7 +806,14 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Like `write_plain_or_quoted`, but intended for VALUE position where ':' is allowed.
     #[inline]
     fn write_plain_or_quoted_value(&mut self, s: &str) -> Result<()> {
-        if is_plain_value_safe(s) {
+        if self.quote_all {
+            // In quote_all mode: prefer single quotes, use double quotes when needed
+            if Self::needs_double_quotes(s) {
+                self.write_quoted(s)
+            } else {
+                self.write_single_quoted(s)
+            }
+        } else if is_plain_value_safe(s) {
             self.out.write_str(s)?;
             Ok(())
         } else {
@@ -993,7 +1038,12 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         // (per ser_quoting::is_plain_value_safe), unless the only reason it needs quoting
         // is the presence of newlines themselves. This ensures cases like "hey:\n" remain
         // quoted (because trimmed value ends with ':'), even when prefer_block_scalars=true.
-        if self.pending_str_style.is_none() && self.prefer_block_scalars && self.in_flow == 0 {
+        // Also skip block scalars when quote_all is enabled - use quoted strings instead.
+        if self.pending_str_style.is_none()
+            && self.prefer_block_scalars
+            && self.in_flow == 0
+            && !self.quote_all
+        {
             use crate::ser_quoting::is_plain_value_safe;
 
             if v.contains('\n') {

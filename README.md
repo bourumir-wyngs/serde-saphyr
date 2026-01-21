@@ -488,8 +488,9 @@ Serde-saphyr supports recursive structures but Rust requires to be about this ve
 - Strings containing new lines, and very long strings are serialized as appropriate block scalars, except cases where they would need escaping (like ending with :).
 - Indentation is changeable.
 - The wrapper [Commented](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) allows to emit comment next to scalar or reference (handy when reference is far from definition and needs to be explained).
+- It is possible to request that all strings be **quoted** — using single quotes when no escape sequences are present, and double quotes otherwise. This is very explicit and unambiguous, but such YAML may be less readable for humans. Line wrapping is disabled in this mode.   
 
-These readability improvements can be adjusted or disabled in [SerializerOptions](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.SerializerOptions.html).
+These settings are changeable in [SerializerOptions](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.SerializerOptions.html).
 
 ## Robotics
 

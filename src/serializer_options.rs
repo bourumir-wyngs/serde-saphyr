@@ -66,6 +66,13 @@ pub struct SerializerOptions {
     /// literal form (|), selecting format depending on the number of empty lines at the end.
     /// On by default.
     pub prefer_block_scalars: bool,
+
+    /// When enabled, quote all string scalars. Uses single quotes by default,
+    /// but switches to double quotes when the string contains escape sequences
+    /// (control characters like `\n`, `\t`, `\r`, backslash) or single quotes.
+    /// Disables block scalar styles (`|` and `>`) for quoted strings when active.
+    /// Off by default.
+    pub quote_all: bool,
 }
 
 // Below this length, block-string wrappers serialize as regular scalars
@@ -99,6 +106,7 @@ impl Default for SerializerOptions {
             tagged_enums: false,
             empty_as_braces: true,
             prefer_block_scalars: true,
+            quote_all: false,
         }
     }
 }
