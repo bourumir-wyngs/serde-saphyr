@@ -29,7 +29,7 @@ use crate::Location;
 
 /// A value paired with source locations describing where it came from.
 ///
-/// Example
+/// # Example
 ///
 /// ```rust
 /// use serde::Deserialize;
@@ -45,7 +45,7 @@ use crate::Location;
 /// assert_eq!(cfg.timeout.referenced.column(), 10);
 /// ```
 ///
-/// Location semantics for YAML aliases and merges
+/// # Location semantics for YAML aliases and merges
 ///
 /// `Spanned<T>` exposes two locations:
 ///
@@ -58,6 +58,88 @@ use crate::Location;
 ///   - For aliases: points to the anchored definition.
 ///   - For merge-derived values: points to the originating scalar in the merged
 ///     mapping.
+///
+/// # Limitation with certain enum representations
+///
+/// `Spanned<T>` **cannot** be used inside variants of enums that use:
+/// - `#[serde(untagged)]` - untagged enums
+/// - `#[serde(tag = "...")]` - internally tagged enums
+///
+/// This is a fundamental limitation of how serde handles these enum types: serde
+/// buffers the content and replays it through a generic `ContentDeserializer`
+/// that doesn't recognize the special `__yaml_spanned` marker.
+///
+/// ## Workaround: Wrap the entire enum
+///
+/// Instead of putting `Spanned<T>` inside each variant, wrap the whole enum:
+///
+/// ```rust
+/// use serde::Deserialize;
+/// use serde_saphyr::Spanned;
+///
+/// #[derive(Debug, Deserialize)]
+/// #[serde(untagged)]
+/// pub enum Payload {
+///     StringVariant { message: String },
+///     IntVariant { count: u32 },
+/// }
+///
+/// // Use Spanned<Payload> instead of Spanned<T> inside variants
+/// let yaml = "message: hello";
+/// let result: Spanned<Payload> = serde_saphyr::from_str(yaml).unwrap();
+/// assert_eq!(result.referenced.line(), 1);
+/// ```
+///
+/// ## Alternative: Use externally tagged enums (serde default)
+///
+/// Externally tagged enums (the default) work with `Spanned<T>` inside variants:
+///
+/// ```rust
+/// use serde::Deserialize;
+/// use serde_saphyr::Spanned;
+///
+/// #[derive(Debug, Deserialize)]
+/// pub enum Payload {
+///     StringVariant { message: Spanned<String> },
+///     IntVariant { count: Spanned<u32> },
+/// }
+///
+/// let yaml = "StringVariant:\n  message: hello";
+/// let result: Payload = serde_saphyr::from_str(yaml).unwrap();
+/// match result {
+///     Payload::StringVariant { message } => {
+///         assert_eq!(&message.value, "hello");
+///         assert_eq!(message.referenced.line(), 2);
+///     }
+///     _ => panic!("Expected StringVariant"),
+/// }
+/// ```
+///
+/// ## Alternative: Use adjacently tagged enums
+///
+/// Adjacently tagged enums also work with `Spanned<T>` inside variants:
+///
+/// ```rust
+/// use serde::Deserialize;
+/// use serde_saphyr::Spanned;
+///
+/// #[derive(Debug, Deserialize)]
+/// #[serde(tag = "type", content = "data")]
+/// pub enum Payload {
+///     StringVariant { message: Spanned<String> },
+///     IntVariant { count: Spanned<u32> },
+/// }
+///
+/// let yaml = "type: StringVariant\ndata:\n  message: hello";
+/// let result: Payload = serde_saphyr::from_str(yaml).unwrap();
+/// match result {
+///     Payload::StringVariant { message } => {
+///         assert_eq!(&message.value, "hello");
+///         assert_eq!(message.referenced.line(), 3);
+///     }
+///     _ => panic!("Expected StringVariant"),
+/// }
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Spanned<T> {
     pub value: T,
@@ -106,8 +188,27 @@ where
                     defined: Location,
                 }
 
-                let repr = Repr::<T>::deserialize(deserializer)?;
-                Ok(Spanned::new(repr.value, repr.referenced, repr.defined))
+                Repr::<T>::deserialize(deserializer)
+                    .map_err(|e| {
+                        let msg = e.to_string();
+                        // Detect the specific case where Spanned<T> is used inside an untagged
+                        // or internally tagged enum. In that case, serde's ContentDeserializer
+                        // doesn't provide the `referenced` and `defined` fields that our
+                        // YAML deserializer normally injects.
+                        if msg.contains("missing field `referenced`")
+                            || msg.contains("missing field `defined`")
+                        {
+                            de::Error::custom(
+                                "Spanned<T> cannot be used inside #[serde(untagged)] or \
+                                 #[serde(tag = \"...\")] enum variants. Consider wrapping the \
+                                 entire enum with Spanned<YourEnum>, or use externally tagged \
+                                 or adjacently tagged enums instead."
+                            )
+                        } else {
+                            e
+                        }
+                    })
+                    .map(|repr| Spanned::new(repr.value, repr.referenced, repr.defined))
             }
         }
 

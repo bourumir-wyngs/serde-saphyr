@@ -198,3 +198,33 @@ fn snippet_crops_very_long_lines_around_error_column() {
         "expected cropped snippet to omit the full long 'after' string, got:\n{rendered}"
     );
 }
+
+/// Test that using `Spanned<T>` inside an untagged enum produces an error.
+/// Note: serde's untagged enum handling swallows individual variant errors and only
+/// shows the generic "data did not match any variant" message. The helpful hint from
+/// `Spanned<T>` is generated but not propagated through serde's machinery.
+#[test]
+fn spanned_inside_untagged_enum_shows_helpful_error() {
+    use serde_saphyr::Spanned;
+
+    #[derive(Debug, Deserialize)]
+    #[serde(untagged)]
+    #[allow(dead_code)]
+    enum PayloadWithSpanned {
+        StringVariant { message: Spanned<String> },
+        IntVariant { count: Spanned<u32> },
+    }
+
+    let yaml = "message: hello";
+
+    let err = from_str::<PayloadWithSpanned>(yaml).expect_err("Spanned inside untagged enum should fail");
+    let rendered = err.to_string();
+
+    // Serde's untagged enum handling swallows individual variant errors, so we only see
+    // the generic "untagged" error message. The helpful hint is generated internally
+    // but not propagated.
+    assert!(
+        rendered.contains("untagged"),
+        "expected error message to mention untagged enums, got:\n{rendered}"
+    );
+}

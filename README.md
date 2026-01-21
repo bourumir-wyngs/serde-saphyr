@@ -185,7 +185,7 @@ error: line 3 column 23: invalid here, validation error: length is lower than 2 
 4 |  
 ```
 
-The integration of garde is gated and disabled by default, use `serde-saphyr = { version = "0.0.13", features = ["garde"] }` (or `features = ["validator"]`) in Cargo.toml` to enable it).
+The integration of garde is gated and disabled by default, use `serde-saphyr = { version = "0.0.17", features = ["garde"] }` (or `features = ["validator"]`) in Cargo.toml` to enable it).
 
 If you prefer to validate without validation crates and want to ensure that location information is always available, use the heavier approach with [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html) wrapper instead.
 
@@ -518,7 +518,8 @@ let v: RoboFloats = from_str_with_options(yaml, options).expect("parse robotics 
 Safety hardening with this feature enabled include (maximal expression depth, maximal number of digits, strict underscore placement and fraction parsing limits to precision-relevant digit).
 
 ### Unsupported features
-Common Serde renames made to follow naming conventions (case changes, snake_case, kebab-case, r# stripping) are supported in snippets, as long as they do not introduce ambiguity. Arbitrary renames, flattening, aliases and other complex manipulations possible with serde are not. Parsing and validation will still work, but error messages for arbitrarily renamed fields only tell Rust path.
+- Common Serde renames made to follow naming conventions (case changes, snake_case, kebab-case, r# stripping) are supported in snippets, as long as they do not introduce ambiguity. Arbitrary renames, flattening, aliases and other complex manipulations possible with serde are not. Parsing and validation will still work, but error messages for arbitrarily renamed fields only tell Rust path.
+- [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html)  cannot be used within variants of untagged or internally tagged enums due to a fundamental limitation in Serde. Instead, wrap the entire enum in Spanned<T>, or use externally tagged enums (the default). 
 
 ## Executable
 serde-saphyr comes with a simple executable (CLI) that can be used to check the budget of a given YAML file and also used as YAML validator printing YAML error line, column numbers and excerpt.
