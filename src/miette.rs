@@ -170,6 +170,17 @@ fn build_diagnostic(err: &Error, src: Arc<NamedSource<String>>) -> ErrorDiagnost
 
         Error::WithSnippet { error, .. } => build_diagnostic(error.without_snippet(), src),
 
+        Error::AliasError { msg, locations } => {
+            let labels = build_alias_labels(&src, locations.reference_location, locations.defined_location);
+
+            ErrorDiagnostic {
+                message: msg.clone(),
+                src,
+                labels,
+                related: Vec::new(),
+            }
+        }
+
         other => {
             let mut labels = Vec::new();
             if let Some(loc) = other.location()
@@ -271,6 +282,45 @@ fn build_validation_labels(
     labels
 }
 
+/// Build labels for an alias error with both reference and defined locations.
+fn build_alias_labels(
+    src: &Arc<NamedSource<String>>,
+    ref_loc: Location,
+    def_loc: Location,
+) -> Vec<LabeledSpan> {
+    let mut labels = Vec::new();
+
+    // Primary label: use-site (alias) if known, otherwise definition.
+    if ref_loc != Location::UNKNOWN {
+        if let Some(span) = to_source_span(src, &ref_loc) {
+            labels.push(LabeledSpan::new_with_span(
+                Some("the value is used here".to_owned()),
+                span,
+            ));
+        }
+    } else if def_loc != Location::UNKNOWN
+        && let Some(span) = to_source_span(src, &def_loc)
+    {
+        labels.push(LabeledSpan::new_with_span(
+            Some("defined here".to_owned()),
+            span,
+        ));
+    }
+
+    // Secondary label: definition site when it is distinct and known.
+    if def_loc != Location::UNKNOWN
+        && def_loc != ref_loc
+        && let Some(span) = to_source_span(src, &def_loc)
+    {
+        labels.push(LabeledSpan::new_with_span(
+            Some("anchor defined here".to_owned()),
+            span,
+        ));
+    }
+
+    labels
+}
+
 #[cfg(feature = "validator")]
 fn collect_validator_entries(errors: &ValidationErrors) -> Vec<(PathKey, String)> {
     let mut out = Vec::new();
@@ -360,6 +410,7 @@ fn message_without_location(err: &Error) -> String {
     match err {
         Error::Message { msg, .. } => msg.clone(),
         Error::HookError { msg, .. } => msg.clone(),
+        Error::AliasError { msg, .. } => msg.clone(),
         Error::Eof { .. } => "unexpected end of input".to_owned(),
         Error::Unexpected { expected, .. } => format!("unexpected event: expected {expected}"),
         Error::ContainerEndMismatch { .. } => "list or mapping end with no start".to_owned(),
@@ -714,5 +765,95 @@ mod tests {
             label_debug.contains("defined here"),
             "expected definition-site label, got: {label_debug}"
         );
+    }
+
+    #[test]
+    fn alias_error_has_use_and_definition_labels() {
+        use crate::location::Locations;
+
+        // Simulate an alias error where:
+        // - use-site is at `value: *anchor`
+        // - definition-site is at `anchor: &anchor "bad"`
+        let yaml = "anchor: &a \"bad\"\nvalue: *a\n";
+        let src: Arc<NamedSource<String>> =
+            Arc::new(NamedSource::new("config.yaml", yaml.to_owned()));
+
+        let use_offset = yaml.find("*a").unwrap();
+        let def_offset = yaml.find("\"bad\"").unwrap();
+
+        let referenced_loc = Location {
+            line: 2,
+            column: 8,
+            span: crate::Span {
+                offset: use_offset,
+                len: 2,
+            },
+        };
+        let defined_loc = Location {
+            line: 1,
+            column: 13,
+            span: crate::Span {
+                offset: def_offset,
+                len: 5,
+            },
+        };
+
+        let err = Error::AliasError {
+            msg: "invalid value for alias".to_owned(),
+            locations: Locations {
+                reference_location: referenced_loc,
+                defined_location: defined_loc,
+            },
+        };
+
+        let diag = build_diagnostic(&err, Arc::clone(&src));
+        assert_eq!(diag.message, "invalid value for alias");
+
+        let labels = &diag.labels;
+        assert_eq!(labels.len(), 2, "expected 2 labels, got: {labels:?}");
+
+        let label_debug = format!("{labels:?}");
+        assert!(
+            label_debug.contains("the value is used here"),
+            "expected use-site label, got: {label_debug}"
+        );
+        assert!(
+            label_debug.contains("anchor defined here"),
+            "expected definition-site label, got: {label_debug}"
+        );
+    }
+
+    #[test]
+    fn alias_error_with_same_locations_has_single_label() {
+        use crate::location::Locations;
+
+        let yaml = "value: \"bad\"\n";
+        let src: Arc<NamedSource<String>> =
+            Arc::new(NamedSource::new("config.yaml", yaml.to_owned()));
+
+        let offset = yaml.find("\"bad\"").unwrap();
+        let loc = Location {
+            line: 1,
+            column: 8,
+            span: crate::Span {
+                offset,
+                len: 5,
+            },
+        };
+
+        let err = Error::AliasError {
+            msg: "invalid value".to_owned(),
+            locations: Locations {
+                reference_location: loc,
+                defined_location: loc,
+            },
+        };
+
+        let diag = build_diagnostic(&err, Arc::clone(&src));
+        assert_eq!(diag.message, "invalid value");
+
+        // When both locations are the same, should only have one label
+        let labels = &diag.labels;
+        assert_eq!(labels.len(), 1, "expected 1 label when locations are same, got: {labels:?}");
     }
 }

@@ -68,6 +68,14 @@ pub enum Error {
         id: usize,
         location: Location,
     },
+    /// Error related to an alias, with both reference (use-site) and defined (anchor) locations.
+    ///
+    /// This variant allows reporting both where an alias is used and where the anchor is defined,
+    /// which is useful for errors that occur when deserializing aliased values.
+    AliasError {
+        msg: String,
+        locations: Locations,
+    },
     /// Error when parsing robotic and other extensions beyond standard YAML.
     /// (error in extension hook).
     HookError {
@@ -292,6 +300,9 @@ impl Error {
                 *location = set_location;
             }
             Error::IOError { .. } => {} // this error does not support location
+            Error::AliasError { .. } => {
+                // AliasError carries its own Locations; don't override with a single location.
+            }
             Error::WithSnippet { error, .. } => {
                 let inner = *std::mem::replace(error, Box::new(Error::eof()));
                 **error = inner.with_location(set_location);
@@ -340,6 +351,7 @@ impl Error {
                 }
             }
             Error::IOError { cause: _ } => None,
+            Error::AliasError { locations, .. } => Locations::primary_location(*locations),
             Error::WithSnippet { error, .. } => error.location(),
             #[cfg(feature = "garde")]
             Error::ValidationError { locations, .. } => locations
@@ -380,6 +392,7 @@ impl Error {
             | Error::QuotingRequired { location, .. }
             | Error::Budget { location, .. } => Locations::same(location),
             Error::IOError { .. } => None,
+            Error::AliasError { locations, .. } => Some(*locations),
             Error::WithSnippet { error, .. } => error.locations(),
             #[cfg(feature = "garde")]
             Error::ValidationError { report, locations } => {
@@ -479,6 +492,9 @@ impl fmt::Display for Error {
                 location,
             ),
             Error::IOError { cause } => write!(f, "IO error: {}", cause),
+            Error::AliasError { msg, locations } => {
+                fmt_alias_error_plain(f, msg, locations)
+            }
 
             #[cfg(feature = "garde")]
             Error::ValidationError { report, locations } => {
@@ -639,6 +655,37 @@ fn render_error_with_snippets(inner: &Error, text: &str, crop_radius: usize) -> 
             }
             return out;
         }
+    }
+
+    // Handle AliasError with dual-location snippet rendering
+    if let Error::AliasError { msg, locations } = inner {
+        let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
+        struct AliasSnippetDisplay<'a> {
+            msg: &'a str,
+            locations: &'a Locations,
+            text: &'a str,
+            crop_radius: usize,
+        }
+
+        impl fmt::Display for AliasSnippetDisplay<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                fmt_alias_error_with_snippets(
+                    f,
+                    self.msg,
+                    self.locations,
+                    self.text,
+                    self.crop_radius,
+                )
+            }
+        }
+
+        return AliasSnippetDisplay {
+            msg,
+            locations,
+            text,
+            crop_radius,
+        }
+        .to_string();
     }
 
     let msg = inner.to_string();
@@ -1076,6 +1123,118 @@ fn fmt_with_location(f: &mut fmt::Formatter<'_>, msg: &str, location: &Location)
     }
 }
 
+/// Format an alias error with both reference (use-site) and defined (anchor) locations.
+///
+/// This provides a plain-text representation showing where the alias is used and where
+/// the anchor is defined, which is useful for errors that occur when deserializing aliased values.
+#[cold]
+#[inline(never)]
+fn fmt_alias_error_plain(
+    f: &mut fmt::Formatter<'_>,
+    msg: &str,
+    locations: &Locations,
+) -> fmt::Result {
+    let ref_loc = locations.reference_location;
+    let def_loc = locations.defined_location;
+
+    match (ref_loc, def_loc) {
+        (Location::UNKNOWN, Location::UNKNOWN) => {
+            write!(f, "{msg}")
+        }
+        (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
+            // Only reference location known, or both are the same
+            write!(f, "{msg} at line {}, column {}", r.line, r.column)
+        }
+        (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
+            // Only defined location known
+            write!(f, "{msg} (defined at line {}, column {})", d.line, d.column)
+        }
+        (r, d) => {
+            // Both locations known and different
+            write!(
+                f,
+                "{msg} at line {}, column {} (defined at line {}, column {})",
+                r.line, r.column, d.line, d.column
+            )
+        }
+    }
+}
+
+/// Format an alias error with snippets showing both reference and defined locations.
+///
+/// This renders rustc-like snippet output for alias errors, showing both where the alias
+/// is used and where the anchor is defined when both locations are known and different.
+#[cold]
+#[inline(never)]
+fn fmt_alias_error_with_snippets(
+    f: &mut fmt::Formatter<'_>,
+    msg: &str,
+    locations: &Locations,
+    text: &str,
+    crop_radius: usize,
+) -> fmt::Result {
+    let ref_loc = locations.reference_location;
+    let def_loc = locations.defined_location;
+
+    match (ref_loc, def_loc) {
+        (Location::UNKNOWN, Location::UNKNOWN) => {
+            write!(f, "{msg}")
+        }
+        (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
+            // Only reference location known, or both are the same
+            crate::de_snipped::fmt_with_snippet_or_fallback(
+                f,
+                Level::ERROR,
+                msg,
+                &r,
+                text,
+                "error occurs here",
+                crop_radius,
+            )
+        }
+        (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
+            // Only defined location known
+            crate::de_snipped::fmt_with_snippet_or_fallback(
+                f,
+                Level::ERROR,
+                msg,
+                &d,
+                text,
+                "defined here",
+                crop_radius,
+            )
+        }
+        (r, d) => {
+            // Both locations known and different - show both snippets
+            crate::de_snipped::fmt_with_snippet_or_fallback(
+                f,
+                Level::ERROR,
+                msg,
+                &r,
+                text,
+                "the value is used here",
+                crop_radius,
+            )?;
+            writeln!(f)?;
+            writeln!(
+                f,
+                "  | This value comes indirectly from the anchor at line {} column {}:",
+                d.line, d.column
+            )?;
+            // Show the defined location with a secondary snippet
+            crate::de_snipped::fmt_with_snippet_or_fallback(
+                f,
+                Level::NOTE,
+                "anchor defined here",
+                &d,
+                text,
+                "defined here",
+                crop_radius,
+            )
+        }
+    }
+}
+
 /// Convert a budget breach report into a user-facing error.
 ///
 /// Arguments:
@@ -1121,6 +1280,70 @@ mod tests {
             cause: std::io::Error::other("x"),
         };
         assert_eq!(err.locations(), None);
+    }
+
+    #[test]
+    fn alias_error_returns_both_locations() {
+        let ref_loc = Location::new(5, 10);
+        let def_loc = Location::new(2, 3);
+        let err = Error::AliasError {
+            msg: "test error".to_owned(),
+            locations: Locations {
+                reference_location: ref_loc,
+                defined_location: def_loc,
+            },
+        };
+
+        // location() should return the primary (reference) location
+        assert_eq!(err.location(), Some(ref_loc));
+
+        // locations() should return both
+        assert_eq!(
+            err.locations(),
+            Some(Locations {
+                reference_location: ref_loc,
+                defined_location: def_loc,
+            })
+        );
+    }
+
+    #[test]
+    fn alias_error_display_shows_both_locations() {
+        let ref_loc = Location::new(5, 10);
+        let def_loc = Location::new(2, 3);
+        let err = Error::AliasError {
+            msg: "invalid value".to_owned(),
+            locations: Locations {
+                reference_location: ref_loc,
+                defined_location: def_loc,
+            },
+        };
+
+        let display = err.to_string();
+        assert!(display.contains("invalid value"));
+        assert!(display.contains("line 5"));
+        assert!(display.contains("column 10"));
+        assert!(display.contains("line 2"));
+        assert!(display.contains("column 3"));
+    }
+
+    #[test]
+    fn alias_error_display_with_same_locations() {
+        let loc = Location::new(3, 7);
+        let err = Error::AliasError {
+            msg: "test".to_owned(),
+            locations: Locations {
+                reference_location: loc,
+                defined_location: loc,
+            },
+        };
+
+        let display = err.to_string();
+        // When both locations are the same, should only show one
+        assert!(display.contains("line 3"));
+        assert!(display.contains("column 7"));
+        // Should not contain "defined at" since locations are the same
+        assert!(!display.contains("defined at"));
     }
 
     #[cfg(feature = "validator")]
