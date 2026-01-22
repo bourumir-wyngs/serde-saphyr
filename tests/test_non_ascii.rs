@@ -62,7 +62,7 @@ a2: # A \u{AC00} # A \u{AC00}
 # A \u{AC00}
 ";
 
-    let obj: Value = serde_saphyr::from_str(&yaml).unwrap();
+    let obj: Value = serde_saphyr::from_str(yaml).unwrap();
     // Top-level scalar keys
     assert_eq!(obj.get("가").unwrap(), &Value::String("가".to_string()));
     assert_eq!(obj.get("가a").unwrap(), &Value::String("가a".to_string()));

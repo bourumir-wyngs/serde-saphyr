@@ -10,7 +10,6 @@ use crate::path_map::path_key_from_garde;
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::path_map::{PathKey, PathMap, format_path_with_resolved_leaf};
 use crate::tags::SfTag;
-use annotate_snippets::Level;
 use saphyr_parser::{ScalarStyle, ScanError};
 use serde::de::{self};
 use std::cell::RefCell;
@@ -67,6 +66,14 @@ pub enum Error {
     UnknownAnchor {
         id: usize,
         location: Location,
+    },
+    /// Error related to an alias, with both reference (use-site) and defined (anchor) locations.
+    ///
+    /// This variant allows reporting both where an alias is used and where the anchor is defined,
+    /// which is useful for errors that occur when deserializing aliased values.
+    AliasError {
+        msg: String,
+        locations: Locations,
     },
     /// Error when parsing robotic and other extensions beyond standard YAML.
     /// (error in extension hook).
@@ -139,7 +146,7 @@ impl Error {
             other => other,
         };
 
-        let rendered = render_error_with_snippets(&inner, text, crop_radius);
+        let rendered = crate::de_snipped::render_error_with_snippets(&inner, text, crop_radius);
 
         Error::WithSnippet {
             text: rendered,
@@ -166,7 +173,8 @@ impl Error {
             other => other,
         };
 
-        let rendered = render_error_with_snippets_offset(&inner, text, start_line, crop_radius);
+        let rendered =
+            crate::de_snipped::render_error_with_snippets_offset(&inner, text, start_line, crop_radius);
 
         Error::WithSnippet {
             text: rendered,
@@ -292,6 +300,9 @@ impl Error {
                 *location = set_location;
             }
             Error::IOError { .. } => {} // this error does not support location
+            Error::AliasError { .. } => {
+                // AliasError carries its own Locations; don't override with a single location.
+            }
             Error::WithSnippet { error, .. } => {
                 let inner = *std::mem::replace(error, Box::new(Error::eof()));
                 **error = inner.with_location(set_location);
@@ -340,6 +351,7 @@ impl Error {
                 }
             }
             Error::IOError { cause: _ } => None,
+            Error::AliasError { locations, .. } => Locations::primary_location(*locations),
             Error::WithSnippet { error, .. } => error.location(),
             #[cfg(feature = "garde")]
             Error::ValidationError { locations, .. } => locations
@@ -380,6 +392,7 @@ impl Error {
             | Error::QuotingRequired { location, .. }
             | Error::Budget { location, .. } => Locations::same(location),
             Error::IOError { .. } => None,
+            Error::AliasError { locations, .. } => Some(*locations),
             Error::WithSnippet { error, .. } => error.locations(),
             #[cfg(feature = "garde")]
             Error::ValidationError { report, locations } => {
@@ -479,6 +492,9 @@ impl fmt::Display for Error {
                 location,
             ),
             Error::IOError { cause } => write!(f, "IO error: {}", cause),
+            Error::AliasError { msg, locations } => {
+                fmt_alias_error_plain(f, msg, locations)
+            }
 
             #[cfg(feature = "garde")]
             Error::ValidationError { report, locations } => {
@@ -523,218 +539,6 @@ impl fmt::Display for Error {
     }
 }
 
-#[cold]
-#[inline(never)]
-fn render_error_with_snippets(inner: &Error, text: &str, crop_radius: usize) -> String {
-    // Safety: snippet rendering is best-effort; if anything goes wrong we fall back
-    // to the plain error message.
-    if crop_radius == 0 {
-        return inner.to_string();
-    }
-
-    #[cfg(feature = "garde")]
-    {
-        // Normalize the snippet text to match the coordinate system used by parsing.
-        // Our string-based entry points ignore a single leading UTF-8 BOM (`\u{FEFF}`)
-        // before parsing, so any `Location { line, column }` we store is relative to
-        // the BOM-stripped view. Strip it here as well to keep caret positions aligned.
-        let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
-
-        if let Error::ValidationError { report, locations } = inner {
-            struct ValidationSnippetDisplay<'a> {
-                report: &'a garde::Report,
-                locations: &'a PathMap,
-                text: &'a str,
-                crop_radius: usize,
-            }
-
-            impl fmt::Display for ValidationSnippetDisplay<'_> {
-                fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    fmt_validation_error_with_snippets(
-                        f,
-                        self.report,
-                        self.locations,
-                        self.text,
-                        self.crop_radius,
-                    )
-                }
-            }
-
-            return ValidationSnippetDisplay {
-                report,
-                locations,
-                text,
-                crop_radius,
-            }
-            .to_string();
-        }
-
-        if let Error::ValidationErrors { errors } = inner {
-            let mut out = String::new();
-            for (i, err) in errors.iter().enumerate() {
-                if i > 0 {
-                    out.push('\n');
-                    out.push('\n');
-                }
-
-                // If the nested error already contains snippet output, keep it.
-                // Otherwise, render it against the shared input text.
-                match err {
-                    Error::WithSnippet { .. } => out.push_str(&err.to_string()),
-                    other => out.push_str(&render_error_with_snippets(other, text, crop_radius)),
-                }
-            }
-            return out;
-        }
-    }
-
-    #[cfg(feature = "validator")]
-    {
-        // Normalize the snippet text to match the coordinate system used by parsing.
-        let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
-
-        if let Error::ValidatorError { errors, locations } = inner {
-            struct ValidatorSnippetDisplay<'a> {
-                errors: &'a ValidationErrors,
-                locations: &'a PathMap,
-                text: &'a str,
-                crop_radius: usize,
-            }
-
-            impl fmt::Display for ValidatorSnippetDisplay<'_> {
-                fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    fmt_validator_error_with_snippets(
-                        f,
-                        self.errors,
-                        self.locations,
-                        self.text,
-                        self.crop_radius,
-                    )
-                }
-            }
-
-            return ValidatorSnippetDisplay {
-                errors,
-                locations,
-                text,
-                crop_radius,
-            }
-            .to_string();
-        }
-
-        if let Error::ValidatorErrors { errors } = inner {
-            let mut out = String::new();
-            for (i, err) in errors.iter().enumerate() {
-                if i > 0 {
-                    out.push('\n');
-                    out.push('\n');
-                }
-
-                // If the nested error already contains snippet output, keep it.
-                // Otherwise, render it against the shared input text.
-                match err {
-                    Error::WithSnippet { .. } => out.push_str(&err.to_string()),
-                    other => out.push_str(&render_error_with_snippets(other, text, crop_radius)),
-                }
-            }
-            return out;
-        }
-    }
-
-    let msg = inner.to_string();
-    let Some(location) = inner.location() else {
-        return msg;
-    };
-
-    struct SnippetDisplay<'a> {
-        msg: &'a str,
-        location: &'a Location,
-        text: &'a str,
-        crop_radius: usize,
-    }
-
-    impl fmt::Display for SnippetDisplay<'_> {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            crate::de_snipped::fmt_with_snippet_or_fallback(
-                f,
-                Level::ERROR,
-                self.msg,
-                self.location,
-                self.text,
-                "<input>",
-                self.crop_radius,
-            )
-        }
-    }
-
-    SnippetDisplay {
-        msg: &msg,
-        location: &location,
-        text,
-        crop_radius,
-    }
-    .to_string()
-}
-
-/// Render error with snippets, where the text fragment starts at `start_line` (1-based).
-///
-/// This is used for reader-based parsing where we only have a sliding window of the input.
-#[cold]
-#[inline(never)]
-fn render_error_with_snippets_offset(
-    inner: &Error,
-    text: &str,
-    start_line: usize,
-    crop_radius: usize,
-) -> String {
-    if crop_radius == 0 {
-        return inner.to_string();
-    }
-
-    let msg = inner.to_string();
-    let Some(location) = inner.location() else {
-        return msg;
-    };
-
-    // Check if the error location is within our text fragment
-    let error_line = location.line as usize;
-    if error_line < start_line {
-        // Error is before our fragment - just show the message with location
-        return msg;
-    }
-
-    struct SnippetOffsetDisplay<'a> {
-        msg: &'a str,
-        location: &'a Location,
-        text: &'a str,
-        start_line: usize,
-        crop_radius: usize,
-    }
-
-    impl fmt::Display for SnippetOffsetDisplay<'_> {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            crate::de_snipped::fmt_with_snippet_offset_or_fallback(
-                f,
-                Level::ERROR,
-                self.msg,
-                self.location,
-                self.text,
-                "<input>",
-                self.start_line,
-                self.crop_radius,
-            )
-        }
-    }
-
-    SnippetOffsetDisplay {
-        msg: &msg,
-        location: &location,
-        text,
-        start_line,
-        crop_radius,
-    }
-    .to_string()
-}
 
 #[cfg(feature = "garde")]
 fn fmt_validation_error_plain(
@@ -770,91 +574,6 @@ fn fmt_validation_error_plain(
     Ok(())
 }
 
-#[cfg(feature = "garde")]
-fn fmt_validation_error_with_snippets(
-    f: &mut fmt::Formatter<'_>,
-    report: &garde::Report,
-    locations: &PathMap,
-    text: &str,
-    crop_radius: usize,
-) -> fmt::Result {
-    let mut first = true;
-    for (path, entry) in report.iter() {
-        if !first {
-            writeln!(f)?;
-        }
-        first = false;
-
-        let path_key = path_key_from_garde(path);
-        let original_leaf = path_key
-            .leaf_string()
-            .unwrap_or_else(|| "<root>".to_string());
-
-        let (locs, resolved_leaf) = locations
-            .search(&path_key)
-            .unwrap_or((Locations::UNKNOWN, original_leaf.clone()));
-
-        let ref_loc = locs.reference_location;
-        let def_loc = locs.defined_location;
-
-        let resolved_path = format_path_with_resolved_leaf(&path_key, &resolved_leaf);
-        let base_msg = format!("validation error: {entry} for `{resolved_path}`");
-
-        match (ref_loc, def_loc) {
-            (Location::UNKNOWN, Location::UNKNOWN) => {
-                write!(f, "{base_msg}")?;
-            }
-            (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
-                crate::de_snipped::fmt_with_snippet_or_fallback(
-                    f,
-                    Level::ERROR,
-                    &base_msg,
-                    &r,
-                    text,
-                    "(defined)",
-                    crop_radius,
-                )?;
-            }
-            (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
-                crate::de_snipped::fmt_with_snippet_or_fallback(
-                    f,
-                    Level::ERROR,
-                    &base_msg,
-                    &d,
-                    text,
-                    "(defined here)",
-                    crop_radius,
-                )?;
-            }
-            (r, d) => {
-                crate::de_snipped::fmt_with_snippet_or_fallback(
-                    f,
-                    Level::ERROR,
-                    &format!("invalid here, {base_msg}"),
-                    &r,
-                    text,
-                    "the value is used here",
-                    crop_radius,
-                )?;
-                writeln!(f)?;
-                writeln!(
-                    f,
-                    "  | This value comes indirectly from the anchor at line {} column {}:",
-                    d.line, d.column
-                )?;
-                crate::de_snipped::fmt_snippet_window_or_fallback(
-                    f,
-                    &d,
-                    text,
-                    "defined here",
-                    crop_radius,
-                )?;
-            }
-        }
-    }
-    Ok(())
-}
-
 #[cfg(feature = "validator")]
 fn fmt_validator_error_plain(
     f: &mut fmt::Formatter<'_>,
@@ -886,86 +605,6 @@ fn fmt_validator_error_plain(
         fmt_with_location(f, &msg, &loc)?;
     }
 
-    Ok(())
-}
-
-#[cfg(feature = "validator")]
-fn fmt_validator_error_with_snippets(
-    f: &mut fmt::Formatter<'_>,
-    errors: &ValidationErrors,
-    locations: &PathMap,
-    text: &str,
-    crop_radius: usize,
-) -> fmt::Result {
-    let entries = collect_validator_entries(errors);
-    let mut first = true;
-
-    for (path, entry) in entries {
-        if !first {
-            writeln!(f)?;
-        }
-        first = false;
-
-        let original_leaf = path.leaf_string().unwrap_or_else(|| "<root>".to_string());
-        let (locs, resolved_leaf) = locations
-            .search(&path)
-            .unwrap_or((Locations::UNKNOWN, original_leaf.clone()));
-
-        let resolved_path = format_path_with_resolved_leaf(&path, &resolved_leaf);
-        let base_msg = format!("validation error: {entry} for `{resolved_path}`");
-
-        match (locs.reference_location, locs.defined_location) {
-            (Location::UNKNOWN, Location::UNKNOWN) => {
-                write!(f, "{base_msg}")?;
-            }
-            (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
-                crate::de_snipped::fmt_with_snippet_or_fallback(
-                    f,
-                    Level::ERROR,
-                    &base_msg,
-                    &r,
-                    text,
-                    "(defined)",
-                    crop_radius,
-                )?;
-            }
-            (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
-                crate::de_snipped::fmt_with_snippet_or_fallback(
-                    f,
-                    Level::ERROR,
-                    &base_msg,
-                    &d,
-                    text,
-                    "(defined here)",
-                    crop_radius,
-                )?;
-            }
-            (r, d) => {
-                crate::de_snipped::fmt_with_snippet_or_fallback(
-                    f,
-                    Level::ERROR,
-                    &format!("invalid here, {base_msg}"),
-                    &r,
-                    text,
-                    "the value is used here",
-                    crop_radius,
-                )?;
-                writeln!(f)?;
-                writeln!(
-                    f,
-                    "  | This value comes indirectly from the anchor at line {} column {}:",
-                    d.line, d.column
-                )?;
-                crate::de_snipped::fmt_snippet_window_or_fallback(
-                    f,
-                    &d,
-                    text,
-                    "defined here",
-                    crop_radius,
-                )?;
-            }
-        }
-    }
     Ok(())
 }
 
@@ -1076,6 +715,43 @@ fn fmt_with_location(f: &mut fmt::Formatter<'_>, msg: &str, location: &Location)
     }
 }
 
+/// Format an alias error with both reference (use-site) and defined (anchor) locations.
+///
+/// This provides a plain-text representation showing where the alias is used and where
+/// the anchor is defined, which is useful for errors that occur when deserializing aliased values.
+#[cold]
+#[inline(never)]
+fn fmt_alias_error_plain(
+    f: &mut fmt::Formatter<'_>,
+    msg: &str,
+    locations: &Locations,
+) -> fmt::Result {
+    let ref_loc = locations.reference_location;
+    let def_loc = locations.defined_location;
+
+    match (ref_loc, def_loc) {
+        (Location::UNKNOWN, Location::UNKNOWN) => {
+            write!(f, "{msg}")
+        }
+        (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
+            // Only reference location known, or both are the same
+            write!(f, "{msg} at line {}, column {}", r.line, r.column)
+        }
+        (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
+            // Only defined location known
+            write!(f, "{msg} (defined at line {}, column {})", d.line, d.column)
+        }
+        (r, d) => {
+            // Both locations known and different
+            write!(
+                f,
+                "{msg} at line {}, column {} (defined at line {}, column {})",
+                r.line, r.column, d.line, d.column
+            )
+        }
+    }
+}
+
 /// Convert a budget breach report into a user-facing error.
 ///
 /// Arguments:
@@ -1121,6 +797,70 @@ mod tests {
             cause: std::io::Error::other("x"),
         };
         assert_eq!(err.locations(), None);
+    }
+
+    #[test]
+    fn alias_error_returns_both_locations() {
+        let ref_loc = Location::new(5, 10);
+        let def_loc = Location::new(2, 3);
+        let err = Error::AliasError {
+            msg: "test error".to_owned(),
+            locations: Locations {
+                reference_location: ref_loc,
+                defined_location: def_loc,
+            },
+        };
+
+        // location() should return the primary (reference) location
+        assert_eq!(err.location(), Some(ref_loc));
+
+        // locations() should return both
+        assert_eq!(
+            err.locations(),
+            Some(Locations {
+                reference_location: ref_loc,
+                defined_location: def_loc,
+            })
+        );
+    }
+
+    #[test]
+    fn alias_error_display_shows_both_locations() {
+        let ref_loc = Location::new(5, 10);
+        let def_loc = Location::new(2, 3);
+        let err = Error::AliasError {
+            msg: "invalid value".to_owned(),
+            locations: Locations {
+                reference_location: ref_loc,
+                defined_location: def_loc,
+            },
+        };
+
+        let display = err.to_string();
+        assert!(display.contains("invalid value"));
+        assert!(display.contains("line 5"));
+        assert!(display.contains("column 10"));
+        assert!(display.contains("line 2"));
+        assert!(display.contains("column 3"));
+    }
+
+    #[test]
+    fn alias_error_display_with_same_locations() {
+        let loc = Location::new(3, 7);
+        let err = Error::AliasError {
+            msg: "test".to_owned(),
+            locations: Locations {
+                reference_location: loc,
+                defined_location: loc,
+            },
+        };
+
+        let display = err.to_string();
+        // When both locations are the same, should only show one
+        assert!(display.contains("line 3"));
+        assert!(display.contains("column 7"));
+        // Should not contain "defined at" since locations are the same
+        assert!(!display.contains("defined at"));
     }
 
     #[cfg(feature = "validator")]

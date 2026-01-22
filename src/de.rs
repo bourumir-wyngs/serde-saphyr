@@ -42,15 +42,50 @@ pub use with_deserializer::{
 
 type FastHashSet<T> = HashSet<T, RandomState>;
 
+use crate::location::Locations;
+
+/// Attach both reference and defined locations to an error if it doesn't already have one.
+/// When both locations are known and different, creates an `AliasError` to report both.
+/// This is used for errors occurring when deserializing aliased values.
+#[inline]
+fn attach_alias_locations_if_missing(
+    err: Error,
+    reference_location: Location,
+    defined_location: Location,
+) -> Error {
+    if err.location().is_some() {
+        return err;
+    }
+
+    // If both locations are known and different, create an AliasError to show both
+    if reference_location != Location::UNKNOWN
+        && defined_location != Location::UNKNOWN
+        && reference_location != defined_location
+    {
+        Error::AliasError {
+            msg: err.to_string(),
+            locations: Locations {
+                reference_location,
+                defined_location,
+            },
+        }
+    } else {
+        // Fall back to single location (prefer reference, then defined)
+        let loc = if reference_location != Location::UNKNOWN {
+            reference_location
+        } else {
+            defined_location
+        };
+        err.with_location(loc)
+    }
+}
+
 mod spanned_deser;
 
 // Re-export moved Options and related enums from the options module to preserve
 // the public path serde_saphyr::sf_serde::*.
 pub use crate::options::{AliasLimits, DuplicateKeyPolicy, Options};
 use crate::tags::SfTag;
-
-#[cfg(any(feature = "garde", feature = "validator"))]
-use crate::location::Locations;
 
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::path_map::PathRecorder;
@@ -1718,9 +1753,6 @@ helper to deserialize into String or Cow<'de, str> instead
                     return Ok(None);
                 }
 
-                #[cfg(not(any(feature = "garde", feature = "validator")))]
-                let _ = defined_location;
-
                 // The peek borrow is now released, so it's safe to query other cursor state.
                 let reference_location = self.ev.reference_location();
                 let _missing_field_guard = MissingFieldLocationGuard::new(reference_location);
@@ -1743,7 +1775,10 @@ helper to deserialize into String or Cow<'de, str> instead
 
                         let de =
                             YamlDeserializer::new_with_path_recorder(self.ev, self.cfg, recorder);
-                        let res = seed.deserialize(de).map(Some);
+                        let res = seed
+                            .deserialize(de)
+                            .map(Some)
+                            .map_err(|e| attach_alias_locations_if_missing(e, reference_location, defined_location));
 
                         recorder.current = prev;
                         self.idx += 1;
@@ -1752,7 +1787,9 @@ helper to deserialize into String or Cow<'de, str> instead
                 }
 
                 let de = YamlDeserializer::new(self.ev, self.cfg);
-                seed.deserialize(de).map(Some)
+                seed.deserialize(de)
+                    .map(Some)
+                    .map_err(|e| attach_alias_locations_if_missing(e, reference_location, defined_location))
             }
         }
 
@@ -1923,6 +1960,10 @@ helper to deserialize into String or Cow<'de, str> instead
                 K: de::DeserializeSeed<'de>,
             {
                 let mut replay = ReplayEvents::new(events);
+
+                // Get location from replay events for error reporting.
+                let location = replay.reference_location();
+
                 let de = YamlDeserializer {
                     ev: &mut replay,
                     cfg: self.cfg,
@@ -1933,6 +1974,7 @@ helper to deserialize into String or Cow<'de, str> instead
                     garde: None,
                 };
                 seed.deserialize(de)
+                    .map_err(|e| if e.location().is_none() { e.with_location(location) } else { e })
             }
 
             /// Push a batch of entries to the front of the pending queue in order.
@@ -2241,18 +2283,18 @@ helper to deserialize into String or Cow<'de, str> instead
                     let (events, reference_location) = events;
                     let mut replay = ReplayEvents::with_reference(events, reference_location);
 
+                    // Definition-site location: where the node is defined in the YAML.
+                    // For aliases, this will point at the anchor definition.
+                    let defined_location = replay
+                        .peek()?
+                        .map(|ev| ev.location())
+                        .unwrap_or_else(|| replay.last_location());
+
                     #[cfg(any(feature = "garde", feature = "validator"))]
                     {
                         if let (Some(seg), Some(garde_ref)) = (pending_segment, self.garde.as_mut())
                         {
                             let recorder: &mut PathRecorder = garde_ref;
-
-                            // Definition-site location: where the node is defined in the YAML.
-                            // For aliases, this will point at the anchor definition.
-                            let defined_location = replay
-                                .peek()?
-                                .map(|ev| ev.location())
-                                .unwrap_or_else(|| replay.last_location());
 
                             let prev = recorder.current.take();
                             let now = prev.clone().join(seg.as_str());
@@ -2270,7 +2312,9 @@ helper to deserialize into String or Cow<'de, str> instead
                                 self.cfg,
                                 recorder,
                             );
-                            let res = seed.deserialize(de);
+                            let res = seed
+                                .deserialize(de)
+                                .map_err(|e| attach_alias_locations_if_missing(e, reference_location, defined_location));
                             recorder.current = prev;
                             return res;
                         }
@@ -2278,18 +2322,19 @@ helper to deserialize into String or Cow<'de, str> instead
 
                     let de = YamlDeserializer::new(&mut replay, self.cfg);
                     seed.deserialize(de)
+                        .map_err(|e| attach_alias_locations_if_missing(e, reference_location, defined_location))
                 } else {
+                    // Live stream: get both locations for potential alias error reporting.
+                    let defined_location = self
+                        .ev
+                        .peek()?
+                        .map(|ev| ev.location())
+                        .unwrap_or_else(|| self.ev.last_location());
+
+                    let reference_location = self.ev.reference_location();
+
                     #[cfg(any(feature = "garde", feature = "validator"))]
                     {
-                        // Live stream: record reference location (use-site) if garde recorder is enabled.
-                        let defined_location = self
-                            .ev
-                            .peek()?
-                            .map(|ev| ev.location())
-                            .unwrap_or_else(|| self.ev.last_location());
-
-                        let reference_location = self.ev.reference_location();
-
                         if let (Some(seg), Some(garde_ref)) = (pending_segment, self.garde.as_mut())
                         {
                             let recorder: &mut PathRecorder = garde_ref;
@@ -2307,7 +2352,9 @@ helper to deserialize into String or Cow<'de, str> instead
                             let de = YamlDeserializer::new_with_path_recorder(
                                 self.ev, self.cfg, recorder,
                             );
-                            let res = seed.deserialize(de);
+                            let res = seed
+                                .deserialize(de)
+                                .map_err(|e| attach_alias_locations_if_missing(e, reference_location, defined_location));
                             recorder.current = prev;
                             return res;
                         }
@@ -2315,6 +2362,7 @@ helper to deserialize into String or Cow<'de, str> instead
 
                     let de = YamlDeserializer::new(self.ev, self.cfg);
                     seed.deserialize(de)
+                        .map_err(|e| attach_alias_locations_if_missing(e, reference_location, defined_location))
                 }
             }
         }
@@ -2532,7 +2580,17 @@ helper to deserialize into String or Cow<'de, str> instead
             where
                 T: de::DeserializeSeed<'de>,
             {
-                let value = seed.deserialize(YamlDeserializer::new(self.ev, self.cfg))?;
+                // Get locations for error reporting before deserializing.
+                let defined_location = self
+                    .ev
+                    .peek()?
+                    .map(|ev| ev.location())
+                    .unwrap_or_else(|| self.ev.last_location());
+                let reference_location = self.ev.reference_location();
+
+                let value = seed
+                    .deserialize(YamlDeserializer::new(self.ev, self.cfg))
+                    .map_err(|e| attach_alias_locations_if_missing(e, reference_location, defined_location))?;
                 if self.map_mode {
                     self.expect_map_end()?;
                 }
