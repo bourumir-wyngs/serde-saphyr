@@ -646,10 +646,12 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Preserves blank lines between paragraphs. Each emitted line is indented
     /// exactly at `indent` depth.
     ///
-    /// Wrapping is only performed at whitespace boundaries. If no whitespace is
-    /// available within the wrap limit, the line is emitted unwrapped to preserve
-    /// round-trip correctness: in YAML folded scalars (`>`), inserted newlines are
-    /// typically folded back as spaces on parse.
+    /// Wrapping is only performed at ASCII space (`' '`) boundaries.
+    ///
+    /// This is crucial for round-trip correctness: in YAML folded scalars (`>`), a
+    /// line break is typically folded back as a single space on parse. If we were
+    /// to wrap at a non-space whitespace character (e.g. a tab), the reader would
+    /// still insert a space at the folded newline and the content would change.
     fn write_folded_block(&mut self, s: &str, indent: usize) -> Result<()> {
         // Precompute indent prefix for this block body and reuse it for each emitted line.
         let mut indent_buf: String = String::new();
@@ -671,112 +673,97 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
                 continue;
             }
 
-            let mut start = 0; // byte index
-            // Candidate wrap breakpoint at the start of the last whitespace run seen so far.
+            // If the line starts with a space, avoid wrapping. Wrapping could move those
+            // leading spaces across a folded newline and interact with YAML's
+            // "more-indented" rule.
+            if line.starts_with(' ') {
+                self.out.write_str(indent_str)?;
+                self.at_line_start = false;
+                self.out.write_str(line)?;
+                self.newline()?;
+                continue;
+            }
+
+            // Wrap only at ASCII-space runs.
             //
-            // YAML folded block scalars (`>`) fold a single line break into a single space.
-            // If we break inside a run of N whitespace characters, we must ensure that:
-            //   emitted_trailing_ws + folded_space == original_run_ws
-            // and the next emitted line must NOT start with whitespace (to avoid the
+            // YAML folded scalars (`>`) fold a single line break into a single space.
+            // If we break inside a run of N spaces, we must ensure that:
+            //   emitted_trailing_spaces + folded_space == original_run_spaces
+            // and the next emitted line must NOT start with space (to avoid the
             // "more-indented" rule changing semantics).
             //
-            // To achieve that, when breaking at a whitespace run of length N:
-            //   - emit N-1 whitespace chars at end of the previous line,
+            // To achieve that, when breaking at a run of N spaces:
+            //   - emit N-1 spaces at end of the previous line,
             //   - consume the entire run,
-            //   - start the next line at the first non-whitespace char.
-            // For N==1, we emit none and just consume the single whitespace.
-            let mut last_ws_run: Option<(usize, usize, usize, usize)> = None;
-            // (run_start_byte, run_end_byte, last_ws_char_len, run_len_in_chars)
-            let mut in_ws_run = false;
-            let mut ws_run_start = 0usize;
-            let mut ws_run_end = 0usize;
-            let mut ws_run_last_len = 0usize;
-            let mut ws_run_len = 0usize;
-            let mut col = 0usize; // column in chars
-            for (_i, ch) in line.char_indices() {
-                // Track potential break positions.
-                if ch.is_whitespace() {
-                    if !in_ws_run {
-                        in_ws_run = true;
-                        ws_run_start = _i;
-                        ws_run_len = 0;
-                    }
-                    ws_run_len += 1;
-                    ws_run_last_len = ch.len_utf8();
-                    ws_run_end = _i + ws_run_last_len;
-                } else {
-                    // Commit the completed whitespace run as a possible wrap candidate.
-                    if in_ws_run {
-                        last_ws_run = Some((ws_run_start, ws_run_end, ws_run_last_len, ws_run_len));
-                    }
-                    in_ws_run = false;
+            //   - start the next line at the first non-space char.
+            // For N==1, we emit none and just consume the single space.
+
+            let mut start = 0usize; // byte index of current line start
+            let mut col = 0usize; // column in chars since `start`
+            let mut last_space_run: Option<(usize, usize, usize)> = None;
+            // (run_start_byte, run_end_byte, run_len_in_chars)
+
+            let mut in_space_run = false;
+            let mut run_start = 0usize;
+            let mut run_len = 0usize;
+            let mut prev_i = 0usize;
+            let mut prev_ch_len = 0usize;
+
+            for (i, ch) in line.char_indices() {
+                // Close an open space-run if needed.
+                if in_space_run && ch != ' ' {
+                    // run_end = previous char boundary (prev_i + prev_ch_len)
+                    let run_end = prev_i + prev_ch_len;
+                    last_space_run = Some((run_start, run_end, run_len));
+                    in_space_run = false;
+                    run_len = 0;
                 }
+
+                // Track space-runs.
+                if ch == ' ' {
+                    if !in_space_run {
+                        in_space_run = true;
+                        run_start = i;
+                        run_len = 1;
+                    } else {
+                        run_len += 1;
+                    }
+                }
+
                 col += 1;
 
-                // Wrap only when we have a whitespace to break at. If there is no whitespace
-                // within the limit (e.g., a long token), do not hard-break: folded scalars
-                // would turn that inserted newline into a space when parsed.
                 if col > self.folded_wrap_col {
-                    // Prefer breaking at the most recent completed whitespace run. If we are
-                    // currently inside a whitespace run, extend it forward to include the
-                    // entire run so the next emitted line never starts with whitespace.
-                    let mut candidate = last_ws_run;
-                    if in_ws_run {
-                        // Extend the current run to the full run end (including whitespace
-                        // chars we haven't iterated yet).
-                        let base_end = ws_run_end;
-                        let mut run_end = base_end;
-                        let mut run_len = ws_run_len;
-                        let mut last_ws_len = ws_run_last_len;
-                        for (_j, ch2) in line[base_end..].char_indices() {
-                            if !ch2.is_whitespace() {
-                                break;
-                            }
-                            run_len += 1;
-                            last_ws_len = ch2.len_utf8();
-                            run_end = base_end + _j + last_ws_len;
+                    let Some((ws_start, ws_end, ws_len)) = last_space_run else {
+                        // No ASCII space within the wrap limit: do not hard-break.
+                        break;
+                    };
+
+                    // Emit the segment up to ws_start, then (ws_len - 1) trailing spaces.
+                    self.out.write_str(indent_str)?;
+                    self.at_line_start = false;
+                    self.out.write_str(&line[start..ws_start])?;
+                    if ws_len > 1 {
+                        for _ in 0..(ws_len - 1) {
+                            self.out.write_char(' ')?;
                         }
-                        candidate = Some((ws_run_start, run_end, last_ws_len, run_len));
                     }
+                    self.newline()?;
 
-                    if let Some((run_start, run_end, last_ws_len, run_len)) = candidate
-                        && run_start >= start
-                    {
-                        // Emit content up to the whitespace run.
-                        self.out.write_str(indent_str)?;
-                        self.at_line_start = false;
-                        // Safety: run_start is on char boundary
-                        self.out.write_str(&line[start..run_start])?;
-
-                        // Emit N-1 whitespace chars at end-of-line (see comment above).
-                        if run_len > 1 {
-                            let ws_end = run_end - last_ws_len;
-                            self.out.write_str(&line[run_start..ws_end])?;
-                        }
-                        self.newline()?;
-
-                        // Advance start: skip the entire whitespace run.
-                        start = run_end;
-                        // Reset trackers starting at new segment.
-                        last_ws_run = None;
-                        in_ws_run = false;
-                        ws_run_len = 0;
-                        col = 0;
-                    }
+                    // Consume the whole space-run; next line starts after it.
+                    start = ws_end;
+                    col = 0;
+                    last_space_run = None;
                 }
+
+                prev_i = i;
+                prev_ch_len = ch.len_utf8();
             }
-            // Emit the tail if any
-            if start < line.len() {
-                self.out.write_str(indent_str)?;
-                self.at_line_start = false;
-                self.out.write_str(&line[start..])?;
-                self.newline()?;
-            } else {
-                // If start == line.len(), the line ended exactly at a wrap boundary; still emit an empty line
-                self.out.write_str(indent_str)?;
-                self.at_line_start = false;
-                self.newline()?;
-            }
+
+            // Emit the remaining tail.
+            self.out.write_str(indent_str)?;
+            self.at_line_start = false;
+            self.out.write_str(&line[start..])?;
+            self.newline()?;
         }
         Ok(())
     }

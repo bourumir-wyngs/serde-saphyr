@@ -233,6 +233,60 @@ fn fold_string_wraps_on_unicode_whitespace_without_panic() {
 }
 
 #[test]
+fn fold_string_does_not_wrap_on_tabs_roundtrips() {
+    // In YAML folded scalars (`>`), inserted newlines are folded back as a space.
+    // Wrapping at a tab would therefore change semantics on parse ("\t" would
+    // become " \t" or "\t ", depending on where the break happened).
+    //
+    // Ensure we only ever wrap at ASCII spaces.
+    let s = format!(
+        "{}\t{}",
+        "a".repeat(120),
+        "b".repeat(120)
+    );
+
+    let out = to_string(&FoldString(s.clone())).unwrap();
+    assert!(out.starts_with(">\n  "));
+    assert!(out.contains("\t"));
+
+    let roundtrip: String = serde_saphyr::from_str(&out).unwrap();
+    // FoldString uses plain '>' (clip chomping), which round-trips with a trailing newline.
+    assert_eq!(roundtrip, format!("{}\n", s));
+}
+
+#[test]
+fn fold_string_wraps_space_runs_roundtrips() {
+    // When we wrap at a run of N ASCII spaces in a YAML folded scalar (`>`), the parser
+    // will insert a single space at the folded newline. To preserve the exact number of
+    // spaces on round-trip, the emitter must effectively turn N spaces into:
+    //   (N-1) spaces at end-of-line + folded-space
+    // so that the reconstructed string has N spaces.
+    let s = format!(
+        "{}  {}",
+        "a".repeat(90),
+        "b".repeat(90)
+    );
+
+    let out = to_string(&FoldString(s.clone())).unwrap();
+    assert!(out.starts_with(">\n  "));
+
+    let roundtrip: String = serde_saphyr::from_str(&out).unwrap();
+    assert_eq!(roundtrip, format!("{}\n", s));
+}
+
+#[test]
+fn fold_string_does_not_hard_break_long_tokens_roundtrips() {
+    // If a line contains no ASCII spaces within the wrap limit, we must not hard-break
+    // the token: a folded newline would round-trip as a space and corrupt the content.
+    let s = "x".repeat(200);
+    let out = to_string(&FoldString(s.clone())).unwrap();
+    assert!(out.starts_with(">\n  "));
+
+    let roundtrip: String = serde_saphyr::from_str(&out).unwrap();
+    assert_eq!(roundtrip, format!("{}\n", s));
+}
+
+#[test]
 fn fold_string_as_map_value() {
     #[derive(Serialize)]
     struct Doc {
