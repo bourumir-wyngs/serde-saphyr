@@ -52,32 +52,6 @@ As seen, serde-saphyr exceeds others by performance, even with budget check enab
 
 The test suite currently includes 834+ passing tests, including the fully converted [yaml-test-suite](https://github.com/yaml/yaml-test-suite), with *ALL* tests from there passing with no exceptions. To pass the last few remaining cases, we needed to fork the saphyr-parser crate ([saphyr-parser-bw](https://crates.io/crates/saphyr-parser-bw)). Some additional cases are taken from the original serde-yaml tests. 
 
-## WebAssembly
-
-`serde-saphyr` is intended to be usable from WebAssembly applications (for example Dioxus).
-
-### `wasm32-unknown-unknown` (browser / JS)
-
-`serde-saphyr` builds for `wasm32-unknown-unknown`.
-
-If your workspace uses dependency overrides and you still run into a build error in a transitive dependency mentioning [`getrandom`](https://crates.io/crates/getrandom) / `wasm32-unknown-unknown`, ensure that `getrandom`’s JS backend is enabled in your *workspace* dependency settings.
-
-Build with:
-
-```bash
-cargo build --target wasm32-unknown-unknown
-```
-
-### `wasm32-wasip1` (WASI runtimes)
-
-If you are targeting WASI, you can typically run tests under a WASM runtime (e.g. wasmtime):
-
-```bash
-rustup target add wasm32-wasip1
-cargo install wasmtime-cli
-cargo test --target wasm32-wasip1
-```
-
 ## Notable features
 
 - **Configurable budgets:** Enforce input limits to mitigate resource exhaustion (e.g., deeply nested structures or very large arrays); see [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
@@ -89,6 +63,10 @@ cargo test --target wasm32-wasip1
 - Serialized floats are official YAML floats, both [1.1](https://yaml.org/type/float.html) and [1.2](https://yaml.org/spec/1.2.2/), for example `3.0e+18` and not `3e+18` or `3e18`. Some parsers (such as PyYAML, go-yaml, and Psych) do not see `3e18` as a number.
 - **Precise error reporting with snippet rendering.
 - **robotic extensions** to support YAML dialect common in robotics (see below).
+
+## WebAssembly
+
+`serde-saphyr` is compatible with WebAssembly. CI flow includes builds for both `wasm32-unknown-unknown` (browser / JS) and `wasm32-wasip1`  (WASI runtimes) with full test suite running and passing.
  
 ## Usage
 
