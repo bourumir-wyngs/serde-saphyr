@@ -48,3 +48,52 @@ jobs:
           export PATH=$PATH:/home/github-runner/.cargo/bin
           cargo test --locked --offline --features garde,validator,miette,figment,robotics
 
+  build_wasm32-unknown-unknown:
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain and wasm32-unknown-unknown target
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add wasm32-unknown-unknown
+          rustc -V
+          cargo -V
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check build for wasm32-unknown-unknown
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin
+          cargo check --target wasm32-unknown-unknown --locked
+
+  build_wasm32-wasip1:
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain and wasm32-wasip1 target
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add wasm32-wasip1
+          rustc -V
+          cargo -V
+
+      - name: Install wasmtime
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin
+          cargo install wasmtime-cli --locked || true
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run tests for wasm32-wasip1
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin
+          cargo test --target wasm32-wasip1 --locked
+

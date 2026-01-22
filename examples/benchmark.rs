@@ -73,7 +73,8 @@ fn main() -> Result<(), Error> {
         yaml.len()
     );
 
-    let many: usize = 100_000_000_000_000;
+    // Use an effectively-unlimited budget while staying portable to 32-bit targets (e.g. wasm32).
+    let many: usize = usize::MAX;
     let start = Instant::now();
     let document: Document = serde_saphyr::from_str_with_options(
         &yaml,

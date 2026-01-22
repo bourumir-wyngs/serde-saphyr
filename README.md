@@ -52,6 +52,32 @@ As seen, serde-saphyr exceeds others by performance, even with budget check enab
 
 The test suite currently includes 834+ passing tests, including the fully converted [yaml-test-suite](https://github.com/yaml/yaml-test-suite), with *ALL* tests from there passing with no exceptions. To pass the last few remaining cases, we needed to fork the saphyr-parser crate ([saphyr-parser-bw](https://crates.io/crates/saphyr-parser-bw)). Some additional cases are taken from the original serde-yaml tests. 
 
+## WebAssembly
+
+`serde-saphyr` is intended to be usable from WebAssembly applications (for example Dioxus).
+
+### `wasm32-unknown-unknown` (browser / JS)
+
+`serde-saphyr` builds for `wasm32-unknown-unknown`.
+
+If your workspace uses dependency overrides and you still run into a build error in a transitive dependency mentioning [`getrandom`](https://crates.io/crates/getrandom) / `wasm32-unknown-unknown`, ensure that `getrandom`’s JS backend is enabled in your *workspace* dependency settings.
+
+Build with:
+
+```bash
+cargo build --target wasm32-unknown-unknown
+```
+
+### `wasm32-wasip1` (WASI runtimes)
+
+If you are targeting WASI, you can typically run tests under a WASM runtime (e.g. wasmtime):
+
+```bash
+rustup target add wasm32-wasip1
+cargo install wasmtime-cli
+cargo test --target wasm32-wasip1
+```
+
 ## Notable features
 
 - **Configurable budgets:** Enforce input limits to mitigate resource exhaustion (e.g., deeply nested structures or very large arrays); see [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
@@ -408,7 +434,7 @@ To find the typical budget requirements for you file, run the main() executable 
 
 ## Serialization
 
-```rust
+```rust,ignore
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -425,7 +451,7 @@ Serde-saphyr can conceptually connect YAML anchors with Rust shared references (
 - [RcAnchor<T>](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.RcAnchor.html) and [ArcAnchor<T>](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.ArcAnchor.html) emit anchors like `&a1` on first occurrence and may emit aliases `*a1` later.
 - [RcWeakAnchor<T>](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.RcWeakAnchor.html) and [ArcWeakAnchor<T>](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.ArcWeakAnchor.html) serialize a weak ref: if the strong pointer is gone, it becomes `null`.
 
-```rust
+```rust,ignore
      #[derive(Deserialize, Serialize)]
     struct Doc {
         a: RcAnchor<Node>,
@@ -507,7 +533,7 @@ hh_mm_secs: -0:30:30.5 # Time
 longitude: !radians 8:32:53.2 # Nautical, ETH Zürich Main Building (8°32′53.2″ E)
 ```
 
-```rust
+```rust,ignore
 let options = Options {
     angle_conversions: true, // enable robotics angle parsing
     .. Options::default()

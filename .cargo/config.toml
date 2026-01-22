@@ -1,3 +1,9 @@
 # Explictily disallow unsafe code in all project
 [build]
 rustflags = ["-Funsafe_code"]
+
+# Allow running tests for WASI targets (WebAssembly) when a runner is installed.
+# Install locally with e.g.:
+#   cargo install wasmtime-cli
+[target.wasm32-wasip1]
+runner = "wasmtime"
