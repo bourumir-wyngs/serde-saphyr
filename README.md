@@ -11,7 +11,7 @@
 [![Fuzz & Audit](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/ci.yml/badge.svg)](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/ci.yml)
 
 **serde-saphyr** is a strongly typed YAML deserializer built on the top of slightly modified
-[`saphyr-parser`](https://crates.io/crates/saphyr-parser), published as [saphyr-parser-bw](https://crates.io/crates/saphyr-parser-bw). It aims to be **panic-free** on malformed input exclude `unsafe` code in library code. The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.”
+[`saphyr-parser`](https://crates.io/crates/saphyr-parser), published as [saphyr-parser-bw](https://crates.io/crates/saphyr-parser-bw). It aims to be **panic-free** on malformed input exclude `unsafe` code in library code. The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.” Try it online as WebAssembly application [here](https://verdanta.tech/yva/)
 
 ### Why this approach?
 
@@ -66,7 +66,7 @@ The test suite currently includes 834+ passing tests, including the fully conver
 
 ## WebAssembly
 
-`serde-saphyr` is compatible with WebAssembly. CI flow includes builds for both `wasm32-unknown-unknown` (browser / JS) and `wasm32-wasip1`  (WASI runtimes) with full test suite running and passing.
+`serde-saphyr` is compatible with WebAssembly. CI flow includes builds for both `wasm32-unknown-unknown` (browser / JS) and `wasm32-wasip1`  (WASI runtimes) with full test suite running and passing. We also wrote [yva](https://github.com/bourumir-wyngs/yva) in [dioxus](https://dioxuslabs.com/) to deploy serde-saphyr on the web.
  
 ## Usage
 
@@ -408,7 +408,7 @@ The concept that “Rust code is the schema” naturally extends to implemented 
 
 Fuzzing shows that certain adversarial inputs can make YAML parsers consume excessive time or memory, enabling denial-of-service scenarios. To counter this, `serde-saphyr` offers a fast, configurable pre-check via a [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html), available through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). Defaults are conservative; tighten them when you know your input shape, or disable the budget if you only parse YAML you generate yourself.
 During [reader](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.from_reader_with_options.html)-based deserialization, serde-saphyr does not buffer the entire payload; it parses incrementally, counting bytes and enforcing configured budgets. This design blocks denial-of-service attempts via excessively large inputs. When [streaming](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.read_with_options.html) from the reader through the iterator, other budget limits apply on a per-document basis, since such a reader may be expected to stream indefinitely. The total size of input is not limited in this case.
-To find the typical budget requirements for you file, run the main() executable of this library, providing a YAML file path as the program parameter. You can also fetch the budget programmatically by registering a closure with [`Options::with_budget_report`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html#method.with_budget_report).
+To find the typical budget requirements for you file, use our [web demo](https://verdanta.tech/yva/) or [run the main() executable of this library, providing a YAML file path as the program parameter. You can also fetch the budget programmatically by registering a closure with [`Options::with_budget_report`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html#method.with_budget_report).
 
 ## Serialization
 

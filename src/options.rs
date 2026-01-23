@@ -145,6 +145,7 @@ impl Options {
     ///
     /// ```rust
     /// use serde_saphyr::Options;
+    /// use serde_saphyr::budget::BudgetReport;
     ///
     /// let options = Options::default().with_budget_report(|report: BudgetReport| {
     ///     // e.g. update your state / emit metrics / log the report
