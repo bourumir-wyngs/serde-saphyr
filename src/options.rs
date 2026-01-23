@@ -134,7 +134,7 @@ pub struct Options {
 }
 
 pub type BudgetReportCallback =
-   Rc<dyn Fn(crate::budget::BudgetReport) + 'static>;
+   Rc<std::cell::RefCell<dyn FnMut(crate::budget::BudgetReport) + 'static>>;
 
 impl Options {
     /// Registers a budget-report callback. Any closure can be used,  including ones that
@@ -153,9 +153,9 @@ impl Options {
     /// ```
     pub fn with_budget_report<F>(mut self, cb: F) -> Self
     where
-        F: Fn(crate::budget::BudgetReport) + 'static,
+        F: FnMut(crate::budget::BudgetReport) + 'static,
     {
-        self.budget_report_cb = Some(Rc::new(cb));
+        self.budget_report_cb = Some(Rc::new(std::cell::RefCell::new(cb)));
         self
     }
 }
