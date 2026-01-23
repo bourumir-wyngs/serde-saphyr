@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::rc::Rc;
 use crate::budget::Budget;
 use serde::{Deserialize, Serialize};
 
@@ -134,7 +134,7 @@ pub struct Options {
 }
 
 pub type BudgetReportCallback =
-   Arc<dyn Fn(&crate::budget::BudgetReport) + Send + Sync + 'static>;
+   Rc<dyn Fn(&crate::budget::BudgetReport) + 'static>;
 
 impl Options {
     /// Registers a budget-report callback. Any closure can be used,  including ones that
@@ -156,7 +156,7 @@ impl Options {
     where
         F: Fn(&crate::budget::BudgetReport) + Send + Sync + 'static,
     {
-        self.budget_report_cb = Some(Arc::new(cb));
+        self.budget_report_cb = Some(Rc::new(cb));
         self
     }
 }
