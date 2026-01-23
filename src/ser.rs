@@ -643,128 +643,16 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     }
 
     /// Write a folded block string body, wrapping to `folded_wrap_col` characters.
-    /// Preserves blank lines between paragraphs. Each emitted line is indented
-    /// exactly at `indent` depth.
-    ///
-    /// Wrapping is only performed at ASCII space (`' '`) boundaries.
-    ///
-    /// This is crucial for round-trip correctness: in YAML folded scalars (`>`), a
-    /// line break is typically folded back as a single space on parse. If we were
-    /// to wrap at a non-space whitespace character (e.g. a tab), the reader would
-    /// still insert a space at the folded newline and the content would change.
+    /// Delegates to the standalone function in `wrapping` module.
     fn write_folded_block(&mut self, s: &str, indent: usize) -> Result<()> {
-        // Precompute indent prefix for this block body and reuse it for each emitted line.
-        let mut indent_buf: String = String::new();
-        let spaces = self.indent_step * indent;
-        if spaces > 0 {
-            indent_buf.reserve(spaces);
-            for _ in 0..spaces {
-                indent_buf.push(' ');
-            }
-        }
-        let indent_str = indent_buf.as_str();
-
-        for line in s.split('\n') {
-            if line.is_empty() {
-                // Preserve empty lines between paragraphs
-                self.out.write_str(indent_str)?;
-                self.at_line_start = false;
-                self.newline()?;
-                continue;
-            }
-
-            // If the line starts with a space, avoid wrapping. Wrapping could move those
-            // leading spaces across a folded newline and interact with YAML's
-            // "more-indented" rule.
-            if line.starts_with(' ') {
-                self.out.write_str(indent_str)?;
-                self.at_line_start = false;
-                self.out.write_str(line)?;
-                self.newline()?;
-                continue;
-            }
-
-            // Wrap only at ASCII-space runs.
-            //
-            // YAML folded scalars (`>`) fold a single line break into a single space.
-            // If we break inside a run of N spaces, we must ensure that:
-            //   emitted_trailing_spaces + folded_space == original_run_spaces
-            // and the next emitted line must NOT start with space (to avoid the
-            // "more-indented" rule changing semantics).
-            //
-            // To achieve that, when breaking at a run of N spaces:
-            //   - emit N-1 spaces at end of the previous line,
-            //   - consume the entire run,
-            //   - start the next line at the first non-space char.
-            // For N==1, we emit none and just consume the single space.
-
-            let mut start = 0usize; // byte index of current line start
-            let mut col = 0usize; // column in chars since `start`
-            let mut last_space_run: Option<(usize, usize, usize)> = None;
-            // (run_start_byte, run_end_byte, run_len_in_chars)
-
-            let mut in_space_run = false;
-            let mut run_start = 0usize;
-            let mut run_len = 0usize;
-            let mut prev_i = 0usize;
-            let mut prev_ch_len = 0usize;
-
-            for (i, ch) in line.char_indices() {
-                // Close an open space-run if needed.
-                if in_space_run && ch != ' ' {
-                    // run_end = previous char boundary (prev_i + prev_ch_len)
-                    let run_end = prev_i + prev_ch_len;
-                    last_space_run = Some((run_start, run_end, run_len));
-                    in_space_run = false;
-                    run_len = 0;
-                }
-
-                // Track space-runs.
-                if ch == ' ' {
-                    if !in_space_run {
-                        in_space_run = true;
-                        run_start = i;
-                        run_len = 1;
-                    } else {
-                        run_len += 1;
-                    }
-                }
-
-                col += 1;
-
-                if col > self.folded_wrap_col {
-                    let Some((ws_start, ws_end, ws_len)) = last_space_run else {
-                        // No ASCII space within the wrap limit: do not hard-break.
-                        break;
-                    };
-
-                    // Emit the segment up to ws_start, then (ws_len - 1) trailing spaces.
-                    self.out.write_str(indent_str)?;
-                    self.at_line_start = false;
-                    self.out.write_str(&line[start..ws_start])?;
-                    if ws_len > 1 {
-                        for _ in 0..(ws_len - 1) {
-                            self.out.write_char(' ')?;
-                        }
-                    }
-                    self.newline()?;
-
-                    // Consume the whole space-run; next line starts after it.
-                    start = ws_end;
-                    col = 0;
-                    last_space_run = None;
-                }
-
-                prev_i = i;
-                prev_ch_len = ch.len_utf8();
-            }
-
-            // Emit the remaining tail.
-            self.out.write_str(indent_str)?;
-            self.at_line_start = false;
-            self.out.write_str(&line[start..])?;
-            self.newline()?;
-        }
+        crate::wrapping::write_folded_block(
+            self.out,
+            s,
+            indent,
+            self.indent_step,
+            self.folded_wrap_col,
+        )?;
+        self.at_line_start = true;
         Ok(())
     }
 
@@ -1118,6 +1006,30 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             if self.at_line_start {
                 self.write_indent(base)?;
             }
+            // Compute the indentation indicator N for block scalars.
+            // N = indent_step * body_base = number of spaces the parser will strip.
+            // We must emit an explicit indicator when the first non-empty content line
+            // has leading whitespace, so the parser knows how much to strip.
+            let body_base = base + 1;
+            let indent_n = self.indent_step * body_base;
+
+            // Check if we need an explicit indentation indicator.
+            // Required when the first non-empty line has leading whitespace.
+            let content_trimmed = v.trim_end_matches('\n');
+            let first_line_spaces = crate::wrapping::first_line_leading_spaces(content_trimmed);
+            let needs_indicator = first_line_spaces > 0;
+
+            // If N > 9, YAML parsers reject it. Fall back to quoting.
+            if needs_indicator && indent_n > 9 {
+                // Reset state and fall through to quoted string handling
+                self.pending_str_style = None;
+                self.pending_str_from_auto = false;
+                self.write_scalar_prefix_if_anchor()?;
+                self.write_plain_or_quoted_value(v)?;
+                self.write_end_of_scalar()?;
+                return Ok(());
+            }
+
             match style {
                 StrStyle::Literal => {
                     // Determine trailing newline count to select chomp indicator:
@@ -1126,10 +1038,17 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                     //  - >=2 → "|+" (keep)
                     let content = v.trim_end_matches('\n');
                     let trailing_nl = v.len() - content.len();
+
+                    // Write block scalar header: | or |N with optional chomp indicator
+                    self.out.write_char('|')?;
+                    if needs_indicator {
+                        // Write the indentation indicator digit
+                        self.out.write_char(char::from_digit(indent_n as u32, 10).unwrap())?;
+                    }
                     match trailing_nl {
-                        0 => self.out.write_str("|-")?,
-                        1 => self.out.write_str("|")?,
-                        _ => self.out.write_str("|+")?,
+                        0 => self.out.write_char('-')?,
+                        1 => {} // clip is the default, no indicator needed
+                        _ => self.out.write_char('+')?,
                     }
                     self.newline()?;
 
@@ -1137,11 +1056,6 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                     // For keep chomping (>=2), append (trailing_nl - 1) visual empty lines.
                     // Special case: empty original content with at least one trailing newline
                     // should produce a single empty content line (tests expect this for "\n").
-                    // Determine indentation base for the body relative to the header line base.
-                    // The block scalar body must be indented at least one more level than the
-                    // header line. Compute the same base used for the header and add one level.
-                    // Body must be one indentation level deeper than the header line.
-                    let body_base = base + 1;
                     // Precompute body indent string once for the entire block
                     let mut indent_buf: String = String::new();
                     let spaces = self.indent_step * body_base;
@@ -1177,24 +1091,26 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                     }
                 }
                 StrStyle::Folded => {
+                    // Write block scalar header: > or >N with optional chomp indicator
+                    self.out.write_char('>')?;
+                    if needs_indicator {
+                        // Write the indentation indicator digit
+                        self.out.write_char(char::from_digit(indent_n as u32, 10).unwrap())?;
+                    }
                     if self.pending_str_from_auto {
                         // Auto-selected folded style: choose chomping based on trailing newlines
                         // to preserve exact content on round-trip.
                         let content = v.trim_end_matches('\n');
                         let trailing_nl = v.len() - content.len();
                         match trailing_nl {
-                            0 => self.out.write_str(">-")?,
-                            1 => self.out.write_str(">")?,
-                            _ => self.out.write_str(">+")?,
+                            0 => self.out.write_char('-')?,
+                            1 => {} // clip is the default, no indicator needed
+                            _ => self.out.write_char('+')?,
                         }
-                    } else {
-                        // Explicit FoldStr/FoldString wrappers historically used plain '>'
-                        // regardless of trailing newline; keep that behavior for compatibility.
-                        self.out.write_str(">")?;
                     }
+                    // Note: Explicit FoldStr/FoldString wrappers historically used plain '>'
+                    // regardless of trailing newline; keep that behavior for compatibility.
                     self.newline()?;
-                    // Same body indentation rule as literal: one level deeper than the header base.
-                    let body_base = base + 1;
                     self.write_folded_block(v, body_base)?;
                 }
             }

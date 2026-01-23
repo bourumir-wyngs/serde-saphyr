@@ -69,6 +69,7 @@ pub mod miette;
 #[cfg(feature = "figment")]
 pub mod figment;
 pub(crate) mod ring_reader;
+mod wrapping;
 mod zmij_format;
 // ---------------- Serialization (public API) ----------------
 

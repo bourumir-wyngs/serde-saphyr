@@ -243,3 +243,19 @@ fn folded_wrap_can_preserve_multi_space_runs_by_emitting_trailing_spaces() -> an
     assert_eq!(decoded.long, reference.long);
     Ok(())
 }
+
+#[test]
+fn yaml_long_strings_with_leading_whitespace() -> anyhow::Result<()> {
+    // Test that strings with leading whitespace on the first line are correctly
+    // serialized using explicit indentation indicators (|N or >N) and round-trip.
+    let reference = Foo {
+        a: 32,
+        b: true,
+        short: "A".repeat(20),
+        long: "  leading spaces on first line\nsecond line".to_string(),
+    };
+    let serialized = yaml::to_string(&reference)?;
+    let test: Foo = yaml::from_str(serialized.as_str())?;
+    assert_eq!(reference.long, test.long);
+    Ok(())
+}
