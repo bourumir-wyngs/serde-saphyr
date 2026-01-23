@@ -73,7 +73,7 @@ fn main() {
         }
     }.with_budget_report(|report|
         {
-            match serde_saphyr::to_string(report) {
+            match serde_saphyr::to_string(&report) {
                 Ok(serialized) => println!("Budget report:\n{serialized}"),
                 Err(err) => eprintln!("Failed to serialize budget report: {err}"),
             }
