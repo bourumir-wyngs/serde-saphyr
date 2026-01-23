@@ -154,7 +154,7 @@ impl Options {
     /// ```
     pub fn with_budget_report<F>(mut self, cb: F) -> Self
     where
-        F: Fn(&crate::budget::BudgetReport) + Send + Sync + 'static,
+        F: Fn(&crate::budget::BudgetReport) + 'static,
     {
         self.budget_report_cb = Some(Rc::new(cb));
         self
