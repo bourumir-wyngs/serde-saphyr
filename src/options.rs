@@ -134,7 +134,7 @@ pub struct Options {
 }
 
 pub type BudgetReportCallback =
-   Rc<dyn Fn(&crate::budget::BudgetReport) + 'static>;
+   Rc<dyn Fn(crate::budget::BudgetReport) + 'static>;
 
 impl Options {
     /// Registers a budget-report callback. Any closure can be used,  including ones that
@@ -146,15 +146,14 @@ impl Options {
     /// ```rust
     /// use serde_saphyr::Options;
     ///
-    /// let options = Options::default().with_budget_report(|report| {
+    /// let options = Options::default().with_budget_report(|report: BudgetReport| {
     ///     // e.g. update your state / emit metrics / log the report
-    ///     // report is a &BudgetReport
     ///     let _ = report;
     /// });
     /// ```
     pub fn with_budget_report<F>(mut self, cb: F) -> Self
     where
-        F: Fn(&crate::budget::BudgetReport) + 'static,
+        F: Fn(crate::budget::BudgetReport) + 'static,
     {
         self.budget_report_cb = Some(Rc::new(cb));
         self

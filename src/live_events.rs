@@ -696,10 +696,11 @@ impl<'a> LiveEvents<'a> {
             if let Some(callback) = self.budget_report {
                 callback(&report);
             }
+            let breached = report.breached.clone();
             if let Some(callback) = &self.budget_report_cb {
-                callback(&report);
+                callback(report);
             }
-            if let Some(breach) = report.breached {
+            if let Some(breach) = breached {
                 return Err(budget_error(breach).with_location(self.last_location));
             }
         }
