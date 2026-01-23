@@ -37,7 +37,7 @@ validator = { version = ">= 0.11, < 0.21", optional = true, features = ["derive"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 
 [features]
-default = []
+default = ["garde", "validator", "figment", "miette", "robotics"]
 
 # Enables integration with the `garde` validation crate.
 garde = ["dep:garde"]

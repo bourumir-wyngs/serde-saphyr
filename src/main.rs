@@ -5,13 +5,6 @@ use std::process::exit;
 use serde::de::IgnoredAny;
 use serde_saphyr::{Error, Options, from_str_with_options};
 
-fn report_budget(report: &serde_saphyr::budget::BudgetReport) {
-    match serde_saphyr::to_string(report) {
-        Ok(serialized) => println!("Budget report:\n{serialized}"),
-        Err(err) => eprintln!("Failed to serialize budget report: {err}"),
-    }
-}
-
 fn usage() -> &'static str {
     "Usage: serde-saphyr [--plain] <path>\n\
 \n\
@@ -67,20 +60,25 @@ fn main() {
 
     let options = if plain {
         Options {
-            budget_report: Some(report_budget),
             // Plain mode uses serde-saphyr's own snippet rendering.
             with_snippet: true,
             ..Options::default()
         }
     } else {
         Options {
-            budget_report: Some(report_budget),
             // When using miette, use miette's snippet rendering instead of serde-saphyr's.
             // Otherwise, keep serde-saphyr snippets enabled.
             with_snippet: cfg!(feature = "miette") == false,
             ..Options::default()
         }
-    };
+    }.with_budget_report(|report|
+        {
+            match serde_saphyr::to_string(report) {
+                Ok(serialized) => println!("Budget report:\n{serialized}"),
+                Err(err) => eprintln!("Failed to serialize budget report: {err}"),
+            }
+        }
+    );
 
     let r: Result<IgnoredAny, Error> = from_str_with_options(&content, options);
 

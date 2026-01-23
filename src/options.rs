@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::budget::Budget;
 use serde::{Deserialize, Serialize};
 
@@ -73,14 +74,23 @@ impl Default for AliasLimits {
 /// let cfg: Config = from_str_with_options(yaml, options).unwrap();
 /// assert_eq!(cfg.name, "My Application");
 /// ```
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Options {
     /// Optional YAML budget to enforce before parsing (counts raw parser events).
     pub budget: Option<Budget>,
     /// Optional callback invoked with the final budget report after parsing.
     /// It is invoked both when parsing is successful and when budget was breached.
+    #[deprecated(
+        since = "0.0.17",
+        note = "Use `Options::with_budget_report(...)` instead"
+    )]
     #[serde(skip)]
     pub budget_report: Option<fn(&crate::budget::BudgetReport)>,
+
+    /// Invoked both when parsing is successful and when budget was breached.
+    #[serde(skip)]
+    pub budget_report_cb: Option<BudgetReportCallback>,
+
     /// Policy for duplicate keys.
     pub duplicate_keys: DuplicateKeyPolicy,
     /// Limits for alias replay to harden against alias bombs.
@@ -123,11 +133,41 @@ pub struct Options {
     pub crop_radius: usize,
 }
 
+pub type BudgetReportCallback =
+   Arc<dyn Fn(&crate::budget::BudgetReport) + Send + Sync + 'static>;
+
+impl Options {
+    /// Registers a budget-report callback. Any closure can be used,  including ones that
+    /// capture state from the surrounding scope.
+    ///
+    /// The callback is invoked with the final [`crate::budget::BudgetReport`] after parsing
+    /// completes, both on success and when the budget is breached.
+    ///
+    /// ```rust
+    /// use serde_saphyr::Options;
+    ///
+    /// let options = Options::default().with_budget_report(|report| {
+    ///     // e.g. update your state / emit metrics / log the report
+    ///     // report is a &BudgetReport
+    ///     let _ = report;
+    /// });
+    /// ```
+    pub fn with_budget_report<F>(mut self, cb: F) -> Self
+    where
+        F: Fn(&crate::budget::BudgetReport) + Send + Sync + 'static,
+    {
+        self.budget_report_cb = Some(Arc::new(cb));
+        self
+    }
+}
+
 impl Default for Options {
+    #[allow(deprecated)]
     fn default() -> Self {
         Self {
             budget: Some(Budget::default()),
             budget_report: None,
+            budget_report_cb: None,
             duplicate_keys: DuplicateKeyPolicy::Error,
             alias_limits: AliasLimits::default(),
             legacy_octal_numbers: false,
@@ -138,5 +178,25 @@ impl Default for Options {
             with_snippet: true,
             crop_radius: 64,
         }
+    }
+}
+
+impl std::fmt::Debug for Options {
+    #[allow(deprecated)]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Options")
+            .field("budget", &self.budget)
+            .field("budget_report", &self.budget_report)
+            .field("budget_report_cb", &if self.budget_report_cb.is_some() { "set" } else { "none" })
+            .field("duplicate_keys", &self.duplicate_keys)
+            .field("alias_limits", &self.alias_limits)
+            .field("legacy_octal_numbers", &self.legacy_octal_numbers)
+            .field("strict_booleans", &self.strict_booleans)
+            .field("ignore_binary_tag_for_string", &self.ignore_binary_tag_for_string)
+            .field("angle_conversions", &self.angle_conversions)
+            .field("no_schema", &self.no_schema)
+            .field("with_snippet", &self.with_snippet)
+            .field("crop_radius", &self.crop_radius)
+            .finish()
     }
 }

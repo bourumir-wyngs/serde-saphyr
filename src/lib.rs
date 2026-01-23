@@ -281,6 +281,7 @@ pub fn from_str<T: DeserializeOwned>(input: &str) -> Result<T, Error> {
 /// let cfg: Config = serde_saphyr::from_str_with_options(yaml, options).unwrap();
 /// assert_eq!(cfg.retries, 5);
 /// ```
+#[allow(deprecated)]
 pub fn from_str_with_options<T: DeserializeOwned>(
     input: &str,
     options: Options,
@@ -301,6 +302,7 @@ pub fn from_str_with_options<T: DeserializeOwned>(
         input,
         options.budget,
         options.budget_report,
+        options.budget_report_cb,
         options.alias_limits,
         false,
     );
@@ -351,6 +353,7 @@ pub fn from_str_with_options<T: DeserializeOwned>(
 /// Deserialize a single YAML document with configurable [`Options`], and also
 /// return a map from validation paths to source [`Location`]s.
 #[cfg(any(feature = "garde", feature = "validator"))]
+#[allow(deprecated)]
 fn from_str_with_options_and_path_recorder<T: DeserializeOwned>(
     input: &str,
     options: Options,
@@ -370,6 +373,7 @@ fn from_str_with_options_and_path_recorder<T: DeserializeOwned>(
         input,
         options.budget,
         options.budget_report,
+        options.budget_report_cb,
         options.alias_limits,
         false,
     );
@@ -501,6 +505,7 @@ where
 /// The error message will contain a snippet with exact location information, and if the
 /// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
 #[cfg(feature = "garde")]
+#[allow(deprecated)]
 pub fn from_multiple_with_options_valid<T>(input: &str, options: Options) -> Result<Vec<T>, Error>
 where
     T: DeserializeOwned + garde::Validate,
@@ -514,6 +519,7 @@ where
         input,
         options.budget,
         options.budget_report,
+        options.budget_report_cb,
         options.alias_limits,
         false,
     );
@@ -635,6 +641,7 @@ where
 /// As there is no access to the full text of the document, the error message will not contain
 /// a snippet.
 #[cfg(feature = "garde")]
+#[allow(deprecated)]
 pub fn from_reader_with_options_valid<R: std::io::Read, T>(
     reader: R,
     options: Options,
@@ -648,6 +655,7 @@ where
         reader,
         options.budget,
         options.budget_report,
+        options.budget_report_cb,
         options.alias_limits,
         false,
         EnforcingPolicy::AllContent,
@@ -724,6 +732,7 @@ where
 /// As there is no access to the full text of the document, the error message will not contain
 /// a snippet.
 #[cfg(feature = "garde")]
+#[allow(deprecated)]
 pub fn read_with_options_valid<'a, R, T>(
     reader: &'a mut R,
     options: Options,
@@ -815,6 +824,7 @@ where
         reader,
         options.budget,
         options.budget_report,
+        options.budget_report_cb,
         options.alias_limits,
         false,
         EnforcingPolicy::PerDocument,
@@ -877,6 +887,7 @@ pub fn from_multiple_validate<T: DeserializeOwned + ValidatorValidate>(
 /// The error message will contain a snippet with exact location information, and if the
 /// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
 #[cfg(feature = "validator")]
+#[allow(deprecated)]
 pub fn from_multiple_with_options_validate<T>(
     input: &str,
     options: Options,
@@ -892,6 +903,7 @@ where
         input,
         options.budget,
         options.budget_report,
+        options.budget_report_cb,
         options.alias_limits,
         false,
     );
@@ -1007,6 +1019,7 @@ where
 /// As there is no access to the full text of the document, the error message will not contain
 /// a snippet.
 #[cfg(feature = "validator")]
+#[allow(deprecated)]
 pub fn from_reader_with_options_validate<R: std::io::Read, T>(
     reader: R,
     options: Options,
@@ -1019,6 +1032,7 @@ where
         reader,
         options.budget,
         options.budget_report,
+        options.budget_report_cb,
         options.alias_limits,
         false,
         EnforcingPolicy::AllContent,
@@ -1094,6 +1108,7 @@ where
 /// As there is no access to the full text of the document, the error message will not contain
 /// a snippet.
 #[cfg(feature = "validator")]
+#[allow(deprecated)]
 pub fn read_with_options_validate<'a, R, T>(
     reader: &'a mut R,
     options: Options,
@@ -1183,6 +1198,7 @@ where
         reader,
         options.budget,
         options.budget_report,
+        options.budget_report_cb,
         options.alias_limits,
         false,
         EnforcingPolicy::PerDocument,
@@ -1279,6 +1295,7 @@ pub fn from_multiple<T: DeserializeOwned>(input: &str) -> Result<Vec<T>, Error> 
 /// assert_eq!(cfgs.len(), 2);
 /// assert!(!cfgs[1].enabled);
 /// ```
+#[allow(deprecated)]
 pub fn from_multiple_with_options<T: DeserializeOwned>(
     input: &str,
     options: Options,
@@ -1297,6 +1314,7 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
         input,
         options.budget,
         options.budget_report,
+        options.budget_report_cb,
         options.alias_limits,
         false,
     );
@@ -1595,6 +1613,7 @@ pub fn from_reader<'a, R: std::io::Read + 'a, T: DeserializeOwned>(reader: R) ->
 /// - If the reader contains multiple documents, an error is returned suggesting the
 ///   `read`/`read_with_options` iterator APIs.
 /// - If `Options::budget` is set and a limit is exceeded, an error is returned early.
+#[allow(deprecated)]
 pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
     reader: R,
     options: Options,
@@ -1610,6 +1629,7 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
         ring_handle,
         options.budget,
         options.budget_report,
+        options.budget_report_cb,
         options.alias_limits,
         false,
         EnforcingPolicy::AllContent,
@@ -1826,6 +1846,7 @@ where
 /// - After a **syntax error** or **budget/alias limit exceeded**, the iterator ends because
 ///   the parser state may be unrecoverable.
 /// - Empty/null-like documents are skipped and produce no items.
+#[allow(deprecated)]
 pub fn read_with_options<'a, R, T>(
     reader: &'a mut R, // iterator must not outlive this borrow
     options: Options,
@@ -1898,6 +1919,7 @@ where
         reader,
         options.budget,
         options.budget_report,
+        options.budget_report_cb,
         options.alias_limits,
         false,
         EnforcingPolicy::PerDocument,

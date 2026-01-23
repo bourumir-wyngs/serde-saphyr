@@ -32,6 +32,7 @@ use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::rc::Rc;
+use crate::options::BudgetReportCallback;
 
 type StreamReader<'a> = Box<dyn std::io::Read + 'a>;
 type StreamBufReader<'a> = std::io::BufReader<StreamReader<'a>>;
@@ -93,7 +94,8 @@ pub(crate) struct LiveEvents<'a> {
     budget: Option<BudgetEnforcer>,
     /// Optional reporter to expose budget usage once parsing completes.
     budget_report: Option<fn(&crate::budget::BudgetReport)>,
-
+    /// Optional reporter (new API)
+    budget_report_cb: Option<BudgetReportCallback>,
     /// Location of the last yielded event (for better error reporting).
     last_location: Location,
 
@@ -152,6 +154,7 @@ impl<'a> LiveEvents<'a> {
         inputs: R,
         budget: Option<Budget>,
         budget_report: Option<fn(&crate::budget::BudgetReport)>,
+        budget_report_cb: Option<BudgetReportCallback>,
         alias_limits: AliasLimits,
         stop_at_doc_end: bool,
         policy: EnforcingPolicy,
@@ -169,7 +172,9 @@ impl<'a> LiveEvents<'a> {
             anchors: Vec::with_capacity(8),
             rec_stack: Vec::with_capacity(2),
             budget: budget.map(|budget| BudgetEnforcer::new(budget, policy)),
+
             budget_report,
+            budget_report_cb,
 
             last_location: Location::UNKNOWN,
 
@@ -198,6 +203,7 @@ impl<'a> LiveEvents<'a> {
         input: &'a str,
         budget: Option<Budget>,
         budget_report: Option<fn(&crate::budget::BudgetReport)>,
+        budget_report_cb: Option<BudgetReportCallback>,
         alias_limits: AliasLimits,
         stop_at_doc_end: bool,
     ) -> Self {
@@ -210,7 +216,9 @@ impl<'a> LiveEvents<'a> {
             anchors: Vec::with_capacity(8),
             rec_stack: Vec::with_capacity(2),
             budget: budget.map(|budget| BudgetEnforcer::new(budget, EnforcingPolicy::AllContent)),
+
             budget_report,
+            budget_report_cb,
 
             last_location: Location::UNKNOWN,
 
@@ -686,6 +694,9 @@ impl<'a> LiveEvents<'a> {
         if let Some(budget) = self.budget.take() {
             let report = budget.finalize();
             if let Some(callback) = self.budget_report {
+                callback(&report);
+            }
+            if let Some(callback) = &self.budget_report_cb {
                 callback(&report);
             }
             if let Some(breach) = report.breached {

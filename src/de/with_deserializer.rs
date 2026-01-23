@@ -72,6 +72,7 @@ where
 ///
 /// The deserializer borrows internal parsing state, so it cannot be returned directly.
 /// Instead, you provide a closure `f` that performs the desired deserialization.
+#[allow(deprecated)]
 pub fn with_deserializer_from_str_with_options<R, F>(
     input: &str,
     options: Options,
@@ -91,6 +92,7 @@ where
         input,
         options.budget,
         options.budget_report,
+        options.budget_report_cb,
         options.alias_limits,
         false,
     );
@@ -153,6 +155,7 @@ where
 
 /// Create a streaming [`crate::Deserializer`] for any [`std::io::Read`] with configurable [`Options`]
 /// and run a closure against it.
+#[allow(deprecated)]
 pub fn with_deserializer_from_reader_with_options<R, Out, F>(
     reader: R,
     options: Options,
@@ -167,6 +170,7 @@ where
         reader,
         options.budget,
         options.budget_report,
+        options.budget_report_cb,
         options.alias_limits,
         false,
         EnforcingPolicy::AllContent,
