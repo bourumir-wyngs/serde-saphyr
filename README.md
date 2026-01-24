@@ -46,7 +46,7 @@ Benchmarking was done with [Criterion](https://crates.io/crates/criterion), givi
 <p align="center">
 <img src="https://github.com/bourumir-wyngs/serde-saphyr-benchmark/blob/master/figures/yaml_parse/relative_vs_baseline.png?raw=true"
 alt="Relative median time vs baseline"
-width="60%">
+width="70%">
 </p>
 
 As seen, serde-saphyr exceeds others by performance, even with budget check enabled.
