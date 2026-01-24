@@ -29,15 +29,17 @@
 In our [benchmarking project](https://github.com/bourumir-wyngs/serde-saphyr-benchmark), we tested the following crates:
 
 
-|                                                   Crate | Version             | Merge Keys   | Nested Enums | Duplicate key rejection | Validation | Error snippet | Notes                                                                    |
-| ------------------------------------------------------: |:--------------------| :----------- | :----------- | :---------------------- |:----------:|:-------------:| :----------------------------------------------------------------------- |
-|   [serde-saphyr](https://crates.io/crates/serde-saphyr) | current             | ✅ Native    | ✅           | ✅ Configurable         | ✅ [`garde`](https://crates.io/crates/garde) / [`validator`](https://crates.io/crates/validator) | ✅            | No`unsafe`, no [unsafe-libyaml](https://crates.io/crates/unsafe-libyaml) |
-| [serde-yaml-bw](https://crates.io/crates/serde-yaml_bw) | 2.4.1               | ✅ Native    | ✅           | ✅ Configurable         |     ❌      | ❌            | Slow due Saphyr doing budget check first upfront of libyaml              |
-| [serde-yaml-ng](https://crates.io/crates/serde-yaml-ng) | 0.10.0              | ⚠️ partial | ❌           | ❌                      |     ❌      | ❌            |                                                                          |
-|       [serde-yaml](https://crates.io/crates/serde-yaml) | 0.9.34 + deprecated | ⚠️ partial | ❌           | ❌                      |     ❌      | ❌            | Original, deprecated, repo archived                                      |
-|   [serde-norway](https://crates.io/crates/serde-norway) | 0.9                 | ⚠️ partial | ❌           | ❌                      |     ❌      | ❌            |                                                                          |
-|         [serde-yml](https://crates.io/crates/serde-yml) | 0.0.12              | ⚠️ partial | ❌           | ❌                      |     ❌      | ❌            | Repo archived                                                            |
+|                                                   Crate | Version             | Merge Keys       | Nested Enums | Duplicate key rejection |                                           Validation                                           | Error snippet | Notes                                                                    |
+| ------------------------------------------------------: | :------------------ | :--------------- | :----------- | :---------------------- | :---------------------------------------------------------------------------------------------: | :-----------: | :----------------------------------------------------------------------- |
+|   [serde-saphyr](https://crates.io/crates/serde-saphyr) | current             | ✅ Native        | ✅           | ✅ Configurable         | ✅[`garde`](https://crates.io/crates/garde) / [`validator`](https://crates.io/crates/validator) |      ✅      | No`unsafe`, no [unsafe-libyaml](https://crates.io/crates/unsafe-libyaml) |
+| [serde-yaml-bw](https://crates.io/crates/serde-yaml_bw) | 2.4.1               | ✅ Native        | ✅           | ✅ Configurable         |                                               ❌                                               |      ❌      | Slow due Saphyr doing budget check first upfront of libyaml              |
+| [serde-yaml-ng](https://crates.io/crates/serde-yaml-ng) | 0.10.0              | ⚠️ partial     | ❌           | ❌                      |                                               ❌                                               |      ❌      |                                                                          |
+|       [serde-yaml](https://crates.io/crates/serde-yaml) | 0.9.34 + deprecated | ⚠️ partial     | ❌           | ❌                      |                                               ❌                                               |      ❌      | Original, deprecated, repo archived                                      |
+|   [serde-norway](https://crates.io/crates/serde-norway) | 0.9                 | ⚠️ partial     | ❌           | ❌                      |                                               ❌                                               |      ❌      |                                                                          |
+|         [serde-yml](https://crates.io/crates/serde-yml) | 0.0.12              | ⚠️ partial     | ❌           | ❌                      |                                               ❌                                               |      ❌      | Repo archived                                                            |
+|   [yaml-spanned](https://crates.io/crates/yaml-spanned) | 0.0.3               | ⚠️ apply_merge | ❌           | ✅                      |                                               ❌                                               |      ❌      | Uses [libyaml-safer](https://crates.io/crates/libyaml-safer)           |
 
+                                               |
 Benchmarking was done with [Criterion](https://crates.io/crates/criterion), giving the following results:
 
 <p align="center">
@@ -50,7 +52,7 @@ As seen, serde-saphyr exceeds others by performance, even with budget check enab
 
 ## Testing
 
-The test suite currently includes 834+ passing tests, including the fully converted [yaml-test-suite](https://github.com/yaml/yaml-test-suite), with *ALL* tests from there passing with no exceptions. To pass the last few remaining cases, we needed to fork the saphyr-parser crate ([saphyr-parser-bw](https://crates.io/crates/saphyr-parser-bw)). Some additional cases are taken from the original serde-yaml tests. 
+The test suite currently includes 834+ passing tests, including the fully converted [yaml-test-suite](https://github.com/yaml/yaml-test-suite), with *ALL* tests from there passing with no exceptions. To pass the last few remaining cases, we needed to fork the saphyr-parser crate ([saphyr-parser-bw](https://crates.io/crates/saphyr-parser-bw)). Some additional cases are taken from the original serde-yaml tests.
 
 ## Notable features
 
@@ -67,7 +69,7 @@ The test suite currently includes 834+ passing tests, including the fully conver
 ## WebAssembly
 
 `serde-saphyr` is compatible with WebAssembly. CI flow includes builds for both `wasm32-unknown-unknown` (browser / JS) and `wasm32-wasip1`  (WASI runtimes) with full test suite running and passing. We also wrote [yva](https://github.com/bourumir-wyngs/yva) in [dioxus](https://dioxuslabs.com/) to deploy serde-saphyr on the web.
- 
+
 ## Usage
 
 Parse YAML into a Rust structure with proper error handling. The crate name on crates.io is
@@ -103,7 +105,6 @@ let yaml_input = r#"
     }
 }
 ```
-
 ### Garde and Validator integration
 
 This crate optionally integrates with [validator](https://crates.io/crates/validator) or [`garde`](https://crates.io/crates/garde) to run declarative validation. serde-saphyr error will print the snippet, providing location information. If the invalid value comes from the YAML anchor, serde-saphyr will also tell where this anchor has been defined.
@@ -138,8 +139,8 @@ fn main() {
     eprintln!("{err}");
 }
 ```
-
 #### Validator
+
 ```rust
 use serde::Deserialize;
 use validator::Validate;
@@ -167,7 +168,6 @@ fn main() {
     eprintln!("{err}");
 }
 ```
-
 A typical output with serde-saphyr native snippet rendering looks like:
 
 ```text
@@ -188,7 +188,6 @@ error: line 3 column 23: invalid here, validation error: length is lower than 2 
 3 |         secondString: *A
 4 |  
 ```
-
 The integration of garde is gated and disabled by default, use `serde-saphyr = { version = "0.0.17", features = ["garde"] }` (or `features = ["validator"]`) in Cargo.toml` to enable it).
 
 If you prefer to validate without validation crates and want to ensure that location information is always available, use the heavier approach with [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html) wrapper instead.
@@ -228,7 +227,6 @@ fn main() {
     let docs = serde_saphyr::from_multiple(input).expect("valid YAML stream");
 }
 ```
-
 ## Nested enums
 
 Externally tagged enums nest naturally in YAML as maps keyed by the variant name.
@@ -269,7 +267,6 @@ let yaml = r#"
   println!("Parsed {} moves", robot_moves.len());
   }
 ```
-
 There are two variants of the deserialization functions: from_* and from_*_with_options. The latter accepts an [Options](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html)
 object that allows you to configure budget and other aspects of parsing. For larger projects that require consistent parsing behavior, we recommend defining a wrapper function so that all option and budget settings are managed in one place (see examples/wrapper_function.rs).
 
@@ -305,7 +302,6 @@ let transform: Transform = serde_saphyr::from_str(yaml).unwrap();
 println!("{} entries", transform.map.len());
 }
 ```
-
 ## Booleans
 
 By default, if the target field is boolean, serde-saphyr will attempt to interpret standard YAML 1.1 values as boolean (not just 'false' but also 'no', etc).
@@ -332,7 +328,6 @@ fn parse_blob() {
     assert_eq!(blob.data, b"hello");
 }
 ```
-
 ## Merge keys
 
 `serde-saphyr` supports merge keys, which reduce redundancy and verbosity by specifying shared key-value pairs once and then reusing them across multiple mappings. Here is an example with merge keys (inherited properties):
@@ -391,7 +386,6 @@ production:
     assert_eq!(parsed, expected);
 }
 ```
-
 Merge keys are standard in YAML 1.1. Although YAML 1.2 no longer includes merge keys in its specification, it doesn't explicitly disallow them either, and many parsers implement this feature.
 
 ## Rust types as schema
@@ -421,7 +415,6 @@ struct User { name: String, active: bool }
 let yaml = serde_saphyr::to_string(&User { name: "Ada".into(), active: true }).unwrap();
 assert!(yaml.contains("name: Ada"));
 ```
-
 #### Anchors (Rc/Arc/Weak)
 
 Serde-saphyr can conceptually connect YAML anchors with Rust shared references (Rc, Weak and Arc). You need to use wrappers to activate this feature:
@@ -476,15 +469,15 @@ Serde-saphyr can conceptually connect YAML anchors with Rust shared references (
     Ok(())
 }
 ```
-
 When anchors are highly repetitive and also large, packing them into references can make YAML more human-readable.
 
 To support round trip, library can also deserialize into these anchor structures, this serialization is identity-preserving. A field or structure that is defined once and subsequently referenced will exist as a single instance in memory, with all anchor fields pointing to it. This is crucial when the topology of references itself constitutes important information to be transferred.
 
 ### Recursive YAML
-While recursive YAML is unusual, it is not forbidden by the specification. Real world examples and [requests to implement](https://github.com/saphyr-rs/saphyr/issues/24) exist. 
 
-Serde-saphyr supports recursive structures but Rust requires to be about this very explicit. A structure that may hold recursive references to itself must be wrapped in a [RcRecursive<T>](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.RcRecursive.html), and any reference that points to it must be [RcRecursion<T>](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.RcRecursion.html). Arc varieties exist. See also [examples/recursive_yaml.rs](examples/recursive_yaml.rs). 
+While recursive YAML is unusual, it is not forbidden by the specification. Real world examples and [requests to implement](https://github.com/saphyr-rs/saphyr/issues/24) exist.
+
+Serde-saphyr supports recursive structures but Rust requires to be about this very explicit. A structure that may hold recursive references to itself must be wrapped in a [RcRecursive<T>](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.RcRecursive.html), and any reference that points to it must be [RcRecursion<T>](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.RcRecursion.html). Arc varieties exist. See also [examples/recursive_yaml.rs](examples/recursive_yaml.rs).
 
 ### Controlling deserialization
 
@@ -510,7 +503,6 @@ func_rad: rad(pi) # value in radians (stays in radians)
 hh_mm_secs: -0:30:30.5 # Time
 longitude: !radians 8:32:53.2 # Nautical, ETH Zürich Main Building (8°32′53.2″ E)
 ```
-
 ```rust,ignore
 let options = Options {
     angle_conversions: true, // enable robotics angle parsing
@@ -519,24 +511,25 @@ let options = Options {
 
 let v: RoboFloats = from_str_with_options(yaml, options).expect("parse robotics YAML");
 ```
-
 Safety hardening with this feature enabled include (maximal expression depth, maximal number of digits, strict underscore placement and fraction parsing limits to precision-relevant digit).
 
 ### Unsupported features
+
 - Common Serde renames made to follow naming conventions (case changes, snake_case, kebab-case, r# stripping) are supported in snippets, as long as they do not introduce ambiguity. Arbitrary renames, flattening, aliases and other complex manipulations possible with serde are not. Parsing and validation will still work, but error messages for arbitrarily renamed fields only tell Rust path.
-- [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html)  cannot be used within variants of untagged or internally tagged enums due to a fundamental limitation in Serde. Instead, wrap the entire enum in Spanned<T>, or use externally tagged enums (the default). 
+- [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html)  cannot be used within variants of untagged or internally tagged enums due to a fundamental limitation in Serde. Instead, wrap the entire enum in Spanned<T>, or use externally tagged enums (the default).
 
 ## Executable
+
 serde-saphyr comes with a simple executable (CLI) that can be used to check the budget of a given YAML file and also used as YAML validator printing YAML error line, column numbers and excerpt.
 
 To run it (no Rust knowledge required):
+
 ```bash
 cargo install serde-saphyr
 
 # binary name is the package name by default
 serde-saphyr path/to/file.yaml
 ```
-
 To enable **fancy error reporting** (graphical diagnostics) via the optional `miette` integration, install/build the CLI with the `miette` feature enabled:
 
 ```bash
@@ -546,7 +539,6 @@ cargo install serde-saphyr --features miette
 # or run from a git checkout
 cargo run --features miette -- path/to/file.yaml
 ```
-
 If you want to keep the previous plain-text error output even when built with `miette`, pass `--plain`:
 
 ```bash
