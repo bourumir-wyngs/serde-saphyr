@@ -9,6 +9,7 @@ use miette::{Diagnostic, LabeledSpan, NamedSource, SourceSpan};
 
 use crate::Error;
 use crate::Location;
+use crate::de_snipped::sanitize_terminal_snippet_preserve_len;
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::location::Locations;
 #[cfg(feature = "garde")]
@@ -40,7 +41,8 @@ use validator::{ValidationErrors, ValidationErrorsKind};
 ///   This helper owns a copy of `source` to build a standalone `miette::Report`.
 /// - If the error has no known location/span, the report will not include labels.
 pub fn to_miette_report(err: &Error, source: &str, file: &str) -> miette::Report {
-    let src = Arc::new(NamedSource::new(file, source.to_owned()));
+    let sanitized_source = sanitize_terminal_snippet_preserve_len(source.to_owned());
+    let src = Arc::new(NamedSource::new(file, sanitized_source));
     let diag = build_diagnostic(err.without_snippet(), src);
     miette::Report::new(diag)
 }

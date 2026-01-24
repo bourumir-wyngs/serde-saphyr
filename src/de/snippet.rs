@@ -872,6 +872,72 @@ fn fmt_with_location(f: &mut fmt::Formatter<'_>, msg: &str, location: &Location)
     }
 }
 
+/// Returns true if `text` contains no control characters that could mess with terminal/log output.
+///
+/// Keeps `\n` and `\t` (so the snippet stays readable).
+/// Treats:
+/// - ASCII C0 controls (0x00..=0x1F) and DEL (0x7F) as unsafe (except \n/\t)
+/// - UTF-8 encoded C1 controls U+0080..U+009F (bytes: 0xC2 0x80..=0x9F) as unsafe.
+pub(crate) fn is_terminal_snippet_clean(text: &str) -> bool {
+    let b = text.as_bytes();
+
+    // Fast scan for ASCII controls.
+    for &x in b {
+        if (x < 0x20 && x != b'\n' && x != b'\t') || x == 0x7F {
+            return false;
+        }
+    }
+
+    // Scan for UTF-8 encoded C1 control block: 0xC2 0x80..=0x9F
+    let mut i = 0usize;
+    while i + 1 < b.len() {
+        if b[i] == 0xC2 && (0x80..=0x9F).contains(&b[i + 1]) {
+            return false;
+        }
+        i += 1;
+    }
+
+    true
+}
+
+/// Sanitize snippet text for terminal/log display *without changing the byte length*.
+///
+/// This is important because snippet renderers tend to use byte offsets for spans.
+/// We:
+/// - Replace ASCII control bytes (except '\n' and '\t') and DEL with space (0x20).
+/// - Replace UTF-8 encoded C1 controls (0xC2 0x80..=0x9F) with NBSP (0xC2 0xA0).
+///
+/// This breaks ANSI/OSC escapes by neutralizing their introducers (ESC or C1).
+pub(crate) fn sanitize_terminal_snippet_preserve_len(s: String) -> String {
+    let mut bytes = s.into_bytes();
+
+    // ASCII C0 controls + DEL
+    for x in &mut bytes {
+        let b = *x;
+        if (b < 0x20 && b != b'\n' && b != b'\t') || b == 0x7F {
+            *x = b' ';
+        }
+    }
+
+    // UTF-8 encoded C1 controls (U+0080..U+009F): 0xC2 0x80..=0x9F
+    // Convert to NBSP (U+00A0): 0xC2 0xA0 (same length).
+    let mut i = 0usize;
+    while i + 1 < bytes.len() {
+        if bytes[i] == 0xC2 && (0x80..=0x9F).contains(&bytes[i + 1]) {
+            bytes[i + 1] = 0xA0;
+            i += 2;
+            continue;
+        }
+        i += 1;
+    }
+
+    // This should never fail because we preserved UTF-8 validity.
+    match String::from_utf8(bytes) {
+        Ok(out) => out,
+        Err(e) => String::from_utf8_lossy(&e.into_bytes()).into_owned(),
+    }
+}
+
 /// Horizontally crop the snippet window by character columns and normalize CRLF.
 ///
 /// - Crops lines of `window_text` to the same `[left_col, right_col]` window around the
@@ -890,8 +956,11 @@ fn crop_window_text(
     local_start: usize,
     local_end: usize,
 ) -> (String, usize, usize) {
-    // Fast path: no horizontal cropping and no CRs to strip.
-    if crop_radius == 0 && !window_text.as_bytes().contains(&b'\r') {
+    // Fast path: no horizontal cropping, no CRs, and no other unsafe control chars.
+    if crop_radius == 0
+        && !window_text.as_bytes().contains(&b'\r')
+        && is_terminal_snippet_clean(window_text)
+    {
         return (window_text.to_owned(), local_start, local_end);
     }
 
@@ -991,6 +1060,9 @@ fn crop_window_text(
     if new_local_end < new_local_start {
         new_local_end = new_local_start;
     }
+
+    // Before returning:
+    let out = sanitize_terminal_snippet_preserve_len(out);
 
     (out, new_local_start, new_local_end)
 }

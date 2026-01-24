@@ -37,7 +37,7 @@ In our [benchmarking project](https://github.com/bourumir-wyngs/serde-saphyr-ben
 |       [serde-yaml](https://crates.io/crates/serde-yaml) | 0.9.34 + deprecated | ⚠️       | ❌           | ❌                      |                                               ❌                                               |      ❌      | Original, deprecated, repo archived                                      |
 |   [serde-norway](https://crates.io/crates/serde-norway) | 0.9                 | ⚠️       | ❌           | ❌                      |                                               ❌                                               |      ❌      |                                                                          |
 |         [serde-yml](https://crates.io/crates/serde-yml) | 0.0.12              | ⚠️       | ❌           | ❌                      |                                               ❌                                               |      ❌      | Repo archived                                                            |
-|   [yaml-spanned](https://crates.io/crates/yaml-spanned) | 0.0.3               | ⚠️       | ❌           | ✅                      |                                               ❌                                               |      ❌      | Uses [libyaml-safer](https://crates.io/crates/libyaml-safer)             |
+|   [yaml-spanned](https://crates.io/crates/yaml-spanned) | 0.0.3               | ⚠️       | ❌           | ✅                      |                                               ❌                                               |      ❌      | Uses [libyaml-safer](https://crates.io/crates/libyaml-safer)             |
 
 ⚠️ - partial support. Serde-yaml forks do not support merge keys natively but instead provide [apply_merge](https://docs.rs/serde_yaml/0.9.34+deprecated/serde_yaml/enum.Value.html#method.apply_merge) function that must be called manually. Crates marked ✅ offer native and transparent support.
 
@@ -106,6 +106,10 @@ let yaml_input = r#"
     }
 }
 ```
+
+### Snippets
+To make debugging easier, **serde-saphyr** renders snippets of the YAML that caused an error (similar to how many compilers report errors). These snippets include the line where the error occurred along with some surrounding context. Any terminal control sequences that might be present in the YAML are stripped out. If not desired, snippets can be removed for a specific error using [`without_snippet`](https://docs.rs/serde-saphyr/latest/serde_saphyr/enum.Error.html#method.without_snippet), or disabled entirely via the `Options` configuration.
+
 
 ### Garde and Validator integration
 
@@ -193,7 +197,7 @@ error: line 3 column 23: invalid here, validation error: length is lower than 2 
 4 |  
 ```
 
-The integration of garde is gated and disabled by default, use `serde-saphyr = { version = "0.0.17", features = ["garde"] }` (or `features = ["validator"]`) in Cargo.toml` to enable it).
+The integration of garde is gated and disabled by default, use `serde-saphyr = { version = "0.0.17", features = ["garde"] }` (or `features = ["validator"]`) in Cargo.toml` to enable it). 
 
 If you prefer to validate without validation crates and want to ensure that location information is always available, use the heavier approach with [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html) wrapper instead.
 
