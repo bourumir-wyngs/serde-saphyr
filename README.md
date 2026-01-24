@@ -39,7 +39,7 @@ In our [benchmarking project](https://github.com/bourumir-wyngs/serde-saphyr-ben
 |         [serde-yml](https://crates.io/crates/serde-yml) | 0.0.12              | ⚠️ partial     | ❌           | ❌                      |                                               ❌                                               |      ❌      | Repo archived                                                            |
 |   [yaml-spanned](https://crates.io/crates/yaml-spanned) | 0.0.3               | ⚠️ apply_merge | ❌           | ✅                      |                                               ❌                                               |      ❌      | Uses [libyaml-safer](https://crates.io/crates/libyaml-safer)           |
 
-                                               |
+                                              
 Benchmarking was done with [Criterion](https://crates.io/crates/criterion), giving the following results:
 
 <p align="center">
