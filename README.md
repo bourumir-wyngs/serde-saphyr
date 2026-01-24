@@ -40,7 +40,7 @@ In our [benchmarking project](https://github.com/bourumir-wyngs/serde-saphyr-ben
 |   [yaml-spanned](https://crates.io/crates/yaml-spanned) | 0.0.3               | ⚠️ apply_merge | ❌           | ✅                      |                                               ❌                                               |      ❌      | Uses [libyaml-safer](https://crates.io/crates/libyaml-safer)           |
 
                                               
-Benchmarking was done with [Criterion](https://crates.io/crates/criterion), giving the following results:
+Benchmarking was done with [Criterion](https://crates.io/crates/criterion), giving the following results (lower is better):
 
 <p align="center">
 <img src="https://github.com/bourumir-wyngs/serde-saphyr-benchmark/blob/master/figures/yaml_parse/relative_vs_baseline.png?raw=true"
