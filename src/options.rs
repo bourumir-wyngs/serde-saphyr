@@ -68,7 +68,7 @@ impl Default for AliasLimits {
 ///         ..Budget::default()
 ///     }),
 ///     duplicate_keys: DuplicateKeyPolicy::LastWins,
-///     ..Options::default()
+///     ..Options::default() // always use Options::default() as new fields may be added in the future
 /// };
 ///
 /// let cfg: Config = from_str_with_options(yaml, options).unwrap();
