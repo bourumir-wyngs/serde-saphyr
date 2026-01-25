@@ -1,6 +1,6 @@
 [package]
 name = "serde-saphyr"
-version = "0.0.16"
+version = "0.0.17"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "YAML (de)serializer for Serde, built on top of Saphyr, emphasizing panic-free parsing."
@@ -11,7 +11,7 @@ categories = ["encoding", "parser-implementations", "config", "command-line-util
 keywords = ["yaml", "serde", "config", "ros", "wasm"]
 
 [dependencies]
-# saphyr-parser = { package = "saphyr-parser-bw", version = "0.0.605"}
+# saphyr-parser = { package = "saphyr-parser-bw", version = "0.0.606"}
 saphyr-parser = { package="saphyr-parser-bw", git = "https://github.com/bourumir-wyngs/saphyr", branch = "dev/saphyr-parser", subdir="parser" }
 serde = { version = "1", features = ["derive"] }
 # Our tests are all fine with this alpha so far, this will be advanced
