@@ -9,6 +9,7 @@ repository = "https://github.com/bourumir-wyngs/serde-saphyr"
 readme = "README.md"
 categories = ["encoding", "parser-implementations", "config", "command-line-utilities"]
 keywords = ["yaml", "serde", "config", "ros", "wasm"]
+exclude = ["Cargo.lock"]
 
 [dependencies]
 # saphyr-parser = { package = "saphyr-parser-bw", version = "0.0.606"}
