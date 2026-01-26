@@ -1,5 +1,5 @@
 use serde_json::Value;
-use serde_saphyr::{DuplicateKeyPolicy, Options};
+use serde_saphyr::DuplicateKeyPolicy;
 use std::collections::BTreeMap;
 
 #[test]
@@ -10,11 +10,10 @@ fn yaml_x38w_aliases_in_flow_objects_with_complex_keys() -> anyhow::Result<()> {
     // and heterogeneous values (scalar first, then sequence overriding it).
     let map: BTreeMap<Vec<String>, Value> = serde_saphyr::from_str_with_options(
         y,
-        Options {
+        serde_saphyr::options! {
             // With serde-saphyr, we need to configure correct duplicate key policy for this to work
             // Default policy would be rejecting duplicate keys.
             duplicate_keys: DuplicateKeyPolicy::LastWins,
-            ..Default::default()
         },
     )?;
 

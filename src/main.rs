@@ -3,7 +3,7 @@
 use std::process::exit;
 
 use serde::de::IgnoredAny;
-use serde_saphyr::{Error, Options, from_str_with_options};
+use serde_saphyr::{Error, from_str_with_options};
 
 fn usage() -> &'static str {
     "Usage: serde-saphyr [--plain] <path>\n\
@@ -58,20 +58,20 @@ fn main() {
         }
     };
 
+    #[allow(deprecated)]
     let options = if plain {
-        Options {
+        serde_saphyr::options! {
             // Plain mode uses serde-saphyr's own snippet rendering.
             with_snippet: true,
-            ..Options::default()
         }
     } else {
-        Options {
+        serde_saphyr::options! {
             // When using miette, use miette's snippet rendering instead of serde-saphyr's.
             // Otherwise, keep serde-saphyr snippets enabled.
             with_snippet: cfg!(feature = "miette") == false,
-            ..Options::default()
         }
-    }.with_budget_report(|report|
+    }
+    .with_budget_report(|report|
         {
             match serde_saphyr::to_string(&report) {
                 Ok(serialized) => println!("Budget report:\n{serialized}"),

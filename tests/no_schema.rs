@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use serde_saphyr::{Options, from_str_with_options};
+use serde_saphyr::from_str_with_options;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -10,10 +10,7 @@ struct AsString {
 #[test]
 fn no_schema_off_allows_plain_numeric_into_string() {
     let y = "s: 123\n";
-    let opts = Options {
-        no_schema: false,
-        ..Default::default()
-    };
+    let opts = serde_saphyr::options! { no_schema: false };
     let v: AsString =
         from_str_with_options(y, opts).expect("no_schema=false should accept plain 123 as string");
     assert_eq!(v.s, "123");
@@ -22,10 +19,7 @@ fn no_schema_off_allows_plain_numeric_into_string() {
 #[test]
 fn no_schema_on_rejects_plain_numeric_into_string() {
     let y = "s: 123\n";
-    let opts = Options {
-        no_schema: true,
-        ..Default::default()
-    };
+    let opts = serde_saphyr::options! { no_schema: true };
     let err = from_str_with_options::<AsString>(y, opts).unwrap_err();
     let msg = err.to_string();
     assert!(msg.contains("must be quoted"), "unexpected error: {msg}");
@@ -34,10 +28,7 @@ fn no_schema_on_rejects_plain_numeric_into_string() {
 #[test]
 fn no_schema_on_accepts_quoted_numeric_into_string() {
     let y = "s: '123'\n";
-    let opts = Options {
-        no_schema: true,
-        ..Default::default()
-    };
+    let opts = serde_saphyr::options! { no_schema: true };
     let v: AsString = from_str_with_options(y, opts)
         .expect("quoted numeric should be accepted as string when no_schema");
     assert_eq!(v.s, "123");
@@ -46,10 +37,7 @@ fn no_schema_on_accepts_quoted_numeric_into_string() {
 #[test]
 fn no_schema_on_accepts_explicit_str_tag_into_string() {
     let y = "s: !!str 123\n";
-    let opts = Options {
-        no_schema: true,
-        ..Default::default()
-    };
+    let opts = serde_saphyr::options! { no_schema: true };
     let v: AsString = from_str_with_options(y, opts)
         .expect("!!str 123 should be accepted as string when no_schema");
     assert_eq!(v.s, "123");
@@ -59,10 +47,7 @@ fn no_schema_on_accepts_explicit_str_tag_into_string() {
 fn no_schema_for_map_keys_string() {
     // Plain numeric key should be rejected when no_schema = true
     let y_plain = "1: a\n";
-    let opts = Options {
-        no_schema: true,
-        ..Default::default()
-    };
+    let opts = serde_saphyr::options! { no_schema: true };
     let err = from_str_with_options::<BTreeMap<String, String>>(y_plain, opts.clone()).unwrap_err();
     assert!(
         err.to_string().contains("must be quoted"),
@@ -85,10 +70,7 @@ struct HasChar {
 fn no_schema_on_char_rejects_plain_numeric_or_bool_like() {
     // Plain digit: looks like number, must be quoted when no_schema=true
     let y1 = "c: 1\n";
-    let opts = Options {
-        no_schema: true,
-        ..Default::default()
-    };
+    let opts = serde_saphyr::options! { no_schema: true };
     let e1 = from_str_with_options::<HasChar>(y1, opts.clone()).unwrap_err();
     assert!(
         e1.to_string().contains("must be quoted"),
@@ -123,10 +105,7 @@ enum UnitE {
 #[test]
 fn no_schema_for_enum_unit_variant_name() {
     // no_schema=false accepts plain variant names even if they look like non-strings
-    let off = Options {
-        no_schema: false,
-        ..Default::default()
-    };
+    let off = serde_saphyr::options! { no_schema: false };
     let e_true: UnitE = from_str_with_options("true\n", off.clone())
         .expect("true as unit variant should parse with no_schema=false");
     assert!(matches!(e_true, UnitE::True));
@@ -135,10 +114,7 @@ fn no_schema_for_enum_unit_variant_name() {
     assert!(matches!(e_one, UnitE::One));
 
     // no_schema=true rejects plain true/1
-    let on = Options {
-        no_schema: true,
-        ..Default::default()
-    };
+    let on = serde_saphyr::options! { no_schema: true };
     let err_true = from_str_with_options::<UnitE>("true\n", on.clone()).unwrap_err();
     assert!(
         err_true.to_string().contains("must be quoted"),
@@ -169,10 +145,7 @@ enum NewtypeE {
 #[test]
 fn no_schema_for_enum_externally_tagged_map_form() {
     // Map form with unquoted key should be rejected when no_schema=true
-    let opts = Options {
-        no_schema: true,
-        ..Default::default()
-    };
+    let opts = serde_saphyr::options! { no_schema: true };
 
     let err1 = from_str_with_options::<NewtypeE>("{ true: 5 }\n", opts.clone()).unwrap_err();
     assert!(

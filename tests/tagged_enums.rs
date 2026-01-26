@@ -47,9 +47,8 @@ fn unit_variant_serializes_plain_by_default() {
 #[test]
 fn unit_variant_serializes_tagged_when_enabled() {
     let mut out = String::new();
-    let opts = serde_saphyr::SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         tagged_enums: true,
-        ..serde_saphyr::SerializerOptions::default()
     };
     serde_saphyr::to_fmt_writer_with_options(&mut out, &Simple::VALUE, opts)
         .expect("failed to serialize tagged enum variant");
@@ -65,9 +64,8 @@ fn struct_with_enum() -> anyhow::Result<()> {
         area: usize,
     }
 
-    let mut opts = serde_saphyr::SerializerOptions {
+    let mut opts = serde_saphyr::ser_options! {
         tagged_enums: true,
-        ..serde_saphyr::SerializerOptions::default()
     };
 
     let mut yaml = String::new();
@@ -86,7 +84,10 @@ fn struct_with_enum() -> anyhow::Result<()> {
     assert_eq!(d, s);
     yaml.clear();
 
-    opts.tagged_enums = false;
+    // Reconstruct instead of mutating a deprecated field directly.
+    opts = serde_saphyr::ser_options! {
+        tagged_enums: false,
+    };
     serde_saphyr::to_fmt_writer_with_options(&mut yaml, &s, opts)?;
     assert_eq!("shape: SQUARE\ncolor: GREEN\narea: 51\n", yaml);
     let d: MyStruct = serde_saphyr::from_str(&yaml)?;

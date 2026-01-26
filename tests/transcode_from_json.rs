@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod tests {
     use serde::Deserialize;
-    use serde_saphyr::SerializerOptions;
 
     fn transcode_yaml_to_json(yaml: &str) -> String {
         serde_saphyr::with_deserializer_from_str(yaml, |de| {
@@ -82,9 +81,8 @@ bools:
         let mut json_deserializer = serde_json::Deserializer::from_str(json);
 
         let mut yaml = String::new();
-        let mut yaml_serializer_options = SerializerOptions {
+        let mut yaml_serializer_options = serde_saphyr::ser_options! {
             indent_step: 2,
-            ..Default::default()
         };
         let mut yaml_serializer =
             serde_saphyr::Serializer::with_options(&mut yaml, &mut yaml_serializer_options);

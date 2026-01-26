@@ -1,4 +1,8 @@
 #![forbid(unsafe_code)]
+// Options structs expose their fields for now, but callers are expected to migrate to the
+// `options!` / `serializer_options!` macros. The fields are deprecated to guide downstream
+// users, while this crate still legitimately reads them internally.
+#![allow(deprecated)]
 //! Serialization public API is defined at crate root
 
 pub use anchors::{
@@ -54,6 +58,7 @@ pub use de::{
 };
 
 mod serializer_options;
+mod macros;
 mod tags;
 
 pub(crate) mod ser_quoting;
@@ -270,13 +275,12 @@ pub fn from_str<T: DeserializeOwned>(input: &str) -> Result<T, Error> {
 ///      retries: 5
 /// "#;
 ///
-/// let options = serde_saphyr::Options {
-///      budget: Some(serde_saphyr::Budget {
-///            max_anchors: 200,
-///            .. serde_saphyr::Budget::default()
-///      }),
+/// let options = serde_saphyr::options! {
+///     budget: Some(serde_saphyr::Budget {
+///         max_anchors: 200,
+///         ..serde_saphyr::Budget::default()
+///     }),
 ///     duplicate_keys: DuplicateKeyPolicy::FirstWins,
-///     .. serde_saphyr::Options::default()
 /// };
 /// let cfg: Config = serde_saphyr::from_str_with_options(yaml, options).unwrap();
 /// assert_eq!(cfg.retries, 5);
@@ -1283,13 +1287,12 @@ pub fn from_multiple<T: DeserializeOwned>(input: &str) -> Result<Vec<T>, Error> 
 /// retries: 2
 /// "#;
 ///
-/// let options = serde_saphyr::Options {
-///      budget: Some(serde_saphyr::Budget {
-///            max_anchors: 200,
-///            .. serde_saphyr::Budget::default()
-///      }),
+/// let options = serde_saphyr::options! {
+///     budget: Some(serde_saphyr::Budget {
+///         max_anchors: 200,
+///         ..serde_saphyr::Budget::default()
+///     }),
 ///     duplicate_keys: DuplicateKeyPolicy::FirstWins,
-///     .. serde_saphyr::Options::default()
 /// };
 /// let cfgs: Vec<Config> = serde_saphyr::from_multiple_with_options(yaml, options).unwrap();
 /// assert_eq!(cfgs.len(), 2);
@@ -1401,13 +1404,12 @@ pub fn from_slice<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, Error> {
 ///      retries: 5
 /// "#;
 /// let bytes = yaml.as_bytes();
-/// let options = serde_saphyr::Options {
-///      budget: Some(serde_saphyr::Budget {
-///            max_anchors: 200,
-///            .. serde_saphyr::Budget::default()
-///      }),
+/// let options = serde_saphyr::options! {
+///     budget: Some(serde_saphyr::Budget {
+///         max_anchors: 200,
+///         ..serde_saphyr::Budget::default()
+///     }),
 ///     duplicate_keys: DuplicateKeyPolicy::FirstWins,
-///     .. serde_saphyr::Options::default()
 /// };
 /// let cfg: Config = serde_saphyr::from_slice_with_options(bytes, options).unwrap();
 /// assert_eq!(cfg.retries, 5);
@@ -1478,13 +1480,12 @@ pub fn from_slice_multiple<T: DeserializeOwned>(bytes: &[u8]) -> Result<Vec<T>, 
 /// retries: 2
 /// "#;
 /// let bytes = yaml.as_bytes();
-/// let options = serde_saphyr::Options {
-///      budget: Some(serde_saphyr::Budget {
-///            max_anchors: 200,
-///            .. serde_saphyr::Budget::default()
-///      }),
+/// let options = serde_saphyr::options! {
+///     budget: Some(serde_saphyr::Budget {
+///         max_anchors: 200,
+///         ..serde_saphyr::Budget::default()
+///     }),
 ///     duplicate_keys: DuplicateKeyPolicy::FirstWins,
-///     .. serde_saphyr::Options::default()
 /// };
 /// let cfgs: Vec<Config> = serde_saphyr::from_slice_multiple_with_options(bytes, options).unwrap();
 /// assert_eq!(cfgs.len(), 2);

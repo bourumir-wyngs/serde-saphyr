@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
 pub fn from_str<T: DeserializeOwned>(s: &str) -> Result<T, serde_saphyr::Error> {
-    let options = serde_saphyr::Options {
+    let options = serde_saphyr::options! {
         duplicate_keys: serde_saphyr::DuplicateKeyPolicy::LastWins,
         strict_booleans: true,
         ignore_binary_tag_for_string: true,
@@ -10,7 +10,6 @@ pub fn from_str<T: DeserializeOwned>(s: &str) -> Result<T, serde_saphyr::Error> 
             max_total_scalar_bytes: 65536,
             ..serde_saphyr::Budget::default()
         }),
-        ..serde_saphyr::Options::default()
     };
     serde_saphyr::from_str_with_options(s, options)
 }

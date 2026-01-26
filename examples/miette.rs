@@ -1,9 +1,6 @@
 fn main() {
     // Disable serde-saphyr snippet as miette snippet is used.
-    let no_snippet = serde_saphyr::Options {
-        with_snippet: false,
-        ..Default::default()
-    };
+    let no_snippet = serde_saphyr::options! { with_snippet: false };
 
     eprintln!("Miette alone:");
     //   cargo run --example miette --features miette

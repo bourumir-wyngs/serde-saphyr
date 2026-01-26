@@ -1,6 +1,6 @@
 use garde::Validate;
 use serde::Deserialize;
-use serde_saphyr::{Error, Options};
+use serde_saphyr::Error;
 
 fn default_offsets() -> Vec<f64> {
     vec![0.0; 6]
@@ -90,9 +90,8 @@ dof: 6
 
     let root: Result<Root, Error> = serde_saphyr::from_str_with_options_valid(
         contents,
-        Options {
+        serde_saphyr::options! {
             angle_conversions: true,
-            ..Default::default()
         },
     );
     match root {
@@ -124,9 +123,8 @@ dof: 6    "#;
 
     let root: Result<Root, Error> = serde_saphyr::from_str_with_options_valid(
         contents,
-        Options {
+        serde_saphyr::options! {
             angle_conversions: true,
-            ..Default::default()
         },
     );
     match root {

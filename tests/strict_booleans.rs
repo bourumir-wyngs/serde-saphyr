@@ -16,10 +16,7 @@ fn non_strict_accepts_yaml11_bool_literals() {
 #[test]
 fn strict_rejects_yaml11_bool_literals() {
     let y = "enabled: yes\n";
-    let opts = serde_saphyr::Options {
-        strict_booleans: true,
-        ..serde_saphyr::Options::default()
-    };
+    let opts = serde_saphyr::options! { strict_booleans: true };
     let err =
         serde_saphyr::from_str_with_options::<Flag>(y, opts).expect_err("strict should reject yes");
     let msg = err.to_string();
@@ -33,10 +30,7 @@ fn strict_rejects_yaml11_bool_literals() {
 #[test]
 fn strict_inference_for_json_value() {
     // In strict mode, only true/false are booleans; `yes` should remain a string when inferring into Value
-    let opts = serde_saphyr::Options {
-        strict_booleans: true,
-        ..serde_saphyr::Options::default()
-    };
+    let opts = serde_saphyr::options! { strict_booleans: true };
 
     let v_true: Value =
         serde_saphyr::from_str_with_options("true", opts.clone()).expect("parse true");

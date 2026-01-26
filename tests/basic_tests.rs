@@ -73,8 +73,11 @@ mod tests {
         use std::collections::HashMap;
 
         let mut options = Options::default();
-        if let Some(ref mut budget) = options.budget {
-            budget.max_nodes = 1; // force a tiny budget to trigger the error
+        #[allow(deprecated)]
+        {
+            if let Some(ref mut budget) = options.budget {
+                budget.max_nodes = 1; // force a tiny budget to trigger the error
+            }
         }
 
         let yaml = "a: 1\n";
@@ -93,8 +96,11 @@ mod tests {
         use std::collections::HashMap;
 
         let mut options = Options::default();
-        if let Some(ref mut budget) = options.budget {
-            budget.max_nodes = 1; // ensure the budget error triggers
+        #[allow(deprecated)]
+        {
+            if let Some(ref mut budget) = options.budget {
+                budget.max_nodes = 1; // ensure the budget error triggers
+            }
         }
 
         let yaml = "a: 1\n---\nb: 2\n";
@@ -154,9 +160,8 @@ mod tests {
     #[test]
     fn duplicate_keys_first_wins_policy() {
         let y = "a: 1\na: 2\nb: 3\n";
-        let opt = Options {
+        let opt = serde_saphyr::options! {
             duplicate_keys: DuplicateKeyPolicy::FirstWins,
-            ..Default::default()
         };
         let m = from_str_with_options::<HashMap<String, i32>>(y, opt).unwrap();
         assert_eq!(m.get("a"), Some(&1));
@@ -173,17 +178,15 @@ mod tests {
         let msg = format!("{err}");
         assert!(msg.contains("duplicate mapping key"));
 
-        let opt_first = Options {
+        let opt_first = serde_saphyr::options! {
             duplicate_keys: DuplicateKeyPolicy::FirstWins,
-            ..Default::default()
         };
         let first = from_str_with_options::<HashMap<Vec<i32>, String>>(y, opt_first).unwrap();
         assert_eq!(first.get(&vec![1, 2]).map(String::as_str), Some("first"));
         assert_eq!(first.len(), 1);
 
-        let opt_last = Options {
+        let opt_last = serde_saphyr::options! {
             duplicate_keys: DuplicateKeyPolicy::LastWins,
-            ..Default::default()
         };
         let last = from_str_with_options::<HashMap<Vec<i32>, String>>(y, opt_last).unwrap();
         assert_eq!(last.get(&vec![1, 2]).map(String::as_str), Some("second"));
@@ -204,9 +207,8 @@ mod tests {
         let msg = format!("{err}");
         assert!(msg.contains("duplicate mapping key"));
 
-        let opt_first = Options {
+        let opt_first = serde_saphyr::options! {
             duplicate_keys: DuplicateKeyPolicy::FirstWins,
-            ..Default::default()
         };
         let first = from_str_with_options::<HashMap<StructKey, i32>>(y, opt_first).unwrap();
         assert_eq!(
@@ -218,9 +220,8 @@ mod tests {
         );
         assert_eq!(first.len(), 1);
 
-        let opt_last = Options {
+        let opt_last = serde_saphyr::options! {
             duplicate_keys: DuplicateKeyPolicy::LastWins,
-            ..Default::default()
         };
         let last = from_str_with_options::<HashMap<StructKey, i32>>(y, opt_last).unwrap();
         assert_eq!(
@@ -237,16 +238,15 @@ mod tests {
     mod hardening_policy_fixed_yaml_tests {
         use super::*;
         use serde::Deserialize;
-        use serde_saphyr::{Options, from_str_with_options};
+        use serde_saphyr::{from_str_with_options};
         use std::collections::HashMap;
 
         // ---------- Duplicate key policy: LastWins ----------
         #[test]
         fn duplicate_keys_last_wins_policy() {
             let y = "a: 1\na: 2\nb: 3\n";
-            let opt = Options {
+            let opt = serde_saphyr::options! {
                 duplicate_keys: DuplicateKeyPolicy::LastWins,
-                ..Default::default()
             };
             let m = from_str_with_options::<HashMap<String, i32>>(y, opt).unwrap();
             assert_eq!(m.get("a"), Some(&2));
@@ -263,8 +263,11 @@ mod tests {
         fn alias_per_anchor_expansion_limit() {
             // Anchor &A once, then reference it three times; cap expansions at 2.
             let y = "defs: &A { k: v }\nx: *A\ny: *A\nz: *A\n";
-            let mut opt = Options::default();
-            opt.alias_limits.max_alias_expansions_per_anchor = 2;
+            let mut opt = serde_saphyr::Options::default();
+            #[allow(deprecated)]
+            {
+                opt.alias_limits.max_alias_expansions_per_anchor = 2;
+            }
             let err = from_str_with_options::<HashMap<String, HashMap<String, String>>>(y, opt)
                 .unwrap_err();
             let msg = format!("{err}");
@@ -289,8 +292,11 @@ mod tests {
         #[test]
         fn alias_total_replayed_events_limit() {
             let y = "defs: &A [1, 2, 3, 4]\nlist: [*A, *A]\n";
-            let mut opt = Options::default();
-            opt.alias_limits.max_total_replayed_events = 10;
+            let mut opt = serde_saphyr::Options::default();
+            #[allow(deprecated)]
+            {
+                opt.alias_limits.max_total_replayed_events = 10;
+            }
             let err = from_str_with_options::<Data>(y, opt).unwrap_err();
             let msg = format!("{err}");
             assert!(
@@ -308,8 +314,11 @@ mod tests {
         #[test]
         fn alias_replay_stack_depth_limit() {
             let y = "defs: &A [1]\nout: *A\n";
-            let mut opt = Options::default();
-            opt.alias_limits.max_replay_stack_depth = 0; // any alias use should exceed this
+            let mut opt = serde_saphyr::Options::default();
+            #[allow(deprecated)]
+            {
+                opt.alias_limits.max_replay_stack_depth = 0; // any alias use should exceed this
+            }
             let err = from_str_with_options::<HashMap<String, Vec<u32>>>(y, opt).unwrap_err();
             let msg = format!("{err}");
             assert!(
@@ -322,9 +331,12 @@ mod tests {
         // (which matches HashMap<_, _>), then alias it multiple times to exceed the budget.
         #[test]
         fn alias_replay_counts_toward_budget() {
-            let mut options = Options::default();
-            if let Some(ref mut b) = options.budget {
-                b.max_nodes = 10;
+            let mut options = serde_saphyr::Options::default();
+            #[allow(deprecated)]
+            {
+                if let Some(ref mut b) = options.budget {
+                    b.max_nodes = 10;
+                }
             }
 
             // Root is a mapping with key "seq". First element defines &A, the rest alias it.

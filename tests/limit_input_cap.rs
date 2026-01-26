@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde_saphyr::budget::BudgetBreach;
 use serde_saphyr::{
-    Budget, Error, Options, from_multiple_with_options, from_reader, from_reader_with_options,
+    Budget, Error, from_multiple_with_options, from_reader, from_reader_with_options,
     read_with_options,
 };
 use std::io::ErrorKind;
@@ -32,12 +32,11 @@ fn from_reader_respects_max_input_bytes_budget() {
     let rdr = std::io::Cursor::new(yaml.as_bytes());
 
     // Set a tiny max_input_bytes so the reader should trip it early
-    let opts_small = Options {
+    let opts_small = serde_saphyr::options! {
         budget: Some(Budget {
             max_reader_input_bytes: Some(160),
             ..Budget::default()
         }),
-        ..Default::default()
     };
 
     let a: Result<Simple, Error> = from_reader_with_options(rdr.clone(), opts_small);
@@ -51,12 +50,11 @@ fn from_reader_respects_max_input_bytes_budget() {
         },
     }
 
-    let opts_large = Options {
+    let opts_large = serde_saphyr::options! {
         budget: Some(Budget {
             max_reader_input_bytes: Some(16000),
             ..Budget::default()
         }),
-        ..Default::default()
     };
     let b: Result<Simple, Error> = from_reader_with_options(rdr.clone(), opts_large);
     assert!(b.is_ok());
@@ -71,12 +69,11 @@ fn read_respects_max_input_bytes_budget() {
 
     // Case 1: limit is hit (very small cap)
     let mut rdr1 = std::io::Cursor::new(yaml.as_bytes());
-    let opts_small = Options {
+    let opts_small = serde_saphyr::options! {
         budget: Some(Budget {
             max_reader_input_bytes: Some(160),
             ..Budget::default()
         }),
-        ..Default::default()
     };
     let mut iter1 = read_with_options::<_, Simple>(&mut rdr1, opts_small);
     match iter1.next().unwrap() {
@@ -88,12 +85,11 @@ fn read_respects_max_input_bytes_budget() {
 
     // Case 2: limit is not hit (large cap)
     let mut rdr2 = std::io::Cursor::new(yaml.as_bytes());
-    let opts_large = Options {
+    let opts_large = serde_saphyr::options! {
         budget: Some(Budget {
             max_reader_input_bytes: Some(16000),
             ..Budget::default()
         }),
-        ..Default::default()
     };
     let mut iter2 = read_with_options::<_, Simple>(&mut rdr2, opts_large);
     let v = iter2
@@ -105,12 +101,11 @@ fn read_respects_max_input_bytes_budget() {
 
     // Case 3: limit set to None (no cap)
     let mut rdr3 = std::io::Cursor::new(yaml.as_bytes());
-    let opts_no_cap = Options {
+    let opts_no_cap = serde_saphyr::options! {
         budget: Some(Budget {
             max_reader_input_bytes: None,
             ..Budget::default()
         }),
-        ..Default::default()
     };
     let mut iter3 = read_with_options::<_, Simple>(&mut rdr3, opts_no_cap);
     let v = iter3
@@ -136,12 +131,11 @@ fn read_limits_are_per_document() {
     assert_eq!(n, 5);
 
     // set now limit low enough for one document
-    let opts = Options {
+    let opts = serde_saphyr::options! {
         budget: Some(Budget {
             max_nodes: 30, // We have 1024 nodes per document
             ..Budget::default()
         }),
-        ..Default::default()
     };
 
     let deserialized: Result<Vec<Simple>, Error> = from_multiple_with_options(&yaml, opts);
@@ -179,15 +173,14 @@ fn from_reader_limits_are_per_all_content() {
 }
 
 /// Create 5 documents but budget only for nodes for the first 3
-fn yaml_and_options() -> (Options, String) {
+fn yaml_and_options() -> (serde_saphyr::Options, String) {
     let yaml = big_valid_yaml(1024);
     let yaml = format!("{yaml}\n---\n{yaml}\n---\n{yaml}\n---\n{yaml}\n---\n{yaml}\n");
-    let opts = Options {
+    let opts = serde_saphyr::options! {
         budget: Some(Budget {
             max_nodes: 3000, // We have 1024 nodes per document
             ..Budget::default()
         }),
-        ..Default::default()
     };
     (opts, yaml)
 }

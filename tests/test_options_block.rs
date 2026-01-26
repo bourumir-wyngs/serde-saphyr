@@ -1,20 +1,17 @@
 use serde_saphyr::{
-    FoldStr, FoldString, LitStr, LitString, SerializerOptions, to_fmt_writer_with_options,
-    to_string_with_options,
+    FoldStr, FoldString, LitStr, LitString, to_fmt_writer_with_options, to_string_with_options,
 };
 
 #[test]
 fn lit_wrappers_respect_min_fold_chars_option() {
     // Default: threshold 32, so a short single-line becomes plain scalar.
     let mut s = String::new();
-    to_fmt_writer_with_options(&mut s, &LitStr("short"), SerializerOptions::default()).unwrap();
+    to_fmt_writer_with_options(&mut s, &LitStr("short"), serde_saphyr::SerializerOptions::default())
+        .unwrap();
     assert_eq!(s, "|-\n  short\n");
 
     // With min_fold_chars = 0, even a short single-line should use block style `|`.
-    let opts = SerializerOptions {
-        min_fold_chars: 0,
-        ..SerializerOptions::default()
-    };
+    let opts = serde_saphyr::ser_options! { min_fold_chars: 0 };
     s.clear();
     to_fmt_writer_with_options(&mut s, &LitStr("short"), opts).unwrap();
     assert_eq!(s, "|-\n  short\n");
@@ -24,10 +21,7 @@ fn lit_wrappers_respect_min_fold_chars_option() {
     to_fmt_writer_with_options(
         &mut s,
         &LitStr("a\nb"),
-        SerializerOptions {
-            min_fold_chars: usize::MAX,
-            ..Default::default()
-        },
+        serde_saphyr::ser_options! { min_fold_chars: usize::MAX },
     )
     .unwrap();
     assert_eq!(s, "|-\n  a\n  b\n");
@@ -36,10 +30,7 @@ fn lit_wrappers_respect_min_fold_chars_option() {
 #[test]
 fn lit_owned_variant_also_respects_option() {
     let mut s = String::new();
-    let opts = SerializerOptions {
-        min_fold_chars: 0,
-        ..SerializerOptions::default()
-    };
+    let opts = serde_saphyr::ser_options! { min_fold_chars: 0 };
     to_fmt_writer_with_options(&mut s, &LitString("ok".to_string()), opts).unwrap();
     assert_eq!(s, "|-\n  ok\n");
 }
@@ -47,10 +38,9 @@ fn lit_owned_variant_also_respects_option() {
 #[test]
 fn fold_wrapping_uses_configured_column() {
     // Configure very small wrap to make behavior easy to assert
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         folded_wrap_chars: 10,
         min_fold_chars: 0,
-        ..SerializerOptions::default()
     };
 
     // A single long line without newlines should still go to block style because min_fold_chars=0
@@ -73,10 +63,9 @@ fn fold_wrapping_uses_configured_column() {
 
 #[test]
 fn fold_owned_variant_respects_wrap() {
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         folded_wrap_chars: 12,
         min_fold_chars: 0,
-        ..SerializerOptions::default()
     };
     let mut out = String::new();
     to_fmt_writer_with_options(
@@ -92,10 +81,7 @@ fn fold_owned_variant_respects_wrap() {
 
 #[test]
 fn foldstr_sequence_under_map_key() {
-    let opts = SerializerOptions {
-        min_fold_chars: 0,
-        ..SerializerOptions::default()
-    };
+    let opts = serde_saphyr::ser_options! { min_fold_chars: 0 };
 
     #[derive(serde::Serialize)]
     struct Doc<'a> {

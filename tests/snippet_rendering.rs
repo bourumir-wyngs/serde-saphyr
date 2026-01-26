@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use serde_saphyr::{Options, from_str, from_str_with_options};
+use serde_saphyr::{from_str, from_str_with_options};
 
 /// Specialized regression test for snippet rendering.
 ///
@@ -153,10 +153,7 @@ fn snippet_crops_very_long_lines_around_error_column() {
     after_2: "!@#$%^&*()_++_)(*&^%$#@"
 "#;
 
-    let opts = Options {
-        crop_radius: 10,
-        ..Default::default()
-    };
+    let opts = serde_saphyr::options! { crop_radius: 10 };
 
     let err = from_str_with_options::<Doc>(yaml, opts).expect_err("unknown anchor should error");
     let rendered = err.to_string();

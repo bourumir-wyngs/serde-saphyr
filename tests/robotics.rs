@@ -3,7 +3,7 @@
 mod tests {
     use core::f64::consts::PI;
     use serde::Deserialize;
-    use serde_saphyr::{Options, from_str_with_options};
+    use serde_saphyr::from_str_with_options;
 
     #[derive(Debug, Deserialize)]
     struct RoboFloats {
@@ -73,9 +73,8 @@ angle_from_sexagesimal_2: !degrees 8:32:53.2
 angle_from_sexagesimal_rad: !radians 8:32:53.2
 "#;
 
-        let options = Options {
+        let options = serde_saphyr::options! {
             angle_conversions: true, // enable robotics angle parsing
-            ..Options::default()
         };
 
         let v: RoboFloats = from_str_with_options(yaml, options).expect("parse robotics YAML");

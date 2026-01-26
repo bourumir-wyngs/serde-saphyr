@@ -1,4 +1,3 @@
-use crate::Options;
 use serde::de::DeserializeOwned;
 use std::path::Path;
 
@@ -31,9 +30,8 @@ impl ::figment::providers::Format for Yaml {
         // figment does not render out snippet anyway
         crate::from_str_with_options(
             string,
-            Options {
+            crate::options! {
                 with_snippet: false,
-                ..Options::default()
             },
         )
     }
@@ -43,9 +41,8 @@ impl ::figment::providers::Format for Yaml {
         // figment does not render out snippet anyway
         crate::from_slice_with_options(
             &bytes,
-            Options {
+            crate::options! {
                 with_snippet: false,
-                ..Options::default()
             },
         )
     }

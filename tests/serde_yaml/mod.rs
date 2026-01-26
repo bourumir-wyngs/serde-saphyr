@@ -37,12 +37,11 @@ mod test_writer_reader;
 pub fn adapt_to_miri() -> Options {
     // Tighten limits for miri that otherwise takes very long
     if cfg!(miri) {
-        Options {
+        serde_saphyr::options! {
             budget: Some(Budget {
                 max_nodes: 250,
                 ..Budget::default()
             }),
-            ..Options::default()
         }
     } else {
         Options::default()

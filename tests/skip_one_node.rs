@@ -3,7 +3,7 @@ mod tests {
     use serde_json::Value;
     use serde_saphyr::Error;
     use serde_saphyr::options::DuplicateKeyPolicy;
-    use serde_saphyr::{Options, from_str_with_options};
+    use serde_saphyr::from_str_with_options;
     use std::collections::BTreeMap;
 
     /// Parse a YAML mapping into a BTreeMap<String, serde_json::Value>,
@@ -15,9 +15,8 @@ mod tests {
     /// Returns:
     /// - `Result<BTreeMap<String, Value>, Error>` with parsed map or a deserialization error.
     fn parse_first_wins_map(yaml: &str) -> Result<BTreeMap<String, Value>, Error> {
-        let opts = Options {
+        let opts = serde_saphyr::options! {
             duplicate_keys: DuplicateKeyPolicy::FirstWins,
-            ..Options::default()
         };
         from_str_with_options::<BTreeMap<String, Value>>(yaml, opts)
     }

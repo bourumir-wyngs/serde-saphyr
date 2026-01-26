@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
-use serde_saphyr::SerializerOptions;
 
 #[test]
 fn empty_top_level_map_braces_by_default() {
@@ -32,10 +31,7 @@ fn struct_with_empty_map_renders_exact() {
     let s = serde_saphyr::to_string(&v).unwrap();
     assert_eq!(s, "m: {}\n");
 
-    let options = SerializerOptions {
-        empty_as_braces: false,
-        ..Default::default()
-    };
+    let options = serde_saphyr::ser_options! { empty_as_braces: false };
 
     let mut s: String = String::new();
     serde_saphyr::to_fmt_writer_with_options(&mut s, &v, options).unwrap();
@@ -62,10 +58,7 @@ non_empty:
 "#;
     assert_eq!(yaml, expected);
 
-    let mut opts = SerializerOptions {
-        empty_as_braces: false,
-        ..Default::default()
-    };
+    let opts = serde_saphyr::ser_options! { empty_as_braces: false };
     let yaml_legacy = {
         let mut out = String::new();
         serde_saphyr::to_fmt_writer_with_options(&mut out, &o, opts).unwrap();
@@ -82,8 +75,10 @@ non_empty:
     assert_eq!(or1, o);
     assert_eq!(or2, o);
 
-    opts.indent_step = 3;
-    opts.empty_as_braces = true;
+    let opts = serde_saphyr::ser_options! {
+        indent_step: 3,
+        empty_as_braces: true,
+    };
     let yaml = {
         let mut out = String::new();
         serde_saphyr::to_fmt_writer_with_options(&mut out, &o, opts).unwrap();
@@ -97,7 +92,10 @@ non_empty:
 "#;
     assert_eq!(yaml, expected);
 
-    opts.empty_as_braces = false;
+    let opts = serde_saphyr::ser_options! {
+        indent_step: 3,
+        empty_as_braces: false,
+    };
     let yaml_legacy = {
         let mut out = String::new();
         serde_saphyr::to_fmt_writer_with_options(&mut out, &o, opts).unwrap();
@@ -140,10 +138,7 @@ fn disable_empty_map_as_braces_restores_legacy() {
     // When disabled, an empty map in block position should not render braces. We test a map value
     // position where previously an empty body produced just a newline after the key.
     let v = WrapMap { m: BTreeMap::new() };
-    let opts = SerializerOptions {
-        empty_as_braces: false,
-        ..Default::default()
-    };
+    let opts = serde_saphyr::ser_options! { empty_as_braces: false };
     let s = {
         let mut out = String::new();
         serde_saphyr::to_fmt_writer_with_options(&mut out, &v, opts).unwrap();

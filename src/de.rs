@@ -109,6 +109,7 @@ pub(crate) struct Cfg {
 
 impl Cfg {
     #[inline]
+    #[allow(deprecated)]
     pub(crate) fn from_options(options: &Options) -> Self {
         Self {
             dup_policy: options.duplicate_keys,

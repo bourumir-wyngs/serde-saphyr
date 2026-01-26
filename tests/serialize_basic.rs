@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use serde_saphyr::SerializerOptions;
 
 // 1. A structure with int, float, boolean, string fields
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -129,10 +128,9 @@ fn serialize_nested_variant_enums() {
     serde_saphyr::to_fmt_writer(&mut buf, &v).expect("to_writer works");
     assert!(!buf.is_empty());
     let mut buf2 = String::new();
-    let opts = serde_saphyr::SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         indent_step: 4,
         anchor_generator: None,
-        ..Default::default()
     };
     serde_saphyr::to_fmt_writer_with_options(&mut buf2, &v, opts)
         .expect("to_writer_with_options works");
@@ -171,10 +169,7 @@ fn serialize_array_of_empty_maps_to_io() {
 fn test_invalid_options() {
     let mut out = String::new();
     let mut ovec = Vec::new();
-    let invalid_options = SerializerOptions {
-        indent_step: 0,
-        ..SerializerOptions::default()
-    };
+    let invalid_options = serde_saphyr::ser_options! { indent_step: 0 };
 
     let object = VecOfMaps { vec: vec![] };
 

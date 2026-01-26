@@ -1,4 +1,4 @@
-use serde_saphyr::{self, SerializerOptions};
+use serde_saphyr::{self};
 
 // Dedicated tests for prefer_block_scalars behavior
 
@@ -39,6 +39,7 @@ fn prefer_block_scalars_literal_newlines_and_trailing() {
 #[test]
 fn prefer_block_scalars_folded_for_long_single_line() {
     // Single-line string longer than folded_wrap_chars (80 by default) should trigger folded '>'
+    const DEFAULT_FOLDED_WRAP_CHARS: usize = 80;
     let long = "word ".repeat(20) + "end"; // > 80 chars
 
     // Ensure default options are in effect (prefer_block_scalars = true, wrap = 80)
@@ -57,9 +58,9 @@ fn prefer_block_scalars_folded_for_long_single_line() {
         }
         let len = content.chars().count();
         assert!(
-            len <= SerializerOptions::default().folded_wrap_chars,
+            len <= DEFAULT_FOLDED_WRAP_CHARS,
             "line exceeds wrap width ({}): {:?}",
-            SerializerOptions::default().folded_wrap_chars,
+            DEFAULT_FOLDED_WRAP_CHARS,
             line
         );
     }

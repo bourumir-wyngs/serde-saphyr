@@ -53,9 +53,8 @@ fn test_serde_saphyr_binary_supporting_false() -> anyhow::Result<()> {
         name: Vec<u8>,
     }
 
-    let options = serde_saphyr::Options {
+    let options = serde_saphyr::options! {
         ignore_binary_tag_for_string: false, // Still should be fine as the target is not string
-        ..serde_saphyr::Options::default()
     };
 
     let value: SupportsBinary = serde_saphyr::from_str_with_options(content, options)?;
@@ -67,9 +66,8 @@ fn test_serde_saphyr_binary_supporting_false() -> anyhow::Result<()> {
 #[test]
 fn test_serde_saphyr_json_value() -> anyhow::Result<()> {
     let content = "name: !!binary H4sIAA==";
-    let options = serde_saphyr::Options {
+    let options = serde_saphyr::options! {
         ignore_binary_tag_for_string: true,
-        ..serde_saphyr::Options::default()
     };
 
     let value: serde_json::Value = serde_saphyr::from_str_with_options(content, options)?;

@@ -4,7 +4,7 @@ use serde::Deserialize;
 use serde::de::IgnoredAny;
 
 use serde_saphyr::options::DuplicateKeyPolicy;
-use serde_saphyr::{Options, from_str, from_str_with_options};
+use serde_saphyr::{from_str, from_str_with_options};
 
 #[derive(Deserialize)]
 struct MergeDoc<T> {
@@ -59,9 +59,8 @@ target:
   <<: [*B1, *B2]
 "#;
 
-    let options = Options {
+    let options = serde_saphyr::options! {
         duplicate_keys: DuplicateKeyPolicy::FirstWins,
-        ..Default::default()
     };
 
     let doc: MergeDoc<BTreeMap<String, i32>> =
@@ -79,9 +78,8 @@ target:
   <<: [*B1, *B2]
 "#;
 
-    let options = Options {
+    let options = serde_saphyr::options! {
         duplicate_keys: DuplicateKeyPolicy::LastWins,
-        ..Default::default()
     };
 
     let doc: MergeDoc<BTreeMap<String, i32>> =
@@ -124,9 +122,8 @@ target:
   <<: *B
 "#;
 
-    let options = Options {
+    let options = serde_saphyr::options! {
         duplicate_keys: DuplicateKeyPolicy::FirstWins,
-        ..Default::default()
     };
 
     let doc: MergeDoc<BTreeMap<String, i32>> =
@@ -148,9 +145,8 @@ target:
   <<: *B3
 "#;
 
-    let options = Options {
+    let options = serde_saphyr::options! {
         duplicate_keys: DuplicateKeyPolicy::FirstWins,
-        ..Default::default()
     };
 
     let doc: MergeDoc<BTreeMap<String, i32>> =
@@ -168,9 +164,8 @@ target:
   <<: [ { shared: 1, first: 10 }, { shared: 2, second: 20 } ]
 "#;
 
-    let options = Options {
+    let options = serde_saphyr::options! {
         duplicate_keys: DuplicateKeyPolicy::FirstWins,
-        ..Default::default()
     };
 
     let doc: MergeDoc<BTreeMap<String, i32>> =

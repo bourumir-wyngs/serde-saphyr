@@ -24,9 +24,8 @@ fn yaml_long_strings() -> anyhow::Result<()> {
     yaml::to_fmt_writer_with_options(
         &mut serialized,
         &reference,
-        yaml::SerializerOptions {
+        yaml::ser_options! {
             prefer_block_scalars: false,
-            ..Default::default()
         },
     )?;
     let test: Foo = yaml::from_str(serialized.as_str())?;
@@ -70,9 +69,8 @@ fn prefer_block_scalars_must_not_hard_break_long_token() -> anyhow::Result<()> {
     yaml::to_fmt_writer_with_options(
         &mut serialized,
         &reference,
-        yaml::SerializerOptions {
+        yaml::ser_options! {
             prefer_block_scalars: true,
-            ..Default::default()
         },
     )?;
 
@@ -193,10 +191,9 @@ fn folded_wrap_can_preserve_multi_space_runs_by_emitting_trailing_spaces() -> an
     yaml::to_fmt_writer_with_options(
         &mut serialized,
         &reference,
-        yaml::SerializerOptions {
+        yaml::ser_options! {
             prefer_block_scalars: true,
             folded_wrap_chars: 10,
-            ..Default::default()
         },
     )?;
 
