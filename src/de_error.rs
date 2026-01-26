@@ -43,6 +43,7 @@ impl Drop for MissingFieldLocationGuard {
 }
 
 /// Error type compatible with `serde::de::Error`.
+#[non_exhaustive]
 #[derive(Debug)]
 pub enum Error {
     /// Free-form error with optional source location.

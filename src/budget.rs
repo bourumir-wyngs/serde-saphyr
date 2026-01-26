@@ -126,6 +126,7 @@ impl Default for Budget {
 }
 
 /// What tripped the budget (if anything).
+#[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum BudgetBreach {
     /// The total number of parser events exceeded [`Budget::max_events`].
@@ -251,6 +252,7 @@ impl BudgetReport {
 /// Defines how budget limit policies are enforces (per document or for all content).
 /// Default is for all content, except when streaming from reader to iterator where
 /// it is per document as infinite may be required.
+#[non_exhaustive]
 #[derive(Debug, PartialEq)]
 pub enum EnforcingPolicy {
     AllContent,

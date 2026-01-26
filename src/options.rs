@@ -3,6 +3,7 @@ use crate::budget::Budget;
 use serde::{Deserialize, Serialize};
 
 /// Duplicate key handling policy for mappings.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum DuplicateKeyPolicy {
     /// Error out on encountering a duplicate key.

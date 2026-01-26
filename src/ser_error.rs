@@ -17,6 +17,7 @@ use std::{fmt, io};
 ///   target.
 /// - `Unexpected` is used internally for invariant violations (e.g., around
 ///   anchors). It should not normally surface; if it does, please file a bug.
+#[non_exhaustive]
 #[derive(Debug)]
 pub enum Error {
     /// Free-form error.
