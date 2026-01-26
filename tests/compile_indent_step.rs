@@ -1,3 +1,7 @@
+// `trybuild` runs by spawning a host `cargo` process to compile UI test crates.
+// This is not supported on WASI runtimes, so we disable these tests on WASI.
+#![cfg(not(target_os = "wasi"))]
+
 #[test]
 fn serializer_options_indent_step_range_is_enforced_for_literals() {
     let t = trybuild::TestCases::new();
