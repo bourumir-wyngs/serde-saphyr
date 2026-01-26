@@ -1,0 +1,7 @@
+error[E0080]: evaluation panicked: `indent_step` must be in the range 1..=65535
+ --> tests/ui/indent_step_zero.rs:2:13
+  |
+2 |     let _ = serde_saphyr::ser_options! { indent_step: 0 };
+  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ evaluation of `main::_` failed here
+  |
+  = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the macro `serde_saphyr::ser_options` (in Nightly builds, run with -Z macro-backtrace for more info)

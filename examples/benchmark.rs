@@ -3,7 +3,6 @@
 
 use serde::Deserialize;
 use serde_saphyr::Error;
-use serde_saphyr::budget::Budget;
 use std::time::Instant;
 
 #[derive(Debug, Deserialize)]
@@ -78,7 +77,7 @@ fn main() -> Result<(), Error> {
     let document: Document = serde_saphyr::from_str_with_options(
         &yaml,
         serde_saphyr::options! {
-            budget: Some(Budget {
+            budget: serde_saphyr::budget! {
                 max_reader_input_bytes: None,
                 max_events: many,
                 max_aliases: many,
@@ -91,7 +90,7 @@ fn main() -> Result<(), Error> {
                 enforce_alias_anchor_ratio: false,
                 alias_anchor_min_aliases: many,
                 alias_anchor_ratio_multiplier: many,
-            }),
+            },
         },
     )?;
     let elapsed = start.elapsed();

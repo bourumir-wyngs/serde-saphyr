@@ -1,4 +1,4 @@
-use serde_saphyr::{Budget, Options};
+use serde_saphyr::Options;
 
 mod test_anchor_only;
 mod test_binary;
@@ -38,10 +38,9 @@ pub fn adapt_to_miri() -> Options {
     // Tighten limits for miri that otherwise takes very long
     if cfg!(miri) {
         serde_saphyr::options! {
-            budget: Some(Budget {
+            budget: serde_saphyr::budget! {
                 max_nodes: 250,
-                ..Budget::default()
-            }),
+            },
         }
     } else {
         Options::default()

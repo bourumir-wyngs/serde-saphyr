@@ -47,6 +47,7 @@ fn billion_laughs_is_rejected() {
 
 #[test]
 fn excessive_document_storm_is_rejected() {
+    #[allow(deprecated)]
     let limit = Budget::default().max_documents;
     let yaml = document_storm_yaml(limit + 1);
     let report = check_yaml_budget(&yaml, Budget::default(), EnforcingPolicy::AllContent).unwrap();

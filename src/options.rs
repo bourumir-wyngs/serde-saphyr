@@ -64,10 +64,9 @@ impl Default for AliasLimits {
 /// "#;
 ///
 /// let options = serde_saphyr::options! {
-///     budget: Some(Budget {
+///     budget: serde_saphyr::budget! {
 ///         max_documents: 2,
-///         ..Budget::default()
-///     }),
+///     },
 ///     duplicate_keys: DuplicateKeyPolicy::LastWins,
 /// };
 ///

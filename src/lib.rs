@@ -276,10 +276,9 @@ pub fn from_str<T: DeserializeOwned>(input: &str) -> Result<T, Error> {
 /// "#;
 ///
 /// let options = serde_saphyr::options! {
-///     budget: Some(serde_saphyr::Budget {
+///     budget: serde_saphyr::budget! {
 ///         max_anchors: 200,
-///         ..serde_saphyr::Budget::default()
-///     }),
+///     },
 ///     duplicate_keys: DuplicateKeyPolicy::FirstWins,
 /// };
 /// let cfg: Config = serde_saphyr::from_str_with_options(yaml, options).unwrap();
@@ -1288,10 +1287,9 @@ pub fn from_multiple<T: DeserializeOwned>(input: &str) -> Result<Vec<T>, Error> 
 /// "#;
 ///
 /// let options = serde_saphyr::options! {
-///     budget: Some(serde_saphyr::Budget {
+///     budget: serde_saphyr::budget! {
 ///         max_anchors: 200,
-///         ..serde_saphyr::Budget::default()
-///     }),
+///     },
 ///     duplicate_keys: DuplicateKeyPolicy::FirstWins,
 /// };
 /// let cfgs: Vec<Config> = serde_saphyr::from_multiple_with_options(yaml, options).unwrap();
@@ -1405,10 +1403,9 @@ pub fn from_slice<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, Error> {
 /// "#;
 /// let bytes = yaml.as_bytes();
 /// let options = serde_saphyr::options! {
-///     budget: Some(serde_saphyr::Budget {
+///     budget: serde_saphyr::budget! {
 ///         max_anchors: 200,
-///         ..serde_saphyr::Budget::default()
-///     }),
+///     },
 ///     duplicate_keys: DuplicateKeyPolicy::FirstWins,
 /// };
 /// let cfg: Config = serde_saphyr::from_slice_with_options(bytes, options).unwrap();
@@ -1481,10 +1478,9 @@ pub fn from_slice_multiple<T: DeserializeOwned>(bytes: &[u8]) -> Result<Vec<T>, 
 /// "#;
 /// let bytes = yaml.as_bytes();
 /// let options = serde_saphyr::options! {
-///     budget: Some(serde_saphyr::Budget {
+///     budget: serde_saphyr::budget! {
 ///         max_anchors: 200,
-///         ..serde_saphyr::Budget::default()
-///     }),
+///     },
 ///     duplicate_keys: DuplicateKeyPolicy::FirstWins,
 /// };
 /// let cfgs: Vec<Config> = serde_saphyr::from_slice_multiple_with_options(bytes, options).unwrap();
@@ -1595,13 +1591,11 @@ pub fn from_reader<'a, R: std::io::Read + 'a, T: DeserializeOwned>(reader: R) ->
 /// let yaml = "x: 3\ny: 4\n";
 /// let reader = Cursor::new(yaml.as_bytes());
 ///
-/// let opts = Options {
-///   budget: Some(Budget {
-///       max_events: 10_000,
-///       max_reader_input_bytes: Some(1024),
-///       ..Budget::default()
-///     }),
-///   ..Options::default()
+/// let opts = serde_saphyr::options! {
+///     budget: serde_saphyr::budget! {
+///         max_events: 10_000,
+///         max_reader_input_bytes: Some(1024),
+///     },
 /// };
 ///
 /// let p: Point = serde_saphyr::from_reader_with_options(reader, opts).unwrap();
@@ -1771,12 +1765,10 @@ where
 {
     Box::new(read_with_options(
         reader,
-        Options {
-            budget: Some(Budget {
+        crate::options! {
+            budget: crate::budget! {
                 max_reader_input_bytes: None,
-                ..Budget::default()
-            }),
-            ..Options::default()
+            },
         },
     ))
 }

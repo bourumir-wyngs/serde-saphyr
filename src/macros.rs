@@ -41,15 +41,84 @@ macro_rules! options {
 /// ```
 #[macro_export]
 macro_rules! serializer_options {
-    ( $( $field:ident : $value:expr ),* $(,)? ) => {{
+    ( $( $tt:tt )* ) => {{
         let mut opt = $crate::SerializerOptions::default();
+        $crate::__serde_saphyr_serializer_options_apply!(opt, $( $tt )*);
+        opt
+    }};
+}
+
+/// Construct `Some([`crate::Budget`])` from `Default` and a list of field assignments.
+///
+/// This macro returns `Some(Budget)` (instead of just `Budget`) so it can be embedded
+/// directly inside [`crate::options!`] as the value for `Options::budget`.
+///
+/// Example:
+///
+/// ```rust
+/// let options = serde_saphyr::options! {
+///     budget: serde_saphyr::budget! {
+///         max_nodes: 30,
+///     },
+/// };
+/// ```
+#[macro_export]
+macro_rules! budget {
+    ( $( $field:ident : $value:expr ),* $(,)? ) => {{
+        let mut b = $crate::Budget::default();
         $(
             #[allow(deprecated)]
             {
-                opt.$field = $value;
+                b.$field = $value;
             }
         )*
-        opt
+        Some(b)
+    }};
+}
+
+/// Implementation detail for [`serializer_options!`].
+///
+/// This is `#[macro_export]` so that `$crate::...` can resolve it from expansions in
+/// downstream crates.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __serde_saphyr_serializer_options_apply {
+    // End.
+    ($opt:ident,) => {};
+    ($opt:ident) => {};
+
+    // Special-case indent_step when the value is a literal: enforce at compile time.
+    ($opt:ident, indent_step : $value:literal $(, $($rest:tt)*)? ) => {{
+        const _: () = {
+            // Keep the check aligned with the YAML emitter's constraints.
+            // Valid range: 1..=65535.
+            if !($value > 0 && $value < 65536) {
+                panic!("`indent_step` must be in the range 1..=65535");
+            }
+        };
+        #[allow(deprecated)]
+        {
+            $opt.indent_step = $value;
+        }
+        $( $crate::__serde_saphyr_serializer_options_apply!($opt, $($rest)*); )?
+    }};
+
+    // indent_step for non-const expressions: allow compilation; runtime validation will apply.
+    ($opt:ident, indent_step : $value:expr $(, $($rest:tt)*)? ) => {{
+        #[allow(deprecated)]
+        {
+            $opt.indent_step = $value;
+        }
+        $( $crate::__serde_saphyr_serializer_options_apply!($opt, $($rest)*); )?
+    }};
+
+    // Generic field assignment.
+    ($opt:ident, $field:ident : $value:expr $(, $($rest:tt)*)? ) => {{
+        #[allow(deprecated)]
+        {
+            $opt.$field = $value;
+        }
+        $( $crate::__serde_saphyr_serializer_options_apply!($opt, $($rest)*); )?
     }};
 }
 

@@ -1,6 +1,5 @@
 use indoc::indoc;
 use serde_json::Value;
-use serde_saphyr::Budget;
 
 #[test]
 fn custom_recursion_limit_exceeded() {
@@ -8,10 +7,9 @@ fn custom_recursion_limit_exceeded() {
     let yaml = "[".repeat(depth) + &"]".repeat(depth);
 
     let options = serde_saphyr::options! {
-        budget: Some(Budget {
+        budget: serde_saphyr::budget! {
             max_depth: 2,
-            ..Budget::default()
-        }),
+        },
     };
     let result = serde_saphyr::from_str_with_options::<Value>(&yaml, options);
     assert!(result.is_err());
@@ -26,10 +24,9 @@ fn custom_alias_limit_exceeded() {
         "
     };
     let options = serde_saphyr::options! {
-        budget: Some(Budget {
+        budget: serde_saphyr::budget! {
             max_aliases: 2,
-            ..Budget::default()
-        }),
+        },
     };
     let result = serde_saphyr::from_str_with_options::<Value>(yaml, options);
     assert!(result.is_err());

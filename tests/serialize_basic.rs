@@ -169,7 +169,10 @@ fn serialize_array_of_empty_maps_to_io() {
 fn test_invalid_options() {
     let mut out = String::new();
     let mut ovec = Vec::new();
-    let invalid_options = serde_saphyr::ser_options! { indent_step: 0 };
+    // Use a non-literal expression so this remains a runtime error (the macro enforces
+    // the valid range at compile time for literal values).
+    let zero = 0usize;
+    let invalid_options = serde_saphyr::ser_options! { indent_step: zero };
 
     let object = VecOfMaps { vec: vec![] };
 
