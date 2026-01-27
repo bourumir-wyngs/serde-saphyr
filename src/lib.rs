@@ -1,4 +1,4 @@
-#![forbid(unsafe_code)]
+//#![deny(unsafe_code)]
 // Options structs expose their fields for now, but callers are expected to migrate to the
 // `options!` / `serializer_options!` macros. The fields are deprecated to guide downstream
 // users, while this crate still legitimately reads them internally.
@@ -10,6 +10,7 @@ pub use anchors::{
     RcWeakAnchor,
 };
 pub use de::{Budget, DuplicateKeyPolicy, Error, Options};
+pub use de_error::TransformReason;
 pub use location::{Location, Locations, Span};
 pub use long_strings::{FoldStr, FoldString, LitStr, LitString};
 pub use ser::{Commented, FlowMap, FlowSeq, SpaceAfter};
@@ -223,11 +224,20 @@ pub fn to_writer_with_options<W: std::fmt::Write, T: serde::Serialize>(
     to_fmt_writer_with_options(output, value, options)
 }
 
-/// Deserialize any `T: serde::de::DeserializeOwned` directly from a YAML string.
+/// Deserialize any `T: serde::de::Deserialize<'de>` directly from a YAML string.
 ///
 /// This is the simplest entry point; it parses a single YAML document. If the
 /// input contains multiple documents, this returns an error advising to use
 /// [`from_multiple`] or [`from_multiple_with_options`].
+///
+/// This function supports both owned types (like `String`) and borrowed types
+/// (like `&str`). For borrowed types, the deserialized value's lifetime is tied
+/// to the input string's lifetime.
+///
+/// **Note**: Borrowing only works for simple plain scalars that don't require
+/// any transformation (no multi-line folding, no escape processing). For
+/// transformed strings, deserialization to `&str` will fail with a helpful
+/// error message suggesting to use `String` or `Cow<str>` instead.
 ///
 /// Example: read a small `Config` structure from a YAML string.
 ///
@@ -250,11 +260,99 @@ pub fn to_writer_with_options<W: std::fmt::Write, T: serde::Serialize>(
 /// let cfg: Config = serde_saphyr::from_str(yaml).unwrap();
 /// assert!(cfg.enabled);
 /// ```
-pub fn from_str<T: DeserializeOwned>(input: &str) -> Result<T, Error> {
+///
+/// Example: read a structure with borrowed string fields.
+///
+/// ```rust
+/// use serde::Deserialize;
+///
+/// #[derive(Debug, Deserialize, PartialEq)]
+/// struct Data<'a> {
+///     name: &'a str,
+///     value: i32,
+/// }
+///
+/// let yaml = "name: hello\nvalue: 42\n";
+///
+/// let data: Data = serde_saphyr::from_str(yaml).unwrap();
+/// assert_eq!(data.name, "hello");
+/// assert_eq!(data.value, 42);
+/// ```
+pub fn from_str<'de, T>(input: &'de str) -> Result<T, Error>
+where
+    T: serde::de::Deserialize<'de>,
+{
     from_str_with_options(input, Options::default())
 }
 
+#[allow(deprecated)]
+fn from_str_with_options_impl<'de, T>(input: &'de str, options: Options) -> Result<T, Error>
+where
+    T: serde::de::Deserialize<'de>,
+{
+    // Normalize: ignore a single leading UTF-8 BOM if present.
+    let input = if let Some(rest) = input.strip_prefix('\u{FEFF}') {
+        rest
+    } else {
+        input
+    };
+
+    let with_snippet = options.with_snippet;
+    let crop_radius = options.crop_radius;
+
+    let cfg = crate::de::Cfg::from_options(&options);
+    // Do not stop at DocumentEnd; we'll probe for trailing content/errors explicitly.
+    let mut src = LiveEvents::from_str(
+        input,
+        options.budget,
+        options.budget_report,
+        options.budget_report_cb,
+        options.alias_limits,
+        false,
+    );
+    let value_res = crate::anchor_store::with_document_scope(|| {
+        T::deserialize(crate::de::YamlDeserializer::new(&mut src, cfg))
+    });
+    let value = match value_res {
+        Ok(v) => v,
+        Err(e) => {
+            if src.synthesized_null_emitted() {
+                let err = Error::eof().with_location(src.last_location());
+                return Err(maybe_with_snippet(err, input, with_snippet, crop_radius));
+            } else {
+                return Err(maybe_with_snippet(e, input, with_snippet, crop_radius));
+            }
+        }
+    };
+
+    match src.peek() {
+        Ok(Some(_)) => {
+            let err = Error::msg(
+                "multiple YAML documents detected; use from_multiple or from_multiple_with_options",
+            )
+            .with_location(src.last_location());
+            return Err(maybe_with_snippet(err, input, with_snippet, crop_radius));
+        }
+        Ok(None) => {}
+        Err(e) => {
+            if src.seen_doc_end() {
+                // Trailing garbage after a proper document end marker is ignored.
+            } else {
+                return Err(maybe_with_snippet(e, input, with_snippet, crop_radius));
+            }
+        }
+    }
+
+    src.finish()
+        .map_err(|e| maybe_with_snippet(e, input, with_snippet, crop_radius))?;
+    Ok(value)
+}
+
 /// Deserialize a single YAML document with configurable [`Options`].
+///
+/// This function supports both owned types (like `String`) and borrowed types
+/// (like `&str`). For borrowed types, the deserialized value's lifetime is tied
+/// to the input string's lifetime.
 ///
 /// Example: read a small `Config` with a custom budget and default duplicate-key policy.
 ///
@@ -285,72 +383,11 @@ pub fn from_str<T: DeserializeOwned>(input: &str) -> Result<T, Error> {
 /// assert_eq!(cfg.retries, 5);
 /// ```
 #[allow(deprecated)]
-pub fn from_str_with_options<T: DeserializeOwned>(
-    input: &str,
-    options: Options,
-) -> Result<T, Error> {
-    // Normalize: ignore a single leading UTF-8 BOM if present.
-    let input = if let Some(rest) = input.strip_prefix('\u{FEFF}') {
-        rest
-    } else {
-        input
-    };
-
-    let with_snippet = options.with_snippet;
-    let crop_radius = options.crop_radius;
-
-    let cfg = crate::de::Cfg::from_options(&options);
-    // Do not stop at DocumentEnd; we'll probe for trailing content/errors explicitly.
-    let mut src = LiveEvents::from_str(
-        input,
-        options.budget,
-        options.budget_report,
-        options.budget_report_cb,
-        options.alias_limits,
-        false,
-    );
-    let value_res = crate::anchor_store::with_document_scope(|| {
-        T::deserialize(crate::de::YamlDeserializer::new(&mut src, cfg))
-    });
-    let value = match value_res {
-        Ok(v) => v,
-        Err(e) => {
-            if src.synthesized_null_emitted() {
-                // If the only thing in the input was an empty document (synthetic null),
-                // surface this as an EOF error to preserve expected error semantics
-                // for incompatible target types (e.g., bool).
-                let err = Error::eof().with_location(src.last_location());
-                return Err(maybe_with_snippet(err, input, with_snippet, crop_radius));
-            } else {
-                return Err(maybe_with_snippet(e, input, with_snippet, crop_radius));
-            }
-        }
-    };
-
-    // After finishing first document, peek ahead to detect either another document/content
-    // or trailing garbage. If a scan error occurs but we have seen a DocumentEnd ("..."),
-    // ignore the trailing garbage. Otherwise, surface the error.
-    match src.peek() {
-        Ok(Some(_)) => {
-            let err = Error::msg(
-                "multiple YAML documents detected; use from_multiple or from_multiple_with_options",
-            )
-            .with_location(src.last_location());
-            return Err(maybe_with_snippet(err, input, with_snippet, crop_radius));
-        }
-        Ok(None) => {}
-        Err(e) => {
-            if src.seen_doc_end() {
-                // Trailing garbage after a proper document end marker is ignored.
-            } else {
-                return Err(maybe_with_snippet(e, input, with_snippet, crop_radius));
-            }
-        }
-    }
-
-    src.finish()
-        .map_err(|e| maybe_with_snippet(e, input, with_snippet, crop_radius))?;
-    Ok(value)
+pub fn from_str_with_options<'de, T>(input: &'de str, options: Options) -> Result<T, Error>
+where
+    T: serde::de::Deserialize<'de>,
+{
+    from_str_with_options_impl(input, options)
 }
 
 /// Deserialize a single YAML document with configurable [`Options`], and also

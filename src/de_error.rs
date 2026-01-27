@@ -42,6 +42,37 @@ impl Drop for MissingFieldLocationGuard {
     }
 }
 
+/// The reason why a string value was transformed during parsing and cannot be borrowed.
+///
+/// When deserializing to `&str`, the value must exist verbatim in the input. However,
+/// certain YAML constructs require string transformation, making borrowing impossible.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransformReason {
+    /// Escape sequences were processed (e.g., `\n`, `\t`, `\uXXXX` in double-quoted strings).
+    EscapeSequence,
+    /// Line folding was applied (folded block scalar `>`).
+    LineFolding,
+    /// Multi-line plain or quoted scalar with whitespace normalization.
+    MultiLineNormalization,
+    /// Block scalar processing (literal `|` or folded `>` with chomping/indentation).
+    BlockScalarProcessing,
+    /// Single-quoted string with `''` escape processing.
+    SingleQuoteEscape,
+}
+
+impl fmt::Display for TransformReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TransformReason::EscapeSequence => write!(f, "escape sequence processing"),
+            TransformReason::LineFolding => write!(f, "line folding"),
+            TransformReason::MultiLineNormalization => write!(f, "multi-line whitespace normalization"),
+            TransformReason::BlockScalarProcessing => write!(f, "block scalar processing"),
+            TransformReason::SingleQuoteEscape => write!(f, "single-quote escape processing"),
+        }
+    }
+}
+
 /// Error type compatible with `serde::de::Error`.
 #[non_exhaustive]
 #[derive(Debug)]
@@ -95,6 +126,17 @@ pub enum Error {
     /// This error can only happen if no_schema set true.
     QuotingRequired {
         value: String, // sanitized (checked) value that must be quoted
+        location: Location,
+    },
+
+    /// The target type requires a borrowed string (`&str`), but the value was transformed
+    /// during parsing (e.g., through escape processing, line folding, or multi-line normalization)
+    /// and cannot be borrowed from the input.
+    ///
+    /// Use `String` or `Cow<str>` instead of `&str` to handle transformed values.
+    CannotBorrowTransformedString {
+        /// The reason why the string had to be transformed and cannot be borrowed.
+        reason: TransformReason,
         location: Location,
     },
 
@@ -276,6 +318,19 @@ impl Error {
         }
     }
 
+    /// Construct a `CannotBorrowTransformedString` error for the given reason.
+    ///
+    /// This error is returned when deserializing to `&str` but the string value
+    /// was transformed during parsing and cannot be borrowed from the input.
+    #[cold]
+    #[inline(never)]
+    pub fn cannot_borrow_transformed(reason: TransformReason) -> Self {
+        Error::CannotBorrowTransformedString {
+            reason,
+            location: Location::UNKNOWN,
+        }
+    }
+
     /// Attach/override a concrete location to this error and return it.
     ///
     /// Arguments:
@@ -297,7 +352,8 @@ impl Error {
             | Error::ContainerEndMismatch { location, .. }
             | Error::UnknownAnchor { location, .. }
             | Error::QuotingRequired { location, .. }
-            | Error::Budget { location, .. } => {
+            | Error::Budget { location, .. }
+            | Error::CannotBorrowTransformedString { location, .. } => {
                 *location = set_location;
             }
             Error::IOError { .. } => {} // this error does not support location
@@ -344,7 +400,8 @@ impl Error {
             | Error::ContainerEndMismatch { location, .. }
             | Error::UnknownAnchor { location, .. }
             | Error::QuotingRequired { location, .. }
-            | Error::Budget { location, .. } => {
+            | Error::Budget { location, .. }
+            | Error::CannotBorrowTransformedString { location, .. } => {
                 if location != &Location::UNKNOWN {
                     Some(*location)
                 } else {
@@ -391,7 +448,8 @@ impl Error {
             | Error::ContainerEndMismatch { location, .. }
             | Error::UnknownAnchor { location, .. }
             | Error::QuotingRequired { location, .. }
-            | Error::Budget { location, .. } => Locations::same(location),
+            | Error::Budget { location, .. }
+            | Error::CannotBorrowTransformedString { location, .. } => Locations::same(location),
             Error::IOError { .. } => None,
             Error::AliasError { locations, .. } => Some(*locations),
             Error::WithSnippet { error, .. } => error.locations(),
@@ -490,6 +548,14 @@ impl fmt::Display for Error {
             Error::QuotingRequired { value, location } => fmt_with_location(
                 f,
                 &format!("The string value [{value}] must be quoted"),
+                location,
+            ),
+            Error::CannotBorrowTransformedString { reason, location } => fmt_with_location(
+                f,
+                &format!(
+                    "cannot borrow string: value was transformed during parsing ({reason}). \
+                     Use String or Cow<str> instead of &str"
+                ),
                 location,
             ),
             Error::IOError { cause } => write!(f, "IO error: {}", cause),

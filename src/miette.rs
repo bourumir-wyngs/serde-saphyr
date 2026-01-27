@@ -421,6 +421,12 @@ fn message_without_location(err: &Error) -> String {
         Error::QuotingRequired { value, .. } => {
             format!("The string value [{value}] must be quoted")
         }
+        Error::CannotBorrowTransformedString { reason, .. } => {
+            format!(
+                "cannot borrow string: value was transformed during parsing ({reason}). \
+                 Use String or Cow<str> instead of &str"
+            )
+        }
         Error::IOError { cause } => format!("IO error: {cause}"),
         Error::WithSnippet { error, .. } => message_without_location(error),
 

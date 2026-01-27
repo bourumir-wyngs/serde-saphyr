@@ -95,4 +95,4 @@ name = "figment_yaml"
 required-features = ["figment"]
 
 [lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "deny"

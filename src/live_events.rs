@@ -39,6 +39,7 @@ type StreamBufReader<'a> = std::io::BufReader<StreamReader<'a>>;
 type StreamInput<'a> = BufferedInput<ChunkedChars<StreamBufReader<'a>>>;
 type StreamParser<'a> = Parser<'a, StreamInput<'a>>;
 
+
 /// This is enough to hold a single scalar that is common  case in YAML anchors.
 const SMALLVECT_INLINE: usize = 8;
 
@@ -75,6 +76,8 @@ impl<'input> SaphyrParser<'input> {
 pub(crate) struct LiveEvents<'a> {
     /// Underlying streaming parser that produces raw events from the input.
     parser: SaphyrParser<'a>,
+    /// Original input string (for zero-copy borrowing). `None` for reader-based input.
+    input: Option<&'a str>,
 
     /// Whether any content event has been produced in the current stream.
     produced_any_in_doc: bool,
@@ -167,6 +170,7 @@ impl<'a> LiveEvents<'a> {
             produced_any_in_doc: false,
             synthesized_null_emitted: false,
             parser: SaphyrParser::StreamParser(parser),
+            input: None, // Reader-based input cannot support zero-copy borrowing
             look: None,
             inject: Vec::with_capacity(2),
             anchors: Vec::with_capacity(8),
@@ -211,6 +215,7 @@ impl<'a> LiveEvents<'a> {
             produced_any_in_doc: false,
             synthesized_null_emitted: false,
             parser: SaphyrParser::StringParser(Parser::new_from_str(input)),
+            input: Some(input),
             look: None,
             inject: Vec::with_capacity(2),
             anchors: Vec::with_capacity(8),
@@ -330,11 +335,24 @@ impl<'a> LiveEvents<'a> {
                         return Err(Error::msg("folded block scalars must indent their content")
                             .with_location(location));
                     }
-
+                    
+                    // Convert to owned string
                     let s = match val {
                         Cow::Borrowed(v) => v.to_string(),
                         Cow::Owned(v) => v,
                     };
+                    
+                    // Determine if this scalar can be borrowed from the input.
+                    // For plain scalars without multi-line content, borrowing is possible.
+                    // We defer the actual slice extraction to deserialize_str to avoid
+                    // the O(n) character-to-byte index conversion on every scalar.
+                    //
+                    // Quoted and block scalars may have transformations (escapes, folding, etc.)
+                    // so we don't attempt to borrow those.
+                    let can_borrow = self.input.is_some() 
+                        && matches!(style, ScalarStyle::Plain)
+                        && !s.contains('\n');  // Multi-line plain scalars have folding
+                    
                     let tag_s = SfTag::from_optional_cow(&tag);
                     if s.is_empty()
                         && anchor_id != 0
@@ -350,6 +368,7 @@ impl<'a> LiveEvents<'a> {
                         style,
                         anchor: anchor_id,
                         location,
+                        can_borrow,
                     };
                     self.record(&ev, false, false);
                     if anchor_id != 0 {
@@ -472,6 +491,7 @@ impl<'a> LiveEvents<'a> {
                                 style: ScalarStyle::Plain,
                                 anchor: anchor_id,
                                 location,
+                                can_borrow: false,
                             };
                             self.record(&ev, false, false);
                             self.last_location = location;
@@ -550,6 +570,7 @@ impl<'a> LiveEvents<'a> {
                 style: ScalarStyle::Plain,
                 anchor: 0,
                 location: self.last_location,
+                can_borrow: false,
             };
             self.produced_any_in_doc = true;
             self.synthesized_null_emitted = true;
@@ -717,7 +738,7 @@ impl<'a> LiveEvents<'a> {
     }
 }
 
-impl<'a> Events for LiveEvents<'a> {
+impl<'de> Events<'de> for LiveEvents<'de> {
     /// Get the next event, using a single-item lookahead buffer if present.
     /// Updates last_location to the yielded event's location.
     fn next(&mut self) -> Result<Option<Ev>, Error> {
@@ -754,6 +775,10 @@ impl<'a> Events for LiveEvents<'a> {
             .as_ref()
             .map(|e| e.location())
             .unwrap_or(self.last_location)
+    }
+
+    fn input_for_borrowing(&self) -> Option<&'de str> {
+        self.input
     }
 }
 

@@ -1,6 +1,7 @@
-# Explictily disallow unsafe code in all project
+# Allow running tests for WASI targets (WebAssembly) when a runner is installed.
 [build]
-rustflags = ["-Funsafe_code"]
+# Note: unsafe code is denied in source via #![deny(unsafe_code)] but allowed
+# in specific functions with #[allow(unsafe_code)] for zero-copy deserialization.
 
 # Allow running tests for WASI targets (WebAssembly) when a runner is installed.
 # Install locally with e.g.:

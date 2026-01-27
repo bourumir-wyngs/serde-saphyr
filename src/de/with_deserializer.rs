@@ -8,14 +8,14 @@ fn normalize_str_input(input: &str) -> &str {
     input.strip_prefix('\u{FEFF}').unwrap_or(input)
 }
 
-fn deserialize_with_scope<R, F, W>(
-    src: &mut LiveEvents,
+fn deserialize_with_scope<'de, R, F, W>(
+    src: &mut LiveEvents<'de>,
     cfg: Cfg,
     f: F,
     wrap_err: W,
 ) -> Result<R, Error>
 where
-    for<'de> F: FnOnce(crate::Deserializer<'de>) -> Result<R, Error>,
+    for<'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<R, Error>,
     W: Fn(Error) -> Error,
 {
     let value_res = crate::anchor_store::with_document_scope(|| f(YamlDeserializer::new(src, cfg)));
@@ -34,8 +34,8 @@ where
     }
 }
 
-fn enforce_single_document_and_finish<W>(
-    src: &mut LiveEvents,
+fn enforce_single_document_and_finish<'de, W>(
+    src: &mut LiveEvents<'de>,
     multiple_docs_msg: &'static str,
     wrap_err: W,
 ) -> Result<(), Error>
@@ -79,7 +79,7 @@ pub fn with_deserializer_from_str_with_options<R, F>(
     f: F,
 ) -> Result<R, Error>
 where
-    for<'de> F: FnOnce(crate::Deserializer<'de>) -> Result<R, Error>,
+    for<'de, 'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<R, Error>,
 {
     let input = normalize_str_input(input);
 
@@ -112,7 +112,7 @@ where
 /// [`Options::default`].
 pub fn with_deserializer_from_str<R, F>(input: &str, f: F) -> Result<R, Error>
 where
-    for<'de> F: FnOnce(crate::Deserializer<'de>) -> Result<R, Error>,
+    for<'de, 'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<R, Error>,
 {
     with_deserializer_from_str_with_options(input, Options::default(), f)
 }
@@ -122,7 +122,7 @@ where
 /// This is equivalent to [`with_deserializer_from_str`], but validates the input is UTF-8.
 pub fn with_deserializer_from_slice<R, F>(bytes: &[u8], f: F) -> Result<R, Error>
 where
-    for<'de> F: FnOnce(crate::Deserializer<'de>) -> Result<R, Error>,
+    for<'de, 'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<R, Error>,
 {
     with_deserializer_from_slice_with_options(bytes, Options::default(), f)
 }
@@ -135,7 +135,7 @@ pub fn with_deserializer_from_slice_with_options<R, F>(
     f: F,
 ) -> Result<R, Error>
 where
-    for<'de> F: FnOnce(crate::Deserializer<'de>) -> Result<R, Error>,
+    for<'de, 'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<R, Error>,
 {
     let s = std::str::from_utf8(bytes).map_err(|_| Error::msg("input is not valid UTF-8"))?;
     with_deserializer_from_str_with_options(s, options, f)
@@ -148,7 +148,7 @@ where
 pub fn with_deserializer_from_reader<R, Out, F>(reader: R, f: F) -> Result<Out, Error>
 where
     R: std::io::Read,
-    for<'de> F: FnOnce(crate::Deserializer<'de>) -> Result<Out, Error>,
+    for<'de, 'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<Out, Error>,
 {
     with_deserializer_from_reader_with_options(reader, Options::default(), f)
 }
@@ -163,7 +163,7 @@ pub fn with_deserializer_from_reader_with_options<R, Out, F>(
 ) -> Result<Out, Error>
 where
     R: std::io::Read,
-    for<'de> F: FnOnce(crate::Deserializer<'de>) -> Result<Out, Error>,
+    for<'de, 'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<Out, Error>,
 {
     let cfg = Cfg::from_options(&options);
     let mut src = LiveEvents::from_reader(

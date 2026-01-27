@@ -14,7 +14,7 @@ use crate::Deserializer;
 /// (`defined`) locations and then synthesizes a struct-like view:
 /// `{ value: T, referenced: Location, defined: Location }`.
 pub(super) fn deserialize_yaml_spanned<'de, V>(
-    de: Deserializer<'_>,
+    de: Deserializer<'de, '_>,
     visitor: V,
 ) -> Result<V::Value, Error>
 where
@@ -52,9 +52,9 @@ where
 /// Lifetime note:
 /// - This owns a `Deser<'a>` by value. When deserializing `value`, we must
 ///   *reborrow* `&mut dyn Events` from inside `Deser` rather than moving it out.
-struct SpannedDeser<'a> {
+struct SpannedDeser<'de, 'e> {
     /// The underlying YAML deserializer we delegate `value: T` to.
-    de: Deserializer<'a>,
+    de: Deserializer<'de, 'e>,
     /// Use-site location: where the next node is referenced (e.g. `*a` token).
     referenced: Location,
     /// Definition-site location: where the node is defined (e.g. anchored scalar).
@@ -63,7 +63,7 @@ struct SpannedDeser<'a> {
     state: u8,
 }
 
-impl<'de> de::Deserializer<'de> for SpannedDeser<'_> {
+impl<'de, 'e> de::Deserializer<'de> for SpannedDeser<'de, 'e> {
     type Error = Error;
 
     fn deserialize_any<Vv: Visitor<'de>>(self, visitor: Vv) -> Result<Vv::Value, Self::Error> {
@@ -101,9 +101,9 @@ impl<'de> de::Deserializer<'de> for SpannedDeser<'_> {
 /// This is intentionally a map/struct view (rather than a tuple) because the
 /// public `Spanned<T>` `Deserialize` implementation uses a derived helper
 /// struct (`Repr`) with named fields.
-struct SpannedMapAccess<'a> {
+struct SpannedMapAccess<'de, 'e> {
     /// Underlying YAML deserializer.
-    de: Deserializer<'a>,
+    de: Deserializer<'de, 'e>,
     /// Use-site location (see [`Events::reference_location`]).
     referenced: Location,
     /// Definition-site location (typically `Ev::location()` from `peek()`).
@@ -112,7 +112,7 @@ struct SpannedMapAccess<'a> {
     state: u8,
 }
 
-impl<'de> de::MapAccess<'de> for SpannedMapAccess<'_> {
+impl<'de, 'e> de::MapAccess<'de> for SpannedMapAccess<'de, 'e> {
     type Error = Error;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Error>

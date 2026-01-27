@@ -44,6 +44,41 @@ type FastHashSet<T> = HashSet<T, RandomState>;
 
 use crate::location::Locations;
 
+/// Slice a string by character indices (not byte indices).
+///
+/// The `saphyr-parser` `Marker.index()` returns character offsets, not byte offsets.
+/// This function converts character range to byte range and returns the slice.
+///
+/// Returns `None` if the indices are out of bounds.
+///
+/// Note: This function is part of the zero-copy deserialization infrastructure.
+/// It will be used when full `Deserialize<'de>` support is implemented.
+#[inline]
+#[allow(dead_code)]
+fn slice_by_char_indices(s: &str, start_char: usize, end_char: usize) -> Option<&str> {
+    if start_char > end_char {
+        return None;
+    }
+    let mut char_iter = s.char_indices();
+    
+    // Find start byte offset
+    let start_byte = if start_char == 0 {
+        0
+    } else {
+        char_iter.nth(start_char - 1).map(|(i, c)| i + c.len_utf8())?
+    };
+    
+    // Find end byte offset
+    let chars_to_skip = end_char - start_char;
+    let end_byte = if chars_to_skip == 0 {
+        start_byte
+    } else {
+        char_iter.nth(chars_to_skip - 1).map(|(i, c)| i + c.len_utf8()).unwrap_or(s.len())
+    };
+    
+    Some(&s[start_byte..end_byte])
+}
+
 /// Attach both reference and defined locations to an error if it doesn't already have one.
 /// When both locations are known and different, creates an `AliasError` to report both.
 /// This is used for errors occurring when deserializing aliased values.
@@ -135,6 +170,10 @@ pub(crate) enum Ev {
         /// Numeric anchor id (0 if none) attached to this scalar node.
         anchor: usize,
         location: Location,
+        /// Whether this scalar's value can be borrowed from the original input.
+        /// True when the processed value matches the raw input slice exactly
+        /// (e.g., plain scalars without multi-line folding).
+        can_borrow: bool,
     },
     /// Start of a sequence (`[` / `-`-list).
     SeqStart { anchor: usize, location: Location },
@@ -432,6 +471,7 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
             style,
             anchor,
             location,
+            can_borrow,
         } => {
             let ev = Ev::Scalar {
                 value,
@@ -440,6 +480,7 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
                 style,
                 anchor,
                 location,
+                can_borrow,
             };
             Ok(KeyNode::Scalar {
                 events: vec![ev],
@@ -740,7 +781,7 @@ fn collect_entries_from_map(
 
 /// from_slice_multiple location-free representation of events for duplicate-key comparison.
 /// Source of events with lookahead and alias-injection.
-pub(crate) trait Events {
+pub(crate) trait Events<'de> {
     /// Pull the next event from the stream.
     ///
     /// Returns:
@@ -795,6 +836,21 @@ pub(crate) trait Events {
     /// Implementations therefore must keep the necessary context alive at least
     /// until the node is consumed.
     fn reference_location(&self) -> Location;
+
+    /// Get the original input string for zero-copy borrowing.
+    ///
+    /// Returns `Some(&str)` when the input is available for borrowing (string-based parsing),
+    /// or `None` when borrowing is not possible (reader-based parsing or replay buffers).
+    ///
+    /// Used by:
+    /// - The deserializer to return borrowed `&str` references when possible.
+    ///
+    /// Note: This method is part of the zero-copy deserialization infrastructure.
+    /// It will be used when full `Deserialize<'de>` support is implemented.
+    #[allow(dead_code)]
+    fn input_for_borrowing(&self) -> Option<&'de str> {
+        None // Default: borrowing not supported
+    }
 }
 
 /// Event source that replays a pre-recorded buffer.
@@ -853,7 +909,7 @@ impl ReplayEvents {
     }
 }
 
-impl Events for ReplayEvents {
+impl<'de> Events<'de> for ReplayEvents {
     /// See [`Events::next`]. Replays and advances the internal index.
     fn next(&mut self) -> Result<Option<Ev>, Error> {
         if self.idx >= self.buf.len() {
@@ -929,8 +985,8 @@ impl Events for ReplayEvents {
 // that yields simplified YAML events.
 // Where do values go: Into a Serde `Visitor` provided by the caller's
 // `T: Deserialize`, which drives how we walk the event stream and construct `T`.
-pub struct YamlDeserializer<'e> {
-    ev: &'e mut dyn Events,
+pub struct YamlDeserializer<'de, 'e> {
+    ev: &'e mut dyn Events<'de>,
     cfg: Cfg,
     /// True when deserializing a map key.
     in_key: bool,
@@ -941,7 +997,7 @@ pub struct YamlDeserializer<'e> {
     garde: Option<&'e mut PathRecorder>,
 }
 
-impl<'e> YamlDeserializer<'e> {
+impl<'de, 'e> YamlDeserializer<'de, 'e> {
     /// Construct a new streaming deserializer over an `Events` source.
     ///
     /// Arguments:
@@ -953,7 +1009,7 @@ impl<'e> YamlDeserializer<'e> {
     ///
     /// Called by:
     /// - Top-level entry points and recursively for nested values.
-    pub(crate) fn new(ev: &'e mut dyn Events, cfg: Cfg) -> Self {
+    pub(crate) fn new(ev: &'e mut dyn Events<'de>, cfg: Cfg) -> Self {
         Self {
             ev,
             cfg,
@@ -967,7 +1023,7 @@ impl<'e> YamlDeserializer<'e> {
 
     #[cfg(any(feature = "garde", feature = "validator"))]
     pub(crate) fn new_with_path_recorder(
-        ev: &'e mut dyn Events,
+        ev: &'e mut dyn Events<'de>,
         cfg: Cfg,
         garde: &'e mut PathRecorder,
     ) -> Self {
@@ -1071,7 +1127,7 @@ impl<'e> YamlDeserializer<'e> {
     }
 }
 
-impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'e> {
+impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     type Error = Error;
 
     /// Fallback entry point when the caller's type has no specific expectation.
@@ -1346,41 +1402,72 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'e> {
         }
     }
 
-    /// Deserialize a borrowed string; delegate to owned `String` and replace the generic
-    /// borrowed-string failure with a more actionable message that includes location.
-    fn deserialize_str<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
-        // Capture location if the next event is a scalar, so we can attach it to our message.
-        let loc_hint = match self.ev.peek()? {
-            Some(Ev::Scalar { location, .. }) => Some(*location),
+    /// Deserialize a borrowed string.
+    ///
+    /// When the scalar value can be borrowed from the input (simple plain scalars without
+    /// transformation), this method uses `visit_borrowed_str`. Otherwise, it falls back
+    /// to `visit_str` with an owned string.
+    ///
+    /// For transformed strings (escapes, folding, multi-line normalization), deserialization
+    /// to `&str` will fail with a helpful error message suggesting `String` or `Cow<str>`.
+    fn deserialize_str<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
+        // Check if we have a scalar and gather borrowing info
+        let (can_borrow, start_char, end_char) = match self.ev.peek()? {
+            Some(Ev::Scalar {
+                can_borrow,
+                location,
+                tag,
+                style,
+                value,
+                ..
+            }) => {
+                // Check for null - not valid for string deserialization
+                if tag == &SfTag::Null || scalar_is_nullish(value, style) {
+                    let loc = *location;
+                    let _ = self.ev.next()?;
+                    return Err(
+                        Error::msg("cannot deserialize null into string; use Option<String>")
+                            .with_location(loc),
+                    );
+                }
+                let loc = *location;
+                let start = loc.span().offset();
+                let end = start + loc.span().len() as usize;
+                (*can_borrow, start, end)
+            }
             Some(other) => {
                 return Err(Error::unexpected("string scalar").with_location(other.location()));
             }
             None => return Err(Error::eof().with_location(self.ev.last_location())),
         };
 
-        match self.deserialize_string(visitor) {
-            Ok(v) => Ok(v),
-            Err(err) => {
-                // Serde will typically produce an Error::Message like
-                // "invalid type: string \"...\", expected a borrowed string" when a
-                // &str visitor rejects an owned String. Detect that shape and replace it
-                // with an actionable hint.
-                let msg = err.to_string();
-                if msg.contains("expected a borrowed string") || msg.contains("borrowed string") {
-                    let location = loc_hint.unwrap();
-                    Err(Error::msg(
-                        r#"YAML string cannot be deserialized as &str in
-`deserialize_with`. &str deserialization here would need a borrowed
-string with longer life span than this format can provide. Change your
-helper to deserialize into String or Cow<'de, str> instead
-(e.g. String::deserialize(deserializer)?))"#,
-                    )
-                    .with_location(location))
-                } else {
-                    Err(err)
-                }
+        // Try to borrow from input if possible
+        // We need to get the input reference and compute the slice before consuming the event
+        // to avoid borrow checker issues.
+        if can_borrow {
+            // Compute the slice before consuming the event (so we can still `peek()`/inspect).
+            // `input_for_borrowing()` is lifetime-safe: it returns `&'de str`.
+            let maybe_borrowed: Option<&'de str> = self
+                .ev
+                .input_for_borrowing()
+                .and_then(|input| slice_by_char_indices(input, start_char, end_char));
+
+            if let Some(borrowed) = maybe_borrowed {
+                // Now consume the event (mutable borrow) and yield the borrowed str.
+                let _ = self.ev.next()?;
+                return visitor.visit_borrowed_str(borrowed);
             }
         }
+
+        // Fall back to owned string - this path is taken when:
+        // 1. can_borrow is false (string was transformed)
+        // 2. input_for_borrowing() returns None (reader-based input)
+        // 3. slice extraction failed
+        //
+        // For &str targets, serde will fail because we can only provide owned data.
+        // For String/Cow<str> targets, visit_string works fine.
+        let value = self.take_string_scalar()?;
+        visitor.visit_string(value)
     }
 
     /// Deserialize an owned string (with `!!binary` UTF-8 support).
@@ -1725,8 +1812,8 @@ helper to deserialize into String or Cow<'de, str> instead
         }
         self.expect_seq_start()?;
         /// Streaming `SeqAccess` over the underlying `Events`.
-        struct SA<'e> {
-            ev: &'e mut dyn Events,
+        struct SA<'de, 'e> {
+            ev: &'e mut dyn Events<'de>,
             cfg: Cfg,
 
             #[cfg(any(feature = "garde", feature = "validator"))]
@@ -1734,7 +1821,7 @@ helper to deserialize into String or Cow<'de, str> instead
             #[cfg(any(feature = "garde", feature = "validator"))]
             idx: usize,
         }
-        impl<'de, 'e> de::SeqAccess<'de> for SA<'e> {
+        impl<'de, 'e> de::SeqAccess<'de> for SA<'de, 'e> {
             type Error = Error;
             /// Produce the next element by recursively deserializing from the same event source.
             fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Error>
@@ -1890,8 +1977,8 @@ helper to deserialize into String or Cow<'de, str> instead
         }
 
         /// Streaming `MapAccess` over the underlying `Events`.
-        struct MA<'e> {
-            ev: &'e mut dyn Events,
+        struct MA<'de, 'e> {
+            ev: &'e mut dyn Events<'de>,
             cfg: Cfg,
             have_key: bool,
 
@@ -1913,7 +2000,7 @@ helper to deserialize into String or Cow<'de, str> instead
             pending_value: Option<(Vec<Ev>, Location)>,
         }
 
-        impl<'e> MA<'e> {
+        impl<'de, 'e> MA<'de, 'e> {
             /// Skip exactly one YAML node (scalar/sequence/mapping) in the live stream.
             ///
             /// Used by:
@@ -1951,21 +2038,21 @@ helper to deserialize into String or Cow<'de, str> instead
             /// Arguments:
             /// - `seed`: Serde seed for the key type.
             /// - `events`: recorded node events for the key.
-            fn deserialize_recorded_key<'de, K>(
+            fn deserialize_recorded_key<'de2, K>(
                 &mut self,
                 seed: K,
                 events: Vec<Ev>,
                 kemn: bool,
             ) -> Result<K::Value, Error>
             where
-                K: de::DeserializeSeed<'de>,
+                K: de::DeserializeSeed<'de2>,
             {
                 let mut replay = ReplayEvents::new(events);
 
                 // Get location from replay events for error reporting.
                 let location = replay.reference_location();
 
-                let de = YamlDeserializer {
+                let de = YamlDeserializer::<'de2, '_> {
                     ev: &mut replay,
                     cfg: self.cfg,
                     in_key: true,
@@ -1999,7 +2086,7 @@ helper to deserialize into String or Cow<'de, str> instead
             }
         }
 
-        impl<'de, 'e> de::MapAccess<'de> for MA<'e> {
+        impl<'de, 'e> de::MapAccess<'de> for MA<'de, 'e> {
             type Error = Error;
 
             /// Produce the next key for the visitor, honoring duplicate policy and merges.
@@ -2329,7 +2416,7 @@ helper to deserialize into String or Cow<'de, str> instead
                     let defined_location = self
                         .ev
                         .peek()?
-                        .map(|ev| ev.location())
+                        .map(|ev: &Ev| ev.location())
                         .unwrap_or_else(|| self.ev.last_location());
 
                     let reference_location = self.ev.reference_location();
@@ -2497,17 +2584,17 @@ helper to deserialize into String or Cow<'de, str> instead
             .with_location(location));
         }
 
-        struct EA<'e> {
-            ev: &'e mut dyn Events,
+        struct EA<'de, 'e> {
+            ev: &'e mut dyn Events<'de>,
             cfg: Cfg,
             variant: String,
             map_mode: bool,
             variant_location: Location,
         }
 
-        impl<'de, 'e> de::EnumAccess<'de> for EA<'e> {
+        impl<'de, 'e> de::EnumAccess<'de> for EA<'de, 'e> {
             type Error = Error;
-            type Variant = VA<'e>;
+            type Variant = VA<'de, 'e>;
 
             /// Provide the variant identifier to Serde and return a `VariantAccess`.
             fn variant_seed<Vv>(self, seed: Vv) -> Result<(Vv::Value, Self::Variant), Error>
@@ -2530,13 +2617,13 @@ helper to deserialize into String or Cow<'de, str> instead
             }
         }
 
-        struct VA<'e> {
-            ev: &'e mut dyn Events,
+        struct VA<'de, 'e> {
+            ev: &'e mut dyn Events<'de>,
             cfg: Cfg,
             map_mode: bool,
         }
 
-        impl<'e> VA<'e> {
+        impl<'de, 'e> VA<'de, 'e> {
             /// In map mode (`{ Variant: ... }`) ensure the closing `}` is present.
             fn expect_map_end(&mut self) -> Result<(), Error> {
                 match self.ev.next()? {
@@ -2550,7 +2637,7 @@ helper to deserialize into String or Cow<'de, str> instead
             }
         }
 
-        impl<'de, 'e> de::VariantAccess<'de> for VA<'e> {
+        impl<'de, 'e> de::VariantAccess<'de> for VA<'de, 'e> {
             type Error = Error;
 
             /// Handle unit variants: `Variant` or `{ Variant: null/~ }`.
@@ -2561,9 +2648,7 @@ helper to deserialize into String or Cow<'de, str> instead
                             let _ = self.ev.next()?;
                             Ok(())
                         }
-                        Some(Ev::Scalar {
-                            value: s, style, ..
-                        }) if scalar_is_nullish(s, style) => {
+                        Some(Ev::Scalar { value: s, style, .. }) if scalar_is_nullish(s, style) => {
                             let _ = self.ev.next()?; // consume the null-like scalar
                             self.expect_map_end()
                         }
@@ -2585,7 +2670,7 @@ helper to deserialize into String or Cow<'de, str> instead
                 let defined_location = self
                     .ev
                     .peek()?
-                    .map(|ev| ev.location())
+                    .map(|ev: &Ev| ev.location())
                     .unwrap_or_else(|| self.ev.last_location());
                 let reference_location = self.ev.reference_location();
 

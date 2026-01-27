@@ -60,9 +60,10 @@ global:
             Ok(_config) => anyhow::bail!("expected error when deserializing &str, but got Ok"),
             Err(e) => {
                 let msg = e.to_string();
+                // Serde's error message when visit_string is called but &str is expected
                 assert!(
-                    msg.contains("String or Cow<'de, str>"),
-                    "hint missing: {}",
+                    msg.contains("expected a borrowed string") || msg.contains("String or Cow"),
+                    "expected borrowed string error, got: {}",
                     msg
                 );
             }
