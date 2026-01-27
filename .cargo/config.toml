@@ -1,8 +1,6 @@
-# Allow running tests for WASI targets (WebAssembly) when a runner is installed.
+# Explicitly disallow unsafe code in all project
 [build]
-# Note: unsafe code is denied in source via #![deny(unsafe_code)] but allowed
-# in specific functions with #[allow(unsafe_code)] for zero-copy deserialization.
-
+rustflags = ["-Funsafe_code"]
 # Allow running tests for WASI targets (WebAssembly) when a runner is installed.
 # Install locally with e.g.:
 #   cargo install wasmtime-cli

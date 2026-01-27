@@ -13,7 +13,7 @@ exclude = ["Cargo.lock"]
 
 [dependencies]
 # saphyr-parser = { package = "saphyr-parser-bw", version = "0.0.606"}
-saphyr-parser = { package="saphyr-parser-bw", git = "https://github.com/bourumir-wyngs/saphyr", branch = "dev/saphyr-parser", subdir="parser" }
+saphyr-parser = { package="saphyr-parser-bw", git = "https://github.com/bourumir-wyngs/saphyr", branch = "dev/saphyr-parser" }
 serde = { version = "1", features = ["derive"] }
 # Our tests are all fine with this alpha so far, this will be advanced
 smallvec = "2.0.0-alpha.12"
@@ -95,4 +95,4 @@ name = "figment_yaml"
 required-features = ["figment"]
 
 [lints.rust]
-unsafe_code = "deny"
+unsafe_code = "forbid"
