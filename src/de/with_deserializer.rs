@@ -73,13 +73,13 @@ where
 /// The deserializer borrows internal parsing state, so it cannot be returned directly.
 /// Instead, you provide a closure `f` that performs the desired deserialization.
 #[allow(deprecated)]
-pub fn with_deserializer_from_str_with_options<R, F>(
-    input: &str,
+pub fn with_deserializer_from_str_with_options<'de, R, F>(
+    input: &'de str,
     options: Options,
     f: F,
 ) -> Result<R, Error>
 where
-    for<'de, 'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<R, Error>,
+    for<'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<R, Error>,
 {
     let input = normalize_str_input(input);
 
@@ -110,9 +110,9 @@ where
 
 /// Convenience wrapper around [`with_deserializer_from_str_with_options`] using
 /// [`Options::default`].
-pub fn with_deserializer_from_str<R, F>(input: &str, f: F) -> Result<R, Error>
+pub fn with_deserializer_from_str<'de, R, F>(input: &'de str, f: F) -> Result<R, Error>
 where
-    for<'de, 'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<R, Error>,
+    for<'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<R, Error>,
 {
     with_deserializer_from_str_with_options(input, Options::default(), f)
 }
@@ -120,22 +120,22 @@ where
 /// Create a streaming [`crate::Deserializer`] for a UTF-8 byte slice and run a closure against it.
 ///
 /// This is equivalent to [`with_deserializer_from_str`], but validates the input is UTF-8.
-pub fn with_deserializer_from_slice<R, F>(bytes: &[u8], f: F) -> Result<R, Error>
+pub fn with_deserializer_from_slice<'de, R, F>(bytes: &'de [u8], f: F) -> Result<R, Error>
 where
-    for<'de, 'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<R, Error>,
+    for<'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<R, Error>,
 {
     with_deserializer_from_slice_with_options(bytes, Options::default(), f)
 }
 
 /// Create a streaming [`crate::Deserializer`] for a UTF-8 byte slice with configurable [`Options`]
 /// and run a closure against it.
-pub fn with_deserializer_from_slice_with_options<R, F>(
-    bytes: &[u8],
+pub fn with_deserializer_from_slice_with_options<'de, R, F>(
+    bytes: &'de [u8],
     options: Options,
     f: F,
 ) -> Result<R, Error>
 where
-    for<'de, 'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<R, Error>,
+    for<'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<R, Error>,
 {
     let s = std::str::from_utf8(bytes).map_err(|_| Error::msg("input is not valid UTF-8"))?;
     with_deserializer_from_str_with_options(s, options, f)
@@ -147,8 +147,8 @@ where
 /// byte-oriented reader, decodes it to UTF-8, and streams events into the deserializer.
 pub fn with_deserializer_from_reader<R, Out, F>(reader: R, f: F) -> Result<Out, Error>
 where
-    R: std::io::Read,
     for<'de, 'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<Out, Error>,
+    R: std::io::Read,
 {
     with_deserializer_from_reader_with_options(reader, Options::default(), f)
 }
@@ -162,8 +162,8 @@ pub fn with_deserializer_from_reader_with_options<R, Out, F>(
     f: F,
 ) -> Result<Out, Error>
 where
-    R: std::io::Read,
     for<'de, 'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<Out, Error>,
+    R: std::io::Read,
 {
     let cfg = Cfg::from_options(&options);
     let mut src = LiveEvents::from_reader(

@@ -21,7 +21,7 @@ pub use crate::location::Location;
 
 use crate::anchor_store::{self, AnchorKind};
 use crate::base64::decode_base64_yaml;
-use crate::de_error::MissingFieldLocationGuard;
+use crate::de_error::{MissingFieldLocationGuard, TransformReason};
 use crate::parse_scalars::{
     leading_zero_decimal, maybe_not_string, parse_int_signed, parse_int_unsigned,
     parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish, scalar_is_nullish_for_option,
@@ -44,46 +44,6 @@ type FastHashSet<T> = HashSet<T, RandomState>;
 
 use crate::location::Locations;
 
-/// Slice a string by character indices (not byte indices).
-///
-/// The `saphyr-parser` `Marker.index()` returns character offsets, not byte offsets.
-/// This function converts character range to byte range and returns the slice.
-///
-/// Returns `None` if the indices are out of bounds.
-///
-/// Note: This function is part of the zero-copy deserialization infrastructure.
-/// It will be used when full `Deserialize<'de>` support is implemented.
-#[inline]
-#[allow(dead_code)]
-fn slice_by_char_indices(s: &str, start_char: usize, end_char: usize) -> Option<&str> {
-    if start_char > end_char {
-        return None;
-    }
-    
-    // Optimization: if all characters are ASCII, char index == byte index
-    if s.is_ascii() {
-        return s.get(start_char..end_char);
-    }
-
-    let mut char_iter = s.char_indices();
-    
-    // Find start byte offset
-    let start_byte = if start_char == 0 {
-        0
-    } else {
-        char_iter.nth(start_char - 1).map(|(i, c)| i + c.len_utf8())?
-    };
-    
-    // Find end byte offset
-    let chars_to_skip = end_char - start_char;
-    let end_byte = if chars_to_skip == 0 {
-        start_byte
-    } else {
-        char_iter.nth(chars_to_skip - 1).map(|(i, c)| i + c.len_utf8()).unwrap_or(s.len())
-    };
-    
-    s.get(start_byte..end_byte)
-}
 
 /// Attach both reference and defined locations to an error if it doesn't already have one.
 /// When both locations are known and different, creates an `AliasError` to report both.
@@ -170,16 +130,15 @@ pub(crate) enum Ev {
     Scalar {
         value: String,
         tag: SfTag,
-        /// Original tag string if provided in the YAML source.
         raw_tag: Option<String>,
         style: ScalarStyle,
         /// Numeric anchor id (0 if none) attached to this scalar node.
         anchor: usize,
         location: Location,
-        /// Whether this scalar's value can be borrowed from the original input.
-        /// True when the processed value matches the raw input slice exactly
-        /// (e.g., plain scalars without multi-line folding).
-        can_borrow: bool,
+        /// Information about whether and why this scalar can or cannot be borrowed.
+        /// `Ok((start_byte, end_byte))` contains the byte offsets into the input string.
+        /// `Err(reason)` explains why borrowing is not possible.
+        borrow_info: Result<(usize, usize), TransformReason>,
     },
     /// Start of a sequence (`[` / `-`-list).
     SeqStart { anchor: usize, location: Location },
@@ -477,7 +436,7 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
             style,
             anchor,
             location,
-            can_borrow,
+            borrow_info,
         } => {
             let ev = Ev::Scalar {
                 value,
@@ -486,7 +445,7 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
                 style,
                 anchor,
                 location,
-                can_borrow,
+                borrow_info,
             };
             Ok(KeyNode::Scalar {
                 events: vec![ev],
@@ -1418,9 +1377,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     /// to `&str` will fail with a helpful error message suggesting `String` or `Cow<str>`.
     fn deserialize_str<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Check if we have a scalar and gather borrowing info
-        let (can_borrow, start_char_base, value_len, style) = match self.ev.peek()? {
+        let (borrow_info, location) = match self.ev.peek()? {
             Some(Ev::Scalar {
-                can_borrow,
+                borrow_info,
                 location,
                 tag,
                 style,
@@ -1436,10 +1395,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                             .with_location(loc),
                     );
                 }
-                let start = location.span().offset();
-                let len = value.chars().count();
-                let style = *style;
-                (*can_borrow, start, len, style)
+                (*borrow_info, *location)
             }
             Some(other) => {
                 return Err(Error::unexpected("string scalar").with_location(other.location()));
@@ -1447,52 +1403,39 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             None => return Err(Error::eof().with_location(self.ev.last_location())),
         };
 
-        let (start_char, end_char) = if matches!(style, ScalarStyle::SingleQuoted | ScalarStyle::DoubleQuoted) {
-            // Try to determine if we need to skip an opening quote by inspecting the input.
-            // saphyr-parser Marker can point to the quote or the content depending on context.
-            let needs_skip = self
-                .ev
-                .input_for_borrowing()
-                .and_then(|input| input.chars().nth(start_char_base))
-                .map(|c| c == '"' || c == '\'')
-                .unwrap_or(true);
-
-            if needs_skip {
-                (start_char_base + 1, start_char_base + 1 + value_len)
-            } else {
-                (start_char_base, start_char_base + value_len)
-            }
-        } else {
-            (start_char_base, start_char_base + value_len)
-        };
-
         // Try to borrow from input if possible
-        // We need to get the input reference and compute the slice before consuming the event
-        // to avoid borrow checker issues.
-        if can_borrow {
-            // Compute the slice before consuming the event (so we can still `peek()`/inspect).
-            // `input_for_borrowing()` is lifetime-safe: it returns `&'de str`.
-            let maybe_borrowed: Option<&'de str> = self
-                .ev
-                .input_for_borrowing()
-                .and_then(|input| slice_by_char_indices(input, start_char, end_char));
-
-            if let Some(borrowed) = maybe_borrowed {
-                // Now consume the event (mutable borrow) and yield the borrowed str.
-                let _ = self.ev.next()?;
-                return visitor.visit_borrowed_str(borrowed);
+        if let Ok((start, end)) = borrow_info {
+            if let Some(input) = self.ev.input_for_borrowing() {
+                // Ensure the slice is within bounds and valid UTF-8
+                if start < input.len() && end <= input.len() {
+                    let borrowed = &input[start..end];
+                    // Now consume the event and yield the borrowed str.
+                    let _ = self.ev.next()?;
+                    return visitor.visit_borrowed_str(borrowed);
+                }
             }
         }
 
         // Fall back to owned string - this path is taken when:
-        // 1. can_borrow is false (string was transformed)
+        // 1. borrow_info is Err (string was transformed)
         // 2. input_for_borrowing() returns None (reader-based input)
         // 3. slice extraction failed
-        //
-        // For &str targets, serde will fail because we can only provide owned data.
-        // For String/Cow<str> targets, visit_string works fine.
+        
         let value = self.take_string_scalar()?;
-        visitor.visit_string(value)
+        let res: Result<V::Value, Self::Error> = visitor.visit_string(value);
+        match res {
+            Ok(v) => Ok(v),
+            Err(err) => {
+                // If it failed because a borrowed string was expected, return our rich error.
+                if let Err(reason) = borrow_info {
+                    let msg = err.to_string();
+                    if msg.contains("expected a borrowed string") {
+                        return Err(Error::cannot_borrow_transformed(reason).with_location(location));
+                    }
+                }
+                Err(err)
+            }
+        }
     }
 
     /// Deserialize an owned string (with `!!binary` UTF-8 support).

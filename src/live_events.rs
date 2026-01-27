@@ -24,7 +24,7 @@
 use crate::budget::{BudgetEnforcer, EnforcingPolicy};
 use crate::buffered_input::{ChunkedChars, buffered_input_from_reader_with_limit};
 use crate::de::{AliasLimits, Budget, Error, Ev, Events, Location};
-use crate::de_error::budget_error;
+use crate::de_error::{budget_error, TransformReason};
 use crate::location::location_from_span;
 use crate::tags::SfTag;
 use saphyr_parser::{BufferedInput, Event, Parser, ScalarStyle, ScanError, Span, StrInput};
@@ -211,6 +211,7 @@ impl<'a> LiveEvents<'a> {
         alias_limits: AliasLimits,
         stop_at_doc_end: bool,
     ) -> Self {
+        let input = input.strip_prefix('\u{FEFF}').unwrap_or(input);
         Self {
             produced_any_in_doc: false,
             synthesized_null_emitted: false,
@@ -336,39 +337,95 @@ impl<'a> LiveEvents<'a> {
                             .with_location(location));
                     }
                     
-                    // Convert to owned string
-                    let s = match val {
-                        Cow::Borrowed(v) => v.to_string(),
-                        Cow::Owned(v) => v,
-                    };
-                    
+                    let tag_s = SfTag::from_optional_cow(&tag);
+
                     // Determine if this scalar can be borrowed from the input.
                     //
                     // Zero-copy borrowing is possible when:
                     // 1. The input is a string (not a reader).
-                    // 2. The scalar style is 'Plain' or 'Quoted' (single or double) without escapes.
-                    // 3. The scalar is single-line.
+                    // 2. The parser gave us a borrowed slice (no transformation like escapes/folding).
+                    // 3. The tag is standard string or not present.
                     //
-                    // Multi-line plain scalars require folding (normalization of whitespace/newlines),
-                    // which means the processed value doesn't match the raw input slice exactly.
-                    // Similarly, block scalars often involve specific indentation/chomping rules 
-                    // that require a new string.
-                    //
-                    // Quoted scalars may be borrowed if they don't contain escape sequences
-                    // and are single-line.
-                    //
-                    // We defer the actual slice extraction to `deserialize_str` to avoid
-                    // the O(n) character-to-byte index conversion on every scalar.
-                    let can_borrow = self.input.is_some() 
-                        && !s.contains('\n')
-                        && match style {
-                            ScalarStyle::Plain => true,
-                            ScalarStyle::SingleQuoted => !s.contains('\''),
-                            ScalarStyle::DoubleQuoted => !s.contains('\\'),
-                            _ => false,
-                        };
+                    // We store the byte offsets into the input for O(1) slicing later.
+                                let borrow_info = if let Some(input) = self.input {
+                                    if !matches!(tag_s, SfTag::None | SfTag::String | SfTag::NonSpecific) {
+                                         Err(TransformReason::BlockScalarProcessing) // placeholder for "tag transformation"
+                                    } else {
+                                        let mut start = location.span().offset();
+                                        let mut end = start + location.span().len() as usize;
+
+                                        // Sanity check: ensure the slice is actually within the input
+                                        if start <= input.len() && end <= input.len() && input.is_char_boundary(start) && input.is_char_boundary(end) {
+                                            let mut raw_slice = &input[start..end];
+                                            
+                                            // Skip leading whitespace if it's a plain scalar
+                                            if matches!(style, ScalarStyle::Plain) {
+                                                let trimmed = raw_slice.trim_start();
+                                                start += raw_slice.len() - trimmed.len();
+                                                raw_slice = trimmed;
+                                                
+                                                let trimmed_end = raw_slice.trim_end();
+                                                end -= raw_slice.len() - trimmed_end.len();
+                                                raw_slice = trimmed_end;
+                                            }
+
+                                            if raw_slice == val {
+                                                Ok((start, end))
+                                            } else if matches!(style, ScalarStyle::SingleQuoted | ScalarStyle::DoubleQuoted) 
+                                                && raw_slice.len() >= 2 
+                                                && &raw_slice[1..raw_slice.len()-1] == val 
+                                            {
+                                                // Borrowed quoted scalar (excluding quotes)
+                                                Ok((start + 1, end - 1))
+                                            } else {
+                                                // Fallback: search for the value near the reported location
+                                                // Saphyr's span might be slightly off due to internal buffering/BOM.
+                                                let search_start = start.saturating_sub(16);
+                                                let search_end = (end + 16).min(input.len());
+                                                
+                                                // Find char boundaries for search area
+                                                let mut final_search_start = search_start;
+                                                while !input.is_char_boundary(final_search_start) {
+                                                    final_search_start -= 1;
+                                                }
+                                                let mut final_search_end = search_end;
+                                                while final_search_end < input.len() && !input.is_char_boundary(final_search_end) {
+                                                    final_search_end += 1;
+                                                }
+                                                
+                                                let search_area = &input[final_search_start..final_search_end];
+                                                
+                                                if let Some(pos) = search_area.find(val.as_ref()) {
+                                                    let final_start = final_search_start + pos;
+                                                    let final_end = final_start + val.len();
+                                                    Ok((final_start, final_end))
+                                                } else {
+                                                    // Determine the reason why it couldn't be borrowed.
+                                                    // Saphyr parser returns Cow::Owned for plain scalars ONLY if they
+                                                    // involve folding/normalization (multi-line).
+                                                    let reason = match style {
+                                                        ScalarStyle::Plain => TransformReason::MultiLineNormalization,
+                                                        ScalarStyle::SingleQuoted if val.contains('\'') => TransformReason::SingleQuoteEscape,
+                                                        ScalarStyle::DoubleQuoted if val.contains('\\') => TransformReason::EscapeSequence,
+                                                        ScalarStyle::Folded => TransformReason::LineFolding,
+                                                        ScalarStyle::Literal => TransformReason::BlockScalarProcessing,
+                                                        _ => TransformReason::MultiLineNormalization,
+                                                    };
+                                                    Err(reason)
+                                                }
+                                            }
+                                        } else {
+                                            Err(TransformReason::MultiLineNormalization)
+                                        }
+                                    }
+                                } else {
+                                    // Reader-based input cannot support zero-copy borrowing
+                                    Err(TransformReason::BlockScalarProcessing) // placeholder
+                                };
                     
-                    let tag_s = SfTag::from_optional_cow(&tag);
+                    // Convert to owned string
+                    let s = val.into_owned();
+                    
                     if s.is_empty()
                         && anchor_id != 0
                         && matches!(style, ScalarStyle::SingleQuoted | ScalarStyle::DoubleQuoted)
@@ -383,7 +440,7 @@ impl<'a> LiveEvents<'a> {
                         style,
                         anchor: anchor_id,
                         location,
-                        can_borrow,
+                        borrow_info,
                     };
                     self.record(&ev, false, false);
                     if anchor_id != 0 {
@@ -506,7 +563,7 @@ impl<'a> LiveEvents<'a> {
                                 style: ScalarStyle::Plain,
                                 anchor: anchor_id,
                                 location,
-                                can_borrow: false,
+                                borrow_info: Err(TransformReason::MultiLineNormalization),
                             };
                             self.record(&ev, false, false);
                             self.last_location = location;
@@ -585,7 +642,7 @@ impl<'a> LiveEvents<'a> {
                 style: ScalarStyle::Plain,
                 anchor: 0,
                 location: self.last_location,
-                can_borrow: false,
+                borrow_info: Err(TransformReason::MultiLineNormalization),
             };
             self.produced_any_in_doc = true;
             self.synthesized_null_emitted = true;
