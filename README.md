@@ -304,13 +304,31 @@ struct Transform {
 }
 
 fn main() {
-let yaml = r#"
-map:
-  {x: 1, y: 2}: {x: 3, y: 4}
-  {x: 5, y: 6}: {x: 7, y: 8}
-"#;
-let transform: Transform = serde_saphyr::from_str(yaml).unwrap();
-println!("{} entries", transform.map.len());
+    let yaml = r#"
+    map:
+      {x: 1, y: 2}: {x: 3, y: 4}
+      {x: 5, y: 6}: {x: 7, y: 8}
+    "#;
+    let transform: Transform = serde_saphyr::from_str(yaml).unwrap();
+    println!("{} entries", transform.map.len());
+}
+```
+
+## Options
+Serde-saphyr provides control over serialization and deserialization behavior. We generally welcome feature requests, but we also recognize that not every user wants every feature enabled by default.
+
+To support different use cases, most behavior can be enabled, disabled, or tuned via [Options](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html) (deserializers) and [SerializerOptions](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.SerializerOptions.html) (serializers).
+
+Adding fields to the public API is a breaking change. To allow new options without breaking compatibility, Serde-saphyr uses a macro-driven approach based on the [`options!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.options.html), [`budget!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.budget.html), and [`ser_options!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.ser_options.html) macros.
+
+```rust
+fn main() {
+    let options = serde_saphyr::options! {
+     budget: serde_saphyr::budget! {
+         max_documents: 2,
+     },
+     duplicate_keys: DuplicateKeyPolicy::LastWins,
+ };
 }
 ```
 
