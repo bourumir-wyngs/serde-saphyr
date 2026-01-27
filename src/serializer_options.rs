@@ -29,7 +29,7 @@ pub struct SerializerOptions {
     /// human to grasp.
     #[deprecated(
         since = "0.0.17",
-        note = "Prefer constructing `SerializerOptions` via `serde_saphyr::ser_options! { ... }` (or `serializer_options! { ... }`) rather than struct literal syntax; direct field init may be restricted in a future release"
+        note = "Prefer constructing `SerializerOptions` via `serde_saphyr::ser_options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
     )]
     pub empty_as_braces: bool,
     /// Number of spaces to indent per nesting level when emitting block-style collections (2 by default).
@@ -37,7 +37,7 @@ pub struct SerializerOptions {
     /// no indentation would produce invalid YAML otherwise.
     #[deprecated(
         since = "0.0.17",
-        note = "Prefer constructing `SerializerOptions` via `serde_saphyr::ser_options! { ... }` (or `serializer_options! { ... }`) rather than struct literal syntax; direct field init may be restricted in a future release"
+        note = "Prefer constructing `SerializerOptions` via `serde_saphyr::ser_options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
     )]
     pub indent_step: usize,
     /// Optional custom anchor-name generator.
@@ -46,7 +46,7 @@ pub struct SerializerOptions {
     /// anchor name to emit. If `None`, the built-in generator yields names like `a1`, `a2`, ...
     #[deprecated(
         since = "0.0.17",
-        note = "Prefer constructing `SerializerOptions` via `serde_saphyr::ser_options! { ... }` (or `serializer_options! { ... }`) rather than struct literal syntax; direct field init may be restricted in a future release"
+        note = "Prefer constructing `SerializerOptions` via `serde_saphyr::ser_options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
     )]
     pub anchor_generator: Option<fn(usize) -> String>,
     /// Threshold for block-string wrappers ([crate::LitStr]/[crate::FoldStr] and owned variants
@@ -60,7 +60,7 @@ pub struct SerializerOptions {
     /// examples.
     #[deprecated(
         since = "0.0.17",
-        note = "Prefer constructing `SerializerOptions` via `serde_saphyr::ser_options! { ... }` (or `serializer_options! { ... }`) rather than struct literal syntax; direct field init may be restricted in a future release"
+        note = "Prefer constructing `SerializerOptions` via `serde_saphyr::ser_options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
     )]
     pub min_fold_chars: usize,
     /// Maximum width (in characters) for lines in folded block scalars (`>`).
@@ -72,7 +72,7 @@ pub struct SerializerOptions {
     /// newlines back as spaces when parsing. 32 default.
     #[deprecated(
         since = "0.0.17",
-        note = "Prefer constructing `SerializerOptions` via `serde_saphyr::ser_options! { ... }` (or `serializer_options! { ... }`) rather than struct literal syntax; direct field init may be restricted in a future release"
+        note = "Prefer constructing `SerializerOptions` via `serde_saphyr::ser_options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
     )]
     pub folded_wrap_chars: usize,
     /// When enabled, serialize simple enums that become a single scalar (unit variants)
@@ -80,7 +80,7 @@ pub struct SerializerOptions {
     /// Deserializer does not need this setting as both cases will be understood. Off by default.
     #[deprecated(
         since = "0.0.17",
-        note = "Prefer constructing `SerializerOptions` via `serde_saphyr::ser_options! { ... }` (or `serializer_options! { ... }`) rather than struct literal syntax; direct field init may be restricted in a future release"
+        note = "Prefer constructing `SerializerOptions` via `serde_saphyr::ser_options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
     )]
     pub tagged_enums: bool,
 
@@ -90,7 +90,7 @@ pub struct SerializerOptions {
     /// On by default.
     #[deprecated(
         since = "0.0.17",
-        note = "Prefer constructing `SerializerOptions` via `serde_saphyr::ser_options! { ... }` (or `serializer_options! { ... }`) rather than struct literal syntax; direct field init may be restricted in a future release"
+        note = "Prefer constructing `SerializerOptions` via `serde_saphyr::ser_options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
     )]
     pub prefer_block_scalars: bool,
 
@@ -101,7 +101,7 @@ pub struct SerializerOptions {
     /// Off by default.
     #[deprecated(
         since = "0.0.17",
-        note = "Prefer constructing `SerializerOptions` via `serde_saphyr::ser_options! { ... }` (or `serializer_options! { ... }`) rather than struct literal syntax; direct field init may be restricted in a future release"
+        note = "Prefer constructing `SerializerOptions` via `serde_saphyr::ser_options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
     )]
     pub quote_all: bool,
 }

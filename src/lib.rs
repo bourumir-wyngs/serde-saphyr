@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 // Options structs expose their fields for now, but callers are expected to migrate to the
-// `options!` / `serializer_options!` macros. The fields are deprecated to guide downstream
+// `options!` / `ser_options!` macros. The fields are deprecated to guide downstream
 // users, while this crate still legitimately reads them internally.
 #![allow(deprecated)]
 //! Serialization public API is defined at crate root

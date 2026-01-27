@@ -34,13 +34,13 @@ macro_rules! options {
 /// Example:
 ///
 /// ```rust
-/// let opts = serde_saphyr::serializer_options! {
+/// let opts = serde_saphyr::ser_options! {
 ///     indent_step: 4,
 ///     quote_all: true,
 /// };
 /// ```
 #[macro_export]
-macro_rules! serializer_options {
+macro_rules! ser_options {
     ( $( $tt:tt )* ) => {{
         let mut opt = $crate::SerializerOptions::default();
         $crate::__serde_saphyr_serializer_options_apply!(opt, $( $tt )*);
@@ -76,7 +76,7 @@ macro_rules! budget {
     }};
 }
 
-/// Implementation detail for [`serializer_options!`].
+/// Implementation detail for [`ser_options!`].
 ///
 /// This is `#[macro_export]` so that `$crate::...` can resolve it from expansions in
 /// downstream crates.
@@ -122,12 +122,4 @@ macro_rules! __serde_saphyr_serializer_options_apply {
     }};
 }
 
-/// Compatibility alias for [`serializer_options!`].
-///
-/// The name is intentionally short for call sites.
-#[macro_export]
-macro_rules! ser_options {
-    ( $( $field:ident : $value:expr ),* $(,)? ) => {{
-        $crate::serializer_options! { $( $field : $value ),* }
-    }};
-}
+// NOTE: `serializer_options!` intentionally removed; `ser_options!` is the canonical macro.
