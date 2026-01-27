@@ -59,6 +59,12 @@ fn slice_by_char_indices(s: &str, start_char: usize, end_char: usize) -> Option<
     if start_char > end_char {
         return None;
     }
+    
+    // Optimization: if all characters are ASCII, char index == byte index
+    if s.is_ascii() {
+        return s.get(start_char..end_char);
+    }
+
     let mut char_iter = s.char_indices();
     
     // Find start byte offset
@@ -76,7 +82,7 @@ fn slice_by_char_indices(s: &str, start_char: usize, end_char: usize) -> Option<
         char_iter.nth(chars_to_skip - 1).map(|(i, c)| i + c.len_utf8()).unwrap_or(s.len())
     };
     
-    Some(&s[start_byte..end_byte])
+    s.get(start_byte..end_byte)
 }
 
 /// Attach both reference and defined locations to an error if it doesn't already have one.
@@ -1412,7 +1418,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     /// to `&str` will fail with a helpful error message suggesting `String` or `Cow<str>`.
     fn deserialize_str<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Check if we have a scalar and gather borrowing info
-        let (can_borrow, start_char, end_char) = match self.ev.peek()? {
+        let (can_borrow, start_char_base, value_len, style) = match self.ev.peek()? {
             Some(Ev::Scalar {
                 can_borrow,
                 location,
@@ -1430,15 +1436,34 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                             .with_location(loc),
                     );
                 }
-                let loc = *location;
-                let start = loc.span().offset();
-                let end = start + loc.span().len() as usize;
-                (*can_borrow, start, end)
+                let start = location.span().offset();
+                let len = value.chars().count();
+                let style = *style;
+                (*can_borrow, start, len, style)
             }
             Some(other) => {
                 return Err(Error::unexpected("string scalar").with_location(other.location()));
             }
             None => return Err(Error::eof().with_location(self.ev.last_location())),
+        };
+
+        let (start_char, end_char) = if matches!(style, ScalarStyle::SingleQuoted | ScalarStyle::DoubleQuoted) {
+            // Try to determine if we need to skip an opening quote by inspecting the input.
+            // saphyr-parser Marker can point to the quote or the content depending on context.
+            let needs_skip = self
+                .ev
+                .input_for_borrowing()
+                .and_then(|input| input.chars().nth(start_char_base))
+                .map(|c| c == '"' || c == '\'')
+                .unwrap_or(true);
+
+            if needs_skip {
+                (start_char_base + 1, start_char_base + 1 + value_len)
+            } else {
+                (start_char_base, start_char_base + value_len)
+            }
+        } else {
+            (start_char_base, start_char_base + value_len)
         };
 
         // Try to borrow from input if possible

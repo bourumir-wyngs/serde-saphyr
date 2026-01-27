@@ -343,15 +343,30 @@ impl<'a> LiveEvents<'a> {
                     };
                     
                     // Determine if this scalar can be borrowed from the input.
-                    // For plain scalars without multi-line content, borrowing is possible.
-                    // We defer the actual slice extraction to deserialize_str to avoid
-                    // the O(n) character-to-byte index conversion on every scalar.
                     //
-                    // Quoted and block scalars may have transformations (escapes, folding, etc.)
-                    // so we don't attempt to borrow those.
+                    // Zero-copy borrowing is possible when:
+                    // 1. The input is a string (not a reader).
+                    // 2. The scalar style is 'Plain' or 'Quoted' (single or double) without escapes.
+                    // 3. The scalar is single-line.
+                    //
+                    // Multi-line plain scalars require folding (normalization of whitespace/newlines),
+                    // which means the processed value doesn't match the raw input slice exactly.
+                    // Similarly, block scalars often involve specific indentation/chomping rules 
+                    // that require a new string.
+                    //
+                    // Quoted scalars may be borrowed if they don't contain escape sequences
+                    // and are single-line.
+                    //
+                    // We defer the actual slice extraction to `deserialize_str` to avoid
+                    // the O(n) character-to-byte index conversion on every scalar.
                     let can_borrow = self.input.is_some() 
-                        && matches!(style, ScalarStyle::Plain)
-                        && !s.contains('\n');  // Multi-line plain scalars have folding
+                        && !s.contains('\n')
+                        && match style {
+                            ScalarStyle::Plain => true,
+                            ScalarStyle::SingleQuoted => !s.contains('\''),
+                            ScalarStyle::DoubleQuoted => !s.contains('\\'),
+                            _ => false,
+                        };
                     
                     let tag_s = SfTag::from_optional_cow(&tag);
                     if s.is_empty()

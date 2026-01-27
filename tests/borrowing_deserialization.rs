@@ -1,9 +1,9 @@
 //! Tests for deserialization with borrowed (`&str`), `Cow<str>`, and owned (`String`) fields.
 //!
 //! These tests demonstrate the current behavior of serde-saphyr regarding zero-copy
-//! deserialization. Currently, the library requires `DeserializeOwned`, so structures
-//! with `&str` fields cannot be deserialized directly. This test file documents the
-//! expected behavior and error messages.
+//! deserialization. The library supports `Deserialize<'de>`, so structures
+//! with `&str` fields can be deserialized directly when the scalar value can
+//! be borrowed from the input (e.g., plain scalars without multi-line folding).
 
 #[cfg(test)]
 mod tests {
