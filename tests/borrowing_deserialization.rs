@@ -485,4 +485,112 @@ items:
         assert_eq!(result.items[1], "it's here");
         assert_eq!(result.items[2], "plain text");
     }
+
+    // ============================================================================
+    // Tests for reader-based input (cannot borrow)
+    // ============================================================================
+
+    #[test]
+    fn reader_based_input_cannot_borrow_str_compile_time_check() {
+        // Reader-based input cannot support zero-copy borrowing because
+        // the input is consumed incrementally and not available as a single slice.
+        //
+        // This is enforced at COMPILE TIME by the `from_reader` API which requires
+        // `DeserializeOwned` (i.e., `for<'de> Deserialize<'de>`).
+        //
+        // The following code would NOT compile:
+        // ```
+        // use std::io::Cursor;
+        // let yaml = b"name: hello\nvalue: 42\n";
+        // let reader = Cursor::new(yaml);
+        // let result: Result<BorrowedData, _> = serde_saphyr::from_reader(reader);
+        // ```
+        //
+        // Error: implementation of `Deserialize` is not general enough
+        //        `BorrowedData<'_>` must implement `Deserialize<'0>`, for any lifetime `'0`...
+        //        ...but `BorrowedData<'_>` actually implements `Deserialize<'1>`, for some specific lifetime `'1`
+        //
+        // This is the correct behavior - the API prevents misuse at compile time.
+        
+        // Verify the TransformReason::InputNotBorrowable exists and has a good message
+        use serde_saphyr::TransformReason;
+        let reason = TransformReason::InputNotBorrowable;
+        let msg = format!("{}", reason);
+        assert!(msg.contains("not available") || msg.contains("borrowing"));
+    }
+
+    #[test]
+    fn reader_based_input_works_with_owned_string() {
+        // Reader-based input should work fine with owned String fields
+        use std::io::Cursor;
+        
+        let yaml = b"name: hello\nvalue: 42\n";
+        let reader = Cursor::new(yaml);
+        
+        let result: OwnedData = serde_saphyr::from_reader(reader).unwrap();
+        assert_eq!(result.name, "hello");
+        assert_eq!(result.value, 42);
+    }
+
+    #[test]
+    fn reader_based_input_works_with_cow_string() {
+        // Reader-based input should work with Cow<str> (will be Owned variant)
+        use std::io::Cursor;
+        
+        let yaml = b"name: hello\nvalue: 42\n";
+        let reader = Cursor::new(yaml);
+        
+        let result: CowData = serde_saphyr::from_reader(reader).unwrap();
+        assert_eq!(result.name.as_ref(), "hello");
+        assert_eq!(result.value, 42);
+        // Note: With reader-based input, Cow will always be Owned
+    }
+
+    // ============================================================================
+    // Tests for aliases (replay events cannot borrow)
+    // ============================================================================
+
+    #[test]
+    fn alias_works_with_owned_string() {
+        // Aliases replay recorded events, which should work with owned String
+        let yaml = r#"
+anchor: &name "shared value"
+first: *name
+second: *name
+"#;
+        
+        #[derive(Debug, Deserialize)]
+        struct AliasOwned {
+            anchor: String,
+            first: String,
+            second: String,
+        }
+        
+        let result: AliasOwned = serde_saphyr::from_str(yaml).unwrap();
+        assert_eq!(result.anchor, "shared value");
+        assert_eq!(result.first, "shared value");
+        assert_eq!(result.second, "shared value");
+    }
+
+    #[test]
+    fn alias_works_with_cow_string() {
+        // Aliases should work with Cow<str> (aliased values will be Owned)
+        let yaml = r#"
+anchor: &name "shared value"
+first: *name
+second: *name
+"#;
+        
+        #[derive(Debug, Deserialize)]
+        struct AliasCow<'a> {
+            anchor: Cow<'a, str>,
+            first: Cow<'a, str>,
+            second: Cow<'a, str>,
+        }
+        
+        let result: AliasCow = serde_saphyr::from_str(yaml).unwrap();
+        assert_eq!(result.anchor.as_ref(), "shared value");
+        assert_eq!(result.first.as_ref(), "shared value");
+        assert_eq!(result.second.as_ref(), "shared value");
+    }
 }

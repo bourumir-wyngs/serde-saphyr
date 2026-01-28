@@ -92,6 +92,7 @@ mod tests {
             TransformReason::MultiLineNormalization,
             TransformReason::BlockScalarProcessing,
             TransformReason::SingleQuoteEscape,
+            TransformReason::InputNotBorrowable,
         ];
         
         let messages: Vec<String> = reasons.iter().map(|r| format!("{}", r)).collect();
@@ -104,6 +105,23 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn transform_reason_display_input_not_borrowable() {
+        let reason = TransformReason::InputNotBorrowable;
+        let msg = format!("{}", reason);
+        assert!(msg.contains("not available") || msg.contains("borrowing"));
+    }
+
+    #[test]
+    fn cannot_borrow_input_not_borrowable_error() {
+        // Verify the error for InputNotBorrowable provides helpful guidance
+        let err = Error::cannot_borrow_transformed(TransformReason::InputNotBorrowable);
+        let msg = format!("{}", err);
+        
+        assert!(msg.contains("cannot borrow"));
+        assert!(msg.contains("String") || msg.contains("Cow"));
     }
 
     #[test]

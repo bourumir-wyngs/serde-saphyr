@@ -1407,6 +1407,16 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             None => return Err(Error::eof().with_location(self.ev.last_location())),
         };
 
+        // Determine the reason why borrowing might fail (used for error reporting).
+        // This is computed before attempting to borrow so we can provide a helpful error.
+        let cannot_borrow_reason: Option<TransformReason> = match &borrow_info {
+            Err(reason) => Some(*reason),
+            Ok(_) if self.ev.input_for_borrowing().is_none() => {
+                Some(TransformReason::InputNotBorrowable)
+            }
+            Ok(_) => None,
+        };
+
         // Try to borrow from input if possible
         if let Ok((start, end)) = borrow_info {
             if let Some(input) = self.ev.input_for_borrowing() {
@@ -1422,8 +1432,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
         // Fall back to owned string - this path is taken when:
         // 1. borrow_info is Err (string was transformed)
-        // 2. input_for_borrowing() returns None (reader-based input)
-        // 3. slice extraction failed
+        // 2. input_for_borrowing() returns None (reader-based input or aliases)
+        // 3. slice extraction failed (bounds check)
         
         let value = self.take_string_scalar()?;
         let res: Result<V::Value, Self::Error> = visitor.visit_string(value);
@@ -1431,7 +1441,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             Ok(v) => Ok(v),
             Err(err) => {
                 // If it failed because a borrowed string was expected, return our rich error.
-                if let Err(reason) = borrow_info {
+                if let Some(reason) = cannot_borrow_reason {
                     let msg = err.to_string();
                     if msg.contains("expected a borrowed string") {
                         return Err(Error::cannot_borrow_transformed(reason).with_location(location));

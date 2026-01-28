@@ -524,6 +524,31 @@ Serde-saphyr supports recursive structures but Rust requires to be about this ve
 
 These settings are changeable in [SerializerOptions](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.SerializerOptions.html).
 
+### Borrowed string deserialization
+
+serde-saphyr supports zero-copy deserialization for string fields when using `from_str` or `from_slice`. This allows deserializing into `&str` fields that borrow directly from the input, avoiding allocation overhead.
+
+```rust
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
+struct Data<'a> {
+    name: &'a str,
+    value: i32,
+}
+
+let yaml = "name: hello\nvalue: 42\n";
+let data: Data = serde_saphyr::from_str(yaml).unwrap();
+assert_eq!(data.name, "hello");
+```
+
+**Limitations:**
+- Borrowing only works for **plain scalars** that exist verbatim in the input (no escape processing, line folding, or block scalar normalization).
+- If a scalar requires transformation (e.g., `"hello\nworld"` with escape sequences, or multi-line folded scalars), deserialization into `&str` fails with a helpful error suggesting `String` or `Cow<str>`.
+- Reader-based entry points (`from_reader`) require `DeserializeOwned` and cannot return borrowed values.
+
+For maximum flexibility, use `Cow<'a, str>` which borrows when possible and owns when transformation is required.
+
 ## Robotics
 
 The feature-gated "robotics" capability enables parsing of YAML extensions commonly used in robotics ([ROS](https://www.ros.org/blog/why-ros/) These extensions support conversion functions (deg, rad) and simple mathematical expressions such as deg(180), rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). This capability is gated behind the [robotics] feature and is not enabled by default. Additionally, **angle_conversions** must be set to true in the [Options](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). Just adding robotics feature is not sufficient to activate this mode of parsing. This parser is still just a simple expression calculator implemented directly in Rust, not some hook into a language interpreter.
