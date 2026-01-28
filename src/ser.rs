@@ -35,6 +35,7 @@ use serde::ser::{
     self, Serialize, SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant,
     SerializeTuple, SerializeTupleStruct, SerializeTupleVariant, Serializer,
 };
+use serde::ser::Error as _;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{self, Write};
@@ -944,6 +945,13 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     }
 
     fn serialize_str(self, v: &str) -> Result<()> {
+        #[inline]
+        fn block_indent_indicator_digit(indent_n: usize) -> Result<char> {
+            char::from_digit(indent_n as u32, 10).ok_or_else(|| {
+                Error::custom("indentation indicator must be a single digit (1..=9)")
+            })
+        }
+
         // If no explicit style pending, and option is enabled, auto-select block style
         // similar to LitStr/FoldStr wrappers to improve compatibility with Go's yaml.v3.
         // However, DISABLE auto block scalars when the string needs quoting as a value
@@ -1044,7 +1052,8 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                     self.out.write_char('|')?;
                     if needs_indicator {
                         // Write the indentation indicator digit
-                        self.out.write_char(char::from_digit(indent_n as u32, 10).unwrap())?;
+                        let digit = block_indent_indicator_digit(indent_n)?;
+                        self.out.write_char(digit)?;
                     }
                     match trailing_nl {
                         0 => self.out.write_char('-')?,
@@ -1096,7 +1105,8 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                     self.out.write_char('>')?;
                     if needs_indicator {
                         // Write the indentation indicator digit
-                        self.out.write_char(char::from_digit(indent_n as u32, 10).unwrap())?;
+                        let digit = block_indent_indicator_digit(indent_n)?;
+                        self.out.write_char(digit)?;
                     }
                     if self.pending_str_from_auto {
                         // Auto-selected folded style: choose chomping based on trailing newlines
