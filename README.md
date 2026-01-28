@@ -543,8 +543,8 @@ assert_eq!(data.name, "hello");
 ```
 
 **Limitations:**
-- Borrowing only works for **plain scalars** that exist verbatim in the input (no escape processing, line folding, or block scalar normalization).
-- If a scalar requires transformation (e.g., `"hello\nworld"` with escape sequences, or multi-line folded scalars), deserialization into `&str` fails with a helpful error suggesting `String` or `Cow<str>`.
+- Borrowing works for any scalar whose parsed value exists **verbatim** in the input. This includes plain scalars and simple quoted strings without escape sequences (e.g., `"hello world"` can be borrowed, but `"hello\nworld"` cannot because `\n` is transformed to a newline).
+- If a scalar requires transformation (escape processing, line folding, block scalar normalization, or `''` escape in single-quoted strings), deserialization into `&str` fails with a helpful error suggesting `String` or `Cow<str>`.
 - Reader-based entry points (`from_reader`) require `DeserializeOwned` and cannot return borrowed values.
 
 For maximum flexibility, use `Cow<'a, str>` which borrows when possible and owns when transformation is required.
