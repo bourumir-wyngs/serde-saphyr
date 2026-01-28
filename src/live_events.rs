@@ -339,89 +339,87 @@ impl<'a> LiveEvents<'a> {
                     
                     let tag_s = SfTag::from_optional_cow(&tag);
 
-                    // Determine if this scalar can be borrowed from the input.
+                    // Determine if this scalar can be borrowed from the original input.
                     //
-                    // Zero-copy borrowing is possible when:
-                    // 1. The input is a string (not a reader).
-                    // 2. The parser gave us a borrowed slice (no transformation like escapes/folding).
-                    // 3. The tag is standard string or not present.
+                    // Sound borrowing is only possible when:
+                    // - we are deserializing from an in-memory input (`from_str`/`from_slice`), and
+                    // - the parser produced a `Cow::Borrowed` that is a subslice of that input, and
+                    // - the tag doesn't imply schema-driven string transformation.
                     //
-                    // We store the byte offsets into the input for O(1) slicing later.
-                                let borrow_info = if let Some(input) = self.input {
-                                    if !matches!(tag_s, SfTag::None | SfTag::String | SfTag::NonSpecific) {
-                                         Err(TransformReason::BlockScalarProcessing) // placeholder for "tag transformation"
+                    // We store byte offsets into the input for O(1) slicing later.
+                    let borrow_info = if let Some(input) = self.input {
+                        if !matches!(tag_s, SfTag::None | SfTag::String | SfTag::NonSpecific) {
+                            // Non-stringy tags can imply schema conversion; don't claim we can borrow.
+                            Err(TransformReason::BlockScalarProcessing)
+                        } else {
+                            // First, try to derive offsets from the parser-provided span.
+                            // This can still support borrowing even if the parser produced an owned
+                            // `Cow` for an untransformed scalar.
+                            let span = location.span();
+                            let start = span.offset();
+                            let end = start.saturating_add(span.len() as usize);
+                            let as_ref = val.as_ref();
+
+                            let by_span = if end <= input.len()
+                                && input.is_char_boundary(start)
+                                && input.is_char_boundary(end)
+                            {
+                                let raw = &input[start..end];
+                                if raw == as_ref {
+                                    Some(Ok((start, end)))
+                                } else if matches!(style, ScalarStyle::SingleQuoted | ScalarStyle::DoubleQuoted)
+                                    && raw.len() >= 2
+                                    && &raw[1..raw.len() - 1] == as_ref
+                                {
+                                    Some(Ok((start + 1, end - 1)))
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            };
+
+                            if let Some(res) = by_span {
+                                res
+                            } else if let Cow::Borrowed(borrowed) = val {
+                                // If the parser gave us a borrowed subslice, compute offsets from
+                                // the actual slice (robust against duplicate substrings).
+                                let base = input.as_bytes().as_ptr() as usize;
+                                let ptr = borrowed.as_bytes().as_ptr() as usize;
+                                let len = borrowed.len();
+                                let input_len = input.len();
+
+                                if ptr >= base
+                                    && ptr
+                                        .checked_add(len)
+                                        .is_some_and(|end| end <= base + input_len)
+                                {
+                                    let start = ptr - base;
+                                    let end = start + len;
+                                    if input.is_char_boundary(start) && input.is_char_boundary(end) {
+                                        Ok((start, end))
                                     } else {
-                                        let mut start = location.span().offset();
-                                        let mut end = start + location.span().len() as usize;
-
-                                        // Sanity check: ensure the slice is actually within the input
-                                        if start <= input.len() && end <= input.len() && input.is_char_boundary(start) && input.is_char_boundary(end) {
-                                            let mut raw_slice = &input[start..end];
-                                            
-                                            // Skip leading whitespace if it's a plain scalar
-                                            if matches!(style, ScalarStyle::Plain) {
-                                                let trimmed = raw_slice.trim_start();
-                                                start += raw_slice.len() - trimmed.len();
-                                                raw_slice = trimmed;
-                                                
-                                                let trimmed_end = raw_slice.trim_end();
-                                                end -= raw_slice.len() - trimmed_end.len();
-                                                raw_slice = trimmed_end;
-                                            }
-
-                                            if raw_slice == val {
-                                                Ok((start, end))
-                                            } else if matches!(style, ScalarStyle::SingleQuoted | ScalarStyle::DoubleQuoted) 
-                                                && raw_slice.len() >= 2 
-                                                && &raw_slice[1..raw_slice.len()-1] == val 
-                                            {
-                                                // Borrowed quoted scalar (excluding quotes)
-                                                Ok((start + 1, end - 1))
-                                            } else {
-                                                // Fallback: search for the value near the reported location
-                                                // Saphyr's span might be slightly off due to internal buffering/BOM.
-                                                let search_start = start.saturating_sub(16);
-                                                let search_end = (end + 16).min(input.len());
-                                                
-                                                // Find char boundaries for search area
-                                                let mut final_search_start = search_start;
-                                                while !input.is_char_boundary(final_search_start) {
-                                                    final_search_start -= 1;
-                                                }
-                                                let mut final_search_end = search_end;
-                                                while final_search_end < input.len() && !input.is_char_boundary(final_search_end) {
-                                                    final_search_end += 1;
-                                                }
-                                                
-                                                let search_area = &input[final_search_start..final_search_end];
-                                                
-                                                if let Some(pos) = search_area.find(val.as_ref()) {
-                                                    let final_start = final_search_start + pos;
-                                                    let final_end = final_start + val.len();
-                                                    Ok((final_start, final_end))
-                                                } else {
-                                                    // Determine the reason why it couldn't be borrowed.
-                                                    // Saphyr parser returns Cow::Owned for plain scalars ONLY if they
-                                                    // involve folding/normalization (multi-line).
-                                                    let reason = match style {
-                                                        ScalarStyle::Plain => TransformReason::MultiLineNormalization,
-                                                        ScalarStyle::SingleQuoted if val.contains('\'') => TransformReason::SingleQuoteEscape,
-                                                        ScalarStyle::DoubleQuoted if val.contains('\\') => TransformReason::EscapeSequence,
-                                                        ScalarStyle::Folded => TransformReason::LineFolding,
-                                                        ScalarStyle::Literal => TransformReason::BlockScalarProcessing,
-                                                        _ => TransformReason::MultiLineNormalization,
-                                                    };
-                                                    Err(reason)
-                                                }
-                                            }
-                                        } else {
-                                            Err(TransformReason::MultiLineNormalization)
-                                        }
+                                        Err(TransformReason::MultiLineNormalization)
                                     }
                                 } else {
-                                    // Reader-based input cannot support zero-copy borrowing
-                                    Err(TransformReason::BlockScalarProcessing) // placeholder
+                                    Err(TransformReason::InputNotBorrowable)
+                                }
+                            } else {
+                                // Could not prove that the returned string exists verbatim in the input.
+                                let reason = match style {
+                                    ScalarStyle::Plain => TransformReason::MultiLineNormalization,
+                                    ScalarStyle::SingleQuoted => TransformReason::SingleQuoteEscape,
+                                    ScalarStyle::DoubleQuoted => TransformReason::EscapeSequence,
+                                    ScalarStyle::Folded => TransformReason::LineFolding,
+                                    ScalarStyle::Literal => TransformReason::BlockScalarProcessing,
                                 };
+                                Err(reason)
+                            }
+                        }
+                    } else {
+                        // Reader-based input cannot support zero-copy borrowing.
+                        Err(TransformReason::InputNotBorrowable)
+                    };
                     
                     // Convert to owned string
                     let s = val.into_owned();

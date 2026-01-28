@@ -263,6 +263,14 @@ pub fn to_writer_with_options<W: std::fmt::Write, T: serde::Serialize>(
 ///
 /// Example: read a structure with borrowed string fields.
 ///
+/// Borrowed strings are supported when deserializing from an in-memory input (`from_str` / `from_slice`),
+/// and only when the scalar exists verbatim in the input (i.e., no escape processing, folding, or other
+/// normalization is required). If the YAML scalar requires transformation, deserializing into `&str`
+/// fails with an error suggesting `String` or `Cow<str>`.
+///
+/// Note: reader-based entry points like [`from_reader`] require `DeserializeOwned` and therefore cannot
+/// return values that borrow from the input.
+///
 /// ```rust
 /// use serde::Deserialize;
 ///

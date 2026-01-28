@@ -1369,12 +1369,16 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
     /// Deserialize a borrowed string.
     ///
-    /// When the scalar value can be borrowed from the input (simple plain scalars without
-    /// transformation), this method uses `visit_borrowed_str`. Otherwise, it falls back
-    /// to `visit_str` with an owned string.
+    /// When the scalar exists verbatim in the original input, this method uses
+    /// `Visitor::visit_borrowed_str`.
     ///
-    /// For transformed strings (escapes, folding, multi-line normalization), deserialization
-    /// to `&str` will fail with a helpful error message suggesting `String` or `Cow<str>`.
+    /// Borrowing is only possible for in-memory inputs (e.g. `from_str` / `from_slice`) and only
+    /// when no transformation is required (no escape processing, folding, chomping/indent handling,
+    /// or multi-line normalization).
+    ///
+    /// If borrowing is not possible, this method falls back to `Visitor::visit_string`.
+    /// When the target type requires `&str`, that fallback produces a helpful error suggesting
+    /// `String` or `Cow<str>`, with a [`TransformReason`] describing why borrowing was impossible.
     fn deserialize_str<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Check if we have a scalar and gather borrowing info
         let (borrow_info, location) = match self.ev.peek()? {

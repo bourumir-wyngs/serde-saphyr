@@ -59,6 +59,10 @@ pub enum TransformReason {
     BlockScalarProcessing,
     /// Single-quoted string with `''` escape processing.
     SingleQuoteEscape,
+    /// Borrowing is not supported because the deserializer does not have access to the full input
+    /// buffer (for example, when deserializing from a `Read`er), or because the parser did not
+    /// provide a slice that is a subslice of the original input.
+    InputNotBorrowable,
 }
 
 impl fmt::Display for TransformReason {
@@ -69,6 +73,7 @@ impl fmt::Display for TransformReason {
             TransformReason::MultiLineNormalization => write!(f, "multi-line whitespace normalization"),
             TransformReason::BlockScalarProcessing => write!(f, "block scalar processing"),
             TransformReason::SingleQuoteEscape => write!(f, "single-quote escape processing"),
+            TransformReason::InputNotBorrowable => write!(f, "input is not available for borrowing"),
         }
     }
 }

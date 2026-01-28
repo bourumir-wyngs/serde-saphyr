@@ -209,6 +209,30 @@ value: 42
         assert_eq!(result.value, 42);
     }
 
+    #[test]
+    fn borrowed_string_rejects_escape_sequences() {
+        // Double-quoted strings with escape processing cannot be borrowed into `&str`.
+        let yaml = "name: \"hello\\nworld\"\nvalue: 42\n";
+        let err = serde_saphyr::from_str::<BorrowedData>(yaml).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("cannot borrow"));
+        assert!(msg.contains("escape"));
+    }
+
+    #[test]
+    fn borrowed_string_rejects_single_quote_escape_even_if_value_appears_nearby() {
+        // Regression: previously, borrowing used a heuristic substring search near the reported
+        // span, which could accidentally "borrow" the wrong occurrence of the final value.
+        // Here, the parsed value is "it's" (after processing `''`), but the input contains an
+        // unrelated "it's" nearby.
+        let yaml = "other: it's\nname: 'it''s'\nvalue: 42\n";
+        let err = serde_saphyr::from_str::<BorrowedData>(yaml).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("cannot borrow"));
+        assert!(msg.contains("single-quote") || msg.contains("single"));
+    }
+
+
     // ============================================================================
     // Tests for mixed field types
     // ============================================================================
