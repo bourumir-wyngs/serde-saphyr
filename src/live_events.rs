@@ -432,9 +432,9 @@ impl<'a> LiveEvents<'a> {
                         style = ScalarStyle::Plain;
                     }
                     let ev = Ev::Scalar {
-                        value: s,
+                        value: s.into(),
                         tag: tag_s,
-                        raw_tag: tag.as_ref().map(|t| t.to_string()),
+                        raw_tag: tag.as_ref().map(|t| t.to_string().into()),
                         style,
                         anchor: anchor_id,
                         location,
@@ -555,7 +555,7 @@ impl<'a> LiveEvents<'a> {
                     if self.rec_stack.iter().any(|frame| frame.id == anchor_id) {
                         if crate::anchor_store::recursive_anchor_in_progress(anchor_id) {
                             let ev = Ev::Scalar {
-                                value: String::new(),
+                                value: String::new().into(),
                                 tag: SfTag::Null,
                                 raw_tag: None,
                                 style: ScalarStyle::Plain,
@@ -634,7 +634,7 @@ impl<'a> LiveEvents<'a> {
         // synthesize a single null scalar event to represent an empty document.
         if !self.produced_any_in_doc {
             let ev = Ev::Scalar {
-                value: String::new(),
+                value: String::new().into(),
                 tag: SfTag::Null,
                 raw_tag: None,
                 style: ScalarStyle::Plain,

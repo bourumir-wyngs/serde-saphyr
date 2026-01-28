@@ -32,6 +32,7 @@ use serde::de::{self, Deserializer as _, IntoDeserializer, Visitor};
 use std::borrow::Cow;
 use std::collections::{HashSet, VecDeque};
 use std::mem;
+use std::rc::Rc;
 
 pub mod with_deserializer;
 pub use with_deserializer::{
@@ -128,9 +129,9 @@ impl Cfg {
 pub(crate) enum Ev {
     /// Scalar value from YAML (text), with optional tag and style.
     Scalar {
-        value: String,
+        value: Rc<str>,
         tag: SfTag,
-        raw_tag: Option<String>,
+        raw_tag: Option<Rc<str>>,
         style: ScalarStyle,
         /// Numeric anchor id (0 if none) attached to this scalar node.
         anchor: usize,
@@ -182,7 +183,7 @@ impl Ev {
     }
 }
 
-fn simple_tagged_enum_name(raw_tag: &Option<String>, tag: &SfTag) -> Option<String> {
+fn simple_tagged_enum_name(raw_tag: &Option<Rc<str>>, tag: &SfTag) -> Option<String> {
     if !matches!(tag, SfTag::Other) {
         return None;
     }
@@ -271,7 +272,7 @@ impl KeyNode {
                 if let Some(Ev::Scalar { tag, value, .. }) = events.first() {
                     Cow::Owned(KeyFingerprint::Scalar {
                         tag: *tag,
-                        value: value.clone(),
+                        value: value.to_string(),
                     })
                 } else {
                     unreachable!()
@@ -541,7 +542,7 @@ fn is_merge_key(node: &KeyNode) -> bool {
             tag,
             style: ScalarStyle::Plain,
             ..
-        }) if tag == &SfTag::None && value == "<<"
+        }) if tag == &SfTag::None && value.as_ref() == "<<"
     )
 }
 
@@ -564,7 +565,7 @@ fn pending_entries_from_events(
 ) -> Result<Vec<PendingEntry>, Error> {
     let mut replay = ReplayEvents::with_reference(events, reference_location);
     match replay.peek()? {
-        Some(Ev::Scalar { value, style, .. }) if scalar_is_nullish(value.as_str(), style) => {
+        Some(Ev::Scalar { value, style, .. }) if scalar_is_nullish(value.as_ref(), style) => {
             Ok(Vec::new())
         }
         Some(Ev::Scalar { location, .. }) => Err(Error::msg(
@@ -631,7 +632,7 @@ fn pending_entries_from_live_events(
     merge_reference_location: Location,
 ) -> Result<Vec<PendingEntry>, Error> {
     match ev.peek()? {
-        Some(Ev::Scalar { value, style, .. }) if scalar_is_nullish(value.as_str(), style) => {
+        Some(Ev::Scalar { value, style, .. }) if scalar_is_nullish(value.as_ref(), style) => {
             let _ = ev.next()?;
             Ok(Vec::new())
         }
@@ -1016,7 +1017,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
                 tag,
                 location,
                 ..
-            }) => Ok((value, tag, location)),
+            }) => Ok((value.to_string(), tag, location)),
             Some(other) => Err(Error::unexpected("string scalar").with_location(other.location())),
             None => Err(Error::eof().with_location(self.ev.last_location())),
         }
@@ -2551,7 +2552,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         {
                             return Err(Error::quoting_required(&value).with_location(location));
                         }
-                        Mode::Map(value, location)
+                        Mode::Map(value.to_string(), location)
                     }
                     Some(other) => {
                         return Err(Error::msg("expected string key for externally tagged enum")
