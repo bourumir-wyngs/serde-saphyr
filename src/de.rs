@@ -1126,8 +1126,13 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     fn deserialize_any<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         match self.ev.peek()? {
             Some(Ev::Scalar {
-                tag, style, value, ..
+                tag,
+                style,
+                value,
+                borrow_info,
+                ..
             }) => {
+                let borrow_info = *borrow_info;
                 // Tagged nulls map to unit/null regardless of style
                 if tag == &SfTag::Null {
                     let _ = self.take_scalar_event()?; // consume
@@ -1140,6 +1145,15 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     return visitor.visit_unit();
                 }
                 if !is_plain || !tag.can_parse_into_string() || tag == &SfTag::Binary {
+                    if let Ok((start, end)) = borrow_info.as_ref() {
+                        if let Some(input) = self.ev.input_for_borrowing() {
+                            if *start < input.len() && *end <= input.len() {
+                                let borrowed = &input[*start..*end];
+                                let _ = self.ev.next()?;
+                                return visitor.visit_borrowed_str(borrowed);
+                            }
+                        }
+                    }
                     return visitor.visit_string(self.take_string_scalar()?);
                 }
 
@@ -1204,6 +1218,14 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 }
 
                 // Fallback: treat as string as-is.
+                if let Ok((start, end)) = borrow_info.as_ref() {
+                    if let Some(input) = self.ev.input_for_borrowing() {
+                        if *start < input.len() && *end <= input.len() {
+                            let borrowed = &input[*start..*end];
+                            return visitor.visit_borrowed_str(borrowed);
+                        }
+                    }
+                }
                 visitor.visit_string(s)
             }
             Some(Ev::SeqStart { .. }) => self.deserialize_seq(visitor),
