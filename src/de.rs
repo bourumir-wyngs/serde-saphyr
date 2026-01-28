@@ -1462,25 +1462,47 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     /// **From/To:** scalar text (or base64-decoded bytes) → `Visitor::visit_string`.
     fn deserialize_string<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Reject YAML null when deserializing into String. Allow quoted forms.
-        if let Some(Ev::Scalar {
-            tag, style, value, ..
+        let (borrow_info, _location) = if let Some(Ev::Scalar {
+            tag,
+            style,
+            value,
+            borrow_info,
+            location,
+            ..
         }) = self.ev.peek()?
-            && tag != &SfTag::String
         {
-            // If explicitly tagged as null, or plain null-like, this is not a valid String.
-            if tag == &SfTag::Null || scalar_is_nullish(value, style) {
+             // If explicitly tagged as null, or plain null-like, this is not a valid String.
+             if (tag == &SfTag::Null || scalar_is_nullish(value, style)) && tag != &SfTag::String {
                 // Consume the scalar to anchor the error at the correct location.
                 let (_value, _tag, location) = self.take_scalar_event()?;
                 return Err(
                     Error::msg("cannot deserialize null into string; use Option<String>")
                         .with_location(location),
                 );
-            } else if self.cfg.no_schema && maybe_not_string(value, style) {
+            } else if self.cfg.no_schema && maybe_not_string(value, style) && tag != &SfTag::String {
                 // Consume the scalar to anchor the error at the correct location.
                 let (value, _tag, location) = self.take_scalar_event()?;
                 return Err(Error::quoting_required(&value).with_location(location));
             }
+            (*borrow_info, *location)
+        } else {
+             // Let take_string_scalar handle the error if it's not a scalar
+             return visitor.visit_string(self.take_string_scalar()?);
+        };
+
+        // Try to borrow from input if possible
+        if let Ok((start, end)) = borrow_info {
+            if let Some(input) = self.ev.input_for_borrowing() {
+                // Ensure the slice is within bounds and valid UTF-8
+                if start < input.len() && end <= input.len() {
+                    let borrowed = &input[start..end];
+                    // Now consume the event and yield the borrowed str.
+                    let _ = self.ev.next()?;
+                    return visitor.visit_borrowed_str(borrowed);
+                }
+            }
         }
+        
         visitor.visit_string(self.take_string_scalar()?)
     }
 
