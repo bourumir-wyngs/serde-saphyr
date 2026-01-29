@@ -1023,9 +1023,26 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         }
     }
 
-    /// Consume a scalar and return `(value, location)` (dropping tag).
-    fn take_scalar_with_location(&mut self) -> Result<(String, SfTag, Location), Error> {
-        let (value, tag, location) = self.take_scalar_event()?;
+    /// Consume the next scalar event and return it without allocating a new `String`.
+    ///
+    /// This keeps the scalar text in its existing `Rc<str>` container, which is cheap to clone
+    /// and allows primitive parsers (bool/int/float/char) to work directly on `&str`.
+    fn take_scalar_rc_event(&mut self) -> Result<(Rc<str>, SfTag, Location), Error> {
+        match self.ev.next()? {
+            Some(Ev::Scalar {
+                value,
+                tag,
+                location,
+                ..
+            }) => Ok((value, tag, location)),
+            Some(other) => Err(Error::unexpected("string scalar").with_location(other.location())),
+            None => Err(Error::eof().with_location(self.ev.last_location())),
+        }
+    }
+
+    /// Consume a scalar and return it without allocating a `String`.
+    fn take_scalar_rc_with_location(&mut self) -> Result<(Rc<str>, SfTag, Location), Error> {
+        let (value, tag, location) = self.take_scalar_rc_event()?;
         Ok((value, tag, location))
     }
 
@@ -1256,7 +1273,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     /// Caller: Serde when target expects `bool`.
     /// Flow: scalar text → `Visitor::visit_bool`.
     fn deserialize_bool<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_with_location()?;
+        let (s, _tag, location) = self.take_scalar_rc_with_location()?;
+        let s = s.as_ref();
         let t = s.trim();
         let b: bool = if self.cfg.strict_booleans {
             if t.eq_ignore_ascii_case("true") {
@@ -1270,83 +1288,83 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 );
             }
         } else {
-            parse_yaml11_bool(&s).map_err(|msg| Error::msg(msg).with_location(location))?
+            parse_yaml11_bool(s).map_err(|msg| Error::msg(msg).with_location(location))?
         };
         visitor.visit_bool(b)
     }
 
     /// Parse a signed 8-bit integer.
     fn deserialize_i8<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_with_location()?;
-        let v: i8 = parse_int_signed(&s, "i8", location, self.cfg.legacy_octal_numbers)?;
+        let (s, _tag, location) = self.take_scalar_rc_with_location()?;
+        let v: i8 = parse_int_signed(s.as_ref(), "i8", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i8(v)
     }
     /// Parse a signed 16-bit integer.
     fn deserialize_i16<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_with_location()?;
-        let v: i16 = parse_int_signed(&s, "i16", location, self.cfg.legacy_octal_numbers)?;
+        let (s, _tag, location) = self.take_scalar_rc_with_location()?;
+        let v: i16 = parse_int_signed(s.as_ref(), "i16", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i16(v)
     }
     /// Parse a signed 32-bit integer.
     fn deserialize_i32<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_with_location()?;
-        let v: i32 = parse_int_signed(&s, "i32", location, self.cfg.legacy_octal_numbers)?;
+        let (s, _tag, location) = self.take_scalar_rc_with_location()?;
+        let v: i32 = parse_int_signed(s.as_ref(), "i32", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i32(v)
     }
     /// Parse a signed 64-bit integer.
     fn deserialize_i64<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_with_location()?;
-        let v: i64 = parse_int_signed(&s, "i64", location, self.cfg.legacy_octal_numbers)?;
+        let (s, _tag, location) = self.take_scalar_rc_with_location()?;
+        let v: i64 = parse_int_signed(s.as_ref(), "i64", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i64(v)
     }
     /// Parse a signed 128-bit integer.
     fn deserialize_i128<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_with_location()?;
-        let v: i128 = parse_int_signed(&s, "i128", location, self.cfg.legacy_octal_numbers)?;
+        let (s, _tag, location) = self.take_scalar_rc_with_location()?;
+        let v: i128 = parse_int_signed(s.as_ref(), "i128", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i128(v)
     }
 
     /// Parse an unsigned 8-bit integer.
     fn deserialize_u8<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_with_location()?;
-        let v: u8 = parse_int_unsigned(&s, "u8", location, self.cfg.legacy_octal_numbers)?;
+        let (s, _tag, location) = self.take_scalar_rc_with_location()?;
+        let v: u8 = parse_int_unsigned(s.as_ref(), "u8", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u8(v)
     }
     /// Parse an unsigned 16-bit integer.
     fn deserialize_u16<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_with_location()?;
-        let v: u16 = parse_int_unsigned(&s, "u16", location, self.cfg.legacy_octal_numbers)?;
+        let (s, _tag, location) = self.take_scalar_rc_with_location()?;
+        let v: u16 = parse_int_unsigned(s.as_ref(), "u16", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u16(v)
     }
     /// Parse an unsigned 32-bit integer.
     fn deserialize_u32<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_with_location()?;
-        let v: u32 = parse_int_unsigned(&s, "u32", location, self.cfg.legacy_octal_numbers)?;
+        let (s, _tag, location) = self.take_scalar_rc_with_location()?;
+        let v: u32 = parse_int_unsigned(s.as_ref(), "u32", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u32(v)
     }
     /// Parse an unsigned 64-bit integer.
     fn deserialize_u64<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_with_location()?;
-        let v: u64 = parse_int_unsigned(&s, "u64", location, self.cfg.legacy_octal_numbers)?;
+        let (s, _tag, location) = self.take_scalar_rc_with_location()?;
+        let v: u64 = parse_int_unsigned(s.as_ref(), "u64", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u64(v)
     }
     /// Parse an unsigned 128-bit integer.
     fn deserialize_u128<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_with_location()?;
-        let v: u128 = parse_int_unsigned(&s, "u128", location, self.cfg.legacy_octal_numbers)?;
+        let (s, _tag, location) = self.take_scalar_rc_with_location()?;
+        let v: u128 = parse_int_unsigned(s.as_ref(), "u128", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u128(v)
     }
 
     /// Parse a 32-bit float (supports YAML 1.2 `+.inf`, `-.inf`, `.nan`).
     fn deserialize_f32<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, tag, location) = self.take_scalar_with_location()?;
-        let v: f32 = parse_yaml12_float(&s, location, tag, self.cfg.angle_conversions)?;
+        let (s, tag, location) = self.take_scalar_rc_with_location()?;
+        let v: f32 = parse_yaml12_float(s.as_ref(), location, tag, self.cfg.angle_conversions)?;
         visitor.visit_f32(v)
     }
     /// Parse a 64-bit float (supports YAML 1.2 `+.inf`, `-.inf`, `.nan`).
     fn deserialize_f64<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, tag, location) = self.take_scalar_with_location()?;
-        let v: f64 = parse_yaml12_float(&s, location, tag, self.cfg.angle_conversions)?;
+        let (s, tag, location) = self.take_scalar_rc_with_location()?;
+        let v: f64 = parse_yaml12_float(s.as_ref(), location, tag, self.cfg.angle_conversions)?;
         visitor.visit_f64(v)
     }
 
@@ -1379,8 +1397,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
         }
 
         // Now consume the scalar and validate it contains exactly one Unicode scalar value.
-        let (s, _tag, location) = self.take_scalar_with_location()?;
-        let mut it = s.chars();
+        let (s, _tag, location) = self.take_scalar_rc_with_location()?;
+        let mut it = s.as_ref().chars();
         match (it.next(), it.next()) {
             (Some(c), None) => visitor.visit_char(c),
             _ => Err(
