@@ -32,7 +32,6 @@ use serde::de::{self, Deserializer as _, IntoDeserializer, Visitor};
 use std::borrow::Cow;
 use std::collections::{HashSet, VecDeque};
 use std::mem;
-use std::rc::Rc;
 
 pub mod with_deserializer;
 pub use with_deserializer::{
@@ -126,12 +125,12 @@ impl Cfg {
 
 /// Our simplified owned event kind that we feed into Serde.
 #[derive(Clone, Debug)]
-pub(crate) enum Ev {
+pub(crate) enum Ev<'a> {
     /// Scalar value from YAML (text), with optional tag and style.
     Scalar {
-        value: Rc<str>,
+        value: Cow<'a, str>,
         tag: SfTag,
-        raw_tag: Option<Rc<str>>,
+        raw_tag: Option<Cow<'a, str>>,
         style: ScalarStyle,
         /// Numeric anchor id (0 if none) attached to this scalar node.
         anchor: usize,
@@ -154,7 +153,7 @@ pub(crate) enum Ev {
     Taken { location: Location },
 }
 
-impl Default for Ev {
+impl Default for Ev<'_> {
     // Used for optimization
     fn default() -> Self {
         Ev::Taken {
@@ -163,7 +162,7 @@ impl Default for Ev {
     }
 }
 
-impl Ev {
+impl Ev<'_> {
     /// Get the source location attached to this event.
     ///
     /// Returns:
@@ -183,7 +182,7 @@ impl Ev {
     }
 }
 
-fn simple_tagged_enum_name(raw_tag: &Option<Rc<str>>, tag: &SfTag) -> Option<String> {
+fn simple_tagged_enum_name(raw_tag: &Option<Cow<'_, str>>, tag: &SfTag) -> Option<String> {
     if !matches!(tag, SfTag::Other) {
         return None;
     }
@@ -252,19 +251,19 @@ impl KeyFingerprint {
 /// - `fingerprint`: canonical representation for duplicate detection.
 /// - `events`: exact event slice that replays the node on demand.
 /// - `location`: start location of the node (for diagnostics).
-enum KeyNode {
+enum KeyNode<'a> {
     Fingerprinted {
         fingerprint: KeyFingerprint,
-        events: Vec<Ev>,
+        events: Vec<Ev<'a>>,
         location: Location,
     },
     Scalar {
-        events: Vec<Ev>,
+        events: Vec<Ev<'a>>,
         location: Location,
     },
 }
 
-impl KeyNode {
+impl<'a> KeyNode<'a> {
     fn fingerprint(&self) -> Cow<'_, KeyFingerprint> {
         match self {
             KeyNode::Fingerprinted { fingerprint, .. } => Cow::Borrowed(fingerprint),
@@ -281,14 +280,14 @@ impl KeyNode {
         }
     }
 
-    fn events(&self) -> &[Ev] {
+    fn events(&self) -> &[Ev<'a>] {
         match self {
             KeyNode::Fingerprinted { events, .. } => events,
             KeyNode::Scalar { events, .. } => events,
         }
     }
 
-    fn take_events(&mut self) -> Vec<Ev> {
+    fn take_events(&mut self) -> Vec<Ev<'a>> {
         match self {
             KeyNode::Fingerprinted { events, .. } => mem::take(events),
             KeyNode::Scalar { events, .. } => mem::take(events),
@@ -315,9 +314,9 @@ impl KeyNode {
 ///
 /// Produced by:
 /// - Merge (`<<`) processing and by scanning the current mapping fields.
-struct PendingEntry {
-    key: KeyNode,
-    value: KeyNode,
+struct PendingEntry<'a> {
+    key: KeyNode<'a>,
+    value: KeyNode<'a>,
     /// Where the key/value pair is referenced/used in YAML.
     ///
     /// For merge-derived entries, this is the `<<` entry location.
@@ -327,7 +326,7 @@ struct PendingEntry {
 /// Return the span lengths of key and value for a one-entry map encoded in `events`.
 /// The expected layout is: MapStart, <key node>, <value node>, MapEnd.
 /// On success returns (key_start, key_end, val_start, val_end) as indices into events.
-fn one_entry_map_spans(events: &[Ev]) -> Option<(usize, usize, usize, usize)> {
+fn one_entry_map_spans<'a>(events: &[Ev<'a>]) -> Option<(usize, usize, usize, usize)> {
     if events.len() < 4 {
         return None;
     }
@@ -355,7 +354,7 @@ fn one_entry_map_spans(events: &[Ev]) -> Option<(usize, usize, usize, usize)> {
 
 /// Skip one complete node in `events` starting at index `i`, returning the number of
 /// events consumed. Returns None if the slice is malformed.
-fn skip_one_node_len(events: &[Ev], mut i: usize) -> Option<usize> {
+fn skip_one_node_len<'a>(events: &[Ev<'a>], mut i: usize) -> Option<usize> {
     match events.get(i)? {
         Ev::Scalar { .. } => Some(1),
         Ev::SeqStart { .. } => {
@@ -424,7 +423,7 @@ fn skip_one_node_len(events: &[Ev], mut i: usize) -> Option<usize> {
 ///
 /// Called by:
 /// - Mapping deserialization to stage keys and values, and by merge processing.
-fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
+fn capture_node<'a>(ev: &mut dyn Events<'a>) -> Result<KeyNode<'a>, Error> {
     let Some(event) = ev.next()? else {
         return Err(Error::eof().with_location(ev.last_location()));
     };
@@ -439,7 +438,7 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
             location,
             borrow_info,
         } => {
-            let ev = Ev::Scalar {
+            let scalar_ev = Ev::Scalar {
                 value,
                 tag,
                 raw_tag,
@@ -449,7 +448,7 @@ fn capture_node(ev: &mut dyn Events) -> Result<KeyNode, Error> {
                 borrow_info,
             };
             Ok(KeyNode::Scalar {
-                events: vec![ev],
+                events: vec![scalar_ev],
                 location,
             })
         }
@@ -558,11 +557,11 @@ fn is_merge_key(node: &KeyNode) -> bool {
 ///
 /// Called by:
 /// - Mapping deserialization when encountering `<<: value`.
-fn pending_entries_from_events(
-    events: Vec<Ev>,
+fn pending_entries_from_events<'a>(
+    events: Vec<Ev<'a>>,
     location: Location,
     reference_location: Location,
-) -> Result<Vec<PendingEntry>, Error> {
+) -> Result<Vec<PendingEntry<'a>>, Error> {
     let mut replay = ReplayEvents::with_reference(events, reference_location);
     match replay.peek()? {
         Some(Ev::Scalar { value, style, .. }) if scalar_is_nullish(value.as_ref(), style) => {
@@ -627,10 +626,10 @@ fn pending_entries_from_events(
 ///
 /// because `Events::reference_location()` can still observe the alias token
 /// locations while the replay injection frame is active.
-fn pending_entries_from_live_events(
-    ev: &mut dyn Events,
+fn pending_entries_from_live_events<'a>(
+    ev: &mut dyn Events<'a>,
     merge_reference_location: Location,
-) -> Result<Vec<PendingEntry>, Error> {
+) -> Result<Vec<PendingEntry<'a>>, Error> {
     match ev.peek()? {
         Some(Ev::Scalar { value, style, .. }) if scalar_is_nullish(value.as_ref(), style) => {
             let _ = ev.next()?;
@@ -694,10 +693,10 @@ fn pending_entries_from_live_events(
 ///
 /// Called by:
 /// - Merge expansion (`pending_entries_from_events`) and map scanning.
-fn collect_entries_from_map(
-    ev: &mut dyn Events,
+fn collect_entries_from_map<'a>(
+    ev: &mut dyn Events<'a>,
     reference_location: Location,
-) -> Result<Vec<PendingEntry>, Error> {
+) -> Result<Vec<PendingEntry<'a>>, Error> {
     let Some(Ev::MapStart { .. }) = ev.next()? else {
         return Err(
             Error::msg("YAML merge value must be mapping or sequence of mappings")
@@ -757,7 +756,7 @@ pub(crate) trait Events<'de> {
     ///
     /// Called by:
     /// - The streaming deserializer (`Deser`) and helper scanners.
-    fn next(&mut self) -> Result<Option<Ev>, Error>;
+    fn next(&mut self) -> Result<Option<Ev<'de>>, Error>;
 
     /// Peek at the next event without consuming it.
     ///
@@ -768,7 +767,7 @@ pub(crate) trait Events<'de> {
     ///
     /// Called by:
     /// - Lookahead logic (merge, container boundaries, option/unit handling).
-    fn peek(&mut self) -> Result<Option<&Ev>, Error>;
+    fn peek(&mut self) -> Result<Option<&Ev<'de>>, Error>;
 
     /// Last location that `next` or `peek` has observed.
     ///
@@ -820,8 +819,8 @@ pub(crate) trait Events<'de> {
 }
 
 /// Event source that replays a pre-recorded buffer.
-struct ReplayEvents {
-    buf: Vec<Ev>,
+struct ReplayEvents<'a> {
+    buf: Vec<Ev<'a>>,
     /// Index of the next event to yield (0..=buf.len()).
     idx: usize,
     /// Optional override for the reference location (use-site) of the next node.
@@ -838,7 +837,7 @@ struct ReplayEvents {
     ref_override: Option<Location>,
 }
 
-impl ReplayEvents {
+impl<'a> ReplayEvents<'a> {
     /// Create a replay source over `buf`, initially positioned at index 0.
     ///
     /// Arguments:
@@ -846,7 +845,7 @@ impl ReplayEvents {
     ///
     /// Called by:
     /// - Merge expansion and recorded key/value deserialization.
-    fn new(buf: Vec<Ev>) -> Self {
+    fn new(buf: Vec<Ev<'a>>) -> Self {
         Self {
             buf,
             idx: 0,
@@ -866,7 +865,7 @@ impl ReplayEvents {
     /// Note that this does not change the events themselves: `Ev::location()` still
     /// points to where each event was originally produced/captured (definition-site).
     /// The override only affects [`Events::reference_location`].
-    fn with_reference(buf: Vec<Ev>, reference: Location) -> Self {
+    fn with_reference(buf: Vec<Ev<'a>>, reference: Location) -> Self {
         Self {
             buf,
             idx: 0,
@@ -875,9 +874,9 @@ impl ReplayEvents {
     }
 }
 
-impl<'de> Events<'de> for ReplayEvents {
+impl<'a> Events<'a> for ReplayEvents<'a> {
     /// See [`Events::next`]. Replays and advances the internal index.
-    fn next(&mut self) -> Result<Option<Ev>, Error> {
+    fn next(&mut self) -> Result<Option<Ev<'a>>, Error> {
         if self.idx >= self.buf.len() {
             return Ok(None);
         }
@@ -888,7 +887,7 @@ impl<'de> Events<'de> for ReplayEvents {
         Ok(Some(ev))
     }
 
-    fn peek(&mut self) -> Result<Option<&Ev>, Error> {
+    fn peek(&mut self) -> Result<Option<&Ev<'a>>, Error> {
         Ok(self.buf.get(self.idx))
     }
 
@@ -1017,17 +1016,17 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
                 tag,
                 location,
                 ..
-            }) => Ok((value.to_string(), tag, location)),
+            }) => Ok((value.into_owned(), tag, location)),
             Some(other) => Err(Error::unexpected("string scalar").with_location(other.location())),
             None => Err(Error::eof().with_location(self.ev.last_location())),
         }
     }
 
-    /// Consume the next scalar event and return it without allocating a new `String`.
+    /// Consume the next scalar event and return it without allocating a new `String` (if possible).
     ///
-    /// This keeps the scalar text in its existing `Rc<str>` container, which is cheap to clone
+    /// This keeps the scalar text in its existing `Cow` container, which is cheap to clone
     /// and allows primitive parsers (bool/int/float/char) to work directly on `&str`.
-    fn take_scalar_rc_event(&mut self) -> Result<(Rc<str>, SfTag, Location), Error> {
+    fn take_scalar_cow_event(&mut self) -> Result<(Cow<'de, str>, SfTag, Location), Error> {
         match self.ev.next()? {
             Some(Ev::Scalar {
                 value,
@@ -1041,8 +1040,8 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
     }
 
     /// Consume a scalar and return it without allocating a `String`.
-    fn take_scalar_rc_with_location(&mut self) -> Result<(Rc<str>, SfTag, Location), Error> {
-        let (value, tag, location) = self.take_scalar_rc_event()?;
+    fn take_scalar_cow_with_location(&mut self) -> Result<(Cow<'de, str>, SfTag, Location), Error> {
+        let (value, tag, location) = self.take_scalar_cow_event()?;
         Ok((value, tag, location))
     }
 
@@ -1273,7 +1272,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     /// Caller: Serde when target expects `bool`.
     /// Flow: scalar text → `Visitor::visit_bool`.
     fn deserialize_bool<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_rc_with_location()?;
+        let (s, _tag, location) = self.take_scalar_cow_with_location()?;
         let s = s.as_ref();
         let t = s.trim();
         let b: bool = if self.cfg.strict_booleans {
@@ -1295,75 +1294,75 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
     /// Parse a signed 8-bit integer.
     fn deserialize_i8<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_rc_with_location()?;
+        let (s, _tag, location) = self.take_scalar_cow_with_location()?;
         let v: i8 = parse_int_signed(s.as_ref(), "i8", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i8(v)
     }
     /// Parse a signed 16-bit integer.
     fn deserialize_i16<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_rc_with_location()?;
+        let (s, _tag, location) = self.take_scalar_cow_with_location()?;
         let v: i16 = parse_int_signed(s.as_ref(), "i16", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i16(v)
     }
     /// Parse a signed 32-bit integer.
     fn deserialize_i32<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_rc_with_location()?;
+        let (s, _tag, location) = self.take_scalar_cow_with_location()?;
         let v: i32 = parse_int_signed(s.as_ref(), "i32", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i32(v)
     }
     /// Parse a signed 64-bit integer.
     fn deserialize_i64<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_rc_with_location()?;
+        let (s, _tag, location) = self.take_scalar_cow_with_location()?;
         let v: i64 = parse_int_signed(s.as_ref(), "i64", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i64(v)
     }
     /// Parse a signed 128-bit integer.
     fn deserialize_i128<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_rc_with_location()?;
+        let (s, _tag, location) = self.take_scalar_cow_with_location()?;
         let v: i128 = parse_int_signed(s.as_ref(), "i128", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i128(v)
     }
 
     /// Parse an unsigned 8-bit integer.
     fn deserialize_u8<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_rc_with_location()?;
+        let (s, _tag, location) = self.take_scalar_cow_with_location()?;
         let v: u8 = parse_int_unsigned(s.as_ref(), "u8", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u8(v)
     }
     /// Parse an unsigned 16-bit integer.
     fn deserialize_u16<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_rc_with_location()?;
+        let (s, _tag, location) = self.take_scalar_cow_with_location()?;
         let v: u16 = parse_int_unsigned(s.as_ref(), "u16", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u16(v)
     }
     /// Parse an unsigned 32-bit integer.
     fn deserialize_u32<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_rc_with_location()?;
+        let (s, _tag, location) = self.take_scalar_cow_with_location()?;
         let v: u32 = parse_int_unsigned(s.as_ref(), "u32", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u32(v)
     }
     /// Parse an unsigned 64-bit integer.
     fn deserialize_u64<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_rc_with_location()?;
+        let (s, _tag, location) = self.take_scalar_cow_with_location()?;
         let v: u64 = parse_int_unsigned(s.as_ref(), "u64", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u64(v)
     }
     /// Parse an unsigned 128-bit integer.
     fn deserialize_u128<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_rc_with_location()?;
+        let (s, _tag, location) = self.take_scalar_cow_with_location()?;
         let v: u128 = parse_int_unsigned(s.as_ref(), "u128", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u128(v)
     }
 
     /// Parse a 32-bit float (supports YAML 1.2 `+.inf`, `-.inf`, `.nan`).
     fn deserialize_f32<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, tag, location) = self.take_scalar_rc_with_location()?;
+        let (s, tag, location) = self.take_scalar_cow_with_location()?;
         let v: f32 = parse_yaml12_float(s.as_ref(), location, tag, self.cfg.angle_conversions)?;
         visitor.visit_f32(v)
     }
     /// Parse a 64-bit float (supports YAML 1.2 `+.inf`, `-.inf`, `.nan`).
     fn deserialize_f64<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, tag, location) = self.take_scalar_rc_with_location()?;
+        let (s, tag, location) = self.take_scalar_cow_with_location()?;
         let v: f64 = parse_yaml12_float(s.as_ref(), location, tag, self.cfg.angle_conversions)?;
         visitor.visit_f64(v)
     }
@@ -1397,7 +1396,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
         }
 
         // Now consume the scalar and validate it contains exactly one Unicode scalar value.
-        let (s, _tag, location) = self.take_scalar_rc_with_location()?;
+        let (s, _tag, location) = self.take_scalar_cow_with_location()?;
         let mut it = s.as_ref().chars();
         match (it.next(), it.next()) {
             (Some(c), None) => visitor.visit_char(c),
@@ -2039,10 +2038,10 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
             // For duplicate-key detection for arbitrary keys.
             seen: FastHashSet<KeyFingerprint>,
-            pending: VecDeque<PendingEntry>,
-            merge_stack: Vec<Vec<PendingEntry>>,
+            pending: VecDeque<PendingEntry<'de>>,
+            merge_stack: Vec<Vec<PendingEntry<'de>>>,
             flushing_merges: bool,
-            pending_value: Option<(Vec<Ev>, Location)>,
+            pending_value: Option<(Vec<Ev<'de>>, Location)>,
         }
 
         impl<'de, 'e> MA<'de, 'e> {
@@ -2086,7 +2085,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             fn deserialize_recorded_key<'de2, K>(
                 &mut self,
                 seed: K,
-                events: Vec<Ev>,
+                events: Vec<Ev<'de2>>,
                 kemn: bool,
             ) -> Result<K::Value, Error>
             where
@@ -2111,7 +2110,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             }
 
             /// Push a batch of entries to the front of the pending queue in order.
-            fn enqueue_entries(&mut self, entries: Vec<PendingEntry>) {
+            fn enqueue_entries(&mut self, entries: Vec<PendingEntry<'de>>) {
                 self.pending.reserve(entries.len());
                 for entry in entries.into_iter().rev() {
                     self.pending.push_front(entry);

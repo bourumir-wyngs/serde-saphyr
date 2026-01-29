@@ -46,12 +46,12 @@ const SMALLVECT_INLINE: usize = 8;
 /// A frame that records events for an anchored container until its end.
 /// Uses SmallVec to avoid heap allocations for small anchors.
 #[derive(Clone, Debug)]
-struct RecFrame {
+struct RecFrame<'a> {
     id: usize,
     /// counts nested container starts/ends
     depth: usize,
     /// inline up to SMALLVECT_INLINE events; spills to heap beyond
-    buf: SmallVec<Ev, SMALLVECT_INLINE>,
+    buf: SmallVec<Ev<'a>, SMALLVECT_INLINE>,
 }
 
 /// Handle input polymorphism
@@ -84,15 +84,15 @@ pub(crate) struct LiveEvents<'a> {
     /// Whether we emitted a synthetic null scalar to represent an empty document.
     synthesized_null_emitted: bool,
     /// Single-item lookahead buffer (peeked event not yet consumed).
-    look: Option<Ev>,
+    look: Option<Ev<'a>>,
     /// For alias replay: a stack of injected buffers; we always read from the top first.
     inject: Vec<InjectFrame>,
     /// Recorded buffers for anchors (index = anchor_id).
     /// `None` means the id is not recorded (e.g., never anchored or cleared).
     /// Saphyr's parser anchor_id is the sequential counter.
-    anchors: Vec<Option<Box<[Ev]>>>,
+    anchors: Vec<Option<Box<[Ev<'a>]>>>,
     /// Recording frames for currently-open anchored containers.
-    rec_stack: Vec<RecFrame>,
+    rec_stack: Vec<RecFrame<'a>>,
     /// Budget (raw events); independent of alias replay limits below.
     budget: Option<BudgetEnforcer>,
     /// Optional reporter to expose budget usage once parsing completes.
@@ -251,7 +251,7 @@ impl<'a> LiveEvents<'a> {
     /// - Maintains last_location for better error messages.
     ///
     /// Returns Some(event) when an event is produced, or Ok(None) on true EOF.
-    fn next_impl(&mut self) -> Result<Option<Ev>, Error> {
+    fn next_impl(&mut self) -> Result<Option<Ev<'a>>, Error> {
         // 1) Serve from injected buffers first (alias replay)
         //
         // Important subtlety: we keep an exhausted injection frame on the stack until
@@ -421,10 +421,7 @@ impl<'a> LiveEvents<'a> {
                         Err(TransformReason::InputNotBorrowable)
                     };
                     
-                    // Convert to owned string
-                    let s = val.into_owned();
-                    
-                    if s.is_empty()
+                    if val.is_empty()
                         && anchor_id != 0
                         && matches!(style, ScalarStyle::SingleQuoted | ScalarStyle::DoubleQuoted)
                     {
@@ -432,9 +429,9 @@ impl<'a> LiveEvents<'a> {
                         style = ScalarStyle::Plain;
                     }
                     let ev = Ev::Scalar {
-                        value: s.into(),
+                        value: val,
                         tag: tag_s,
-                        raw_tag: tag.as_ref().map(|t| t.to_string().into()),
+                        raw_tag: tag.as_ref().map(|t| Cow::Owned(t.to_string())),
                         style,
                         anchor: anchor_id,
                         location,
@@ -716,7 +713,7 @@ impl<'a> LiveEvents<'a> {
     /// - `is_start`: whether this is a container start event.
     /// - `seeded_new_frame`: true **only** when a new frame was just created and already
     ///   seeded with the same start event (i.e., anchored container start).
-    fn record(&mut self, ev: &Ev, is_start: bool, seeded_new_frame: bool) {
+    fn record(&mut self, ev: &Ev<'a>, is_start: bool, seeded_new_frame: bool) {
         if self.rec_stack.is_empty() {
             return;
         }
@@ -811,7 +808,7 @@ impl<'a> LiveEvents<'a> {
 impl<'de> Events<'de> for LiveEvents<'de> {
     /// Get the next event, using a single-item lookahead buffer if present.
     /// Updates last_location to the yielded event's location.
-    fn next(&mut self) -> Result<Option<Ev>, Error> {
+    fn next(&mut self) -> Result<Option<Ev<'de>>, Error> {
         self.io_error()?;
 
         if let Some(ev) = self.look.take() {
@@ -821,7 +818,7 @@ impl<'de> Events<'de> for LiveEvents<'de> {
         self.next_impl()
     }
     /// Peek at the next event without consuming it, filling the lookahead buffer if empty.
-    fn peek(&mut self) -> Result<Option<&Ev>, Error> {
+    fn peek(&mut self) -> Result<Option<&Ev<'de>>, Error> {
         self.io_error()?;
 
         if self.look.is_none() {
