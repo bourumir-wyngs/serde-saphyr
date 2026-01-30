@@ -21,7 +21,37 @@
 
 use crate::ser_error::Error;
 
-/// Serializer options
+/// Serializer options for YAML emission.
+///
+/// This struct controls various aspects of YAML serialization, such as indentation,
+/// anchor generation, and scalar styles.
+///
+/// Construct `SerializerOptions` using the [`ser_options!`](crate::ser_options!)
+/// macro to ensure compatibility with future updates.
+///
+/// ```rust
+/// use serde::Serialize;
+/// use serde_saphyr::{ser_options, to_string_with_options};
+///
+/// #[derive(Serialize)]
+/// struct Config {
+///     name: String,
+///     values: Vec<i32>,
+/// }
+///
+/// let config = Config {
+///     name: "test".to_string(),
+///     values: vec![1, 2, 3],
+/// };
+///
+/// // Use 4-space indentation and quote all strings
+/// let options = ser_options! {
+///     indent_step: 4,
+///     quote_all: true,
+/// };
+///
+/// let yaml = to_string_with_options(&config, options).unwrap();
+/// ```
 #[derive(Clone, Copy)]
 pub struct SerializerOptions {
     /// If true, empty maps are emitted as braces {} and empty lists as []  (this is the default).
