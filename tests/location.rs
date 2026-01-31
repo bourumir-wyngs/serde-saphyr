@@ -23,10 +23,10 @@ fn expect_location(err: &Error, line: u64, column: u64) {
 fn expect_span_offset(err: &Error, offset: usize) {
     if let Some(loc) = err.location() {
         assert_eq!(
-            loc.span().offset(),
+            loc.span().offset() as usize,
             offset,
             "Invalid span offset, expected {offset} reported {reported}",
-            reported = loc.span().offset()
+            reported = loc.span().offset() as usize
         );
     } else {
         panic!("Location was not provided");
@@ -137,7 +137,7 @@ fn span_offsets_are_in_characters_not_bytes() {
     let char_off = yaml[..byte_off_scalar].chars().count();
 
     if let Some(loc) = err.location() {
-        assert_eq!(loc.span().offset(), char_off);
+        assert_eq!(loc.span().offset() as usize, char_off);
     } else {
         panic!("Location was not provided");
     }

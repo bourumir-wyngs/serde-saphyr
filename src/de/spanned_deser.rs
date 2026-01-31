@@ -236,7 +236,7 @@ impl<'de> de::MapAccess<'de> for LocationMapAccess {
     }
 }
 
-/// Internal deserializer that exposes a [`crate::Span`] as `{ offset, len }`.
+/// Internal deserializer that exposes a [`crate::Span`] as `{ offset, len, byte_info }`.
 struct SpanDeser {
     span: crate::Span,
 }
@@ -245,7 +245,7 @@ impl<'de> de::Deserializer<'de> for SpanDeser {
     type Error = Error;
 
     fn deserialize_any<Vv: Visitor<'de>>(self, visitor: Vv) -> Result<Vv::Value, Self::Error> {
-        self.deserialize_struct("Span", &["offset", "len"], visitor)
+        self.deserialize_struct("Span", &["offset", "len", "byte_info"], visitor)
     }
 
     fn deserialize_struct<Vv: Visitor<'de>>(
@@ -267,6 +267,69 @@ impl<'de> de::Deserializer<'de> for SpanDeser {
     }
 }
 
+/// Deserializer for the `(SpanIndex, SpanIndex)` byte_info tuple.
+struct ByteInfoTupleDeser((crate::location::SpanIndex, crate::location::SpanIndex));
+
+impl<'de> de::Deserializer<'de> for ByteInfoTupleDeser {
+    type Error = Error;
+
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        self.deserialize_tuple(2, visitor)
+    }
+
+    fn deserialize_tuple<V>(self, _len: usize, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        visitor.visit_seq(ByteInfoSeqAccess {
+            byte_info: self.0,
+            index: 0,
+        })
+    }
+
+    fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        self.deserialize_tuple(2, visitor)
+    }
+
+    serde::forward_to_deserialize_any! {
+        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
+        bytes byte_buf option unit unit_struct newtype_struct
+        tuple_struct map struct enum identifier ignored_any
+    }
+}
+
+struct ByteInfoSeqAccess {
+    byte_info: (crate::location::SpanIndex, crate::location::SpanIndex),
+    index: u8,
+}
+
+impl<'de> de::SeqAccess<'de> for ByteInfoSeqAccess {
+    type Error = Error;
+
+    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
+    where
+        T: de::DeserializeSeed<'de>,
+    {
+        match self.index {
+            0 => {
+                self.index += 1;
+                seed.deserialize((self.byte_info.0 as u64).into_deserializer()).map(Some)
+            }
+            1 => {
+                self.index += 1;
+                seed.deserialize((self.byte_info.1 as u64).into_deserializer()).map(Some)
+            }
+            _ => Ok(None),
+        }
+    }
+}
+
 struct SpanMapAccess {
     span: crate::Span,
     state: u8,
@@ -282,6 +345,7 @@ impl<'de> de::MapAccess<'de> for SpanMapAccess {
         let key = match self.state {
             0 => "offset",
             1 => "len",
+            2 => "byte_info",
             _ => return Ok(None),
         };
         self.state += 1;
@@ -293,8 +357,9 @@ impl<'de> de::MapAccess<'de> for SpanMapAccess {
         Vv: de::DeserializeSeed<'de>,
     {
         match self.state {
-            1 => seed.deserialize(self.span.offset.into_deserializer()),
-            2 => seed.deserialize(self.span.len.into_deserializer()),
+            1 => seed.deserialize((self.span.raw_offset() as u64).into_deserializer()),
+            2 => seed.deserialize((self.span.raw_len() as u64).into_deserializer()),
+            3 => seed.deserialize(ByteInfoTupleDeser(self.span.raw_byte_info())),
             _ => Err(Error::msg("invalid Span internal state")),
         }
     }

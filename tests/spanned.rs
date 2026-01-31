@@ -59,7 +59,7 @@ nested: { threshold: 0.25, flags: [fast, safe], inner: { enabled: true, note: nu
     assert_eq!(cfg.name.referenced.line(), 2);
     assert_eq!(cfg.name.referenced.column(), 7);
     assert_eq!(
-        cfg.name.referenced.span().offset(),
+        cfg.name.referenced.span().offset() as usize,
         yaml.find("bar #").unwrap()
     );
     assert!(!cfg.name.referenced.span().is_empty());
@@ -69,7 +69,7 @@ nested: { threshold: 0.25, flags: [fast, safe], inner: { enabled: true, note: nu
     assert_eq!(cfg.timeout.referenced.line(), 3);
     assert_eq!(cfg.timeout.referenced.column(), 10);
     assert_eq!(
-        cfg.timeout.referenced.span().offset(),
+        cfg.timeout.referenced.span().offset() as usize,
         yaml.find("5\n").unwrap()
     );
     assert!(!cfg.timeout.referenced.span().is_empty());
@@ -140,8 +140,8 @@ fn spanned_offsets_are_character_based_with_non_ascii() {
     let byte_off_scalar = yaml.find("α").unwrap();
     let char_off = yaml[..byte_off_scalar].chars().count();
 
-    assert_eq!(cfg.value.referenced.span().offset(), char_off);
-    assert_eq!(cfg.value.defined.span().offset(), char_off);
+    assert_eq!(cfg.value.referenced.span().offset() as usize, char_off);
+    assert_eq!(cfg.value.defined.span().offset() as usize, char_off);
 }
 
 #[test]

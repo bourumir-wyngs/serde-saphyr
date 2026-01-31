@@ -363,40 +363,50 @@ fn to_source_span(src: &NamedSource<String>, location: &Location) -> Option<Sour
         return None;
     }
 
-    // The parser provides character-based offsets/lengths, while miette expects
-    // byte offsets into the UTF-8 source. Convert here using the available source.
-    fn char_range_to_byte_range(
-        s: &str,
-        char_offset: usize,
-        char_len: usize,
-    ) -> Option<(usize, usize)> {
-        // Start byte index for the given character offset
-        let start_byte = if char_offset == 0 {
-            0
-        } else {
-            s.char_indices().nth(char_offset).map(|(i, _)| i)?
-        };
+    let (byte_off, mut byte_len): (usize, usize) = if let (Some(off), Some(len)) = (
+        location.span().byte_offset(),
+        location.span().byte_len(),
+    ) {
+        (off as usize, len as usize)
+    } else {
+        // The parser provides character-based offsets/lengths, while miette expects
+        // byte offsets into the UTF-8 source. Convert here using the available source.
+        fn char_range_to_byte_range(
+            s: &str,
+            char_offset: usize,
+            char_len: usize,
+        ) -> Option<(usize, usize)> {
+            // Start byte index for the given character offset
+            let start_byte = if char_offset == 0 {
+                0
+            } else {
+                s.char_indices().nth(char_offset).map(|(i, _)| i)?
+            };
 
-        // End in characters (exclusive)
-        let end_char = char_offset.saturating_add(char_len);
+            // End in characters (exclusive)
+            let end_char = char_offset.saturating_add(char_len);
 
-        // If end past the last char, clamp to the end of the string in bytes
-        let end_byte = match s.char_indices().nth(end_char) {
-            Some((i, _)) => i,
-            None => s.len(),
-        };
+            // If end past the last char, clamp to the end of the string in bytes
+            let end_byte = match s.char_indices().nth(end_char) {
+                Some((i, _)) => i,
+                None => s.len(),
+            };
 
-        Some((start_byte, end_byte.saturating_sub(start_byte)))
+            Some((start_byte, end_byte.saturating_sub(start_byte)))
+        }
+
+        let char_off = location.span().offset() as usize;
+        let mut char_len = location.span().len() as usize;
+        if char_len == 0 {
+            char_len = 1;
+        }
+
+        char_range_to_byte_range(src.inner(), char_off, char_len)?
+    };
+
+    if byte_len == 0 {
+        byte_len = 1;
     }
-
-    let char_off = location.span().offset();
-    let mut char_len = location.span().len();
-    if char_len == 0 {
-        // zero-length spans are hard to see; highlight at least one character
-        char_len = 1;
-    }
-
-    let (byte_off, mut byte_len) = char_range_to_byte_range(src.inner(), char_off, char_len)?;
 
     // Clamp to the actual input, to avoid panics and invalid spans.
     let src_len = src.inner().len();
@@ -459,8 +469,8 @@ mod tests {
             location: Location {
                 line: 1,
                 column: 4,
-                span: crate::Span {
-                    offset: "a: definitely\n".find("definitely").unwrap(),
+                span: crate::Span { byte_info: (0, 0), 
+                    offset: "a: definitely\n".find("definitely").unwrap() as crate::location::SpanIndex,
                     len: 3,
                 },
             },
@@ -471,7 +481,7 @@ mod tests {
         assert_eq!(labels.len(), 1);
         assert_eq!(
             labels[0].inner().offset(),
-            err.location().unwrap().span().offset()
+            err.location().unwrap().span().offset() as usize
         );
     }
 
@@ -493,9 +503,9 @@ mod tests {
                 line: 1,
                 // Column is 1-indexed and character-based; set consistently with the span
                 column: (char_off as u32) + 1,
-                span: crate::Span {
-                    offset: char_off,
-                    len: ascii_slice.len() as u32,
+                span: crate::Span { byte_info: (0, 0), 
+                    offset: char_off as crate::location::SpanIndex,
+                    len: ascii_slice.len() as crate::location::SpanIndex,
                 },
             },
         };
@@ -524,9 +534,9 @@ mod tests {
             location: Location {
                 line: 1,
                 column: (start_char as u32) + 1,
-                span: crate::Span {
-                    offset: start_char,
-                    len: value_chars.chars().count() as u32,
+                span: crate::Span { byte_info: (0, 0), 
+                    offset: start_char as crate::location::SpanIndex,
+                    len: value_chars.chars().count() as crate::location::SpanIndex,
                 },
             },
         };
@@ -552,8 +562,8 @@ mod tests {
             location: Location {
                 line: 1,
                 column: (start_char as u32) + 1,
-                span: crate::Span {
-                    offset: start_char,
+                span: crate::Span { byte_info: (0, 0), 
+                    offset: start_char as crate::location::SpanIndex,
                     len: 0,
                 },
             },
@@ -580,8 +590,8 @@ mod tests {
             location: Location {
                 line: 1,
                 column: (start_char as u32) + 1,
-                span: crate::Span {
-                    offset: start_char,
+                span: crate::Span { byte_info: (0, 0), 
+                    offset: start_char as crate::location::SpanIndex,
                     len: 1000,
                 },
             },
@@ -609,9 +619,9 @@ mod tests {
             location: Location {
                 line: 3,
                 column: 1,
-                span: crate::Span {
-                    offset: start_char,
-                    len: target.chars().count() as u32,
+                span: crate::Span { byte_info: (0, 0), 
+                    offset: start_char as crate::location::SpanIndex,
+                    len: target.chars().count() as crate::location::SpanIndex,
                 },
             },
         };
@@ -652,16 +662,16 @@ mod tests {
         let referenced_loc = Location {
             line: 3,
             column: 15,
-            span: crate::Span {
-                offset: use_offset,
+            span: crate::Span { byte_info: (0, 0), 
+                offset: use_offset as crate::location::SpanIndex,
                 len: 2,
             },
         };
         let defined_loc = Location {
             line: 2,
             column: 18,
-            span: crate::Span {
-                offset: def_offset,
+            span: crate::Span { byte_info: (0, 0), 
+                offset: def_offset as crate::location::SpanIndex,
                 len: 3,
             },
         };
@@ -728,16 +738,16 @@ mod tests {
         let referenced_loc = Location {
             line: 3,
             column: 15,
-            span: crate::Span {
-                offset: use_offset,
+            span: crate::Span { byte_info: (0, 0), 
+                offset: use_offset as crate::location::SpanIndex,
                 len: 2,
             },
         };
         let defined_loc = Location {
             line: 2,
             column: 18,
-            span: crate::Span {
-                offset: def_offset,
+            span: crate::Span { byte_info: (0, 0), 
+                offset: def_offset as crate::location::SpanIndex,
                 len: 3,
             },
         };
@@ -792,16 +802,16 @@ mod tests {
         let referenced_loc = Location {
             line: 2,
             column: 8,
-            span: crate::Span {
-                offset: use_offset,
+            span: crate::Span { byte_info: (0, 0), 
+                offset: use_offset as crate::location::SpanIndex,
                 len: 2,
             },
         };
         let defined_loc = Location {
             line: 1,
             column: 13,
-            span: crate::Span {
-                offset: def_offset,
+            span: crate::Span { byte_info: (0, 0), 
+                offset: def_offset as crate::location::SpanIndex,
                 len: 5,
             },
         };
@@ -843,8 +853,8 @@ mod tests {
         let loc = Location {
             line: 1,
             column: 8,
-            span: crate::Span {
-                offset,
+            span: crate::Span { byte_info: (0, 0), 
+                offset: offset as crate::location::SpanIndex,
                 len: 5,
             },
         };

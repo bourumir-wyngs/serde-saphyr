@@ -27,7 +27,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::Location;
 
-/// A value paired with source locations describing where it came from.
+/// A value paired with source locations describing where it came from. Spanned location
+/// is specified in character positions and, when possible, in byte offsets as well (byte offsets
+/// are available for a string source but not from the reader.
 ///
 /// # Example
 ///

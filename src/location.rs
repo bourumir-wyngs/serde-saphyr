@@ -3,43 +3,106 @@
 use saphyr_parser::Span as ParserSpan;
 use serde::Deserialize;
 
-/// A character-based span within the source YAML document.
+/// Type alias for span offset and length fields.
 ///
-/// Offsets and lengths are reported in characters (Unicode scalar values),
-/// as produced by `saphyr-parser`. These are NOT byte indices.
+/// By default, this is `u32`, which limits documents to 4 GiB but keeps `Span` at 16 bytes.
+/// When the `huge_documents` feature is enabled, this becomes `usize`, allowing arbitrarily
+/// large documents at the cost of increased memory usage (40 bytes on 64-bit platforms).
+#[cfg(not(feature = "huge_documents"))]
+pub(crate) type SpanIndex = u32;
+
+/// Type alias for span offset and length fields.
 ///
-/// Notes for consumers:
-/// - Line/column in [`Location`] are also character-based and 1-indexed.
-/// - If you need byte offsets (e.g., for `miette::SourceSpan`), convert the
-///   character range to a byte range against the original UTF-8 source string.
-///   Our `miette` integration performs this conversion at the boundary.
+/// With `huge_documents` enabled, this is `usize`, allowing documents larger than 4 GiB.
+/// This increases `Span` size from 16 to 40 bytes on 64-bit platforms.
+#[cfg(feature = "huge_documents")]
+pub(crate) type SpanIndex = u64;
+
+/// A span within the source YAML document.
+///
+/// This structure provides location information in two forms:
+/// 1. **Character-based**: `offset` and `len` count Unicode scalar values. This matches
+///    `saphyr-parser`'s native reporting and is always present.
+/// 2. **Byte-based**: `byte_info` contains `(byte_offset, byte_len)` counting raw bytes (UTF-8 code units).
+///    These are only populated when parsing from string inputs (`&str`, `String`).
+/// Byte base indices are internally limited to 32 bits by default (4 Gb documents). If you work
+/// with larger YAML documents, enable the `huge_documents` feature or do not use byte
+/// offsets (parsing and normal error reporting will still work).
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize, Default)]
 pub struct Span {
     /// Character offset within the source YAML document.
-    pub(crate) offset: usize,
+    pub(crate) offset: SpanIndex,
     /// Character length within the source YAML document.
-    pub(crate) len: u32,
+    pub(crate) len: SpanIndex,
+    /// Byte offset and length within the source YAML document (offset, len).
+    /// Only available when parsing from string sources. `(0, 0)` means unavailable.
+    pub(crate) byte_info: (SpanIndex, SpanIndex),
 }
 
 impl Span {
     /// Sentinel span meaning "unknown".
-    pub const UNKNOWN: Self = Self { offset: 0, len: 0 };
+    pub const UNKNOWN: Self = Self {
+        offset: 0,
+        len: 0,
+        byte_info: (0, 0),
+    };
 
     /// Returns the character offset within the source YAML document.
     #[inline]
-    pub fn offset(&self) -> usize {
-        self.offset
+    pub fn offset(&self) -> u64 {
+        self.offset as u64
     }
 
     /// Returns the character length within the source YAML document.
     #[inline]
-    pub fn len(&self) -> usize {
-        self.len as usize
+    pub fn len(&self) -> u64 {
+        self.len as u64
+    }
+
+    /// Returns the byte offset within the source YAML document.
+    /// Returns `None` if byte info is unavailable.
+    #[inline]
+    pub fn byte_offset(&self) -> Option<u64> {
+        if self.byte_info == (0, 0) {
+            None
+        } else {
+            Some(self.byte_info.0 as u64)
+        }
+    }
+
+    /// Returns the byte length within the source YAML document.
+    /// Returns `None` if byte info is unavailable.
+    #[inline]
+    pub fn byte_len(&self) -> Option<u64> {
+        if self.byte_info == (0, 0) {
+            None
+        } else {
+            Some(self.byte_info.1 as u64)
+        }
     }
 
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.len == 0
+    }
+
+    /// Returns the raw offset value as stored (either `u32` or `usize` depending on `huge_documents` feature).
+    #[inline]
+    pub(crate) fn raw_offset(&self) -> SpanIndex {
+        self.offset
+    }
+
+    /// Returns the raw length value as stored (either `u32` or `usize` depending on `huge_documents` feature).
+    #[inline]
+    pub(crate) fn raw_len(&self) -> SpanIndex {
+        self.len
+    }
+
+    /// Returns the raw byte_info tuple as stored.
+    #[inline]
+    pub(crate) fn raw_byte_info(&self) -> (SpanIndex, SpanIndex) {
+        self.byte_info
     }
 }
 
@@ -48,13 +111,42 @@ impl Span {
 /// This type is used for both:
 /// - deserialization error reporting ([`crate::Error`])
 /// - span-aware values ([`crate::Spanned`])
+///
+/// # Example
+///
+/// ```
+/// use serde::Deserialize;
+///
+/// #[derive(Deserialize, Debug)]
+/// struct Doc {
+///     val: String,
+/// }
+///
+/// // 1. Parse invalid YAML (type mismatch: expected string, found sequence)
+/// // Due emoji character and byte offsets are different.
+/// let yaml = "val🔑: [1, 2]";
+/// let err: Result<Doc, _> = serde_saphyr::from_str(yaml);
+///
+/// // 2. Obtain the error and its location
+/// if let Err(e) = err {
+///     if let Some(loc) = e.location() {
+///         // 3. Print row, column, and byte offsets
+///         // Output: Error at line 1, col 7. Byte offset: 9
+///         println!("Error at line {}, col {}", loc.line(), loc.column());
+///         if let Some(byte_off) = loc.span().byte_offset() {
+///             println!("Byte offset: {}", byte_off);
+///         }
+///     }
+/// }
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
 pub struct Location {
     /// 1-indexed row number in the input stream.
     pub(crate) line: u32,
     /// 1-indexed column number in the input stream.
     pub(crate) column: u32,
-    /// Character-based span within the document.
+    /// Character-based span within the document
+    /// Byte offsets are available for string source but not from the reader.
     #[serde(default)]
     pub(crate) span: Span,
 }
@@ -73,6 +165,7 @@ impl Location {
     }
 
     /// Character-based span within the source document.
+    /// For string source, it also can provide byte offsets.
     #[inline]
     pub fn span(&self) -> Span {
         self.span
@@ -119,9 +212,31 @@ impl Location {
 /// matching what the parser reports.
 pub(crate) fn location_from_span(span: &ParserSpan) -> Location {
     let start = &span.start;
+    let end = &span.end;
+
+    let byte_info = if let (Some(start_byte), Some(end_byte)) = (start.byte_offset(), end.byte_offset()) {
+        #[cfg(not(feature = "huge_documents"))]
+        {
+            let len = end_byte.saturating_sub(start_byte);
+            // If byte offsets exceed 4 GiB on non-huge builds, mark byte info as unavailable.
+            if start_byte > (u32::MAX as usize) || len > (u32::MAX as usize) {
+                (0, 0)
+            } else {
+                (start_byte as SpanIndex, len as SpanIndex)
+            }
+        }
+        #[cfg(feature = "huge_documents")]
+        {
+            (start_byte as SpanIndex, (end_byte - start_byte) as SpanIndex)
+        }
+    } else {
+        (0, 0)
+    };
+    
     Location::new(start.line(), start.col() + 1).with_span(Span {
-        offset: start.index(),
-        len: span.len() as u32,
+        offset: start.index() as SpanIndex,
+        len: span.len() as SpanIndex,
+        byte_info,
     })
 }
 

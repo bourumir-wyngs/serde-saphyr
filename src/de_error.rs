@@ -491,11 +491,13 @@ impl Error {
     #[cold]
     #[inline(never)]
     pub(crate) fn from_scan_error(err: ScanError) -> Self {
+        use crate::location::SpanIndex;
         let mark = err.marker();
         let location =
             Location::new(mark.line(), mark.col() + 1).with_span(crate::location::Span {
-                offset: mark.index(),
+                offset: mark.index() as SpanIndex,
                 len: 1,
+                byte_info: (0, 0),
             });
         Error::Message {
             msg: err.info().to_owned(),
