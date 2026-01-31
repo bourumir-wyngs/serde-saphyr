@@ -12,8 +12,8 @@ keywords = ["yaml", "serde", "config", "ros", "wasm"]
 exclude = ["Cargo.lock"]
 
 [dependencies]
-# saphyr-parser = { package = "saphyr-parser-bw", version = "0.0.606"}
-saphyr-parser = { package="saphyr-parser-bw", git = "https://github.com/bourumir-wyngs/saphyr", branch = "dev/saphyr-parser" }
+saphyr-parser = { package = "saphyr-parser-bw", version = "0.0.607"}
+# saphyr-parser = { package="saphyr-parser-bw", git = "https://github.com/bourumir-wyngs/saphyr", branch = "dev/saphyr-parser" }
 serde = { version = "1", features = ["derive"] }
 # Our tests are all fine with this alpha so far, this will be advanced
 smallvec = "2.0.0-alpha.12"
@@ -56,10 +56,9 @@ figment = ["dep:figment"]
 # as deg(180), rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). angle_conversions must be set to true in the Options.
 robotics = []
 
-# Enables byte span reporting YAML documents larger than 4 GiB by using `usize` instead of `u32`.
-# If this large document would be parsed without huge_documents enabled, parsing itself and
-# normal error reporting would still work but byte offsets will not be available. Public API is
-# always u64 and does not change from this feature.
+# Enables byte-span reporting for YAML documents > 4 GiB by using `u64` instead of `u32`.
+# Parsing and normal error reporting work without this feature, but byte offsets are not reported. Public API
+# does not change.
 huge_documents = []
 
 [dev-dependencies]
