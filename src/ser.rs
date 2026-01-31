@@ -86,10 +86,9 @@ pub struct FlowMap<T>(pub T);
 /// let yaml = serde_saphyr::to_string(&cfg).unwrap();
 /// // The output will have an empty line after "first: 1"
 /// ```
-/// **Important: ** Avoid using this wrapper with `LitStr`/`LitString` as it may add the empty
-/// line to the string content. For `FoldStr`/`FoldString` and all other YAML values
-/// (key: value, quoted scalars), extra empty lines are cosmetic.
-/// ```
+/// **Important:** Avoid using this wrapper with `LitStr`/`LitString` as it may add the empty
+/// line to the string content. For `FoldStr`/`FoldString` and other YAML values
+/// (e.g. `key: value`, quoted scalars), the extra empty line is cosmetic.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SpaceAfter<T>(pub T);
 
@@ -98,7 +97,7 @@ pub struct SpaceAfter<T>(pub T);
 /// This wrapper lets you annotate a scalar with an inline YAML comment that is
 /// emitted after the value when using block style. The typical form is:
 /// `value # comment`. This is the most useful when deserializing the anchor
-/// reference (human reader may want short comment what is the reference about)
+/// reference (so a human reader can see what a referenced value represents).
 ///
 /// Behavior
 /// - Block style (default): the comment appears after the scalar on the same line.
@@ -139,8 +138,8 @@ pub struct SpaceAfter<T>(pub T);
 ///
 /// *Important*: Comments are suppressed in flow contexts (no `#` appears), and
 /// ignored for complex inner values. Value with `Commented` wrapper will be
-/// deserializaed correctly as well, but deserialization of comment is
-/// currently not supported.
+/// deserialized correctly as well, but deserializing comments is currently not
+/// supported.
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Commented<T>(pub T, pub String);

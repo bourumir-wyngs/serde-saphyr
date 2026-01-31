@@ -28,7 +28,6 @@ pub(crate) type SpanIndex = u64;
 /// Byte base indices are internally limited to 32 bits by default (4 Gb documents). If you work
 /// with larger YAML documents, enable the `huge_documents` feature or do not use byte
 /// offsets (parsing and normal error reporting will still work).
-/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize, Default)]
 pub struct Span {
     /// Character offset within the source YAML document.

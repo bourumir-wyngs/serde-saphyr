@@ -904,17 +904,18 @@ impl<'a> Events<'a> for ReplayEvents<'a> {
     }
 }
 
-/// The streaming Serde deserializer
+/// The streaming Serde deserializer.
 ///
-/// ## Important: this deserializer is *borrowing* and is only available in a closure
+/// ## Important: this deserializer *borrows* and is only available in a closure
 ///
-/// `YamlDeserializer` borrows internal parsing state (the underlying `Events` source).
-/// Because of that, you generally cannot construct and return it as a standalone value.
-/// Instead, obtain it through the `with_deserializer_from_*` helpers, which give you a
-/// `crate::Deserializer` (an alias for `YamlDeserializer`) **inside a closure**.
+/// `YamlDeserializer` borrows from the YAML input processing state, so you generally
+/// cannot construct and return it as a standalone value.
 ///
-/// This is useful when you want to wrap the deserializer (e.g. to collect
-/// ignored fields or add error context) while still deserializing into your target type.
+/// Instead, obtain it through the `with_deserializer_from_*` helpers, which provide a
+/// [`crate::Deserializer`] (an alias for `YamlDeserializer`) **inside a closure**.
+///
+/// This is useful when you want to wrap the deserializer (for example, to collect
+/// ignored fields or to add error context) while still deserializing into your target type.
 ///
 /// ## Example
 ///
@@ -938,8 +939,8 @@ impl<'a> Events<'a> for ReplayEvents<'a> {
 /// # Ok::<(), serde_saphyr::Error>(())
 /// ```
 ///
-/// This type is *stateless* with respect to ownership: it borrows the event source
-/// (`'e`) and forwards requests into it, translating YAML shapes into Serde calls.
+/// This type is *stateless* with respect to ownership: it borrows the underlying input
+/// state (`'e`) and forwards Serde requests into it, translating YAML shapes into Serde calls.
 // Where do values come from: From an `Events` stream (typically [`LiveEvents`])
 // that yields simplified YAML events.
 // Where do values go: Into a Serde `Visitor` provided by the caller's
