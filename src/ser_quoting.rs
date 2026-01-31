@@ -137,32 +137,45 @@ pub(crate) fn is_plain_safe(s: &str) -> bool {
         return false;
     }
     let bytes = s.as_bytes();
-    if bytes[0].is_ascii_whitespace()
-        || matches!(
-            bytes[0],
-            b'-' | b'?'
-                | b':'
-                | b'['
-                | b']'
-                | b'{'
-                | b'}'
-                | b'#'
-                | b'&'
-                | b'*'
-                | b'!'
-                | b'|'
-                | b'>'
-                | b'\''
-                | b'"'
-                | b'%'
-                | b'@'
-                | b'`'
-        )
-    {
+    if bytes[0].is_ascii_whitespace() {
         return false;
     }
 
-    !contains_any_or_is_control(s, &[':', '#', ','])
+    // YAML indicators are only special in certain forms.
+    // For example, "-a" and "?query" are valid plain scalars, while "-" / "?"
+    // or "- " / "? " should be quoted.
+    match bytes[0] {
+        b'-' | b'?' => {
+            if bytes.len() == 1 {
+                return false;
+            }
+            if bytes[1].is_ascii_whitespace() {
+                return false;
+            }
+        }
+        // ',' is a flow indicator and cannot start a plain scalar.
+        b',' => return false,
+        b':'
+        | b'['
+        | b']'
+        | b'{'
+        | b'}'
+        | b'#'
+        | b'&'
+        | b'*'
+        | b'!'
+        | b'|'
+        | b'>'
+        | b'\''
+        | b'"'
+        | b'%'
+        | b'@'
+        | b'`' => return false,
+        _ => {}
+    }
+
+    // In block style, commas are just characters (only flow style treats them as structural).
+    !contains_any_or_is_control(s, &[':', '#'])
 }
 
 /// Returns true if `s` can be emitted as a plain scalar in VALUE position without quoting.
@@ -171,36 +184,44 @@ pub(crate) fn is_plain_safe(s: &str) -> bool {
 /// where certain characters would break parsing (e.g., commas and brackets) or where the token
 /// could be misinterpreted as a number or boolean.
 #[inline]
-pub(crate) fn is_plain_value_safe(s: &str, yaml_12: bool) -> bool {
+pub(crate) fn is_plain_value_safe(s: &str, yaml_12: bool, in_flow: bool) -> bool {
     if is_ambiguous_value(s, yaml_12) {
         return false;
     }
 
-    // Special float tokens per YAML
     let bytes = s.as_bytes();
-    if bytes[0].is_ascii_whitespace()
-        || matches!(
-            bytes[0],
-            b'-' | b'?'
-                | b':'
-                | b'['
-                | b']'
-                | b'{'
-                | b'}'
-                | b'#'
-                | b'&'
-                | b'*'
-                | b'!'
-                | b'|'
-                | b'>'
-                | b'\''
-                | b'"'
-                | b'%'
-                | b'@'
-                | b'`'
-        )
-    {
+    if bytes[0].is_ascii_whitespace() {
         return false;
+    }
+
+    match bytes[0] {
+        b'-' | b'?' => {
+            if bytes.len() == 1 {
+                return false;
+            }
+            if bytes[1].is_ascii_whitespace() {
+                return false;
+            }
+        }
+        // ',' is a flow indicator and cannot start a plain scalar.
+        b',' => return false,
+        b':'
+        | b'['
+        | b']'
+        | b'{'
+        | b'}'
+        | b'#'
+        | b'&'
+        | b'*'
+        | b'!'
+        | b'|'
+        | b'>'
+        | b'\''
+        | b'"'
+        | b'%'
+        | b'@'
+        | b'`' => return false,
+        _ => {}
     }
 
     // Yet while colon is ok, colon after whitespace is not.
@@ -210,9 +231,14 @@ pub(crate) fn is_plain_value_safe(s: &str, yaml_12: bool) -> bool {
         return false;
     }
 
-    // In flow style, commas and brackets/braces are structural; quote strings containing them.
-    // In values, ':' is allowed, but '#' would start a comment so still disallow '#'.
-    !contains_any_or_is_control(s, &[',', '[', ']', '{', '}', '#'])
+    if in_flow {
+        // In flow style, commas and brackets/braces are structural.
+        // In values, ':' is allowed, but '#' would start a comment so still disallow '#'.
+        !contains_any_or_is_control(s, &[',', '[', ']', '{', '}', '#'])
+    } else {
+        // In block style, commas/brackets/braces are ordinary characters.
+        !contains_any_or_is_control(s, &['#'])
+    }
 }
 
 fn contains_any_or_is_control(string: &str, values: &[char]) -> bool {

@@ -741,7 +741,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
             } else {
                 self.write_single_quoted(s)
             }
-        } else if is_plain_value_safe(s, self.yaml_12) {
+        } else if is_plain_value_safe(s, self.yaml_12, self.in_flow > 0) {
             self.out.write_str(s)?;
             Ok(())
         } else {
@@ -967,36 +967,43 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             })
         }
 
-        // If no explicit style pending, and option is enabled, auto-select block style
-        // similar to LitStr/FoldStr wrappers to improve compatibility with Go's yaml.v3.
-        // However, DISABLE auto block scalars when the string needs quoting as a value
-        // (per ser_quoting::is_plain_value_safe), unless the only reason it needs quoting
-        // is the presence of newlines themselves. This ensures cases like "hey:\n" remain
-        // quoted (because trimmed value ends with ':'), even when prefer_block_scalars=true.
+        // If no explicit style pending, auto-select block style.
+        //
+        // Controlled by `prefer_block_scalars`:
+        //  - multiline + long (by folded_wrap_col) → literal (|)
+        //  - otherwise, multiline → literal (|) only when newlines are the only reason plain
+        //    style is unsafe
+        //  - single-line + long (by folded_wrap_col) → folded (>)
+        //
         // Also skip block scalars when quote_all is enabled - use quoted strings instead.
-        if self.pending_str_style.is_none()
-            && self.prefer_block_scalars
-            && self.in_flow == 0
-            && !self.quote_all
-        {
+        if self.pending_str_style.is_none() && self.in_flow == 0 && !self.quote_all {
             use crate::ser_quoting::is_plain_value_safe;
 
             if v.contains('\n') {
-                // If removing newlines makes it plain-safe, then the only problem was newlines →
-                // allow literal block style. Otherwise, don't auto-select block style so that
-                // quoting logic handles it (e.g., values ending with ':').
-                let trimmed = v.trim_end_matches('\n');
-                let normalized = trimmed.replace('\n', " ");
-                if is_plain_value_safe(&normalized, self.yaml_12) {
-                    self.pending_str_style = Some(StrStyle::Literal);
-                    self.pending_str_from_auto = true;
+                if self.prefer_block_scalars {
+                    // If it's already multiline and long, emit literal block style for readability.
+                    let char_len = v.chars().count();
+                    if char_len > self.folded_wrap_col {
+                        self.pending_str_style = Some(StrStyle::Literal);
+                        self.pending_str_from_auto = true;
+                    } else {
+                        // If removing newlines makes it plain-safe, then the only problem was
+                        // newlines → allow literal block style. Otherwise, don't auto-select block
+                        // style so that quoting logic handles it (e.g., values ending with ':').
+                        let trimmed = v.trim_end_matches('\n');
+                        let normalized = trimmed.replace('\n', " ");
+                        if is_plain_value_safe(&normalized, self.yaml_12, false) {
+                            self.pending_str_style = Some(StrStyle::Literal);
+                            self.pending_str_from_auto = true;
+                        }
+                    }
                 }
-            } else {
+            } else if self.prefer_block_scalars {
                 // Single-line string. If it needs quoting as a value, don't auto-fold.
-                let needs_quoting = !is_plain_value_safe(v, self.yaml_12);
+                let needs_quoting = !is_plain_value_safe(v, self.yaml_12, false);
                 if !needs_quoting {
                     // Measure in characters, not bytes.
-                    if v.len() > self.folded_wrap_col {
+                    if v.chars().count() > self.folded_wrap_col {
                         self.pending_str_style = Some(StrStyle::Folded);
                         self.pending_str_from_auto = true;
                     }
@@ -2808,7 +2815,9 @@ impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
         // Keys are in a more restrictive position than values (':' is structural),
         // but they also must avoid ambiguous plain scalars (e.g. YAML 1.1 bool spellings
         // like y/n/yes/no) to preserve intended string keys.
-        if is_plain_safe(v) && is_plain_value_safe(v, self.yaml_12) {
+        // Be conservative here: keys may be emitted in both block and flow mappings,
+        // and flow mappings treat characters like ','/[]/{} as structural.
+        if is_plain_safe(v) && is_plain_value_safe(v, self.yaml_12, true) {
             self.s.push_str(v);
         } else {
             self.s.push('"');
