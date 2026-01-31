@@ -57,74 +57,38 @@ pub struct Budget {
     /// stream into iterator, where potentially infinite input may need to be supported.
     ///
     /// Default: 256 Mb
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `Budget` via `serde_saphyr::budget! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub max_reader_input_bytes: Option<usize>,
     /// Maximum total parser events (counting every event).
     ///
     /// Default: 1,000,000
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `Budget` via `serde_saphyr::budget! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub max_events: usize,
     /// Maximum number of alias (`*ref`) events allowed.
     ///
     /// Default: 50,000
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `Budget` via `serde_saphyr::budget! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub max_aliases: usize,
     /// Maximal total number of anchors (distinct `&anchor` definitions).
     ///
     /// Default: 50,000
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `Budget` via `serde_saphyr::budget! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub max_anchors: usize,
     /// Maximum structural nesting depth (sequences + mappings).
     ///
     /// Default: 2,000
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `Budget` via `serde_saphyr::budget! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub max_depth: usize,
     /// Maximum number of YAML documents in the stream.
     ///
     /// Default: 1,024. If enforcing policy is "per document", this is ignored.
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `Budget` via `serde_saphyr::budget! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub max_documents: usize,
     /// Maximum number of *nodes* (SequenceStart/MappingStart/Scalar).
     ///
     /// Default: 250,000
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `Budget` via `serde_saphyr::budget! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub max_nodes: usize,
     /// Maximum total bytes of scalar contents (sum of `Scalar.value.len()`).
     ///
     /// Default: 67,108,864 (64 MiB)
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `Budget` via `serde_saphyr::budget! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub max_total_scalar_bytes: usize,
     /// Maximum number of merge keys (`<<`) allowed across the stream.
     ///
     /// Default: 10,000
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `Budget` via `serde_saphyr::budget! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub max_merge_keys: usize,
     /// If `true`, enforce the alias/anchor heuristic.
     ///
@@ -132,29 +96,17 @@ pub struct Budget {
     /// relative to the number of defined anchors.
     ///
     /// Default: true
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `Budget` via `serde_saphyr::budget! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub enforce_alias_anchor_ratio: bool,
     /// Minimum number of aliases required before the alias/anchor ratio
     /// heuristic is evaluated. This avoids tiny-input false positives.
     ///
     /// Default: 100
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `Budget` via `serde_saphyr::budget! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub alias_anchor_min_aliases: usize,
     /// Multiplier used for the alias/anchor ratio heuristic. A breach occurs
     /// when `aliases > alias_anchor_ratio_multiplier * anchors` (after
     /// scanning), once [`Budget::alias_anchor_min_aliases`] is met.
     ///
     /// Default: 10
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `Budget` via `serde_saphyr::budget! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub alias_anchor_ratio_multiplier: usize,
 }
 

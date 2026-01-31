@@ -57,27 +57,15 @@ pub struct SerializerOptions {
     /// If true, empty maps are emitted as braces {} and empty lists as []  (this is the default).
     /// Such form is equally valid YAML, allows to tell empty from null and may be easier for a
     /// human to grasp.
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `SerializerOptions` via `serde_saphyr::ser_options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub empty_as_braces: bool,
     /// Number of spaces to indent per nesting level when emitting block-style collections (2 by default).
     /// 0 value is invalid and will result and error when trying to deserialize, because
     /// no indentation would produce invalid YAML otherwise.
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `SerializerOptions` via `serde_saphyr::ser_options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub indent_step: usize,
     /// Optional custom anchor-name generator.
     ///
     /// Receives a monotonically increasing `usize` id (starting at 1) and returns the
     /// anchor name to emit. If `None`, the built-in generator yields names like `a1`, `a2`, ...
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `SerializerOptions` via `serde_saphyr::ser_options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub anchor_generator: Option<fn(usize) -> String>,
     /// Threshold for block-string wrappers ([crate::LitStr]/[crate::FoldStr] and owned variants
     /// [crate::LitString]/[crate::FoldString]).
@@ -88,10 +76,6 @@ pub struct SerializerOptions {
     /// styles `|` or `>` depending on the wrapper. See the type docs for
     /// [crate::LitStr], [crate::FoldStr], [crate::LitString] and [crate::FoldString] for
     /// examples.
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `SerializerOptions` via `serde_saphyr::ser_options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub min_fold_chars: usize,
     /// Maximum width (in characters) for lines in folded block scalars (`>`).
     ///
@@ -100,28 +84,16 @@ pub struct SerializerOptions {
     /// within the limit (e.g., a single long token), the line is emitted unwrapped
     /// to preserve round-trip correctness: YAML folded scalars typically fold inserted
     /// newlines back as spaces when parsing. 32 default.
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `SerializerOptions` via `serde_saphyr::ser_options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub folded_wrap_chars: usize,
     /// When enabled, serialize simple enums that become a single scalar (unit variants)
     /// using YAML tags, e.g. `!!Enum Variant` instead of a plain scalar `Variant`.
     /// Deserializer does not need this setting as both cases will be understood. Off by default.
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `SerializerOptions` via `serde_saphyr::ser_options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub tagged_enums: bool,
 
     /// When enabled, strings containing more than folded_wrap_chars (80 by default) are written
     /// in wrapped multistring folded form (>), and strings containing new lines are written in
     /// literal form (|), selecting format depending on the number of empty lines at the end.
     /// On by default.
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `SerializerOptions` via `serde_saphyr::ser_options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub prefer_block_scalars: bool,
 
     /// When enabled, quote all string scalars. Uses single quotes by default,
@@ -129,10 +101,6 @@ pub struct SerializerOptions {
     /// (control characters like `\n`, `\t`, `\r`, backslash) or single quotes.
     /// Disables block scalar styles (`|` and `>`) for quoted strings when active.
     /// Off by default.
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `SerializerOptions` via `serde_saphyr::ser_options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub quote_all: bool,
 }
 

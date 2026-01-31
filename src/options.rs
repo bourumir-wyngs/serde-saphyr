@@ -76,71 +76,35 @@ impl Default for AliasLimits {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Options {
     /// Optional YAML budget to enforce before parsing (counts raw parser events).
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `Options` via `serde_saphyr::options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub budget: Option<Budget>,
     /// Optional callback invoked with the final budget report after parsing.
     /// It is invoked both when parsing is successful and when budget was breached.
-    #[deprecated(
-        since = "0.0.17",
-        note = "Use `Options::with_budget_report(...)` instead"
-    )]
     #[serde(skip)]
     pub budget_report: Option<fn(&crate::budget::BudgetReport)>,
 
     /// Invoked both when parsing is successful and when budget was breached.
     #[serde(skip)]
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `Options` via `serde_saphyr::options! { ... }`; for callbacks prefer `Options::with_budget_report(...)`"
-    )]
     pub budget_report_cb: Option<BudgetReportCallback>,
 
     /// Policy for duplicate keys.
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `Options` via `serde_saphyr::options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub duplicate_keys: DuplicateKeyPolicy,
     /// Limits for alias replay to harden against alias bombs.
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `Options` via `serde_saphyr::options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub alias_limits: AliasLimits,
     /// Enable legacy octal parsing where values starting with `00` are treated as base-8.
     /// They are deprecated in YAML 1.2. Default: false.
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `Options` via `serde_saphyr::options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub legacy_octal_numbers: bool,
     /// If true, interpret only the exact literals `true` and `false` as booleans.
     /// YAML 1.1 forms like `yes`/`no`/`on`/`off` will be rejected and not inferred.
     /// Default: false (accept YAML 1.1 boolean forms).
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `Options` via `serde_saphyr::options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub strict_booleans: bool,
     /// When a field marked with the `!!binary` tag is deserialized into a `String`,
     /// `serde-saphyr` normally expects the value to be base64-encoded UTF-8.
     /// If you want to treat the value as a plain string and ignore the `!!binary` tag,
     /// set this to `true` (the default is `false`).
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `Options` via `serde_saphyr::options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub ignore_binary_tag_for_string: bool,
     /// Activates YAML conventions common in robotics community. These extensions support
     /// conversion functions (deg, rad) and simple mathematical expressions such as deg(180),
     /// rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). [robotics] feature must also be enabled.
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `Options` via `serde_saphyr::options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub angle_conversions: bool,
     /// If true, values that can be parsed as booleans or numbers are rejected as
     /// unquoted strings. This flag is intended for teams that want to enforce
@@ -148,19 +112,11 @@ pub struct Options {
     /// requiring such strings to be explicitly quoted.
     /// The default is false (a number or boolean will be stored in the string
     /// field exactly as provided, without quoting).
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `Options` via `serde_saphyr::options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub no_schema: bool,
 
     /// If true (default), public APIs that have access to the original YAML input
     /// will wrap returned errors with a snippet wrapper, enabling rustc-like snippet
     /// rendering when a location is available.
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `Options` via `serde_saphyr::options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub with_snippet: bool,
 
     /// Horizontal crop radius (in character columns) when rendering snippet diagnostics.
@@ -169,10 +125,6 @@ pub struct Options {
     /// column window around the reported error column, so they stay vertically aligned.
     ///
     /// If set to `0`, snippet wrapping is disabled (the original, unwrapped error is returned).
-    #[deprecated(
-        since = "0.0.17",
-        note = "Prefer constructing `Options` via `serde_saphyr::options! { ... }` rather than struct literal syntax; direct field init may be restricted in a future release"
-    )]
     pub crop_radius: usize,
 }
 
