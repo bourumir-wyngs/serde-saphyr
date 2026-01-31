@@ -26,6 +26,7 @@ use crate::buffered_input::{ChunkedChars, buffered_input_from_reader_with_limit}
 use crate::de::{AliasLimits, Budget, Error, Ev, Events, Location};
 use crate::de_error::{budget_error, TransformReason};
 use crate::location::location_from_span;
+use crate::slicer::scalar_borrow_offsets;
 use crate::tags::SfTag;
 use saphyr_parser::{BufferedInput, Event, Parser, ScalarStyle, ScanError, Span, StrInput};
 use smallvec::SmallVec;
@@ -37,7 +38,10 @@ use crate::options::BudgetReportCallback;
 type StreamReader<'a> = Box<dyn std::io::Read + 'a>;
 type StreamBufReader<'a> = std::io::BufReader<StreamReader<'a>>;
 type StreamInput<'a> = BufferedInput<ChunkedChars<StreamBufReader<'a>>>;
-type StreamParser<'a> = Parser<'a, StreamInput<'a>>;
+// NOTE: `BufferedInput` is a streaming input without stable backing storage.
+// Upstream implements `BorrowedInput<'static>` for it, so the parser's event lifetime is `'static`.
+// This is fine for our reader-based mode since we never borrow from the original input string.
+type StreamParser<'a> = Parser<'static, StreamInput<'a>>;
 
 
 /// This is enough to hold a single scalar that is common  case in YAML anchors.
@@ -341,85 +345,14 @@ impl<'a> LiveEvents<'a> {
 
                     // Determine if this scalar can be borrowed from the original input.
                     //
-                    // Sound borrowing is only possible when:
-                    // - we are deserializing from an in-memory input (`from_str`/`from_slice`), and
-                    // - the parser produced a `Cow::Borrowed` that is a subslice of that input, and
-                    // - the tag doesn't imply schema-driven string transformation.
-                    //
-                    // We store byte offsets into the input for O(1) slicing later.
-                    let borrow_info = if let Some(input) = self.input {
-                        if !matches!(tag_s, SfTag::None | SfTag::String | SfTag::NonSpecific) {
-                            // Non-stringy tags can imply schema conversion; don't claim we can borrow.
-                            Err(TransformReason::BlockScalarProcessing)
-                        } else {
-                            // First, try to derive offsets from the parser-provided span.
-                            // This can still support borrowing even if the parser produced an owned
-                            // `Cow` for an untransformed scalar.
-                            let span = location.span();
-                            let start = span.offset();
-                            let end = start.saturating_add(span.len() as usize);
-                            let as_ref = val.as_ref();
-
-                            let by_span = if end <= input.len()
-                                && input.is_char_boundary(start)
-                                && input.is_char_boundary(end)
-                            {
-                                let raw = &input[start..end];
-                                if raw == as_ref {
-                                    Some(Ok((start, end)))
-                                } else if matches!(style, ScalarStyle::SingleQuoted | ScalarStyle::DoubleQuoted)
-                                    && raw.len() >= 2
-                                    && &raw[1..raw.len() - 1] == as_ref
-                                {
-                                    Some(Ok((start + 1, end - 1)))
-                                } else {
-                                    None
-                                }
-                            } else {
-                                None
-                            };
-
-                            if let Some(res) = by_span {
-                                res
-                            } else if let Cow::Borrowed(borrowed) = val {
-                                // If the parser gave us a borrowed subslice, compute offsets from
-                                // the actual slice (robust against duplicate substrings).
-                                let base = input.as_bytes().as_ptr() as usize;
-                                let ptr = borrowed.as_bytes().as_ptr() as usize;
-                                let len = borrowed.len();
-                                let input_len = input.len();
-
-                                if ptr >= base
-                                    && ptr
-                                        .checked_add(len)
-                                        .is_some_and(|end| end <= base + input_len)
-                                {
-                                    let start = ptr - base;
-                                    let end = start + len;
-                                    if input.is_char_boundary(start) && input.is_char_boundary(end) {
-                                        Ok((start, end))
-                                    } else {
-                                        Err(TransformReason::MultiLineNormalization)
-                                    }
-                                } else {
-                                    Err(TransformReason::InputNotBorrowable)
-                                }
-                            } else {
-                                // Could not prove that the returned string exists verbatim in the input.
-                                let reason = match style {
-                                    ScalarStyle::Plain => TransformReason::MultiLineNormalization,
-                                    ScalarStyle::SingleQuoted => TransformReason::SingleQuoteEscape,
-                                    ScalarStyle::DoubleQuoted => TransformReason::EscapeSequence,
-                                    ScalarStyle::Folded => TransformReason::LineFolding,
-                                    ScalarStyle::Literal => TransformReason::BlockScalarProcessing,
-                                };
-                                Err(reason)
-                            }
-                        }
-                    } else {
-                        // Reader-based input cannot support zero-copy borrowing.
-                        Err(TransformReason::InputNotBorrowable)
-                    };
+                    // The core algorithm lives in `src/slicer.rs`.
+                    let borrow_info = scalar_borrow_offsets(
+                        self.input,
+                        &val,
+                        style,
+                        tag_s,
+                        &location,
+                    );
                     
                     if val.is_empty()
                         && anchor_id != 0
