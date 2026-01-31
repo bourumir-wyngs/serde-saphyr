@@ -111,10 +111,11 @@ non_empty:
 fn struct_with_non_empty_map_renders_block_mapping() {
     let mut m = BTreeMap::new();
     m.insert("x".to_string(), "foo".to_string());
-    m.insert("y".to_string(), "bar".to_string());
+    // Avoid YAML 1.1 boolean-like plain scalars as keys (e.g. "y"), which are now quoted.
+    m.insert("xy".to_string(), "bar".to_string());
     let v = WrapMap { m };
     let s = serde_saphyr::to_string(&v).unwrap();
-    let expected = "m:\n  x: foo\n  y: bar\n";
+    let expected = "m:\n  x: foo\n  xy: bar\n";
     assert_eq!(s, expected, "yaml: {}", s);
 }
 

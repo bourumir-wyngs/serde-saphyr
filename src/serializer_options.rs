@@ -102,6 +102,15 @@ pub struct SerializerOptions {
     /// Disables block scalar styles (`|` and `>`) for quoted strings when active.
     /// Off by default.
     pub quote_all: bool,
+
+    /// When enabled, emit `%YAML 1.2` at the beginning of the document and
+    /// use YAML 1.2 rules for certain compatibility heuristics.
+    ///
+    /// In particular, YAML 1.1 boolean spellings like `yes`/`no`/`on`/`off`/`y`/`n`
+    /// will **not** be treated as booleans for the purpose of auto-quoting. In cases
+    /// like multiple x, y coordinates quoting y may be very annoying.
+    /// Default: false.
+    pub yaml_12: bool,
 }
 
 // Below this length, block-string wrappers serialize as regular scalars
@@ -138,6 +147,7 @@ impl Default for SerializerOptions {
             empty_as_braces: true,
             prefer_block_scalars: true,
             quote_all: false,
+            yaml_12: false,
         }
     }
 }

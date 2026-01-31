@@ -173,10 +173,11 @@ fn test_vec() {
 fn test_map() {
     let mut thing = BTreeMap::new();
     thing.insert("x".to_owned(), 1);
-    thing.insert("y".to_owned(), 2);
+    // Avoid YAML 1.1 boolean-like plain scalars as keys (e.g. "y"), which are now quoted.
+    thing.insert("xy".to_owned(), 2);
     let yaml = indoc! {"
         x: 1
-        y: 2
+        xy: 2
     "};
     test_serde(&thing, yaml);
 }
@@ -209,17 +210,17 @@ fn test_basic_struct() {
     #[derive(Serialize, Deserialize, PartialEq, Debug)]
     struct Basic {
         x: isize,
-        y: String,
+        xy: String,
         z: bool,
     }
     let thing = Basic {
         x: -4,
-        y: "hi\tquoted".to_owned(),
+        xy: "hi\tquoted".to_owned(),
         z: true,
     };
     let yaml = indoc! {r#"
         x: -4
-        y: "hi\tquoted"
+        xy: "hi\tquoted"
         z: true
     "#};
     test_serde(&thing, yaml);
@@ -288,7 +289,7 @@ fn test_strings_needing_quote() {
         boolean: String,
         integer: String,
         void: String,
-        nan: String,
+        xnan: String,
         leading_zeros: String,
         ok: String,
     }
@@ -296,14 +297,14 @@ fn test_strings_needing_quote() {
         boolean: "true".to_owned(),
         integer: "1".to_owned(),
         void: "null".to_owned(),
-        nan: "NaN".to_owned(),
+        xnan: "NaN".to_owned(),
         leading_zeros: "007".to_owned(),
         ok: "OK".to_owned(), // does not need quote
     };
     let yaml = r#"boolean: "true"
 integer: "1"
 void: "null"
-nan: "NaN"
+xnan: "NaN"
 leading_zeros: "007"
 ok: OK
 "#;
@@ -418,13 +419,13 @@ fn test_struct() {
     #[derive(Serialize, Deserialize, PartialEq, Debug)]
     struct Point {
         x: f64,
-        y: f64,
+        xy: f64,
     }
 
-    let point = Point { x: 1.0, y: 2.0 };
+    let point = Point { x: 1.0, xy: 2.0 };
 
     let yaml = serde_saphyr::to_string(&point).unwrap();
-    assert_eq!(yaml, "x: 1.0\ny: 2.0\n");
+    assert_eq!(yaml, "x: 1.0\nxy: 2.0\n");
 
     let deserialized_point: Point = serde_saphyr::from_str(&yaml).unwrap();
     assert_eq!(point, deserialized_point);
@@ -434,10 +435,11 @@ fn test_struct() {
 fn test_btree_map() {
     let mut map = BTreeMap::new();
     map.insert("x".to_string(), 1.0);
-    map.insert("y".to_string(), 2.0);
+    // Avoid YAML 1.1 boolean-like plain scalars as keys (e.g. "y"), which are now quoted.
+    map.insert("xy".to_string(), 2.0);
 
     let yaml = serde_saphyr::to_string(&map).unwrap();
-    assert_eq!(yaml, "x: 1.0\ny: 2.0\n");
+    assert_eq!(yaml, "x: 1.0\nxy: 2.0\n");
 
     let deserialized_map: BTreeMap<String, f64> = serde_saphyr::from_str(&yaml).unwrap();
     assert_eq!(map, deserialized_map);

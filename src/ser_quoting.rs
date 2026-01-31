@@ -108,14 +108,14 @@ fn is_ambiguous(s: &str) -> bool {
 /// For values we are more conservative: quote additional spellings that many YAML
 /// parsers accept as floats even if YAML 1.2 requires the leading-dot form.
 #[inline]
-fn is_ambiguous_value(s: &str) -> bool {
+fn is_ambiguous_value(s: &str, yaml_12: bool) -> bool {
     if is_ambiguous(s) {
         return true;
     }
 
     // YAML 1.1 boolean spellings: quote them as strings for compatibility and
     // round-tripping (e.g. "YES", "no", "On", "off", "y", "n").
-    if parse_yaml11_bool(s).is_ok() {
+    if !yaml_12 && parse_yaml11_bool(s).is_ok() {
         return true;
     }
 
@@ -171,8 +171,8 @@ pub(crate) fn is_plain_safe(s: &str) -> bool {
 /// where certain characters would break parsing (e.g., commas and brackets) or where the token
 /// could be misinterpreted as a number or boolean.
 #[inline]
-pub(crate) fn is_plain_value_safe(s: &str) -> bool {
-    if is_ambiguous_value(s) {
+pub(crate) fn is_plain_value_safe(s: &str, yaml_12: bool) -> bool {
+    if is_ambiguous_value(s, yaml_12) {
         return false;
     }
 

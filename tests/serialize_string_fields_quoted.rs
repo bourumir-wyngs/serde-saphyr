@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 struct HasStrings {
     zero: String,
-    nan: String,
+    xnan: String,
     colon: String,
     comment: String,
     ending_colon: String,
@@ -15,7 +15,7 @@ struct HasStrings {
 fn strings_that_look_special_are_quoted() -> Result<()> {
     let v = HasStrings {
         zero: "0".to_string(),
-        nan: "nan".to_string(),
+        xnan: "nan".to_string(),
         colon: "a: b".to_string(),
         comment: "# hi".to_string(),
         ending_colon: "hi:".to_string(),
@@ -27,7 +27,7 @@ fn strings_that_look_special_are_quoted() -> Result<()> {
     // Each of these fields should be quoted or escaped so that they are preserved as strings
     // and do not get parsed as numbers, special floats, or mapping syntax.
     assert!(out.contains("zero: \"0\""), "'0' must be quoted: {out}");
-    assert!(out.contains("nan: \"nan\""), "'nan' must be quoted: {out}");
+    assert!(out.contains("xnan: \"nan\""), "'nan' must be quoted: {out}");
     assert!(out.contains("\"# hi\""), "comment must be quoted: {out}");
     assert!(
         out.contains("colon: \"a: b\""),

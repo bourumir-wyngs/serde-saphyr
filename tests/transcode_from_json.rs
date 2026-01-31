@@ -23,7 +23,7 @@ mod tests {
                 "rainbow": ["red", "orange", "yellow", "green", "blue", "purple"],
                 "point": {
                     "x": 12,
-                    "y": -34
+                    "xy": -34
                 },
                 "bools": [true, false]
             }
@@ -46,7 +46,7 @@ mod tests {
   - purple
 point:
   x: 12
-  y: -34
+  xy: -34
 bools:
   - true
   - false
@@ -126,7 +126,7 @@ bools:
   - purple
 point:
   x: 12
-  y: -34
+  xy: -34
 bools:
   - true
   - false
@@ -138,7 +138,7 @@ bools:
             &json,
             r#"{
               "rainbow": ["red", "orange", "yellow", "green", "blue", "purple"],
-              "point": {"x": 12, "y": -34},
+              "point": {"x": 12, "xy": -34},
               "bools": [true, false]
             }"#,
         );

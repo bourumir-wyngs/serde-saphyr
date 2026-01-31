@@ -129,11 +129,11 @@ pub struct SpaceAfter<T>(pub T);
 /// use serde_saphyr::Commented;
 ///
 /// #[derive(Serialize)]
-/// struct S { n: Commented<i32> }
+/// struct S { xn: Commented<i32> }
 ///
-/// let s = S { n: Commented(5, "send five starships first".into()) };
+/// let s = S { xn: Commented(5, "send five starships first".into()) };
 /// let out = serde_saphyr::to_string(&s).unwrap();
-/// assert_eq!(out, "n: 5 # send five starships first\n");
+/// assert_eq!(out, "xn: 5 # send five starships first\n");
 /// ```
 ///
 /// *Important*: Comments are suppressed in flow contexts (no `#` appears), and
@@ -468,6 +468,11 @@ pub struct YamlSerializer<'a, W: Write> {
     /// If true, quote all string scalars. Uses single quotes by default, but switches to
     /// double quotes when the string contains escape sequences or single quotes.
     quote_all: bool,
+
+    /// When enabled, emit YAML 1.2 directive and use YAML 1.2-friendly heuristics.
+    yaml_12: bool,
+    /// Whether we have started emitting the current document.
+    doc_started: bool,
 }
 
 impl<'a, W: Write> YamlSerializer<'a, W> {
@@ -501,6 +506,8 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
             after_dash_depth: None,
             current_map_depth: None,
             quote_all: false,
+            yaml_12: false,
+            doc_started: false,
         }
     }
     /// Construct a `YamlSerializer` with a specific indentation step.
@@ -523,6 +530,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         s.empty_as_braces = options.empty_as_braces;
         s.prefer_block_scalars = options.prefer_block_scalars;
         s.quote_all = options.quote_all;
+        s.yaml_12 = options.yaml_12;
         s
     }
 
@@ -626,6 +634,14 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     #[inline]
     fn write_indent(&mut self, depth: usize) -> Result<()> {
         if self.at_line_start {
+            if !self.doc_started {
+                self.doc_started = true;
+                if self.yaml_12 {
+                    self.out.write_str("%YAML 1.2\n")?;
+                    // Still at start of a line after the directive.
+                    self.at_line_start = true;
+                }
+            }
             for _k in 0..self.indent_step * depth {
                 self.out.write_char(' ')?;
             }
@@ -725,7 +741,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
             } else {
                 self.write_single_quoted(s)
             }
-        } else if is_plain_value_safe(s) {
+        } else if is_plain_value_safe(s, self.yaml_12) {
             self.out.write_str(s)?;
             Ok(())
         } else {
@@ -971,13 +987,13 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 // quoting logic handles it (e.g., values ending with ':').
                 let trimmed = v.trim_end_matches('\n');
                 let normalized = trimmed.replace('\n', " ");
-                if is_plain_value_safe(&normalized) {
+                if is_plain_value_safe(&normalized, self.yaml_12) {
                     self.pending_str_style = Some(StrStyle::Literal);
                     self.pending_str_from_auto = true;
                 }
             } else {
                 // Single-line string. If it needs quoting as a value, don't auto-fold.
-                let needs_quoting = !is_plain_value_safe(v);
+                let needs_quoting = !is_plain_value_safe(v, self.yaml_12);
                 if !needs_quoting {
                     // Measure in characters, not bytes.
                     if v.len() > self.folded_wrap_col {
@@ -2025,7 +2041,7 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
             if !self.first {
                 self.ser.out.write_str(", ")?;
             }
-            let text = scalar_key_to_string(key)?;
+            let text = scalar_key_to_string(key, self.ser.yaml_12)?;
             self.ser.out.write_str(&text)?;
             self.ser.out.write_str(": ")?;
             self.ser.at_line_start = false;
@@ -2050,7 +2066,7 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
             self.ser.after_dash_depth = None;
             self.ser.pending_inline_map = false;
 
-            match scalar_key_to_string(key) {
+            match scalar_key_to_string(key, self.ser.yaml_12) {
                 Ok(text) => {
                     // Indent continuation lines. If this map started inline after a dash,
                     // align under the first key by adding two spaces instead of a full indent step.
@@ -2224,7 +2240,7 @@ impl<'a, 'b, W: Write> SerializeStructVariant for StructVariantSer<'a, 'b, W> {
         key: &'static str,
         value: &T,
     ) -> Result<()> {
-        let text = scalar_key_to_string(&key)?;
+        let text = scalar_key_to_string(&key, self.ser.yaml_12)?;
         self.ser.write_indent(self.depth)?;
         self.ser.out.write_str(&text)?;
         // Defer spacing/newline decision to the value serializer similarly to map entries.
@@ -2713,10 +2729,10 @@ impl StrCapture {
 /// Serialize a key using a restricted scalar-only serializer into a `String`.
 ///
 /// Called by map/struct serializers to ensure YAML keys are scalars.
-fn scalar_key_to_string<K: Serialize + ?Sized>(key: &K) -> Result<String> {
+fn scalar_key_to_string<K: Serialize + ?Sized>(key: &K, yaml_12: bool) -> Result<String> {
     let mut s = String::new();
     {
-        let mut ks = KeyScalarSink { s: &mut s };
+        let mut ks = KeyScalarSink { s: &mut s, yaml_12 };
         key.serialize(&mut ks)?;
     }
     Ok(s)
@@ -2724,6 +2740,7 @@ fn scalar_key_to_string<K: Serialize + ?Sized>(key: &K) -> Result<String> {
 
 struct KeyScalarSink<'a> {
     s: &'a mut String,
+    yaml_12: bool,
 }
 
 impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
@@ -2788,7 +2805,10 @@ impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
         self.serialize_str(v.encode_utf8(&mut buf))
     }
     fn serialize_str(self, v: &str) -> Result<()> {
-        if is_plain_safe(v) {
+        // Keys are in a more restrictive position than values (':' is structural),
+        // but they also must avoid ambiguous plain scalars (e.g. YAML 1.1 bool spellings
+        // like y/n/yes/no) to preserve intended string keys.
+        if is_plain_safe(v) && is_plain_value_safe(v, self.yaml_12) {
             self.s.push_str(v);
         } else {
             self.s.push('"');

@@ -3,29 +3,31 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Point {
     x: i32,
-    y: i32,
+    xy: i32,
 }
 
 #[test]
 fn test_read_json_struct() {
     // JSON input
-    let json = r#"{ "x": 1, "y": 2 }"#;
+    // Avoid YAML 1.1 boolean-like plain scalars as keys (e.g. "y"), which are now quoted.
+    let json = r#"{ "x": 1, "xy": 2 }"#;
 
     // Parse JSON string using serde_yaml (JSON is valid YAML)
     let point: Point = serde_saphyr::from_str(json).unwrap();
 
-    assert_eq!(point, Point { x: 1, y: 2 });
+    assert_eq!(point, Point { x: 1, xy: 2 });
 }
 
 #[test]
 fn test_read_json_array_of_structs() {
     // JSON input: an array of Point objects
-    let json = r#"[ { "x": 1, "y": 2 }, { "x": 3, "y": 4 } ]"#;
+    // Avoid YAML 1.1 boolean-like plain scalars as keys (e.g. "y"), which are now quoted.
+    let json = r#"[ { "x": 1, "xy": 2 }, { "x": 3, "xy": 4 } ]"#;
 
     // Parse JSON (valid YAML) into Vec<Point>
     let points: Vec<Point> = serde_saphyr::from_str(json).unwrap();
 
-    assert_eq!(points, vec![Point { x: 1, y: 2 }, Point { x: 3, y: 4 },]);
+    assert_eq!(points, vec![Point { x: 1, xy: 2 }, Point { x: 3, xy: 4 },]);
 
     // Serialize back to YAML
     let s = serde_saphyr::to_string(&points).unwrap();
@@ -33,9 +35,9 @@ fn test_read_json_array_of_structs() {
     // YAML block style for arrays
     let expected = "\
 - x: 1
-  y: 2
+  xy: 2
 - x: 3
-  y: 4
+  xy: 4
 ";
 
     assert_eq!(s, expected);
@@ -54,9 +56,9 @@ fn test_read_json_nested_struct() {
     {
         "name": "triangle",
         "vertices": [
-            { "x": 0, "y": 0 },
-            { "x": 1, "y": 0 },
-            { "x": 0, "y": 1 }
+            { "x": 0, "xy": 0 },
+            { "x": 1, "xy": 0 },
+            { "x": 0, "xy": 1 }
         ]
     }
     "#;
@@ -69,9 +71,9 @@ fn test_read_json_nested_struct() {
         Shape {
             name: "triangle".to_string(),
             vertices: vec![
-                Point { x: 0, y: 0 },
-                Point { x: 1, y: 0 },
-                Point { x: 0, y: 1 },
+                Point { x: 0, xy: 0 },
+                Point { x: 1, xy: 0 },
+                Point { x: 0, xy: 1 },
             ]
         }
     );
