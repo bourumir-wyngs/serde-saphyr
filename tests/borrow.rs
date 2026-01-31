@@ -14,7 +14,7 @@
 mod tests {
     use serde::de::{self, Deserializer, Visitor};
     use serde::Deserialize;
-    use serde_saphyr::from_str;
+    use serde_saphyr::{from_str, Error};
     use std::borrow::Cow;
     use std::fmt;
 
@@ -405,14 +405,21 @@ value: 42
         assert_eq!(result.value, 42);
     }
 
+    fn assert_transform_error(err: Error) {
+        match err.without_snippet() {
+            Error::CannotBorrowTransformedString { .. } => {
+                // fine
+            }
+            _ => unreachable!("Expected CannotBorrowTransformedString, got {:?}", err),
+        };
+    }
+
     #[test]
     fn borrowed_string_rejects_escape_sequences() {
         // Double-quoted strings with escape processing cannot be borrowed into `&str`.
         let yaml = "name: \"hello\\nworld\"\nvalue: 42\n";
         let err = from_str::<BorrowedData>(yaml).unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("cannot borrow"));
-        assert!(msg.contains("escape"));
+        assert_transform_error(err);
     }
 
     #[test]
@@ -423,9 +430,7 @@ value: 42
         // unrelated "it's" nearby.
         let yaml = "other: it's\nname: 'it''s'\nvalue: 42\n";
         let err = from_str::<BorrowedData>(yaml).unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("cannot borrow"));
-        assert!(msg.contains("single-quote") || msg.contains("single"));
+        assert_transform_error(err);
     }
 
     // ============================================================================

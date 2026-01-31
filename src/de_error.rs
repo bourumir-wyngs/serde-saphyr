@@ -63,6 +63,13 @@ pub enum TransformReason {
     /// buffer (for example, when deserializing from a `Read`er), or because the parser did not
     /// provide a slice that is a subslice of the original input.
     InputNotBorrowable,
+
+    /// The parser returned an owned string for this scalar.
+    ///
+    /// In newer `saphyr-parser` versions, zero-copy is represented directly as `Cow::Borrowed`.
+    /// If a scalar comes through as `Cow::Owned`, the deserializer cannot safely fabricate a
+    /// borrow, because it would not refer to the original input buffer.
+    ParserReturnedOwned,
 }
 
 impl fmt::Display for TransformReason {
@@ -74,6 +81,7 @@ impl fmt::Display for TransformReason {
             TransformReason::BlockScalarProcessing => write!(f, "block scalar processing"),
             TransformReason::SingleQuoteEscape => write!(f, "single-quote escape processing"),
             TransformReason::InputNotBorrowable => write!(f, "input is not available for borrowing"),
+            TransformReason::ParserReturnedOwned => write!(f, "parser returned an owned string"),
         }
     }
 }

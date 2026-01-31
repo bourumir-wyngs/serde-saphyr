@@ -135,10 +135,6 @@ pub(crate) enum Ev<'a> {
         /// Numeric anchor id (0 if none) attached to this scalar node.
         anchor: usize,
         location: Location,
-        /// Information about whether and why this scalar can or cannot be borrowed.
-        /// `Ok((start_byte, end_byte))` contains the byte offsets into the input string.
-        /// `Err(reason)` explains why borrowing is not possible.
-        borrow_info: Result<(usize, usize), TransformReason>,
     },
     /// Start of a sequence (`[` / `-`-list).
     SeqStart { anchor: usize, location: Location },
@@ -436,7 +432,6 @@ fn capture_node<'a>(ev: &mut dyn Events<'a>) -> Result<KeyNode<'a>, Error> {
             style,
             anchor,
             location,
-            borrow_info,
         } => {
             let scalar_ev = Ev::Scalar {
                 value,
@@ -445,7 +440,6 @@ fn capture_node<'a>(ev: &mut dyn Events<'a>) -> Result<KeyNode<'a>, Error> {
                 style,
                 anchor,
                 location,
-                borrow_info,
             };
             Ok(KeyNode::Scalar {
                 events: vec![scalar_ev],
@@ -1146,10 +1140,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 tag,
                 style,
                 value,
-                borrow_info,
                 ..
             }) => {
-                let borrow_info = *borrow_info;
                 // Tagged nulls map to unit/null regardless of style
                 if tag == &SfTag::Null {
                     let _ = self.take_scalar_event()?; // consume
@@ -1162,16 +1154,27 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     return visitor.visit_unit();
                 }
                 if !is_plain || !tag.can_parse_into_string() || tag == &SfTag::Binary {
-                    if let Ok((start, end)) = borrow_info.as_ref() {
-                        if let Some(input) = self.ev.input_for_borrowing() {
-                            if *start < input.len() && *end <= input.len() {
-                                let borrowed = &input[*start..*end];
-                                let _ = self.ev.next()?;
-                                return visitor.visit_borrowed_str(borrowed);
-                            }
-                        }
+                    // For string-ish scalars, rely on the parser's own zero-copy capability:
+                    // if the scalar is returned as `Cow::Borrowed`, we can pass it through.
+                    // Otherwise we fall back to owning.
+                    if *tag == SfTag::Binary && !self.cfg.ignore_binary_tag_for_string {
+                        return visitor.visit_string(self.take_string_scalar()?);
                     }
-                    return visitor.visit_string(self.take_string_scalar()?);
+                    if !tag.can_parse_into_string()
+                        && *tag != SfTag::NonSpecific
+                        && !(self.cfg.ignore_binary_tag_for_string && *tag == SfTag::Binary)
+                    {
+                        let location = self.ev.peek()?.unwrap().location();
+                        return Err(
+                            Error::msg("cannot deserialize scalar tagged into string").with_location(location)
+                        );
+                    }
+
+                    let (cow, _tag2, _location) = self.take_scalar_cow_event()?;
+                    return match cow {
+                        Cow::Borrowed(b) => visitor.visit_borrowed_str(b),
+                        Cow::Owned(s) => visitor.visit_string(s),
+                    };
                 }
 
                 // Consume the scalar and attempt typed parses in order: bool -> int -> float.
@@ -1235,14 +1238,6 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 }
 
                 // Fallback: treat as string as-is.
-                if let Ok((start, end)) = borrow_info.as_ref() {
-                    if let Some(input) = self.ev.input_for_borrowing() {
-                        if *start < input.len() && *end <= input.len() {
-                            let borrowed = &input[*start..*end];
-                            return visitor.visit_borrowed_str(borrowed);
-                        }
-                    }
-                }
                 visitor.visit_string(s)
             }
             Some(Ev::SeqStart { .. }) => self.deserialize_seq(visitor),
@@ -1420,10 +1415,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     /// When the target type requires `&str`, that fallback produces a helpful error suggesting
     /// `String` or `Cow<str>`, with a [`TransformReason`] describing why borrowing was impossible.
     fn deserialize_str<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        // Check if we have a scalar and gather borrowing info
-        let (borrow_info, location) = match self.ev.peek()? {
+        let location = match self.ev.peek()? {
             Some(Ev::Scalar {
-                borrow_info,
                 location,
                 tag,
                 style,
@@ -1439,7 +1432,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                             .with_location(loc),
                     );
                 }
-                (*borrow_info, *location)
+                *location
             }
             Some(other) => {
                 return Err(Error::unexpected("string scalar").with_location(other.location()));
@@ -1447,45 +1440,31 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             None => return Err(Error::eof().with_location(self.ev.last_location())),
         };
 
-        // Determine the reason why borrowing might fail (used for error reporting).
-        // This is computed before attempting to borrow so we can provide a helpful error.
-        let cannot_borrow_reason: Option<TransformReason> = match &borrow_info {
-            Err(reason) => Some(*reason),
-            Ok(_) if self.ev.input_for_borrowing().is_none() => {
-                Some(TransformReason::InputNotBorrowable)
-            }
-            Ok(_) => None,
-        };
-
-        // Try to borrow from input if possible
-        if let Ok((start, end)) = borrow_info {
-            if let Some(input) = self.ev.input_for_borrowing() {
-                // Ensure the slice is within bounds and valid UTF-8
-                if start < input.len() && end <= input.len() {
-                    let borrowed = &input[start..end];
-                    // Now consume the event and yield the borrowed str.
-                    let _ = self.ev.next()?;
-                    return visitor.visit_borrowed_str(borrowed);
-                }
-            }
+        // Consume scalar and rely on the parser's own borrowing promise:
+        // `Cow::Borrowed` indicates the scalar exists verbatim in the backing input.
+        let (cow, _tag, _loc) = self.take_scalar_cow_with_location()?;
+        if let Cow::Borrowed(b) = cow {
+            return visitor.visit_borrowed_str(b);
         }
 
-        // Fall back to owned string - this path is taken when:
-        // 1. borrow_info is Err (string was transformed)
-        // 2. input_for_borrowing() returns None (reader-based input or aliases)
-        // 3. slice extraction failed (bounds check)
-        
-        let value = self.take_string_scalar()?;
-        let res: Result<V::Value, Self::Error> = visitor.visit_string(value);
+        // Fall back to owned string. If the caller required a borrowed string (`&str`),
+        // convert the generic error into our richer message.
+        let cannot_borrow_reason = if self.ev.input_for_borrowing().is_none() {
+            TransformReason::InputNotBorrowable
+        } else {
+            TransformReason::ParserReturnedOwned
+        };
+
+        let res: Result<V::Value, Self::Error> = visitor.visit_string(cow.into_owned());
         match res {
             Ok(v) => Ok(v),
             Err(err) => {
-                // If it failed because a borrowed string was expected, return our rich error.
-                if let Some(reason) = cannot_borrow_reason {
-                    let msg = err.to_string();
-                    if msg.contains("expected a borrowed string") {
-                        return Err(Error::cannot_borrow_transformed(reason).with_location(location));
-                    }
+                let msg = err.to_string();
+                if msg.contains("expected a borrowed string") {
+                    return Err(
+                        Error::cannot_borrow_transformed(cannot_borrow_reason)
+                            .with_location(location),
+                    );
                 }
                 Err(err)
             }
@@ -1502,11 +1481,10 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     /// **From/To:** scalar text (or base64-decoded bytes) → `Visitor::visit_string`.
     fn deserialize_string<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Reject YAML null when deserializing into String. Allow quoted forms.
-        let (borrow_info, _location) = if let Some(Ev::Scalar {
+        let _location = if let Some(Ev::Scalar {
             tag,
             style,
             value,
-            borrow_info,
             location,
             ..
         }) = self.ev.peek()?
@@ -1524,26 +1502,34 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 let (value, _tag, location) = self.take_scalar_event()?;
                 return Err(Error::quoting_required(&value).with_location(location));
             }
-            (*borrow_info, *location)
+            *location
         } else {
              // Let take_string_scalar handle the error if it's not a scalar
              return visitor.visit_string(self.take_string_scalar()?);
         };
 
-        // Try to borrow from input if possible
-        if let Ok((start, end)) = borrow_info {
-            if let Some(input) = self.ev.input_for_borrowing() {
-                // Ensure the slice is within bounds and valid UTF-8
-                if start < input.len() && end <= input.len() {
-                    let borrowed = &input[start..end];
-                    // Now consume the event and yield the borrowed str.
-                    let _ = self.ev.next()?;
-                    return visitor.visit_borrowed_str(borrowed);
-                }
+        // Prefer `Cow::Borrowed` when the parser can provide it. Keep `!!binary` semantics.
+        if let Some(Ev::Scalar { tag, .. }) = self.ev.peek()?
+        {
+            if *tag == SfTag::Binary && !self.cfg.ignore_binary_tag_for_string {
+                return visitor.visit_string(self.take_string_scalar()?);
+            }
+            if !tag.can_parse_into_string()
+                && *tag != SfTag::NonSpecific
+                && !(self.cfg.ignore_binary_tag_for_string && *tag == SfTag::Binary)
+            {
+                let location = self.ev.peek()?.unwrap().location();
+                return Err(
+                    Error::msg("cannot deserialize scalar tagged into string").with_location(location)
+                );
             }
         }
-        
-        visitor.visit_string(self.take_string_scalar()?)
+
+        let (cow, _tag, _loc) = self.take_scalar_cow_with_location()?;
+        match cow {
+            Cow::Borrowed(b) => visitor.visit_borrowed_str(b),
+            Cow::Owned(s) => visitor.visit_string(s),
+        }
     }
 
     /// Deserialize bytes either from `!!binary` or from a sequence of integers (0..=255).

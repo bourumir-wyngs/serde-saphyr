@@ -24,9 +24,8 @@
 use crate::budget::{BudgetEnforcer, EnforcingPolicy};
 use crate::buffered_input::{ChunkedChars, buffered_input_from_reader_with_limit};
 use crate::de::{AliasLimits, Budget, Error, Ev, Events, Location};
-use crate::de_error::{budget_error, TransformReason};
+use crate::de_error::budget_error;
 use crate::location::location_from_span;
-use crate::slicer::scalar_borrow_offsets;
 use crate::tags::SfTag;
 use saphyr_parser::{BufferedInput, Event, Parser, ScalarStyle, ScanError, Span, StrInput};
 use smallvec::SmallVec;
@@ -342,17 +341,6 @@ impl<'a> LiveEvents<'a> {
                     }
                     
                     let tag_s = SfTag::from_optional_cow(&tag);
-
-                    // Determine if this scalar can be borrowed from the original input.
-                    //
-                    // The core algorithm lives in `src/slicer.rs`.
-                    let borrow_info = scalar_borrow_offsets(
-                        self.input,
-                        &val,
-                        style,
-                        tag_s,
-                        &location,
-                    );
                     
                     if val.is_empty()
                         && anchor_id != 0
@@ -368,7 +356,6 @@ impl<'a> LiveEvents<'a> {
                         style,
                         anchor: anchor_id,
                         location,
-                        borrow_info,
                     };
                     self.record(&ev, false, false);
                     if anchor_id != 0 {
@@ -491,7 +478,6 @@ impl<'a> LiveEvents<'a> {
                                 style: ScalarStyle::Plain,
                                 anchor: anchor_id,
                                 location,
-                                borrow_info: Err(TransformReason::MultiLineNormalization),
                             };
                             self.record(&ev, false, false);
                             self.last_location = location;
@@ -570,7 +556,6 @@ impl<'a> LiveEvents<'a> {
                 style: ScalarStyle::Plain,
                 anchor: 0,
                 location: self.last_location,
-                borrow_info: Err(TransformReason::MultiLineNormalization),
             };
             self.produced_any_in_doc = true;
             self.synthesized_null_emitted = true;

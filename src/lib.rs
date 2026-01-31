@@ -38,7 +38,6 @@ mod de_error;
 #[path = "de/snippet.rs"]
 mod de_snipped;
 mod live_events;
-mod slicer;
 mod long_strings;
 pub mod options;
 mod parse_scalars;
