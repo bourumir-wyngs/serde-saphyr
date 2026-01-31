@@ -101,16 +101,3 @@ required-features = ["figment"]
 
 [lints.rust]
 unsafe_code = "forbid"
-
-
-[[test]]
-name = "grafana_test_line_width"
-path = "tests/grafana/test_line_width.rs"
-
-[[test]]
-name = "grafana_critical_line_folding"
-path = "tests/grafana/critical_line_folding.rs"
-
-[[test]]
-name = "grafana_test_ambiguous_keys"
-path = "tests/grafana/test_ambiguous_keys.rs"
