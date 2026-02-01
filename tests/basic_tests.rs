@@ -60,6 +60,22 @@ mod tests {
     }
 
     #[test]
+    fn legacy_misplaced_bracket_in_flow_sequence_is_accepted() {
+        #[derive(Debug, Deserialize, PartialEq)]
+        struct Cfg {
+            key: Vec<usize>,
+        }
+
+        let yaml = r#"
+            key: [ 1, 2, 2
+            ] # this sits wrongly but okay
+        "#;
+
+        let cfg: Cfg = from_str(yaml).unwrap();
+        assert_eq!(cfg.key, vec![1, 2, 2]);
+    }
+
+    #[test]
     fn multiple_documents_deserialize_into_vec() {
         let yaml = "---\nname: John\nage: 80\ndetails:\n  city: Paris\n---\nname: Jane\nage: 42\ndetails:\n  city: London\n";
         let people: Vec<Person> = from_multiple(yaml).unwrap();

@@ -10,9 +10,8 @@ struct Cfg {
 
 fn main() {
     // Intentionally invalid YAML to demonstrate snippet rendering.
-    //  Move closing bracket under "key" to result a valid YAML.
     let yaml = r#"
-    base_scalar: -z123
+    base_scalar: -z123 # this should be a number
     key: [ 1, 2, 2 ]
 "#;
 
