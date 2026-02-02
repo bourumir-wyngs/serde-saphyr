@@ -77,6 +77,7 @@ pub mod figment;
 pub(crate) mod ring_reader;
 mod wrapping;
 mod zmij_format;
+pub mod error_format;
 // ---------------- Serialization (public API) ----------------
 
 /// Serialize a value to a YAML `String`.
