@@ -1051,7 +1051,9 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         if tag == SfTag::Binary && !self.cfg.ignore_binary_tag_for_string {
             let data = decode_base64_yaml(&value).map_err(|err| err.with_location(location))?;
             let text = String::from_utf8(data).map_err(|_| {
-                Error::msg("!!binary scalar is not valid UTF-8").with_location(location)
+                Error::msg("!!binary scalar is not valid UTF-8 so cannot be stored into string. \
+                If you use !!binary just as documentation or annotation tag, set \
+                ignore_binary_tag_for_string = true in Options.").with_location(location)
             })?;
             return Ok(text);
         }
