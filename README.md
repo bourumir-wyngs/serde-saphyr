@@ -66,7 +66,7 @@ The test suite currently includes 834+ passing tests, including the fully conver
 - **serde_json::Value** is supported when parsing without target structure defined.
 - **[Serializer](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Serializer.html)** and **[Deserializer](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Deserializer.html)** are now public (due to how it's implemented, Deserializer is available in the closure only).
 - Serialized floats are official YAML floats, both [1.1](https://yaml.org/type/float.html) and [1.2](https://yaml.org/spec/1.2.2/), for example `3.0e+18` and not `3e+18` or `3e18`. Some parsers (such as PyYAML, go-yaml, and Psych) do not see `3e18` as a number.
-- **Precise error reporting with snippet rendering.
+- Precise error reporting with **snippet rendering**.
 - **robotic extensions** to support YAML dialect common in robotics (see below).
 
 ## WebAssembly
@@ -358,6 +358,29 @@ struct Blob {
 fn parse_blob() {
     let blob: Blob = serde_saphyr::from_str("data: !!binary aGVsbG8=").unwrap();
     assert_eq!(blob.data, b"hello");
+}
+```
+**Important**: some projects add the `!!binary` tag while actually expecting a *verbatim string value* (for example, the literal string `"aGVsbG8="`). This works with parsers that simply ignore the tag. However, `serde-saphyr` decodes `!!binary` values by default, attempting to interpret them as UTF-8 bytes.
+
+To support cases where `!!binary` is used only as a documentation or annotation tag, enable  
+`ignore_binary_tag_for_string = true` in `Options`.
+
+```rust
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct ContainsString {
+    name: String,
+}
+
+fn parse_string() {
+    let value: ContainsString = serde_saphyr::from_str_with_options(
+        "name: !!binary H4sIAA==",
+        serde_saphyr::options! {
+            ignore_binary_tag_for_string: true
+        },
+    )?;
+    assert_eq!(value.name, "H4sIAA==");
 }
 ```
 
