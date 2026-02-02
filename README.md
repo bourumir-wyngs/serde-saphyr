@@ -362,8 +362,7 @@ fn parse_blob() {
 ```
 **Important**: some projects add the `!!binary` tag while actually expecting a *verbatim string value* (for example, the literal string `"aGVsbG8="`). This works with parsers that simply ignore the tag. However, `serde-saphyr` decodes `!!binary` values by default, attempting to interpret them as UTF-8 bytes.
 
-To support cases where `!!binary` is used only as a documentation or annotation tag, enable  
-`ignore_binary_tag_for_string = true` in `Options`.
+If you use `!!binary` only as a documentation or annotation tag, enable `ignore_binary_tag_for_string = true` in `Options`.
 
 ```rust
 use serde::Deserialize;
@@ -383,6 +382,7 @@ fn parse_string() {
     assert_eq!(value.name, "H4sIAA==");
 }
 ```
+`!!binary` for other types like `Vec<u8>` will stay supported.
 
 ## Merge keys
 
