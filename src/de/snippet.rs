@@ -34,6 +34,72 @@ pub(crate) enum LineMapping {
     Offset { start_line: usize },
 }
 
+/// Crop a small source window around `location` and return `(cropped_text, start_line)`.
+///
+/// - `cropped_text` contains a vertical window of a few lines around the error location.
+/// - `start_line` is the 1-based line number in the *original* input where `cropped_text` starts.
+///
+/// The returned `cropped_text` is suitable for deferred snippet rendering via
+/// `Snippet::new(&cropped_text, ..).with_offset(start_line)`.
+#[cold]
+#[inline(never)]
+pub(crate) fn crop_source_window(text: &str, location: &Location, mapping: LineMapping) -> (String, usize) {
+    if text.is_empty() || location == &Location::UNKNOWN {
+        return (String::new(), 1);
+    }
+
+    // Keep snippet coordinates aligned with parsers that ignore a leading UTF-8 BOM.
+    let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
+
+    // Map absolute YAML line to the coordinates within `text`.
+    let absolute_row = location.line as usize;
+    let relative_row = match mapping {
+        LineMapping::Identity => absolute_row,
+        LineMapping::Offset { start_line } => {
+            if absolute_row < start_line {
+                return (String::new(), start_line);
+            }
+            absolute_row.saturating_sub(start_line).saturating_add(1)
+        }
+    };
+
+    let starts = line_starts(text);
+    if starts.is_empty() {
+        return (String::new(), 1);
+    }
+    if relative_row == 0 || relative_row > starts.len() {
+        let start_line = match mapping {
+            LineMapping::Identity => 1,
+            LineMapping::Offset { start_line } => start_line,
+        };
+        return (String::new(), start_line);
+    }
+
+    // Keep the same vertical policy as snippet rendering: two lines before/after.
+    let total_lines = starts.len();
+    let window_start_row = relative_row.saturating_sub(2).max(1);
+    let window_end_row = relative_row.saturating_add(2).min(total_lines);
+    let window_start_row = window_start_row.min(window_end_row);
+
+    let window_start = starts[window_start_row - 1];
+    let window_end = if window_end_row < total_lines {
+        starts[window_end_row]
+    } else {
+        text.len()
+    };
+
+    let cropped = text[window_start..window_end].to_owned();
+
+    let start_line = match mapping {
+        LineMapping::Identity => window_start_row,
+        LineMapping::Offset { start_line } => start_line
+            .saturating_add(window_start_row)
+            .saturating_sub(1),
+    };
+
+    (cropped, start_line)
+}
+
 /// Parameters controlling how to render a diagnostic snippet.
 ///
 /// Bundles together:
@@ -748,16 +814,65 @@ pub(crate) fn fmt_snippet_window_or_fallback(
     msg: &str,
     crop_radius: usize,
 ) -> fmt::Result {
+    fmt_snippet_window_with_mapping_or_fallback(f, location, text, LineMapping::Identity, msg, crop_radius)
+}
+
+/// Like [`fmt_snippet_window_or_fallback`], but renders against a text fragment whose line
+/// numbering may be offset.
+#[cfg(any(feature = "garde", feature = "validator"))]
+pub(crate) fn fmt_snippet_window_offset_or_fallback(
+    f: &mut fmt::Formatter<'_>,
+    location: &Location,
+    text: &str,
+    start_line: usize,
+    msg: &str,
+    crop_radius: usize,
+) -> fmt::Result {
+    fmt_snippet_window_with_mapping_or_fallback(
+        f,
+        location,
+        text,
+        LineMapping::Offset { start_line },
+        msg,
+        crop_radius,
+    )
+}
+
+fn fmt_snippet_window_with_mapping_or_fallback(
+    f: &mut fmt::Formatter<'_>,
+    location: &Location,
+    text: &str,
+    mapping: LineMapping,
+    msg: &str,
+    crop_radius: usize,
+) -> fmt::Result {
     if location == &Location::UNKNOWN {
         return Ok(());
     }
 
     // `Location` is 1-based and uses *character* columns (not byte offsets).
-    let row = location.line as usize;
+    let absolute_row = location.line as usize;
     let col = location.column as usize;
+
+    let (row, window_title_row) = match mapping {
+        LineMapping::Identity => (absolute_row, absolute_row),
+        LineMapping::Offset { start_line } => {
+            if absolute_row < start_line {
+                return Ok(());
+            }
+            let relative = absolute_row
+                .saturating_sub(start_line)
+                .saturating_add(1);
+            (relative, absolute_row)
+        }
+    };
 
     let line_starts = line_starts(text);
     if line_starts.is_empty() {
+        return Ok(());
+    }
+
+    if row == 0 || row > line_starts.len() {
         return Ok(());
     }
 
@@ -771,7 +886,7 @@ pub(crate) fn fmt_snippet_window_or_fallback(
         _ => next_char_boundary(text, start).unwrap_or(start),
     };
 
-    // Same vertical window policy as `fmt_with_snippet_or_fallback`.
+    // Same vertical window policy as `Snippet::fmt_or_fallback`.
     let total_lines = line_starts.len();
     let window_start_row = row.saturating_sub(2).max(1);
     let window_end_row = row.saturating_add(2).min(total_lines);
@@ -798,6 +913,13 @@ pub(crate) fn fmt_snippet_window_or_fallback(
         local_end,
     );
 
+    let window_start_absolute_row = match mapping {
+        LineMapping::Identity => window_start_row,
+        LineMapping::Offset { start_line } => start_line
+            .saturating_add(window_start_row)
+            .saturating_sub(1),
+    };
+
     let gutter_width = window_end_row.to_string().len();
     writeln!(f, "  |")?;
 
@@ -811,11 +933,12 @@ pub(crate) fn fmt_snippet_window_or_fallback(
             line = stripped;
         }
 
-        writeln!(f, "{cur_row:>gutter_width$} | {line}")?;
+        let display_row = window_start_absolute_row
+            .saturating_add(cur_row)
+            .saturating_sub(window_start_row);
+        writeln!(f, "{display_row:>gutter_width$} | {line}")?;
 
         if cur_row == row {
-            // Compute caret column within the window line by counting chars from the start of the
-            // error line to `local_start`.
             let line_byte_start = window_text[..local_start]
                 .rfind('\n')
                 .map(|i| i + 1)
@@ -834,11 +957,11 @@ pub(crate) fn fmt_snippet_window_or_fallback(
         }
     }
 
-    // If the window ends with '\n', there is an implicit trailing empty line.
-    // `split_inclusive('\n')` does not yield that final empty line, so print it explicitly
-    // when it's inside the requested window (common for EOF / "at end" diagnostics).
     if window_end_row == total_lines && window_text.ends_with('\n') && cur_row <= window_end_row {
-        writeln!(f, "{cur_row:>gutter_width$} |")?;
+        let display_row = window_start_absolute_row
+            .saturating_add(cur_row)
+            .saturating_sub(window_start_row);
+        writeln!(f, "{display_row:>gutter_width$} |")?;
 
         if cur_row == row {
             let line_byte_start = window_text[..local_start]
@@ -853,6 +976,9 @@ pub(crate) fn fmt_snippet_window_or_fallback(
             }
         }
     }
+
+    // Silence unused warning when only used for offset rendering.
+    let _ = window_title_row;
 
     writeln!(f, "  |")
 }

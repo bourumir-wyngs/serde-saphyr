@@ -12,10 +12,44 @@ use crate::path_map::{PathKey, PathMap, format_path_with_resolved_leaf};
 use crate::tags::SfTag;
 use saphyr_parser::{ScalarStyle, ScanError};
 use serde::de::{self};
+use annotate_snippets::Level;
 use std::cell::RefCell;
 use std::fmt;
 #[cfg(feature = "validator")]
 use validator::{ValidationErrors, ValidationErrorsKind};
+
+#[cfg(any(feature = "garde", feature = "validator"))]
+#[derive(Debug, Clone)]
+pub(crate) struct ValidationIssue {
+    pub(crate) path: PathKey,
+    pub(crate) code: String,
+    pub(crate) message: Option<String>,
+    pub(crate) params: Vec<(String, String)>,
+}
+
+#[cfg(any(feature = "garde", feature = "validator"))]
+impl ValidationIssue {
+    pub(crate) fn display_entry(&self) -> String {
+        if let Some(msg) = &self.message {
+            return msg.clone();
+        }
+
+        if self.params.is_empty() {
+            return self.code.clone();
+        }
+
+        let mut params = String::new();
+        for (i, (k, v)) in self.params.iter().enumerate() {
+            if i > 0 {
+                params.push_str(", ");
+            }
+            params.push_str(k);
+            params.push('=');
+            params.push_str(v);
+        }
+        format!("{} ({params})", self.code)
+    }
+}
 
 thread_local! {
     // Best-effort fallback location for Serde structural errors that have no inherent span,
@@ -155,11 +189,13 @@ pub enum Error {
 
     /// Wrap an error with the full input text, enabling rustc-like snippet rendering.
     WithSnippet {
-        /// Pre-rendered snippet output (cropped) for display.
+        /// Cropped source window used for snippet rendering.
         ///
-        /// Note: this intentionally does NOT store the full input text, to avoid
-        /// retaining large YAML inputs inside errors.
+        /// This intentionally does NOT store the full input text, to avoid retaining
+        /// large YAML inputs inside errors.
         text: String,
+        /// The 1-based line number in the *original* input where `text` starts.
+        start_line: usize,
         crop_radius: usize,
         error: Box<Error>,
     },
@@ -196,16 +232,24 @@ impl Error {
     #[inline(never)]
     pub(crate) fn with_snippet(self, text: &str, crop_radius: usize) -> Self {
         // Avoid nesting snippet wrappers: keep the innermost error and rebuild the
-        // wrapper with freshly rendered/cropped snippet output.
+        // wrapper with freshly cropped source window.
         let inner = match self {
             Error::WithSnippet { error, .. } => *error,
             other => other,
         };
 
-        let rendered = crate::de_snipped::render_error_with_snippets(&inner, text, crop_radius);
+        // Keep snippet coordinates aligned with parsers that ignore a leading UTF-8 BOM.
+        let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
+        let (cropped, start_line) = match inner.location() {
+            Some(loc) if loc != Location::UNKNOWN && crop_radius != 0 => {
+                crate::de_snipped::crop_source_window(text, &loc, crate::de_snipped::LineMapping::Identity)
+            }
+            _ => (String::new(), 1),
+        };
 
         Error::WithSnippet {
-            text: rendered,
+            text: cropped,
+            start_line,
             crop_radius,
             error: Box::new(inner),
         }
@@ -229,11 +273,20 @@ impl Error {
             other => other,
         };
 
-        let rendered =
-            crate::de_snipped::render_error_with_snippets_offset(&inner, text, start_line, crop_radius);
+        // Keep snippet coordinates aligned with parsers that ignore a leading UTF-8 BOM.
+        let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
+        let (cropped, start_line) = match inner.location() {
+            Some(loc) if loc != Location::UNKNOWN && crop_radius != 0 => crate::de_snipped::crop_source_window(
+                text,
+                &loc,
+                crate::de_snipped::LineMapping::Offset { start_line },
+            ),
+            _ => (String::new(), start_line),
+        };
 
         Error::WithSnippet {
-            text: rendered,
+            text: cropped,
+            start_line,
             crop_radius,
             error: Box::new(inner),
         }
@@ -425,19 +478,28 @@ impl Error {
             Error::AliasError { locations, .. } => Locations::primary_location(*locations),
             Error::WithSnippet { error, .. } => error.location(),
             #[cfg(feature = "garde")]
-            Error::ValidationError { locations, .. } => locations
-                .map
-                .values()
-                .copied()
-                .find_map(Locations::primary_location),
+            Error::ValidationError { report, locations } => report.iter().next().and_then(|(path, _)| {
+                let key = path_key_from_garde(path);
+                let (locs, _) = locations.search(&key)?;
+                let loc = if locs.reference_location != Location::UNKNOWN {
+                    locs.reference_location
+                } else {
+                    locs.defined_location
+                };
+                if loc != Location::UNKNOWN { Some(loc) } else { None }
+            }),
             #[cfg(feature = "garde")]
             Error::ValidationErrors { errors } => errors.iter().find_map(|e| e.location()),
             #[cfg(feature = "validator")]
-            Error::ValidatorError { locations, .. } => locations
-                .map
-                .values()
-                .copied()
-                .find_map(Locations::primary_location),
+            Error::ValidatorError { errors, locations } => collect_validator_issues(errors).first().and_then(|issue| {
+                let (locs, _) = locations.search(&issue.path)?;
+                let loc = if locs.reference_location != Location::UNKNOWN {
+                    locs.reference_location
+                } else {
+                    locs.defined_location
+                };
+                if loc != Location::UNKNOWN { Some(loc) } else { None }
+            }),
             #[cfg(feature = "validator")]
             Error::ValidatorErrors { errors } => errors.iter().find_map(|e| e.location()),
         }
@@ -476,9 +538,9 @@ impl Error {
             #[cfg(feature = "garde")]
             Error::ValidationErrors { errors } => errors.first().and_then(Error::locations),
             #[cfg(feature = "validator")]
-            Error::ValidatorError { errors, locations } => collect_validator_entries(errors)
+            Error::ValidatorError { errors, locations } => collect_validator_issues(errors)
                 .first()
-                .and_then(|(path, _)| locations.search(path).map(|(locs, _)| locs)),
+                .and_then(|issue| locations.search(&issue.path).map(|(locs, _)| locs)),
             #[cfg(feature = "validator")]
             Error::ValidatorErrors { errors } => errors.first().and_then(Error::locations),
         }
@@ -531,6 +593,7 @@ impl fmt::Display for Error {
         match self {
             Error::WithSnippet {
                 text,
+                start_line,
                 crop_radius,
                 error,
             } => {
@@ -538,8 +601,75 @@ impl fmt::Display for Error {
                     // Treat as "snippet disabled".
                     return write!(f, "{}", error);
                 }
-                // `text` is already the pre-rendered snippet output.
-                write!(f, "{text}")
+
+                // Validation errors have custom snippet formatting (paths, alias context, and
+                // messages without location duplication).
+                #[cfg(feature = "garde")]
+                if let Error::ValidationError { report, locations } = error.as_ref() {
+                    return fmt_validation_error_with_snippets_offset(
+                        f,
+                        report,
+                        locations,
+                        text,
+                        *start_line,
+                        *crop_radius,
+                    );
+                }
+                #[cfg(feature = "garde")]
+                if let Error::ValidationErrors { errors } = error.as_ref() {
+                    let mut first = true;
+                    for err in errors {
+                        if !first {
+                            writeln!(f)?;
+                            writeln!(f)?;
+                        }
+                        first = false;
+                        fmt_error_with_snippets_offset(f, err, text, *start_line, *crop_radius)?;
+                    }
+                    return Ok(());
+                }
+
+                #[cfg(feature = "validator")]
+                if let Error::ValidatorError { errors, locations } = error.as_ref() {
+                    return fmt_validator_error_with_snippets_offset(
+                        f,
+                        errors,
+                        locations,
+                        text,
+                        *start_line,
+                        *crop_radius,
+                    );
+                }
+                #[cfg(feature = "validator")]
+                if let Error::ValidatorErrors { errors } = error.as_ref() {
+                    let mut first = true;
+                    for err in errors {
+                        if !first {
+                            writeln!(f)?;
+                            writeln!(f)?;
+                        }
+                        first = false;
+                        fmt_error_with_snippets_offset(f, err, text, *start_line, *crop_radius)?;
+                    }
+                    return Ok(());
+                }
+
+                // Render a snippet from the cropped source window. If anything is missing,
+                // fall back to the plain nested error.
+                let Some(location) = error.location() else {
+                    return write!(f, "{}", error);
+                };
+                if location == Location::UNKNOWN {
+                    return write!(f, "{}", error);
+                }
+                if text.is_empty() {
+                    return write!(f, "{}", error);
+                }
+
+                let msg = error.to_string();
+                let ctx = crate::de_snipped::Snippet::new(text, "<input>", *crop_radius)
+                    .with_offset(*start_line);
+                ctx.fmt_or_fallback(f, Level::ERROR, &msg, &location)
             }
             Error::Message { msg, location } => fmt_with_location(f, msg, location),
             Error::HookError { msg, location } => fmt_with_location(f, msg, location),
@@ -628,13 +758,16 @@ fn fmt_validation_error_plain(
     report: &garde::Report,
     locations: &PathMap,
 ) -> fmt::Result {
+    let issues = collect_garde_issues(report);
     let mut first = true;
-    for (path, entry) in report.iter() {
+    for issue in issues {
         if !first {
             writeln!(f)?;
         }
         first = false;
-        let path_key = path_key_from_garde(path);
+
+        let entry = issue.display_entry();
+        let path_key = issue.path;
         let original_leaf = path_key
             .leaf_string()
             .unwrap_or_else(|| "<root>".to_string());
@@ -656,20 +789,92 @@ fn fmt_validation_error_plain(
     Ok(())
 }
 
+#[cfg(feature = "garde")]
+fn fmt_validation_error_with_snippets_offset(
+    f: &mut fmt::Formatter<'_>,
+    report: &garde::Report,
+    locations: &PathMap,
+    text: &str,
+    text_start_line: usize,
+    crop_radius: usize,
+) -> fmt::Result {
+    let mut first = true;
+    for (path, entry) in report.iter() {
+        if !first {
+            writeln!(f)?;
+        }
+        first = false;
+
+        let path_key = path_key_from_garde(path);
+        let original_leaf = path_key
+            .leaf_string()
+            .unwrap_or_else(|| "<root>".to_string());
+
+        let (locs, resolved_leaf) = locations
+            .search(&path_key)
+            .unwrap_or((Locations::UNKNOWN, original_leaf.clone()));
+
+        let ref_loc = locs.reference_location;
+        let def_loc = locs.defined_location;
+
+        let resolved_path = format_path_with_resolved_leaf(&path_key, &resolved_leaf);
+        let base_msg = format!("validation error: {entry} for `{resolved_path}`");
+
+        match (ref_loc, def_loc) {
+            (Location::UNKNOWN, Location::UNKNOWN) => {
+                write!(f, "{base_msg}")?;
+            }
+            (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
+                let ctx = crate::de_snipped::Snippet::new(text, "(defined)", crop_radius)
+                    .with_offset(text_start_line);
+                ctx.fmt_or_fallback(f, Level::ERROR, &base_msg, &r)?;
+            }
+            (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
+                let ctx = crate::de_snipped::Snippet::new(text, "(defined here)", crop_radius)
+                    .with_offset(text_start_line);
+                ctx.fmt_or_fallback(f, Level::ERROR, &base_msg, &d)?;
+            }
+            (r, d) => {
+                let ctx = crate::de_snipped::Snippet::new(text, "the value is used here", crop_radius)
+                    .with_offset(text_start_line);
+                ctx.fmt_or_fallback(f, Level::ERROR, &format!("invalid here, {base_msg}"), &r)?;
+                writeln!(f)?;
+                writeln!(
+                    f,
+                    "  | This value comes indirectly from the anchor at line {} column {}:",
+                    d.line, d.column
+                )?;
+                crate::de_snipped::fmt_snippet_window_offset_or_fallback(
+                    f,
+                    &d,
+                    text,
+                    text_start_line,
+                    "defined here",
+                    crop_radius,
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(feature = "validator")]
 fn fmt_validator_error_plain(
     f: &mut fmt::Formatter<'_>,
     errors: &ValidationErrors,
     locations: &PathMap,
 ) -> fmt::Result {
-    let entries = collect_validator_entries(errors);
+    let entries = collect_validator_issues(errors);
     let mut first = true;
 
-    for (path, entry) in entries {
+    for issue in entries {
         if !first {
             writeln!(f)?;
         }
         first = false;
+
+        let entry = issue.display_entry();
+        let path = issue.path;
 
         let original_leaf = path.leaf_string().unwrap_or_else(|| "<root>".to_string());
         let (locs, resolved_leaf) = locations
@@ -691,38 +896,183 @@ fn fmt_validator_error_plain(
 }
 
 #[cfg(feature = "validator")]
-fn collect_validator_entries(errors: &ValidationErrors) -> Vec<(PathKey, String)> {
+fn fmt_validator_error_with_snippets_offset(
+    f: &mut fmt::Formatter<'_>,
+    errors: &ValidationErrors,
+    locations: &PathMap,
+    text: &str,
+    text_start_line: usize,
+    crop_radius: usize,
+) -> fmt::Result {
+    let entries = collect_validator_issues(errors);
+    let mut first = true;
+
+    for issue in entries {
+        if !first {
+            writeln!(f)?;
+        }
+        first = false;
+
+        let original_leaf = issue
+            .path
+            .leaf_string()
+            .unwrap_or_else(|| "<root>".to_string());
+        let (locs, resolved_leaf) = locations
+            .search(&issue.path)
+            .unwrap_or((Locations::UNKNOWN, original_leaf.clone()));
+
+        let resolved_path = format_path_with_resolved_leaf(&issue.path, &resolved_leaf);
+        let entry = issue.display_entry();
+        let base_msg = format!("validation error: {entry} for `{resolved_path}`");
+
+        match (locs.reference_location, locs.defined_location) {
+            (Location::UNKNOWN, Location::UNKNOWN) => {
+                write!(f, "{base_msg}")?;
+            }
+            (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
+                let ctx = crate::de_snipped::Snippet::new(text, "(defined)", crop_radius)
+                    .with_offset(text_start_line);
+                ctx.fmt_or_fallback(f, Level::ERROR, &base_msg, &r)?;
+            }
+            (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
+                let ctx = crate::de_snipped::Snippet::new(text, "(defined here)", crop_radius)
+                    .with_offset(text_start_line);
+                ctx.fmt_or_fallback(f, Level::ERROR, &base_msg, &d)?;
+            }
+            (r, d) => {
+                let ctx = crate::de_snipped::Snippet::new(text, "the value is used here", crop_radius)
+                    .with_offset(text_start_line);
+                ctx.fmt_or_fallback(f, Level::ERROR, &format!("invalid here, {base_msg}"), &r)?;
+                writeln!(f)?;
+                writeln!(
+                    f,
+                    "  | This value comes indirectly from the anchor at line {} column {}:",
+                    d.line, d.column
+                )?;
+                crate::de_snipped::fmt_snippet_window_offset_or_fallback(
+                    f,
+                    &d,
+                    text,
+                    text_start_line,
+                    "defined here",
+                    crop_radius,
+                )?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn fmt_error_with_snippets_offset(
+    f: &mut fmt::Formatter<'_>,
+    err: &Error,
+    text: &str,
+    text_start_line: usize,
+    crop_radius: usize,
+) -> fmt::Result {
+    if crop_radius == 0 {
+        return write!(f, "{err}");
+    }
+
+    // Keep existing snippet output if the nested error is already wrapped.
+    if let Error::WithSnippet { .. } = err {
+        return write!(f, "{err}");
+    }
+
+    #[cfg(feature = "garde")]
+    if let Error::ValidationError { report, locations } = err {
+        return fmt_validation_error_with_snippets_offset(
+            f,
+            report,
+            locations,
+            text,
+            text_start_line,
+            crop_radius,
+        );
+    }
+
+    #[cfg(feature = "validator")]
+    if let Error::ValidatorError { errors, locations } = err {
+        return fmt_validator_error_with_snippets_offset(
+            f,
+            errors,
+            locations,
+            text,
+            text_start_line,
+            crop_radius,
+        );
+    }
+
+    let msg = err.to_string();
+    let Some(location) = err.location() else {
+        return write!(f, "{msg}");
+    };
+    if location == Location::UNKNOWN {
+        return write!(f, "{msg}");
+    }
+
+    let ctx = crate::de_snipped::Snippet::new(text, "<input>", crop_radius).with_offset(text_start_line);
+    ctx.fmt_or_fallback(f, Level::ERROR, &msg, &location)
+}
+
+#[cfg(feature = "validator")]
+fn collect_validator_issues(errors: &ValidationErrors) -> Vec<ValidationIssue> {
     let mut out = Vec::new();
     let root = PathKey::empty();
-    collect_validator_entries_inner(errors, &root, &mut out);
+    collect_validator_issues_inner(errors, &root, &mut out);
     out
 }
 
 #[cfg(feature = "validator")]
-fn collect_validator_entries_inner(
+fn collect_validator_issues_inner(
     errors: &ValidationErrors,
     path: &PathKey,
-    out: &mut Vec<(PathKey, String)>,
+    out: &mut Vec<ValidationIssue>,
 ) {
     for (field, kind) in errors.errors() {
         let field_path = path.clone().join(field.as_ref());
         match kind {
             ValidationErrorsKind::Field(entries) => {
                 for entry in entries {
-                    out.push((field_path.clone(), entry.to_string()));
+                    let mut params = Vec::new();
+                    for (k, v) in &entry.params {
+                        params.push((k.to_string(), v.to_string()));
+                    }
+
+                    out.push(ValidationIssue {
+                        path: field_path.clone(),
+                        code: entry.code.to_string(),
+                        message: entry.message.as_ref().map(|m| m.to_string()),
+                        params,
+                    });
                 }
             }
             ValidationErrorsKind::Struct(inner) => {
-                collect_validator_entries_inner(inner, &field_path, out);
+                collect_validator_issues_inner(inner, &field_path, out);
             }
             ValidationErrorsKind::List(list) => {
                 for (idx, inner) in list {
                     let index_path = field_path.clone().join(*idx);
-                    collect_validator_entries_inner(inner, &index_path, out);
+                    collect_validator_issues_inner(inner, &index_path, out);
                 }
             }
         }
     }
+}
+
+#[cfg(feature = "garde")]
+fn collect_garde_issues(report: &garde::Report) -> Vec<ValidationIssue> {
+    let mut out = Vec::new();
+    for (path, entry) in report.iter() {
+        out.push(ValidationIssue {
+            path: path_key_from_garde(path),
+            code: "garde".to_string(),
+            message: Some(entry.message().to_string()),
+            params: Vec::new(),
+        });
+    }
+    out
 }
 impl std::error::Error for Error {}
 

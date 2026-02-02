@@ -301,11 +301,13 @@ fn with_snippet_only_contains_lines_near_error() {
     let err = serde_saphyr::from_str::<std::collections::HashMap<String, String>>(&yaml)
         .expect_err("unknown anchor should error");
 
-    match err {
+    match &err {
         Error::WithSnippet { text, .. } => {
+            // The error stores only a cropped source window; snippet formatting is deferred.
+            let rendered = err.to_string();
             assert!(
-                text.contains("<input>"),
-                "expected snippet output header, got: {text}"
+                rendered.contains("<input>"),
+                "expected snippet output header, got: {rendered}"
             );
 
             // Core requirement: snippet should NOT include content far away from the error.
