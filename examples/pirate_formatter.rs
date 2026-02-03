@@ -199,11 +199,6 @@ fn main() {
     }
 
     // Example 3: Validation
-    //
-    // This demonstrates customizing the *validation* message wording as well.
-    // Run with:
-    // - cargo run --example pirate_formatter --features garde
-    // - cargo run --example pirate_formatter --features validator
     #[cfg(feature = "garde")]
     {
         use garde::Validate;
