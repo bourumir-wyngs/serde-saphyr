@@ -76,6 +76,39 @@ macro_rules! budget {
     }};
 }
 
+/// Construct [`crate::RenderOptions`] from defaults and a list of field assignments.
+///
+/// This macro exists to keep call sites ergonomic while allowing `RenderOptions` to evolve
+/// over time (e.g., adding fields) without forcing downstream crates to use struct literal
+/// syntax.
+///
+/// Defaults:
+/// - `formatter`: [`crate::DefaultMessageFormatter`]
+/// - `snippets`: [`crate::SnippetMode::Auto`]
+///
+/// Example:
+///
+/// ```rust
+/// use serde_saphyr::{SnippetMode, UserMessageFormatter};
+///
+/// let opts = serde_saphyr::render_options! {
+///     formatter: &UserMessageFormatter,
+///     snippets: SnippetMode::Off,
+/// };
+/// ```
+#[macro_export]
+macro_rules! render_options {
+    ( $( $field:ident : $value:expr ),* $(,)? ) => {{
+        let mut opt = $crate::RenderOptions::new(&$crate::DefaultMessageFormatter);
+        $(
+            {
+                opt.$field = $value;
+            }
+        )*
+        opt
+    }};
+}
+
 /// Implementation detail for [`ser_options!`].
 ///
 /// This is `#[macro_export]` so that `$crate::...` can resolve it from expansions in

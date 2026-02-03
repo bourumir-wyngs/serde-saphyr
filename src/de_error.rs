@@ -1,6 +1,6 @@
-//! Defines error and its location
-use crate::Location;
 use crate::budget::BudgetBreach;
+use crate::Location;
+use crate::localizer::{Localizer, DEFAULT_ENGLISH_LOCALIZER};
 use crate::location::Locations;
 use crate::message_formatters::DefaultMessageFormatter;
 use crate::parse_scalars::{
@@ -72,6 +72,14 @@ use validator::{ValidationErrors, ValidationErrorsKind};
 ///     .contains("unknown reference"));
 /// ```
 pub trait MessageFormatter {
+    /// Return the [`Localizer`] used by the renderer.
+    ///
+    /// This controls wording that is produced outside of [`MessageFormatter::format_message`],
+    /// such as location suffixes and snippet/validation labels.
+    fn localizer(&self) -> &dyn Localizer {
+        &DEFAULT_ENGLISH_LOCALIZER
+    }
+
     /// Return the message text for `err`.
     ///
     /// The returned string should NOT include location suffixes like
@@ -95,10 +103,48 @@ pub enum SnippetMode {
 }
 
 /// Options for deferred error rendering.
+///
+/// Prefer constructing this via the [`render_options!`](crate::render_options!) macro
+/// instead of a struct literal. This keeps call sites stable even if new fields are added
+/// in the future (this type is `#[non_exhaustive]`).
+///
+/// # Example (using the `render_options!` macro)
+///
+/// ```rust
+/// use serde_saphyr::{DefaultMessageFormatter, SnippetMode};
+///
+/// // Customize how an error is rendered later (formatter + snippet mode).
+/// let render_opts = serde_saphyr::render_options! {
+///     formatter: &DefaultMessageFormatter,
+///     snippets: SnippetMode::Off,
+/// };
+///
+/// let err = serde_saphyr::from_str::<String>("").unwrap_err();
+/// let rendered = err.render_with_options(render_opts);
+/// assert!(rendered.contains("unexpected"));
+/// ```
+#[non_exhaustive]
 #[derive(Clone, Copy)]
 pub struct RenderOptions<'a> {
+    /// Message formatter used to produce the core error message text.
     pub formatter: &'a dyn MessageFormatter,
+    /// Snippet rendering mode.
     pub snippets: SnippetMode,
+}
+
+impl<'a> RenderOptions<'a> {
+    /// Construct render options with the given message `formatter` and default values
+    /// for all other fields.
+    ///
+    /// Defaults:
+    /// - `snippets`: [`SnippetMode::Auto`]
+    #[inline]
+    pub fn new(formatter: &'a dyn MessageFormatter) -> Self {
+        Self {
+            formatter,
+            snippets: SnippetMode::Auto,
+        }
+    }
 }
 
 #[cfg(any(feature = "garde", feature = "validator"))]
@@ -1064,8 +1110,21 @@ fn fmt_error_plain_with_formatter(
     let err = err.without_snippet();
 
     let msg = formatter.format_message(err);
+
+    // Validation errors embed per-issue locations in their formatted message (potentially
+    // multiple distinct locations). Do not attach a single top-level location suffix here,
+    // or we'd duplicate location wording.
+    #[cfg(feature = "garde")]
+    if matches!(err, Error::ValidationError { .. }) {
+        return write!(f, "{msg}");
+    }
+    #[cfg(feature = "validator")]
+    if matches!(err, Error::ValidatorError { .. }) {
+        return write!(f, "{msg}");
+    }
+
     if let Some(loc) = err.location() {
-        fmt_with_location(f, msg.as_ref(), &loc)?;
+        fmt_with_location(f, formatter.localizer(), msg.as_ref(), &loc)?;
     } else {
         write!(f, "{msg}")?;
     }
@@ -1154,6 +1213,7 @@ fn fmt_error_rendered(
             if let Error::ValidationError { report, locations } = error.as_ref() {
                 return fmt_validation_error_with_snippets_offset(
                     f,
+                    options.formatter.localizer(),
                     report,
                     locations,
                     text,
@@ -1190,6 +1250,7 @@ fn fmt_error_rendered(
             if let Error::ValidatorError { errors, locations } = error.as_ref() {
                 return fmt_validator_error_with_snippets_offset(
                     f,
+                    options.formatter.localizer(),
                     errors,
                     locations,
                     text,
@@ -1255,7 +1316,7 @@ fn fmt_error_rendered(
 
             let ctx = crate::de_snipped::Snippet::new(text, "<input>", *crop_radius)
                 .with_offset(*start_line);
-            ctx.fmt_or_fallback(f, Level::ERROR, &msg, &location)
+            ctx.fmt_or_fallback(f, Level::ERROR, options.formatter.localizer(), &msg, &location)
         }
         _ => fmt_error_plain_with_formatter(f, err, options.formatter),
     }
@@ -1299,6 +1360,7 @@ impl fmt::Display for Error {
 #[cfg(feature = "garde")]
 fn fmt_validation_error_with_snippets_offset(
     f: &mut fmt::Formatter<'_>,
+    l10n: &dyn Localizer,
     report: &garde::Report,
     locations: &PathMap,
     text: &str,
@@ -1315,7 +1377,7 @@ fn fmt_validation_error_with_snippets_offset(
         let path_key = path_key_from_garde(path);
         let original_leaf = path_key
             .leaf_string()
-            .unwrap_or_else(|| "<root>".to_string());
+            .unwrap_or_else(|| l10n.root_path_label().into_owned());
 
         let (locs, resolved_leaf) = locations
             .search(&path_key)
@@ -1325,38 +1387,40 @@ fn fmt_validation_error_with_snippets_offset(
         let def_loc = locs.defined_location;
 
         let resolved_path = format_path_with_resolved_leaf(&path_key, &resolved_leaf);
-        let base_msg = format!("validation error: {entry} for `{resolved_path}`");
+        let entry = entry.to_string();
+        let base_msg = l10n.validation_snippet_base_message(&entry, &resolved_path);
 
         match (ref_loc, def_loc) {
             (Location::UNKNOWN, Location::UNKNOWN) => {
                 write!(f, "{base_msg}")?;
             }
             (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
-                let ctx = crate::de_snipped::Snippet::new(text, "(defined)", crop_radius)
+                let label = l10n.snippet_label_defined();
+                let ctx = crate::de_snipped::Snippet::new(text, label.as_ref(), crop_radius)
                     .with_offset(text_start_line);
-                ctx.fmt_or_fallback(f, Level::ERROR, &base_msg, &r)?;
+                ctx.fmt_or_fallback(f, Level::ERROR, l10n, &base_msg, &r)?;
             }
             (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
-                let ctx = crate::de_snipped::Snippet::new(text, "(defined here)", crop_radius)
+                let label = l10n.snippet_label_defined_here();
+                let ctx = crate::de_snipped::Snippet::new(text, label.as_ref(), crop_radius)
                     .with_offset(text_start_line);
-                ctx.fmt_or_fallback(f, Level::ERROR, &base_msg, &d)?;
+                ctx.fmt_or_fallback(f, Level::ERROR, l10n, &base_msg, &d)?;
             }
             (r, d) => {
-                let ctx = crate::de_snipped::Snippet::new(text, "the value is used here", crop_radius)
+                let label = l10n.snippet_label_value_used_here();
+                let ctx = crate::de_snipped::Snippet::new(text, label.as_ref(), crop_radius)
                     .with_offset(text_start_line);
-                ctx.fmt_or_fallback(f, Level::ERROR, &format!("invalid here, {base_msg}"), &r)?;
+                let invalid_here = l10n.validation_snippet_invalid_here(&base_msg);
+                ctx.fmt_or_fallback(f, Level::ERROR, l10n, &invalid_here, &r)?;
                 writeln!(f)?;
-                writeln!(
-                    f,
-                    "  | This value comes indirectly from the anchor at line {} column {}:",
-                    d.line, d.column
-                )?;
+                writeln!(f, "{}", l10n.validation_snippet_indirect_anchor_intro(d))?;
                 crate::de_snipped::fmt_snippet_window_offset_or_fallback(
                     f,
+                    l10n,
                     &d,
                     text,
                     text_start_line,
-                    "defined here",
+                    l10n.snippet_label_defined_window().as_ref(),
                     crop_radius,
                 )?;
             }
@@ -1369,6 +1433,7 @@ fn fmt_validation_error_with_snippets_offset(
 #[cfg(feature = "validator")]
 fn fmt_validator_error_with_snippets_offset(
     f: &mut fmt::Formatter<'_>,
+    l10n: &dyn Localizer,
     errors: &ValidationErrors,
     locations: &PathMap,
     text: &str,
@@ -1387,45 +1452,46 @@ fn fmt_validator_error_with_snippets_offset(
         let original_leaf = issue
             .path
             .leaf_string()
-            .unwrap_or_else(|| "<root>".to_string());
+            .unwrap_or_else(|| l10n.root_path_label().into_owned());
         let (locs, resolved_leaf) = locations
             .search(&issue.path)
             .unwrap_or((Locations::UNKNOWN, original_leaf.clone()));
 
         let resolved_path = format_path_with_resolved_leaf(&issue.path, &resolved_leaf);
         let entry = issue.display_entry();
-        let base_msg = format!("validation error: {entry} for `{resolved_path}`");
+        let base_msg = l10n.validation_snippet_base_message(&entry, &resolved_path);
 
         match (locs.reference_location, locs.defined_location) {
             (Location::UNKNOWN, Location::UNKNOWN) => {
                 write!(f, "{base_msg}")?;
             }
             (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
-                let ctx = crate::de_snipped::Snippet::new(text, "(defined)", crop_radius)
+                let label = l10n.snippet_label_defined();
+                let ctx = crate::de_snipped::Snippet::new(text, label.as_ref(), crop_radius)
                     .with_offset(text_start_line);
-                ctx.fmt_or_fallback(f, Level::ERROR, &base_msg, &r)?;
+                ctx.fmt_or_fallback(f, Level::ERROR, l10n, &base_msg, &r)?;
             }
             (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
-                let ctx = crate::de_snipped::Snippet::new(text, "(defined here)", crop_radius)
+                let label = l10n.snippet_label_defined_here();
+                let ctx = crate::de_snipped::Snippet::new(text, label.as_ref(), crop_radius)
                     .with_offset(text_start_line);
-                ctx.fmt_or_fallback(f, Level::ERROR, &base_msg, &d)?;
+                ctx.fmt_or_fallback(f, Level::ERROR, l10n, &base_msg, &d)?;
             }
             (r, d) => {
-                let ctx = crate::de_snipped::Snippet::new(text, "the value is used here", crop_radius)
+                let label = l10n.snippet_label_value_used_here();
+                let ctx = crate::de_snipped::Snippet::new(text, label.as_ref(), crop_radius)
                     .with_offset(text_start_line);
-                ctx.fmt_or_fallback(f, Level::ERROR, &format!("invalid here, {base_msg}"), &r)?;
+                let invalid_here = l10n.validation_snippet_invalid_here(&base_msg);
+                ctx.fmt_or_fallback(f, Level::ERROR, l10n, &invalid_here, &r)?;
                 writeln!(f)?;
-                writeln!(
-                    f,
-                    "  | This value comes indirectly from the anchor at line {} column {}:",
-                    d.line, d.column
-                )?;
+                writeln!(f, "{}", l10n.validation_snippet_indirect_anchor_intro(d))?;
                 crate::de_snipped::fmt_snippet_window_offset_or_fallback(
                     f,
+                    l10n,
                     &d,
                     text,
                     text_start_line,
-                    "defined here",
+                    l10n.snippet_label_defined_window().as_ref(),
                     crop_radius,
                 )?;
             }
@@ -1456,6 +1522,7 @@ fn fmt_error_with_snippets_offset(
     if let Error::ValidationError { report, locations } = err {
         return fmt_validation_error_with_snippets_offset(
             f,
+            formatter.localizer(),
             report,
             locations,
             text,
@@ -1468,6 +1535,7 @@ fn fmt_error_with_snippets_offset(
     if let Error::ValidatorError { errors, locations } = err {
         return fmt_validator_error_with_snippets_offset(
             f,
+            formatter.localizer(),
             errors,
             locations,
             text,
@@ -1485,7 +1553,7 @@ fn fmt_error_with_snippets_offset(
     }
 
     let ctx = crate::de_snipped::Snippet::new(text, "<input>", crop_radius).with_offset(text_start_line);
-    ctx.fmt_or_fallback(f, Level::ERROR, &msg, &location)
+    ctx.fmt_or_fallback(f, Level::ERROR, formatter.localizer(), msg.as_ref(), &location)
 }
 
 #[cfg(feature = "validator")]
@@ -1618,16 +1686,14 @@ impl de::Error for Error {
 /// - `fmt::Result` as required by `Display`.
 #[cold]
 #[inline(never)]
-fn fmt_with_location(f: &mut fmt::Formatter<'_>, msg: &str, location: &Location) -> fmt::Result {
-    if location != &Location::UNKNOWN {
-        write!(
-            f,
-            "{msg} at line {}, column {}",
-            location.line, location.column
-        )
-    } else {
-        write!(f, "{msg}")
-    }
+fn fmt_with_location(
+    f: &mut fmt::Formatter<'_>,
+    l10n: &dyn Localizer,
+    msg: &str,
+    location: &Location,
+) -> fmt::Result {
+    let out = l10n.attach_location(Cow::Borrowed(msg), *location);
+    write!(f, "{out}")
 }
 
 

@@ -4,6 +4,7 @@ use annotate_snippets::{
     AnnotationKind, Level, Renderer, Snippet as AnnotateSnippet, renderer::DecorStyle,
 };
 
+use crate::localizer::Localizer;
 use crate::Location;
 
 /// Borrowed YAML source information used for snippet rendering.
@@ -143,6 +144,7 @@ impl<'a> Snippet<'a> {
         self,
         f: &mut fmt::Formatter<'_>,
         level: Level,
+        l10n: &dyn Localizer,
         msg: &str,
         location: &Location,
     ) -> fmt::Result {
@@ -158,7 +160,7 @@ impl<'a> Snippet<'a> {
             LineMapping::Identity => (absolute_row, absolute_row),
             LineMapping::Offset { start_line } => {
                 if absolute_row < start_line {
-                    return fmt_with_location(f, msg, location);
+                    return fmt_with_location(f, l10n, msg, location);
                 }
                 let relative = absolute_row
                     .saturating_sub(start_line)
@@ -169,18 +171,18 @@ impl<'a> Snippet<'a> {
 
         let line_starts = line_starts(self.source.text);
         if line_starts.is_empty() {
-            return fmt_with_location(f, msg, location);
+            return fmt_with_location(f, l10n, msg, location);
         }
 
         // Check if the (mapped) row is within our snippet text.
         if relative_row == 0 || relative_row > line_starts.len() {
-            return fmt_with_location(f, msg, location);
+            return fmt_with_location(f, l10n, msg, location);
         }
 
         let Some(start) =
             line_col_to_byte_offset_with_starts(self.source.text, &line_starts, relative_row, col)
         else {
-            return fmt_with_location(f, msg, location);
+            return fmt_with_location(f, l10n, msg, location);
         };
 
         // Create a minimal span for the primary annotation:
@@ -265,6 +267,7 @@ impl<'a> Snippet<'a> {
 #[cfg(any(feature = "garde", feature = "validator"))]
 pub(crate) fn fmt_snippet_window_offset_or_fallback(
     f: &mut fmt::Formatter<'_>,
+    l10n: &dyn Localizer,
     location: &Location,
     text: &str,
     start_line: usize,
@@ -273,6 +276,7 @@ pub(crate) fn fmt_snippet_window_offset_or_fallback(
 ) -> fmt::Result {
     fmt_snippet_window_with_mapping_or_fallback(
         f,
+        l10n,
         location,
         text,
         LineMapping::Offset { start_line },
@@ -283,6 +287,7 @@ pub(crate) fn fmt_snippet_window_offset_or_fallback(
 
 fn fmt_snippet_window_with_mapping_or_fallback(
     f: &mut fmt::Formatter<'_>,
+    _l10n: &dyn Localizer,
     location: &Location,
     text: &str,
     mapping: LineMapping,
@@ -429,19 +434,17 @@ fn fmt_snippet_window_with_mapping_or_fallback(
     writeln!(f, "  |")
 }
 
-/// Print a message optionally suffixed with `"at line X, column Y"`.
+/// Print a message optionally suffixed with a localized location suffix.
 ///
 /// Used as a fallback when snippet rendering is not possible.
-fn fmt_with_location(f: &mut fmt::Formatter<'_>, msg: &str, location: &Location) -> fmt::Result {
-    if location != &Location::UNKNOWN {
-        write!(
-            f,
-            "{msg} at line {}, column {}",
-            location.line, location.column
-        )
-    } else {
-        write!(f, "{msg}")
-    }
+fn fmt_with_location(
+    f: &mut fmt::Formatter<'_>,
+    l10n: &dyn Localizer,
+    msg: &str,
+    location: &Location,
+) -> fmt::Result {
+    let out = l10n.attach_location(std::borrow::Cow::Borrowed(msg), *location);
+    write!(f, "{out}")
 }
 
 /// Returns true if `text` contains no control characters that could mess with terminal/log output.
