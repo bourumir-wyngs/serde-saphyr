@@ -42,8 +42,10 @@ impl MessageFormatter for DefaultMessageFormatter {
                 Cow::Borrowed("YAML merge value must be mapping or sequence of mappings")
             }
             Error::InvalidBinaryBase64 { .. } => Cow::Borrowed("invalid !!binary base64"),
-            Error::InvalidUtf8Input | Error::BinaryNotUtf8 { .. } => Cow::Borrowed(
-                "!!binary scalar is not valid UTF-8 so cannot be stored into string. If you just use !!binary for documentation/annotation, set ignore_binary_tag_for_string in Options",
+            Error::InvalidUtf8Input => Cow::Borrowed("input is not valid UTF-8"),
+            Error::BinaryNotUtf8 { .. } => Cow::Borrowed(
+                "!!binary scalar is not valid UTF-8 so cannot be stored into string. \
+                 If you just use !!binary for documentation/annotation, set ignore_binary_tag_for_string in Options",
             ),
             Error::TaggedScalarCannotDeserializeIntoString { .. } => {
                 Cow::Borrowed("cannot deserialize scalar tagged into string")
@@ -303,9 +305,9 @@ impl MessageFormatter for UserMessageFormatter {
             Error::MultipleDocuments { .. } => {
                 Cow::Borrowed("only single YAML document expected but multiple found")
             }
-            Error::InvalidUtf8Input | Error::BinaryNotUtf8 { .. } => {
-                Cow::Borrowed("Expecting !!binary scalar to encode valid UTF-8")
-            }
+            Error::InvalidUtf8Input => Cow::Borrowed("YAML parser input is not valid UTF-8"),
+            Error::BinaryNotUtf8 { .. } => Cow::Borrowed(
+                "!!binary scalar is not valid UTF-8 so cannot be stored into string."),
             Error::InvalidBooleanStrict { .. } => {
                 Cow::Borrowed("invalid boolean (true or false expected)")
             }
