@@ -961,7 +961,7 @@ where
                         Err(D::Error::custom("Recursive references require RcRecursion"))
                     }
                     None => Err(D::Error::custom(
-                        "weak Rc anchor refers to unknown anchor id; strong anchor must be defined before weak",
+                        "weak Rc anchor refers to unknown anchor; strong anchor must be defined before weak",
                     )),
                 }
             }
@@ -1007,7 +1007,7 @@ where
                         "Recursive references require ArcRecursion",
                     )),
                     None => Err(D::Error::custom(
-                        "weak Arc anchor refers to unknown anchor id; strong anchor must be defined before weak",
+                        "weak Arc anchor refers to unknown anchor; strong anchor must be defined before weak",
                     )),
                 }
             }

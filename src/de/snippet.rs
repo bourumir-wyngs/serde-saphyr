@@ -297,8 +297,8 @@ fn fmt_snippet_window_with_mapping_or_fallback(
     let absolute_row = location.line as usize;
     let col = location.column as usize;
 
-    let (row, window_title_row) = match mapping {
-        LineMapping::Identity => (absolute_row, absolute_row),
+    let row = match mapping {
+        LineMapping::Identity => absolute_row,
         LineMapping::Offset { start_line } => {
             if absolute_row < start_line {
                 return Ok(());
@@ -306,7 +306,7 @@ fn fmt_snippet_window_with_mapping_or_fallback(
             let relative = absolute_row
                 .saturating_sub(start_line)
                 .saturating_add(1);
-            (relative, absolute_row)
+            relative
         }
     };
 
@@ -363,7 +363,13 @@ fn fmt_snippet_window_with_mapping_or_fallback(
             .saturating_sub(1),
     };
 
-    let gutter_width = window_end_row.to_string().len();
+    let max_display_row = match mapping {
+        LineMapping::Identity => window_end_row,
+        LineMapping::Offset { start_line } => start_line
+            .saturating_add(window_end_row)
+            .saturating_sub(1),
+    };
+    let gutter_width = max_display_row.to_string().len();
     writeln!(f, "  |")?;
 
     let mut cur_row = window_start_row;
@@ -419,9 +425,6 @@ fn fmt_snippet_window_with_mapping_or_fallback(
             }
         }
     }
-
-    // Silence unused warning when only used for offset rendering.
-    let _ = window_title_row;
 
     writeln!(f, "  |")
 }

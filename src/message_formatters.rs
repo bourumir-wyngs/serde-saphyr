@@ -168,9 +168,7 @@ impl MessageFormatter for DefaultMessageFormatter {
             Error::ContainerEndMismatch { .. } => {
                 Cow::Borrowed("list or mapping end with no start")
             }
-            Error::UnknownAnchor { id, .. } => {
-                Cow::Owned(format!("alias references unknown anchor id {id}"))
-            }
+            Error::UnknownAnchor { .. } => Cow::Borrowed("alias references unknown anchor"),
             Error::Budget { breach, .. } => {
                 Cow::Owned(format!("budget breached: {breach:?}"))
             }

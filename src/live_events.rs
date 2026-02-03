@@ -272,9 +272,7 @@ impl<'a> LiveEvents<'a> {
                 .anchors
                 .get(anchor_id)
                 .and_then(|o| o.as_ref())
-                .ok_or_else(|| {
-                    Error::unknown_anchor(anchor_id).with_location(self.last_location)
-                })?;
+                .ok_or_else(|| Error::unknown_anchor().with_location(self.last_location))?;
 
             if *idx >= buf.len() {
                 // Exhausted: pop and continue (there may be another injected frame beneath).
@@ -496,7 +494,7 @@ impl<'a> LiveEvents<'a> {
                         .and_then(|o| o.as_ref())
                         .is_some();
                     if !exists {
-                        return Err(Error::unknown_anchor(anchor_id).with_location(location));
+                        return Err(Error::unknown_anchor().with_location(location));
                     }
                     self.inject.push(InjectFrame {
                         anchor_id,

@@ -51,8 +51,8 @@ use validator::{ValidationErrors, ValidationErrorsKind};
 ///             Error::Eof { .. } => Cow::Borrowed("could you please provide a YAML document?"),
 ///
 ///             // Formatted string => `Cow::Owned`
-///             Error::UnknownAnchor { id, .. } => {
-///                 Cow::Owned(format!("sorry but unknown reference (anchor id: {id})"))
+///             Error::UnknownAnchor { .. } => {
+///                 Cow::Borrowed("sorry but unknown reference")
 ///             }
 ///
 ///             // Everything else => delegate
@@ -65,12 +65,11 @@ use validator::{ValidationErrors, ValidationErrorsKind};
 /// assert!(err.render_with_formatter(&PoliteFormatter).contains("please provide"));
 ///
 /// let err = Error::UnknownAnchor {
-///     id: 123,
 ///     location: Location::UNKNOWN,
 /// };
 /// assert!(err
 ///     .render_with_formatter(&PoliteFormatter)
-///     .contains("anchor id: 123"));
+///     .contains("unknown reference"));
 /// ```
 pub trait MessageFormatter {
     /// Return the message text for `err`.
@@ -452,11 +451,8 @@ pub enum Error {
     ContainerEndMismatch {
         location: Location,
     },
-    /// Alias references a non-existent anchor id.
-    UnknownAnchor {
-        id: usize,
-        location: Location,
-    },
+    /// Alias references a non-existent anchor.
+    UnknownAnchor { location: Location },
     /// Error related to an alias, with both reference (use-site) and defined (anchor) locations.
     ///
     /// This variant allows reporting both where an alias is used and where the anchor is defined,
@@ -731,15 +727,14 @@ impl Error {
         }
     }
 
-    /// Construct an `UnknownAnchor` error for the given anchor id (unknown location).
+    /// Construct an `UnknownAnchor` error (unknown location).
     ///
     /// Called by:
     /// - Alias replay logic in the live event source.
     #[cold]
     #[inline(never)]
-    pub(crate) fn unknown_anchor(id: usize) -> Self {
+    pub(crate) fn unknown_anchor() -> Self {
         Error::UnknownAnchor {
-            id,
             location: Location::UNKNOWN,
         }
     }
@@ -1047,12 +1042,11 @@ impl Error {
         // common real-world case (`*missing`), detect this and convert to our structured
         // `Error::UnknownAnchor`.
         //
-        // Note: the parser message usually contains an anchor *name*, while our structured
-        // variant currently stores a numeric id used by the alias replay mechanism. We use a
-        // best-effort placeholder id.
+        // Note: the parser message usually contains an anchor *name*. We intentionally do not
+        // attempt to parse or store it, to keep this variant free of best-effort identifiers.
         let info = err.info();
         if info.to_ascii_lowercase().contains("unknown anchor") {
-            return Error::UnknownAnchor { id: 0, location };
+            return Error::UnknownAnchor { location };
         }
 
         Error::Message {
@@ -1068,9 +1062,6 @@ fn fmt_error_plain_with_formatter(
     formatter: &dyn MessageFormatter,
 ) -> fmt::Result {
     let err = err.without_snippet();
-    if let Error::WithSnippet { error, .. } = err {
-        return fmt_error_plain_with_formatter(f, error, formatter);
-    }
 
     let msg = formatter.format_message(err);
     if let Some(loc) = err.location() {
@@ -1183,7 +1174,14 @@ fn fmt_error_rendered(
                         writeln!(f)?;
                     }
                     first = false;
-                    fmt_error_with_snippets_offset(f, err, text, *start_line, *crop_radius)?;
+                    fmt_error_with_snippets_offset(
+                        f,
+                        err,
+                        text,
+                        *start_line,
+                        *crop_radius,
+                        options.formatter,
+                    )?;
                 }
                 return Ok(());
             }
@@ -1212,7 +1210,14 @@ fn fmt_error_rendered(
                         writeln!(f)?;
                     }
                     first = false;
-                    fmt_error_with_snippets_offset(f, err, text, *start_line, *crop_radius)?;
+                    fmt_error_with_snippets_offset(
+                        f,
+                        err,
+                        text,
+                        *start_line,
+                        *crop_radius,
+                        options.formatter,
+                    )?;
                 }
                 return Ok(());
             }
@@ -1436,9 +1441,10 @@ fn fmt_error_with_snippets_offset(
     text: &str,
     text_start_line: usize,
     crop_radius: usize,
+    formatter: &dyn MessageFormatter,
 ) -> fmt::Result {
     if crop_radius == 0 {
-        return write!(f, "{err}");
+        return fmt_error_plain_with_formatter(f, err, formatter);
     }
 
     // Keep existing snippet output if the nested error is already wrapped.
@@ -1470,7 +1476,7 @@ fn fmt_error_with_snippets_offset(
         );
     }
 
-    let msg = err.to_string();
+    let msg = formatter.format_message(err);
     let Some(location) = err.location() else {
         return write!(f, "{msg}");
     };

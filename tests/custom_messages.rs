@@ -1,5 +1,8 @@
-use serde_saphyr::{Error, from_str};
+use serde_saphyr::{Error, MessageFormatter, from_str};
+use serde_saphyr::from_slice;
 use serde_saphyr::UserMessageFormatter;
+
+use std::borrow::Cow;
 
 #[test]
 fn test_user_formatter_eof() {
@@ -37,6 +40,87 @@ fn test_user_formatter_quoting_required() {
     assert_eq!(user_msg, "value requires quoting");
 }
 
+#[test]
+fn invalid_utf8_input_from_slice_mentions_utf8_not_binary() {
+    // Invalid UTF-8 (0xFF is never a valid leading byte).
+    let bytes = [0xFFu8, b'\n'];
+
+    let err = from_slice::<String>(&bytes).unwrap_err();
+    assert!(matches!(err, Error::InvalidUtf8Input));
+
+    let default_msg = err.to_string();
+    assert!(default_msg.to_ascii_lowercase().contains("utf-8"));
+    assert!(!default_msg.contains("!!binary"));
+
+    let user_msg = err.render_with_formatter(&UserMessageFormatter);
+    assert!(user_msg.to_ascii_lowercase().contains("utf-8"));
+    assert!(!user_msg.contains("!!binary"));
+}
+
+#[cfg(feature = "garde")]
+#[test]
+fn custom_formatter_is_used_for_nested_validation_errors_with_snippets() {
+    struct Custom;
+    impl MessageFormatter for Custom {
+        fn format_message<'a>(&self, err: &'a Error) -> Cow<'a, str> {
+            match err {
+                Error::UnknownAnchor { .. } => Cow::Borrowed("custom unknown anchor"),
+                // Keep the header empty so the assertion only targets nested errors.
+                Error::ValidationErrors { .. } => Cow::Borrowed(""),
+                _ => Cow::Owned(err.to_string()),
+            }
+        }
+    }
+
+    let yaml = "*missing\n";
+    let loc = from_str::<String>(yaml).unwrap_err().location().unwrap();
+    let nested = Error::UnknownAnchor { location: loc };
+
+    let err = Error::WithSnippet {
+        text: yaml.to_string(),
+        start_line: 1,
+        crop_radius: 2,
+        error: Box::new(Error::ValidationErrors {
+            errors: vec![nested],
+        }),
+    };
+
+    let out = err.render_with_formatter(&Custom);
+    assert!(out.contains("custom unknown anchor"));
+}
+
+#[cfg(feature = "validator")]
+#[test]
+fn custom_formatter_is_used_for_nested_validator_errors_with_snippets() {
+    struct Custom;
+    impl MessageFormatter for Custom {
+        fn format_message<'a>(&self, err: &'a Error) -> Cow<'a, str> {
+            match err {
+                Error::UnknownAnchor { .. } => Cow::Borrowed("custom unknown anchor"),
+                // Keep the header empty so the assertion only targets nested errors.
+                Error::ValidatorErrors { .. } => Cow::Borrowed(""),
+                _ => Cow::Owned(err.to_string()),
+            }
+        }
+    }
+
+    let yaml = "*missing\n";
+    let loc = from_str::<String>(yaml).unwrap_err().location().unwrap();
+    let nested = Error::UnknownAnchor { location: loc };
+
+    let err = Error::WithSnippet {
+        text: yaml.to_string(),
+        start_line: 1,
+        crop_radius: 2,
+        error: Box::new(Error::ValidatorErrors {
+            errors: vec![nested],
+        }),
+    };
+
+    let out = err.render_with_formatter(&Custom);
+    assert!(out.contains("custom unknown anchor"));
+}
+
 #[cfg(feature = "miette")]
 #[test]
 fn test_miette_integration() {
@@ -44,7 +128,6 @@ fn test_miette_integration() {
     
     let yaml = "*unknown";
     let err = Error::UnknownAnchor {
-        id: 1,
         location: serde_saphyr::Location::UNKNOWN,
     };
     
