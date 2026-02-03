@@ -2,6 +2,7 @@ use serde::Deserialize;
 use serde_saphyr::Error;
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct Cfg {
     key: Vec<usize>,
 }

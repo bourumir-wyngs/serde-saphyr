@@ -16,7 +16,7 @@ impl MessageFormatter for PirateFormatter {
             Error::CannotBorrowTransformedString { .. } => Cow::Borrowed(
                 "That string got mangled by the waves",
             ),
-            Error::UnknownAnchor { id, .. } => {
+            Error::UnknownAnchor { .. } => {
                 Cow::Borrowed("Mark be missing from the map!")
             }
             // For other errors, we can delegate to the user-facing formatter.
