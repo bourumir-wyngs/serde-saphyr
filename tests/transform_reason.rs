@@ -47,7 +47,7 @@ mod tests {
         
         // Check the error message contains the reason
         let msg = format!("{}", err);
-        assert!(msg.contains("cannot borrow string"));
+        assert!(msg.contains("cannot deserialize into &str"));
         assert!(msg.contains("escape sequence processing"));
         assert!(msg.contains("String or Cow<str>"));
     }
@@ -120,7 +120,7 @@ mod tests {
         let err = Error::cannot_borrow_transformed(TransformReason::InputNotBorrowable);
         let msg = format!("{}", err);
         
-        assert!(msg.contains("cannot borrow"));
+        assert!(msg.contains("cannot deserialize into &str"));
         assert!(msg.contains("String") || msg.contains("Cow"));
     }
 

@@ -6,62 +6,63 @@ use garde::Validate;
 #[cfg(feature = "validator")]
 use validator::Validate as ValidatorValidate;
 use serde::Deserialize;
+use std::borrow::Cow;
 
 /// A custom formatter that translates error messages into Pirate speak.
 struct PirateFormatter;
 
 impl MessageFormatter for PirateFormatter {
     fn format_message(&self, err: &Error) -> String {
-        let msg = match err {
-            Error::Eof { .. } => "Arrr! The scroll be endin' too soon, matey!",
-            Error::MultipleDocuments { .. } => {
-                "Yer scroll be split into many tales, but we be expectin' just one!"
-            }
-            Error::CannotBorrowTransformedString { .. } => {
-                "That string got mangled by the waves — ye can't borrow it as-is. Use a String or Cow<str>, savvy?"
-            }
-            Error::Unexpected { expected, .. } => {
-                &format!("Shiver me timbers! We expected {}, but found somethin' else!", expected)
-            }
+        let msg: Cow<'_, str> = match err {
+            Error::Eof { .. } => Cow::Borrowed("Arrr! The scroll be endin' too soon, matey!"),
+            Error::MultipleDocuments { .. } => Cow::Borrowed(
+                "Yer scroll be split into many tales, but we be expectin' just one!",
+            ),
+            Error::CannotBorrowTransformedString { .. } => Cow::Borrowed(
+                "That string got mangled by the waves — ye can't borrow it as-is. Use a String or Cow<str>, savvy?",
+            ),
+            Error::Unexpected { expected, .. } => Cow::Owned(format!(
+                "Shiver me timbers! We expected {expected}, but found somethin' else!"
+            )),
             Error::UnknownAnchor { id, .. } => {
-                &format!("Anchor {} be missing from the map!", id)
+                Cow::Owned(format!("Anchor {id} be missing from the map!"))
             }
             Error::AliasError { .. } => {
-                "That map reference leads to Davey Jones' locker!"
+                Cow::Borrowed("That map reference leads to Davey Jones' locker!")
             }
             Error::Budget { .. } => {
-                "We're out of powder, too many shells fired. Avast!"
+                Cow::Borrowed("We're out of powder, too many shells fired. Avast!")
             }
             Error::QuotingRequired { .. } => {
-                "Ye need to cage that beast in quotes, savvy?"
+                Cow::Borrowed("Ye need to cage that beast in quotes, savvy?")
             }
             Error::ContainerEndMismatch { .. } => {
-                "Ye opened a chest but didn't close it properly!"
+                Cow::Borrowed("Ye opened a chest but didn't close it properly!")
             }
-            Error::Message { msg, .. } => {
-                &format!("Ahoy! {}", msg)
-            }
+            Error::Message { msg, .. } => Cow::Owned(format!("Ahoy! {msg}")),
             #[cfg(feature = "garde")]
-            Error::ValidationErrors { errors } => {
-                &format!("Arrr! Garde found {} scallywags in yer papers!", errors.len())
-            }
+            Error::ValidationErrors { errors } => Cow::Owned(format!(
+                "Arrr! Garde found {} scallywags in yer papers!",
+                errors.len()
+            )),
             #[cfg(feature = "validator")]
-            Error::ValidatorErrors { errors } => {
-                &format!("Arrr! Validator found {} scallywags in yer papers!", errors.len())
-            }
+            Error::ValidatorErrors { errors } => Cow::Owned(format!(
+                "Arrr! Validator found {} scallywags in yer papers!",
+                errors.len()
+            )),
             #[cfg(feature = "validator")]
             Error::ValidatorError { .. } => {
-                "Garde says, this crew member ain't fit for duty!"
+                Cow::Borrowed("Validator says, this crew member ain't fit for duty!")
             }
             #[cfg(feature = "garde")]
             Error::ValidationError { .. } => {
-                 "Validator says, this crew member ain't fit for duty!"
+                Cow::Borrowed("Garde says, this crew member ain't fit for duty!")
             }
-            
+
             // For other errors, we can delegate to the default formatter or just print the debug
-            _ => &format!("Yarrr! Something be wrong: {:?}", err),
+            _ => Cow::Owned(format!("Yarrr! Something be wrong: {err:?}")),
         };
-        msg.to_string()
+        msg.into_owned()
     }
 }
 

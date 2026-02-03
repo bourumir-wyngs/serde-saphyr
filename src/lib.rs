@@ -11,10 +11,8 @@ pub use anchors::{
 };
 pub use de::{Budget, DuplicateKeyPolicy, Error, Options};
 pub use de_error::TransformReason;
-pub use de_error::{
-    DefaultMessageFormatter, DeveloperMessageFormatter, MessageFormatter, RenderOptions, SnippetMode,
-    UserMessageFormatter,
-};
+pub use de_error::{MessageFormatter, RenderOptions, SnippetMode, UserMessageFormatter};
+pub use message_formatters::{DefaultMessageFormatter, DeveloperMessageFormatter};
 pub use location::{Location, Locations, Span};
 pub use long_strings::{FoldStr, FoldString, LitStr, LitString};
 pub use ser::{Commented, FlowMap, FlowSeq, SpaceAfter};
@@ -38,6 +36,7 @@ mod anchors;
 mod base64;
 pub mod budget;
 mod de;
+mod message_formatters;
 mod de_error;
 #[path = "de/snippet.rs"]
 mod de_snipped;
