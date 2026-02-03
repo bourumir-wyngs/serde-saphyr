@@ -80,7 +80,7 @@ fn eof_error_reports_last_seen_position() {
 fn parser_unknown_anchor_error_reports_location() {
     let err = from_str::<String>("*missing").expect_err("unknown anchor should error");
     expect_location(&err, 1, 1);
-    assert!(matches!(unwrap_snippet(&err), Error::Message { .. }));
+    assert!(matches!(unwrap_snippet(&err), Error::UnknownAnchor { .. }));
 }
 
 #[test]
@@ -116,7 +116,7 @@ fn parser_unknown_anchor_error_reports_location_multiline() {
     )
     .expect_err("unknown anchor should error");
     expect_location(&err, 2, 1);
-    assert!(matches!(unwrap_snippet(&err), Error::Message { .. }));
+    assert!(matches!(unwrap_snippet(&err), Error::UnknownAnchor { .. }));
 }
 
 #[test]
@@ -344,12 +344,13 @@ fn with_snippet_enabled_for_from_slice_with_options() {
 #[test]
 fn render_with_custom_message_formatter_affects_output() {
     use serde_saphyr::MessageFormatter;
+    use std::borrow::Cow;
 
     struct Custom;
 
     impl MessageFormatter for Custom {
-        fn format_message(&self, _err: &Error) -> String {
-            "CUSTOM_MESSAGE".to_owned()
+        fn format_message<'a>(&self, _err: &'a Error) -> Cow<'a, str> {
+            Cow::Borrowed("CUSTOM_MESSAGE")
         }
     }
 

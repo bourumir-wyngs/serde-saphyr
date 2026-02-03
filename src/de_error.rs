@@ -14,6 +14,7 @@ use crate::tags::SfTag;
 use saphyr_parser::{ScalarStyle, ScanError};
 use serde::de::{self};
 use annotate_snippets::Level;
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::fmt;
 #[cfg(feature = "validator")]
@@ -27,12 +28,56 @@ use validator::{ValidationErrors, ValidationErrorsKind};
 ///
 /// Important: implementations must NOT call `err.to_string()` / `Display` for `Error` to
 /// avoid recursion once `Display` delegates to `Error::render()`.
+///
+/// # Example
+///
+/// Override a couple of messages, returning `Cow::Borrowed` for a fixed string and
+/// `Cow::Owned` for a formatted message, while delegating all other cases to
+/// `UserMessageFormatter`.
+///
+/// ```rust
+/// use serde_saphyr::{Error, Location, MessageFormatter, UserMessageFormatter};
+/// use std::borrow::Cow;
+///
+/// struct PoliteFormatter;
+///
+/// impl MessageFormatter for PoliteFormatter {
+///     fn format_message<'a>(&self, err: &'a Error) -> Cow<'a, str> {
+///         // `UserMessageFormatter` is a zero-sized type, so it is cheap to instantiate.
+///         let fallback = UserMessageFormatter;
+///
+///         match err {
+///             // Fixed string => `Cow::Borrowed`
+///             Error::Eof { .. } => Cow::Borrowed("could you please provide a YAML document?"),
+///
+///             // Formatted string => `Cow::Owned`
+///             Error::UnknownAnchor { id, .. } => {
+///                 Cow::Owned(format!("sorry but unknown reference (anchor id: {id})"))
+///             }
+///
+///             // Everything else => delegate
+///             _ => fallback.format_message(err),
+///         }
+///     }
+/// }
+///
+/// let err = serde_saphyr::from_str::<String>("").unwrap_err();
+/// assert!(err.render_with_formatter(&PoliteFormatter).contains("please provide"));
+///
+/// let err = Error::UnknownAnchor {
+///     id: 123,
+///     location: Location::UNKNOWN,
+/// };
+/// assert!(err
+///     .render_with_formatter(&PoliteFormatter)
+///     .contains("anchor id: 123"));
+/// ```
 pub trait MessageFormatter {
     /// Return the message text for `err`.
     ///
     /// The returned string should NOT include location suffixes like
     /// `"at line X, column Y"`; those are added by the renderer.
-    fn format_message(&self, err: &Error) -> String;
+    fn format_message<'a>(&self, err: &'a Error) -> Cow<'a, str>;
 }
 
 /// User-facing message formatter.
@@ -996,8 +1041,22 @@ impl Error {
                 len: 1,
                 byte_info: (0, 0),
             });
+
+        // `saphyr_parser` reports missing aliases/anchors as a `ScanError` with a textual
+        // message (e.g. "unknown anchor"). To keep our formatter overrides working for the
+        // common real-world case (`*missing`), detect this and convert to our structured
+        // `Error::UnknownAnchor`.
+        //
+        // Note: the parser message usually contains an anchor *name*, while our structured
+        // variant currently stores a numeric id used by the alias replay mechanism. We use a
+        // best-effort placeholder id.
+        let info = err.info();
+        if info.to_ascii_lowercase().contains("unknown anchor") {
+            return Error::UnknownAnchor { id: 0, location };
+        }
+
         Error::Message {
-            msg: err.info().to_owned(),
+            msg: info.to_owned(),
             location,
         }
     }
@@ -1015,7 +1074,7 @@ fn fmt_error_plain_with_formatter(
 
     let msg = formatter.format_message(err);
     if let Some(loc) = err.location() {
-        fmt_with_location(f, &msg, &loc)?;
+        fmt_with_location(f, msg.as_ref(), &loc)?;
     } else {
         write!(f, "{msg}")?;
     }

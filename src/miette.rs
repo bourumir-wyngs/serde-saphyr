@@ -204,7 +204,7 @@ fn build_diagnostic(
             );
 
             ErrorDiagnostic {
-                message: formatter.format_message(err),
+                message: formatter.format_message(err).into_owned(),
                 src,
                 labels,
                 related: Vec::new(),
@@ -217,13 +217,13 @@ fn build_diagnostic(
                 && let Some(span) = to_source_span(&src, &loc)
             {
                 labels.push(LabeledSpan::new_with_span(
-                    Some(formatter.format_message(other)),
+                    Some(formatter.format_message(other).into_owned()),
                     span,
                 ));
             }
 
             ErrorDiagnostic {
-                message: formatter.format_message(other),
+                message: formatter.format_message(other).into_owned(),
                 src,
                 labels,
                 related: Vec::new(),

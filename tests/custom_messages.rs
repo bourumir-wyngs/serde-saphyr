@@ -1,4 +1,3 @@
-use serde::Deserialize;
 use serde_saphyr::{Error, from_str};
 use serde_saphyr::UserMessageFormatter;
 
@@ -11,13 +10,8 @@ fn test_user_formatter_eof() {
 
 #[test]
 fn test_user_formatter_unknown_anchor() {
-    // Note: YAML aliases use *named* anchors; unknown names are typically reported by the
-    // underlying parser as a ScanError, which becomes `Error::Message`.
-    // To test formatter behavior for our structured variant, construct it directly.
-    let err = Error::UnknownAnchor {
-        id: 1,
-        location: serde_saphyr::Location::UNKNOWN,
-    };
+    // Real-world repro: unknown alias/anchor in YAML.
+    let err = from_str::<String>("*missing").unwrap_err();
 
     let user_msg = err.render_with_formatter(&UserMessageFormatter);
     assert!(user_msg.contains("reference to unknown value"));

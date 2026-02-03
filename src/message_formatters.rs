@@ -15,7 +15,9 @@ use crate::de_error::collect_validator_issues;
 
 /// Default developer-oriented message formatter.
 ///
-/// This reproduces the current built-in English messages.
+/// This formatter at places produces recommendations on how to adjust settings and API
+/// calls for the parsing to work, so normally should not be user-facing. Use UserMessageFormatter
+/// for user-facing content, or implement custom MessageFormatter for full control over output.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DefaultMessageFormatter;
 
@@ -23,20 +25,12 @@ pub struct DefaultMessageFormatter;
 pub type DeveloperMessageFormatter = DefaultMessageFormatter;
 
 impl MessageFormatter for DefaultMessageFormatter {
-    fn format_message(&self, err: &Error) -> String {
+    fn format_message<'a>(&self, err: &'a Error) -> Cow<'a, str> {
         match err {
-            Error::WithSnippet { error, .. } => return self.format_message(error),
-
-            _ => {}
-        }
-
-        let msg: Cow<'_, str> = match err {
-            // handled by early return above
-            Error::WithSnippet { .. } => unreachable!(),
-
+            Error::WithSnippet { error, .. } => self.format_message(error),
             Error::Message { msg, .. }
             | Error::HookError { msg, .. }
-            | Error::SerdeVariantId { msg, .. } => Cow::Borrowed(msg),
+            | Error::SerdeVariantId { msg, .. } => Cow::Borrowed(msg.as_str()),
             Error::Eof { .. } => Cow::Borrowed("unexpected end of input"),
             Error::MultipleDocuments { hint, .. } => {
                 Cow::Owned(format!("multiple YAML documents detected; {hint}"))
@@ -189,11 +183,11 @@ impl MessageFormatter for DefaultMessageFormatter {
                 let ref_loc = locations.reference_location;
                 let def_loc = locations.defined_location;
                 match (ref_loc, def_loc) {
-                    (Location::UNKNOWN, Location::UNKNOWN) => Cow::Borrowed(msg),
+                    (Location::UNKNOWN, Location::UNKNOWN) => Cow::Borrowed(msg.as_str()),
                     (r, d)
                         if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) =>
                     {
-                        Cow::Borrowed(msg)
+                        Cow::Borrowed(msg.as_str())
                     }
                     (_r, d) => Cow::Owned(format!(
                         "{msg} (defined at line {}, column {})",
@@ -288,181 +282,87 @@ impl MessageFormatter for DefaultMessageFormatter {
                 "validation failed for {} document(s)",
                 errors.len()
             )),
-        };
-
-        msg.into_owned()
+        }
     }
 }
 
 impl MessageFormatter for UserMessageFormatter {
-    fn format_message(&self, err: &Error) -> String {
+    fn format_message<'a>(&self, err: &'a Error) -> Cow<'a, str> {
+        let default = DefaultMessageFormatter;
+
         match err {
-            Error::Message { msg, .. } => msg.clone(),
-            Error::HookError { msg, .. } => msg.clone(),
-            Error::Eof { .. } => "unexpected end of file".to_owned(),
+            Error::WithSnippet { error, .. } => return self.format_message(error),
+            _ => {}
+        }
+
+        match err {
+            // handled by early return above
+            Error::WithSnippet { .. } => unreachable!(),
+
+            Error::Eof { .. } => Cow::Borrowed("unexpected end of file"),
             Error::MultipleDocuments { .. } => {
-                "multiple YAML documents found where only one was expected".to_owned()
+                Cow::Borrowed("only single YAML document expected but multiple found")
             }
-            Error::Unexpected { expected, .. } => format!("unexpected content, expected {expected}"),
-            Error::MergeValueNotMapOrSeqOfMaps { .. } => {
-                "merge value must be a mapping (or a list of mappings)".to_owned()
+            Error::InvalidUtf8Input | Error::BinaryNotUtf8 { .. } => {
+                Cow::Borrowed("Expecting !!binary scalar to encode valid UTF-8")
             }
-            Error::InvalidBinaryBase64 { .. } => "invalid binary value".to_owned(),
-            Error::BinaryNotUtf8 { .. } => "invalid binary value".to_owned(),
-            Error::TaggedScalarCannotDeserializeIntoString { .. } => "invalid value".to_owned(),
-            Error::UnexpectedSequenceEnd { .. } => "structure mismatch".to_owned(),
-            Error::UnexpectedMappingEnd { .. } => "structure mismatch".to_owned(),
-            Error::InvalidBooleanStrict { .. } => "invalid boolean value".to_owned(),
-            Error::InvalidCharNull { .. } => "invalid character value".to_owned(),
-            Error::InvalidCharNotSingleScalar { .. } => "invalid character value".to_owned(),
-            Error::NullIntoString { .. } => "invalid value".to_owned(),
-            Error::BytesNotSupportedMissingBinaryTag { .. } => "invalid value".to_owned(),
-            Error::UnexpectedValueForUnit { .. } => "invalid value".to_owned(),
-            Error::ExpectedEmptyMappingForUnitStruct { .. } => "invalid value".to_owned(),
-            Error::UnexpectedContainerEndWhileSkippingNode { .. } => "processing failed".to_owned(),
-            Error::InternalSeedReusedForMapKey { .. } => "processing failed".to_owned(),
-            Error::ValueRequestedBeforeKey { .. } => "processing failed".to_owned(),
-            Error::ExpectedStringKeyForExternallyTaggedEnum { .. } => "invalid value".to_owned(),
-            Error::ExternallyTaggedEnumExpectedScalarOrMapping { .. } => "invalid value".to_owned(),
-            Error::UnexpectedValueForUnitEnumVariant { .. } => "invalid value".to_owned(),
-            Error::InvalidUtf8Input => "input is not valid UTF-8".to_owned(),
-            Error::AliasReplayCounterOverflow { .. } => "processing failed".to_owned(),
-            Error::AliasReplayLimitExceeded { .. } => "processing failed".to_owned(),
-            Error::AliasExpansionLimitExceeded { .. } => "processing failed".to_owned(),
-            Error::AliasReplayStackDepthExceeded { .. } => "processing failed".to_owned(),
-            Error::FoldedBlockScalarMustIndentContent { .. } => "invalid value".to_owned(),
-            Error::InternalDepthUnderflow { .. } => "processing failed".to_owned(),
-            Error::InternalRecursionStackEmpty { .. } => "processing failed".to_owned(),
+            Error::InvalidBooleanStrict { .. } => {
+                Cow::Borrowed("invalid boolean (true or false expected)")
+            }
+            Error::NullIntoString { .. } | Error::InvalidCharNull { .. } => {
+                Cow::Borrowed("null is not allowed here")
+            }
+            Error::InvalidCharNotSingleScalar { .. } => {
+                Cow::Borrowed("only single character allowed here")
+            }
+            Error::BytesNotSupportedMissingBinaryTag { .. } => Cow::Borrowed("missing !!binary tag"),
+            Error::ExpectedEmptyMappingForUnitStruct { .. } => Cow::Borrowed("expected empty mapping here"),
+            Error::UnexpectedContainerEndWhileSkippingNode { .. } => {
+                Cow::Borrowed("unexpected container end")
+            }
+            Error::AliasReplayCounterOverflow { .. } => {
+                Cow::Borrowed("YAML document too large or too complex")
+            }
+            Error::AliasReplayLimitExceeded {
+                total_replayed_events,
+                max_total_replayed_events,
+                ..
+            } => Cow::Owned(format!(
+                "YAML document too large or too complex: total_replayed_events={total_replayed_events} > {max_total_replayed_events}"
+            )),
+            Error::AliasExpansionLimitExceeded {
+                anchor_id,
+                expansions,
+                max_expansions_per_anchor,
+                ..
+            } => Cow::Owned(format!(
+                "YAML document too large or too complex: anchor id {anchor_id}: {expansions} > {max_expansions_per_anchor}"
+            )),
+            Error::AliasReplayStackDepthExceeded {
+                depth,
+                max_depth,
+                ..
+            } => Cow::Owned(format!(
+                "YAML document too large or too complex: depth={depth} > {max_depth}"
+            )),
+            Error::UnknownAnchor { .. } => Cow::Borrowed("reference to unknown value"),
             Error::RecursiveReferencesRequireWeakTypes { .. } => {
-                "recursive references require a compatible target type".to_owned()
+                Cow::Borrowed("Recursive reference not allowed here")
             }
-            Error::InvalidScalar { .. } => "invalid value".to_owned(),
-            Error::SerdeInvalidType {
-                unexpected,
-                expected,
-                ..
-            } => format!("invalid type: {unexpected}, expected {expected}"),
-            Error::SerdeInvalidValue {
-                unexpected,
-                expected,
-                ..
-            } => format!("invalid value: {unexpected}, expected {expected}"),
-            Error::SerdeUnknownVariant {
-                variant,
-                expected,
-                ..
-            } => format!(
-                "unknown variant `{variant}`, expected one of {}",
-                expected.join(", ")
-            ),
-            Error::SerdeUnknownField { field, expected, .. } => format!(
-                "unknown field `{field}`, expected one of {}",
-                expected.join(", ")
-            ),
-            Error::SerdeMissingField { field, .. } => format!("missing field `{field}`"),
-
-            // Structural / mapping errors
-            Error::UnexpectedContainerEndWhileReadingKeyNode { .. } => "invalid value".to_owned(),
             Error::DuplicateMappingKey { key, .. } => match key {
-                Some(k) => format!("duplicate mapping key: {k}"),
-                None => "duplicate mapping key".to_owned(),
+                Some(k) => Cow::Owned(format!("duplicate mapping key: {k} not allowed here")),
+                None => Cow::Borrowed("duplicate mapping key not allowed here"),
             },
-            Error::TaggedEnumMismatch { .. } => "invalid value".to_owned(),
-            Error::SerdeVariantId { .. } => "invalid value".to_owned(),
-            Error::ExpectedMappingEndAfterEnumVariantValue { .. } => "invalid value".to_owned(),
+            Error::QuotingRequired { .. } => Cow::Borrowed("value requires quoting"),
+            Error::Budget { breach, .. } => Cow::Owned(format!(
+                "YAML document too large or two complex: limits breached: {breach:?}"
+            )),
+            Error::CannotBorrowTransformedString { .. } => Cow::Borrowed(
+                "Only single string with no escape sequeces is allowed here",
+            ),
 
-            Error::ContainerEndMismatch { .. } => "structure mismatch".to_owned(),
-            Error::UnknownAnchor { .. } => "reference to unknown value".to_owned(),
-            Error::Budget { .. } => "document is too complex, resource limit exceeded".to_owned(),
-            Error::QuotingRequired { .. } => "value requires quoting".to_owned(),
-            Error::CannotBorrowTransformedString { .. } => "processing failed".to_owned(),
-            Error::IOError { .. } => "processing failed (IO error)".to_owned(),
-
-            Error::AliasError { msg, locations } => {
-                let msg = if msg.contains("alias references unknown anchor") {
-                    "reference to unknown value"
-                } else {
-                    msg.as_str()
-                };
-
-                let ref_loc = locations.reference_location;
-                let def_loc = locations.defined_location;
-                match (ref_loc, def_loc) {
-                    (Location::UNKNOWN, Location::UNKNOWN) => msg.to_owned(),
-                    (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
-                        msg.to_owned()
-                    }
-                    (_r, d) => format!("{msg} (defined at line {}, column {})", d.line, d.column),
-                }
-            }
-
-            Error::WithSnippet { error, .. } => self.format_message(error),
-
-            #[cfg(feature = "garde")]
-            Error::ValidationError { report, locations } => {
-                use std::fmt::Write;
-
-                let mut buf = String::new();
-                let issues = collect_garde_issues(report);
-                let mut first = true;
-                for issue in issues {
-                    if !first {
-                        let _ = writeln!(buf);
-                    }
-                    first = false;
-
-                    let entry = issue.display_entry();
-                    let path_key = issue.path;
-                    let original_leaf = path_key
-                        .leaf_string()
-                        .unwrap_or_else(|| "<root>".to_string());
-
-                    let (_locs, resolved_leaf) = locations
-                        .search(&path_key)
-                        .unwrap_or((Locations::UNKNOWN, original_leaf));
-
-                    let resolved_path = format_path_with_resolved_leaf(&path_key, &resolved_leaf);
-                    let _ = write!(buf, "invalid value at {resolved_path}: {entry}");
-                }
-                buf
-            }
-            #[cfg(feature = "garde")]
-            Error::ValidationErrors { errors } => {
-                format!("validation failed for {} document(s)", errors.len())
-            }
-
-            #[cfg(feature = "validator")]
-            Error::ValidatorError { errors, locations } => {
-                use std::fmt::Write;
-
-                let mut buf = String::new();
-                let issues = collect_validator_issues(errors);
-                let mut first = true;
-                for issue in issues {
-                    if !first {
-                        let _ = writeln!(buf);
-                    }
-                    first = false;
-
-                    let entry = issue.display_entry();
-                    let path_key = issue.path;
-                    let original_leaf = path_key
-                        .leaf_string()
-                        .unwrap_or_else(|| "<root>".to_string());
-
-                    let (_locs, resolved_leaf) = locations
-                        .search(&path_key)
-                        .unwrap_or((Locations::UNKNOWN, original_leaf));
-
-                    let resolved_path = format_path_with_resolved_leaf(&path_key, &resolved_leaf);
-                    let _ = write!(buf, "invalid value at {resolved_path}: {entry}");
-                }
-                buf
-            }
-            #[cfg(feature = "validator")]
-            Error::ValidatorErrors { errors } => {
-                format!("validation failed for {} document(s)", errors.len())
-            }
+            // All cases when the standard message is good enough
+            _ => default.format_message(err),
         }
     }
 }
