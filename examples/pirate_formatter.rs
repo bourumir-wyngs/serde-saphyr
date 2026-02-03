@@ -24,7 +24,7 @@
 //!   options (see the validation examples below).
 
 use serde_saphyr::{
-    DefaultMessageFormatter, Error, Localizer, MessageFormatter, SnippetMode, UserMessageFormatter,
+    DefaultMessageFormatter, Error, Localizer, MessageFormatter, UserMessageFormatter,
 };
 use serde::Deserialize;
 use std::borrow::Cow;

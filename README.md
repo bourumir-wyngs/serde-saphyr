@@ -575,6 +575,60 @@ assert_eq!(data.name, "hello");
 
 For maximum flexibility, use `Cow<'a, str>` which borrows when possible and owns when transformation is required.
 
+## Custom messages
+The default error messages are **developer-oriented**. They may mention `serde-saphyr` APIs and
+options and include “action items” intended to help fix the problem.
+
+If error messages are shown to end users, switch to the built-in user-facing formatter, or provide
+your own formatter (for example, to translate messages into another language).
+
+See:
+- [`MessageFormatter`](https://docs.rs/serde-saphyr/latest/serde_saphyr/trait.MessageFormatter.html) — controls the main message text for each [`Error`](https://docs.rs/serde-saphyr/latest/serde_saphyr/enum.Error.html).
+- [`Localizer`](https://docs.rs/serde-saphyr/latest/serde_saphyr/trait.Localizer.html) — controls message pieces that are composed *outside* `MessageFormatter::format_message` (location suffixes, validation/snippet labels, etc.).
+
+### Use the built-in user-facing formatter
+
+```rust
+use serde_saphyr::UserMessageFormatter;
+
+# let err = serde_saphyr::from_str::<String>("").unwrap_err();
+println!("\n[User Error]:\n{}", err.render_with_formatter(&UserMessageFormatter));
+```
+
+### Use a custom formatter with `miette`
+
+If you want fancy diagnostics via `miette`, you can convert a `serde-saphyr` error to a
+`miette::Report` while still controlling the message text via a custom formatter:
+
+```rust,ignore
+use serde_saphyr::{MessageFormatter, UserMessageFormatter};
+
+fn main() {
+    let yaml = "not_a_bool\n";
+    let opts = serde_saphyr::options! { with_snippet: false };
+    let err = serde_saphyr::from_str_with_options::<bool>(yaml, opts)
+        .expect_err("bool parse error expected");
+
+    // You can plug in `&UserMessageFormatter` or your own `&dyn MessageFormatter`.
+    let formatter: &dyn MessageFormatter = &UserMessageFormatter;
+
+    let report = serde_saphyr::miette::to_miette_report_with_formatter(
+        &err,
+        yaml,
+        "config.yaml",
+        formatter,
+    );
+
+    eprintln!("{report:?}");
+}
+```
+
+This requires enabling the crate’s `miette` feature.
+
+For a complete custom formatter/localizer example, see `examples/pirate_formatter.rs`. For an
+end-to-end `miette` example, see `examples/miette.rs`.
+
+
 ## Robotics
 
 The feature-gated "robotics" capability enables parsing of YAML extensions commonly used in robotics ([ROS](https://www.ros.org/blog/why-ros/) These extensions support conversion functions (deg, rad) and simple mathematical expressions such as deg(180), rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). This capability is gated behind the [robotics] feature and is not enabled by default. Additionally, **angle_conversions** must be set to true in the [Options](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). Just adding robotics feature is not sufficient to activate this mode of parsing. This parser is still just a simple expression calculator implemented directly in Rust, not some hook into a language interpreter.
