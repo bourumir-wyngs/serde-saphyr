@@ -340,3 +340,29 @@ fn with_snippet_enabled_for_from_slice_with_options() {
         "from_slice_with_options should include snippet origin/coordinates by default.\nrendered: {rendered}"
     );
 }
+
+#[test]
+fn render_with_custom_message_formatter_affects_output() {
+    use serde_saphyr::MessageFormatter;
+
+    struct Custom;
+
+    impl MessageFormatter for Custom {
+        fn format_message(&self, _err: &Error) -> String {
+            "CUSTOM_MESSAGE".to_owned()
+        }
+    }
+
+    let yaml = "*missing";
+    let err = from_str::<String>(yaml).expect_err("unknown anchor should error");
+
+    let custom = err.render_with_formatter(&Custom);
+    assert!(
+        custom.contains("CUSTOM_MESSAGE"),
+        "expected custom message in rendered output.\nrendered: {custom}"
+    );
+    assert!(
+        custom.contains("<input>"),
+        "expected snippet output to still be present.\nrendered: {custom}"
+    );
+}

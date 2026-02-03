@@ -18,6 +18,88 @@ use std::fmt;
 #[cfg(feature = "validator")]
 use validator::{ValidationErrors, ValidationErrorsKind};
 
+/// Formats error *messages* (not including locations/snippets).
+///
+/// This is the core customization hook for deferred rendering. The error value remains
+/// structured data; the formatter decides what message text to show (developer-oriented,
+/// user-oriented, localized, etc.).
+///
+/// Important: implementations must NOT call `err.to_string()` / `Display` for `Error` to
+/// avoid recursion once `Display` delegates to `Error::render()`.
+pub trait MessageFormatter {
+    /// Return the message text for `err`.
+    ///
+    /// The returned string should NOT include location suffixes like
+    /// `"at line X, column Y"`; those are added by the renderer.
+    fn format_message(&self, err: &Error) -> String;
+}
+
+/// Default developer-oriented message formatter.
+///
+/// This reproduces the current built-in English messages.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct DefaultMessageFormatter;
+
+impl MessageFormatter for DefaultMessageFormatter {
+    fn format_message(&self, err: &Error) -> String {
+        match err {
+            Error::Message { msg, .. } => msg.clone(),
+            Error::HookError { msg, .. } => msg.clone(),
+            Error::Eof { .. } => "unexpected end of input".to_owned(),
+            Error::Unexpected { expected, .. } => {
+                format!("unexpected event: expected {expected}")
+            }
+            Error::ContainerEndMismatch { .. } => "list or mapping end with no start".to_owned(),
+            Error::UnknownAnchor { id, .. } => {
+                format!("alias references unknown anchor id {id}")
+            }
+            Error::Budget { breach, .. } => format!("YAML budget breached: {breach:?}"),
+            Error::QuotingRequired { value, .. } => {
+                format!("The string value [{value}] must be quoted")
+            }
+            Error::CannotBorrowTransformedString { reason, .. } => format!(
+                "cannot borrow string: value was transformed during parsing ({reason}). \
+                     Use String or Cow<str> instead of &str"
+            ),
+            Error::IOError { cause } => format!("IO error: {cause}"),
+
+            // For now, these variants still carry pre-rendered message strings.
+            // They will be migrated to codes/args later.
+            Error::AliasError { msg, .. } => msg.clone(),
+
+            // Snippet wrapper is presentation-only; the message belongs to the inner error.
+            Error::WithSnippet { error, .. } => self.format_message(error),
+
+            // Validation variants are rendered with dedicated helpers (paths + alias context).
+            // Keep a stable fallback message here.
+            #[cfg(feature = "garde")]
+            Error::ValidationError { .. } => "validation error".to_owned(),
+            #[cfg(feature = "garde")]
+            Error::ValidationErrors { .. } => "validation errors".to_owned(),
+            #[cfg(feature = "validator")]
+            Error::ValidatorError { .. } => "validation error".to_owned(),
+            #[cfg(feature = "validator")]
+            Error::ValidatorErrors { .. } => "validation errors".to_owned(),
+        }
+    }
+}
+
+/// Controls whether snippet output is included when available.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SnippetMode {
+    /// Render snippets when the error is wrapped in `Error::WithSnippet`.
+    Auto,
+    /// Never render snippets; render a plain (location-suffixed) message instead.
+    Off,
+}
+
+/// Options for deferred error rendering.
+#[derive(Clone, Copy)]
+pub struct RenderOptions<'a> {
+    pub formatter: &'a dyn MessageFormatter,
+    pub snippets: SnippetMode,
+}
+
 #[cfg(any(feature = "garde", feature = "validator"))]
 #[derive(Debug, Clone)]
 pub(crate) struct ValidationIssue {
@@ -300,6 +382,46 @@ impl Error {
         }
     }
 
+    /// Render this error using the built-in developer formatter.
+    ///
+    /// This is the deferred-rendering entrypoint. It is equivalent to `Display`/`to_string()`
+    /// output, but also allows callers to choose a custom [`MessageFormatter`] via
+    /// [`Error::render_with_options`].
+    pub fn render(&self) -> String {
+        self.render_with_options(RenderOptions {
+            formatter: &DefaultMessageFormatter,
+            snippets: SnippetMode::Auto,
+        })
+    }
+
+    /// Render this error using a custom message formatter.
+    pub fn render_with_formatter(&self, formatter: &dyn MessageFormatter) -> String {
+        self.render_with_options(RenderOptions {
+            formatter,
+            snippets: SnippetMode::Auto,
+        })
+    }
+
+    /// Render this error using the provided options.
+    pub fn render_with_options(&self, options: RenderOptions<'_>) -> String {
+        struct RenderDisplay<'a> {
+            err: &'a Error,
+            options: RenderOptions<'a>,
+        }
+
+        impl fmt::Display for RenderDisplay<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                fmt_error_rendered(f, self.err, self.options)
+            }
+        }
+
+        RenderDisplay {
+            err: self,
+            options,
+        }
+        .to_string()
+    }
+
     /// Construct a `Message` error with no known location.
     ///
     /// Arguments:
@@ -568,6 +690,211 @@ impl Error {
     }
 }
 
+fn fmt_error_plain_with_formatter(
+    f: &mut fmt::Formatter<'_>,
+    err: &Error,
+    formatter: &dyn MessageFormatter,
+) -> fmt::Result {
+    let err = err.without_snippet();
+    match err {
+        Error::WithSnippet { error, .. } => fmt_error_plain_with_formatter(f, error, formatter),
+
+        Error::Message { location, .. }
+        | Error::HookError { location, .. }
+        | Error::Eof { location }
+        | Error::Unexpected { location, .. }
+        | Error::ContainerEndMismatch { location }
+        | Error::UnknownAnchor { location, .. }
+        | Error::QuotingRequired { location, .. }
+        | Error::Budget { location, .. }
+        | Error::CannotBorrowTransformedString { location, .. } => {
+            let msg = formatter.format_message(err);
+            fmt_with_location(f, &msg, location)
+        }
+
+        Error::IOError { .. } => {
+            let msg = formatter.format_message(err);
+            write!(f, "{msg}")
+        }
+
+        Error::AliasError { msg, locations } => fmt_alias_error_plain(f, msg, locations),
+
+        #[cfg(feature = "garde")]
+        Error::ValidationError { report, locations } => fmt_validation_error_plain(f, report, locations),
+
+        #[cfg(feature = "garde")]
+        Error::ValidationErrors { errors } => {
+            let mut first = true;
+            for err in errors {
+                if !first {
+                    writeln!(f)?;
+                    writeln!(f)?;
+                }
+                first = false;
+                fmt_error_plain_with_formatter(f, err, formatter)?;
+            }
+            Ok(())
+        }
+
+        #[cfg(feature = "validator")]
+        Error::ValidatorError { errors, locations } => fmt_validator_error_plain(f, errors, locations),
+
+        #[cfg(feature = "validator")]
+        Error::ValidatorErrors { errors } => {
+            let mut first = true;
+            for err in errors {
+                if !first {
+                    writeln!(f)?;
+                    writeln!(f)?;
+                }
+                first = false;
+                fmt_error_plain_with_formatter(f, err, formatter)?;
+            }
+            Ok(())
+        }
+    }
+}
+
+fn fmt_error_rendered(
+    f: &mut fmt::Formatter<'_>,
+    err: &Error,
+    options: RenderOptions<'_>,
+) -> fmt::Result {
+    if options.snippets == SnippetMode::Off {
+        return fmt_error_plain_with_formatter(f, err, options.formatter);
+    }
+
+    match err {
+        #[cfg(feature = "garde")]
+        Error::ValidationErrors { errors } => {
+            let mut first = true;
+            for err in errors {
+                if !first {
+                    writeln!(f)?;
+                    writeln!(f)?;
+                }
+                first = false;
+                fmt_error_rendered(f, err, options)?;
+            }
+            Ok(())
+        }
+
+        #[cfg(feature = "validator")]
+        Error::ValidatorErrors { errors } => {
+            let mut first = true;
+            for err in errors {
+                if !first {
+                    writeln!(f)?;
+                    writeln!(f)?;
+                }
+                first = false;
+                fmt_error_rendered(f, err, options)?;
+            }
+            Ok(())
+        }
+
+        Error::WithSnippet {
+            text,
+            start_line,
+            crop_radius,
+            error,
+        } => {
+            if *crop_radius == 0 {
+                // Treat as "snippet disabled".
+                return fmt_error_plain_with_formatter(f, error, options.formatter);
+            }
+
+            // Validation errors have custom snippet formatting (paths, alias context, and
+            // messages without location duplication).
+            #[cfg(feature = "garde")]
+            if let Error::ValidationError { report, locations } = error.as_ref() {
+                return fmt_validation_error_with_snippets_offset(
+                    f,
+                    report,
+                    locations,
+                    text,
+                    *start_line,
+                    *crop_radius,
+                );
+            }
+            #[cfg(feature = "garde")]
+            if let Error::ValidationErrors { errors } = error.as_ref() {
+                let mut first = true;
+                for err in errors {
+                    if !first {
+                        writeln!(f)?;
+                        writeln!(f)?;
+                    }
+                    first = false;
+                    fmt_error_with_snippets_offset(f, err, text, *start_line, *crop_radius)?;
+                }
+                return Ok(());
+            }
+
+            #[cfg(feature = "validator")]
+            if let Error::ValidatorError { errors, locations } = error.as_ref() {
+                return fmt_validator_error_with_snippets_offset(
+                    f,
+                    errors,
+                    locations,
+                    text,
+                    *start_line,
+                    *crop_radius,
+                );
+            }
+            #[cfg(feature = "validator")]
+            if let Error::ValidatorErrors { errors } = error.as_ref() {
+                let mut first = true;
+                for err in errors {
+                    if !first {
+                        writeln!(f)?;
+                        writeln!(f)?;
+                    }
+                    first = false;
+                    fmt_error_with_snippets_offset(f, err, text, *start_line, *crop_radius)?;
+                }
+                return Ok(());
+            }
+
+            // Render a snippet from the cropped source window. If anything is missing,
+            // fall back to the plain nested error.
+            let Some(location) = error.location() else {
+                return fmt_error_plain_with_formatter(f, error, options.formatter);
+            };
+            if location == Location::UNKNOWN {
+                return fmt_error_plain_with_formatter(f, error, options.formatter);
+            }
+            if text.is_empty() {
+                return fmt_error_plain_with_formatter(f, error, options.formatter);
+            }
+
+            // Display-wrapper approach (no recursion): render the inner error via our
+            // plain renderer into a string.
+            let msg = {
+                struct PlainDisplay<'a> {
+                    err: &'a Error,
+                    formatter: &'a dyn MessageFormatter,
+                }
+                impl fmt::Display for PlainDisplay<'_> {
+                    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                        fmt_error_plain_with_formatter(f, self.err, self.formatter)
+                    }
+                }
+                PlainDisplay {
+                    err: error,
+                    formatter: options.formatter,
+                }
+                .to_string()
+            };
+
+            let ctx = crate::de_snipped::Snippet::new(text, "<input>", *crop_radius)
+                .with_offset(*start_line);
+            ctx.fmt_or_fallback(f, Level::ERROR, &msg, &location)
+        }
+        _ => fmt_error_plain_with_formatter(f, err, options.formatter),
+    }
+}
+
 #[cfg(any(feature = "garde", feature = "validator"))]
 fn search_locations_with_ancestor_fallback(
     locations: &PathMap,
@@ -590,164 +917,14 @@ fn search_locations_with_ancestor_fallback(
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::WithSnippet {
-                text,
-                start_line,
-                crop_radius,
-                error,
-            } => {
-                if *crop_radius == 0 {
-                    // Treat as "snippet disabled".
-                    return write!(f, "{}", error);
-                }
-
-                // Validation errors have custom snippet formatting (paths, alias context, and
-                // messages without location duplication).
-                #[cfg(feature = "garde")]
-                if let Error::ValidationError { report, locations } = error.as_ref() {
-                    return fmt_validation_error_with_snippets_offset(
-                        f,
-                        report,
-                        locations,
-                        text,
-                        *start_line,
-                        *crop_radius,
-                    );
-                }
-                #[cfg(feature = "garde")]
-                if let Error::ValidationErrors { errors } = error.as_ref() {
-                    let mut first = true;
-                    for err in errors {
-                        if !first {
-                            writeln!(f)?;
-                            writeln!(f)?;
-                        }
-                        first = false;
-                        fmt_error_with_snippets_offset(f, err, text, *start_line, *crop_radius)?;
-                    }
-                    return Ok(());
-                }
-
-                #[cfg(feature = "validator")]
-                if let Error::ValidatorError { errors, locations } = error.as_ref() {
-                    return fmt_validator_error_with_snippets_offset(
-                        f,
-                        errors,
-                        locations,
-                        text,
-                        *start_line,
-                        *crop_radius,
-                    );
-                }
-                #[cfg(feature = "validator")]
-                if let Error::ValidatorErrors { errors } = error.as_ref() {
-                    let mut first = true;
-                    for err in errors {
-                        if !first {
-                            writeln!(f)?;
-                            writeln!(f)?;
-                        }
-                        first = false;
-                        fmt_error_with_snippets_offset(f, err, text, *start_line, *crop_radius)?;
-                    }
-                    return Ok(());
-                }
-
-                // Render a snippet from the cropped source window. If anything is missing,
-                // fall back to the plain nested error.
-                let Some(location) = error.location() else {
-                    return write!(f, "{}", error);
-                };
-                if location == Location::UNKNOWN {
-                    return write!(f, "{}", error);
-                }
-                if text.is_empty() {
-                    return write!(f, "{}", error);
-                }
-
-                let msg = error.to_string();
-                let ctx = crate::de_snipped::Snippet::new(text, "<input>", *crop_radius)
-                    .with_offset(*start_line);
-                ctx.fmt_or_fallback(f, Level::ERROR, &msg, &location)
-            }
-            Error::Message { msg, location } => fmt_with_location(f, msg, location),
-            Error::HookError { msg, location } => fmt_with_location(f, msg, location),
-            Error::Eof { location } => fmt_with_location(f, "unexpected end of input", location),
-            Error::Unexpected { expected, location } => fmt_with_location(
-                f,
-                &format!("unexpected event: expected {expected}"),
-                location,
-            ),
-            Error::ContainerEndMismatch { location } => {
-                fmt_with_location(f, "list or mapping end with no start", location)
-            }
-            Error::UnknownAnchor { id, location } => fmt_with_location(
-                f,
-                &format!("alias references unknown anchor id {id}"),
-                location,
-            ),
-            Error::Budget { breach, location } => {
-                fmt_with_location(f, &format!("YAML budget breached: {breach:?}"), location)
-            }
-            Error::QuotingRequired { value, location } => fmt_with_location(
-                f,
-                &format!("The string value [{value}] must be quoted"),
-                location,
-            ),
-            Error::CannotBorrowTransformedString { reason, location } => fmt_with_location(
-                f,
-                &format!(
-                    "cannot borrow string: value was transformed during parsing ({reason}). \
-                     Use String or Cow<str> instead of &str"
-                ),
-                location,
-            ),
-            Error::IOError { cause } => write!(f, "IO error: {}", cause),
-            Error::AliasError { msg, locations } => {
-                fmt_alias_error_plain(f, msg, locations)
-            }
-
-            #[cfg(feature = "garde")]
-            Error::ValidationError { report, locations } => {
-                // No input text available here, so we fall back to a location-suffixed
-                // message format (snippets are only rendered via `Error::WithSnippet`).
-                fmt_validation_error_plain(f, report, locations)
-            }
-
-            #[cfg(feature = "garde")]
-            Error::ValidationErrors { errors } => {
-                let mut first = true;
-                for err in errors {
-                    if !first {
-                        writeln!(f)?;
-                        writeln!(f)?;
-                    }
-                    first = false;
-                    write!(f, "{err}")?;
-                }
-                Ok(())
-            }
-
-            #[cfg(feature = "validator")]
-            Error::ValidatorError { errors, locations } => {
-                fmt_validator_error_plain(f, errors, locations)
-            }
-
-            #[cfg(feature = "validator")]
-            Error::ValidatorErrors { errors } => {
-                let mut first = true;
-                for err in errors {
-                    if !first {
-                        writeln!(f)?;
-                        writeln!(f)?;
-                    }
-                    first = false;
-                    write!(f, "{err}")?;
-                }
-                Ok(())
-            }
-        }
+        fmt_error_rendered(
+            f,
+            self,
+            RenderOptions {
+                formatter: &DefaultMessageFormatter,
+                snippets: SnippetMode::Auto,
+            },
+        )
     }
 }
 

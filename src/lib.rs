@@ -11,6 +11,7 @@ pub use anchors::{
 };
 pub use de::{Budget, DuplicateKeyPolicy, Error, Options};
 pub use de_error::TransformReason;
+pub use de_error::{DefaultMessageFormatter, MessageFormatter, RenderOptions, SnippetMode};
 pub use location::{Location, Locations, Span};
 pub use long_strings::{FoldStr, FoldString, LitStr, LitString};
 pub use ser::{Commented, FlowMap, FlowSeq, SpaceAfter};
