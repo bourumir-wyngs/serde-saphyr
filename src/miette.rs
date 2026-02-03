@@ -9,6 +9,7 @@ use miette::{Diagnostic, LabeledSpan, NamedSource, SourceSpan};
 
 use crate::Error;
 use crate::Location;
+use crate::de_error::{DefaultMessageFormatter, MessageFormatter};
 use crate::de_snipped::sanitize_terminal_snippet_preserve_len;
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::location::Locations;
@@ -41,9 +42,18 @@ use validator::{ValidationErrors, ValidationErrorsKind};
 ///   This helper owns a copy of `source` to build a standalone `miette::Report`.
 /// - If the error has no known location/span, the report will not include labels.
 pub fn to_miette_report(err: &Error, source: &str, file: &str) -> miette::Report {
+    to_miette_report_with_formatter(err, source, file, &DefaultMessageFormatter)
+}
+
+pub fn to_miette_report_with_formatter(
+    err: &Error,
+    source: &str,
+    file: &str,
+    formatter: &dyn MessageFormatter,
+) -> miette::Report {
     let sanitized_source = sanitize_terminal_snippet_preserve_len(source.to_owned());
     let src = Arc::new(NamedSource::new(file, sanitized_source));
-    let diag = build_diagnostic(err.without_snippet(), src);
+    let diag = build_diagnostic(err.without_snippet(), src, formatter);
     miette::Report::new(diag)
 }
 
@@ -84,7 +94,11 @@ impl Diagnostic for ErrorDiagnostic {
     }
 }
 
-fn build_diagnostic(err: &Error, src: Arc<NamedSource<String>>) -> ErrorDiagnostic {
+fn build_diagnostic(
+    err: &Error,
+    src: Arc<NamedSource<String>>,
+    formatter: &dyn MessageFormatter,
+) -> ErrorDiagnostic {
     match err {
         #[cfg(feature = "garde")]
         Error::ValidationError { report, locations } => {
@@ -118,7 +132,11 @@ fn build_diagnostic(err: &Error, src: Arc<NamedSource<String>>) -> ErrorDiagnost
         Error::ValidationErrors { errors } => {
             let mut related = Vec::new();
             for e in errors {
-                related.push(build_diagnostic(e.without_snippet(), Arc::clone(&src)));
+                related.push(build_diagnostic(
+                    e.without_snippet(),
+                    Arc::clone(&src),
+                    formatter,
+                ));
             }
 
             ErrorDiagnostic {
@@ -159,7 +177,11 @@ fn build_diagnostic(err: &Error, src: Arc<NamedSource<String>>) -> ErrorDiagnost
         Error::ValidatorErrors { errors } => {
             let mut related = Vec::new();
             for e in errors {
-                related.push(build_diagnostic(e.without_snippet(), Arc::clone(&src)));
+                related.push(build_diagnostic(
+                    e.without_snippet(),
+                    Arc::clone(&src),
+                    formatter,
+                ));
             }
 
             ErrorDiagnostic {
@@ -170,13 +192,19 @@ fn build_diagnostic(err: &Error, src: Arc<NamedSource<String>>) -> ErrorDiagnost
             }
         }
 
-        Error::WithSnippet { error, .. } => build_diagnostic(error.without_snippet(), src),
+        Error::WithSnippet { error, .. } => {
+            build_diagnostic(error.without_snippet(), src, formatter)
+        }
 
-        Error::AliasError { msg, locations } => {
-            let labels = build_alias_labels(&src, locations.reference_location, locations.defined_location);
+        Error::AliasError { msg: _, locations } => {
+            let labels = build_alias_labels(
+                &src,
+                locations.reference_location,
+                locations.defined_location,
+            );
 
             ErrorDiagnostic {
-                message: msg.clone(),
+                message: formatter.format_message(err),
                 src,
                 labels,
                 related: Vec::new(),
@@ -188,11 +216,14 @@ fn build_diagnostic(err: &Error, src: Arc<NamedSource<String>>) -> ErrorDiagnost
             if let Some(loc) = other.location()
                 && let Some(span) = to_source_span(&src, &loc)
             {
-                labels.push(LabeledSpan::new_with_span(Some(other.to_string()), span));
+                labels.push(LabeledSpan::new_with_span(
+                    Some(formatter.format_message(other)),
+                    span,
+                ));
             }
 
             ErrorDiagnostic {
-                message: message_without_location(other),
+                message: formatter.format_message(other),
                 src,
                 labels,
                 related: Vec::new(),
@@ -418,43 +449,6 @@ fn to_source_span(src: &NamedSource<String>, location: &Location) -> Option<Sour
     Some(SourceSpan::new(byte_off.into(), byte_len))
 }
 
-fn message_without_location(err: &Error) -> String {
-    match err {
-        Error::Message { msg, .. } => msg.clone(),
-        Error::HookError { msg, .. } => msg.clone(),
-        Error::AliasError { msg, .. } => msg.clone(),
-        Error::Eof { .. } => "unexpected end of input".to_owned(),
-        Error::Unexpected { expected, .. } => format!("unexpected event: expected {expected}"),
-        Error::ContainerEndMismatch { .. } => "list or mapping end with no start".to_owned(),
-        Error::UnknownAnchor { id, .. } => format!("alias references unknown anchor id {id}"),
-        Error::Budget { breach, .. } => format!("YAML budget breached: {breach:?}"),
-        Error::QuotingRequired { value, .. } => {
-            format!("The string value [{value}] must be quoted")
-        }
-        Error::CannotBorrowTransformedString { reason, .. } => {
-            format!(
-                "cannot borrow string: value was transformed during parsing ({reason}). \
-                 Use String or Cow<str> instead of &str"
-            )
-        }
-        Error::IOError { cause } => format!("IO error: {cause}"),
-        Error::WithSnippet { error, .. } => message_without_location(error),
-
-        #[cfg(feature = "garde")]
-        Error::ValidationError { report, .. } => format!("validation error: {report}"),
-        #[cfg(feature = "garde")]
-        Error::ValidationErrors { errors } => {
-            format!("validation failed for {} document(s)", errors.len())
-        }
-
-        #[cfg(feature = "validator")]
-        Error::ValidatorError { errors, .. } => format!("validation error: {errors}"),
-        #[cfg(feature = "validator")]
-        Error::ValidatorErrors { errors } => {
-            format!("validation failed for {} document(s)", errors.len())
-        }
-    }
-}
 
 #[cfg(all(test, feature = "miette"))]
 mod tests {
@@ -476,7 +470,7 @@ mod tests {
             },
         };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src));
+        let diag = build_diagnostic(&err, Arc::clone(&src), &DefaultMessageFormatter);
         let labels: Vec<_> = diag.labels().unwrap().collect();
         assert_eq!(labels.len(), 1);
         assert_eq!(
@@ -510,7 +504,7 @@ mod tests {
             },
         };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src));
+        let diag = build_diagnostic(&err, Arc::clone(&src), &DefaultMessageFormatter);
         let labels: Vec<_> = diag.labels().unwrap().collect();
         assert_eq!(labels.len(), 1);
         // miette expects byte offsets; ensure we converted from chars to bytes correctly
@@ -541,7 +535,7 @@ mod tests {
             },
         };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src));
+        let diag = build_diagnostic(&err, Arc::clone(&src), &DefaultMessageFormatter);
         let labels: Vec<_> = diag.labels().unwrap().collect();
         assert_eq!(labels.len(), 1);
         assert_eq!(labels[0].inner().offset(), start_byte);
@@ -569,7 +563,7 @@ mod tests {
             },
         };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src));
+        let diag = build_diagnostic(&err, Arc::clone(&src), &DefaultMessageFormatter);
         let labels: Vec<_> = diag.labels().unwrap().collect();
         assert_eq!(labels.len(), 1);
         assert_eq!(labels[0].inner().offset(), start_byte);
@@ -597,7 +591,7 @@ mod tests {
             },
         };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src));
+        let diag = build_diagnostic(&err, Arc::clone(&src), &DefaultMessageFormatter);
         let labels: Vec<_> = diag.labels().unwrap().collect();
         assert_eq!(labels.len(), 1);
         assert_eq!(labels[0].inner().offset(), start_byte);
@@ -626,7 +620,7 @@ mod tests {
             },
         };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src));
+        let diag = build_diagnostic(&err, Arc::clone(&src), &DefaultMessageFormatter);
         let labels: Vec<_> = diag.labels().unwrap().collect();
         assert_eq!(labels.len(), 1);
         assert_eq!(labels[0].inner().offset(), start_byte);
@@ -691,7 +685,7 @@ mod tests {
 
         let err = Error::ValidatorError { errors, locations };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src));
+        let diag = build_diagnostic(&err, Arc::clone(&src), &DefaultMessageFormatter);
         assert_eq!(diag.message, "validation failed");
         assert_eq!(diag.related.len(), 1);
 
@@ -767,7 +761,7 @@ mod tests {
 
         let err = Error::ValidationError { report, locations };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src));
+        let diag = build_diagnostic(&err, Arc::clone(&src), &DefaultMessageFormatter);
         assert_eq!(diag.message, "validation failed");
         assert_eq!(diag.related.len(), 1);
 
@@ -824,8 +818,8 @@ mod tests {
             },
         };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src));
-        assert_eq!(diag.message, "invalid value for alias");
+        let diag = build_diagnostic(&err, Arc::clone(&src), &DefaultMessageFormatter);
+        assert_eq!(diag.message, "invalid value for alias (defined at line 1, column 13)");
 
         let labels = &diag.labels;
         assert_eq!(labels.len(), 2, "expected 2 labels, got: {labels:?}");
@@ -867,7 +861,7 @@ mod tests {
             },
         };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src));
+        let diag = build_diagnostic(&err, Arc::clone(&src), &DefaultMessageFormatter);
         assert_eq!(diag.message, "invalid value");
 
         // When both locations are the same, should only have one label

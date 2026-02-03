@@ -1,5 +1,12 @@
 use serde::Deserialize;
 
+fn unwrap_snippet<'a>(err: &'a serde_saphyr::Error) -> &'a serde_saphyr::Error {
+    match err {
+        serde_saphyr::Error::WithSnippet { error, .. } => error,
+        other => other,
+    }
+}
+
 #[derive(Debug, Deserialize, PartialEq)]
 struct Person {
     name: String,
@@ -20,6 +27,16 @@ fn multiple_documents_one_no_markers() {
     let docs: Vec<Person> = serde_saphyr::from_multiple(y).expect("parse single doc as multi");
     assert_eq!(docs.len(), 1);
     assert_eq!(docs[0].name, "John");
+}
+
+#[test]
+fn single_document_entrypoint_rejects_multiple_documents() {
+    let y = "name: A\n---\nname: B\n";
+    let err = serde_saphyr::from_str::<Person>(y).expect_err("expected multi-doc stream to fail");
+    match unwrap_snippet(&err) {
+        serde_saphyr::Error::MultipleDocuments { .. } => {}
+        other => panic!("expected MultipleDocuments error, got {other:?}"),
+    }
 }
 
 #[test]

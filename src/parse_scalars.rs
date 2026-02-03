@@ -133,6 +133,8 @@ pub(crate) fn parse_int_signed<T>(
 where
     T: TryFrom<i128>,
 {
+    let invalid = || Error::InvalidScalar { ty, location };
+
     let t = s.trim();
     let (neg, rest) = match t.strip_prefix('+') {
         Some(r) => (false, r),
@@ -145,25 +147,25 @@ where
     let (radix, digits) = radix_and_digits(legacy_octal, rest);
     if radix == 10 {
         let val_i128 = parse_decimal_signed_i128(digits, neg)
-            .ok_or_else(|| Error::msg(format!("invalid {ty}")).with_location(location))?;
+            .ok_or_else(invalid)?;
         return T::try_from(val_i128)
-            .map_err(|_| Error::msg(format!("invalid {ty}")).with_location(location));
+            .map_err(|_| invalid());
     }
 
     let mag = parse_digits_u128(digits, radix)
-        .ok_or_else(|| Error::msg(format!("invalid {ty}")).with_location(location))?;
+        .ok_or_else(invalid)?;
     let val_i128: i128 = if neg {
         let mag_i128: i128 = mag
             .try_into()
-            .map_err(|_| Error::msg(format!("invalid {ty}")).with_location(location))?;
+            .map_err(|_| invalid())?;
         mag_i128
             .checked_neg()
-            .ok_or_else(|| Error::msg(format!("invalid {ty}")).with_location(location))?
+            .ok_or_else(invalid)?
     } else {
         mag.try_into()
-            .map_err(|_| Error::msg(format!("invalid {ty}")).with_location(location))?
+            .map_err(|_| invalid())?
     };
-    T::try_from(val_i128).map_err(|_| Error::msg(format!("invalid {ty}")).with_location(location))
+    T::try_from(val_i128).map_err(|_| invalid())
 }
 
 pub(crate) fn parse_int_unsigned<T>(
@@ -175,23 +177,25 @@ pub(crate) fn parse_int_unsigned<T>(
 where
     T: TryFrom<u128>,
 {
+    let invalid = || Error::InvalidScalar { ty, location };
+
     let t = s.trim();
     if t.starts_with('-') {
-        return Err(Error::msg(format!("invalid {ty}")).with_location(location));
+        return Err(invalid());
     }
     let rest = t.strip_prefix('+').unwrap_or(t);
     let (radix, digits) = radix_and_digits(legacy_octal, rest);
 
     if radix == 10 {
         let val_u128 = parse_decimal_unsigned_u128(digits)
-            .ok_or_else(|| Error::msg(format!("invalid {ty}")).with_location(location))?;
+            .ok_or_else(invalid)?;
         return T::try_from(val_u128)
-            .map_err(|_| Error::msg(format!("invalid {ty}")).with_location(location));
+            .map_err(|_| invalid());
     }
 
     let mag = parse_digits_u128(digits, radix)
-        .ok_or_else(|| Error::msg(format!("invalid {ty}")).with_location(location))?;
-    T::try_from(mag).map_err(|_| Error::msg(format!("invalid {ty}")).with_location(location))
+        .ok_or_else(invalid)?;
+    T::try_from(mag).map_err(|_| invalid())
 }
 
 fn radix_and_digits(legacy_octal: bool, rest: &str) -> (u32, &str) {
@@ -235,13 +239,9 @@ where
         ".nan" | "+.nan" | "-.nan" => Ok(T::nan()),
         ".inf" | "+.inf" => Ok(T::infinity()),
         "-.inf" => Ok(T::neg_infinity()),
-        _ => t.parse::<T>().map_err(|_| {
-            Error::msg(format!(
-                "invalid floating point ({} value)",
-                std::any::type_name::<T>()
-            ))
-            .with_location(location)
-        }),
+        _ => t
+            .parse::<T>()
+            .map_err(|_| Error::InvalidScalar { ty: "floating point", location }),
     }
 }
 
@@ -262,13 +262,9 @@ where
         ".nan" | "+.nan" | "-.nan" => Ok(T::nan()),
         ".inf" | "+.inf" => Ok(T::infinity()),
         "-.inf" => Ok(T::neg_infinity()),
-        _ => t.parse::<T>().map_err(|_| {
-            Error::msg(format!(
-                "invalid floating point ({} value)",
-                std::any::type_name::<T>()
-            ))
-            .with_location(location)
-        }),
+        _ => t
+            .parse::<T>()
+            .map_err(|_| Error::InvalidScalar { ty: "floating point", location }),
     }
 }
 
@@ -395,7 +391,7 @@ mod tests {
         let loc = sample_location();
         let err = parse_int_signed::<i64>("0x8000000000000000", "i64", loc, false).unwrap_err();
         match err {
-            Error::Message { location, .. } => assert_eq!(location, loc),
+            Error::InvalidScalar { location, .. } => assert_eq!(location, loc),
             other => panic!("unexpected error variant: {:?}", other),
         }
     }
@@ -405,7 +401,7 @@ mod tests {
         let loc = sample_location();
         let err = parse_int_unsigned::<u32>("-5", "u32", loc, false).unwrap_err();
         match err {
-            Error::Message { location, .. } => assert_eq!(location, loc),
+            Error::InvalidScalar { location, .. } => assert_eq!(location, loc),
             other => panic!("unexpected error variant: {:?}", other),
         }
     }

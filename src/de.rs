@@ -510,10 +510,9 @@ fn capture_node<'a>(ev: &mut dyn Events<'a>) -> Result<KeyNode<'a>, Error> {
                 location,
             })
         }
-        Ev::SeqEnd { location } | Ev::MapEnd { location } => Err(Error::msg(
-            "unexpected container end while reading key node",
-        )
-        .with_location(location)),
+        Ev::SeqEnd { location } | Ev::MapEnd { location } => {
+            Err(Error::UnexpectedContainerEndWhileReadingKeyNode { location })
+        }
         Ev::Taken { location } => Err(Error::unexpected("consumed event").with_location(location)),
     }
 }
@@ -561,10 +560,9 @@ fn pending_entries_from_events<'a>(
         Some(Ev::Scalar { value, style, .. }) if scalar_is_nullish(value.as_ref(), style) => {
             Ok(Vec::new())
         }
-        Some(Ev::Scalar { location, .. }) => Err(Error::msg(
-            "YAML merge value must be mapping or sequence of mappings",
-        )
-        .with_location(*location)),
+        Some(Ev::Scalar { location, .. }) => Err(Error::MergeValueNotMapOrSeqOfMaps {
+            location: *location,
+        }),
         Some(Ev::MapStart { .. }) => collect_entries_from_map(&mut replay, reference_location),
         Some(Ev::SeqStart { .. }) => {
             let mut batches = Vec::new();
@@ -600,10 +598,9 @@ fn pending_entries_from_events<'a>(
             }
             Ok(merged)
         }
-        Some(other) => Err(
-            Error::msg("YAML merge value must be mapping or sequence of mappings")
-                .with_location(other.location()),
-        ),
+        Some(other) => Err(Error::MergeValueNotMapOrSeqOfMaps {
+            location: other.location(),
+        }),
         None => Err(Error::eof().with_location(location)),
     }
 }
@@ -629,10 +626,9 @@ fn pending_entries_from_live_events<'a>(
             let _ = ev.next()?;
             Ok(Vec::new())
         }
-        Some(Ev::Scalar { location, .. }) => Err(Error::msg(
-            "YAML merge value must be mapping or sequence of mappings",
-        )
-        .with_location(*location)),
+        Some(Ev::Scalar { location, .. }) => Err(Error::MergeValueNotMapOrSeqOfMaps {
+            location: *location,
+        }),
         Some(Ev::MapStart { .. }) => {
             let mut node = capture_node(ev)?;
             pending_entries_from_events(
@@ -669,10 +665,9 @@ fn pending_entries_from_live_events<'a>(
             }
             Ok(merged)
         }
-        Some(other) => Err(
-            Error::msg("YAML merge value must be mapping or sequence of mappings")
-                .with_location(other.location()),
-        ),
+        Some(other) => Err(Error::MergeValueNotMapOrSeqOfMaps {
+            location: other.location(),
+        }),
         None => Err(Error::eof().with_location(ev.last_location())),
     }
 }
@@ -692,10 +687,9 @@ fn collect_entries_from_map<'a>(
     reference_location: Location,
 ) -> Result<Vec<PendingEntry<'a>>, Error> {
     let Some(Ev::MapStart { .. }) = ev.next()? else {
-        return Err(
-            Error::msg("YAML merge value must be mapping or sequence of mappings")
-                .with_location(ev.last_location()),
-        );
+        return Err(Error::MergeValueNotMapOrSeqOfMaps {
+            location: ev.last_location(),
+        });
     };
 
     let mut fields = Vec::new();
@@ -1050,11 +1044,8 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         // Special-case binary: decode base64 and require valid UTF-8.
         if tag == SfTag::Binary && !self.cfg.ignore_binary_tag_for_string {
             let data = decode_base64_yaml(&value).map_err(|err| err.with_location(location))?;
-            let text = String::from_utf8(data).map_err(|_| {
-                Error::msg("!!binary scalar is not valid UTF-8 so cannot be stored into string. \
-                If you use !!binary just as documentation or annotation tag, set \
-                ignore_binary_tag_for_string = true in Options.").with_location(location)
-            })?;
+            let text = String::from_utf8(data)
+                .map_err(|_| Error::BinaryNotUtf8 { location })?;
             return Ok(text);
         }
 
@@ -1063,9 +1054,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
             && tag != SfTag::NonSpecific
             && !(self.cfg.ignore_binary_tag_for_string && tag == SfTag::Binary)
         {
-            return Err(
-                Error::msg("cannot deserialize scalar tagged into string").with_location(location)
-            );
+            return Err(Error::TaggedScalarCannotDeserializeIntoString { location });
         }
 
         Ok(value)
@@ -1168,9 +1157,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         && !(self.cfg.ignore_binary_tag_for_string && *tag == SfTag::Binary)
                     {
                         let location = self.ev.peek()?.unwrap().location();
-                        return Err(
-                            Error::msg("cannot deserialize scalar tagged into string").with_location(location)
-                        );
+                        return Err(Error::TaggedScalarCannotDeserializeIntoString { location });
                     }
 
                     let (cow, _tag2, _location) = self.take_scalar_cow_event()?;
@@ -1246,10 +1233,10 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             Some(Ev::SeqStart { .. }) => self.deserialize_seq(visitor),
             Some(Ev::MapStart { .. }) => self.deserialize_map(visitor),
             Some(Ev::SeqEnd { location }) => {
-                Err(Error::msg("unexpected sequence end").with_location(*location))
+                Err(Error::UnexpectedSequenceEnd { location: *location })
             }
             Some(Ev::MapEnd { location }) => {
-                Err(Error::msg("unexpected mapping end").with_location(*location))
+                Err(Error::UnexpectedMappingEnd { location: *location })
             }
             None => {
                 // When deserializing typeless positions (for example
@@ -1279,13 +1266,11 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             } else if t.eq_ignore_ascii_case("false") {
                 false
             } else {
-                return Err(
-                    Error::msg("invalid boolean (strict mode expects true/false)")
-                        .with_location(location),
-                );
+                return Err(Error::InvalidBooleanStrict { location });
             }
         } else {
-            parse_yaml11_bool(s).map_err(|msg| Error::msg(msg).with_location(location))?
+            parse_yaml11_bool(s)
+                .map_err(|_| Error::InvalidScalar { ty: "boolean", location })?
         };
         visitor.visit_bool(b)
     }
@@ -1382,10 +1367,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             // Reject YAML null for char (allow quoted values like "null").
             if tag == &SfTag::Null || scalar_is_nullish(value, style) {
                 let (_value, _tag, location) = self.take_scalar_event()?;
-                return Err(
-                    Error::msg("invalid char: cannot deserialize null; use Option<char>")
-                        .with_location(location),
-                );
+                return Err(Error::InvalidCharNull { location });
             } else if self.cfg.no_schema && maybe_not_string(value, style) {
                 // Require quoting for ambiguous plain scalars in no_schema mode.
                 let (value, _tag, location) = self.take_scalar_event()?;
@@ -1398,10 +1380,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
         let mut it = s.as_ref().chars();
         match (it.next(), it.next()) {
             (Some(c), None) => visitor.visit_char(c),
-            _ => Err(
-                Error::msg("invalid char: expected a single Unicode scalar value")
-                    .with_location(location),
-            ),
+            _ => Err(Error::InvalidCharNotSingleScalar { location }),
         }
     }
 
@@ -1430,10 +1409,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 if tag == &SfTag::Null || scalar_is_nullish(value, style) {
                     let loc = *location;
                     let _ = self.ev.next()?;
-                    return Err(
-                        Error::msg("cannot deserialize null into string; use Option<String>")
-                            .with_location(loc),
-                    );
+                    return Err(Error::NullIntoString { location: loc });
                 }
                 *location
             }
@@ -1496,10 +1472,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
              if (tag == &SfTag::Null || scalar_is_nullish(value, style)) && tag != &SfTag::String {
                 // Consume the scalar to anchor the error at the correct location.
                 let (_value, _tag, location) = self.take_scalar_event()?;
-                return Err(
-                    Error::msg("cannot deserialize null into string; use Option<String>")
-                        .with_location(location),
-                );
+                return Err(Error::NullIntoString { location });
             } else if self.cfg.no_schema && maybe_not_string(value, style) && tag != &SfTag::String {
                 // Consume the scalar to anchor the error at the correct location.
                 let (value, _tag, location) = self.take_scalar_event()?;
@@ -1522,9 +1495,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 && !(self.cfg.ignore_binary_tag_for_string && *tag == SfTag::Binary)
             {
                 let location = self.ev.peek()?.unwrap().location();
-                return Err(
-                    Error::msg("cannot deserialize scalar tagged into string").with_location(location)
-                );
+                return Err(Error::TaggedScalarCannotDeserializeIntoString { location });
             }
         }
 
@@ -1580,8 +1551,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
             // Scalar without binary tag → reject
             Some(Ev::Scalar { location, .. }) => {
-                Err(Error::msg("bytes not supported (missing !!binary tag)")
-                    .with_location(*location))
+                Err(Error::BytesNotSupportedMissingBinaryTag {
+                    location: *location,
+                })
             }
 
             // Anything else is unexpected here
@@ -1676,7 +1648,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             Some(Ev::MapEnd { .. }) | Some(Ev::SeqEnd { .. }) => visitor.visit_unit(),
             // Anything else isn't a unit value
             Some(other) => {
-                Err(Error::msg("unexpected value for unit").with_location(other.location()))
+                Err(Error::UnexpectedValueForUnit {
+                    location: other.location(),
+                })
             }
         }
     }
@@ -1703,8 +1677,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         let _ = self.ev.next()?; // consume MapEnd
                         visitor.visit_unit()
                     }
-                    Some(other) => Err(Error::msg("expected empty mapping for unit struct")
-                        .with_location(other.location())),
+                    Some(other) => Err(Error::ExpectedEmptyMappingForUnitStruct {
+                        location: other.location(),
+                    }),
                     None => Err(Error::eof().with_location(self.ev.last_location())),
                 }
             }
@@ -2044,8 +2019,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     Some(Ev::Scalar { .. }) => return Ok(()),
                     Some(Ev::SeqStart { .. }) | Some(Ev::MapStart { .. }) => depth = 1,
                     Some(Ev::SeqEnd { location }) | Some(Ev::MapEnd { location }) => {
-                        return Err(Error::msg("unexpected container end while skipping node")
-                            .with_location(location));
+                        return Err(Error::UnexpectedContainerEndWhileSkippingNode { location });
                     }
                     Some(Ev::Taken { location }) => {
                         return Err(Error::unexpected("consumed event").with_location(location));
@@ -2149,11 +2123,10 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                             match self.cfg.dup_policy {
                                 DuplicateKeyPolicy::Error => {
                                     if is_duplicate {
-                                        let msg = fingerprint
+                                        let key = fingerprint
                                             .stringy_scalar_value()
-                                            .map(|s| format!("duplicate mapping key: {s}"))
-                                            .unwrap_or_else(|| "duplicate mapping key".to_string());
-                                        return Err(Error::msg(msg).with_location(location));
+                                            .map(|s| s.to_owned());
+                                        return Err(Error::DuplicateMappingKey { key, location });
                                     }
                                 }
                                 DuplicateKeyPolicy::FirstWins => {
@@ -2221,8 +2194,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         let key_seed = match seed.take() {
                             Some(s) => s,
                             None => {
-                                return Err(Error::msg("internal error: seed reused for map key")
-                                    .with_location(location));
+                                return Err(Error::InternalSeedReusedForMapKey { location });
                             }
                         };
                         let key_value = self.deserialize_recorded_key(key_seed, events, kemn)?;
@@ -2286,14 +2258,12 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                             match self.cfg.dup_policy {
                                 DuplicateKeyPolicy::Error => {
                                     if is_duplicate {
-                                        let msg = key_node
+                                        let location = key_node.location();
+                                        let key = key_node
                                             .fingerprint()
                                             .stringy_scalar_value()
-                                            .map(|s| format!("duplicate mapping key: {s}"))
-                                            .unwrap_or_else(|| "duplicate mapping key".to_string());
-                                        return Err(
-                                            Error::msg(msg).with_location(key_node.location())
-                                        );
+                                            .map(|s| s.to_owned());
+                                        return Err(Error::DuplicateMappingKey { key, location });
                                     }
                                 }
                                 DuplicateKeyPolicy::FirstWins => {
@@ -2355,10 +2325,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                                 let key_seed = match seed.take() {
                                     Some(s) => s,
                                     None => {
-                                        return Err(Error::msg(
-                                            "internal error: seed reused for map key",
-                                        )
-                                        .with_location(location));
+                                        return Err(Error::InternalSeedReusedForMapKey { location });
                                     }
                                 };
                                 let key_value =
@@ -2392,8 +2359,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 Vv: de::DeserializeSeed<'de>,
             {
                 if !self.have_key {
-                    return Err(Error::msg("value requested before key")
-                        .with_location(self.ev.last_location()));
+                    return Err(Error::ValueRequestedBeforeKey {
+                        location: self.ev.last_location(),
+                    });
                 }
                 self.have_key = false;
 
@@ -2583,23 +2551,23 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         Mode::Map(value.to_string(), location)
                     }
                     Some(other) => {
-                        return Err(Error::msg("expected string key for externally tagged enum")
-                            .with_location(other.location()));
+                        return Err(Error::ExpectedStringKeyForExternallyTaggedEnum {
+                            location: other.location(),
+                        });
                     }
                     None => return Err(Error::eof().with_location(self.ev.last_location())),
                 }
             }
             Some(Ev::SeqStart { location, .. }) => {
                 return Err(
-                    Error::msg("externally tagged enum expected scalar or mapping")
-                        .with_location(*location),
+                    Error::ExternallyTaggedEnumExpectedScalarOrMapping { location: *location },
                 );
             }
             Some(Ev::SeqEnd { location }) => {
-                return Err(Error::msg("unexpected sequence end").with_location(*location));
+                return Err(Error::UnexpectedSequenceEnd { location: *location });
             }
             Some(Ev::MapEnd { location }) => {
-                return Err(Error::msg("unexpected mapping end").with_location(*location));
+                return Err(Error::UnexpectedMappingEnd { location: *location });
             }
             Some(Ev::Taken { location }) => {
                 return Err(Error::unexpected("consumed event").with_location(*location));
@@ -2610,11 +2578,11 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
         if let Some((tag_name, location)) = tagged_enum
             && tag_name != _name
         {
-            return Err(Error::msg(format!(
-                "tagged enum `{}` does not match target enum `{}`",
-                tag_name, _name
-            ))
-            .with_location(location));
+            return Err(Error::TaggedEnumMismatch {
+                tagged: tag_name,
+                target: _name,
+                location,
+            });
         }
 
         struct EA<'de, 'e> {
@@ -2643,7 +2611,10 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 } = self;
                 let v = seed.deserialize(variant.into_deserializer()).map_err(
                     |err: serde::de::value::Error| {
-                        Error::msg(err.to_string()).with_location(variant_location)
+                        Error::SerdeVariantId {
+                            msg: err.to_string(),
+                            location: variant_location,
+                        }
                     },
                 )?;
                 Ok((v, VA { ev, cfg, map_mode }))
@@ -2661,10 +2632,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             fn expect_map_end(&mut self) -> Result<(), Error> {
                 match self.ev.next()? {
                     Some(Ev::MapEnd { .. }) => Ok(()),
-                    Some(other) => Err(Error::msg(
-                        "expected end of mapping after enum variant value",
-                    )
-                    .with_location(other.location())),
+                    Some(other) => Err(Error::ExpectedMappingEndAfterEnumVariantValue {
+                        location: other.location(),
+                    }),
                     None => Err(Error::eof().with_location(self.ev.last_location())),
                 }
             }
@@ -2685,8 +2655,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                             let _ = self.ev.next()?; // consume the null-like scalar
                             self.expect_map_end()
                         }
-                        Some(other) => Err(Error::msg("unexpected value for unit enum variant")
-                            .with_location(other.location())),
+                        Some(other) => Err(Error::UnexpectedValueForUnitEnumVariant {
+                            location: other.location(),
+                        }),
                         None => Err(Error::eof().with_location(self.ev.last_location())),
                     }
                 } else {

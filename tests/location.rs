@@ -45,7 +45,7 @@ fn scalar_conversion_error_carries_span() {
     let err = from_str::<bool>("definitely").expect_err("bool parse error expected");
     expect_location(&err, 1, 1);
     expect_span_offset(&err, "definitely".find("definitely").unwrap());
-    assert!(matches!(unwrap_snippet(&err), Error::Message { .. }));
+    assert!(matches!(unwrap_snippet(&err), Error::InvalidScalar { .. }));
 }
 
 #[test]
@@ -92,7 +92,7 @@ definitely"#,
     )
     .expect_err("bool parse error expected");
     expect_location(&err, 2, 1);
-    assert!(matches!(unwrap_snippet(&err), Error::Message { .. }));
+    assert!(matches!(unwrap_snippet(&err), Error::InvalidScalar { .. }));
 }
 
 #[test]
@@ -150,7 +150,7 @@ fn scalar_conversion_error_with_indent_reports_column() {
     // Two leading spaces before an invalid bool should point to column 3.
     let err = from_str::<bool>(r#"  definitely"#).expect_err("bool parse error expected");
     expect_location(&err, 1, 3);
-    assert!(matches!(unwrap_snippet(&err), Error::Message { .. }));
+    assert!(matches!(unwrap_snippet(&err), Error::InvalidScalar { .. }));
 }
 
 #[test]

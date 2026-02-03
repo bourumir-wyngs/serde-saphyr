@@ -1,4 +1,5 @@
 use crate::de::Error;
+use crate::Location;
 
 /// Lookup table translating ASCII bytes to their base64 sextet value.
 ///
@@ -10,7 +11,9 @@ fn decode_val(b: u8) -> Result<u8, Error> {
         b'0'..=b'9' => Ok(b - b'0' + 52),
         b'+' => Ok(62),
         b'/' => Ok(63),
-        _ => Err(Error::msg("invalid !!binary base64")),
+        _ => Err(Error::InvalidBinaryBase64 {
+            location: Location::UNKNOWN,
+        }),
     }
 }
 
@@ -20,7 +23,9 @@ pub(crate) fn decode_base64_yaml(s: &str) -> Result<Vec<u8>, Error> {
     let cleaned: Vec<u8> = s.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
 
     if !cleaned.len().is_multiple_of(4) {
-        return Err(Error::msg("invalid !!binary base64"));
+        return Err(Error::InvalidBinaryBase64 {
+            location: Location::UNKNOWN,
+        });
     }
 
     let mut out = Vec::with_capacity(cleaned.len() / 4 * 3);
@@ -29,7 +34,9 @@ pub(crate) fn decode_base64_yaml(s: &str) -> Result<Vec<u8>, Error> {
     for (idx, chunk) in cleaned.chunks_exact(4).enumerate() {
         let pad = chunk.iter().rev().take_while(|&&c| c == b'=').count();
         if pad > 0 && idx + 1 != total_chunks {
-            return Err(Error::msg("invalid !!binary base64"));
+            return Err(Error::InvalidBinaryBase64 {
+                location: Location::UNKNOWN,
+            });
         }
         let a = decode_val(chunk[0])? as u32;
         let b = decode_val(chunk[1])? as u32;
@@ -37,7 +44,9 @@ pub(crate) fn decode_base64_yaml(s: &str) -> Result<Vec<u8>, Error> {
         let c = match chunk[2] {
             b'=' => {
                 if pad < 2 {
-                    return Err(Error::msg("invalid !!binary base64"));
+                    return Err(Error::InvalidBinaryBase64 {
+                        location: Location::UNKNOWN,
+                    });
                 }
                 0
             }
@@ -47,7 +56,9 @@ pub(crate) fn decode_base64_yaml(s: &str) -> Result<Vec<u8>, Error> {
         let d = match chunk[3] {
             b'=' => {
                 if pad == 0 {
-                    return Err(Error::msg("invalid !!binary base64"));
+                    return Err(Error::InvalidBinaryBase64 {
+                        location: Location::UNKNOWN,
+                    });
                 }
                 0
             }
@@ -55,10 +66,14 @@ pub(crate) fn decode_base64_yaml(s: &str) -> Result<Vec<u8>, Error> {
         };
 
         if pad == 2 && (b & 0x0F) != 0 {
-            return Err(Error::msg("invalid !!binary base64"));
+            return Err(Error::InvalidBinaryBase64 {
+                location: Location::UNKNOWN,
+            });
         }
         if pad == 1 && (c & 0x03) != 0 {
-            return Err(Error::msg("invalid !!binary base64"));
+            return Err(Error::InvalidBinaryBase64 {
+                location: Location::UNKNOWN,
+            });
         }
 
         let triple = (a << 18) | (b << 12) | (c << 6) | d;
@@ -73,7 +88,11 @@ pub(crate) fn decode_base64_yaml(s: &str) -> Result<Vec<u8>, Error> {
 
         match pad {
             0..=2 => {}
-            _ => return Err(Error::msg("invalid !!binary base64")),
+            _ => {
+                return Err(Error::InvalidBinaryBase64 {
+                    location: Location::UNKNOWN,
+                });
+            }
         }
     }
 

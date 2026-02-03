@@ -11,7 +11,10 @@ pub use anchors::{
 };
 pub use de::{Budget, DuplicateKeyPolicy, Error, Options};
 pub use de_error::TransformReason;
-pub use de_error::{DefaultMessageFormatter, MessageFormatter, RenderOptions, SnippetMode};
+pub use de_error::{
+    DefaultMessageFormatter, DeveloperMessageFormatter, MessageFormatter, RenderOptions, SnippetMode,
+    UserMessageFormatter,
+};
 pub use location::{Location, Locations, Span};
 pub use long_strings::{FoldStr, FoldString, LitStr, LitString};
 pub use ser::{Commented, FlowMap, FlowSeq, SpaceAfter};
@@ -336,8 +339,8 @@ where
 
     match src.peek() {
         Ok(Some(_)) => {
-            let err = Error::msg(
-                "multiple YAML documents detected; use from_multiple or from_multiple_with_options",
+            let err = Error::multiple_documents(
+                "use from_multiple or from_multiple_with_options",
             )
             .with_location(src.last_location());
             return Err(maybe_with_snippet(err, input, with_snippet, crop_radius));
@@ -450,8 +453,8 @@ fn from_str_with_options_and_path_recorder<T: DeserializeOwned>(
 
     match src.peek() {
         Ok(Some(_)) => {
-            let err = Error::msg(
-                "multiple YAML documents detected; use from_multiple or from_multiple_with_options",
+            let err = Error::multiple_documents(
+                "use from_multiple or from_multiple_with_options",
             )
             .with_location(src.last_location());
             return Err(maybe_with_snippet(err, input, with_snippet, crop_radius));
@@ -654,7 +657,7 @@ pub fn from_slice_with_options_valid<T: DeserializeOwned + garde::Validate>(
 where
     <T as garde::Validate>::Context: Default,
 {
-    let s = std::str::from_utf8(bytes).map_err(|_| Error::msg("input is not valid UTF-8"))?;
+    let s = std::str::from_utf8(bytes).map_err(|_| Error::InvalidUtf8Input)?;
     from_str_with_options_valid(s, options)
 }
 
@@ -670,7 +673,7 @@ where
     T: DeserializeOwned + garde::Validate,
     <T as garde::Validate>::Context: Default,
 {
-    let s = std::str::from_utf8(bytes).map_err(|_| Error::msg("input is not valid UTF-8"))?;
+    let s = std::str::from_utf8(bytes).map_err(|_| Error::InvalidUtf8Input)?;
     from_multiple_with_options_valid(s, options)
 }
 
@@ -745,10 +748,12 @@ where
     // ignore the trailing garbage. Otherwise, surface the error.
     match src.peek() {
         Ok(Some(_)) => {
-            return Err(Error::msg(
-                "multiple YAML documents detected; use read_valid or read_with_options_valid to obtain the iterator",
-            )
-            .with_location(src.last_location()));
+            return Err(
+                Error::multiple_documents(
+                    "use read_valid or read_with_options_valid to obtain the iterator",
+                )
+                .with_location(src.last_location()),
+            );
         }
         Ok(None) => {}
         Err(e) => {
@@ -1034,7 +1039,7 @@ pub fn from_slice_with_options_validate<T: DeserializeOwned + ValidatorValidate>
     bytes: &[u8],
     options: Options,
 ) -> Result<T, Error> {
-    let s = std::str::from_utf8(bytes).map_err(|_| Error::msg("input is not valid UTF-8"))?;
+    let s = std::str::from_utf8(bytes).map_err(|_| Error::InvalidUtf8Input)?;
     from_str_with_options_validate(s, options)
 }
 
@@ -1049,7 +1054,7 @@ pub fn from_slice_multiple_with_options_validate<T>(
 where
     T: DeserializeOwned + ValidatorValidate,
 {
-    let s = std::str::from_utf8(bytes).map_err(|_| Error::msg("input is not valid UTF-8"))?;
+    let s = std::str::from_utf8(bytes).map_err(|_| Error::InvalidUtf8Input)?;
     from_multiple_with_options_validate(s, options)
 }
 
@@ -1122,10 +1127,12 @@ where
     // ignore the trailing garbage. Otherwise, surface the error.
     match src.peek() {
         Ok(Some(_)) => {
-            return Err(Error::msg(
-                "multiple YAML documents detected; use read_validate or read_with_options_validate to obtain the iterator",
-            )
-            .with_location(src.last_location()));
+            return Err(
+                Error::multiple_documents(
+                    "use read_validate or read_with_options_validate to obtain the iterator",
+                )
+                .with_location(src.last_location()),
+            );
         }
         Ok(None) => {}
         Err(e) => {
@@ -1461,7 +1468,7 @@ pub fn from_slice_with_options<T: DeserializeOwned>(
     bytes: &[u8],
     options: Options,
 ) -> Result<T, Error> {
-    let s = std::str::from_utf8(bytes).map_err(|_| Error::msg("input is not valid UTF-8"))?;
+    let s = std::str::from_utf8(bytes).map_err(|_| Error::InvalidUtf8Input)?;
     from_str_with_options(s, options)
 }
 
@@ -1537,7 +1544,7 @@ pub fn from_slice_multiple_with_options<T: DeserializeOwned>(
     bytes: &[u8],
     options: Options,
 ) -> Result<Vec<T>, Error> {
-    let s = std::str::from_utf8(bytes).map_err(|_| Error::msg("input is not valid UTF-8"))?;
+    let s = std::str::from_utf8(bytes).map_err(|_| Error::InvalidUtf8Input)?;
     from_multiple_with_options(s, options)
 }
 
@@ -1714,10 +1721,12 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
     // ignore the trailing garbage. Otherwise, surface the error.
     match src.peek() {
         Ok(Some(_)) => {
-            return Err(attach_snippet(Error::msg(
-                "multiple YAML documents detected; use read or read_with_options to obtain the iterator",
-            )
-                .with_location(src.last_location())));
+            return Err(attach_snippet(
+                Error::multiple_documents(
+                    "use read or read_with_options to obtain the iterator",
+                )
+                .with_location(src.last_location()),
+            ));
         }
         Ok(None) => {}
         Err(e) => {

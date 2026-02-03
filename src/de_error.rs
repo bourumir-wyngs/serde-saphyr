@@ -40,15 +40,142 @@ pub trait MessageFormatter {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DefaultMessageFormatter;
 
+/// Alias for the default developer-oriented formatter.
+pub type DeveloperMessageFormatter = DefaultMessageFormatter;
+
 impl MessageFormatter for DefaultMessageFormatter {
     fn format_message(&self, err: &Error) -> String {
         match err {
             Error::Message { msg, .. } => msg.clone(),
             Error::HookError { msg, .. } => msg.clone(),
             Error::Eof { .. } => "unexpected end of input".to_owned(),
+            Error::MultipleDocuments { hint, .. } => {
+                format!("multiple YAML documents detected; {hint}")
+            }
             Error::Unexpected { expected, .. } => {
                 format!("unexpected event: expected {expected}")
             }
+            Error::MergeValueNotMapOrSeqOfMaps { .. } => {
+                "YAML merge value must be mapping or sequence of mappings".to_owned()
+            }
+            Error::InvalidBinaryBase64 { .. } => "invalid !!binary base64".to_owned(),
+            Error::BinaryNotUtf8 { .. } => {
+                "!!binary scalar is not valid UTF-8 so cannot be stored into string".to_owned()
+            }
+            Error::TaggedScalarCannotDeserializeIntoString { .. } => {
+                "cannot deserialize scalar tagged into string".to_owned()
+            }
+            Error::UnexpectedSequenceEnd { .. } => "unexpected sequence end".to_owned(),
+            Error::UnexpectedMappingEnd { .. } => "unexpected mapping end".to_owned(),
+            Error::InvalidBooleanStrict { .. } => {
+                "invalid boolean (strict mode expects true/false)".to_owned()
+            }
+            Error::InvalidCharNull { .. } => {
+                "invalid char: cannot deserialize null; use Option<char>".to_owned()
+            }
+            Error::InvalidCharNotSingleScalar { .. } => {
+                "invalid char: expected a single Unicode scalar value".to_owned()
+            }
+            Error::NullIntoString { .. } => {
+                "cannot deserialize null into string; use Option<String>".to_owned()
+            }
+            Error::BytesNotSupportedMissingBinaryTag { .. } => {
+                "bytes not supported (missing !!binary tag)".to_owned()
+            }
+            Error::UnexpectedValueForUnit { .. } => "unexpected value for unit".to_owned(),
+            Error::ExpectedEmptyMappingForUnitStruct { .. } => {
+                "expected empty mapping for unit struct".to_owned()
+            }
+            Error::UnexpectedContainerEndWhileSkippingNode { .. } => {
+                "unexpected container end while skipping node".to_owned()
+            }
+            Error::InternalSeedReusedForMapKey { .. } => {
+                "internal error: seed reused for map key".to_owned()
+            }
+            Error::ValueRequestedBeforeKey { .. } => "value requested before key".to_owned(),
+            Error::ExpectedStringKeyForExternallyTaggedEnum { .. } => {
+                "expected string key for externally tagged enum".to_owned()
+            }
+            Error::ExternallyTaggedEnumExpectedScalarOrMapping { .. } => {
+                "externally tagged enum expected scalar or mapping".to_owned()
+            }
+            Error::UnexpectedValueForUnitEnumVariant { .. } => {
+                "unexpected value for unit enum variant".to_owned()
+            }
+            Error::InvalidUtf8Input => "input is not valid UTF-8".to_owned(),
+            Error::AliasReplayCounterOverflow { .. } => "alias replay counter overflow".to_owned(),
+            Error::AliasReplayLimitExceeded {
+                total_replayed_events,
+                max_total_replayed_events,
+                ..
+            } => format!(
+                "alias replay limit exceeded: total_replayed_events={total_replayed_events} > {max_total_replayed_events}"
+            ),
+            Error::AliasExpansionLimitExceeded {
+                anchor_id,
+                expansions,
+                max_expansions_per_anchor,
+                ..
+            } => format!(
+                "alias expansion limit exceeded for anchor id {anchor_id}: {expansions} > {max_expansions_per_anchor}"
+            ),
+            Error::AliasReplayStackDepthExceeded {
+                depth,
+                max_depth,
+                ..
+            } => format!("alias replay stack depth exceeded: depth={depth} > {max_depth}"),
+            Error::FoldedBlockScalarMustIndentContent { .. } => {
+                "folded block scalars must indent their content".to_owned()
+            }
+            Error::InternalDepthUnderflow { .. } => "internal depth underflow".to_owned(),
+            Error::InternalRecursionStackEmpty { .. } => "internal recursion stack empty".to_owned(),
+            Error::RecursiveReferencesRequireWeakTypes { .. } => {
+                "Recursive references require weak recursion types".to_owned()
+            }
+            Error::InvalidScalar { ty, .. } => format!("invalid {ty}"),
+            Error::SerdeInvalidType {
+                unexpected,
+                expected,
+                ..
+            } => format!("invalid type: {unexpected}, expected {expected}"),
+            Error::SerdeInvalidValue {
+                unexpected,
+                expected,
+                ..
+            } => format!("invalid value: {unexpected}, expected {expected}"),
+            Error::SerdeUnknownVariant {
+                variant,
+                expected,
+                ..
+            } => format!(
+                "unknown variant `{variant}`, expected one of {}",
+                expected.join(", ")
+            ),
+            Error::SerdeUnknownField {
+                field,
+                expected,
+                ..
+            } => format!(
+                "unknown field `{field}`, expected one of {}",
+                expected.join(", ")
+            ),
+            Error::SerdeMissingField { field, .. } => format!("missing field `{field}`"),
+
+            Error::UnexpectedContainerEndWhileReadingKeyNode { .. } => {
+                "unexpected container end while reading key".to_owned()
+            }
+            Error::DuplicateMappingKey { key, .. } => match key {
+                Some(k) => format!("duplicate mapping key: {k}"),
+                None => "duplicate mapping key".to_owned(),
+            },
+            Error::TaggedEnumMismatch {
+                tagged, target, ..
+            } => format!("tagged enum `{tagged}` does not match target enum `{target}`"),
+            Error::SerdeVariantId { msg, .. } => msg.clone(),
+            Error::ExpectedMappingEndAfterEnumVariantValue { .. } => {
+                "expected end of mapping after enum variant value".to_owned()
+            }
+
             Error::ContainerEndMismatch { .. } => "list or mapping end with no start".to_owned(),
             Error::UnknownAnchor { id, .. } => {
                 format!("alias references unknown anchor id {id}")
@@ -63,23 +190,281 @@ impl MessageFormatter for DefaultMessageFormatter {
             ),
             Error::IOError { cause } => format!("IO error: {cause}"),
 
-            // For now, these variants still carry pre-rendered message strings.
-            // They will be migrated to codes/args later.
-            Error::AliasError { msg, .. } => msg.clone(),
+            Error::AliasError { msg, locations } => {
+                let ref_loc = locations.reference_location;
+                let def_loc = locations.defined_location;
+                match (ref_loc, def_loc) {
+                    (Location::UNKNOWN, Location::UNKNOWN) => msg.clone(),
+                    (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
+                        msg.clone()
+                    }
+                    (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
+                        format!("{msg} (defined at line {}, column {})", d.line, d.column)
+                    }
+                    (_r, d) => {
+                        format!("{msg} (defined at line {}, column {})", d.line, d.column)
+                    }
+                }
+            }
 
-            // Snippet wrapper is presentation-only; the message belongs to the inner error.
             Error::WithSnippet { error, .. } => self.format_message(error),
 
-            // Validation variants are rendered with dedicated helpers (paths + alias context).
-            // Keep a stable fallback message here.
             #[cfg(feature = "garde")]
-            Error::ValidationError { .. } => "validation error".to_owned(),
+            Error::ValidationError { report, locations } => {
+                use std::fmt::Write;
+                let mut buf = String::new();
+                let issues = collect_garde_issues(report);
+                let mut first = true;
+                for issue in issues {
+                    if !first {
+                        let _ = writeln!(buf);
+                    }
+                    first = false;
+
+                    let entry = issue.display_entry();
+                    let path_key = issue.path;
+                    let original_leaf = path_key
+                        .leaf_string()
+                        .unwrap_or_else(|| "<root>".to_string());
+
+                    let (locs, resolved_leaf) = locations
+                        .search(&path_key)
+                        .unwrap_or((Locations::UNKNOWN, original_leaf));
+
+                    let loc = if locs.reference_location != Location::UNKNOWN {
+                        locs.reference_location
+                    } else {
+                        locs.defined_location
+                    };
+
+                    let resolved_path = format_path_with_resolved_leaf(&path_key, &resolved_leaf);
+                    let _ = write!(buf, "validation error at {resolved_path}: {entry}");
+                    if loc != Location::UNKNOWN {
+                        let _ = write!(buf, " at line {}, column {}", loc.line, loc.column);
+                    }
+                }
+                buf
+            }
             #[cfg(feature = "garde")]
-            Error::ValidationErrors { .. } => "validation errors".to_owned(),
+            Error::ValidationErrors { errors } => {
+                format!("validation failed for {} document(s)", errors.len())
+            }
             #[cfg(feature = "validator")]
-            Error::ValidatorError { .. } => "validation error".to_owned(),
+            Error::ValidatorError { errors, locations } => {
+                use std::fmt::Write;
+                let mut buf = String::new();
+                let issues = collect_validator_issues(errors);
+                let mut first = true;
+                for issue in issues {
+                    if !first {
+                        let _ = writeln!(buf);
+                    }
+                    first = false;
+
+                    let entry = issue.display_entry();
+                    let path_key = issue.path;
+                    let original_leaf = path_key
+                        .leaf_string()
+                        .unwrap_or_else(|| "<root>".to_string());
+
+                    let (locs, resolved_leaf) = locations
+                        .search(&path_key)
+                        .unwrap_or((Locations::UNKNOWN, original_leaf));
+
+                    let loc = if locs.reference_location != Location::UNKNOWN {
+                        locs.reference_location
+                    } else {
+                        locs.defined_location
+                    };
+
+                    let resolved_path = format_path_with_resolved_leaf(&path_key, &resolved_leaf);
+                    let _ = write!(buf, "validation error at {resolved_path}: {entry}");
+                    if loc != Location::UNKNOWN {
+                        let _ = write!(buf, " at line {}, column {}", loc.line, loc.column);
+                    }
+                }
+                buf
+            }
             #[cfg(feature = "validator")]
-            Error::ValidatorErrors { .. } => "validation errors".to_owned(),
+            Error::ValidatorErrors { errors } => {
+                format!("validation failed for {} document(s)", errors.len())
+            }
+        }
+    }
+}
+
+/// User-facing message formatter.
+///
+/// This formatter simplifies technical errors and removes internal details.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct UserMessageFormatter;
+
+impl MessageFormatter for UserMessageFormatter {
+    fn format_message(&self, err: &Error) -> String {
+        match err {
+            Error::Message { msg, .. } => {
+                msg.clone()
+            }
+            Error::HookError { msg, .. } => msg.clone(),
+            Error::Eof { .. } => "unexpected end of file".to_owned(),
+            Error::MultipleDocuments { .. } => {
+                "multiple YAML documents found where only one was expected".to_owned()
+            }
+            Error::Unexpected { expected, .. } => {
+                format!("unexpected content, expected {expected}")
+            }
+            Error::MergeValueNotMapOrSeqOfMaps { .. } => {
+                "merge value must be a mapping (or a list of mappings)".to_owned()
+            }
+            Error::InvalidBinaryBase64 { .. } => "invalid binary value".to_owned(),
+            Error::BinaryNotUtf8 { .. } => "invalid binary value".to_owned(),
+            Error::TaggedScalarCannotDeserializeIntoString { .. } => {
+                "invalid value".to_owned()
+            }
+            Error::UnexpectedSequenceEnd { .. } => "structure mismatch".to_owned(),
+            Error::UnexpectedMappingEnd { .. } => "structure mismatch".to_owned(),
+            Error::InvalidBooleanStrict { .. } => "invalid boolean value".to_owned(),
+            Error::InvalidCharNull { .. } => "invalid character value".to_owned(),
+            Error::InvalidCharNotSingleScalar { .. } => "invalid character value".to_owned(),
+            Error::NullIntoString { .. } => "invalid value".to_owned(),
+            Error::BytesNotSupportedMissingBinaryTag { .. } => "invalid value".to_owned(),
+            Error::UnexpectedValueForUnit { .. } => "invalid value".to_owned(),
+            Error::ExpectedEmptyMappingForUnitStruct { .. } => "invalid value".to_owned(),
+            Error::UnexpectedContainerEndWhileSkippingNode { .. } => "processing failed".to_owned(),
+            Error::InternalSeedReusedForMapKey { .. } => "processing failed".to_owned(),
+            Error::ValueRequestedBeforeKey { .. } => "processing failed".to_owned(),
+            Error::ExpectedStringKeyForExternallyTaggedEnum { .. } => "invalid value".to_owned(),
+            Error::ExternallyTaggedEnumExpectedScalarOrMapping { .. } => "invalid value".to_owned(),
+            Error::UnexpectedValueForUnitEnumVariant { .. } => "invalid value".to_owned(),
+            Error::InvalidUtf8Input => "input is not valid UTF-8".to_owned(),
+            Error::AliasReplayCounterOverflow { .. } => "processing failed".to_owned(),
+            Error::AliasReplayLimitExceeded { .. } => "processing failed".to_owned(),
+            Error::AliasExpansionLimitExceeded { .. } => "processing failed".to_owned(),
+            Error::AliasReplayStackDepthExceeded { .. } => "processing failed".to_owned(),
+            Error::FoldedBlockScalarMustIndentContent { .. } => "invalid value".to_owned(),
+            Error::InternalDepthUnderflow { .. } => "processing failed".to_owned(),
+            Error::InternalRecursionStackEmpty { .. } => "processing failed".to_owned(),
+            Error::RecursiveReferencesRequireWeakTypes { .. } => {
+                "recursive references require a compatible target type".to_owned()
+            }
+            Error::InvalidScalar { .. } => "invalid value".to_owned(),
+            Error::SerdeInvalidType { unexpected, expected, .. } => {
+                format!("invalid type: {unexpected}, expected {expected}")
+            }
+            Error::SerdeInvalidValue { unexpected, expected, .. } => {
+                format!("invalid value: {unexpected}, expected {expected}")
+            }
+            Error::SerdeUnknownVariant { variant, expected, .. } => format!(
+                "unknown variant `{variant}`, expected one of {}",
+                expected.join(", ")
+            ),
+            Error::SerdeUnknownField { field, expected, .. } => format!(
+                "unknown field `{field}`, expected one of {}",
+                expected.join(", ")
+            ),
+            Error::SerdeMissingField { field, .. } => format!("missing field `{field}`"),
+
+            // Structural / mapping errors
+            Error::UnexpectedContainerEndWhileReadingKeyNode { .. } => "invalid value".to_owned(),
+            Error::DuplicateMappingKey { key, .. } => match key {
+                Some(k) => format!("duplicate mapping key: {k}"),
+                None => "duplicate mapping key".to_owned(),
+            },
+            Error::TaggedEnumMismatch { .. } => "invalid value".to_owned(),
+            Error::SerdeVariantId { .. } => "invalid value".to_owned(),
+            Error::ExpectedMappingEndAfterEnumVariantValue { .. } => "invalid value".to_owned(),
+
+            Error::ContainerEndMismatch { .. } => "structure mismatch".to_owned(),
+            Error::UnknownAnchor { .. } => "reference to unknown value".to_owned(),
+            Error::Budget { .. } => "document is too complex, resource limit exceeded".to_owned(),
+            Error::QuotingRequired { .. } => "value requires quoting".to_owned(),
+            Error::CannotBorrowTransformedString { .. } => "processing failed".to_owned(),
+            Error::IOError { .. } => "processing failed (IO error)".to_owned(),
+
+            Error::AliasError { msg, locations } => {
+                let msg = if msg.contains("alias references unknown anchor") {
+                    "reference to unknown value"
+                } else {
+                    msg.as_str()
+                };
+
+                let ref_loc = locations.reference_location;
+                let def_loc = locations.defined_location;
+                match (ref_loc, def_loc) {
+                    (Location::UNKNOWN, Location::UNKNOWN) => msg.to_owned(),
+                    (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
+                        msg.to_owned()
+                    }
+                    (_r, d) => {
+                        format!("{msg} (defined at line {}, column {})", d.line, d.column)
+                    }
+                }
+            }
+
+            Error::WithSnippet { error, .. } => self.format_message(error),
+
+            #[cfg(feature = "garde")]
+            Error::ValidationError { report, locations } => {
+                use std::fmt::Write;
+                let mut buf = String::new();
+                let issues = collect_garde_issues(report);
+                let mut first = true;
+                for issue in issues {
+                    if !first {
+                        let _ = writeln!(buf);
+                    }
+                    first = false;
+
+                    let entry = issue.display_entry();
+                    let path_key = issue.path;
+                    let original_leaf = path_key
+                        .leaf_string()
+                        .unwrap_or_else(|| "<root>".to_string());
+
+                    let (_locs, resolved_leaf) = locations
+                        .search(&path_key)
+                        .unwrap_or((Locations::UNKNOWN, original_leaf));
+
+                    let resolved_path = format_path_with_resolved_leaf(&path_key, &resolved_leaf);
+                    let _ = write!(buf, "invalid value at {resolved_path}: {entry}");
+                }
+                buf
+            }
+            #[cfg(feature = "garde")]
+            Error::ValidationErrors { errors } => {
+                format!("validation failed for {} document(s)", errors.len())
+            }
+            #[cfg(feature = "validator")]
+            Error::ValidatorError { errors, locations } => {
+                use std::fmt::Write;
+                let mut buf = String::new();
+                let issues = collect_validator_issues(errors);
+                let mut first = true;
+                for issue in issues {
+                    if !first {
+                        let _ = writeln!(buf);
+                    }
+                    first = false;
+
+                    let entry = issue.display_entry();
+                    let path_key = issue.path;
+                    let original_leaf = path_key
+                        .leaf_string()
+                        .unwrap_or_else(|| "<root>".to_string());
+
+                    let (_locs, resolved_leaf) = locations
+                        .search(&path_key)
+                        .unwrap_or((Locations::UNKNOWN, original_leaf));
+
+                    let resolved_path = format_path_with_resolved_leaf(&path_key, &resolved_leaf);
+                    let _ = write!(buf, "invalid value at {resolved_path}: {entry}");
+                }
+                buf
+            }
+            #[cfg(feature = "validator")]
+            Error::ValidatorErrors { errors } => {
+                format!("validation failed for {} document(s)", errors.len())
+            }
         }
     }
 }
@@ -215,9 +600,236 @@ pub enum Error {
     Eof {
         location: Location,
     },
+    /// More than one YAML document was found when a single document was expected.
+    ///
+    /// This is typically returned by single-document entrypoints like `from_str*` / `from_slice*`
+    /// / `read_to_end*` when the input stream contains multiple `---`-delimited documents.
+    MultipleDocuments {
+        /// Developer-facing hint (may mention specific APIs).
+        hint: &'static str,
+        location: Location,
+    },
     /// Structural/type mismatch — something else than the expected token/value was seen.
     Unexpected {
         expected: &'static str,
+        location: Location,
+    },
+
+    /// YAML merge (`<<`) value was not a mapping or a sequence of mappings.
+    MergeValueNotMapOrSeqOfMaps {
+        location: Location,
+    },
+
+    /// `!!binary` scalar could not be decoded as base64.
+    InvalidBinaryBase64 {
+        location: Location,
+    },
+
+    /// `!!binary` scalar decoded successfully but was not valid UTF-8 when a string was expected.
+    BinaryNotUtf8 {
+        location: Location,
+    },
+
+    /// A scalar was explicitly tagged but could not be deserialized into a string.
+    TaggedScalarCannotDeserializeIntoString {
+        location: Location,
+    },
+
+    /// Encountered a sequence end where it was not expected.
+    UnexpectedSequenceEnd {
+        location: Location,
+    },
+
+    /// Encountered a mapping end where it was not expected.
+    UnexpectedMappingEnd {
+        location: Location,
+    },
+
+    /// Invalid boolean literal in strict mode.
+    InvalidBooleanStrict {
+        location: Location,
+    },
+
+    /// Invalid char: null cannot be deserialized into `char`.
+    InvalidCharNull {
+        location: Location,
+    },
+
+    /// Invalid char: expected a single Unicode scalar value.
+    InvalidCharNotSingleScalar {
+        location: Location,
+    },
+
+    /// Cannot deserialize null into string.
+    NullIntoString {
+        location: Location,
+    },
+
+    /// Bytes (`&[u8]` / `Vec<u8>`) are not supported unless the scalar is tagged as `!!binary`.
+    BytesNotSupportedMissingBinaryTag {
+        location: Location,
+    },
+
+    /// Unexpected value for unit (`()`).
+    UnexpectedValueForUnit {
+        location: Location,
+    },
+
+    /// Unit struct expected an empty mapping.
+    ExpectedEmptyMappingForUnitStruct {
+        location: Location,
+    },
+
+    /// While skipping a node, a container end event was encountered unexpectedly.
+    UnexpectedContainerEndWhileSkippingNode {
+        location: Location,
+    },
+
+    /// Internal error: a seed was reused for a map key.
+    InternalSeedReusedForMapKey {
+        location: Location,
+    },
+
+    /// Internal error: value requested before key.
+    ValueRequestedBeforeKey {
+        location: Location,
+    },
+
+    /// Externally tagged enum: expected a string key.
+    ExpectedStringKeyForExternallyTaggedEnum {
+        location: Location,
+    },
+
+    /// Externally tagged enum: expected either a scalar or a mapping.
+    ExternallyTaggedEnumExpectedScalarOrMapping {
+        location: Location,
+    },
+
+    /// Unexpected value for unit enum variant.
+    UnexpectedValueForUnitEnumVariant {
+        location: Location,
+    },
+
+    /// Input was not valid UTF-8.
+    InvalidUtf8Input,
+
+    /// Alias replay counter overflow.
+    AliasReplayCounterOverflow {
+        location: Location,
+    },
+
+    /// Alias replay total event limit exceeded.
+    AliasReplayLimitExceeded {
+        total_replayed_events: usize,
+        max_total_replayed_events: usize,
+        location: Location,
+    },
+
+    /// Alias expansion limit exceeded for a single anchor.
+    AliasExpansionLimitExceeded {
+        anchor_id: usize,
+        expansions: usize,
+        max_expansions_per_anchor: usize,
+        location: Location,
+    },
+
+    /// Alias replay stack depth limit exceeded.
+    AliasReplayStackDepthExceeded {
+        depth: usize,
+        max_depth: usize,
+        location: Location,
+    },
+
+    /// Folded block scalars must indent their content.
+    FoldedBlockScalarMustIndentContent {
+        location: Location,
+    },
+
+    /// Internal: depth counter underflow.
+    InternalDepthUnderflow {
+        location: Location,
+    },
+
+    /// Internal: recursion stack empty.
+    InternalRecursionStackEmpty {
+        location: Location,
+    },
+
+    /// Recursive references require weak recursion types.
+    RecursiveReferencesRequireWeakTypes {
+        location: Location,
+    },
+
+    /// Scalar parsing failed for the requested target type.
+    InvalidScalar {
+        ty: &'static str,
+        location: Location,
+    },
+
+    /// Serde-generated: invalid type.
+    SerdeInvalidType {
+        unexpected: String,
+        expected: String,
+        location: Location,
+    },
+
+    /// Serde-generated: invalid value.
+    SerdeInvalidValue {
+        unexpected: String,
+        expected: String,
+        location: Location,
+    },
+
+    /// Serde-generated: unknown enum variant.
+    SerdeUnknownVariant {
+        variant: String,
+        expected: Vec<&'static str>,
+        location: Location,
+    },
+
+    /// Serde-generated: unknown field.
+    SerdeUnknownField {
+        field: String,
+        expected: Vec<&'static str>,
+        location: Location,
+    },
+
+    /// Serde-generated: missing required field.
+    SerdeMissingField {
+        field: &'static str,
+        location: Location,
+    },
+
+    /// Encountered the end of a sequence or mapping while reading a key node.
+    ///
+    /// This indicates a structural mismatch in the input.
+    UnexpectedContainerEndWhileReadingKeyNode {
+        location: Location,
+    },
+
+    /// Duplicate key in a mapping.
+    ///
+    /// When the duplicate key can be rendered as a string-like scalar, `key` is provided.
+    DuplicateMappingKey {
+        key: Option<String>,
+        location: Location,
+    },
+
+    /// Tagged enum name does not match the target enum.
+    TaggedEnumMismatch {
+        tagged: String,
+        target: &'static str,
+        location: Location,
+    },
+
+    /// Serde-generated error while deserializing an enum variant identifier.
+    SerdeVariantId {
+        msg: String,
+        location: Location,
+    },
+
+    /// Expected the end of a mapping after an externally tagged enum variant value.
+    ExpectedMappingEndAfterEnumVariantValue {
         location: Location,
     },
     ContainerEndMismatch {
@@ -493,6 +1105,15 @@ impl Error {
         }
     }
 
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn multiple_documents(hint: &'static str) -> Self {
+        Error::MultipleDocuments {
+            hint,
+            location: Location::UNKNOWN,
+        }
+    }
+
     /// Construct an `UnknownAnchor` error for the given anchor id (unknown location).
     ///
     /// Called by:
@@ -535,7 +1156,46 @@ impl Error {
         match &mut self {
             Error::Message { location, .. }
             | Error::Eof { location }
+            | Error::MultipleDocuments { location, .. }
             | Error::Unexpected { location, .. }
+            | Error::MergeValueNotMapOrSeqOfMaps { location }
+            | Error::InvalidBinaryBase64 { location }
+            | Error::BinaryNotUtf8 { location }
+            | Error::TaggedScalarCannotDeserializeIntoString { location }
+            | Error::UnexpectedSequenceEnd { location }
+            | Error::UnexpectedMappingEnd { location }
+            | Error::InvalidBooleanStrict { location }
+            | Error::InvalidCharNull { location }
+            | Error::InvalidCharNotSingleScalar { location }
+            | Error::NullIntoString { location }
+            | Error::BytesNotSupportedMissingBinaryTag { location }
+            | Error::UnexpectedValueForUnit { location }
+            | Error::ExpectedEmptyMappingForUnitStruct { location }
+            | Error::UnexpectedContainerEndWhileSkippingNode { location }
+            | Error::InternalSeedReusedForMapKey { location }
+            | Error::ValueRequestedBeforeKey { location }
+            | Error::ExpectedStringKeyForExternallyTaggedEnum { location }
+            | Error::ExternallyTaggedEnumExpectedScalarOrMapping { location }
+            | Error::UnexpectedValueForUnitEnumVariant { location }
+            | Error::AliasReplayCounterOverflow { location }
+            | Error::AliasReplayLimitExceeded { location, .. }
+            | Error::AliasExpansionLimitExceeded { location, .. }
+            | Error::AliasReplayStackDepthExceeded { location, .. }
+            | Error::FoldedBlockScalarMustIndentContent { location }
+            | Error::InternalDepthUnderflow { location }
+            | Error::InternalRecursionStackEmpty { location }
+            | Error::RecursiveReferencesRequireWeakTypes { location }
+            | Error::InvalidScalar { location, .. }
+            | Error::SerdeInvalidType { location, .. }
+            | Error::SerdeInvalidValue { location, .. }
+            | Error::SerdeUnknownVariant { location, .. }
+            | Error::SerdeUnknownField { location, .. }
+            | Error::SerdeMissingField { location, .. }
+            | Error::UnexpectedContainerEndWhileReadingKeyNode { location }
+            | Error::DuplicateMappingKey { location, .. }
+            | Error::TaggedEnumMismatch { location, .. }
+            | Error::SerdeVariantId { location, .. }
+            | Error::ExpectedMappingEndAfterEnumVariantValue { location }
             | Error::HookError { location, .. }
             | Error::ContainerEndMismatch { location, .. }
             | Error::UnknownAnchor { location, .. }
@@ -544,6 +1204,7 @@ impl Error {
             | Error::CannotBorrowTransformedString { location, .. } => {
                 *location = set_location;
             }
+            Error::InvalidUtf8Input => {}
             Error::IOError { .. } => {} // this error does not support location
             Error::AliasError { .. } => {
                 // AliasError carries its own Locations; don't override with a single location.
@@ -583,7 +1244,46 @@ impl Error {
         match self {
             Error::Message { location, .. }
             | Error::Eof { location }
+            | Error::MultipleDocuments { location, .. }
             | Error::Unexpected { location, .. }
+            | Error::MergeValueNotMapOrSeqOfMaps { location }
+            | Error::InvalidBinaryBase64 { location }
+            | Error::BinaryNotUtf8 { location }
+            | Error::TaggedScalarCannotDeserializeIntoString { location }
+            | Error::UnexpectedSequenceEnd { location }
+            | Error::UnexpectedMappingEnd { location }
+            | Error::InvalidBooleanStrict { location }
+            | Error::InvalidCharNull { location }
+            | Error::InvalidCharNotSingleScalar { location }
+            | Error::NullIntoString { location }
+            | Error::BytesNotSupportedMissingBinaryTag { location }
+            | Error::UnexpectedValueForUnit { location }
+            | Error::ExpectedEmptyMappingForUnitStruct { location }
+            | Error::UnexpectedContainerEndWhileSkippingNode { location }
+            | Error::InternalSeedReusedForMapKey { location }
+            | Error::ValueRequestedBeforeKey { location }
+            | Error::ExpectedStringKeyForExternallyTaggedEnum { location }
+            | Error::ExternallyTaggedEnumExpectedScalarOrMapping { location }
+            | Error::UnexpectedValueForUnitEnumVariant { location }
+            | Error::AliasReplayCounterOverflow { location }
+            | Error::AliasReplayLimitExceeded { location, .. }
+            | Error::AliasExpansionLimitExceeded { location, .. }
+            | Error::AliasReplayStackDepthExceeded { location, .. }
+            | Error::FoldedBlockScalarMustIndentContent { location }
+            | Error::InternalDepthUnderflow { location }
+            | Error::InternalRecursionStackEmpty { location }
+            | Error::RecursiveReferencesRequireWeakTypes { location }
+            | Error::InvalidScalar { location, .. }
+            | Error::SerdeInvalidType { location, .. }
+            | Error::SerdeInvalidValue { location, .. }
+            | Error::SerdeUnknownVariant { location, .. }
+            | Error::SerdeUnknownField { location, .. }
+            | Error::SerdeMissingField { location, .. }
+            | Error::UnexpectedContainerEndWhileReadingKeyNode { location }
+            | Error::DuplicateMappingKey { location, .. }
+            | Error::TaggedEnumMismatch { location, .. }
+            | Error::SerdeVariantId { location, .. }
+            | Error::ExpectedMappingEndAfterEnumVariantValue { location }
             | Error::HookError { location, .. }
             | Error::ContainerEndMismatch { location, .. }
             | Error::UnknownAnchor { location, .. }
@@ -596,6 +1296,7 @@ impl Error {
                     None
                 }
             }
+            Error::InvalidUtf8Input => None,
             Error::IOError { cause: _ } => None,
             Error::AliasError { locations, .. } => Locations::primary_location(*locations),
             Error::WithSnippet { error, .. } => error.location(),
@@ -640,13 +1341,53 @@ impl Error {
         match self {
             Error::Message { location, .. }
             | Error::Eof { location }
+            | Error::MultipleDocuments { location, .. }
             | Error::Unexpected { location, .. }
+            | Error::MergeValueNotMapOrSeqOfMaps { location }
+            | Error::InvalidBinaryBase64 { location }
+            | Error::BinaryNotUtf8 { location }
+            | Error::TaggedScalarCannotDeserializeIntoString { location }
+            | Error::UnexpectedSequenceEnd { location }
+            | Error::UnexpectedMappingEnd { location }
+            | Error::InvalidBooleanStrict { location }
+            | Error::InvalidCharNull { location }
+            | Error::InvalidCharNotSingleScalar { location }
+            | Error::NullIntoString { location }
+            | Error::BytesNotSupportedMissingBinaryTag { location }
+            | Error::UnexpectedValueForUnit { location }
+            | Error::ExpectedEmptyMappingForUnitStruct { location }
+            | Error::UnexpectedContainerEndWhileSkippingNode { location }
+            | Error::InternalSeedReusedForMapKey { location }
+            | Error::ValueRequestedBeforeKey { location }
+            | Error::ExpectedStringKeyForExternallyTaggedEnum { location }
+            | Error::ExternallyTaggedEnumExpectedScalarOrMapping { location }
+            | Error::UnexpectedValueForUnitEnumVariant { location }
+            | Error::AliasReplayCounterOverflow { location }
+            | Error::AliasReplayLimitExceeded { location, .. }
+            | Error::AliasExpansionLimitExceeded { location, .. }
+            | Error::AliasReplayStackDepthExceeded { location, .. }
+            | Error::FoldedBlockScalarMustIndentContent { location }
+            | Error::InternalDepthUnderflow { location }
+            | Error::InternalRecursionStackEmpty { location }
+            | Error::RecursiveReferencesRequireWeakTypes { location }
+            | Error::InvalidScalar { location, .. }
+            | Error::SerdeInvalidType { location, .. }
+            | Error::SerdeInvalidValue { location, .. }
+            | Error::SerdeUnknownVariant { location, .. }
+            | Error::SerdeUnknownField { location, .. }
+            | Error::SerdeMissingField { location, .. }
+            | Error::UnexpectedContainerEndWhileReadingKeyNode { location }
+            | Error::DuplicateMappingKey { location, .. }
+            | Error::TaggedEnumMismatch { location, .. }
+            | Error::SerdeVariantId { location, .. }
+            | Error::ExpectedMappingEndAfterEnumVariantValue { location }
             | Error::HookError { location, .. }
             | Error::ContainerEndMismatch { location, .. }
             | Error::UnknownAnchor { location, .. }
             | Error::QuotingRequired { location, .. }
             | Error::Budget { location, .. }
             | Error::CannotBorrowTransformedString { location, .. } => Locations::same(location),
+            Error::InvalidUtf8Input => None,
             Error::IOError { .. } => None,
             Error::AliasError { locations, .. } => Some(*locations),
             Error::WithSnippet { error, .. } => error.locations(),
@@ -696,63 +1437,36 @@ fn fmt_error_plain_with_formatter(
     formatter: &dyn MessageFormatter,
 ) -> fmt::Result {
     let err = err.without_snippet();
-    match err {
-        Error::WithSnippet { error, .. } => fmt_error_plain_with_formatter(f, error, formatter),
+    if let Error::WithSnippet { error, .. } = err {
+        return fmt_error_plain_with_formatter(f, error, formatter);
+    }
 
-        Error::Message { location, .. }
-        | Error::HookError { location, .. }
-        | Error::Eof { location }
-        | Error::Unexpected { location, .. }
-        | Error::ContainerEndMismatch { location }
-        | Error::UnknownAnchor { location, .. }
-        | Error::QuotingRequired { location, .. }
-        | Error::Budget { location, .. }
-        | Error::CannotBorrowTransformedString { location, .. } => {
-            let msg = formatter.format_message(err);
-            fmt_with_location(f, &msg, location)
-        }
+    let msg = formatter.format_message(err);
+    if let Some(loc) = err.location() {
+        fmt_with_location(f, &msg, &loc)?;
+    } else {
+        write!(f, "{msg}")?;
+    }
 
-        Error::IOError { .. } => {
-            let msg = formatter.format_message(err);
-            write!(f, "{msg}")
-        }
-
-        Error::AliasError { msg, locations } => fmt_alias_error_plain(f, msg, locations),
-
-        #[cfg(feature = "garde")]
-        Error::ValidationError { report, locations } => fmt_validation_error_plain(f, report, locations),
-
-        #[cfg(feature = "garde")]
-        Error::ValidationErrors { errors } => {
-            let mut first = true;
-            for err in errors {
-                if !first {
-                    writeln!(f)?;
-                    writeln!(f)?;
-                }
-                first = false;
-                fmt_error_plain_with_formatter(f, err, formatter)?;
-            }
-            Ok(())
-        }
-
-        #[cfg(feature = "validator")]
-        Error::ValidatorError { errors, locations } => fmt_validator_error_plain(f, errors, locations),
-
-        #[cfg(feature = "validator")]
-        Error::ValidatorErrors { errors } => {
-            let mut first = true;
-            for err in errors {
-                if !first {
-                    writeln!(f)?;
-                    writeln!(f)?;
-                }
-                first = false;
-                fmt_error_plain_with_formatter(f, err, formatter)?;
-            }
-            Ok(())
+    #[cfg(feature = "garde")]
+    if let Error::ValidationErrors { errors } = err {
+        for err in errors {
+            writeln!(f)?;
+            writeln!(f)?;
+            fmt_error_plain_with_formatter(f, err, formatter)?;
         }
     }
+
+    #[cfg(feature = "validator")]
+    if let Error::ValidatorErrors { errors } = err {
+        for err in errors {
+            writeln!(f)?;
+            writeln!(f)?;
+            fmt_error_plain_with_formatter(f, err, formatter)?;
+        }
+    }
+
+    Ok(())
 }
 
 fn fmt_error_rendered(
@@ -767,6 +1481,10 @@ fn fmt_error_rendered(
     match err {
         #[cfg(feature = "garde")]
         Error::ValidationErrors { errors } => {
+            let msg = options.formatter.format_message(err);
+            if !msg.is_empty() {
+                writeln!(f, "{}", msg)?;
+            }
             let mut first = true;
             for err in errors {
                 if !first {
@@ -781,6 +1499,10 @@ fn fmt_error_rendered(
 
         #[cfg(feature = "validator")]
         Error::ValidatorErrors { errors } => {
+            let msg = options.formatter.format_message(err);
+            if !msg.is_empty() {
+                writeln!(f, "{}", msg)?;
+            }
             let mut first = true;
             for err in errors {
                 if !first {
@@ -819,6 +1541,10 @@ fn fmt_error_rendered(
             }
             #[cfg(feature = "garde")]
             if let Error::ValidationErrors { errors } = error.as_ref() {
+                let msg = options.formatter.format_message(error);
+                if !msg.is_empty() {
+                    writeln!(f, "{}", msg)?;
+                }
                 let mut first = true;
                 for err in errors {
                     if !first {
@@ -844,6 +1570,10 @@ fn fmt_error_rendered(
             }
             #[cfg(feature = "validator")]
             if let Error::ValidatorErrors { errors } = error.as_ref() {
+                let msg = options.formatter.format_message(error);
+                if !msg.is_empty() {
+                    writeln!(f, "{}", msg)?;
+                }
                 let mut first = true;
                 for err in errors {
                     if !first {
@@ -929,42 +1659,6 @@ impl fmt::Display for Error {
 }
 
 
-#[cfg(feature = "garde")]
-fn fmt_validation_error_plain(
-    f: &mut fmt::Formatter<'_>,
-    report: &garde::Report,
-    locations: &PathMap,
-) -> fmt::Result {
-    let issues = collect_garde_issues(report);
-    let mut first = true;
-    for issue in issues {
-        if !first {
-            writeln!(f)?;
-        }
-        first = false;
-
-        let entry = issue.display_entry();
-        let path_key = issue.path;
-        let original_leaf = path_key
-            .leaf_string()
-            .unwrap_or_else(|| "<root>".to_string());
-
-        let (locs, resolved_leaf) = locations
-            .search(&path_key)
-            .unwrap_or((Locations::UNKNOWN, original_leaf));
-
-        let loc = if locs.reference_location != Location::UNKNOWN {
-            locs.reference_location
-        } else {
-            locs.defined_location
-        };
-
-        let resolved_path = format_path_with_resolved_leaf(&path_key, &resolved_leaf);
-        let msg = format!("validation error at {resolved_path}: {entry}");
-        fmt_with_location(f, &msg, &loc)?;
-    }
-    Ok(())
-}
 
 #[cfg(feature = "garde")]
 fn fmt_validation_error_with_snippets_offset(
@@ -1035,42 +1729,6 @@ fn fmt_validation_error_with_snippets_offset(
     Ok(())
 }
 
-#[cfg(feature = "validator")]
-fn fmt_validator_error_plain(
-    f: &mut fmt::Formatter<'_>,
-    errors: &ValidationErrors,
-    locations: &PathMap,
-) -> fmt::Result {
-    let entries = collect_validator_issues(errors);
-    let mut first = true;
-
-    for issue in entries {
-        if !first {
-            writeln!(f)?;
-        }
-        first = false;
-
-        let entry = issue.display_entry();
-        let path = issue.path;
-
-        let original_leaf = path.leaf_string().unwrap_or_else(|| "<root>".to_string());
-        let (locs, resolved_leaf) = locations
-            .search(&path)
-            .unwrap_or((Locations::UNKNOWN, original_leaf));
-
-        let loc = if locs.reference_location != Location::UNKNOWN {
-            locs.reference_location
-        } else {
-            locs.defined_location
-        };
-
-        let resolved_path = format_path_with_resolved_leaf(&path, &resolved_leaf);
-        let msg = format!("validation error at {resolved_path}: {entry}");
-        fmt_with_location(f, &msg, &loc)?;
-    }
-
-    Ok(())
-}
 
 #[cfg(feature = "validator")]
 fn fmt_validator_error_with_snippets_offset(
@@ -1273,31 +1931,42 @@ impl de::Error for Error {
 
     fn invalid_type(unexp: de::Unexpected, exp: &dyn de::Expected) -> Self {
         // Mirror serde’s default formatting, but add a best-effort location.
-        maybe_attach_fallback_location(Error::msg(format!("invalid type: {unexp}, expected {exp}")))
+        maybe_attach_fallback_location(Error::SerdeInvalidType {
+            unexpected: unexp.to_string(),
+            expected: exp.to_string(),
+            location: Location::UNKNOWN,
+        })
     }
 
     fn invalid_value(unexp: de::Unexpected, exp: &dyn de::Expected) -> Self {
-        maybe_attach_fallback_location(Error::msg(format!(
-            "invalid value: {unexp}, expected {exp}"
-        )))
+        maybe_attach_fallback_location(Error::SerdeInvalidValue {
+            unexpected: unexp.to_string(),
+            expected: exp.to_string(),
+            location: Location::UNKNOWN,
+        })
     }
 
     fn unknown_variant(variant: &str, expected: &'static [&'static str]) -> Self {
-        maybe_attach_fallback_location(Error::msg(format!(
-            "unknown variant `{variant}`, expected one of {}",
-            expected.join(", ")
-        )))
+        maybe_attach_fallback_location(Error::SerdeUnknownVariant {
+            variant: variant.to_owned(),
+            expected: expected.to_vec(),
+            location: Location::UNKNOWN,
+        })
     }
 
     fn unknown_field(field: &str, expected: &'static [&'static str]) -> Self {
-        maybe_attach_fallback_location(Error::msg(format!(
-            "unknown field `{field}`, expected one of {}",
-            expected.join(", ")
-        )))
+        maybe_attach_fallback_location(Error::SerdeUnknownField {
+            field: field.to_owned(),
+            expected: expected.to_vec(),
+            location: Location::UNKNOWN,
+        })
     }
 
     fn missing_field(field: &'static str) -> Self {
-        maybe_attach_fallback_location(Error::msg(format!("missing field `{field}`")))
+        maybe_attach_fallback_location(Error::SerdeMissingField {
+            field,
+            location: Location::UNKNOWN,
+        })
     }
 }
 
@@ -1324,42 +1993,6 @@ fn fmt_with_location(f: &mut fmt::Formatter<'_>, msg: &str, location: &Location)
     }
 }
 
-/// Format an alias error with both reference (use-site) and defined (anchor) locations.
-///
-/// This provides a plain-text representation showing where the alias is used and where
-/// the anchor is defined, which is useful for errors that occur when deserializing aliased values.
-#[cold]
-#[inline(never)]
-fn fmt_alias_error_plain(
-    f: &mut fmt::Formatter<'_>,
-    msg: &str,
-    locations: &Locations,
-) -> fmt::Result {
-    let ref_loc = locations.reference_location;
-    let def_loc = locations.defined_location;
-
-    match (ref_loc, def_loc) {
-        (Location::UNKNOWN, Location::UNKNOWN) => {
-            write!(f, "{msg}")
-        }
-        (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
-            // Only reference location known, or both are the same
-            write!(f, "{msg} at line {}, column {}", r.line, r.column)
-        }
-        (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
-            // Only defined location known
-            write!(f, "{msg} (defined at line {}, column {})", d.line, d.column)
-        }
-        (r, d) => {
-            // Both locations known and different
-            write!(
-                f,
-                "{msg} at line {}, column {} (defined at line {}, column {})",
-                r.line, r.column, d.line, d.column
-            )
-        }
-    }
-}
 
 /// Convert a budget breach report into a user-facing error.
 ///

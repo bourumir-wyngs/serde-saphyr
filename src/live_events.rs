@@ -301,14 +301,16 @@ impl<'a> LiveEvents<'a> {
             self.total_replayed_events = self
                 .total_replayed_events
                 .checked_add(1)
-                .ok_or_else(|| Error::msg("alias replay counter overflow"))
+                .ok_or_else(|| Error::AliasReplayCounterOverflow {
+                    location: Location::UNKNOWN,
+                })
                 .map_err(|err| err.with_location(ev.location()))?;
             if self.total_replayed_events > self.alias_limits.max_total_replayed_events {
-                return Err(Error::msg(format!(
-                    "alias replay limit exceeded: total_replayed_events={} > {}",
-                    self.total_replayed_events, self.alias_limits.max_total_replayed_events
-                ))
-                .with_location(ev.location()));
+                return Err(Error::AliasReplayLimitExceeded {
+                    total_replayed_events: self.total_replayed_events,
+                    max_total_replayed_events: self.alias_limits.max_total_replayed_events,
+                    location: ev.location(),
+                });
             }
             self.observe_budget_for_replay(&ev)?;
             self.record(
@@ -336,8 +338,7 @@ impl<'a> LiveEvents<'a> {
                         && span.start.col() == 0
                         && !val.trim().is_empty()
                     {
-                        return Err(Error::msg("folded block scalars must indent their content")
-                            .with_location(location));
+                        return Err(Error::FoldedBlockScalarMustIndentContent { location });
                     }
                     
                     let tag_s = SfTag::from_optional_cow(&tag);
@@ -452,21 +453,22 @@ impl<'a> LiveEvents<'a> {
                         self.per_anchor_expansions[anchor_id].saturating_add(1);
                     let count = self.per_anchor_expansions[anchor_id];
                     if count > self.alias_limits.max_alias_expansions_per_anchor {
-                        return Err(Error::msg(format!(
-                            "alias expansion limit exceeded for anchor id {}: {} > {}",
-                            anchor_id, count, self.alias_limits.max_alias_expansions_per_anchor
-                        ))
-                        .with_location(location));
+                        return Err(Error::AliasExpansionLimitExceeded {
+                            anchor_id,
+                            expansions: count,
+                            max_expansions_per_anchor: self.alias_limits.max_alias_expansions_per_anchor,
+                            location,
+                        });
                     }
 
                     // Push for replay; enforce stack depth limit.
                     let next_depth = self.inject.len() + 1;
                     if next_depth > self.alias_limits.max_replay_stack_depth {
-                        return Err(Error::msg(format!(
-                            "alias replay stack depth exceeded: depth={} > {}",
-                            next_depth, self.alias_limits.max_replay_stack_depth
-                        ))
-                        .with_location(location));
+                        return Err(Error::AliasReplayStackDepthExceeded {
+                            depth: next_depth,
+                            max_depth: self.alias_limits.max_replay_stack_depth,
+                            location,
+                        });
                     }
 
                     if self.rec_stack.iter().any(|frame| frame.id == anchor_id) {
@@ -484,10 +486,7 @@ impl<'a> LiveEvents<'a> {
                             self.produced_any_in_doc = true;
                             return Ok(Some(ev));
                         }
-                        return Err(Error::msg(
-                            "Recursive references require weak recursion types",
-                        )
-                        .with_location(location));
+                        return Err(Error::RecursiveReferencesRequireWeakTypes { location });
                     }
 
                     // Ensure the anchor exists now (fail fast); store only id + idx.
@@ -525,8 +524,8 @@ impl<'a> LiveEvents<'a> {
                         if let Some(Ok((Event::DocumentStart(_), span2))) = self.parser.next() {
                             let loc2 = location_from_span(&span2);
                             return Err(
-                                Error::msg(
-                                    "multiple YAML documents detected; use from_multiple or from_multiple_with_options",
+                                Error::multiple_documents(
+                                    "use from_multiple or from_multiple_with_options",
                                 )
                                 .with_location(loc2),
                             );
@@ -669,7 +668,7 @@ impl<'a> LiveEvents<'a> {
     fn bump_depth_on_end(&mut self) -> Result<(), Error> {
         for fr in &mut self.rec_stack {
             if fr.depth == 0 {
-                return Err(Error::msg("internal depth underflow"));
+                return Err(Error::InternalDepthUnderflow { location: Location::UNKNOWN });
             }
             fr.depth -= 1;
         }
@@ -679,7 +678,7 @@ impl<'a> LiveEvents<'a> {
                 let done = self
                     .rec_stack
                     .pop()
-                    .ok_or_else(|| Error::msg("internal recursion stack empty"))?;
+                    .ok_or_else(|| Error::InternalRecursionStackEmpty { location: Location::UNKNOWN })?;
                 // Convert SmallVec into Box<[Ev]> and store by anchor_id.
                 self.ensure_anchor_capacity(done.id);
                 self.anchors[done.id] = Some(done.buf.into_vec().into_boxed_slice());

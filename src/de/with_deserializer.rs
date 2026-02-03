@@ -36,7 +36,7 @@ where
 
 fn enforce_single_document_and_finish<'de, W>(
     src: &mut LiveEvents<'de>,
-    multiple_docs_msg: &'static str,
+    multiple_docs_hint: &'static str,
     wrap_err: W,
 ) -> Result<(), Error>
 where
@@ -48,7 +48,7 @@ where
     match src.peek() {
         Ok(Some(_)) => {
             return Err(wrap_err(
-                Error::msg(multiple_docs_msg).with_location(src.last_location()),
+                Error::multiple_documents(multiple_docs_hint).with_location(src.last_location()),
             ));
         }
         Ok(None) => {}
@@ -102,7 +102,7 @@ where
     let value = deserialize_with_scope(&mut src, cfg, f, wrap_err)?;
     enforce_single_document_and_finish(
         &mut src,
-        "multiple YAML documents detected; use from_multiple or from_multiple_with_options",
+        "use from_multiple or from_multiple_with_options",
         wrap_err,
     )?;
     Ok(value)
@@ -137,7 +137,7 @@ pub fn with_deserializer_from_slice_with_options<'de, R, F>(
 where
     for<'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<R, Error>,
 {
-    let s = std::str::from_utf8(bytes).map_err(|_| Error::msg("input is not valid UTF-8"))?;
+    let s = std::str::from_utf8(bytes).map_err(|_| Error::InvalidUtf8Input)?;
     with_deserializer_from_str_with_options(s, options, f)
 }
 
@@ -181,7 +181,7 @@ where
     let value = deserialize_with_scope(&mut src, cfg, f, wrap_err)?;
     enforce_single_document_and_finish(
         &mut src,
-        "multiple YAML documents detected; use read or read_with_options to obtain the iterator",
+        "use read or read_with_options to obtain the iterator",
         wrap_err,
     )?;
     Ok(value)
