@@ -355,10 +355,10 @@ impl MessageFormatter for UserMessageFormatter {
             },
             Error::QuotingRequired { .. } => Cow::Borrowed("value requires quoting"),
             Error::Budget { breach, .. } => Cow::Owned(format!(
-                "YAML document too large or two complex: limits breached: {breach:?}"
+                "YAML document too large or too complex: limits breached: {breach:?}"
             )),
             Error::CannotBorrowTransformedString { .. } => Cow::Borrowed(
-                "Only single string with no escape sequeces is allowed here",
+                "Only single string with no escape sequences is allowed here",
             ),
 
             // All cases when the standard message is good enough
