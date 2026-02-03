@@ -176,7 +176,7 @@ fn main() {
         }
     }
 
-    // Triggered when deserializing to `&str` but the scalar needs transformation (e.g. escapes).
+    // Example 3: Triggered when deserializing to `&str` but the scalar needs transformation (e.g. escapes).
     let yaml_transformed_str = "\"hello\\nworld\"\n";
     println!("\n\n--- Attempting to parse a transformed scalar into &str ---");
     println!("{}", yaml_transformed_str.trim());
@@ -198,7 +198,7 @@ fn main() {
         );
     }
 
-    // Example 3: Validation
+    // Example 4: Validation
     #[cfg(feature = "garde")]
     {
         use garde::Validate;
