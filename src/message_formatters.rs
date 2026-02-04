@@ -1,5 +1,5 @@
 use crate::de_error::{Error, MessageFormatter, UserMessageFormatter};
-use crate::localizer::Localizer;
+use crate::localizer::{ExternalMessage, ExternalMessageSource, Localizer};
 use crate::location::Locations;
 use crate::Location;
 
@@ -28,6 +28,22 @@ pub type DeveloperMessageFormatter = DefaultMessageFormatter;
 fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) -> Cow<'a, str> {
     match err {
         Error::WithSnippet { error, .. } => default_format_message(formatter, error),
+        Error::ExternalMessage {
+            source,
+            msg,
+            code,
+            params,
+            ..
+        } => {
+            let l10n = formatter.localizer();
+            l10n.override_external_message(ExternalMessage {
+                source: *source,
+                original: msg.as_str(),
+                code: code.as_deref(),
+                params,
+            })
+            .unwrap_or(Cow::Borrowed(msg.as_str()))
+        }
         Error::Message { msg, .. }
         | Error::HookError { msg, .. }
         | Error::SerdeVariantId { msg, .. } => Cow::Borrowed(msg.as_str()),
@@ -195,7 +211,7 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
             let issues = collect_garde_issues(report);
             let mut lines = Vec::with_capacity(issues.len());
             for issue in issues {
-                let entry = issue.display_entry();
+                let entry = issue.display_entry_overridden(l10n, ExternalMessageSource::Garde);
                 let path_key = issue.path;
                 let original_leaf = path_key
                     .leaf_string()
@@ -232,7 +248,7 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
             let issues = collect_validator_issues(errors);
             let mut lines = Vec::with_capacity(issues.len());
             for issue in issues {
-                let entry = issue.display_entry();
+                let entry = issue.display_entry_overridden(l10n, ExternalMessageSource::Validator);
                 let path_key = issue.path;
                 let original_leaf = path_key
                     .leaf_string()

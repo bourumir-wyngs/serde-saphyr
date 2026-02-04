@@ -225,3 +225,98 @@ fn spanned_inside_untagged_enum_shows_helpful_error() {
         "expected error message to mention untagged enums, got:\n{rendered}"
     );
 }
+
+#[test]
+fn alias_error_renders_two_snippet_windows_when_reference_and_defined_locations_differ() {
+    #[derive(Debug, Deserialize)]
+    struct Config {
+        // Anchor value is valid for this field.
+        count: u64,
+        // Alias usage site triggers a type mismatch.
+        flag: bool,
+    }
+
+    let yaml = "count: &val 42\nflag: *val\n";
+    let opts = serde_saphyr::options! { with_snippet: true };
+
+    let err = from_str_with_options::<Config>(yaml, opts)
+        .expect_err("type mismatch at alias usage site should error");
+    let rendered = err.to_string();
+
+    // Dual-snippet rendering:
+    // - primary window: alias usage site
+    // - secondary window: anchor definition site
+    assert!(
+        rendered.contains("the value is used here"),
+        "expected primary snippet label for alias usage site, got:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("defined here"),
+        "expected secondary snippet label for anchor definition site, got:\n{rendered}"
+    );
+
+    // The output should include BOTH relevant source lines.
+    assert!(
+        rendered.contains("count: &val 42"),
+        "expected rendered output to include anchor definition line, got:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("flag: *val"),
+        "expected rendered output to include alias usage line, got:\n{rendered}"
+    );
+
+    // Heuristic: each snippet window has a caret marker.
+    // (We don't assert exact formatting to keep the test robust across renderer tweaks.)
+    let caret_count = rendered.matches('^').count();
+    assert!(
+        caret_count >= 2,
+        "expected at least two caret markers (two snippet windows), got {caret_count}:\n{rendered}"
+    );
+}
+
+#[cfg(feature = "garde")]
+#[test]
+fn garde_validation_error_renders_two_snippet_windows_when_value_is_anchored_and_aliased() {
+    use garde::Validate;
+
+    #[derive(Debug, Deserialize, Validate)]
+    #[serde(rename_all = "camelCase")]
+    struct ValidatedConfig {
+        #[garde(skip)]
+        name: String,
+        #[garde(length(min = 2))]
+        nickname: String,
+    }
+
+    // Anchor defines an invalid value ("x") and alias uses it for a validated field.
+    let yaml = "name: &short \"x\"\nnickname: *short\n";
+    let opts = serde_saphyr::options! { with_snippet: true };
+
+    let err = serde_saphyr::from_str_with_options_valid::<ValidatedConfig>(yaml, opts)
+        .expect_err("validation error expected");
+    let rendered = err.to_string();
+
+    assert!(
+        rendered.contains("the value is used here"),
+        "expected primary snippet label for alias usage site, got:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("defined here"),
+        "expected secondary snippet label for anchor definition site, got:\n{rendered}"
+    );
+
+    assert!(
+        rendered.contains("nickname: *short"),
+        "expected rendered output to include alias usage line, got:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("name: &short"),
+        "expected rendered output to include anchor definition line, got:\n{rendered}"
+    );
+
+    let caret_count = rendered.matches('^').count();
+    assert!(
+        caret_count >= 2,
+        "expected at least two caret markers (two snippet windows), got {caret_count}:\n{rendered}"
+    );
+}

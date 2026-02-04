@@ -74,7 +74,7 @@ impl Localizer for PirateLocalizer {
             format!("Bug lurks on line {}, then {} runes in", loc.line(), loc.column())
         }
     }
-    
+
     fn snippet_label_value_used_here(&self) -> Cow<'static, str> {
         Cow::Borrowed("This be where the scribble is put to use!")
     }
@@ -84,6 +84,14 @@ impl Localizer for PirateLocalizer {
             "  | This scribble hails from the anchor at line {}, column {}:",
             def.line(), def.column()
         )
+    }
+
+    fn validation_snippet_invalid_here(&self, base: &str) -> String {
+        format!("crap here, {base}")
+    }
+
+    fn snippet_label_defined_window(&self) -> Cow<'static, str> {
+        Cow::Borrowed("scribbled here")
     }
 }
 

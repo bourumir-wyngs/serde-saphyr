@@ -1,6 +1,6 @@
 use crate::budget::BudgetBreach;
 use crate::Location;
-use crate::localizer::{Localizer, DEFAULT_ENGLISH_LOCALIZER};
+use crate::localizer::{ExternalMessage, ExternalMessageSource, Localizer, DEFAULT_ENGLISH_LOCALIZER};
 use crate::location::Locations;
 use crate::message_formatters::DefaultMessageFormatter;
 use crate::parse_scalars::{
@@ -178,6 +178,23 @@ impl ValidationIssue {
         }
         format!("{} ({params})", self.code)
     }
+
+    pub(crate) fn display_entry_overridden(
+        &self,
+        l10n: &dyn Localizer,
+        source: ExternalMessageSource,
+    ) -> String {
+        let raw = self.display_entry();
+        let overridden = l10n
+            .override_external_message(ExternalMessage {
+                source,
+                original: raw.as_str(),
+                code: Some(self.code.as_str()),
+                params: &self.params,
+            })
+            .unwrap_or(Cow::Borrowed(raw.as_str()));
+        overridden.into_owned()
+    }
 }
 
 thread_local! {
@@ -256,6 +273,20 @@ pub enum Error {
     /// Free-form error with optional source location.
     Message {
         msg: String,
+        location: Location,
+    },
+
+    /// Text primarily produced by a dependency (parser / validators).
+    ///
+    /// Renderers should call [`Localizer::override_external_message`] to allow callers
+    /// to replace or translate this text.
+    ExternalMessage {
+        source: ExternalMessageSource,
+        msg: String,
+        /// Stable-ish identifier when available (e.g. validator error code).
+        code: Option<String>,
+        /// Optional structured parameters when available.
+        params: Vec<(String, String)>,
         location: Location,
     },
     /// Unexpected end of input.
@@ -881,6 +912,7 @@ impl Error {
     pub(crate) fn with_location(mut self, set_location: Location) -> Self {
         match &mut self {
             Error::Message { location, .. }
+            | Error::ExternalMessage { location, .. }
             | Error::Eof { location }
             | Error::MultipleDocuments { location, .. }
             | Error::Unexpected { location, .. }
@@ -969,6 +1001,7 @@ impl Error {
     pub fn location(&self) -> Option<Location> {
         match self {
             Error::Message { location, .. }
+            | Error::ExternalMessage { location, .. }
             | Error::Eof { location }
             | Error::MultipleDocuments { location, .. }
             | Error::Unexpected { location, .. }
@@ -1066,6 +1099,7 @@ impl Error {
     pub fn locations(&self) -> Option<Locations> {
         match self {
             Error::Message { location, .. }
+            | Error::ExternalMessage { location, .. }
             | Error::Eof { location }
             | Error::MultipleDocuments { location, .. }
             | Error::Unexpected { location, .. }
@@ -1163,8 +1197,11 @@ impl Error {
             return Error::UnknownAnchor { location };
         }
 
-        Error::Message {
+        Error::ExternalMessage {
+            source: ExternalMessageSource::SaphyrParser,
             msg: info.to_owned(),
+            code: None,
+            params: Vec::new(),
             location,
         }
     }
@@ -1472,7 +1509,16 @@ fn fmt_validation_error_with_snippets_offset(
         let def_loc = locs.defined_location;
 
         let resolved_path = format_path_with_resolved_leaf(&path_key, &resolved_leaf);
-        let entry = entry.to_string();
+        let entry_raw = entry.to_string();
+        let entry = l10n
+            .override_external_message(ExternalMessage {
+                source: ExternalMessageSource::Garde,
+                original: entry_raw.as_str(),
+                code: None,
+                params: &[],
+            })
+            .unwrap_or(Cow::Borrowed(entry_raw.as_str()))
+            .into_owned();
         let base_msg = l10n.validation_snippet_base_message(&entry, &resolved_path);
 
         match (ref_loc, def_loc) {
@@ -1543,7 +1589,7 @@ fn fmt_validator_error_with_snippets_offset(
             .unwrap_or((Locations::UNKNOWN, original_leaf.clone()));
 
         let resolved_path = format_path_with_resolved_leaf(&issue.path, &resolved_leaf);
-        let entry = issue.display_entry();
+        let entry = issue.display_entry_overridden(l10n, ExternalMessageSource::Validator);
         let base_msg = l10n.validation_snippet_base_message(&entry, &resolved_path);
 
         match (locs.reference_location, locs.defined_location) {

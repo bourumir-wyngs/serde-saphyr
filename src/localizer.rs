@@ -84,6 +84,10 @@ pub trait Localizer {
     ///
     /// Renderers must use this instead of hard-coding English wording like
     /// `" at line X, column Y"`.
+    ///
+    /// Default:
+    /// - If `loc == Location::UNKNOWN`: returns `base` unchanged.
+    /// - Otherwise: returns `"{base} at line {line}, column {column}"`.
     fn attach_location<'a>(&self, base: Cow<'a, str>, loc: Location) -> Cow<'a, str> {
         if loc == Location::UNKNOWN {
             base
@@ -93,6 +97,8 @@ pub trait Localizer {
     }
 
     /// Label used when a path has no leaf.
+    ///
+    /// Default: `"<root>"`.
     fn root_path_label(&self) -> Cow<'static, str> {
         Cow::Borrowed("<root>")
     }
@@ -101,6 +107,8 @@ pub trait Localizer {
     ///
     /// Default wording matches the crate's historical English output:
     /// `" (defined at line X, column Y)"`.
+    ///
+    /// Default: `format!(" (defined at line {line}, column {column})", ...)`.
     fn alias_defined_at_suffix(&self, defined: Location) -> String {
         format!(" (defined at line {}, column {})", defined.line, defined.column)
     }
@@ -110,6 +118,11 @@ pub trait Localizer {
     /// Render one validation issue line.
     ///
     /// The crate provides `resolved_path`, `entry` and the chosen `loc`.
+    ///
+    /// Default:
+    /// - Base text: `"validation error at {resolved_path}: {entry}"`.
+    /// - If `loc` is `Some` and not `Location::UNKNOWN`, appends a location suffix via
+    ///   [`Localizer::attach_location`].
     fn validation_issue_line(
         &self,
         resolved_path: &str,
@@ -124,36 +137,63 @@ pub trait Localizer {
     }
 
     /// Join multiple validation issues into one message.
+    ///
+    /// Default: joins `lines` with a single newline (`"\n"`).
     fn join_validation_issues(&self, lines: &[String]) -> String {
         lines.join("\n")
     }
 
     // ---------------- Validation snippets / diagnostic labels ----------------
 
+    /// Label used for a snippet window when the location is known and considered the
+    /// “definition” site.
+    ///
+    /// Default: `"(defined)"`.
     fn snippet_label_defined(&self) -> Cow<'static, str> {
         Cow::Borrowed("(defined)")
     }
 
+    /// Label used for a snippet window when we only have a “defined here” location.
+    ///
+    /// Default: `"(defined here)"`.
     fn snippet_label_defined_here(&self) -> Cow<'static, str> {
         Cow::Borrowed("(defined here)")
     }
 
+    /// Label used for the primary snippet window when an aliased/anchored value is used
+    /// at a different location than where it was defined.
+    ///
+    /// Default: `"the value is used here"`.
     fn snippet_label_value_used_here(&self) -> Cow<'static, str> {
         Cow::Borrowed("the value is used here")
     }
 
+    /// Label used for the secondary snippet window that points at the anchor definition.
+    ///
+    /// Default: `"defined here"`.
     fn snippet_label_defined_window(&self) -> Cow<'static, str> {
         Cow::Borrowed("defined here")
     }
 
+    /// Compose the base validation message used in snippet rendering.
+    ///
+    /// Default: `"validation error: {entry} for `{resolved_path}`"`.
     fn validation_snippet_base_message(&self, entry: &str, resolved_path: &str) -> String {
         format!("validation error: {entry} for `{resolved_path}`")
     }
 
+    /// Compose the “invalid here” prefix for the primary snippet message.
+    ///
+    /// Default: `"invalid here, {base}"`.
     fn validation_snippet_invalid_here(&self, base: &str) -> String {
         format!("invalid here, {base}")
     }
 
+    /// Intro line printed between the primary and secondary snippet windows for
+    /// anchor/alias (“indirect value”) cases.
+    ///
+    /// Default:
+    /// `"  | This value comes indirectly from the anchor at line {line} column {column}:"`.
     fn validation_snippet_indirect_anchor_intro(&self, def: Location) -> String {
         format!(
             "  | This value comes indirectly from the anchor at line {} column {}:",
@@ -166,6 +206,10 @@ pub trait Localizer {
     /// Optional hook to override an external message.
     ///
     /// Default implementation returns `None` meaning "keep external wording".
+    ///
+    /// Default:
+    /// - If `loc == Location::UNKNOWN`: returns an empty string.
+    /// - Otherwise: returns `"line {line} column {column}"`.
     fn snippet_location_prefix(&self, loc: Location) -> String {
         if loc == Location::UNKNOWN {
             String::new()
@@ -174,6 +218,9 @@ pub trait Localizer {
         }
     }
 
+    /// Best-effort hook to override/translate dependency-provided message text.
+    ///
+    /// Default: returns `None` (keep the external message as-is).
     fn override_external_message<'a>(&self, _msg: ExternalMessage<'a>) -> Option<Cow<'a, str>> {
         None
     }
