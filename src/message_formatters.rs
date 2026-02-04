@@ -22,6 +22,12 @@ use crate::de_error::collect_validator_issues;
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DefaultMessageFormatter;
 
+/// A single shared instance of the default developer-oriented formatter.
+///
+/// Prefer `&DEFAULT_MESSAGE_FORMATTER` over `&DefaultMessageFormatter` to avoid relying on
+/// subtle temporary lifetime/promotion rules for unit structs.
+pub const DEFAULT_MESSAGE_FORMATTER: DefaultMessageFormatter = DefaultMessageFormatter;
+
 /// Alias for the default developer-oriented formatter.
 pub type DeveloperMessageFormatter = DefaultMessageFormatter;
 

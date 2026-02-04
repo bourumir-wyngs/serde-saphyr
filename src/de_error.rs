@@ -2,7 +2,6 @@ use crate::budget::BudgetBreach;
 use crate::Location;
 use crate::localizer::{ExternalMessage, ExternalMessageSource, Localizer, DEFAULT_ENGLISH_LOCALIZER};
 use crate::location::Locations;
-use crate::message_formatters::DefaultMessageFormatter;
 use crate::parse_scalars::{
     parse_int_signed, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish,
 };
@@ -93,6 +92,12 @@ pub trait MessageFormatter {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct UserMessageFormatter;
 
+/// A single shared instance of the user-facing formatter.
+///
+/// Prefer `&USER_MESSAGE_FORMATTER` over `&UserMessageFormatter` to avoid relying on
+/// subtle temporary lifetime/promotion rules for unit structs.
+pub const USER_MESSAGE_FORMATTER: UserMessageFormatter = UserMessageFormatter;
+
 /// Controls whether snippet output is included when available.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SnippetMode {
@@ -111,11 +116,11 @@ pub enum SnippetMode {
 /// # Example (using the `render_options!` macro)
 ///
 /// ```rust
-/// use serde_saphyr::{DefaultMessageFormatter, SnippetMode};
+/// use serde_saphyr::{SnippetMode, DEFAULT_MESSAGE_FORMATTER};
 ///
 /// // Customize how an error is rendered later (formatter + snippet mode).
 /// let render_opts = serde_saphyr::render_options! {
-///     formatter: &DefaultMessageFormatter,
+///     formatter: &DEFAULT_MESSAGE_FORMATTER,
 ///     snippets: SnippetMode::Off,
 /// };
 ///
@@ -768,7 +773,7 @@ impl Error {
     /// [`Error::render_with_options`].
     pub fn render(&self) -> String {
         self.render_with_options(RenderOptions {
-            formatter: &DefaultMessageFormatter,
+            formatter: &crate::DEFAULT_MESSAGE_FORMATTER,
             snippets: SnippetMode::Auto,
         })
     }
@@ -1479,7 +1484,7 @@ impl fmt::Display for Error {
             f,
             self,
             RenderOptions {
-                formatter: &DefaultMessageFormatter,
+                formatter: &crate::DEFAULT_MESSAGE_FORMATTER,
                 snippets: SnippetMode::Auto,
             },
         )
@@ -1526,9 +1531,8 @@ fn fmt_validation_error_with_snippets_offset(
                 code: None,
                 params: &[],
             })
-            .unwrap_or(Cow::Borrowed(entry_raw.as_str()))
-            .into_owned();
-        let base_msg = l10n.validation_snippet_base_message(&entry, &resolved_path);
+            .unwrap_or(Cow::Borrowed(entry_raw.as_str()));
+        let base_msg = l10n.validation_snippet_base_message(entry.as_ref(), &resolved_path);
 
         match (ref_loc, def_loc) {
             (Location::UNKNOWN, Location::UNKNOWN) => {

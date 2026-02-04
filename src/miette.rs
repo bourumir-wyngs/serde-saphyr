@@ -9,7 +9,7 @@ use miette::{Diagnostic, LabeledSpan, NamedSource, SourceSpan};
 
 use crate::Error;
 use crate::Location;
-use crate::{DefaultMessageFormatter, MessageFormatter};
+use crate::{MessageFormatter, DEFAULT_MESSAGE_FORMATTER};
 use crate::de_snipped::sanitize_terminal_snippet_preserve_len;
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::location::Locations;
@@ -42,7 +42,7 @@ use validator::{ValidationErrors, ValidationErrorsKind};
 ///   This helper owns a copy of `source` to build a standalone `miette::Report`.
 /// - If the error has no known location/span, the report will not include labels.
 pub fn to_miette_report(err: &Error, source: &str, file: &str) -> miette::Report {
-    to_miette_report_with_formatter(err, source, file, &DefaultMessageFormatter)
+    to_miette_report_with_formatter(err, source, file, &DEFAULT_MESSAGE_FORMATTER)
 }
 
 pub fn to_miette_report_with_formatter(
@@ -470,7 +470,7 @@ mod tests {
             },
         };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src), &DefaultMessageFormatter);
+        let diag = build_diagnostic(&err, Arc::clone(&src), &DEFAULT_MESSAGE_FORMATTER);
         let labels: Vec<_> = diag.labels().unwrap().collect();
         assert_eq!(labels.len(), 1);
         assert_eq!(
@@ -504,7 +504,7 @@ mod tests {
             },
         };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src), &DefaultMessageFormatter);
+        let diag = build_diagnostic(&err, Arc::clone(&src), &DEFAULT_MESSAGE_FORMATTER);
         let labels: Vec<_> = diag.labels().unwrap().collect();
         assert_eq!(labels.len(), 1);
         // miette expects byte offsets; ensure we converted from chars to bytes correctly
@@ -535,7 +535,7 @@ mod tests {
             },
         };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src), &DefaultMessageFormatter);
+        let diag = build_diagnostic(&err, Arc::clone(&src), &DEFAULT_MESSAGE_FORMATTER);
         let labels: Vec<_> = diag.labels().unwrap().collect();
         assert_eq!(labels.len(), 1);
         assert_eq!(labels[0].inner().offset(), start_byte);
@@ -563,7 +563,7 @@ mod tests {
             },
         };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src), &DefaultMessageFormatter);
+        let diag = build_diagnostic(&err, Arc::clone(&src), &DEFAULT_MESSAGE_FORMATTER);
         let labels: Vec<_> = diag.labels().unwrap().collect();
         assert_eq!(labels.len(), 1);
         assert_eq!(labels[0].inner().offset(), start_byte);
@@ -591,7 +591,7 @@ mod tests {
             },
         };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src), &DefaultMessageFormatter);
+        let diag = build_diagnostic(&err, Arc::clone(&src), &DEFAULT_MESSAGE_FORMATTER);
         let labels: Vec<_> = diag.labels().unwrap().collect();
         assert_eq!(labels.len(), 1);
         assert_eq!(labels[0].inner().offset(), start_byte);
@@ -620,7 +620,7 @@ mod tests {
             },
         };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src), &DefaultMessageFormatter);
+        let diag = build_diagnostic(&err, Arc::clone(&src), &DEFAULT_MESSAGE_FORMATTER);
         let labels: Vec<_> = diag.labels().unwrap().collect();
         assert_eq!(labels.len(), 1);
         assert_eq!(labels[0].inner().offset(), start_byte);
@@ -685,7 +685,7 @@ mod tests {
 
         let err = Error::ValidatorError { errors, locations };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src), &DefaultMessageFormatter);
+        let diag = build_diagnostic(&err, Arc::clone(&src), &DEFAULT_MESSAGE_FORMATTER);
         assert_eq!(diag.message, "validation failed");
         assert_eq!(diag.related.len(), 1);
 
@@ -761,7 +761,7 @@ mod tests {
 
         let err = Error::ValidationError { report, locations };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src), &DefaultMessageFormatter);
+        let diag = build_diagnostic(&err, Arc::clone(&src), &DEFAULT_MESSAGE_FORMATTER);
         assert_eq!(diag.message, "validation failed");
         assert_eq!(diag.related.len(), 1);
 
@@ -818,7 +818,7 @@ mod tests {
             },
         };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src), &DefaultMessageFormatter);
+        let diag = build_diagnostic(&err, Arc::clone(&src), &DEFAULT_MESSAGE_FORMATTER);
         assert_eq!(diag.message, "invalid value for alias (defined at line 1, column 13)");
 
         let labels = &diag.labels;
@@ -861,7 +861,7 @@ mod tests {
             },
         };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src), &DefaultMessageFormatter);
+        let diag = build_diagnostic(&err, Arc::clone(&src), &DEFAULT_MESSAGE_FORMATTER);
         assert_eq!(diag.message, "invalid value");
 
         // When both locations are the same, should only have one label

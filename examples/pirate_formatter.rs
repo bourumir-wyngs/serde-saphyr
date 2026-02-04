@@ -23,7 +23,7 @@
 //!   when the error value is wrapped in `Error::WithSnippet`, which depends on the parsing
 //!   options (see the validation examples below).
 
-use serde_saphyr::{DefaultMessageFormatter, Error, Localizer, Location, MessageFormatter, UserMessageFormatter};
+use serde_saphyr::{Error, Localizer, Location, MessageFormatter, UserMessageFormatter};
 use serde::Deserialize;
 use std::borrow::Cow;
 
@@ -140,7 +140,7 @@ fn main() {
     if let Err(e) = result {
         println!(
             "\n[Developer Error]:\n{}",
-            e.render_with_formatter(&DefaultMessageFormatter)
+            e.render_with_formatter(&serde_saphyr::DEFAULT_MESSAGE_FORMATTER)
         );
         println!(
             "\n[User Error]:\n{}",
@@ -165,7 +165,7 @@ fn main() {
     if let Err(e) = result {
         println!(
             "\n[Developer Error]:\n{}",
-            e.render_with_formatter(&DefaultMessageFormatter)
+            e.render_with_formatter(&serde_saphyr::DEFAULT_MESSAGE_FORMATTER)
         );
         println!(
             "\n[User Error]:\n{}",
@@ -188,7 +188,7 @@ fn main() {
         Err(e) => {
             println!(
                 "\n[Developer Error]:\n{}",
-                e.render_with_formatter(&DefaultMessageFormatter)
+                e.render_with_formatter(&serde_saphyr::DEFAULT_MESSAGE_FORMATTER)
             );
             println!(
                 "\n[User Error]:\n{}",
@@ -211,7 +211,7 @@ fn main() {
     if let Err(e) = result {
         println!(
             "\n[Developer Error]:\n{}",
-            e.render_with_formatter(&DefaultMessageFormatter)
+            e.render_with_formatter(&serde_saphyr::DEFAULT_MESSAGE_FORMATTER)
         );
         println!(
             "\n[User Error]:\n{}",

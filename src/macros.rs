@@ -83,7 +83,7 @@ macro_rules! budget {
 /// syntax.
 ///
 /// Defaults:
-/// - `formatter`: [`crate::DefaultMessageFormatter`]
+/// - `formatter`: [`crate::DEFAULT_MESSAGE_FORMATTER`]
 /// - `snippets`: [`crate::SnippetMode::Auto`]
 ///
 /// Example:
@@ -92,14 +92,14 @@ macro_rules! budget {
 /// use serde_saphyr::{SnippetMode, UserMessageFormatter};
 ///
 /// let opts = serde_saphyr::render_options! {
-///     formatter: &UserMessageFormatter,
+///     formatter: &serde_saphyr::USER_MESSAGE_FORMATTER,
 ///     snippets: SnippetMode::Off,
 /// };
 /// ```
 #[macro_export]
 macro_rules! render_options {
     ( $( $field:ident : $value:expr ),* $(,)? ) => {{
-        let mut opt = $crate::RenderOptions::new(&$crate::DefaultMessageFormatter);
+        let mut opt = $crate::RenderOptions::new(&$crate::DEFAULT_MESSAGE_FORMATTER);
         $(
             {
                 opt.$field = $value;
