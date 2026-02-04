@@ -1416,13 +1416,26 @@ fn fmt_error_rendered(
             }
 
             let l10n = options.formatter.localizer();
-            let msg = options.formatter.format_message(error);
 
             // Check if we have a secondary snippet for dual-location errors (e.g., AliasError)
             let has_secondary = secondary_snippet.is_some() && error.locations().map_or(false, |locs| {
                 locs.reference_location != locs.defined_location 
                     && locs.defined_location != Location::UNKNOWN
             });
+
+            let mut msg = options.formatter.format_message(error);
+
+            // Renderer-level de-duplication for AliasError:
+            // when we are about to show a secondary “defined here” window, drop the
+            // default message suffix " (defined at …)" if present.
+            if has_secondary {
+                if let Error::AliasError { locations, .. } = error.as_ref() {
+                    let suffix = l10n.alias_defined_at_suffix(locations.defined_location);
+                    if let Some(stripped) = msg.as_ref().strip_suffix(&suffix) {
+                        msg = Cow::Owned(stripped.to_string());
+                    }
+                }
+            }
 
             if has_secondary {
                 // Render primary snippet with "value used here" label
@@ -2046,6 +2059,14 @@ mod tests {
 
         // Should contain the error message
         assert!(rendered.contains("invalid value type"), "rendered: {}", rendered);
+
+        // When a secondary snippet window is shown, avoid duplicating the alias
+        // "defined at …" suffix in the main message.
+        assert!(
+            !rendered.contains("(defined at line"),
+            "did not expect alias defined-at suffix when secondary window is present: {}",
+            rendered
+        );
         // Should show "the value is used here" for the reference location
         assert!(rendered.contains("the value is used here") || rendered.contains("use_it"), 
             "rendered should show reference location context: {}", rendered);

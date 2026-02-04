@@ -229,6 +229,7 @@ fn spanned_inside_untagged_enum_shows_helpful_error() {
 #[test]
 fn alias_error_renders_two_snippet_windows_when_reference_and_defined_locations_differ() {
     #[derive(Debug, Deserialize)]
+    #[allow(dead_code)]
     struct Config {
         // Anchor value is valid for this field.
         count: u64,
@@ -281,6 +282,7 @@ fn garde_validation_error_renders_two_snippet_windows_when_value_is_anchored_and
 
     #[derive(Debug, Deserialize, Validate)]
     #[serde(rename_all = "camelCase")]
+    #[allow(dead_code)]
     struct ValidatedConfig {
         #[garde(skip)]
         name: String,
