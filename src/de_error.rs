@@ -550,6 +550,9 @@ pub enum Error {
         /// The 1-based line number in the *original* input where `text` starts.
         start_line: usize,
         crop_radius: usize,
+        /// Optional secondary snippet for dual-location errors (e.g., AliasError).
+        /// Contains (cropped_text, start_line) for the "defined at" location.
+        secondary_snippet: Option<(String, usize)>,
         error: Box<Error>,
     },
 
@@ -593,17 +596,50 @@ impl Error {
 
         // Keep snippet coordinates aligned with parsers that ignore a leading UTF-8 BOM.
         let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
-        let (cropped, start_line) = match inner.location() {
-            Some(loc) if loc != Location::UNKNOWN && crop_radius != 0 => {
-                crate::de_snipped::crop_source_window(text, &loc, crate::de_snipped::LineMapping::Identity)
+        
+        // Check for dual-location errors (e.g., AliasError with different ref/def locations)
+        let (cropped, start_line, secondary_snippet) = match inner.locations() {
+            Some(locs) if locs.reference_location != Location::UNKNOWN 
+                && locs.defined_location != Location::UNKNOWN 
+                && locs.reference_location != locs.defined_location 
+                && crop_radius != 0 => 
+            {
+                // Crop primary (reference) location
+                let (primary_text, primary_start) = crate::de_snipped::crop_source_window(
+                    text, 
+                    &locs.reference_location, 
+                    crate::de_snipped::LineMapping::Identity
+                );
+                // Crop secondary (defined) location
+                let (secondary_text, secondary_start) = crate::de_snipped::crop_source_window(
+                    text, 
+                    &locs.defined_location, 
+                    crate::de_snipped::LineMapping::Identity
+                );
+                let secondary = if !secondary_text.is_empty() {
+                    Some((secondary_text, secondary_start))
+                } else {
+                    None
+                };
+                (primary_text, primary_start, secondary)
             }
-            _ => (String::new(), 1),
+            _ => {
+                // Single location fallback
+                let (cropped, start_line) = match inner.location() {
+                    Some(loc) if loc != Location::UNKNOWN && crop_radius != 0 => {
+                        crate::de_snipped::crop_source_window(text, &loc, crate::de_snipped::LineMapping::Identity)
+                    }
+                    _ => (String::new(), 1),
+                };
+                (cropped, start_line, None)
+            }
         };
 
         Error::WithSnippet {
             text: cropped,
             start_line,
             crop_radius,
+            secondary_snippet,
             error: Box::new(inner),
         }
     }
@@ -628,19 +664,51 @@ impl Error {
 
         // Keep snippet coordinates aligned with parsers that ignore a leading UTF-8 BOM.
         let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
-        let (cropped, start_line) = match inner.location() {
-            Some(loc) if loc != Location::UNKNOWN && crop_radius != 0 => crate::de_snipped::crop_source_window(
-                text,
-                &loc,
-                crate::de_snipped::LineMapping::Offset { start_line },
-            ),
-            _ => (String::new(), start_line),
+        
+        // Check for dual-location errors (e.g., AliasError with different ref/def locations)
+        let mapping = crate::de_snipped::LineMapping::Offset { start_line };
+        let (cropped, final_start_line, secondary_snippet) = match inner.locations() {
+            Some(locs) if locs.reference_location != Location::UNKNOWN 
+                && locs.defined_location != Location::UNKNOWN 
+                && locs.reference_location != locs.defined_location 
+                && crop_radius != 0 => 
+            {
+                // Crop primary (reference) location
+                let (primary_text, primary_start) = crate::de_snipped::crop_source_window(
+                    text, 
+                    &locs.reference_location, 
+                    mapping
+                );
+                // Crop secondary (defined) location
+                let (secondary_text, secondary_start) = crate::de_snipped::crop_source_window(
+                    text, 
+                    &locs.defined_location, 
+                    mapping
+                );
+                let secondary = if !secondary_text.is_empty() {
+                    Some((secondary_text, secondary_start))
+                } else {
+                    None
+                };
+                (primary_text, primary_start, secondary)
+            }
+            _ => {
+                // Single location fallback
+                let (cropped, final_start) = match inner.location() {
+                    Some(loc) if loc != Location::UNKNOWN && crop_radius != 0 => {
+                        crate::de_snipped::crop_source_window(text, &loc, mapping)
+                    }
+                    _ => (String::new(), start_line),
+                };
+                (cropped, final_start, None)
+            }
         };
 
         Error::WithSnippet {
             text: cropped,
-            start_line,
+            start_line: final_start_line,
             crop_radius,
+            secondary_snippet,
             error: Box::new(inner),
         }
     }
@@ -1200,6 +1268,7 @@ fn fmt_error_rendered(
             text,
             start_line,
             crop_radius,
+            secondary_snippet,
             error,
         } => {
             if *crop_radius == 0 {
@@ -1295,13 +1364,44 @@ fn fmt_error_rendered(
                 return fmt_error_plain_with_formatter(f, error, options.formatter);
             }
 
-            // Display-wrapper approach (no recursion): render the inner error via our
-            // plain renderer into a string.
+            let l10n = options.formatter.localizer();
             let msg = options.formatter.format_message(error);
 
-            let ctx = crate::de_snipped::Snippet::new(text, "<input>", *crop_radius)
-                .with_offset(*start_line);
-            ctx.fmt_or_fallback(f, Level::ERROR, options.formatter.localizer(), msg.as_ref(), &location)
+            // Check if we have a secondary snippet for dual-location errors (e.g., AliasError)
+            let has_secondary = secondary_snippet.is_some() && error.locations().map_or(false, |locs| {
+                locs.reference_location != locs.defined_location 
+                    && locs.defined_location != Location::UNKNOWN
+            });
+
+            if has_secondary {
+                // Render primary snippet with "value used here" label
+                let label = l10n.snippet_label_value_used_here();
+                let ctx = crate::de_snipped::Snippet::new(text, label.as_ref(), *crop_radius)
+                    .with_offset(*start_line);
+                ctx.fmt_or_fallback(f, Level::ERROR, l10n, msg.as_ref(), &location)?;
+
+                // Render secondary snippet showing where the value was defined
+                if let Some((secondary_text, secondary_start)) = secondary_snippet {
+                    let def_loc = error.locations().unwrap().defined_location;
+                    writeln!(f)?;
+                    writeln!(f, "{}", l10n.validation_snippet_indirect_anchor_intro(def_loc))?;
+                    crate::de_snipped::fmt_snippet_window_offset_or_fallback(
+                        f,
+                        l10n,
+                        &def_loc,
+                        secondary_text,
+                        *secondary_start,
+                        l10n.snippet_label_defined_window().as_ref(),
+                        *crop_radius,
+                    )?;
+                }
+                Ok(())
+            } else {
+                // Single location rendering (original behavior)
+                let ctx = crate::de_snipped::Snippet::new(text, "<input>", *crop_radius)
+                    .with_offset(*start_line);
+                ctx.fmt_or_fallback(f, Level::ERROR, l10n, msg.as_ref(), &location)
+            }
         }
         _ => fmt_error_plain_with_formatter(f, err, options.formatter),
     }
@@ -1857,5 +1957,71 @@ mod tests {
         let outer = inner.with_snippet_offset(text, start_line, radius);
         let rendered = outer.render_with_options(RenderOptions::new(&Custom));
         assert!(rendered.contains("CUSTOM: original"));
+    }
+
+    #[test]
+    fn alias_error_dual_snippet_rendering() {
+        // YAML with anchor on line 2 and alias usage on line 5
+        let yaml = r#"config:
+  anchor: &myval 42
+  other: stuff
+  more: data
+  use_it: *myval
+"#;
+        // Reference location: line 5, column 11 (where *myval is used)
+        let ref_loc = Location::new(5, 11);
+        // Defined location: line 2, column 11 (where &myval is defined)
+        let def_loc = Location::new(2, 11);
+
+        let err = Error::AliasError {
+            msg: "invalid value type".to_owned(),
+            locations: Locations {
+                reference_location: ref_loc,
+                defined_location: def_loc,
+            },
+        };
+
+        // Wrap with snippet
+        let wrapped = err.with_snippet(yaml, 5);
+        let rendered = wrapped.render();
+
+        // Should contain the error message
+        assert!(rendered.contains("invalid value type"), "rendered: {}", rendered);
+        // Should show "the value is used here" for the reference location
+        assert!(rendered.contains("the value is used here") || rendered.contains("use_it"), 
+            "rendered should show reference location context: {}", rendered);
+        // Should show "defined here" for the anchor location
+        assert!(rendered.contains("defined here") || rendered.contains("anchor"), 
+            "rendered should show defined location context: {}", rendered);
+        // Should mention both line numbers in some form
+        assert!(rendered.contains("5") || rendered.contains("use_it"), 
+            "rendered should reference line 5: {}", rendered);
+        assert!(rendered.contains("2") || rendered.contains("anchor"), 
+            "rendered should reference line 2: {}", rendered);
+    }
+
+    #[test]
+    fn alias_error_same_location_single_snippet() {
+        let yaml = "value: &anchor 42\n";
+        let loc = Location::new(1, 8);
+
+        let err = Error::AliasError {
+            msg: "test error".to_owned(),
+            locations: Locations {
+                reference_location: loc,
+                defined_location: loc,
+            },
+        };
+
+        let wrapped = err.with_snippet(yaml, 5);
+        let rendered = wrapped.render();
+
+        // Should contain the error message
+        assert!(rendered.contains("test error"), "rendered: {}", rendered);
+        // Should NOT show dual-snippet labels when locations are the same
+        assert!(!rendered.contains("defined here"), 
+            "should not show 'defined here' when locations are same: {}", rendered);
+        assert!(!rendered.contains("the value is used here"), 
+            "should not show 'value used here' when locations are same: {}", rendered);
     }
 }

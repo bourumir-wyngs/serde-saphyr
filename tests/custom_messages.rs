@@ -80,6 +80,7 @@ fn custom_formatter_is_used_for_nested_validation_errors_with_snippets() {
         text: yaml.to_string(),
         start_line: 1,
         crop_radius: 2,
+        secondary_snippet: None,
         error: Box::new(Error::ValidationErrors {
             errors: vec![nested],
         }),
@@ -112,6 +113,7 @@ fn custom_formatter_is_used_for_nested_validator_errors_with_snippets() {
         text: yaml.to_string(),
         start_line: 1,
         crop_radius: 2,
+        secondary_snippet: None,
         error: Box::new(Error::ValidatorErrors {
             errors: vec![nested],
         }),

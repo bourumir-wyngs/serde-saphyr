@@ -45,20 +45,22 @@ type FastHashSet<T> = HashSet<T, RandomState>;
 use crate::location::Locations;
 
 
-/// Attach both reference and defined locations to an error if it doesn't already have one.
+/// Attach both reference and defined locations to an error for alias replay scenarios.
 /// When both locations are known and different, creates an `AliasError` to report both.
 /// This is used for errors occurring when deserializing aliased values.
+///
+/// During alias replay, errors may already have a location attached (the anchor's definition
+/// location from the replayed events). We still want to create an `AliasError` with both
+/// locations when the reference (alias) and defined (anchor) locations differ.
 #[inline]
 fn attach_alias_locations_if_missing(
     err: Error,
     reference_location: Location,
     defined_location: Location,
 ) -> Error {
-    if err.location().is_some() {
-        return err;
-    }
-
-    // If both locations are known and different, create an AliasError to show both
+    // If both locations are known and different, create an AliasError to show both.
+    // This applies even if the error already has a location (from replayed anchor events),
+    // because we want to show where the alias was used, not just where the anchor was defined.
     if reference_location != Location::UNKNOWN
         && defined_location != Location::UNKNOWN
         && reference_location != defined_location
@@ -70,6 +72,9 @@ fn attach_alias_locations_if_missing(
                 defined_location,
             },
         }
+    } else if err.location().is_some() {
+        // Error already has a location and we don't have dual locations to add
+        err
     } else {
         // Fall back to single location (prefer reference, then defined)
         let loc = if reference_location != Location::UNKNOWN {
