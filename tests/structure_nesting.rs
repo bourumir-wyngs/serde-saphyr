@@ -1,5 +1,4 @@
-// Put this in any Rust source file in your crate. It converts your snippet into a unit test
-// that parses the YAML and prints both the debug view and the serialized output.
+// Converts a YAML snippet into a unit test that parses and re-serializes the structure.
 
 use serde_json::Value;
 
@@ -67,12 +66,9 @@ mod tests {
         }
 
         let v: Value = serde_saphyr::from_str(DATA).expect("YAML should parse into JSON Value");
-        // Pretty debug view of the parsed structure:
-        //eprintln!("{:#?}", v);
 
-        // Serialize back to YAML using serde_saphyr and print it:
+        // Serialize back to YAML using serde_saphyr.
         let vv = serde_saphyr::to_string(&v).expect("Value should serialize back to YAML");
-        //eprintln!("{}", vv);
 
         // Minimal assertion to keep the test meaningful:
         assert!(!vv.is_empty(), "Serialized YAML should not be empty");

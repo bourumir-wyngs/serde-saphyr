@@ -85,7 +85,7 @@ fn line_width_with_nested_structure() {
     let mut out = String::new();
     to_fmt_writer_with_options(&mut out, &doc, opts).unwrap();
 
-    println!("Output:\n{}", out);
+
 
     // Should wrap the string
     assert!(
@@ -121,7 +121,7 @@ fn line_width_custom_value() {
     let mut out = String::new();
     to_fmt_writer_with_options(&mut out, &doc, opts).unwrap();
 
-    println!("Output:\n{}", out);
+
 
     // Should wrap (plain scalar style)
     assert!(

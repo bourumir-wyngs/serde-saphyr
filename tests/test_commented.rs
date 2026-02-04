@@ -83,8 +83,6 @@ fn test_commented_rc() -> anyhow::Result<()> {
     };
 
     let yaml = serde_saphyr::to_string(&notable)?;
-
-    println!("{yaml}");
     assert!(yaml.contains("127"));
     assert!(yaml.contains("541"));
     assert!(yaml.contains("comment"));

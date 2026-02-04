@@ -7,7 +7,6 @@ fn saphyr_parser_does_not_emit_misplaced_sequence_closing_event() {
 
     let parser = Parser::new_from_str(yaml);
     for next in parser {
-        println!("{:?}", next);
         if next.is_err() {
             break;
         }
@@ -22,7 +21,6 @@ fn bs4k_comment_between_plain_scalar_lines_should_fail() {
 
     let parser = Parser::new_from_str(yaml);
     for next in parser {
-        println!("{:?}", next);
         if next.is_err() {
             break;
         }

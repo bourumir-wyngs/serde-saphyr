@@ -78,5 +78,8 @@ fn readme_main() {
 
     // Serializing will produce the same mapping (order may vary).
     let serialized = serde_saphyr::to_string(&transform).unwrap();
-    println!("{}", serialized);
+
+    // Round-trip the serialized YAML to ensure the output is valid and equivalent.
+    let roundtrip: Transform = serde_saphyr::from_str(&serialized).unwrap();
+    assert_eq!(roundtrip, transform);
 }

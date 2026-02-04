@@ -69,7 +69,6 @@ hash_map:
 
     let err = serde_saphyr::from_str_valid::<Cfg>(yaml).expect_err("must fail");
     let rendered = err.to_string();
-    println!("{rendered}");
 
     // We should render a rustc-like snippet block.
     assert!(

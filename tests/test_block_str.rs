@@ -359,7 +359,6 @@ fn verdanta_case_fold() -> anyhow::Result<()> {
     let object = RcAnchor::wrapping(node);
 
     let yaml = to_string(&object)?;
-    println!("{}", yaml);
 
     // Block scalar bodies must be indented deeper than the `description: >` header.
     assert!(

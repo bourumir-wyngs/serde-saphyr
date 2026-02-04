@@ -167,27 +167,12 @@ fn serialize_anchors() {
         name: "node two".to_string(),
     }));
 
-    // Strong anchors: repeated references produce an anchor + aliases
-    let data = vec![
-        n1.clone(),
-        n1.clone(),
-        n1.clone(),
-        n2.clone(),
-        n1.clone(),
-        n2.clone(),
-    ];
-    println!(
-        "{}",
-        serde_saphyr::to_string(&data).expect("Must serialize strong anchors")
-    );
-
     // Weak anchors: present (upgradable) weak created from an existing strong anchor
     let weak_n1: RcWeakAnchor<Node> = RcWeakAnchor::from(&n1.0);
     let weak_n2: RcWeakAnchor<Node> = RcWeakAnchor::from(&n2.0);
 
     let serialize = (n1.clone(), n2.clone(), weak_n1, weak_n2);
     let yaml = serde_saphyr::to_string(&serialize).expect("Must serialize strong and weak anchors");
-    println!("{}", yaml);
 
     let deserialized: (
         RcAnchor<Node>,

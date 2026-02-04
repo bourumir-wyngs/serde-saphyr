@@ -13,7 +13,6 @@ fn unknown_field_error_has_location_and_renders_snippet() {
 
     let err = serde_saphyr::from_str::<Cfg>(yaml).expect_err("must fail");
     let rendered = err.to_string();
-    println!("{rendered}");
 
     assert!(
         rendered.contains("unknown field"),
@@ -42,7 +41,6 @@ fn plain_string_into_int_error_has_location_and_renders_snippet() {
 
     let err = serde_saphyr::from_str::<Cfg>(yaml).expect_err("must fail");
     let rendered = err.to_string();
-    println!("{rendered}");
 
     assert!(
         rendered.contains("i32") || rendered.contains("integer") || rendered.contains("invalid"),

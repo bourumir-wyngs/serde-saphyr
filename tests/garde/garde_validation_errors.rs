@@ -88,7 +88,6 @@ fn from_str_with_options_valid_runs_garde_validation() {
         "1 | a: \"\"\n",
         "  |    ^ validation error: length is lower than 1 for `a`",
     );
-    //println!("{rendered}");
     assert_eq!(rendered, expected);
 }
 
@@ -209,7 +208,6 @@ fn validation_error_shows_referenced_and_defined_snippets_for_aliases() {
     let err = serde_saphyr::from_str_with_options_valid::<AnchorRoot>(yaml, Default::default())
         .expect_err("must fail validation");
     let rendered = err.to_string();
-    //println!("{rendered}");
 
     // We want to see the primary (use-site) diagnostic.
     assert!(
@@ -241,7 +239,6 @@ fn validation_error_shows_longer_garde_path_for_nested_structures() {
         serde_saphyr::from_str_with_options_valid::<NestedAnchorRoot>(yaml, Default::default())
             .expect_err("must fail validation");
     let rendered = err.to_string();
-    //println!("{rendered}");
 
     // Primary use-site snippet.
     assert!(
@@ -277,7 +274,6 @@ fn validation_error_shows_path_for_nested_map_entry() {
     let err = serde_saphyr::from_str_with_options_valid::<NestedMapRoot>(yaml, Default::default())
         .expect_err("must fail validation");
     let rendered = err.to_string();
-    println!("{rendered}");
 
     // Ensure the failing garde path shows nested map keys and the leaf field.
     assert!(

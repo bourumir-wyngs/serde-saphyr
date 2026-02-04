@@ -35,8 +35,6 @@ my_btree_map:
     let mut buffer = String::new();
     serde_saphyr::to_fmt_writer(&mut buffer, &my_struct).unwrap();
 
-    println!("Deserialized:\n{buffer}");
-
     // Newtype keys that wrap scalars should serialize as scalar keys, not as YAML complex keys.
     assert!(!buffer.contains("\n? "));
 

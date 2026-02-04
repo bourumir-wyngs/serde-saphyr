@@ -37,7 +37,6 @@ fn test_quoted_multiline_wrap_with_block_scalars_enabled() {
     // Verify lines are reasonably sized (not all on one line)
     // Go's yaml.v2 algorithm breaks at spaces only when column > best_width (80).
     // If there's no space before column 80, the line continues until a break point.
-    println!("Output: {}", output);
     let max_line_len = output.lines().map(|l| l.len()).max().unwrap_or(0);
     assert!(
         max_line_len <= 120,

@@ -17,23 +17,23 @@ fn example_main() {
         retries: 5
     "#;
 
-    let config: Result<Config, _> = serde_saphyr::from_str(yaml_input);
-
-    match config {
-        Ok(parsed_config) => {
-            println!("Parsed successfully: {:?}", parsed_config);
-        }
-        Err(e) => {
-            eprintln!("Failed to parse YAML: {}", e);
-        }
-    }
+    let parsed: Config = serde_saphyr::from_str(yaml_input).expect("README example 1 should parse");
+    assert_eq!(parsed.name, "My Application");
+    assert!(parsed.enabled);
+    assert_eq!(parsed.retries, 5);
 }
 
 /// Test example 2 given in README
 #[test]
 fn example_multi() -> anyhow::Result<()> {
     let configs = parse()?;
-    println!("Parsed successfully: {:?}", configs);
+    assert_eq!(configs.len(), 2);
+    assert_eq!(configs[0].name, "My Application");
+    assert!(configs[0].enabled);
+    assert_eq!(configs[0].retries, 5);
+    assert_eq!(configs[1].name, "My Debugger");
+    assert!(!configs[1].enabled);
+    assert_eq!(configs[1].retries, 4);
     Ok(())
 }
 

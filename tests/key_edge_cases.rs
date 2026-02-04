@@ -9,7 +9,6 @@ fn deserialize_empty_key_into_hashmap_string() {
     let y = ": value\n";
     let m: HashMap<Option<String>, Option<String>> =
         serde_saphyr::from_str(y).expect("deserialization error");
-    println!("{:?}", m);
     assert_eq!(m.get(&None), Some(&Some("value".to_string())));
 }
 

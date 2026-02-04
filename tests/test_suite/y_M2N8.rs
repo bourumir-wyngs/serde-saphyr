@@ -229,8 +229,6 @@ fn yaml_m2n8_case2_mapping_with_complex_key_shape() {
         n => panic!("unexpected number of entries: {}", n),
     }
 
-    // Pretty-print using Canon's Display to show the structure as YAML-like text.
-    for (k, v) in &doc {
-        println!("{}: {}", k, v);
-    }
+    // Ensure the document has at least the complex key entry we checked above.
+    assert!(!doc.is_empty());
 }

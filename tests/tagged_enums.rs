@@ -79,7 +79,6 @@ fn struct_with_enum() -> anyhow::Result<()> {
         "shape: !!Shape SQUARE\ncolor: !!Color GREEN\narea: 51\n",
         yaml
     );
-    println!("yaml: {:#?}", yaml);
     let d: MyStruct = serde_saphyr::from_str(&yaml)?;
     assert_eq!(d, s);
     yaml.clear();

@@ -135,7 +135,6 @@ fn test_miette_integration() {
     
     let report = to_miette_report_with_formatter(&err, yaml, "test.yaml", &UserMessageFormatter);
     let out = report.to_string();
-    println!("Miette out: {}", out);
     
     assert!(out.contains("reference to unknown value"));
     assert!(!out.contains("id unknown"));

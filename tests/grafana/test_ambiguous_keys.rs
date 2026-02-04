@@ -18,9 +18,7 @@ fn test_quote_ambiguous_keys() {
     
     let mut output = String::new();
     serde_saphyr::to_fmt_writer_with_options(&mut output, &map, options).unwrap();
-    
-    println!("Output:\n{}", output);
-    
+
     assert!(output.contains("\"y\":"), "y should be quoted");
     assert!(output.contains("\"n\":"), "n should be quoted");
     assert!(output.contains("\"yes\":"), "yes should be quoted");

@@ -27,8 +27,6 @@ fn changing_step_size_results_in_valid_yaml() {
     let mut serialized = String::new();
     serde_saphyr::to_fmt_writer_with_options(&mut serialized, &value, serializer_options).unwrap();
 
-    println!("{}", serialized);
-
     let parsed: serde_json::Value = serde_saphyr::from_str(&serialized).unwrap();
     assert_eq!(parsed, value);
 }

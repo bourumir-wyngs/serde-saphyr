@@ -29,7 +29,6 @@ fn test_enum_billion_laughs_with_tags() {
     };
     let parsed: Result<Value, Error> = serde_saphyr::from_str_with_options(yaml, adapt_to_miri());
     assert!(parsed.is_err());
-    println!("{:?}", parsed);
     assert!(format!("{}", parsed.unwrap_err()).contains("budget breached"));
 }
 
@@ -50,7 +49,6 @@ fn test_enum_billion_laughs() {
     };
     let parsed: Result<Value, Error> = serde_saphyr::from_str_with_options(yaml, adapt_to_miri());
     assert!(parsed.is_err());
-    println!("{:?}", parsed);
     assert!(format!("{}", parsed.unwrap_err()).contains("budget breached"));
 }
 

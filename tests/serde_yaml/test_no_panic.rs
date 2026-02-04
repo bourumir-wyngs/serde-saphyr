@@ -19,7 +19,6 @@ fn test_yaml_malformed() {
     let yaml_input = "\n    x {\n        ";
 
     let result: Result<TestStruct, _> = serde_saphyr::from_str(yaml_input);
-    println!("{result:?}");
 
     // Confirm parsing yields an error, and does not panic or succeed.
     assert!(
@@ -34,7 +33,6 @@ fn test_lexer_errors() {
     let result: Result<serde_json::Value, _> = serde_saphyr::from_str(yaml_input);
 
     // The YAML input is invalid, so expect an Err, but no panic
-    println!("{result:?}");
     assert!(
         result.is_err(),
         "Parsing invalid YAML should return an error, not panic."
@@ -46,7 +44,6 @@ fn test_folded_scalar_with_indented_content() {
     let yaml_input = ">\n  @ !";
     let result: Result<serde_json::Value, _> = serde_saphyr::from_str(yaml_input);
 
-    println!("{result:?}");
     let value = result.expect("Indented folded scalar should deserialize successfully");
     assert_eq!(value, serde_json::Value::String("@ !\n".to_string()));
 }

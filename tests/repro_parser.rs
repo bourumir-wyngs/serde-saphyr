@@ -16,7 +16,7 @@ fn test_parser_direct_borrowing() {
     match event {
         Event::Scalar(cow, _, _, _) => {
             match cow {
-                Cow::Borrowed(s) => println!("Borrowed: '{}'", s),
+                Cow::Borrowed(_) => (),
                 Cow::Owned(s) => panic!("Expected Borrowed, got Owned: '{}'", s),
             }
             assert_eq!(cow, "hello");
@@ -43,7 +43,7 @@ fn test_parser_direct_borrowing_quoted() {
     match event {
         Event::Scalar(cow, _, _, _) => {
             match cow {
-                Cow::Borrowed(s) => println!("Borrowed: '{}'", s),
+                Cow::Borrowed(_) => (),
                 Cow::Owned(s) => panic!("Expected Borrowed, got Owned: '{}'", s),
             }
             assert_eq!(cow, "hello world");

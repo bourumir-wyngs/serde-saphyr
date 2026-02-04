@@ -37,7 +37,6 @@ fn rc_anchor_shared_in_sequence_has_repeated_anchor_and_values() {
     let seq = vec![Wrap(RcAnchor(shared.clone())), Wrap(RcAnchor(shared))];
 
     let yaml = to_string(&seq).expect("serialize RcAnchor sequence");
-    println!("RC anchor seq:\n{}", yaml);
 
     let expected = indoc! {r#"
         - &a1
@@ -70,7 +69,6 @@ fn arc_anchor_shared_in_map_has_repeated_anchor_and_values() {
     map.insert("b", Wrap(ArcAnchor(shared)));
 
     let yaml = to_string(&map).expect("serialize ArcAnchor map");
-    println!("ARC anchor map:\n{}", yaml);
 
     let expected = indoc! {r#"
         a: &a1
@@ -97,7 +95,6 @@ fn rc_weak_anchor_present_serializes_under_anchor() {
     });
     let weak = Rc::downgrade(&strong);
     let yaml = to_string(&RcWeakAnchor(weak)).expect("serialize RcWeakAnchor present");
-    println!("RC weak (present) as YAML:\n{}", yaml);
 
     let expected = indoc! {r#"
         &a1
@@ -123,7 +120,6 @@ fn arc_weak_anchor_present_serializes_under_anchor() {
     });
     let weak = Arc::downgrade(&strong);
     let yaml = to_string(&ArcWeakAnchor(weak)).expect("serialize ArcWeakAnchor present");
-    println!("ARC weak (present) as YAML:\n{}", yaml);
 
     let expected = indoc! {r#"
         &a1
@@ -151,7 +147,6 @@ fn rc_weak_anchor_dangling_serializes_as_null() {
         Rc::downgrade(&temp)
     }; // temp dropped -> weak now dangling
     let yaml = to_string(&RcWeakAnchor(weak)).expect("serialize RcWeakAnchor dangling");
-    println!("RC weak (dangling) as YAML:\n{}", yaml);
     let expected = "null\n";
     assert_eq!(
         yaml, expected,
@@ -183,7 +178,6 @@ fn struct_with_rcanchor_of_rc_string_serializes_with_anchor_and_alias() {
     ];
 
     let yaml = to_string(&v).expect("serialize Holder with RcAnchor<Rc<String>>");
-    println!("Holder YAML:\n{}", yaml);
 
     // Avoid brittle formatting; ensure the important bits are present
     assert!(
@@ -228,7 +222,6 @@ fn node_with_unique_unshared_and_present_weak() {
     };
 
     let yaml = to_string(&parent).expect("serialize parent node with weak and unique");
-    println!("Parent with weak+unique YAML:\n{}", yaml);
 
     // We expect two anchors emitted (&a1 for target via weak, &a2 for unique), but no aliases
     // Accept either form depending on formatter: inline after colon (preferred) or on next line.

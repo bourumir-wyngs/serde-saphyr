@@ -30,7 +30,6 @@ fn missing_required_field_in_nested_struct_renders_snippet_at_parent_container()
 
     let err = serde_saphyr::from_str::<Root>(yaml).expect_err("must fail");
     let rendered = err.to_string();
-    // println!("{rendered}");
 
     assert!(
         rendered.contains("missing field `platform`"),
@@ -45,7 +44,6 @@ fn missing_required_field_in_sequence_item_renders_snippet_at_item_container() {
 
     let err = serde_saphyr::from_str::<Vec<Item>>(yaml).expect_err("must fail");
     let rendered = err.to_string();
-    // println!("{rendered}");
 
     assert!(
         rendered.contains("missing field `platform`"),

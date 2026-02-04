@@ -167,8 +167,6 @@ fn snippet_crops_very_long_lines_around_error_column() {
         "expected cropped snippet to include ellipsis markers, got:\n{rendered}"
     );
 
-    println!("{rendered}");
-
     // The snippet window should include the surrounding context lines and apply the same
     // horizontal crop window to all of them (so they remain vertically aligned).
     // Assert that we can see cropped fragments from:
