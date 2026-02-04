@@ -639,13 +639,15 @@ impl Error {
                 let (primary_text, primary_start) = crate::de_snipped::crop_source_window(
                     text, 
                     &locs.reference_location, 
-                    crate::de_snipped::LineMapping::Identity
+                    crate::de_snipped::LineMapping::Identity,
+                    crop_radius,
                 );
                 // Crop secondary (defined) location
                 let (secondary_text, secondary_start) = crate::de_snipped::crop_source_window(
                     text, 
                     &locs.defined_location, 
-                    crate::de_snipped::LineMapping::Identity
+                    crate::de_snipped::LineMapping::Identity,
+                    crop_radius,
                 );
                 let secondary = if !secondary_text.is_empty() {
                     Some((secondary_text, secondary_start))
@@ -658,7 +660,12 @@ impl Error {
                 // Single location fallback
                 let (cropped, start_line) = match inner.location() {
                     Some(loc) if loc != Location::UNKNOWN && crop_radius != 0 => {
-                        crate::de_snipped::crop_source_window(text, &loc, crate::de_snipped::LineMapping::Identity)
+                        crate::de_snipped::crop_source_window(
+                            text,
+                            &loc,
+                            crate::de_snipped::LineMapping::Identity,
+                            crop_radius,
+                        )
                     }
                     _ => (String::new(), 1),
                 };
@@ -708,13 +715,15 @@ impl Error {
                 let (primary_text, primary_start) = crate::de_snipped::crop_source_window(
                     text, 
                     &locs.reference_location, 
-                    mapping
+                    mapping,
+                    crop_radius,
                 );
                 // Crop secondary (defined) location
                 let (secondary_text, secondary_start) = crate::de_snipped::crop_source_window(
                     text, 
                     &locs.defined_location, 
-                    mapping
+                    mapping,
+                    crop_radius,
                 );
                 let secondary = if !secondary_text.is_empty() {
                     Some((secondary_text, secondary_start))
@@ -727,7 +736,7 @@ impl Error {
                 // Single location fallback
                 let (cropped, final_start) = match inner.location() {
                     Some(loc) if loc != Location::UNKNOWN && crop_radius != 0 => {
-                        crate::de_snipped::crop_source_window(text, &loc, mapping)
+                        crate::de_snipped::crop_source_window(text, &loc, mapping, crop_radius)
                     }
                     _ => (String::new(), start_line),
                 };

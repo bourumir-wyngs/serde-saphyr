@@ -42,7 +42,12 @@ pub(crate) enum LineMapping {
 /// `Snippet::new(&cropped_text, ..).with_offset(start_line)`.
 #[cold]
 #[inline(never)]
-pub(crate) fn crop_source_window(text: &str, location: &Location, mapping: LineMapping) -> (String, usize) {
+pub(crate) fn crop_source_window(
+    text: &str,
+    location: &Location,
+    mapping: LineMapping,
+    crop_radius: usize,
+) -> (String, usize) {
     if text.is_empty() || location == &Location::UNKNOWN {
         return (String::new(), 1);
     }
@@ -87,7 +92,86 @@ pub(crate) fn crop_source_window(text: &str, location: &Location, mapping: LineM
         text.len()
     };
 
-    let cropped = text[window_start..window_end].to_owned();
+    let window_text = &text[window_start..window_end];
+
+    // Storage-time horizontal cropping to avoid retaining huge single-line scalars.
+    //
+    // Important correctness constraint: later snippet rendering maps the *original* column
+    // number from `Location` into a byte offset within the stored snippet text.
+    // Therefore we must NOT remove bytes to the left of the error column on the error line.
+    //
+    // Policy:
+    // - Error line: keep full prefix, truncate only the right side past `error_col + crop_radius`.
+    // - Context lines: crop both sides using the same `[left_col, right_col]` window.
+    let cropped = if crop_radius == 0 {
+        window_text.to_owned()
+    } else {
+        // Avoid changing the rendered output for normal-sized inputs.
+        // Only apply storage-time horizontal cropping when the vertical window contains
+        // very large lines (e.g., base64 blobs / huge scalars), to reduce memory retention.
+        let needs_storage_crop = window_text.len() > 16 * 1024
+            || window_text
+                .lines()
+                .any(|l| l.strip_suffix('\r').unwrap_or(l).len() > 4 * 1024);
+
+        if !needs_storage_crop {
+            return (
+                window_text.to_owned(),
+                match mapping {
+                    LineMapping::Identity => window_start_row,
+                    LineMapping::Offset { start_line } => start_line
+                        .saturating_add(window_start_row)
+                        .saturating_sub(1),
+                },
+            );
+        }
+
+        let error_row = relative_row;
+        let error_col = location.column as usize;
+        let left_col = error_col.saturating_sub(crop_radius).max(1);
+        let right_col = error_col.saturating_add(crop_radius);
+
+        let mut out = String::with_capacity(window_text.len().min(4096));
+        let mut old_pos = 0usize;
+        let mut row = window_start_row;
+        while old_pos < window_text.len() {
+            let next_nl = window_text[old_pos..].find('\n').map(|i| old_pos + i);
+            let (line_raw, had_nl, consumed) = match next_nl {
+                Some(nl) => (&window_text[old_pos..nl], true, (nl - old_pos) + 1),
+                None => (
+                    &window_text[old_pos..],
+                    false,
+                    window_text.len().saturating_sub(old_pos),
+                ),
+            };
+
+            // Normalize CRLF: strip a trailing '\r' from the line content if present.
+            let line = line_raw.strip_suffix('\r').unwrap_or(line_raw);
+
+            if row == error_row {
+                // Preserve the left prefix so `error_col` continues to map correctly.
+                let end_col_excl = right_col.saturating_add(1);
+                let end_byte = col_to_byte_offset_in_line(line, end_col_excl).unwrap_or(line.len());
+                let right_clipped = end_byte < line.len();
+                out.push_str(&line[..end_byte]);
+                if right_clipped {
+                    out.push('…');
+                }
+            } else {
+                let (rendered, _crop) = crop_line_by_cols(line, left_col, right_col);
+                out.push_str(&rendered);
+            }
+
+            if had_nl {
+                out.push('\n');
+            }
+
+            old_pos = old_pos.saturating_add(consumed);
+            row = row.saturating_add(1);
+        }
+
+        sanitize_terminal_snippet_preserve_len(out)
+    };
 
     let start_line = match mapping {
         LineMapping::Identity => window_start_row,
@@ -97,6 +181,59 @@ pub(crate) fn crop_source_window(text: &str, location: &Location, mapping: LineM
     };
 
     (cropped, start_line)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn crop_source_window_truncates_huge_error_line_on_the_right_only() {
+        let text = format!("key: {}\n", "A".repeat(10_000));
+        let loc = Location::new(1, 6);
+
+        let (cropped, start_line) = crop_source_window(&text, &loc, LineMapping::Identity, 20);
+        assert_eq!(start_line, 1);
+
+        // Should not retain the full blob.
+        assert!(cropped.len() < 512, "cropped len was {}", cropped.len());
+
+        let line = cropped.lines().next().unwrap();
+        assert!(line.starts_with("key: "));
+        assert!(line.ends_with('…'), "expected ellipsis at end, got: {line:?}");
+
+        // The original column must still map: col 6 points at the first 'A'.
+        let off = col_to_byte_offset_in_line(line, 6).expect("col 6 offset");
+        assert_eq!(&line[off..off + 1], "A");
+    }
+
+    #[test]
+    fn crop_source_window_crops_context_lines_on_both_sides() {
+        let text = format!(
+            "{}\nkey: {}\n{}\n",
+            "X".repeat(10_000),
+            "A".repeat(10_000),
+            "Y".repeat(10_000)
+        );
+        let loc = Location::new(2, 6);
+
+        let (cropped, _start_line) = crop_source_window(&text, &loc, LineMapping::Identity, 8);
+        let mut lines = cropped.lines();
+
+        let before = lines.next().unwrap();
+        let error = lines.next().unwrap();
+        let after = lines.next().unwrap();
+
+        // With an error near the start of the line (col 6), `left_col` resolves to 1,
+        // so context lines are expected to be right-truncated, not left-truncated.
+        assert!(before.ends_with('…'), "before line not right-truncated: {before:?}");
+        assert!(after.ends_with('…'), "after line not right-truncated: {after:?}");
+        assert!(before.len() < 256, "before line too large: {}", before.len());
+        assert!(after.len() < 256, "after line too large: {}", after.len());
+
+        // Error line must keep its left prefix for column mapping.
+        assert!(error.starts_with("key: "));
+    }
 }
 
 /// Parameters controlling how to render a diagnostic snippet.
