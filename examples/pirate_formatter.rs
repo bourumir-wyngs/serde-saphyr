@@ -23,9 +23,7 @@
 //!   when the error value is wrapped in `Error::WithSnippet`, which depends on the parsing
 //!   options (see the validation examples below).
 
-use serde_saphyr::{
-    DefaultMessageFormatter, Error, Localizer, MessageFormatter, UserMessageFormatter,
-};
+use serde_saphyr::{DefaultMessageFormatter, Error, Localizer, Location, MessageFormatter, UserMessageFormatter};
 use serde::Deserialize;
 use std::borrow::Cow;
 
@@ -75,6 +73,17 @@ impl Localizer for PirateLocalizer {
         } else {
             format!("Bug lurks on line {}, then {} runes in", loc.line(), loc.column())
         }
+    }
+    
+    fn snippet_label_value_used_here(&self) -> Cow<'static, str> {
+        Cow::Borrowed("This be where the scribble is put to use!")
+    }
+
+    fn validation_snippet_indirect_anchor_intro(&self, def: Location) -> String {
+        format!(
+            "  | This scribble hails from the anchor at line {}, column {}:",
+            def.line(), def.column()
+        )
     }
 }
 
@@ -206,7 +215,9 @@ fn main() {
         );
     }
 
-    // Example 4: Validation
+    // Example 4: Validation with dual-snippet (anchor + alias)
+    // The invalid value is defined with an anchor and referenced via alias,
+    // so the error shows both where the alias is used and where the anchor defined the value.
     #[cfg(feature = "garde")]
     {
         use garde::Validate;
@@ -214,13 +225,15 @@ fn main() {
         #[derive(Debug, Deserialize, Validate)]
         #[allow(dead_code)]
         struct Cfg {
-            #[serde(rename = "secondString")]
+            #[garde(skip)]
+            name: String,
             #[garde(length(min = 2))]
-            second_string: String,
+            nickname: String,
         }
 
-        let yaml = "secondString: x\n";
-        println!("\n\n--- Attempting to parse YAML with garde validation error ---");
+        // The anchor &short defines "x" (too short), and *short references it for nickname
+        let yaml = "name: &short \"x\"\nnickname: *short\n";
+        println!("\n\n--- Attempting to parse YAML with garde validation error (dual-snippet) ---");
         println!("{}", yaml.trim());
 
         let err = serde_saphyr::from_str_with_options_valid::<Cfg>(
@@ -240,13 +253,15 @@ fn main() {
         #[derive(Debug, Deserialize, Validate)]
         #[allow(dead_code)]
         struct Cfg {
-            #[serde(rename = "secondString")]
+            #[validate(skip)]
+            name: String,
             #[validate(length(min = 2))]
-            second_string: String,
+            nickname: String,
         }
 
-        let yaml = "secondString: x\n";
-        println!("\n\n--- Attempting to parse YAML with validator validation error ---");
+        // The anchor &short defines "x" (too short), and *short references it for nickname
+        let yaml = "name: &short \"x\"\nnickname: *short\n";
+        println!("\n\n--- Attempting to parse YAML with validator validation error (dual-snippet) ---");
         println!("{}", yaml.trim());
 
         let err = serde_saphyr::from_str_with_options_validate::<Cfg>(

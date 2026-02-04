@@ -13,7 +13,15 @@
 //!
 //! This helps users understand that an error at an alias usage site originated
 //! from a value defined elsewhere in the YAML document.
+//!
+//! # Validation errors with dual-snippet (garde)
+//! When using the `garde` validation crate, validation errors can also show
+//! dual-snippet rendering. If an invalid value is defined with an anchor and
+//! referenced via alias, the error shows both where the value is used (alias)
+//! and where it was originally defined (anchor).
 
+#[cfg(feature = "garde")]
+use garde::Validate;
 use serde::Deserialize;
 use serde_saphyr::Error;
 
@@ -106,4 +114,54 @@ flag: *val
     println!("  1. Shows the primary snippet at the alias usage site");
     println!("  2. Shows a secondary snippet at the anchor definition site");
     println!("  3. Labels them appropriately ('the value is used here' / 'defined here')");
+
+    // Validation error with dual-snippet rendering (requires 'garde' feature)
+    #[cfg(feature = "garde")]
+    validation_error_dual_snippet();
+}
+
+/// Demonstrates dual-snippet rendering for validation errors using garde.
+///
+/// When an invalid value is defined with an anchor and referenced via alias,
+/// the validation error shows both locations:
+/// - Where the alias is used (and validation fails)
+/// - Where the anchor originally defined the invalid value
+#[cfg(feature = "garde")]
+fn validation_error_dual_snippet() {
+    println!("\n=== Validation error with dual-snippet (garde) ===\n");
+
+    // A struct with garde validation: second_string must have length >= 2
+    #[derive(Debug, Deserialize, Validate)]
+    #[serde(rename_all = "camelCase")]
+    #[allow(dead_code)]
+    struct ValidatedConfig {
+        #[garde(skip)]
+        first_string: String,
+        #[garde(length(min = 2))]
+        second_string: String,
+    }
+
+    // YAML where an anchor defines a too-short string "x", and an alias uses it
+    // for a field that requires length >= 2. The validation error will show
+    // both where the alias is used AND where the anchor defined the value.
+    let yaml = r#"
+firstString: &short "x"
+secondString: *short
+"#;
+
+    println!("Parsing YAML with anchor (&short) defining invalid value:");
+    println!("{}", yaml);
+
+    let result = serde_saphyr::from_str_valid::<ValidatedConfig>(yaml);
+    match result {
+        Ok(cfg) => println!("Parsed: {:?}", cfg),
+        Err(err) => {
+            eprintln!("{err}");
+
+            println!("\n--- Validation error details ---");
+            println!("The validation error shows dual-snippet rendering:");
+            println!("  - Primary snippet: where the alias (*short) is used");
+            println!("  - Secondary snippet: where the anchor (&short) defined the invalid value");
+        }
+    }
 }
