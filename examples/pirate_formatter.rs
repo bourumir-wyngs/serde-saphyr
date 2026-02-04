@@ -68,6 +68,14 @@ impl Localizer for PirateLocalizer {
         // Keep it pirate-speak so validation snippets are fully localized.
         format!("Arrr! Ye violated the code: {entry} for `{resolved_path}`")
     }
+
+    fn snippet_location_prefix(&self, loc: serde_saphyr::Location) -> String {
+        if loc == serde_saphyr::Location::UNKNOWN {
+            String::new()
+        } else {
+            format!("Bug lurks on line {}, then {} runes in", loc.line(), loc.column())
+        }
+    }
 }
 
 /// A custom formatter that translates error messages into Pirate speak.

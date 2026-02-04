@@ -1297,26 +1297,11 @@ fn fmt_error_rendered(
 
             // Display-wrapper approach (no recursion): render the inner error via our
             // plain renderer into a string.
-            let msg = {
-                struct PlainDisplay<'a> {
-                    err: &'a Error,
-                    formatter: &'a dyn MessageFormatter,
-                }
-                impl fmt::Display for PlainDisplay<'_> {
-                    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                        fmt_error_plain_with_formatter(f, self.err, self.formatter)
-                    }
-                }
-                PlainDisplay {
-                    err: error,
-                    formatter: options.formatter,
-                }
-                .to_string()
-            };
+            let msg = options.formatter.format_message(error);
 
             let ctx = crate::de_snipped::Snippet::new(text, "<input>", *crop_radius)
                 .with_offset(*start_line);
-            ctx.fmt_or_fallback(f, Level::ERROR, options.formatter.localizer(), &msg, &location)
+            ctx.fmt_or_fallback(f, Level::ERROR, options.formatter.localizer(), msg.as_ref(), &location)
         }
         _ => fmt_error_plain_with_formatter(f, err, options.formatter),
     }

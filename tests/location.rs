@@ -210,14 +210,15 @@ fn error_with_snippet_renders_diagnostic_and_preserves_message() {
     let err_plain = serde_saphyr::from_str_with_options::<String>(yaml, opts)
         .expect_err("unknown anchor should error");
     let plain = err_plain.to_string();
+    assert_eq!(plain, "alias references unknown anchor at line 1, column 1");
 
     // And compare to the default-rendered error (snippet enabled by default).
     let err = from_str::<String>(yaml).expect_err("unknown anchor should error");
     let rendered = err.to_string();
 
     assert!(
-        rendered.contains(&plain),
-        "rendered output must include the original message.\nplain: {plain}\nrendered: {rendered}"
+        rendered.contains("alias references unknown anchor"),
+        "rendered output must include the original message.\nrendered: {rendered}"
     );
     assert!(
         rendered.contains("<input>:1:1"),

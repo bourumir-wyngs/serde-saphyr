@@ -166,6 +166,14 @@ pub trait Localizer {
     /// Optional hook to override an external message.
     ///
     /// Default implementation returns `None` meaning "keep external wording".
+    fn snippet_location_prefix(&self, loc: Location) -> String {
+        if loc == Location::UNKNOWN {
+            String::new()
+        } else {
+            format!("line {} column {}", loc.line(), loc.column())
+        }
+    }
+
     fn override_external_message<'a>(&self, _msg: ExternalMessage<'a>) -> Option<Cow<'a, str>> {
         None
     }

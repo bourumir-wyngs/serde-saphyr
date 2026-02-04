@@ -156,7 +156,7 @@ impl<'a> Snippet<'a> {
         let absolute_row = location.line as usize;
         let col = location.column as usize;
 
-        let (relative_row, window_title_row) = match self.mapping {
+        let (relative_row, _window_title_row) = match self.mapping {
             LineMapping::Identity => (absolute_row, absolute_row),
             LineMapping::Offset { start_line } => {
                 if absolute_row < start_line {
@@ -237,10 +237,10 @@ impl<'a> Snippet<'a> {
                 .saturating_sub(1),
         };
 
+        let loc_prefix = l10n.snippet_location_prefix(*location);
+
         let report = &[level
-            .primary_title(format!(
-                "line {window_title_row} column {col}: {msg}"
-            ))
+            .primary_title(format!("{}: {msg}", loc_prefix))
             .element(
                 AnnotateSnippet::source(&window_text)
                     .line_start(window_start_absolute_row)
