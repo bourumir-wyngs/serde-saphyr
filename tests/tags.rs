@@ -23,7 +23,7 @@ fn tagged_int_cannot_parse_into_string() {
         yaml::from_str::<String>("!!int 42").expect_err("!!int should not deserialize into String");
     let msg = format!("{}", err);
     assert!(
-        msg.contains("cannot deserialize scalar tagged"),
+        msg.contains("cannot deserialize tagged scalar"),
         "unexpected error: {msg}"
     );
 }
@@ -34,7 +34,7 @@ fn tagged_bool_cannot_parse_into_string() {
         .expect_err("!!int should not deserialize into String");
     let msg = format!("{}", err);
     assert!(
-        msg.contains("cannot deserialize scalar tagged"),
+        msg.contains("cannot deserialize tagged scalar"),
         "unexpected error: {msg}"
     );
 }

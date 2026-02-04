@@ -822,7 +822,7 @@ where
                     && anchor_store::rc_recursive_reentrant(id)
                 {
                     return Err(D::Error::custom(
-                        "Recursive references require weak recursion types",
+                        "recursive references require weak recursion types",
                     ));
                 }
 
@@ -888,7 +888,7 @@ where
                     && anchor_store::arc_recursive_reentrant(id)
                 {
                     return Err(D::Error::custom(
-                        "Recursive references require weak recursion types",
+                        "recursive references require weak recursion types",
                     ));
                 }
 

@@ -417,7 +417,7 @@ pub enum Error {
         location: Location,
     },
 
-    /// Recursive references require weak recursion types.
+    /// recursive references require weak recursion types.
     RecursiveReferencesRequireWeakTypes {
         location: Location,
     },

@@ -48,7 +48,7 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
                  If you just use !!binary for documentation/annotation, set ignore_binary_tag_for_string in Options",
         ),
         Error::TaggedScalarCannotDeserializeIntoString { .. } => {
-            Cow::Borrowed("cannot deserialize scalar tagged into string")
+            Cow::Borrowed("cannot deserialize tagged scalar into string")
         }
         Error::UnexpectedSequenceEnd { .. } => Cow::Borrowed("unexpected sequence end"),
         Error::UnexpectedMappingEnd { .. } => Cow::Borrowed("unexpected mapping end"),
@@ -118,7 +118,7 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
             Cow::Borrowed("internal recursion stack empty")
         }
         Error::RecursiveReferencesRequireWeakTypes { .. } => {
-            Cow::Borrowed("Recursive references require weak recursion types")
+            Cow::Borrowed("recursive references require weak recursion types")
         }
         Error::InvalidScalar { ty, .. } => Cow::Owned(format!("invalid {ty}")),
         Error::SerdeInvalidType {
