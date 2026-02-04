@@ -1430,7 +1430,7 @@ fn fmt_error_rendered(
             // default message suffix " (defined at …)" if present.
             if has_secondary {
                 if let Error::AliasError { locations, .. } = error.as_ref() {
-                    let suffix = l10n.alias_defined_at_suffix(locations.defined_location);
+                    let suffix = l10n.alias_defined_at(locations.defined_location);
                     if let Some(stripped) = msg.as_ref().strip_suffix(&suffix) {
                         msg = Cow::Owned(stripped.to_string());
                     }
@@ -1439,7 +1439,7 @@ fn fmt_error_rendered(
 
             if has_secondary {
                 // Render primary snippet with "value used here" label
-                let label = l10n.snippet_label_value_used_here();
+                let label = l10n.value_used_here();
                 let ctx = crate::de_snipped::Snippet::new(text, label.as_ref(), *crop_radius)
                     .with_offset(*start_line);
                 ctx.fmt_or_fallback(f, Level::ERROR, l10n, msg.as_ref(), &location)?;
@@ -1448,14 +1448,14 @@ fn fmt_error_rendered(
                 if let Some((secondary_text, secondary_start)) = secondary_snippet {
                     let def_loc = error.locations().unwrap().defined_location;
                     writeln!(f)?;
-                    writeln!(f, "{}", l10n.validation_snippet_indirect_anchor_intro(def_loc))?;
+                    writeln!(f, "{}", l10n.value_comes_from_the_anchor(def_loc))?;
                     crate::de_snipped::fmt_snippet_window_offset_or_fallback(
                         f,
                         l10n,
                         &def_loc,
                         secondary_text,
                         *secondary_start,
-                        l10n.snippet_label_defined_window().as_ref(),
+                        l10n.defined_window().as_ref(),
                         *crop_radius,
                     )?;
                 }
@@ -1545,39 +1545,39 @@ fn fmt_validation_error_with_snippets_offset(
                 params: &[],
             })
             .unwrap_or(Cow::Borrowed(entry_raw.as_str()));
-        let base_msg = l10n.validation_snippet_base_message(entry.as_ref(), &resolved_path);
+        let base_msg = l10n.validation_base_message(entry.as_ref(), &resolved_path);
 
         match (ref_loc, def_loc) {
             (Location::UNKNOWN, Location::UNKNOWN) => {
                 write!(f, "{base_msg}")?;
             }
             (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
-                let label = l10n.snippet_label_defined();
+                let label = l10n.defined();
                 let ctx = crate::de_snipped::Snippet::new(text, label.as_ref(), crop_radius)
                     .with_offset(text_start_line);
                 ctx.fmt_or_fallback(f, Level::ERROR, l10n, &base_msg, &r)?;
             }
             (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
-                let label = l10n.snippet_label_defined_here();
+                let label = l10n.defined_here();
                 let ctx = crate::de_snipped::Snippet::new(text, label.as_ref(), crop_radius)
                     .with_offset(text_start_line);
                 ctx.fmt_or_fallback(f, Level::ERROR, l10n, &base_msg, &d)?;
             }
             (r, d) => {
-                let label = l10n.snippet_label_value_used_here();
+                let label = l10n.value_used_here();
                 let ctx = crate::de_snipped::Snippet::new(text, label.as_ref(), crop_radius)
                     .with_offset(text_start_line);
-                let invalid_here = l10n.validation_snippet_invalid_here(&base_msg);
+                let invalid_here = l10n.invalid_here(&base_msg);
                 ctx.fmt_or_fallback(f, Level::ERROR, l10n, &invalid_here, &r)?;
                 writeln!(f)?;
-                writeln!(f, "{}", l10n.validation_snippet_indirect_anchor_intro(d))?;
+                writeln!(f, "{}", l10n.value_comes_from_the_anchor(d))?;
                 crate::de_snipped::fmt_snippet_window_offset_or_fallback(
                     f,
                     l10n,
                     &d,
                     text,
                     text_start_line,
-                    l10n.snippet_label_defined_window().as_ref(),
+                    l10n.defined_window().as_ref(),
                     crop_radius,
                 )?;
             }
@@ -1616,39 +1616,39 @@ fn fmt_validator_error_with_snippets_offset(
 
         let resolved_path = format_path_with_resolved_leaf(&issue.path, &resolved_leaf);
         let entry = issue.display_entry_overridden(l10n, ExternalMessageSource::Validator);
-        let base_msg = l10n.validation_snippet_base_message(&entry, &resolved_path);
+        let base_msg = l10n.validation_base_message(&entry, &resolved_path);
 
         match (locs.reference_location, locs.defined_location) {
             (Location::UNKNOWN, Location::UNKNOWN) => {
                 write!(f, "{base_msg}")?;
             }
             (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
-                let label = l10n.snippet_label_defined();
+                let label = l10n.defined();
                 let ctx = crate::de_snipped::Snippet::new(text, label.as_ref(), crop_radius)
                     .with_offset(text_start_line);
                 ctx.fmt_or_fallback(f, Level::ERROR, l10n, &base_msg, &r)?;
             }
             (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
-                let label = l10n.snippet_label_defined_here();
+                let label = l10n.defined_here();
                 let ctx = crate::de_snipped::Snippet::new(text, label.as_ref(), crop_radius)
                     .with_offset(text_start_line);
                 ctx.fmt_or_fallback(f, Level::ERROR, l10n, &base_msg, &d)?;
             }
             (r, d) => {
-                let label = l10n.snippet_label_value_used_here();
+                let label = l10n.value_used_here();
                 let ctx = crate::de_snipped::Snippet::new(text, label.as_ref(), crop_radius)
                     .with_offset(text_start_line);
-                let invalid_here = l10n.validation_snippet_invalid_here(&base_msg);
+                let invalid_here = l10n.invalid_here(&base_msg);
                 ctx.fmt_or_fallback(f, Level::ERROR, l10n, &invalid_here, &r)?;
                 writeln!(f)?;
-                writeln!(f, "{}", l10n.validation_snippet_indirect_anchor_intro(d))?;
+                writeln!(f, "{}", l10n.value_comes_from_the_anchor(d))?;
                 crate::de_snipped::fmt_snippet_window_offset_or_fallback(
                     f,
                     l10n,
                     &d,
                     text,
                     text_start_line,
-                    l10n.snippet_label_defined_window().as_ref(),
+                    l10n.defined_window().as_ref(),
                     crop_radius,
                 )?;
             }

@@ -98,9 +98,9 @@ pub trait Localizer {
 
     /// Label used when a path has no leaf.
     ///
-    /// Default: `"<root>"`.
+    /// Default empty
     fn root_path_label(&self) -> Cow<'static, str> {
-        Cow::Borrowed("<root>")
+        Cow::Borrowed("")
     }
 
     /// Suffix for alias-related errors when a distinct defined-location is available.
@@ -109,7 +109,7 @@ pub trait Localizer {
     /// `" (defined at line X, column Y)"`.
     ///
     /// Default: `format!(" (defined at line {line}, column {column})", ...)`.
-    fn alias_defined_at_suffix(&self, defined: Location) -> String {
+    fn alias_defined_at(&self, defined: Location) -> String {
         format!(" (defined at line {}, column {})", defined.line, defined.column)
     }
 
@@ -149,14 +149,14 @@ pub trait Localizer {
     /// “definition” site.
     ///
     /// Default: `"(defined)"`.
-    fn snippet_label_defined(&self) -> Cow<'static, str> {
+    fn defined(&self) -> Cow<'static, str> {
         Cow::Borrowed("(defined)")
     }
 
     /// Label used for a snippet window when we only have a “defined here” location.
     ///
     /// Default: `"(defined here)"`.
-    fn snippet_label_defined_here(&self) -> Cow<'static, str> {
+    fn defined_here(&self) -> Cow<'static, str> {
         Cow::Borrowed("(defined here)")
     }
 
@@ -164,28 +164,28 @@ pub trait Localizer {
     /// at a different location than where it was defined.
     ///
     /// Default: `"the value is used here"`.
-    fn snippet_label_value_used_here(&self) -> Cow<'static, str> {
+    fn value_used_here(&self) -> Cow<'static, str> {
         Cow::Borrowed("the value is used here")
     }
 
     /// Label used for the secondary snippet window that points at the anchor definition.
     ///
     /// Default: `"defined here"`.
-    fn snippet_label_defined_window(&self) -> Cow<'static, str> {
+    fn defined_window(&self) -> Cow<'static, str> {
         Cow::Borrowed("defined here")
     }
 
     /// Compose the base validation message used in snippet rendering.
     ///
     /// Default: `"validation error: {entry} for `{resolved_path}`"`.
-    fn validation_snippet_base_message(&self, entry: &str, resolved_path: &str) -> String {
+    fn validation_base_message(&self, entry: &str, resolved_path: &str) -> String {
         format!("validation error: {entry} for `{resolved_path}`")
     }
 
     /// Compose the “invalid here” prefix for the primary snippet message.
     ///
     /// Default: `"invalid here, {base}"`.
-    fn validation_snippet_invalid_here(&self, base: &str) -> String {
+    fn invalid_here(&self, base: &str) -> String {
         format!("invalid here, {base}")
     }
 
@@ -194,7 +194,7 @@ pub trait Localizer {
     ///
     /// Default:
     /// `"  | This value comes indirectly from the anchor at line {line} column {column}:"`.
-    fn validation_snippet_indirect_anchor_intro(&self, def: Location) -> String {
+    fn value_comes_from_the_anchor(&self, def: Location) -> String {
         format!(
             "  | This value comes indirectly from the anchor at line {} column {}:",
             def.line, def.column

@@ -206,7 +206,7 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
                 (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
                     Cow::Borrowed(msg.as_str())
                 }
-                (_r, d) => Cow::Owned(format!("{msg}{}", l10n.alias_defined_at_suffix(d))),
+                (_r, d) => Cow::Owned(format!("{msg}{}", l10n.alias_defined_at(d))),
             }
         }
 

@@ -61,7 +61,7 @@ impl Localizer for PirateLocalizer {
         }
     }
 
-    fn validation_snippet_base_message(&self, entry: &str, resolved_path: &str) -> String {
+    fn validation_base_message(&self, entry: &str, resolved_path: &str) -> String {
         // This text is shown as the snippet title/label for validation errors.
         // Keep it pirate-speak so validation snippets are fully localized.
         format!("Arrr! Ye violated the code: {entry} for `{resolved_path}`")
@@ -75,22 +75,22 @@ impl Localizer for PirateLocalizer {
         }
     }
 
-    fn snippet_label_value_used_here(&self) -> Cow<'static, str> {
+    fn value_used_here(&self) -> Cow<'static, str> {
         Cow::Borrowed("This be where the scribble is put to use!")
     }
 
-    fn validation_snippet_indirect_anchor_intro(&self, def: Location) -> String {
+    fn value_comes_from_the_anchor(&self, def: Location) -> String {
         format!(
             "  | This scribble hails from the anchor at line {}, column {}:",
             def.line(), def.column()
         )
     }
 
-    fn validation_snippet_invalid_here(&self, base: &str) -> String {
+    fn invalid_here(&self, base: &str) -> String {
         format!("crap here, {base}")
     }
 
-    fn snippet_label_defined_window(&self) -> Cow<'static, str> {
+    fn defined_window(&self) -> Cow<'static, str> {
         Cow::Borrowed("scribbled here")
     }
 }
