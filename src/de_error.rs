@@ -1500,7 +1500,7 @@ fn fmt_error_with_snippets_offset(
 
     // Keep existing snippet output if the nested error is already wrapped.
     if let Error::WithSnippet { .. } = err {
-        return write!(f, "{err}");
+        return fmt_error_rendered(f, err, RenderOptions::new(formatter));
     }
 
     #[cfg(feature = "garde")]
@@ -1829,5 +1829,33 @@ mod tests {
                 defined_location: defined_loc,
             })
         );
+    }
+
+    #[test]
+    fn nested_snippet_preserves_custom_formatter() {
+        struct Custom;
+        impl MessageFormatter for Custom {
+            fn localizer(&self) -> &dyn Localizer {
+                &DEFAULT_ENGLISH_LOCALIZER
+            }
+            fn format_message<'a>(&self, err: &'a Error) -> Cow<'a, str> {
+                match err {
+                    Error::Message { msg, .. } => Cow::Owned(format!("CUSTOM: {}", msg.as_str())),
+                    _ => Cow::Borrowed(""),
+                }
+            }
+        }
+        let loc = Location::new(1, 1);
+        let base = Error::Message {
+            msg: "original".to_string(),
+            location: loc,
+        };
+        let text = "input";
+        let start_line = 1;
+        let radius = 1;
+        let inner = base.with_snippet_offset(text, start_line, radius);
+        let outer = inner.with_snippet_offset(text, start_line, radius);
+        let rendered = outer.render_with_options(RenderOptions::new(&Custom));
+        assert!(rendered.contains("CUSTOM: original"));
     }
 }
