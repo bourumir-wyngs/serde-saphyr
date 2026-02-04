@@ -67,7 +67,7 @@ fn custom_formatter_is_used_for_nested_validation_errors_with_snippets() {
                 Error::UnknownAnchor { .. } => Cow::Borrowed("custom unknown anchor"),
                 // Keep the header empty so the assertion only targets nested errors.
                 Error::ValidationErrors { .. } => Cow::Borrowed(""),
-                _ => Cow::Owned(err.to_string()),
+                _ => UserMessageFormatter.format_message(err),
             }
         }
     }
@@ -99,7 +99,7 @@ fn custom_formatter_is_used_for_nested_validator_errors_with_snippets() {
                 Error::UnknownAnchor { .. } => Cow::Borrowed("custom unknown anchor"),
                 // Keep the header empty so the assertion only targets nested errors.
                 Error::ValidatorErrors { .. } => Cow::Borrowed(""),
-                _ => Cow::Owned(err.to_string()),
+                _ => UserMessageFormatter.format_message(err),
             }
         }
     }
