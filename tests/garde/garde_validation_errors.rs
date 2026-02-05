@@ -203,15 +203,22 @@ fn validation_error_shows_referenced_and_defined_snippets_for_aliases() {
     // - referenced: location of the alias token `*A`
     // - defined: location of the anchored scalar value (the `""` under `&A`)
     // Use a non-empty string to avoid it being treated as null-like by any YAML adapters.
-    let yaml = "a: &A \"x\"\nb: *A\n";
+    // Insert many comment lines between the anchor definition and the alias reference,
+    // so a single cropped snippet window cannot cover both locations.
+    let mut yaml = String::new();
+    yaml.push_str("a: &A \"x\"\n");
+    for _ in 0..32 {
+        yaml.push_str("#\n");
+    }
+    yaml.push_str("b: *A\n");
 
-    let err = serde_saphyr::from_str_with_options_valid::<AnchorRoot>(yaml, Default::default())
+    let err = serde_saphyr::from_str_with_options_valid::<AnchorRoot>(&yaml, Default::default())
         .expect_err("must fail validation");
     let rendered = err.to_string();
 
     // We want to see the primary (use-site) diagnostic.
     assert!(
-        rendered.contains(" --> the value is used here:2:4"),
+        rendered.contains(" --> the value is used here:34:4"),
         "expected use-site snippet header, got: {rendered}"
     );
 
@@ -233,16 +240,23 @@ fn validation_error_shows_referenced_and_defined_snippets_for_aliases() {
 fn validation_error_shows_longer_garde_path_for_nested_structures() {
     // Same anchor/alias scenario as `validation_error_shows_referenced_and_defined_snippets_for_aliases`,
     // but nested inside structures so garde produces a longer path like `outer.inner.b`.
-    let yaml = concat!("outer:\n", "  inner:\n", "    a: &A \"x\"\n", "    b: *A\n",);
+    let mut yaml = String::new();
+    yaml.push_str("outer:\n");
+    yaml.push_str("  inner:\n");
+    yaml.push_str("    a: &A \"x\"\n");
+    for _ in 0..32 {
+        yaml.push_str("    #\n");
+    }
+    yaml.push_str("    b: *A\n");
 
     let err =
-        serde_saphyr::from_str_with_options_valid::<NestedAnchorRoot>(yaml, Default::default())
+        serde_saphyr::from_str_with_options_valid::<NestedAnchorRoot>(&yaml, Default::default())
             .expect_err("must fail validation");
     let rendered = err.to_string();
 
     // Primary use-site snippet.
     assert!(
-        rendered.contains(" --> the value is used here:4:8"),
+        rendered.contains(" --> the value is used here:36:8"),
         "expected use-site snippet header, got: {rendered}"
     );
 

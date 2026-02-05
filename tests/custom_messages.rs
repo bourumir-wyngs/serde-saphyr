@@ -1,4 +1,4 @@
-use serde_saphyr::{Error, MessageFormatter, from_str};
+use serde_saphyr::{CroppedRegion, Error, MessageFormatter, from_str};
 use serde_saphyr::from_slice;
 use serde_saphyr::UserMessageFormatter;
 
@@ -77,10 +77,12 @@ fn custom_formatter_is_used_for_nested_validation_errors_with_snippets() {
     let nested = Error::UnknownAnchor { location: loc };
 
     let err = Error::WithSnippet {
-        text: yaml.to_string(),
-        start_line: 1,
+        regions: vec![CroppedRegion {
+            text: yaml.to_string(),
+            start_line: 1,
+            end_line: 1,
+        }],
         crop_radius: 2,
-        secondary_snippet: None,
         error: Box::new(Error::ValidationErrors {
             errors: vec![nested],
         }),
@@ -110,10 +112,12 @@ fn custom_formatter_is_used_for_nested_validator_errors_with_snippets() {
     let nested = Error::UnknownAnchor { location: loc };
 
     let err = Error::WithSnippet {
-        text: yaml.to_string(),
-        start_line: 1,
+        regions: vec![CroppedRegion {
+            text: yaml.to_string(),
+            start_line: 1,
+            end_line: 1,
+        }],
         crop_radius: 2,
-        secondary_snippet: None,
         error: Box::new(Error::ValidatorErrors {
             errors: vec![nested],
         }),

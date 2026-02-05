@@ -303,7 +303,7 @@ fn with_snippet_only_contains_lines_near_error() {
         .expect_err("unknown anchor should error");
 
     match &err {
-        Error::WithSnippet { text, .. } => {
+        Error::WithSnippet { regions, .. } => {
             // The error stores only a cropped source window; snippet formatting is deferred.
             let rendered = err.to_string();
             assert!(
@@ -313,14 +313,18 @@ fn with_snippet_only_contains_lines_near_error() {
 
             // Core requirement: snippet should NOT include content far away from the error.
             assert!(
-                !text.contains("marker_far_away: DO_NOT_INCLUDE"),
+                !regions
+                    .iter()
+                    .any(|r| r.text.contains("marker_far_away: DO_NOT_INCLUDE")),
                 "snippet should not include far-away lines"
             );
 
             // If the contract is +-10 lines around the error, this should stay small.
             // Keep this bound generous for headers/formatting differences.
-            assert!(text.lines().count() <= 60, "snippet has too many lines");
-            assert!(text.len() < 10_000, "snippet output unexpectedly large");
+            let total_lines: usize = regions.iter().map(|r| r.text.lines().count()).sum();
+            let total_len: usize = regions.iter().map(|r| r.text.len()).sum();
+            assert!(total_lines <= 60, "snippet has too many lines");
+            assert!(total_len < 10_000, "snippet output unexpectedly large");
         }
         other => panic!("expected WithSnippet wrapper, got: {other:?}"),
     }

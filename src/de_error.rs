@@ -88,12 +88,15 @@ pub trait MessageFormatter {
 
 /// User-facing message formatter.
 ///
-/// This formatter simplifies technical errors and removes internal details. It should be used
-/// for the messages intended for the user who only sees YAML but has no control over API usage
-/// (hence hints about the source code or parsing options are not relevant).
+/// This formatter simplifies technical errors and removes internal details.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct UserMessageFormatter;
 
+/// A single shared instance of the user-facing formatter.
+///
+/// Prefer `&USER_MESSAGE_FORMATTER` over `&UserMessageFormatter` to avoid relying on
+/// subtle temporary lifetime/promotion rules for unit structs.
+pub const USER_MESSAGE_FORMATTER: UserMessageFormatter = UserMessageFormatter;
 
 /// Controls whether snippet output is included when available.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -113,12 +116,11 @@ pub enum SnippetMode {
 /// # Example (using the `render_options!` macro)
 ///
 /// ```rust
-/// use serde_saphyr::{SnippetMode, DefaultMessageFormatter};
+/// use serde_saphyr::{SnippetMode, DEFAULT_MESSAGE_FORMATTER};
 ///
 /// // Customize how an error is rendered later (formatter + snippet mode).
-/// let dev = DefaultMessageFormatter;
 /// let render_opts = serde_saphyr::render_options! {
-///     formatter: &dev,
+///     formatter: &DEFAULT_MESSAGE_FORMATTER,
 ///     snippets: SnippetMode::Off,
 /// };
 ///
@@ -150,16 +152,27 @@ impl<'a> RenderOptions<'a> {
     }
 }
 
-impl<'a> Default for RenderOptions<'a> {
-    fn default() -> Self {
-        // Keep the default formatter reference valid even if RenderOptions is stored.
-        static DEFAULT_FMT: crate::message_formatters::DefaultMessageFormatter =
-            crate::message_formatters::DefaultMessageFormatter;
+/// Cropped YAML source window stored inside [`Error::WithSnippet`].
+///
+/// The window is described in terms of the original (absolute) 1-based line numbers.
+/// This allows selecting the best-matching region for a particular error location.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CroppedRegion {
+    /// Cropped source text used for snippet rendering.
+    pub text: String,
+    /// The 1-based line number in the *original* input where `text` starts.
+    pub start_line: usize,
+    /// The 1-based line number in the *original* input where `text` ends (inclusive).
+    pub end_line: usize,
+}
 
-        Self {
-            formatter: &DEFAULT_FMT,
-            snippets: SnippetMode::Auto,
+impl CroppedRegion {
+    fn covers(&self, location: &Location) -> bool {
+        if location == &Location::UNKNOWN {
+            return false;
         }
+        let line = location.line as usize;
+        self.start_line <= line && line <= self.end_line
     }
 }
 
@@ -589,17 +602,12 @@ pub enum Error {
 
     /// Wrap an error with the full input text, enabling rustc-like snippet rendering.
     WithSnippet {
-        /// Cropped source window used for snippet rendering.
+        /// Cropped source windows used for snippet rendering.
         ///
         /// This intentionally does NOT store the full input text, to avoid retaining
         /// large YAML inputs inside errors.
-        text: String,
-        /// The 1-based line number in the *original* input where `text` starts.
-        start_line: usize,
+        regions: Vec<CroppedRegion>,
         crop_radius: usize,
-        /// Optional secondary snippet for dual-location errors (e.g., AliasError).
-        /// Contains (cropped_text, start_line) for the "defined at" location.
-        secondary_snippet: Option<(String, usize)>,
         error: Box<Error>,
     },
 
@@ -644,56 +652,75 @@ impl Error {
         // Keep snippet coordinates aligned with parsers that ignore a leading UTF-8 BOM.
         let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
         
-        // Check for dual-location errors (e.g., AliasError with different ref/def locations)
-        let (cropped, start_line, secondary_snippet) = match inner.locations() {
-            Some(locs) if locs.reference_location != Location::UNKNOWN 
-                && locs.defined_location != Location::UNKNOWN 
-                && locs.reference_location != locs.defined_location 
-                && crop_radius != 0 => 
-            {
-                // Crop primary (reference) location
-                let (primary_text, primary_start) = crate::de_snipped::crop_source_window(
-                    text, 
-                    &locs.reference_location, 
-                    crate::de_snipped::LineMapping::Identity,
-                    crop_radius,
-                );
-                // Crop secondary (defined) location
-                let (secondary_text, secondary_start) = crate::de_snipped::crop_source_window(
-                    text, 
-                    &locs.defined_location, 
-                    crate::de_snipped::LineMapping::Identity,
-                    crop_radius,
-                );
-                let secondary = if !secondary_text.is_empty() {
-                    Some((secondary_text, secondary_start))
-                } else {
-                    None
-                };
-                (primary_text, primary_start, secondary)
+        fn push_region_for_location(
+            regions: &mut Vec<CroppedRegion>,
+            text: &str,
+            location: &Location,
+            mapping: crate::de_snipped::LineMapping,
+            crop_radius: usize,
+        ) {
+            if crop_radius == 0 || *location == Location::UNKNOWN {
+                return;
             }
-            _ => {
-                // Single location fallback
-                let (cropped, start_line) = match inner.location() {
-                    Some(loc) if loc != Location::UNKNOWN && crop_radius != 0 => {
-                        crate::de_snipped::crop_source_window(
-                            text,
-                            &loc,
-                            crate::de_snipped::LineMapping::Identity,
-                            crop_radius,
-                        )
-                    }
-                    _ => (String::new(), 1),
-                };
-                (cropped, start_line, None)
+            let (cropped, start_line) =
+                crate::de_snipped::crop_source_window(text, location, mapping, crop_radius);
+            if cropped.is_empty() {
+                return;
             }
-        };
+            let lines = cropped.split_terminator('\n').count().max(1);
+            let end_line = start_line.saturating_add(lines.saturating_sub(1));
+            regions.push(CroppedRegion {
+                text: cropped,
+                start_line,
+                end_line,
+            });
+        }
+
+        let mut regions: Vec<CroppedRegion> = Vec::new();
+        let mapping = crate::de_snipped::LineMapping::Identity;
+
+        // Validation errors may contain multiple independent issue locations; pre-crop
+        // one region per issue so we can later pick the region that covers the issue.
+        #[cfg(feature = "garde")]
+        if let Error::ValidationError { report, locations } = &inner {
+            for (path, _entry) in report.iter() {
+                let key = path_key_from_garde(path);
+                let (locs, _) = locations.search(&key).unwrap_or((Locations::UNKNOWN, String::new()));
+                push_region_for_location(&mut regions, text, &locs.reference_location, mapping, crop_radius);
+                if locs.defined_location != locs.reference_location {
+                    push_region_for_location(&mut regions, text, &locs.defined_location, mapping, crop_radius);
+                }
+            }
+        }
+        #[cfg(feature = "validator")]
+        if let Error::ValidatorError { errors, locations } = &inner {
+            for issue in collect_validator_issues(errors) {
+                let (locs, _) = locations
+                    .search(&issue.path)
+                    .unwrap_or((Locations::UNKNOWN, String::new()));
+                push_region_for_location(&mut regions, text, &locs.reference_location, mapping, crop_radius);
+                if locs.defined_location != locs.reference_location {
+                    push_region_for_location(&mut regions, text, &locs.defined_location, mapping, crop_radius);
+                }
+            }
+        }
+
+        // Fallback: crop around the top-level error locations (including dual-location
+        // errors such as AliasError).
+        if regions.is_empty() {
+            if let Some(locs) = inner.locations() {
+                push_region_for_location(&mut regions, text, &locs.reference_location, mapping, crop_radius);
+                if locs.defined_location != locs.reference_location {
+                    push_region_for_location(&mut regions, text, &locs.defined_location, mapping, crop_radius);
+                }
+            } else if let Some(loc) = inner.location() {
+                push_region_for_location(&mut regions, text, &loc, mapping, crop_radius);
+            }
+        }
 
         Error::WithSnippet {
-            text: cropped,
-            start_line,
+            regions,
             crop_radius,
-            secondary_snippet,
             error: Box::new(inner),
         }
     }
@@ -719,52 +746,71 @@ impl Error {
         // Keep snippet coordinates aligned with parsers that ignore a leading UTF-8 BOM.
         let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
         
-        // Check for dual-location errors (e.g., AliasError with different ref/def locations)
+        fn push_region_for_location(
+            regions: &mut Vec<CroppedRegion>,
+            text: &str,
+            location: &Location,
+            mapping: crate::de_snipped::LineMapping,
+            crop_radius: usize,
+        ) {
+            if crop_radius == 0 || *location == Location::UNKNOWN {
+                return;
+            }
+            let (cropped, region_start_line) =
+                crate::de_snipped::crop_source_window(text, location, mapping, crop_radius);
+            if cropped.is_empty() {
+                return;
+            }
+            let lines = cropped.split_terminator('\n').count().max(1);
+            let end_line = region_start_line.saturating_add(lines.saturating_sub(1));
+            regions.push(CroppedRegion {
+                text: cropped,
+                start_line: region_start_line,
+                end_line,
+            });
+        }
+
+        let mut regions: Vec<CroppedRegion> = Vec::new();
         let mapping = crate::de_snipped::LineMapping::Offset { start_line };
-        let (cropped, final_start_line, secondary_snippet) = match inner.locations() {
-            Some(locs) if locs.reference_location != Location::UNKNOWN 
-                && locs.defined_location != Location::UNKNOWN 
-                && locs.reference_location != locs.defined_location 
-                && crop_radius != 0 => 
-            {
-                // Crop primary (reference) location
-                let (primary_text, primary_start) = crate::de_snipped::crop_source_window(
-                    text, 
-                    &locs.reference_location, 
-                    mapping,
-                    crop_radius,
-                );
-                // Crop secondary (defined) location
-                let (secondary_text, secondary_start) = crate::de_snipped::crop_source_window(
-                    text, 
-                    &locs.defined_location, 
-                    mapping,
-                    crop_radius,
-                );
-                let secondary = if !secondary_text.is_empty() {
-                    Some((secondary_text, secondary_start))
-                } else {
-                    None
-                };
-                (primary_text, primary_start, secondary)
+
+        #[cfg(feature = "garde")]
+        if let Error::ValidationError { report, locations } = &inner {
+            for (path, _entry) in report.iter() {
+                let key = path_key_from_garde(path);
+                let (locs, _) = locations.search(&key).unwrap_or((Locations::UNKNOWN, String::new()));
+                push_region_for_location(&mut regions, text, &locs.reference_location, mapping, crop_radius);
+                if locs.defined_location != locs.reference_location {
+                    push_region_for_location(&mut regions, text, &locs.defined_location, mapping, crop_radius);
+                }
             }
-            _ => {
-                // Single location fallback
-                let (cropped, final_start) = match inner.location() {
-                    Some(loc) if loc != Location::UNKNOWN && crop_radius != 0 => {
-                        crate::de_snipped::crop_source_window(text, &loc, mapping, crop_radius)
-                    }
-                    _ => (String::new(), start_line),
-                };
-                (cropped, final_start, None)
+        }
+        #[cfg(feature = "validator")]
+        if let Error::ValidatorError { errors, locations } = &inner {
+            for issue in collect_validator_issues(errors) {
+                let (locs, _) = locations
+                    .search(&issue.path)
+                    .unwrap_or((Locations::UNKNOWN, String::new()));
+                push_region_for_location(&mut regions, text, &locs.reference_location, mapping, crop_radius);
+                if locs.defined_location != locs.reference_location {
+                    push_region_for_location(&mut regions, text, &locs.defined_location, mapping, crop_radius);
+                }
             }
-        };
+        }
+
+        if regions.is_empty() {
+            if let Some(locs) = inner.locations() {
+                push_region_for_location(&mut regions, text, &locs.reference_location, mapping, crop_radius);
+                if locs.defined_location != locs.reference_location {
+                    push_region_for_location(&mut regions, text, &locs.defined_location, mapping, crop_radius);
+                }
+            } else if let Some(loc) = inner.location() {
+                push_region_for_location(&mut regions, text, &loc, mapping, crop_radius);
+            }
+        }
 
         Error::WithSnippet {
-            text: cropped,
-            start_line: final_start_line,
+            regions,
             crop_radius,
-            secondary_snippet,
             error: Box::new(inner),
         }
     }
@@ -783,7 +829,10 @@ impl Error {
     /// output, but also allows callers to choose a custom [`MessageFormatter`] via
     /// [`Error::render_with_options`].
     pub fn render(&self) -> String {
-        self.render_with_options(RenderOptions::default())
+        self.render_with_options(RenderOptions {
+            formatter: &crate::DEFAULT_MESSAGE_FORMATTER,
+            snippets: SnippetMode::Auto,
+        })
     }
 
     /// Render this error using a custom message formatter.
@@ -1277,6 +1326,16 @@ fn fmt_error_plain_with_formatter(
     Ok(())
 }
 
+fn pick_cropped_region<'a>(
+    regions: &'a [CroppedRegion],
+    location: &Location,
+) -> Option<&'a CroppedRegion> {
+    regions
+        .iter()
+        .find(|r| r.covers(location))
+        .or_else(|| regions.first())
+}
+
 fn fmt_error_rendered(
     f: &mut fmt::Formatter<'_>,
     err: &Error,
@@ -1324,14 +1383,16 @@ fn fmt_error_rendered(
         }
 
         Error::WithSnippet {
-            text,
-            start_line,
+            regions,
             crop_radius,
-            secondary_snippet,
             error,
         } => {
             if *crop_radius == 0 {
                 // Treat as "snippet disabled".
+                return fmt_error_plain_with_formatter(f, error, options.formatter);
+            }
+
+            if regions.is_empty() {
                 return fmt_error_plain_with_formatter(f, error, options.formatter);
             }
 
@@ -1344,8 +1405,7 @@ fn fmt_error_rendered(
                     options.formatter.localizer(),
                     report,
                     locations,
-                    text,
-                    *start_line,
+                    regions,
                     *crop_radius,
                 );
             }
@@ -1365,8 +1425,7 @@ fn fmt_error_rendered(
                     fmt_error_with_snippets_offset(
                         f,
                         err,
-                        text,
-                        *start_line,
+                        regions,
                         *crop_radius,
                         options.formatter,
                     )?;
@@ -1381,8 +1440,7 @@ fn fmt_error_rendered(
                     options.formatter.localizer(),
                     errors,
                     locations,
-                    text,
-                    *start_line,
+                    regions,
                     *crop_radius,
                 );
             }
@@ -1402,8 +1460,7 @@ fn fmt_error_rendered(
                     fmt_error_with_snippets_offset(
                         f,
                         err,
-                        text,
-                        *start_line,
+                        regions,
                         *crop_radius,
                         options.formatter,
                     )?;
@@ -1419,16 +1476,19 @@ fn fmt_error_rendered(
             if location == Location::UNKNOWN {
                 return fmt_error_plain_with_formatter(f, error, options.formatter);
             }
-            if text.is_empty() {
-                return fmt_error_plain_with_formatter(f, error, options.formatter);
-            }
 
             let l10n = options.formatter.localizer();
 
-            // Check if we have a secondary snippet for dual-location errors (e.g., AliasError)
-            let has_secondary = secondary_snippet.is_some() && error.locations().map_or(false, |locs| {
-                locs.reference_location != locs.defined_location 
+            let region = match pick_cropped_region(regions, &location) {
+                Some(r) => r,
+                None => return fmt_error_plain_with_formatter(f, error, options.formatter),
+            };
+
+            // Dual-location rendering: show both the reference and the definition window.
+            let dual_locations = error.locations().filter(|locs| {
+                locs.reference_location != Location::UNKNOWN
                     && locs.defined_location != Location::UNKNOWN
+                    && locs.reference_location != locs.defined_location
             });
 
             let mut msg = options.formatter.format_message(error);
@@ -1436,7 +1496,7 @@ fn fmt_error_rendered(
             // Renderer-level de-duplication for AliasError:
             // when we are about to show a secondary “defined here” window, drop the
             // default message suffix " (defined at …)" if present.
-            if has_secondary {
+            if dual_locations.is_some() {
                 if let Error::AliasError { locations, .. } = error.as_ref() {
                     let suffix = l10n.alias_defined_at(locations.defined_location);
                     if let Some(stripped) = msg.as_ref().strip_suffix(&suffix) {
@@ -1445,33 +1505,37 @@ fn fmt_error_rendered(
                 }
             }
 
-            if has_secondary {
-                // Render primary snippet with "value used here" label
-                let label = l10n.value_used_here();
-                let ctx = crate::de_snipped::Snippet::new(text, label.as_ref(), *crop_radius)
-                    .with_offset(*start_line);
-                ctx.fmt_or_fallback(f, Level::ERROR, l10n, msg.as_ref(), &location)?;
+            if let Some(locs) = dual_locations {
+                let ref_loc = locs.reference_location;
+                let def_loc = locs.defined_location;
 
-                // Render secondary snippet showing where the value was defined
-                if let Some((secondary_text, secondary_start)) = secondary_snippet {
-                    let def_loc = error.locations().unwrap().defined_location;
-                    writeln!(f)?;
-                    writeln!(f, "{}", l10n.value_comes_from_the_anchor(def_loc))?;
-                    crate::de_snipped::fmt_snippet_window_offset_or_fallback(
-                        f,
-                        l10n,
-                        &def_loc,
-                        secondary_text,
-                        *secondary_start,
-                        l10n.defined_window().as_ref(),
-                        *crop_radius,
-                    )?;
-                }
+                let used_region = pick_cropped_region(regions, &ref_loc).unwrap_or(region);
+                let label = l10n.value_used_here();
+                let ctx = crate::de_snipped::Snippet::new(
+                    used_region.text.as_str(),
+                    label.as_ref(),
+                    *crop_radius,
+                )
+                .with_offset(used_region.start_line);
+                ctx.fmt_or_fallback(f, Level::ERROR, l10n, msg.as_ref(), &ref_loc)?;
+
+                let def_region = pick_cropped_region(regions, &def_loc).unwrap_or(region);
+                writeln!(f)?;
+                writeln!(f, "{}", l10n.value_comes_from_the_anchor(def_loc))?;
+                crate::de_snipped::fmt_snippet_window_offset_or_fallback(
+                    f,
+                    l10n,
+                    &def_loc,
+                    def_region.text.as_str(),
+                    def_region.start_line,
+                    l10n.defined_window().as_ref(),
+                    *crop_radius,
+                )?;
                 Ok(())
             } else {
-                // Single location rendering (original behavior)
-                let ctx = crate::de_snipped::Snippet::new(text, "<input>", *crop_radius)
-                    .with_offset(*start_line);
+                // Single location rendering.
+                let ctx = crate::de_snipped::Snippet::new(region.text.as_str(), "<input>", *crop_radius)
+                    .with_offset(region.start_line);
                 ctx.fmt_or_fallback(f, Level::ERROR, l10n, msg.as_ref(), &location)
             }
         }
@@ -1504,7 +1568,10 @@ impl fmt::Display for Error {
         fmt_error_rendered(
             f,
             self,
-            RenderOptions::default(),
+            RenderOptions {
+                formatter: &crate::DEFAULT_MESSAGE_FORMATTER,
+                snippets: SnippetMode::Auto,
+            },
         )
     }
 }
@@ -1517,8 +1584,7 @@ fn fmt_validation_error_with_snippets_offset(
     l10n: &dyn Localizer,
     report: &garde::Report,
     locations: &PathMap,
-    text: &str,
-    text_start_line: usize,
+    regions: &[CroppedRegion],
     crop_radius: usize,
 ) -> fmt::Result {
     let mut first = true;
@@ -1558,33 +1624,61 @@ fn fmt_validation_error_with_snippets_offset(
             }
             (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
                 let label = l10n.defined();
-                let ctx = crate::de_snipped::Snippet::new(text, label.as_ref(), crop_radius)
-                    .with_offset(text_start_line);
-                ctx.fmt_or_fallback(f, Level::ERROR, l10n, &base_msg, &r)?;
+                if let Some(region) = pick_cropped_region(regions, &r) {
+                    let ctx = crate::de_snipped::Snippet::new(
+                        region.text.as_str(),
+                        label.as_ref(),
+                        crop_radius,
+                    )
+                    .with_offset(region.start_line);
+                    ctx.fmt_or_fallback(f, Level::ERROR, l10n, &base_msg, &r)?;
+                } else {
+                    fmt_with_location(f, l10n, &base_msg, &r)?;
+                }
             }
             (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
                 let label = l10n.defined_here();
-                let ctx = crate::de_snipped::Snippet::new(text, label.as_ref(), crop_radius)
-                    .with_offset(text_start_line);
-                ctx.fmt_or_fallback(f, Level::ERROR, l10n, &base_msg, &d)?;
+                if let Some(region) = pick_cropped_region(regions, &d) {
+                    let ctx = crate::de_snipped::Snippet::new(
+                        region.text.as_str(),
+                        label.as_ref(),
+                        crop_radius,
+                    )
+                    .with_offset(region.start_line);
+                    ctx.fmt_or_fallback(f, Level::ERROR, l10n, &base_msg, &d)?;
+                } else {
+                    fmt_with_location(f, l10n, &base_msg, &d)?;
+                }
             }
             (r, d) => {
                 let label = l10n.value_used_here();
-                let ctx = crate::de_snipped::Snippet::new(text, label.as_ref(), crop_radius)
-                    .with_offset(text_start_line);
                 let invalid_here = l10n.invalid_here(&base_msg);
-                ctx.fmt_or_fallback(f, Level::ERROR, l10n, &invalid_here, &r)?;
+                if let Some(region) = pick_cropped_region(regions, &r) {
+                    let ctx = crate::de_snipped::Snippet::new(
+                        region.text.as_str(),
+                        label.as_ref(),
+                        crop_radius,
+                    )
+                    .with_offset(region.start_line);
+                    ctx.fmt_or_fallback(f, Level::ERROR, l10n, &invalid_here, &r)?;
+                } else {
+                    fmt_with_location(f, l10n, &invalid_here, &r)?;
+                }
                 writeln!(f)?;
                 writeln!(f, "{}", l10n.value_comes_from_the_anchor(d))?;
-                crate::de_snipped::fmt_snippet_window_offset_or_fallback(
-                    f,
-                    l10n,
-                    &d,
-                    text,
-                    text_start_line,
-                    l10n.defined_window().as_ref(),
-                    crop_radius,
-                )?;
+                if let Some(region) = pick_cropped_region(regions, &d) {
+                    crate::de_snipped::fmt_snippet_window_offset_or_fallback(
+                        f,
+                        l10n,
+                        &d,
+                        region.text.as_str(),
+                        region.start_line,
+                        l10n.defined_window().as_ref(),
+                        crop_radius,
+                    )?;
+                } else {
+                    fmt_with_location(f, l10n, l10n.defined_window().as_ref(), &d)?;
+                }
             }
         }
     }
@@ -1598,8 +1692,7 @@ fn fmt_validator_error_with_snippets_offset(
     l10n: &dyn Localizer,
     errors: &ValidationErrors,
     locations: &PathMap,
-    text: &str,
-    text_start_line: usize,
+    regions: &[CroppedRegion],
     crop_radius: usize,
 ) -> fmt::Result {
     let entries = collect_validator_issues(errors);
@@ -1629,33 +1722,61 @@ fn fmt_validator_error_with_snippets_offset(
             }
             (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
                 let label = l10n.defined();
-                let ctx = crate::de_snipped::Snippet::new(text, label.as_ref(), crop_radius)
-                    .with_offset(text_start_line);
-                ctx.fmt_or_fallback(f, Level::ERROR, l10n, &base_msg, &r)?;
+                if let Some(region) = pick_cropped_region(regions, &r) {
+                    let ctx = crate::de_snipped::Snippet::new(
+                        region.text.as_str(),
+                        label.as_ref(),
+                        crop_radius,
+                    )
+                    .with_offset(region.start_line);
+                    ctx.fmt_or_fallback(f, Level::ERROR, l10n, &base_msg, &r)?;
+                } else {
+                    fmt_with_location(f, l10n, &base_msg, &r)?;
+                }
             }
             (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
                 let label = l10n.defined_here();
-                let ctx = crate::de_snipped::Snippet::new(text, label.as_ref(), crop_radius)
-                    .with_offset(text_start_line);
-                ctx.fmt_or_fallback(f, Level::ERROR, l10n, &base_msg, &d)?;
+                if let Some(region) = pick_cropped_region(regions, &d) {
+                    let ctx = crate::de_snipped::Snippet::new(
+                        region.text.as_str(),
+                        label.as_ref(),
+                        crop_radius,
+                    )
+                    .with_offset(region.start_line);
+                    ctx.fmt_or_fallback(f, Level::ERROR, l10n, &base_msg, &d)?;
+                } else {
+                    fmt_with_location(f, l10n, &base_msg, &d)?;
+                }
             }
             (r, d) => {
                 let label = l10n.value_used_here();
-                let ctx = crate::de_snipped::Snippet::new(text, label.as_ref(), crop_radius)
-                    .with_offset(text_start_line);
                 let invalid_here = l10n.invalid_here(&base_msg);
-                ctx.fmt_or_fallback(f, Level::ERROR, l10n, &invalid_here, &r)?;
+                if let Some(region) = pick_cropped_region(regions, &r) {
+                    let ctx = crate::de_snipped::Snippet::new(
+                        region.text.as_str(),
+                        label.as_ref(),
+                        crop_radius,
+                    )
+                    .with_offset(region.start_line);
+                    ctx.fmt_or_fallback(f, Level::ERROR, l10n, &invalid_here, &r)?;
+                } else {
+                    fmt_with_location(f, l10n, &invalid_here, &r)?;
+                }
                 writeln!(f)?;
                 writeln!(f, "{}", l10n.value_comes_from_the_anchor(d))?;
-                crate::de_snipped::fmt_snippet_window_offset_or_fallback(
-                    f,
-                    l10n,
-                    &d,
-                    text,
-                    text_start_line,
-                    l10n.defined_window().as_ref(),
-                    crop_radius,
-                )?;
+                if let Some(region) = pick_cropped_region(regions, &d) {
+                    crate::de_snipped::fmt_snippet_window_offset_or_fallback(
+                        f,
+                        l10n,
+                        &d,
+                        region.text.as_str(),
+                        region.start_line,
+                        l10n.defined_window().as_ref(),
+                        crop_radius,
+                    )?;
+                } else {
+                    fmt_with_location(f, l10n, l10n.defined_window().as_ref(), &d)?;
+                }
             }
         }
     }
@@ -1666,8 +1787,7 @@ fn fmt_validator_error_with_snippets_offset(
 fn fmt_error_with_snippets_offset(
     f: &mut fmt::Formatter<'_>,
     err: &Error,
-    text: &str,
-    text_start_line: usize,
+    regions: &[CroppedRegion],
     crop_radius: usize,
     formatter: &dyn MessageFormatter,
 ) -> fmt::Result {
@@ -1687,8 +1807,7 @@ fn fmt_error_with_snippets_offset(
             formatter.localizer(),
             report,
             locations,
-            text,
-            text_start_line,
+            regions,
             crop_radius,
         );
     }
@@ -1700,8 +1819,7 @@ fn fmt_error_with_snippets_offset(
             formatter.localizer(),
             errors,
             locations,
-            text,
-            text_start_line,
+            regions,
             crop_radius,
         );
     }
@@ -1714,7 +1832,11 @@ fn fmt_error_with_snippets_offset(
         return write!(f, "{msg}");
     }
 
-    let ctx = crate::de_snipped::Snippet::new(text, "<input>", crop_radius).with_offset(text_start_line);
+    let Some(region) = pick_cropped_region(regions, &location) else {
+        return fmt_with_location(f, formatter.localizer(), msg.as_ref(), &location);
+    };
+    let ctx = crate::de_snipped::Snippet::new(region.text.as_str(), "<input>", crop_radius)
+        .with_offset(region.start_line);
     ctx.fmt_or_fallback(f, Level::ERROR, formatter.localizer(), msg.as_ref(), &location)
 }
 
