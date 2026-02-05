@@ -203,7 +203,7 @@ pub trait Localizer {
 
     // ---------------- External overrides ----------------
 
-    /// Optional hook to override the location prefix used for external messages.
+    /// Optional hook to override the location prefix used for snippet titles
     ///
     /// Default:
     /// - If `loc == Location::UNKNOWN`: returns an empty string.
