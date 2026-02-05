@@ -1,5 +1,5 @@
 fn main() {
-    let formatter = &serde_saphyr::UserMessageFormatter;
+    let formatter = serde_saphyr::UserMessageFormatter;
 
     // Disable serde-saphyr snippet as miette snippet is used.
     let no_snippet = serde_saphyr::options! { with_snippet: false };
@@ -14,7 +14,7 @@ fn main() {
         &err,
         yaml,
         "config.yaml",
-        formatter,
+        &formatter,
     );
 
     // `Debug` formatting uses miette's graphical reporter.
@@ -54,7 +54,7 @@ secondString: *A
             &err,
             yaml,
             "config.yaml",
-            formatter,
+            &formatter,
         );
         eprintln!("{report:?}");
     }
@@ -92,7 +92,7 @@ secondString: *A
             &err,
             yaml,
             "config.yaml",
-            formatter,
+            &formatter,
         );
         eprintln!("{report:?}");
     }

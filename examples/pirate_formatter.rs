@@ -140,7 +140,7 @@ fn main() {
     if let Err(e) = result {
         println!(
             "\n[Developer Error]:\n{}",
-            e.render_with_formatter(&serde_saphyr::DEFAULT_MESSAGE_FORMATTER)
+            e.render()
         );
         println!(
             "\n[User Error]:\n{}",
@@ -165,7 +165,7 @@ fn main() {
     if let Err(e) = result {
         println!(
             "\n[Developer Error]:\n{}",
-            e.render_with_formatter(&serde_saphyr::DEFAULT_MESSAGE_FORMATTER)
+            e.render()
         );
         println!(
             "\n[User Error]:\n{}",
@@ -188,7 +188,7 @@ fn main() {
         Err(e) => {
             println!(
                 "\n[Developer Error]:\n{}",
-                e.render_with_formatter(&serde_saphyr::DEFAULT_MESSAGE_FORMATTER)
+                e.render()
             );
             println!(
                 "\n[User Error]:\n{}",
@@ -211,7 +211,7 @@ fn main() {
     if let Err(e) = result {
         println!(
             "\n[Developer Error]:\n{}",
-            e.render_with_formatter(&serde_saphyr::DEFAULT_MESSAGE_FORMATTER)
+            e.render()
         );
         println!(
             "\n[User Error]:\n{}",
