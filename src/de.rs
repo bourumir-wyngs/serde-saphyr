@@ -1137,6 +1137,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 tag,
                 style,
                 value,
+                location,
                 ..
             }) => {
                 // Tagged nulls map to unit/null regardless of style
@@ -1161,8 +1162,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         && *tag != SfTag::NonSpecific
                         && !(self.cfg.ignore_binary_tag_for_string && *tag == SfTag::Binary)
                     {
-                        let location = self.ev.peek()?.unwrap().location();
-                        return Err(Error::TaggedScalarCannotDeserializeIntoString { location });
+                        return Err(Error::TaggedScalarCannotDeserializeIntoString {
+                            location: *location,
+                        });
                     }
 
                     let (cow, _tag2, _location) = self.take_scalar_cow_event()?;
