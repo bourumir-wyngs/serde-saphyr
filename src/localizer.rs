@@ -98,9 +98,9 @@ pub trait Localizer {
 
     /// Label used when a path has no leaf.
     ///
-    /// Default empty
+    /// Default <root>
     fn root_path_label(&self) -> Cow<'static, str> {
-        Cow::Borrowed("")
+        Cow::Borrowed("<root>")
     }
 
     /// Suffix for alias-related errors when a distinct defined-location is available.
