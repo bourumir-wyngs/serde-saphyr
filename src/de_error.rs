@@ -92,12 +92,6 @@ pub trait MessageFormatter {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct UserMessageFormatter;
 
-/// A single shared instance of the user-facing formatter.
-///
-/// Prefer `&USER_MESSAGE_FORMATTER` over `&UserMessageFormatter` to avoid relying on
-/// subtle temporary lifetime/promotion rules for unit structs.
-pub const USER_MESSAGE_FORMATTER: UserMessageFormatter = UserMessageFormatter;
-
 /// Controls whether snippet output is included when available.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SnippetMode {
@@ -116,11 +110,12 @@ pub enum SnippetMode {
 /// # Example (using the `render_options!` macro)
 ///
 /// ```rust
-/// use serde_saphyr::{SnippetMode, DEFAULT_MESSAGE_FORMATTER};
+/// use serde_saphyr::{DefaultMessageFormatter, SnippetMode};
 ///
+/// let dev = DefaultMessageFormatter;
 /// // Customize how an error is rendered later (formatter + snippet mode).
 /// let render_opts = serde_saphyr::render_options! {
-///     formatter: &DEFAULT_MESSAGE_FORMATTER,
+///     formatter: &dev,
 ///     snippets: SnippetMode::Off,
 /// };
 ///
@@ -135,6 +130,17 @@ pub struct RenderOptions<'a> {
     pub formatter: &'a dyn MessageFormatter,
     /// Snippet rendering mode.
     pub snippets: SnippetMode,
+}
+
+impl<'a> Default for RenderOptions<'a> {
+    #[inline]
+    fn default() -> Self {
+        // Keep the default formatter reference valid even if `RenderOptions` is stored.
+        static DEFAULT_FMT: crate::message_formatters::DefaultMessageFormatter =
+            crate::message_formatters::DefaultMessageFormatter;
+
+        Self::new(&DEFAULT_FMT)
+    }
 }
 
 impl<'a> RenderOptions<'a> {
@@ -829,10 +835,7 @@ impl Error {
     /// output, but also allows callers to choose a custom [`MessageFormatter`] via
     /// [`Error::render_with_options`].
     pub fn render(&self) -> String {
-        self.render_with_options(RenderOptions {
-            formatter: &crate::DEFAULT_MESSAGE_FORMATTER,
-            snippets: SnippetMode::Auto,
-        })
+        self.render_with_options(RenderOptions::default())
     }
 
     /// Render this error using a custom message formatter.
@@ -1568,10 +1571,7 @@ impl fmt::Display for Error {
         fmt_error_rendered(
             f,
             self,
-            RenderOptions {
-                formatter: &crate::DEFAULT_MESSAGE_FORMATTER,
-                snippets: SnippetMode::Auto,
-            },
+            RenderOptions::default(),
         )
     }
 }

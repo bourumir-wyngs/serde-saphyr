@@ -12,9 +12,9 @@ pub use anchors::{
 pub use de::{Budget, DuplicateKeyPolicy, Error, Options};
 pub use de_error::TransformReason;
 pub use de_error::CroppedRegion;
-pub use de_error::{MessageFormatter, RenderOptions, SnippetMode, UserMessageFormatter, USER_MESSAGE_FORMATTER};
+pub use de_error::{MessageFormatter, RenderOptions, SnippetMode, UserMessageFormatter};
 pub use localizer::{DefaultEnglishLocalizer, ExternalMessage, ExternalMessageSource, Localizer, DEFAULT_ENGLISH_LOCALIZER};
-pub use message_formatters::{DefaultMessageFormatter, DeveloperMessageFormatter, DEFAULT_MESSAGE_FORMATTER};
+pub use message_formatters::{DefaultMessageFormatter, DeveloperMessageFormatter};
 pub use location::{Location, Locations, Span};
 pub use long_strings::{FoldStr, FoldString, LitStr, LitString};
 pub use ser::{Commented, FlowMap, FlowSeq, SpaceAfter};
