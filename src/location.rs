@@ -5,16 +5,19 @@ use serde::Deserialize;
 
 /// Type alias for span offset and length fields.
 ///
-/// By default, this is `u32`, which limits documents to 4 GiB but keeps `Span` at 16 bytes.
-/// When the `huge_documents` feature is enabled, this becomes `usize`, allowing arbitrarily
-/// large documents at the cost of increased memory usage (40 bytes on 64-bit platforms).
+/// By default, this is `u32`, which limits offsets/lengths to 4 GiB but keeps [`Span`] compact
+/// (4 × `u32` = 16 bytes).
+///
+/// When the `huge_documents` feature is enabled, this becomes `u64`, allowing documents larger
+/// than 4 GiB even on 32-bit platforms, at the cost of increased memory usage
+/// (4 × `u64` = 32 bytes).
 #[cfg(not(feature = "huge_documents"))]
 pub(crate) type SpanIndex = u32;
 
 /// Type alias for span offset and length fields.
 ///
-/// With `huge_documents` enabled, this is `usize`, allowing documents larger than 4 GiB.
-/// This increases `Span` size from 16 to 40 bytes on 64-bit platforms.
+/// With `huge_documents` enabled, this is `u64`, allowing documents larger than 4 GiB.
+/// This increases [`Span`] size from 16 to 32 bytes.
 #[cfg(feature = "huge_documents")]
 pub(crate) type SpanIndex = u64;
 
@@ -86,13 +89,15 @@ impl Span {
         self.len == 0
     }
 
-    /// Returns the raw offset value as stored (either `u32` or `usize` depending on `huge_documents` feature).
+    /// Returns the raw offset value as stored (either `u32` or `u64` depending on the
+    /// `huge_documents` feature).
     #[inline]
     pub(crate) fn raw_offset(&self) -> SpanIndex {
         self.offset
     }
 
-    /// Returns the raw length value as stored (either `u32` or `usize` depending on `huge_documents` feature).
+    /// Returns the raw length value as stored (either `u32` or `u64` depending on the
+    /// `huge_documents` feature).
     #[inline]
     pub(crate) fn raw_len(&self) -> SpanIndex {
         self.len
