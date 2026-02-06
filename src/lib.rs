@@ -1467,10 +1467,13 @@ pub fn from_slice<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, Error> {
 /// let cfg: Config = serde_saphyr::from_slice_with_options(bytes, options).unwrap();
 /// assert_eq!(cfg.retries, 5);
 /// ```
-pub fn from_slice_with_options<T: DeserializeOwned>(
-    bytes: &[u8],
+pub fn from_slice_with_options<'de, T>(
+    bytes: &'de [u8],
     options: Options,
-) -> Result<T, Error> {
+) -> Result<T, Error>
+where
+    T: serde::Deserialize<'de>,
+{
     let s = std::str::from_utf8(bytes).map_err(|_| Error::InvalidUtf8Input)?;
     from_str_with_options(s, options)
 }
