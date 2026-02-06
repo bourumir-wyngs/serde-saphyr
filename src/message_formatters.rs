@@ -193,7 +193,7 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
             Cow::Owned(format!("The string value [{value}] must be quoted"))
         }
         Error::CannotBorrowTransformedString { reason, .. } => Cow::Owned(format!(
-            "cannot deserialize into &str ({reason}); use String or Cow<str> instead",
+            "input does not contain value verbatim so cannot deserialize into &str ({reason}); use String or Cow<str> instead",
         )),
         Error::IOError { cause } => Cow::Owned(format!("IO error: {cause}")),
         Error::AliasError { msg, locations } => {
