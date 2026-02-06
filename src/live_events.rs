@@ -54,7 +54,7 @@ struct RecFrame<'a> {
     /// counts nested container starts/ends
     depth: usize,
     /// inline up to SMALLVECT_INLINE events; spills to heap beyond
-    buf: SmallVec<Ev<'a>, SMALLVECT_INLINE>,
+    buf: SmallVec<[Ev<'a>; SMALLVECT_INLINE]>,
 }
 
 /// Handle input polymorphism
@@ -376,7 +376,7 @@ impl<'a> LiveEvents<'a> {
                     // Start recording for this anchor *after* bumping other frames,
                     // and include the start event in the new buffer.
                     if anchor_id != 0 {
-                        let mut buf: SmallVec<Ev, SMALLVECT_INLINE> = SmallVec::new();
+                        let mut buf: SmallVec<[Ev; SMALLVECT_INLINE]> = SmallVec::new();
                         buf.push(ev.clone());
                         self.rec_stack.push(RecFrame {
                             id: anchor_id,
@@ -414,7 +414,7 @@ impl<'a> LiveEvents<'a> {
                     };
                     self.bump_depth_on_start();
                     if anchor_id != 0 {
-                        let mut buf: SmallVec<Ev, SMALLVECT_INLINE> = SmallVec::new();
+                        let mut buf: SmallVec<[Ev; SMALLVECT_INLINE]> = SmallVec::new();
                         buf.push(ev.clone());
                         self.rec_stack.push(RecFrame {
                             id: anchor_id,

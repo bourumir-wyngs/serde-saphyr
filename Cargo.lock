@@ -810,7 +810,7 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "serde_repr",
- "smallvec 2.0.0-alpha.12",
+ "smallvec 1.15.1",
  "trybuild",
  "validator",
  "zmij",

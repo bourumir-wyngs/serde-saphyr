@@ -273,7 +273,7 @@ pub(crate) struct BudgetEnforcer {
     report: BudgetReport,
     depth: usize,
     defined_anchors: FastHashSet<usize>,
-    containers: SmallVec<ContainerState, 64>,
+    containers: SmallVec<[ContainerState; 64]>,
     policy: EnforcingPolicy,
 }
 
