@@ -89,6 +89,14 @@ pub trait MessageFormatter {
 /// User-facing message formatter.
 ///
 /// This formatter simplifies technical errors and removes internal details.
+/// ```
+/// use serde_saphyr::UserMessageFormatter;
+///
+/// let err = serde_saphyr::from_str::<String>("").unwrap_err();
+/// let msg = err.render_with_formatter(&UserMessageFormatter);
+///
+/// assert_eq!(msg, "unexpected end of file at line 1, column 1");
+/// ```
 #[derive(Debug, Default, Clone, Copy)]
 pub struct UserMessageFormatter;
 
