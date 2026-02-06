@@ -12,7 +12,7 @@ keywords = ["yaml", "serde", "config", "ros", "wasm"]
 exclude = ["Cargo.lock"]
 
 [dependencies]
-saphyr-parser = { package = "saphyr-parser-bw", version = "0.0.607"}
+saphyr-parser = { package = "saphyr-parser-bw", version = "0.0.608"}
 # saphyr-parser = { package="saphyr-parser-bw", git = "https://github.com/bourumir-wyngs/saphyr", branch = "dev/saphyr-parser" }
 serde = { version = "1", features = ["derive"] }
 smallvec = {  version = ">= 1.0.0, < 1.16.0" }
