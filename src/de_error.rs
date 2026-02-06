@@ -1601,7 +1601,7 @@ fn fmt_validation_error_with_snippets_offset(
 
         let (locs, resolved_leaf) = locations
             .search(&path_key)
-            .unwrap_or((Locations::UNKNOWN, original_leaf.clone()));
+            .unwrap_or_else(|| (Locations::UNKNOWN, original_leaf));
 
         let ref_loc = locs.reference_location;
         let def_loc = locs.defined_location;
@@ -1710,7 +1710,7 @@ fn fmt_validator_error_with_snippets_offset(
             .unwrap_or_else(|| l10n.root_path_label().into_owned());
         let (locs, resolved_leaf) = locations
             .search(&issue.path)
-            .unwrap_or((Locations::UNKNOWN, original_leaf.clone()));
+            .unwrap_or_else(|| (Locations::UNKNOWN, original_leaf));
 
         let resolved_path = format_path_with_resolved_leaf(&issue.path, &resolved_leaf);
         let entry = issue.display_entry_overridden(l10n, ExternalMessageSource::Validator);
