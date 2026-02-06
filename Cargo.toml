@@ -15,7 +15,7 @@ exclude = ["Cargo.lock"]
 saphyr-parser = { package = "saphyr-parser-bw", version = "0.0.607"}
 # saphyr-parser = { package="saphyr-parser-bw", git = "https://github.com/bourumir-wyngs/saphyr", branch = "dev/saphyr-parser" }
 serde = { version = "1", features = ["derive"] }
-smallvec = "1.15.1"
+smallvec = {  version = ">= 1.0.0, < 1.16.0" }
 serde_json = { version = "1", features = ["preserve_order"] }
 num-traits = { version = ">=0.2.0, <=0.2.19" }
 base64 = { version = ">=0.21.0, <=0.22.1" }
