@@ -48,6 +48,17 @@ jobs:
           export PATH=$PATH:/home/github-runner/.cargo/bin
           cargo test --locked --offline --features garde,validator,miette,figment,robotics
 
+      - name: Run no default features
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin
+          cargo test --locked --offline --no-default-features
+
+      - name: Run large huge_documents
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin
+          cargo test --locked --offline --features huge_documents
+          
+
   build_wasm32-unknown-unknown:
     runs-on: [self-hosted, linux, x64]
     steps:
