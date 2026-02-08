@@ -34,7 +34,7 @@ validator = { version = ">= 0.11, < 0.21", optional = true, features = ["derive"
 # Some dependency stacks pull in `getrandom` (often via `ahash`). For `wasm32-unknown-unknown`,
 # `getrandom` needs the JS backend enabled. Adding it here ensures feature unification even when
 # `getrandom` is only a transitive dependency.
-getrandom = { version = "0.3", features = ["wasm_js"] }
+getrandom = { version = "0.4", features = ["wasm_js"] }
 
 [features]
 default = ["garde", "validator", "figment", "miette", "robotics"]
