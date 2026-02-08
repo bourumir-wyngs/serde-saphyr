@@ -1,7 +1,11 @@
-use serde_saphyr::{CroppedRegion, Error, MessageFormatter, from_str};
+use serde_saphyr::{Error, from_str};
 use serde_saphyr::from_slice;
 use serde_saphyr::UserMessageFormatter;
 
+#[cfg(any(feature = "garde", feature = "validator"))]
+use serde_saphyr::{CroppedRegion, MessageFormatter};
+
+#[cfg(any(feature = "garde", feature = "validator"))]
 use std::borrow::Cow;
 
 #[test]

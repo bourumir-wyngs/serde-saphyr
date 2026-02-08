@@ -1,6 +1,6 @@
 use crate::budget::BudgetBreach;
 use crate::Location;
-use crate::localizer::{ExternalMessage, ExternalMessageSource, Localizer, DEFAULT_ENGLISH_LOCALIZER};
+use crate::localizer::{ExternalMessageSource, Localizer, DEFAULT_ENGLISH_LOCALIZER};
 use crate::location::Locations;
 use crate::parse_scalars::{
     parse_int_signed, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish,
@@ -18,6 +18,10 @@ use std::cell::RefCell;
 use std::fmt;
 #[cfg(feature = "validator")]
 use validator::{ValidationErrors, ValidationErrorsKind};
+use crate::de_snipped::fmt_snippet_window_offset_or_fallback;
+
+#[cfg(any(feature = "garde", feature = "validator"))]
+use crate::localizer::ExternalMessage;
 
 /// Formats error *messages* (not including locations/snippets).
 ///
@@ -1507,12 +1511,10 @@ fn fmt_error_rendered(
             // Renderer-level de-duplication for AliasError:
             // when we are about to show a secondary “defined here” window, drop the
             // default message suffix " (defined at …)" if present.
-            if dual_locations.is_some() {
-                if let Error::AliasError { locations, .. } = error.as_ref() {
-                    let suffix = l10n.alias_defined_at(locations.defined_location);
-                    if let Some(stripped) = msg.as_ref().strip_suffix(&suffix) {
-                        msg = Cow::Owned(stripped.to_string());
-                    }
+            if dual_locations.is_some() && let Error::AliasError { locations, .. } = error.as_ref() {
+                let suffix = l10n.alias_defined_at(locations.defined_location);
+                if let Some(stripped) = msg.as_ref().strip_suffix(&suffix) {
+                    msg = Cow::Owned(stripped.to_string());
                 }
             }
 
@@ -1533,7 +1535,7 @@ fn fmt_error_rendered(
                 let def_region = pick_cropped_region(regions, &def_loc).unwrap_or(region);
                 writeln!(f)?;
                 writeln!(f, "{}", l10n.value_comes_from_the_anchor(def_loc))?;
-                crate::de_snipped::fmt_snippet_window_offset_or_fallback(
+                fmt_snippet_window_offset_or_fallback(
                     f,
                     l10n,
                     &def_loc,
@@ -1609,7 +1611,7 @@ fn fmt_validation_error_with_snippets_offset(
 
         let (locs, resolved_leaf) = locations
             .search(&path_key)
-            .unwrap_or_else(|| (Locations::UNKNOWN, original_leaf));
+            .unwrap_or((Locations::UNKNOWN, original_leaf));
 
         let ref_loc = locs.reference_location;
         let def_loc = locs.defined_location;
@@ -1718,7 +1720,7 @@ fn fmt_validator_error_with_snippets_offset(
             .unwrap_or_else(|| l10n.root_path_label().into_owned());
         let (locs, resolved_leaf) = locations
             .search(&issue.path)
-            .unwrap_or_else(|| (Locations::UNKNOWN, original_leaf));
+            .unwrap_or((Locations::UNKNOWN, original_leaf));
 
         let resolved_path = format_path_with_resolved_leaf(&issue.path, &resolved_leaf);
         let entry = issue.display_entry_overridden(l10n, ExternalMessageSource::Validator);
@@ -1792,6 +1794,7 @@ fn fmt_validator_error_with_snippets_offset(
     Ok(())
 }
 
+#[cfg(any(feature = "garde", feature = "validator"))]
 fn fmt_error_with_snippets_offset(
     f: &mut fmt::Formatter<'_>,
     err: &Error,

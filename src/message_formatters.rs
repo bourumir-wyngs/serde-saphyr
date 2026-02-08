@@ -1,12 +1,17 @@
 use crate::de_error::{Error, MessageFormatter, UserMessageFormatter};
-use crate::localizer::{ExternalMessage, ExternalMessageSource, Localizer};
-use crate::location::Locations;
+use crate::localizer::{ExternalMessage, Localizer};
 use crate::Location;
 
 use std::borrow::Cow;
 
 #[cfg(any(feature = "garde", feature = "validator"))]
+use crate::localizer::ExternalMessageSource;
+
+#[cfg(any(feature = "garde", feature = "validator"))]
 use crate::path_map::format_path_with_resolved_leaf;
+
+#[cfg(any(feature = "garde", feature = "validator"))]
+use crate::Locations;
 
 #[cfg(feature = "garde")]
 use crate::de_error::collect_garde_issues;
@@ -316,9 +321,8 @@ impl DefaultMessageFormatter {
 }
 
 fn user_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) -> Cow<'a, str> {
-    match err {
-        Error::WithSnippet { error, .. } => return user_format_message(formatter, error),
-        _ => {}
+    if let Error::WithSnippet { error, .. } = err {
+        return user_format_message(formatter, error);
     }
 
     match err {

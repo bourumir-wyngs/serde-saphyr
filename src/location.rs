@@ -28,9 +28,9 @@ pub(crate) type SpanIndex = u64;
 ///    `saphyr-parser`'s native reporting and is always present.
 /// 2. **Byte-based**: `byte_info` contains `(byte_offset, byte_len)` counting raw bytes (UTF-8 code units).
 ///    These are only populated when parsing from string inputs (`&str`, `String`).
-/// Byte base indices are internally limited to 32 bits by default (4 Gb documents). If you work
-/// with larger YAML documents, enable the `huge_documents` feature or do not use byte
-/// offsets (parsing and normal error reporting will still work).
+///    Byte base indices are internally limited to 32 bits by default (4 Gb documents). If you work
+///    with larger YAML documents, enable the `huge_documents` feature or do not use byte
+///    offsets (parsing and normal error reporting will still work).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize, Default)]
 pub struct Span {
     /// Character offset within the source YAML document.
@@ -53,13 +53,27 @@ impl Span {
     /// Returns the character offset within the source YAML document.
     #[inline]
     pub fn offset(&self) -> u64 {
-        self.offset as u64
+        #[cfg(not(feature = "huge_documents"))]
+        {
+            self.offset as u64
+        }
+        #[cfg(feature = "huge_documents")]
+        {
+            self.offset
+        }
     }
 
     /// Returns the character length within the source YAML document.
     #[inline]
     pub fn len(&self) -> u64 {
-        self.len as u64
+        #[cfg(not(feature = "huge_documents"))]
+        {
+            self.len as u64
+        }
+        #[cfg(feature = "huge_documents")]
+        {
+            self.len
+        }
     }
 
     /// Returns the byte offset within the source YAML document.
@@ -69,7 +83,14 @@ impl Span {
         if self.byte_info == (0, 0) {
             None
         } else {
-            Some(self.byte_info.0 as u64)
+            #[cfg(not(feature = "huge_documents"))]
+            {
+                Some(self.byte_info.0 as u64)
+            }
+            #[cfg(feature = "huge_documents")]
+            {
+                Some(self.byte_info.0)
+            }
         }
     }
 
@@ -80,7 +101,14 @@ impl Span {
         if self.byte_info == (0, 0) {
             None
         } else {
-            Some(self.byte_info.1 as u64)
+            #[cfg(not(feature = "huge_documents"))]
+            {
+                Some(self.byte_info.1 as u64)
+            }
+            #[cfg(feature = "huge_documents")]
+            {
+                Some(self.byte_info.1)
+            }
         }
     }
 

@@ -299,7 +299,7 @@ impl<'a> LiveEvents<'a> {
             self.total_replayed_events = self
                 .total_replayed_events
                 .checked_add(1)
-                .ok_or_else(|| Error::AliasReplayCounterOverflow {
+                .ok_or(Error::AliasReplayCounterOverflow {
                     location: Location::UNKNOWN,
                 })
                 .map_err(|err| err.with_location(ev.location()))?;
@@ -676,7 +676,7 @@ impl<'a> LiveEvents<'a> {
                 let done = self
                     .rec_stack
                     .pop()
-                    .ok_or_else(|| Error::InternalRecursionStackEmpty { location: Location::UNKNOWN })?;
+                    .ok_or(Error::InternalRecursionStackEmpty { location: Location::UNKNOWN })?;
                 // Convert SmallVec into Box<[Ev]> and store by anchor_id.
                 self.ensure_anchor_capacity(done.id);
                 self.anchors[done.id] = Some(done.buf.into_vec().into_boxed_slice());

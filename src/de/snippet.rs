@@ -401,7 +401,6 @@ impl<'a> Snippet<'a> {
 
 /// Like [`fmt_snippet_window_or_fallback`], but renders against a text fragment whose line
 /// numbering may be offset.
-#[cfg(any(feature = "garde", feature = "validator"))]
 pub(crate) fn fmt_snippet_window_offset_or_fallback(
     f: &mut fmt::Formatter<'_>,
     l10n: &dyn Localizer,
@@ -445,10 +444,9 @@ fn fmt_snippet_window_with_mapping_or_fallback(
             if absolute_row < start_line {
                 return Ok(());
             }
-            let relative = absolute_row
+            absolute_row
                 .saturating_sub(start_line)
-                .saturating_add(1);
-            relative
+                .saturating_add(1)
         }
     };
 
