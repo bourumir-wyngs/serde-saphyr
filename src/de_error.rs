@@ -14,7 +14,7 @@ use saphyr_parser::{ScalarStyle, ScanError};
 use serde::de::{self};
 use annotate_snippets::Level;
 use std::borrow::Cow;
-use std::cell::RefCell;
+use std::cell::Cell;
 use std::fmt;
 #[cfg(feature = "validator")]
 use validator::{ValidationErrors, ValidationErrorsKind};
@@ -194,6 +194,14 @@ impl CroppedRegion {
     }
 }
 
+fn line_count_including_trailing_empty_line(text: &str) -> usize {
+    let mut lines = text.split_terminator('\n').count().max(1);
+    if text.ends_with('\n') {
+        lines = lines.saturating_add(1);
+    }
+    lines
+}
+
 #[cfg(any(feature = "garde", feature = "validator"))]
 #[derive(Debug, Clone)]
 pub(crate) struct ValidationIssue {
@@ -244,12 +252,19 @@ impl ValidationIssue {
     }
 }
 
+// Fallback location for Serde's static error constructors (`unknown_field`, `missing_field`,
+// etc.) which have no `&self` and cannot access deserializer state. Thread-local because
+// that is the only side-channel available. `Cell` suffices since `Location` is `Copy`.
+//
+// Set to the current key's location before each key deserialization via
+// [`MissingFieldLocationGuard`]; read by [`maybe_attach_fallback_location`].
+// The guard saves/restores the previous value on drop for correct nesting.
 thread_local! {
-    // Best-effort fallback location for Serde structural errors that have no inherent span,
-    // such as `missing_field`. This is set by the deserializer when entering a container.
-    static MISSING_FIELD_FALLBACK: RefCell<Option<Location>> = const { RefCell::new(None) };
+    static MISSING_FIELD_FALLBACK: Cell<Option<Location>> = const { Cell::new(None) };
 }
 
+/// RAII guard for [`MISSING_FIELD_FALLBACK`]. Saves the previous value on creation,
+/// restores it on drop.
 pub(crate) struct MissingFieldLocationGuard {
     prev: Option<Location>,
 }
@@ -259,13 +274,16 @@ impl MissingFieldLocationGuard {
         let prev = MISSING_FIELD_FALLBACK.with(|c| c.replace(Some(location)));
         Self { prev }
     }
+
+    /// Update the fallback location in place, reusing the existing guard's restore point.
+    pub(crate) fn replace_location(&mut self, location: Location) {
+        MISSING_FIELD_FALLBACK.with(|c| c.set(Some(location)));
+    }
 }
 
 impl Drop for MissingFieldLocationGuard {
     fn drop(&mut self) {
-        MISSING_FIELD_FALLBACK.with(|c| {
-            c.replace(self.prev.take());
-        });
+        MISSING_FIELD_FALLBACK.with(|c| c.set(self.prev));
     }
 }
 
@@ -685,7 +703,7 @@ impl Error {
             if cropped.is_empty() {
                 return;
             }
-            let lines = cropped.split_terminator('\n').count().max(1);
+            let lines = line_count_including_trailing_empty_line(cropped.as_str());
             let end_line = start_line.saturating_add(lines.saturating_sub(1));
             regions.push(CroppedRegion {
                 text: cropped,
@@ -779,7 +797,7 @@ impl Error {
             if cropped.is_empty() {
                 return;
             }
-            let lines = cropped.split_terminator('\n').count().max(1);
+            let lines = line_count_including_trailing_empty_line(cropped.as_str());
             let end_line = region_start_line.saturating_add(lines.saturating_sub(1));
             regions.push(CroppedRegion {
                 text: cropped,
@@ -1911,8 +1929,9 @@ pub(crate) fn collect_garde_issues(report: &garde::Report) -> Vec<ValidationIssu
 }
 impl std::error::Error for Error {}
 
+/// Attach the current [`MISSING_FIELD_FALLBACK`] location to `err`, if available.
 fn maybe_attach_fallback_location(mut err: Error) -> Error {
-    let loc = MISSING_FIELD_FALLBACK.with(|c| *c.borrow());
+    let loc = MISSING_FIELD_FALLBACK.with(|c| c.get());
     if let Some(loc) = loc
         && loc != Location::UNKNOWN
     {
@@ -2101,6 +2120,42 @@ mod tests {
         assert!(display.contains("column 7"));
         // Should not contain "defined at" since locations are the same
         assert!(!display.contains("defined at"));
+    }
+
+    #[test]
+    fn with_snippet_counts_trailing_empty_line_for_end_line() {
+        // `"a\n"` has two logical lines: "a" and a trailing empty line.
+        let text = "a\n";
+        let err = Error::Message {
+            msg: "x".to_owned(),
+            location: Location::new(2, 1),
+        };
+
+        let wrapped = err.with_snippet(text, 50);
+        let Error::WithSnippet { regions, .. } = wrapped else {
+            panic!("expected WithSnippet wrapper");
+        };
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].start_line, 1);
+        assert_eq!(regions[0].end_line, 2);
+    }
+
+    #[test]
+    fn with_snippet_offset_counts_trailing_empty_line_for_end_line() {
+        // Fragment starts at line 10, and ends with a newline -> includes empty line 11.
+        let text = "a\n";
+        let err = Error::Message {
+            msg: "x".to_owned(),
+            location: Location::new(11, 1),
+        };
+
+        let wrapped = err.with_snippet_offset(text, 10, 50);
+        let Error::WithSnippet { regions, .. } = wrapped else {
+            panic!("expected WithSnippet wrapper");
+        };
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].start_line, 10);
+        assert_eq!(regions[0].end_line, 11);
     }
 
     #[cfg(feature = "validator")]

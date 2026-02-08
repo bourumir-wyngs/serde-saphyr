@@ -2204,13 +2204,19 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                                 return Err(Error::InternalSeedReusedForMapKey { location });
                             }
                         };
+
+                        // Set the fallback location to the key span *before* deserializing the key.
+                        // Serde can raise `unknown_field` (and similar structural errors) during key
+                        // deserialization itself; if we set the guard only after deserialization,
+                        // those errors will incorrectly fall back to the container start.
+                        match &mut self.fallback_guard {
+                            Some(guard) => guard.replace_location(location),
+                            None => self.fallback_guard = Some(MissingFieldLocationGuard::new(location)),
+                        }
+
                         let key_value = self.deserialize_recorded_key(key_seed, events, kemn)?;
                         self.have_key = true;
                         self.pending_value = Some((value_events, reference_location));
-
-                        // Keep the current fallback location set to the key span so Serde can
-                        // attribute errors like `unknown_field` to the offending key.
-                        self.fallback_guard = Some(MissingFieldLocationGuard::new(location));
 
                         #[cfg(any(feature = "garde", feature = "validator"))]
                         {
@@ -2335,15 +2341,19 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                                         return Err(Error::InternalSeedReusedForMapKey { location });
                                     }
                                 };
+
+                                // Same reasoning as the buffered path above: set key-span fallback
+                                // before key deserialization so errors during key parsing are
+                                // attributed to this key.
+                                match &mut self.fallback_guard {
+                                    Some(guard) => guard.replace_location(location),
+                                    None => self.fallback_guard = Some(MissingFieldLocationGuard::new(location)),
+                                }
+
                                 let key_value =
                                     self.deserialize_recorded_key(key_seed, events, kemn_direct)?;
                                 self.have_key = true;
                                 self.pending_value = None; // value will be read live
-
-                                // Same as the buffered path above: keep the key location alive
-                                // across the caller boundary.
-                                self.fallback_guard =
-                                    Some(MissingFieldLocationGuard::new(location));
 
                                 #[cfg(any(feature = "garde", feature = "validator"))]
                                 {
