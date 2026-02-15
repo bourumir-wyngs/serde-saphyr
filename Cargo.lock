@@ -786,7 +786,7 @@ dependencies = [
 
 [[package]]
 name = "serde-saphyr"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "ahash",
  "annotate-snippets",
