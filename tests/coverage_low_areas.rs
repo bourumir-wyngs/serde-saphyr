@@ -290,7 +290,7 @@ mod zmij_format_tests {
         struct W {
             v: f64,
         }
-        serde_saphyr::to_fmt_writer(&mut buf, &W { v: 1.23e10 }).unwrap();
+        serde_saphyr::to_fmt_writer(&mut buf, &W { v: 1.23e20 }).unwrap();
         assert!(buf.contains("e+"), "expected e+ exponent sign with decimal mantissa, got: {buf}");
     }
 
@@ -318,7 +318,7 @@ mod zmij_format_tests {
 
     #[test]
     fn round_trip_scientific_decimal_pos() {
-        let s = round_trip(1.23e10);
+        let s = round_trip(1.23e20);
         assert!(s.contains("e+"), "expected e+ exponent sign, got: {s}");
     }
 
