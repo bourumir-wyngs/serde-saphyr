@@ -224,7 +224,7 @@ mod zmij_format_tests {
             v: f64,
         }
         let mut buf = String::new();
-        serde_saphyr::to_writer(&mut buf, &W { v: f64::NAN }).unwrap();
+        serde_saphyr::to_fmt_writer(&mut buf, &W { v: f64::NAN }).unwrap();
         assert!(buf.contains(".nan"));
     }
 
