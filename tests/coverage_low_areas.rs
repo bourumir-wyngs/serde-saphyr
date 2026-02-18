@@ -271,6 +271,62 @@ mod zmij_format_tests {
         serde_saphyr::to_fmt_writer(&mut buf, &W { v: 1.0 }).unwrap();
         assert!(buf.contains('.'), "expected decimal point, got: {buf}");
     }
+
+    #[test]
+    fn write_path_large_exponent() {
+        let mut buf = String::new();
+        #[derive(Serialize)]
+        struct W {
+            v: f64,
+        }
+        serde_saphyr::to_fmt_writer(&mut buf, &W { v: 1e20 }).unwrap();
+        assert!(buf.contains("e+"), "expected e+ exponent sign, got: {buf}");
+    }
+
+    #[test]
+    fn write_path_scientific_decimal_pos() {
+        let mut buf = String::new();
+        #[derive(Serialize)]
+        struct W {
+            v: f64,
+        }
+        serde_saphyr::to_fmt_writer(&mut buf, &W { v: 1.23e10 }).unwrap();
+        assert!(buf.contains("e+"), "expected e+ exponent sign with decimal mantissa, got: {buf}");
+    }
+
+    #[test]
+    fn write_path_scientific_decimal_neg() {
+        let mut buf = String::new();
+        #[derive(Serialize)]
+        struct W {
+            v: f64,
+        }
+        serde_saphyr::to_fmt_writer(&mut buf, &W { v: 1.23e-10 }).unwrap();
+        assert!(buf.contains("e-"), "expected e- exponent sign, got: {buf}");
+    }
+
+    #[test]
+    fn write_path_f32_large_exp() {
+        let mut buf = String::new();
+        #[derive(Serialize)]
+        struct W {
+            v: f32,
+        }
+        serde_saphyr::to_fmt_writer(&mut buf, &W { v: 1e20f32 }).unwrap();
+        assert!(buf.contains("e"), "expected scientific notation, got: {buf}");
+    }
+
+    #[test]
+    fn round_trip_scientific_decimal_pos() {
+        let s = round_trip(1.23e10);
+        assert!(s.contains("e+"), "expected e+ exponent sign, got: {s}");
+    }
+
+    #[test]
+    fn round_trip_scientific_decimal_neg() {
+        let s = round_trip(1.23e-10);
+        assert!(s.contains("e-"), "expected e- exponent sign, got: {s}");
+    }
 }
 
 // ─── localizer ───────────────────────────────────────────────────────────────
