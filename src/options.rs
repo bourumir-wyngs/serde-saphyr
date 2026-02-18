@@ -196,3 +196,47 @@ impl std::fmt::Debug for Options {
             .finish()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_options_default() {
+        let opts = Options::default();
+        assert!(opts.budget.is_some());
+        assert!(opts.budget_report.is_none());
+        assert!(opts.budget_report_cb.is_none());
+        assert!(matches!(opts.duplicate_keys, DuplicateKeyPolicy::Error));
+        assert_eq!(opts.alias_limits.max_total_replayed_events, 1_000_000);
+        assert!(!opts.legacy_octal_numbers);
+        assert!(!opts.strict_booleans);
+        assert!(!opts.ignore_binary_tag_for_string);
+        assert!(!opts.angle_conversions);
+        assert!(!opts.no_schema);
+        assert!(opts.with_snippet);
+        assert_eq!(opts.crop_radius, 64);
+    }
+
+    #[test]
+    fn test_options_debug_format() {
+        let opts = Options::default();
+        let debug_str = format!("{:?}", opts);
+        assert!(debug_str.contains("Options"));
+        assert!(debug_str.contains("budget"));
+        assert!(debug_str.contains("budget_report_cb: \"none\""));
+        
+        // Test with callback
+        let opts_with_cb = opts.with_budget_report(|_| {});
+        let debug_str_cb = format!("{:?}", opts_with_cb);
+        assert!(debug_str_cb.contains("budget_report_cb: \"set\""));
+    }
+    
+    #[test]
+    fn test_alias_limits_default() {
+        let limits = AliasLimits::default();
+        assert_eq!(limits.max_total_replayed_events, 1_000_000);
+        assert_eq!(limits.max_replay_stack_depth, 64);
+        assert_eq!(limits.max_alias_expansions_per_anchor, usize::MAX);
+    }
+}

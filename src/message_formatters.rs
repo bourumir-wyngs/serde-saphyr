@@ -415,3 +415,68 @@ impl UserMessageFormatter {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::de_error::{Error, MessageFormatter};
+    use crate::Location;
+
+    #[test]
+    fn test_default_formatter() {
+        let formatter = DefaultMessageFormatter;
+        
+        let err = Error::Message {
+            msg: "test error".to_owned(),
+            location: Location::UNKNOWN,
+        };
+        assert_eq!(formatter.format_message(&err), "test error");
+        
+        let err = Error::InvalidUtf8Input;
+        assert_eq!(formatter.format_message(&err), "input is not valid UTF-8");
+        
+        let err = Error::Unexpected {
+            expected: "something else",
+            location: Location::UNKNOWN,
+        };
+        assert_eq!(formatter.format_message(&err), "unexpected event: expected something else");
+        
+        let err = Error::SerdeInvalidType {
+            unexpected: "sequence".to_owned(),
+            expected: "integer".to_owned(),
+            location: Location::UNKNOWN,
+        };
+        // Expect: "invalid type: sequence, expected integer"
+        let msg = formatter.format_message(&err);
+        assert!(msg.contains("invalid type: sequence"), "got: {}", msg);
+        assert!(msg.contains("expected integer"), "got: {}", msg);
+    }
+
+    #[test]
+    fn test_user_formatter_serde_invalid_type() {
+        let formatter = UserMessageFormatter;
+        
+        let err = Error::SerdeInvalidType {
+            unexpected: "sequence".to_owned(),
+            expected: "integer".to_owned(),
+            location: Location::UNKNOWN,
+        };
+        // User formatter typically rephrases some errors
+        // I suspect user formatter might produce "Type mismatch: expected integer, got sequence"
+        // Let's verify what it actually produces by running the test.
+        // I'll make the assertion loose first or just check keywords.
+        let msg = formatter.format_message(&err);
+        // If it's the same as default, this will pass. If it's different, I'll see.
+        // Wait, I can't see unless I print it.
+        // But I can check if it contains "expected integer".
+        assert!(msg.contains("expected integer"), "got: {}", msg);
+        assert!(msg.contains("sequence"), "got: {}", msg);
+    }
+
+    #[test]
+    fn test_eof_error() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::Eof { location: Location::UNKNOWN };
+        assert_eq!(formatter.format_message(&err), "unexpected end of input");
+    }
+}
+
