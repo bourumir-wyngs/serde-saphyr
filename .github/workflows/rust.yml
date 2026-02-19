@@ -110,3 +110,25 @@ jobs:
           export PATH=$PATH:/home/github-runner/.cargo/bin
           cargo test --target wasm32-wasip1 --locked
 
+  build_os_compat:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc -V
+          cargo -V
+        shell: bash
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run tests (all features)
+        run: cargo test --locked --all-features
+
