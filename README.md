@@ -4,6 +4,7 @@
 [![Miri](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/miri.yml/badge.svg)](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/miri.yml)
 ![panic-free](https://img.shields.io/badge/panic--free-%E2%9C%94%EF%B8%8F-brightgreen)
 [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/bourumir-wyngs/serde-saphyr/rust.yml)](https://github.com/bourumir-wyngs/serde-saphyr/actions)
+[![codecov](https://codecov.io/gh/bourumir-wyngs/serde-saphyr/graph/badge.svg)](https://codecov.io/gh/bourumir-wyngs/serde-saphyr)
 [![crates.io](https://img.shields.io/crates/v/serde-saphyr.svg)](https://crates.io/crates/serde-saphyr)
 [![crates.io](https://img.shields.io/crates/l/serde-saphyr.svg)](https://crates.io/crates/serde-saphyr)
 [![crates.io](https://img.shields.io/crates/d/serde-saphyr.svg)](https://crates.io/crates/serde-saphyr)
