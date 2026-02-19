@@ -142,20 +142,23 @@ jobs:
           export PATH=$PATH:/home/github-runner/.cargo/bin
           rustup toolchain install stable --profile minimal
           rustup default stable
+          rustup component add llvm-tools-preview
 
-      - name: Install cargo-tarpaulin
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-tarpaulin
+      - name: Install cargo-llvm-cov
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin
+          cargo install cargo-llvm-cov --locked
 
       - name: Generate code coverage
         run: |
           export PATH=$PATH:/home/github-runner/.cargo/bin
-          cargo tarpaulin --out Xml --all-features
+          cargo llvm-cov --all-features --lcov --output-path lcov.info
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: bourumir-wyngs/serde-saphyr
+          files: lcov.info
+          fail_ci_if_error: true
 
