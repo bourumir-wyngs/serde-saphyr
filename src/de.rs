@@ -1151,7 +1151,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     let _ = self.ev.next()?; // consume
                     return visitor.visit_unit();
                 }
-                if !is_plain || !tag.can_parse_into_string() || tag == &SfTag::Binary {
+                if !is_plain || !tag.can_parse_into_string() || tag == &SfTag::Binary || tag == &SfTag::String {
                     // For string-ish scalars, rely on the parser's own zero-copy capability:
                     // if the scalar is returned as `Cow::Borrowed`, we can pass it through.
                     // Otherwise we fall back to owning.
