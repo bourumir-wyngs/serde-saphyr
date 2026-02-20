@@ -73,6 +73,7 @@ serde_ignored = "0.1"
 serde_path_to_error = "0.1"
 serde_json = { version = "1", features = ["preserve_order"] }
 miette = { version = "7", features = ["fancy"] }
+tempfile = "3.25.0"
 
 [package.metadata]
 status = "actively developed"
