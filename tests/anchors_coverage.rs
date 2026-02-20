@@ -574,6 +574,7 @@ fn arc_recursive_deserialize_no_anchor_context() {
 #[test]
 fn rc_weak_anchor_non_alias_errors() {
     #[derive(Deserialize)]
+    #[allow(dead_code)]
     struct Doc {
         strong: RcAnchor<Val>,
         weak: RcWeakAnchor<Val>,
@@ -592,6 +593,7 @@ fn rc_weak_anchor_non_alias_errors() {
 #[test]
 fn arc_weak_anchor_before_strong_errors() {
     #[derive(Deserialize)]
+    #[allow(dead_code)]
     struct Doc {
         weak: ArcWeakAnchor<Val>,
         strong: ArcAnchor<Val>,
