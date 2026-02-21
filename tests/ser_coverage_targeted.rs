@@ -1060,7 +1060,8 @@ fn tuple_struct_serialized() {
     #[derive(Serialize)]
     struct Point(i32, i32);
     let yaml = to_string(&Point(3, 4)).unwrap();
-    assert!(yaml.contains("3") && yaml.contains("4"), "yaml: {yaml}");
+    assert!(yaml.contains("- 3"), "expected first element: {yaml}");
+    assert!(yaml.contains("- 4"), "expected second element: {yaml}");
 }
 
 // ── Tuple variant serialization ───────────────────────────────────────────────
@@ -1074,7 +1075,9 @@ fn tuple_variant_serialized() {
         Rect(f64, f64),
     }
     let yaml = to_string(&Shape::Rect(2.0, 3.0)).unwrap();
-    assert!(yaml.contains("Rect") || yaml.contains("2") , "yaml: {yaml}");
+    assert!(yaml.contains("Rect"), "expected variant name: {yaml}");
+    assert!(yaml.contains("2.0") || yaml.contains("2."), "expected first field: {yaml}");
+    assert!(yaml.contains("3.0") || yaml.contains("3."), "expected second field: {yaml}");
 }
 
 // ── Struct variant serialization ──────────────────────────────────────────────
@@ -1086,7 +1089,9 @@ fn struct_variant_serialized() {
         Move { x: i32, y: i32 },
     }
     let yaml = to_string(&Event::Move { x: 10, y: 20 }).unwrap();
-    assert!(yaml.contains("x") && yaml.contains("10"), "yaml: {yaml}");
+    assert!(yaml.contains("Move"), "expected variant name: {yaml}");
+    assert!(yaml.contains("x: 10"), "expected first field: {yaml}");
+    assert!(yaml.contains("y: 20") || yaml.contains("\"y\": 20"), "expected second field: {yaml}");
 }
 
 // ── to_io_writer ──────────────────────────────────────────────────────────────

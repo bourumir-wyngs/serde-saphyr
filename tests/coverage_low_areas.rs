@@ -466,10 +466,14 @@ mod localizer_tests {
     }
 
     /// Custom localizer that overrides one method.
+    #[derive(Debug, Clone, Copy)]
     struct SpanishLocalizer;
     impl Localizer for SpanishLocalizer {
         fn root_path_label(&self) -> Cow<'static, str> {
             Cow::Borrowed("<raíz>")
+        }
+        fn defined(&self) -> Cow<'static, str> {
+            Cow::Borrowed("(definido)")
         }
     }
 
@@ -477,8 +481,13 @@ mod localizer_tests {
     fn custom_localizer_override() {
         let l = SpanishLocalizer;
         assert_eq!(l.root_path_label(), "<raíz>");
+        assert_eq!(l.defined(), "(definido)");
         // Other methods still return English defaults
-        assert_eq!(l.defined(), "(defined)");
+        assert_eq!(l.defined_here(), "(defined here)");
+
+        let _ = format!("{:?}", l);
+        let l2 = l;
+        let _ = l2;
     }
 }
 

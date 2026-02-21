@@ -165,7 +165,7 @@ fn rc_weak_anchor_ne_different_ptr() {
 }
 
 #[test]
-fn rc_weak_anchor_eq_both_dangling() {
+fn rc_weak_anchor_ne_both_dangling() {
     let a: RcWeakAnchor<Val> = RcWeakAnchor(Rc::downgrade(&{
         let tmp = Rc::new(Val { x: 0 });
         tmp
@@ -174,8 +174,8 @@ fn rc_weak_anchor_eq_both_dangling() {
         let tmp = Rc::new(Val { x: 0 });
         tmp
     }));
-    // Both dangling → equal
-    assert_eq!(a, b);
+    // Both dangling and from different sources → not equal
+    assert_ne!(a, b);
 }
 
 #[test]
@@ -207,7 +207,7 @@ fn arc_weak_anchor_ne_different_ptr() {
 }
 
 #[test]
-fn arc_weak_anchor_eq_both_dangling() {
+fn arc_weak_anchor_ne_both_dangling() {
     let a: ArcWeakAnchor<Val> = ArcWeakAnchor(Arc::downgrade(&{
         let tmp = Arc::new(Val { x: 0 });
         tmp
@@ -216,7 +216,7 @@ fn arc_weak_anchor_eq_both_dangling() {
         let tmp = Arc::new(Val { x: 0 });
         tmp
     }));
-    assert_eq!(a, b);
+    assert_ne!(a, b);
 }
 
 #[test]
@@ -276,7 +276,7 @@ fn rc_recursion_ne_different_ptr() {
 }
 
 #[test]
-fn rc_recursion_eq_both_dangling() {
+fn rc_recursion_ne_both_dangling() {
     let a = {
         let r = RcRecursive::wrapping(Val { x: 0 });
         RcRecursion::from(&r)
@@ -285,7 +285,7 @@ fn rc_recursion_eq_both_dangling() {
         let r = RcRecursive::wrapping(Val { x: 0 });
         RcRecursion::from(&r)
     };
-    assert_eq!(a, b);
+    assert_ne!(a, b);
 }
 
 #[test]
@@ -317,7 +317,7 @@ fn arc_recursion_ne_different_ptr() {
 }
 
 #[test]
-fn arc_recursion_eq_both_dangling() {
+fn arc_recursion_ne_both_dangling() {
     let a = {
         let r = ArcRecursive::wrapping(Val { x: 0 });
         ArcRecursion::from(&r)
@@ -326,7 +326,7 @@ fn arc_recursion_eq_both_dangling() {
         let r = ArcRecursive::wrapping(Val { x: 0 });
         ArcRecursion::from(&r)
     };
-    assert_eq!(a, b);
+    assert_ne!(a, b);
 }
 
 #[test]
