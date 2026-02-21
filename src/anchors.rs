@@ -515,11 +515,7 @@ impl<T> Eq for ArcAnchor<T> {}
 impl<T> PartialEq for RcWeakAnchor<T> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        match (self.0.upgrade(), other.0.upgrade()) {
-            (Some(a), Some(b)) => Rc::ptr_eq(&a, &b),
-            (None, None) => true,
-            _ => false,
-        }
+        self.0.ptr_eq(&other.0)
     }
 }
 impl<T> Eq for RcWeakAnchor<T> {}
@@ -527,11 +523,7 @@ impl<T> Eq for RcWeakAnchor<T> {}
 impl<T> PartialEq for RcRecursion<T> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        match (self.0.upgrade(), other.0.upgrade()) {
-            (Some(a), Some(b)) => Rc::ptr_eq(&a, &b),
-            (None, None) => true,
-            _ => false,
-        }
+        self.0.ptr_eq(&other.0)
     }
 }
 impl<T> Eq for RcRecursion<T> {}
@@ -539,11 +531,7 @@ impl<T> Eq for RcRecursion<T> {}
 impl<T> PartialEq for ArcWeakAnchor<T> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        match (self.0.upgrade(), other.0.upgrade()) {
-            (Some(a), Some(b)) => Arc::ptr_eq(&a, &b),
-            (None, None) => true,
-            _ => false,
-        }
+        self.0.ptr_eq(&other.0)
     }
 }
 impl<T> PartialEq for RcRecursive<T> {
@@ -557,11 +545,7 @@ impl<T> Eq for RcRecursive<T> {}
 impl<T> PartialEq for ArcRecursion<T> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        match (self.0.upgrade(), other.0.upgrade()) {
-            (Some(a), Some(b)) => Arc::ptr_eq(&a, &b),
-            (None, None) => true,
-            _ => false,
-        }
+        self.0.ptr_eq(&other.0)
     }
 }
 impl<T> Eq for ArcRecursion<T> {}
