@@ -166,14 +166,8 @@ fn rc_weak_anchor_ne_different_ptr() {
 
 #[test]
 fn rc_weak_anchor_ne_both_dangling() {
-    let a: RcWeakAnchor<Val> = RcWeakAnchor(Rc::downgrade(&{
-        let tmp = Rc::new(Val { x: 0 });
-        tmp
-    }));
-    let b: RcWeakAnchor<Val> = RcWeakAnchor(Rc::downgrade(&{
-        let tmp = Rc::new(Val { x: 0 });
-        tmp
-    }));
+    let a: RcWeakAnchor<Val> = RcWeakAnchor(Rc::downgrade(&Rc::new(Val { x: 0 })));
+    let b: RcWeakAnchor<Val> = RcWeakAnchor(Rc::downgrade(&Rc::new(Val { x: 0 })));
     // Both dangling and from different sources → not equal
     assert_ne!(a, b);
 }
@@ -182,10 +176,7 @@ fn rc_weak_anchor_ne_both_dangling() {
 fn rc_weak_anchor_ne_one_dangling() {
     let rc = Rc::new(Val { x: 3 });
     let alive = RcWeakAnchor::from(&rc);
-    let dangling: RcWeakAnchor<Val> = RcWeakAnchor(Rc::downgrade(&{
-        let tmp = Rc::new(Val { x: 0 });
-        tmp
-    }));
+    let dangling: RcWeakAnchor<Val> = RcWeakAnchor(Rc::downgrade(&Rc::new(Val { x: 0 })));
     assert_ne!(alive, dangling);
 }
 
@@ -208,14 +199,8 @@ fn arc_weak_anchor_ne_different_ptr() {
 
 #[test]
 fn arc_weak_anchor_ne_both_dangling() {
-    let a: ArcWeakAnchor<Val> = ArcWeakAnchor(Arc::downgrade(&{
-        let tmp = Arc::new(Val { x: 0 });
-        tmp
-    }));
-    let b: ArcWeakAnchor<Val> = ArcWeakAnchor(Arc::downgrade(&{
-        let tmp = Arc::new(Val { x: 0 });
-        tmp
-    }));
+    let a: ArcWeakAnchor<Val> = ArcWeakAnchor(Arc::downgrade(&Arc::new(Val { x: 0 })));
+    let b: ArcWeakAnchor<Val> = ArcWeakAnchor(Arc::downgrade(&Arc::new(Val { x: 0 })));
     assert_ne!(a, b);
 }
 
@@ -223,10 +208,7 @@ fn arc_weak_anchor_ne_both_dangling() {
 fn arc_weak_anchor_ne_one_dangling() {
     let arc = Arc::new(Val { x: 4 });
     let alive = ArcWeakAnchor::from(&arc);
-    let dangling: ArcWeakAnchor<Val> = ArcWeakAnchor(Arc::downgrade(&{
-        let tmp = Arc::new(Val { x: 0 });
-        tmp
-    }));
+    let dangling: ArcWeakAnchor<Val> = ArcWeakAnchor(Arc::downgrade(&Arc::new(Val { x: 0 })));
     assert_ne!(alive, dangling);
 }
 
@@ -366,10 +348,7 @@ fn debug_rc_weak_anchor_alive() {
 
 #[test]
 fn debug_rc_weak_anchor_dangling() {
-    let w: RcWeakAnchor<Val> = RcWeakAnchor(Rc::downgrade(&{
-        let tmp = Rc::new(Val { x: 0 });
-        tmp
-    }));
+    let w: RcWeakAnchor<Val> = RcWeakAnchor(Rc::downgrade(&Rc::new(Val { x: 0 })));
     let s = format!("{:?}", w);
     assert!(s.contains("dangling"), "got: {s}");
 }
@@ -384,10 +363,7 @@ fn debug_arc_weak_anchor_alive() {
 
 #[test]
 fn debug_arc_weak_anchor_dangling() {
-    let w: ArcWeakAnchor<Val> = ArcWeakAnchor(Arc::downgrade(&{
-        let tmp = Arc::new(Val { x: 0 });
-        tmp
-    }));
+    let w: ArcWeakAnchor<Val> = ArcWeakAnchor(Arc::downgrade(&Arc::new(Val { x: 0 })));
     let s = format!("{:?}", w);
     assert!(s.contains("dangling"), "got: {s}");
 }

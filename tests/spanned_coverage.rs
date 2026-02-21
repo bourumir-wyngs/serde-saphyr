@@ -35,7 +35,7 @@ flat_struct!(FlatVec, Vec<i32>);
 #[test]
 fn flatten_spanned_bool() {
     let v: FlatBool = serde_saphyr::from_str("val: true\n").unwrap();
-    assert_eq!(v.inner["val"].value, true);
+    assert!(v.inner["val"].value);
 }
 
 #[test]
@@ -58,14 +58,16 @@ fn flatten_spanned_u32() {
 
 #[test]
 fn flatten_spanned_f32() {
-    let v: FlatF32 = serde_saphyr::from_str("val: 3.14\n").unwrap();
-    assert!((v.inner["val"].value - 3.14).abs() < 0.01);
+    let yaml = format!("val: {}\n", std::f32::consts::PI);
+    let v: FlatF32 = serde_saphyr::from_str(&yaml).unwrap();
+    assert!((v.inner["val"].value - std::f32::consts::PI).abs() < 0.01);
 }
 
 #[test]
 fn flatten_spanned_f64() {
-    let v: FlatF64 = serde_saphyr::from_str("val: 2.718\n").unwrap();
-    assert!((v.inner["val"].value - 2.718).abs() < 0.001);
+    let yaml = format!("val: {}\n", std::f64::consts::E);
+    let v: FlatF64 = serde_saphyr::from_str(&yaml).unwrap();
+    assert!((v.inner["val"].value - std::f64::consts::E).abs() < 0.001);
 }
 
 #[test]

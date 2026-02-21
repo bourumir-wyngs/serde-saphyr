@@ -244,8 +244,10 @@ fn c1_control_char_uses_hex_escape() {
 // a single-quote character correctly falls through to double-quoting.
 #[test]
 fn quote_all_with_single_quote_uses_double_quotes() {
-    let mut opts = SerializerOptions::default();
-    opts.quote_all = true;
+    let opts = SerializerOptions {
+        quote_all: true,
+        ..Default::default()
+    };
     let yaml = serde_saphyr::to_string_with_options(&"it's", opts).unwrap();
     // Should be double-quoted because single-quote triggers needs_double_quotes
     assert!(yaml.contains("\"it's\""), "Expected double-quoted: {}", yaml);

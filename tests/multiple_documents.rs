@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-fn unwrap_snippet<'a>(err: &'a serde_saphyr::Error) -> &'a serde_saphyr::Error {
+fn unwrap_snippet(err: &serde_saphyr::Error) -> &serde_saphyr::Error {
     match err {
         serde_saphyr::Error::WithSnippet { error, .. } => error,
         other => other,

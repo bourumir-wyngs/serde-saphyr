@@ -190,7 +190,6 @@ fn spanned_deser_span_accessors() {
     let s: S = serde_saphyr::from_str(yaml).unwrap();
     let span = s.v.referenced.span();
     assert_eq!(span.offset() as usize, yaml.find("hello").unwrap());
-    assert!(span.len() > 0);
     assert!(!span.is_empty());
     // byte_offset and byte_len are available for string sources
     assert!(span.byte_offset().is_some());
@@ -230,8 +229,9 @@ fn spanned_deser_float() {
     struct S {
         v: Spanned<f64>,
     }
-    let s: S = serde_saphyr::from_str("v: 3.14\n").unwrap();
-    assert!((s.v.value - 3.14).abs() < 1e-10);
+    let yaml = format!("v: {}\n", std::f64::consts::PI);
+    let s: S = serde_saphyr::from_str(&yaml).unwrap();
+    assert!((s.v.value - std::f64::consts::PI).abs() < 1e-10);
     assert_eq!(s.v.referenced.line(), 1);
 }
 

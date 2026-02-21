@@ -496,8 +496,8 @@ fn serialize_integer_key_map() {
 
 #[test]
 fn serialize_float_key_map() {
-    let s = serde_saphyr::to_string(&3.14f64).unwrap();
-    assert!(s.contains("3.14"));
+    let s = serde_saphyr::to_string(&std::f64::consts::PI).unwrap();
+    assert!(s.contains("3.14159"));
 }
 
 // ── de.rs: deserialize various types ───────────────────────────────────

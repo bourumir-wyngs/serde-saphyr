@@ -60,10 +60,10 @@ mod tests {
     }
 
     #[test]
-    fn transform_reason_clone() {
+    fn transform_reason_copy() {
         let reason = TransformReason::MultiLineNormalization;
-        let cloned = reason.clone();
-        assert_eq!(reason, cloned);
+        let copied = reason;
+        assert_eq!(reason, copied);
     }
 
     #[test]

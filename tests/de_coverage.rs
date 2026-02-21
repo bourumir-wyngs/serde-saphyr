@@ -264,7 +264,7 @@ struct WithBool {
 fn bool_strict_true() {
     let opts = serde_saphyr::options! { strict_booleans: true };
     let v: WithBool = serde_saphyr::from_str_with_options("b: true\n", opts).unwrap();
-    assert_eq!(v.b, true);
+    assert!(v.b);
 }
 
 /// Strict booleans: "yes" rejected.
@@ -405,8 +405,9 @@ struct WithF32 {
 
 #[test]
 fn deserialize_f32() {
-    let v: WithF32 = serde_saphyr::from_str("f: 3.14\n").unwrap();
-    assert!((v.f - 3.14f32).abs() < 1e-5);
+    let yaml = format!("f: {}\n", std::f32::consts::PI);
+    let v: WithF32 = serde_saphyr::from_str(&yaml).unwrap();
+    assert!((v.f - std::f32::consts::PI).abs() < 1e-5);
 }
 
 // ---------------------------------------------------------------------------

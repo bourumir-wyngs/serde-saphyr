@@ -837,7 +837,7 @@ second: *name
     // Unicode-specific edge-case tests for zero-copy deserialization.
 
     #[cfg(test)]
-    mod tests {
+    mod unicode_tests {
         use serde::Deserialize;
 
         #[derive(Debug, Deserialize, PartialEq)]

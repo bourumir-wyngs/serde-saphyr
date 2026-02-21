@@ -175,8 +175,8 @@ mod zmij_format_tests {
 
     #[test]
     fn regular_float() {
-        let s = round_trip(3.14);
-        assert!(s.contains("3.14"), "expected 3.14, got: {s}");
+        let s = round_trip(std::f64::consts::PI);
+        assert!(s.contains("3.14159"), "expected PI (~3.14159), got: {s}");
     }
 
     #[test]

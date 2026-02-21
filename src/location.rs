@@ -408,7 +408,7 @@ mod tests {
             len: 20,
             byte_info: (100, 20),
         };
-        let loc_with_span = loc.with_span(span.clone());
+        let loc_with_span = loc.with_span(span);
         
         // Span implements Copy? Not sure, let's check.
         // impl Span defines methods. Does it derive Copy?

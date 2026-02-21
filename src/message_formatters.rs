@@ -597,7 +597,7 @@ mod tests {
     #[test]
     fn default_io_error() {
         let formatter = DefaultMessageFormatter;
-        let err = Error::IOError { cause: std::io::Error::new(std::io::ErrorKind::Other, "disk full") };
+        let err = Error::IOError { cause: std::io::Error::other("disk full") };
         let msg = formatter.format_message(&err);
         assert!(msg.contains("IO error"), "got: {msg}");
         assert!(msg.contains("disk full"), "got: {msg}");
