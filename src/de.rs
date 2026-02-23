@@ -2523,9 +2523,11 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
         _variants: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
-        enum Mode {
+        enum Mode<'a> {
             Unit(String, Location),
             Map(String, Location),
+            /// Tag selects the variant, scalar value is the newtype payload.
+            TaggedNewtype(String, Location, Vec<Ev<'a>>),
         }
 
         let mut tagged_enum = None;
@@ -2546,8 +2548,29 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     let (v, _t, loc) = self.take_scalar_event()?;
                     return Err(Error::quoting_required(&v).with_location(loc));
                 }
-                let (value, _tag, loc) = self.take_scalar_event()?;
-                Mode::Unit(value, loc)
+                // If the tag matches a variant name, use tag as variant selector
+                // and the scalar value as newtype payload.
+                if let Some((ref tag_name, tag_loc)) = tagged_enum {
+                    if _variants.contains(&tag_name.as_str()) {
+                        let variant_name = tag_name.clone();
+                        // Consume the scalar and re-emit it without the tag for payload deserialization
+                        let ev = self.ev.next()?.unwrap();
+                        let replay = match ev {
+                            Ev::Scalar { value, style, location, anchor, .. } => {
+                                vec![Ev::Scalar { value, tag: SfTag::String, raw_tag: None, style, location, anchor }]
+                            }
+                            other => vec![other],
+                        };
+                        tagged_enum = None; // prevent mismatch check
+                        Mode::TaggedNewtype(variant_name, tag_loc, replay)
+                    } else {
+                        let (value, _tag, loc) = self.take_scalar_event()?;
+                        Mode::Unit(value, loc)
+                    }
+                } else {
+                    let (value, _tag, loc) = self.take_scalar_event()?;
+                    Mode::Unit(value, loc)
+                }
             }
             Some(Ev::MapStart { .. }) => {
                 self.expect_map_start()?;
@@ -2735,6 +2758,72 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             }
         }
 
+        struct TaggedEA<'de> {
+            replay: Box<ReplayEvents<'de>>,
+            cfg: Cfg,
+            variant: String,
+            variant_location: Location,
+        }
+
+        impl<'de> de::EnumAccess<'de> for TaggedEA<'de> {
+            type Error = Error;
+            type Variant = TaggedVA<'de>;
+
+            fn variant_seed<Vv>(self, seed: Vv) -> Result<(Vv::Value, Self::Variant), Error>
+            where
+                Vv: de::DeserializeSeed<'de>,
+            {
+                let v = seed.deserialize(self.variant.clone().into_deserializer()).map_err(
+                    |err: serde::de::value::Error| {
+                        Error::SerdeVariantId {
+                            msg: err.to_string(),
+                            location: self.variant_location,
+                        }
+                    },
+                )?;
+                Ok((v, TaggedVA { replay: self.replay, cfg: self.cfg }))
+            }
+        }
+
+        struct TaggedVA<'de> {
+            replay: Box<ReplayEvents<'de>>,
+            cfg: Cfg,
+        }
+
+        impl<'de> de::VariantAccess<'de> for TaggedVA<'de> {
+            type Error = Error;
+
+            fn unit_variant(self) -> Result<(), Error> {
+                Ok(())
+            }
+
+            fn newtype_variant_seed<T>(mut self, seed: T) -> Result<T::Value, Error>
+            where
+                T: de::DeserializeSeed<'de>,
+            {
+                seed.deserialize(YamlDeserializer::new(&mut *self.replay, self.cfg))
+            }
+
+            fn tuple_variant<Vv>(mut self, len: usize, visitor: Vv) -> Result<Vv::Value, Error>
+            where
+                Vv: Visitor<'de>,
+            {
+                YamlDeserializer::new(&mut *self.replay, self.cfg).deserialize_tuple(len, visitor)
+            }
+
+            fn struct_variant<Vv>(
+                mut self,
+                fields: &'static [&'static str],
+                visitor: Vv,
+            ) -> Result<Vv::Value, Error>
+            where
+                Vv: Visitor<'de>,
+            {
+                YamlDeserializer::new(&mut *self.replay, self.cfg)
+                    .deserialize_struct("", fields, visitor)
+            }
+        }
+
         let access = match mode {
             Mode::Unit(variant, variant_location) => EA {
                 ev: self.ev,
@@ -2750,6 +2839,16 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 map_mode: true,
                 variant_location,
             },
+            Mode::TaggedNewtype(variant, variant_location, replay_buf) => {
+                let replay = Box::new(ReplayEvents::new(replay_buf));
+                // We need to use a replay source for the payload
+                return visitor.visit_enum(TaggedEA {
+                    replay,
+                    cfg: self.cfg,
+                    variant,
+                    variant_location,
+                });
+            }
         };
 
         visitor.visit_enum(access)

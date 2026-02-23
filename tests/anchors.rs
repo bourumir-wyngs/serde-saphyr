@@ -1,3 +1,5 @@
+pub mod anon_enums;
+
 #[cfg(test)]
 mod tests {
     use serde::Deserialize;
