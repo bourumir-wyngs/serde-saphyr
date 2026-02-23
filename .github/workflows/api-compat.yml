@@ -1,0 +1,30 @@
+name: 0.0.18 API compatibility
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  semver:
+    name: cargo-semver-checks (vs 0.0.18)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check public API compatibility
+        uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          baseline-ref: 0.0.18
