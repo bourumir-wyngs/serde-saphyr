@@ -142,7 +142,12 @@ pub(crate) enum Ev<'a> {
         location: Location,
     },
     /// Start of a sequence (`[` / `-`-list).
-    SeqStart { anchor: usize, location: Location },
+    SeqStart {
+        anchor: usize,
+        tag: SfTag,
+        raw_tag: Option<Cow<'a, str>>,
+        location: Location,
+    },
     /// End of a sequence.
     SeqEnd { location: Location },
     /// Start of a mapping (`{` or block mapping).
@@ -451,8 +456,8 @@ fn capture_node<'a>(ev: &mut dyn Events<'a>) -> Result<KeyNode<'a>, Error> {
                 location,
             })
         }
-        Ev::SeqStart { anchor, location } => {
-            let mut events = vec![Ev::SeqStart { anchor, location }];
+        Ev::SeqStart { anchor, tag, raw_tag, location } => {
+            let mut events = vec![Ev::SeqStart { anchor, tag, raw_tag, location }];
             let mut elements = Vec::new();
             loop {
                 match ev.peek()? {
@@ -2598,7 +2603,37 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     None => return Err(Error::eof().with_location(self.ev.last_location())),
                 }
             }
-            Some(Ev::SeqStart { location, .. }) => {
+            Some(Ev::SeqStart { tag, raw_tag, location, .. }) => {
+                if let Some(tag_name) = simple_tagged_enum_name(raw_tag, tag) {
+                    if _variants.contains(&tag_name.as_str()) {
+                        // Consume the SeqStart, collect all events until SeqEnd, replay as untagged sequence
+                        let seq_start = self.ev.next()?.unwrap();
+                        let start_loc = seq_start.location();
+                        let mut replay_events: Vec<Ev<'de>> = Vec::new();
+                        // Re-emit SeqStart without tag
+                        if let Ev::SeqStart { anchor, location, .. } = seq_start {
+                            replay_events.push(Ev::SeqStart { anchor, tag: SfTag::None, raw_tag: None, location });
+                        }
+                        let mut depth = 1usize;
+                        while depth > 0 {
+                            match self.ev.next()? {
+                                Some(ev @ Ev::SeqStart { .. }) => { depth += 1; replay_events.push(ev); }
+                                Some(ev @ Ev::SeqEnd { .. }) => { depth -= 1; replay_events.push(ev); }
+                                Some(ev @ Ev::MapStart { .. }) => { depth += 1; replay_events.push(ev); }
+                                Some(ev @ Ev::MapEnd { .. }) => { depth -= 1; replay_events.push(ev); }
+                                Some(ev) => { replay_events.push(ev); }
+                                None => return Err(Error::eof().with_location(self.ev.last_location())),
+                            }
+                        }
+                        let replay = Box::new(ReplayEvents::new(replay_events));
+                        return visitor.visit_enum(TaggedEA {
+                            replay,
+                            cfg: self.cfg,
+                            variant: tag_name,
+                            variant_location: start_loc,
+                        });
+                    }
+                }
                 return Err(
                     Error::ExternallyTaggedEnumExpectedScalarOrMapping { location: *location },
                 );

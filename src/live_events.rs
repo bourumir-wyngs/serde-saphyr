@@ -366,9 +366,12 @@ impl<'a> LiveEvents<'a> {
                     return Ok(Some(ev));
                 }
 
-                Event::SequenceStart(anchor_id, _tag) => {
+                Event::SequenceStart(anchor_id, tag) => {
+                    let tag_s = SfTag::from_optional_cow(&tag);
                     let ev = Ev::SeqStart {
                         anchor: anchor_id,
+                        tag: tag_s,
+                        raw_tag: tag.as_ref().map(|t| Cow::Owned(t.to_string())),
                         location,
                     };
                     // Existing frames go deeper with this start.
