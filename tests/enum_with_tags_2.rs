@@ -6,7 +6,7 @@ use serde::Deserialize;
 pub enum Value {
     Expression(String),
     Template(String),
-    Pair(String, String),
+    Pair(String, u32),
 }
 
 #[derive(Debug, PartialEq, Eq, Deserialize)]
@@ -25,8 +25,8 @@ fn test_tagged_expression_scalar() {
 #[test]
 fn test_tagged_pair_flow_seq() {
     assert_eq!(
-        serde_saphyr::<Context>(r#"value: !Pair ["a", "b"]"#),
-        Context { value: Value::Pair("a".to_string(), "b".to_string()) }
+        serde_saphyr::<Context>(r#"value: !Pair [a, 12]"#),
+        Context { value: Value::Pair("a".to_string(), 12) }
     );
 }
 
@@ -37,10 +37,10 @@ fn test_tagged_pair_block_seq() {
             r#"
 value: !Pair
   - "a"
-  - "b"
+  - 12
 "#
         ),
-        Context { value: Value::Pair("a".to_string(), "b".to_string()) }
+        Context { value: Value::Pair("a".to_string(), 12) }
     );
 }
 
