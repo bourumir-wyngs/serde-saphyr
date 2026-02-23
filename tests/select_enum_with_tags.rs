@@ -13,25 +13,12 @@ pub struct Context {
     value: Value,
 }
 
-// It would be awesome if we could select the enum newtype variant to parse into with tags, as follows:
 #[test]
 fn test_tagged_expression() {
-    // Fails with:
-    //    ╭─[str:1:20]
-    //  1 │ value: !Expression "1 + 1"
-    //    ·                    ───┬───
-    //    ·                       ╰── tagged enum `Expression` does not match target enum `Value`
-    //    ╰────
     assert_eq!(serde_saphyr::<Context>(r#"value: !Expression "1 + 1""#), Context { value: Value::Expression("1 + 1".to_string()) });
 }
 #[test]
 fn test_tagged_template() {
-    // Fails with:
-    //    ╭─[str:1:18]
-    //  1 │ value: !Template "{{ a }}"
-    //    ·                  ────┬────
-    //    ·                      ╰── tagged enum `Template` does not match target enum `Value`
-    //    ╰────
     assert_eq!(serde_saphyr::<Context>(r#"value: !Template "{{ a }}""#), Context { value: Value::Template("{{ a }}".to_string()) });
 }
 

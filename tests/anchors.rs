@@ -1,4 +1,4 @@
-pub mod anon_enums;
+pub mod select_enum_with_tags;
 
 #[cfg(test)]
 mod tests {
