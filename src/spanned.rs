@@ -22,7 +22,7 @@
 //! assert_eq!(cfg.timeout.referenced.column(), 10);
 //! ```
 
-use serde::de::{self, Deserializer};
+use serde::de::{self, Deserializer, IntoDeserializer};
 use serde::{Deserialize, Serialize};
 
 use crate::Location;
@@ -61,17 +61,17 @@ use crate::Location;
 ///   - For merge-derived values: points to the originating scalar in the merged
 ///     mapping.
 ///
-/// # Limitation with certain enum representations
+/// # Limitation with `#[serde(flatten)]`, `#[serde(untagged)]`, and `#[serde(tag = "...")]`
 ///
-/// `Spanned<T>` **cannot** be used inside variants of enums that use:
-/// - `#[serde(untagged)]` - untagged enums
-/// - `#[serde(tag = "...")]` - internally tagged enums
+/// When `Spanned<T>` is used inside a struct with `#[serde(flatten)]`, or inside
+/// variants of `#[serde(untagged)]` or `#[serde(tag = "...")]` enums, deserialization
+/// **succeeds** but **location information is lost**: both `referenced` and `defined`
+/// will be `Location::UNKNOWN` (line 0, column 0).
 ///
-/// This is a fundamental limitation of how serde handles these enum types: serde
-/// buffers the content and replays it through a generic `ContentDeserializer`
-/// that doesn't recognize the special `__yaml_spanned` marker.
+/// This is because serde buffers values through a generic `ContentDeserializer` in
+/// these cases, which discards the YAML deserializer context needed to capture spans.
 ///
-/// ## Workaround: Wrap the entire enum
+/// ## Workaround for untagged/internally-tagged enums: Wrap the entire enum
 ///
 /// Instead of putting `Spanned<T>` inside each variant, wrap the whole enum:
 ///
@@ -183,6 +183,36 @@ where
             where
                 D: Deserializer<'de>,
             {
+                // Call deserialize_any so that:
+                // - Our YAML SpannedDeser calls deserialize_struct → visit_map with the
+                //   synthesized {value, referenced, defined} map → full location info.
+                // - serde's ContentDeserializer (used by #[serde(flatten)]) calls
+                //   visit_map with the buffered Content::Map → ReprOrPlainVisitor::visit_map.
+                // - serde's ContentDeserializer with a plain scalar calls visit_u64/visit_str/
+                //   etc. → ReprOrPlainVisitor plain-value fallbacks with Location::UNKNOWN.
+                deserializer.deserialize_any(ReprOrPlainVisitor::<T>(std::marker::PhantomData))
+            }
+        }
+
+        /// Visitor that handles both the normal YAML path (visit_map with synthesized
+        /// {value, referenced, defined} fields) and the flattened/content path where
+        /// serde's ContentDeserializer calls visit_* with a plain or map value.
+        struct ReprOrPlainVisitor<T>(std::marker::PhantomData<T>);
+
+        impl<'de, T> de::Visitor<'de> for ReprOrPlainVisitor<T>
+        where
+            T: Deserialize<'de>,
+        {
+            type Value = Spanned<T>;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a value or a span-aware map with value/referenced/defined fields")
+            }
+
+            fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
                 #[derive(Deserialize)]
                 struct Repr<T> {
                     value: T,
@@ -190,27 +220,92 @@ where
                     defined: Location,
                 }
 
-                Repr::<T>::deserialize(deserializer)
-                    .map_err(|e| {
-                        let msg = e.to_string();
-                        // Detect the specific case where Spanned<T> is used inside an untagged
-                        // or internally tagged enum. In that case, serde's ContentDeserializer
-                        // doesn't provide the `referenced` and `defined` fields that our
-                        // YAML deserializer normally injects.
-                        if msg.contains("missing field `referenced`")
-                            || msg.contains("missing field `defined`")
-                        {
-                            de::Error::custom(
-                                "Spanned<T> cannot be used inside #[serde(untagged)] or \
-                                 #[serde(tag = \"...\")] enum variants. Consider wrapping the \
-                                 entire enum with Spanned<YourEnum>, or use externally tagged \
-                                 or adjacently tagged enums instead."
-                            )
-                        } else {
-                            e
-                        }
-                    })
+                Repr::<T>::deserialize(de::value::MapAccessDeserializer::new(map))
                     .map(|repr| Spanned::new(repr.value, repr.referenced, repr.defined))
+            }
+
+            // Fallback handlers for plain values arriving via ContentDeserializer
+            // when Spanned<T> is inside a #[serde(flatten)] struct.
+            // Location information is unavailable in this path; Location::UNKNOWN is used.
+
+            fn visit_bool<E: de::Error>(self, v: bool) -> Result<Self::Value, E> {
+                T::deserialize(v.into_deserializer())
+                    .map(|val| Spanned::new(val, Location::UNKNOWN, Location::UNKNOWN))
+            }
+            fn visit_i8<E: de::Error>(self, v: i8) -> Result<Self::Value, E> {
+                T::deserialize(v.into_deserializer())
+                    .map(|val| Spanned::new(val, Location::UNKNOWN, Location::UNKNOWN))
+            }
+            fn visit_i16<E: de::Error>(self, v: i16) -> Result<Self::Value, E> {
+                T::deserialize(v.into_deserializer())
+                    .map(|val| Spanned::new(val, Location::UNKNOWN, Location::UNKNOWN))
+            }
+            fn visit_i32<E: de::Error>(self, v: i32) -> Result<Self::Value, E> {
+                T::deserialize(v.into_deserializer())
+                    .map(|val| Spanned::new(val, Location::UNKNOWN, Location::UNKNOWN))
+            }
+            fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
+                T::deserialize(v.into_deserializer())
+                    .map(|val| Spanned::new(val, Location::UNKNOWN, Location::UNKNOWN))
+            }
+            fn visit_u8<E: de::Error>(self, v: u8) -> Result<Self::Value, E> {
+                T::deserialize(v.into_deserializer())
+                    .map(|val| Spanned::new(val, Location::UNKNOWN, Location::UNKNOWN))
+            }
+            fn visit_u16<E: de::Error>(self, v: u16) -> Result<Self::Value, E> {
+                T::deserialize(v.into_deserializer())
+                    .map(|val| Spanned::new(val, Location::UNKNOWN, Location::UNKNOWN))
+            }
+            fn visit_u32<E: de::Error>(self, v: u32) -> Result<Self::Value, E> {
+                T::deserialize(v.into_deserializer())
+                    .map(|val| Spanned::new(val, Location::UNKNOWN, Location::UNKNOWN))
+            }
+            fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
+                T::deserialize(v.into_deserializer())
+                    .map(|val| Spanned::new(val, Location::UNKNOWN, Location::UNKNOWN))
+            }
+            fn visit_f32<E: de::Error>(self, v: f32) -> Result<Self::Value, E> {
+                T::deserialize(v.into_deserializer())
+                    .map(|val| Spanned::new(val, Location::UNKNOWN, Location::UNKNOWN))
+            }
+            fn visit_f64<E: de::Error>(self, v: f64) -> Result<Self::Value, E> {
+                T::deserialize(v.into_deserializer())
+                    .map(|val| Spanned::new(val, Location::UNKNOWN, Location::UNKNOWN))
+            }
+            fn visit_char<E: de::Error>(self, v: char) -> Result<Self::Value, E> {
+                T::deserialize(v.into_deserializer())
+                    .map(|val| Spanned::new(val, Location::UNKNOWN, Location::UNKNOWN))
+            }
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                T::deserialize(v.into_deserializer())
+                    .map(|val| Spanned::new(val, Location::UNKNOWN, Location::UNKNOWN))
+            }
+            fn visit_string<E: de::Error>(self, v: String) -> Result<Self::Value, E> {
+                T::deserialize(v.into_deserializer())
+                    .map(|val| Spanned::new(val, Location::UNKNOWN, Location::UNKNOWN))
+            }
+            fn visit_bytes<E: de::Error>(self, v: &[u8]) -> Result<Self::Value, E> {
+                T::deserialize(de::value::BytesDeserializer::new(v))
+                    .map(|val| Spanned::new(val, Location::UNKNOWN, Location::UNKNOWN))
+            }
+            fn visit_byte_buf<E: de::Error>(self, v: Vec<u8>) -> Result<Self::Value, E> {
+                T::deserialize(de::value::BytesDeserializer::new(&v))
+                    .map(|val| Spanned::new(val, Location::UNKNOWN, Location::UNKNOWN))
+            }
+            fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+                T::deserialize(().into_deserializer())
+                    .map(|val| Spanned::new(val, Location::UNKNOWN, Location::UNKNOWN))
+            }
+            fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+                T::deserialize(().into_deserializer())
+                    .map(|val| Spanned::new(val, Location::UNKNOWN, Location::UNKNOWN))
+            }
+            fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::SeqAccess<'de>,
+            {
+                T::deserialize(de::value::SeqAccessDeserializer::new(seq))
+                    .map(|val| Spanned::new(val, Location::UNKNOWN, Location::UNKNOWN))
             }
         }
 

@@ -418,64 +418,463 @@ impl UserMessageFormatter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::de_error::{Error, MessageFormatter};
+    use crate::de_error::{Error, MessageFormatter, TransformReason};
+    use crate::location::Locations;
     use crate::Location;
 
+    fn loc() -> Location {
+        Location::UNKNOWN
+    }
+
+    // -----------------------------------------------------------------------
+    // DefaultMessageFormatter – uncovered arms
+    // -----------------------------------------------------------------------
+
     #[test]
-    fn test_default_formatter() {
+    fn default_with_snippet_delegates() {
         let formatter = DefaultMessageFormatter;
-        
-        let err = Error::Message {
-            msg: "test error".to_owned(),
-            location: Location::UNKNOWN,
+        let inner = Error::Eof { location: loc() };
+        let err = Error::WithSnippet {
+            regions: vec![],
+            crop_radius: 3,
+            error: Box::new(inner),
         };
-        assert_eq!(formatter.format_message(&err), "test error");
-        
-        let err = Error::InvalidUtf8Input;
-        assert_eq!(formatter.format_message(&err), "input is not valid UTF-8");
-        
-        let err = Error::Unexpected {
-            expected: "something else",
-            location: Location::UNKNOWN,
-        };
-        assert_eq!(formatter.format_message(&err), "unexpected event: expected something else");
-        
-        let err = Error::SerdeInvalidType {
-            unexpected: "sequence".to_owned(),
-            expected: "integer".to_owned(),
-            location: Location::UNKNOWN,
-        };
-        // Expect: "invalid type: sequence, expected integer"
-        let msg = formatter.format_message(&err);
-        assert!(msg.contains("invalid type: sequence"), "got: {}", msg);
-        assert!(msg.contains("expected integer"), "got: {}", msg);
+        assert_eq!(formatter.format_message(&err), "unexpected end of input");
     }
 
     #[test]
-    fn test_user_formatter_serde_invalid_type() {
+    fn default_hook_error() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::HookError { msg: "hook msg".to_owned(), location: loc() };
+        assert_eq!(formatter.format_message(&err), "hook msg");
+    }
+
+    #[test]
+    fn default_serde_variant_id() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::SerdeVariantId { msg: "variant id msg".to_owned(), location: loc() };
+        assert_eq!(formatter.format_message(&err), "variant id msg");
+    }
+
+    #[test]
+    fn default_invalid_binary_base64() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::InvalidBinaryBase64 { location: loc() };
+        assert_eq!(formatter.format_message(&err), "invalid !!binary base64");
+    }
+
+    #[test]
+    fn default_unexpected_sequence_end() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::UnexpectedSequenceEnd { location: loc() };
+        assert_eq!(formatter.format_message(&err), "unexpected sequence end");
+    }
+
+    #[test]
+    fn default_unexpected_mapping_end() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::UnexpectedMappingEnd { location: loc() };
+        assert_eq!(formatter.format_message(&err), "unexpected mapping end");
+    }
+
+    #[test]
+    fn default_unexpected_container_end_while_skipping() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::UnexpectedContainerEndWhileSkippingNode { location: loc() };
+        assert_eq!(formatter.format_message(&err), "unexpected container end while skipping node");
+    }
+
+    #[test]
+    fn default_internal_seed_reused() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::InternalSeedReusedForMapKey { location: loc() };
+        assert_eq!(formatter.format_message(&err), "internal error: seed reused for map key");
+    }
+
+    #[test]
+    fn default_value_requested_before_key() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::ValueRequestedBeforeKey { location: loc() };
+        assert_eq!(formatter.format_message(&err), "value requested before key");
+    }
+
+    #[test]
+    fn default_alias_replay_counter_overflow() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::AliasReplayCounterOverflow { location: loc() };
+        assert_eq!(formatter.format_message(&err), "alias replay counter overflow");
+    }
+
+    #[test]
+    fn default_folded_block_scalar() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::FoldedBlockScalarMustIndentContent { location: loc() };
+        assert_eq!(formatter.format_message(&err), "folded block scalars must indent their content");
+    }
+
+    #[test]
+    fn default_internal_depth_underflow() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::InternalDepthUnderflow { location: loc() };
+        assert_eq!(formatter.format_message(&err), "internal depth underflow");
+    }
+
+    #[test]
+    fn default_internal_recursion_stack_empty() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::InternalRecursionStackEmpty { location: loc() };
+        assert_eq!(formatter.format_message(&err), "internal recursion stack empty");
+    }
+
+    #[test]
+    fn default_recursive_references_require_weak_types() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::RecursiveReferencesRequireWeakTypes { location: loc() };
+        assert_eq!(formatter.format_message(&err), "recursive references require weak recursion types");
+    }
+
+    #[test]
+    fn default_serde_invalid_value() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::SerdeInvalidValue {
+            unexpected: "null".to_owned(),
+            expected: "string".to_owned(),
+            location: loc(),
+        };
+        let msg = formatter.format_message(&err);
+        assert!(msg.contains("invalid value"), "got: {msg}");
+        assert!(msg.contains("null"), "got: {msg}");
+        assert!(msg.contains("string"), "got: {msg}");
+    }
+
+    #[test]
+    fn default_serde_unknown_variant() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::SerdeUnknownVariant {
+            variant: "foo".to_owned(),
+            expected: vec!["bar", "baz"],
+            location: loc(),
+        };
+        let msg = formatter.format_message(&err);
+        assert!(msg.contains("unknown variant"), "got: {msg}");
+        assert!(msg.contains("foo"), "got: {msg}");
+    }
+
+    #[test]
+    fn default_serde_unknown_field() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::SerdeUnknownField {
+            field: "xyz".to_owned(),
+            expected: vec!["a", "b"],
+            location: loc(),
+        };
+        let msg = formatter.format_message(&err);
+        assert!(msg.contains("unknown field"), "got: {msg}");
+        assert!(msg.contains("xyz"), "got: {msg}");
+    }
+
+    #[test]
+    fn default_unexpected_container_end_while_reading_key() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::UnexpectedContainerEndWhileReadingKeyNode { location: loc() };
+        assert_eq!(formatter.format_message(&err), "unexpected container end while reading key");
+    }
+
+    #[test]
+    fn default_expected_mapping_end_after_enum_variant() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::ExpectedMappingEndAfterEnumVariantValue { location: loc() };
+        assert_eq!(formatter.format_message(&err), "expected end of mapping after enum variant value");
+    }
+
+    #[test]
+    fn default_container_end_mismatch() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::ContainerEndMismatch { location: loc() };
+        assert_eq!(formatter.format_message(&err), "list or mapping end with no start");
+    }
+
+    #[test]
+    fn default_io_error() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::IOError { cause: std::io::Error::other("disk full") };
+        let msg = formatter.format_message(&err);
+        assert!(msg.contains("IO error"), "got: {msg}");
+        assert!(msg.contains("disk full"), "got: {msg}");
+    }
+
+    #[test]
+    fn default_alias_error_both_unknown() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::AliasError {
+            msg: "alias msg".to_owned(),
+            locations: Locations::UNKNOWN,
+        };
+        assert_eq!(formatter.format_message(&err), "alias msg");
+    }
+
+    #[test]
+    fn default_alias_error_ref_known_def_unknown() {
+        let formatter = DefaultMessageFormatter;
+        let ref_loc = Location::new(1, 0);
+        let err = Error::AliasError {
+            msg: "alias msg".to_owned(),
+            locations: Locations { reference_location: ref_loc, defined_location: Location::UNKNOWN },
+        };
+        // r != UNKNOWN and d == UNKNOWN → returns msg as-is
+        assert_eq!(formatter.format_message(&err), "alias msg");
+    }
+
+    #[test]
+    fn default_alias_error_both_known_different() {
+        let formatter = DefaultMessageFormatter;
+        let ref_loc = Location::new(1, 0);
+        let def_loc = Location::new(5, 0);
+        let err = Error::AliasError {
+            msg: "alias msg".to_owned(),
+            locations: Locations { reference_location: ref_loc, defined_location: def_loc },
+        };
+        // _r != UNKNOWN, d != UNKNOWN, d != r → appends defined-at suffix
+        let msg = formatter.format_message(&err);
+        assert!(msg.starts_with("alias msg"), "got: {msg}");
+    }
+
+    // -----------------------------------------------------------------------
+    // UserMessageFormatter – all arms
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn user_with_snippet_delegates() {
         let formatter = UserMessageFormatter;
-        
-        let err = Error::SerdeInvalidType {
-            unexpected: "sequence".to_owned(),
-            expected: "integer".to_owned(),
-            location: Location::UNKNOWN,
+        let inner = Error::Eof { location: loc() };
+        let err = Error::WithSnippet {
+            regions: vec![],
+            crop_radius: 3,
+            error: Box::new(inner),
         };
-        // User formatter typically rephrases some errors
-        // I suspect user formatter might produce "Type mismatch: expected integer, got sequence"
-        // Let's verify what it actually produces by running the test.
-        // I'll make the assertion loose first or just check keywords.
-        let msg = formatter.format_message(&err);
-        // If it's the same as default, this will pass. If it's different, I'll see.
-        // Wait, I can't see unless I print it.
-        // But I can check if it contains "expected integer".
-        assert!(msg.contains("expected integer"), "got: {}", msg);
-        assert!(msg.contains("sequence"), "got: {}", msg);
+        assert_eq!(formatter.format_message(&err), "unexpected end of file");
     }
 
     #[test]
-    fn test_eof_error() {
-        let formatter = DefaultMessageFormatter;
-        let err = Error::Eof { location: Location::UNKNOWN };
+    fn user_eof() {
+        let formatter = UserMessageFormatter;
+        let err = Error::Eof { location: loc() };
+        assert_eq!(formatter.format_message(&err), "unexpected end of file");
+    }
+
+    #[test]
+    fn user_multiple_documents() {
+        let formatter = UserMessageFormatter;
+        let err = Error::MultipleDocuments { hint: "use from_str_multidoc", location: loc() };
+        assert_eq!(formatter.format_message(&err), "only single YAML document expected but multiple found");
+    }
+
+    #[test]
+    fn user_invalid_utf8_input() {
+        let formatter = UserMessageFormatter;
+        let err = Error::InvalidUtf8Input;
+        assert_eq!(formatter.format_message(&err), "YAML parser input is not valid UTF-8");
+    }
+
+    #[test]
+    fn user_binary_not_utf8() {
+        let formatter = UserMessageFormatter;
+        let err = Error::BinaryNotUtf8 { location: loc() };
+        assert!(formatter.format_message(&err).contains("!!binary"));
+    }
+
+    #[test]
+    fn user_invalid_boolean_strict() {
+        let formatter = UserMessageFormatter;
+        let err = Error::InvalidBooleanStrict { location: loc() };
+        assert_eq!(formatter.format_message(&err), "invalid boolean (true or false expected)");
+    }
+
+    #[test]
+    fn user_null_into_string() {
+        let formatter = UserMessageFormatter;
+        let err = Error::NullIntoString { location: loc() };
+        assert_eq!(formatter.format_message(&err), "null is not allowed here");
+    }
+
+    #[test]
+    fn user_invalid_char_null() {
+        let formatter = UserMessageFormatter;
+        let err = Error::InvalidCharNull { location: loc() };
+        assert_eq!(formatter.format_message(&err), "null is not allowed here");
+    }
+
+    #[test]
+    fn user_invalid_char_not_single_scalar() {
+        let formatter = UserMessageFormatter;
+        let err = Error::InvalidCharNotSingleScalar { location: loc() };
+        assert_eq!(formatter.format_message(&err), "only single character allowed here");
+    }
+
+    #[test]
+    fn user_bytes_not_supported_missing_binary_tag() {
+        let formatter = UserMessageFormatter;
+        let err = Error::BytesNotSupportedMissingBinaryTag { location: loc() };
+        assert_eq!(formatter.format_message(&err), "missing !!binary tag");
+    }
+
+    #[test]
+    fn user_expected_empty_mapping_for_unit_struct() {
+        let formatter = UserMessageFormatter;
+        let err = Error::ExpectedEmptyMappingForUnitStruct { location: loc() };
+        assert_eq!(formatter.format_message(&err), "expected empty mapping here");
+    }
+
+    #[test]
+    fn user_unexpected_container_end_while_skipping() {
+        let formatter = UserMessageFormatter;
+        let err = Error::UnexpectedContainerEndWhileSkippingNode { location: loc() };
+        assert_eq!(formatter.format_message(&err), "unexpected container end");
+    }
+
+    #[test]
+    fn user_alias_replay_counter_overflow() {
+        let formatter = UserMessageFormatter;
+        let err = Error::AliasReplayCounterOverflow { location: loc() };
+        assert_eq!(formatter.format_message(&err), "YAML document too large or too complex");
+    }
+
+    #[test]
+    fn user_alias_replay_limit_exceeded() {
+        let formatter = UserMessageFormatter;
+        let err = Error::AliasReplayLimitExceeded {
+            total_replayed_events: 1000,
+            max_total_replayed_events: 500,
+            location: loc(),
+        };
+        let msg = formatter.format_message(&err);
+        assert!(msg.contains("too large or too complex"), "got: {msg}");
+        assert!(msg.contains("1000"), "got: {msg}");
+    }
+
+    #[test]
+    fn user_alias_expansion_limit_exceeded() {
+        let formatter = UserMessageFormatter;
+        let err = Error::AliasExpansionLimitExceeded {
+            anchor_id: 7,
+            expansions: 200,
+            max_expansions_per_anchor: 100,
+            location: loc(),
+        };
+        let msg = formatter.format_message(&err);
+        assert!(msg.contains("too large or too complex"), "got: {msg}");
+        assert!(msg.contains("7"), "got: {msg}");
+    }
+
+    #[test]
+    fn user_alias_replay_stack_depth_exceeded() {
+        let formatter = UserMessageFormatter;
+        let err = Error::AliasReplayStackDepthExceeded {
+            depth: 50,
+            max_depth: 20,
+            location: loc(),
+        };
+        let msg = formatter.format_message(&err);
+        assert!(msg.contains("too large or too complex"), "got: {msg}");
+        assert!(msg.contains("50"), "got: {msg}");
+    }
+
+    #[test]
+    fn user_unknown_anchor() {
+        let formatter = UserMessageFormatter;
+        let err = Error::UnknownAnchor { location: loc() };
+        assert_eq!(formatter.format_message(&err), "reference to unknown value");
+    }
+
+    #[test]
+    fn user_recursive_references_require_weak_types() {
+        let formatter = UserMessageFormatter;
+        let err = Error::RecursiveReferencesRequireWeakTypes { location: loc() };
+        assert_eq!(formatter.format_message(&err), "Recursive reference not allowed here");
+    }
+
+    #[test]
+    fn user_duplicate_mapping_key_with_key() {
+        let formatter = UserMessageFormatter;
+        let err = Error::DuplicateMappingKey { key: Some("mykey".to_owned()), location: loc() };
+        let msg = formatter.format_message(&err);
+        assert!(msg.contains("mykey"), "got: {msg}");
+        assert!(msg.contains("duplicate"), "got: {msg}");
+    }
+
+    #[test]
+    fn user_duplicate_mapping_key_without_key() {
+        let formatter = UserMessageFormatter;
+        let err = Error::DuplicateMappingKey { key: None, location: loc() };
+        let msg = formatter.format_message(&err);
+        assert!(msg.contains("duplicate"), "got: {msg}");
+    }
+
+    #[test]
+    fn user_quoting_required() {
+        let formatter = UserMessageFormatter;
+        let err = Error::QuotingRequired { value: "yes".to_owned(), location: loc() };
+        assert_eq!(formatter.format_message(&err), "value requires quoting");
+    }
+
+    #[test]
+    fn user_budget() {
+        use crate::budget::BudgetBreach;
+        let formatter = UserMessageFormatter;
+        let err = Error::Budget { breach: BudgetBreach::Events { events: 9999 }, location: loc() };
+        let msg = formatter.format_message(&err);
+        assert!(msg.contains("too large or too complex"), "got: {msg}");
+    }
+
+    #[test]
+    fn user_cannot_borrow_transformed_string() {
+        let formatter = UserMessageFormatter;
+        let err = Error::CannotBorrowTransformedString {
+            reason: TransformReason::EscapeSequence,
+            location: loc(),
+        };
+        assert_eq!(
+            formatter.format_message(&err),
+            "Only single string with no escape sequences is allowed here"
+        );
+    }
+
+    #[test]
+    fn user_falls_through_to_default_for_unhandled() {
+        // SerdeInvalidType is not explicitly handled by user_format_message → falls through to default
+        let formatter = UserMessageFormatter;
+        let err = Error::SerdeInvalidType {
+            unexpected: "seq".to_owned(),
+            expected: "map".to_owned(),
+            location: loc(),
+        };
+        let msg = formatter.format_message(&err);
+        assert!(msg.contains("invalid type"), "got: {msg}");
+    }
+
+    // -----------------------------------------------------------------------
+    // UserMessageFormatterWithLocalizer
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn user_with_localizer_delegates() {
+        use crate::localizer::DefaultEnglishLocalizer;
+        let localizer = DefaultEnglishLocalizer;
+        let formatter = UserMessageFormatter.with_localizer(&localizer);
+        let err = Error::Eof { location: loc() };
+        assert_eq!(formatter.format_message(&err), "unexpected end of file");
+    }
+
+    // -----------------------------------------------------------------------
+    // DefaultMessageFormatterWithLocalizer
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn default_with_localizer_delegates() {
+        use crate::localizer::DefaultEnglishLocalizer;
+        let localizer = DefaultEnglishLocalizer;
+        let formatter = DefaultMessageFormatter.with_localizer(&localizer);
+        let err = Error::Eof { location: loc() };
         assert_eq!(formatter.format_message(&err), "unexpected end of input");
     }
 }

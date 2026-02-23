@@ -5,8 +5,13 @@
 
 use serde::de::{self, IntoDeserializer, Visitor};
 
-use super::{Cfg, Error, Events, Location};
+use super::{Error, Location};
 use crate::Deserializer;
+
+#[cold]
+fn unreachable_deserialize_any(what: &str) -> Error {
+    Error::msg(format!("{what}::deserialize_any should not be reachable"))
+}
 
 #[cfg(not(feature = "huge_documents"))]
 #[inline]
@@ -180,8 +185,8 @@ struct LocationDeser {
 impl<'de> de::Deserializer<'de> for LocationDeser {
     type Error = Error;
 
-    fn deserialize_any<Vv: Visitor<'de>>(self, visitor: Vv) -> Result<Vv::Value, Self::Error> {
-        self.deserialize_struct("Location", &["line", "column", "span"], visitor)
+    fn deserialize_any<Vv: Visitor<'de>>(self, _visitor: Vv) -> Result<Vv::Value, Self::Error> {
+        Err(unreachable_deserialize_any("LocationDeser"))
     }
 
     fn deserialize_struct<Vv: Visitor<'de>>(
@@ -256,8 +261,8 @@ struct SpanDeser {
 impl<'de> de::Deserializer<'de> for SpanDeser {
     type Error = Error;
 
-    fn deserialize_any<Vv: Visitor<'de>>(self, visitor: Vv) -> Result<Vv::Value, Self::Error> {
-        self.deserialize_struct("Span", &["offset", "len", "byte_info"], visitor)
+    fn deserialize_any<Vv: Visitor<'de>>(self, _visitor: Vv) -> Result<Vv::Value, Self::Error> {
+        Err(unreachable_deserialize_any("SpanDeser"))
     }
 
     fn deserialize_struct<Vv: Visitor<'de>>(
@@ -285,11 +290,11 @@ struct ByteInfoTupleDeser((crate::location::SpanIndex, crate::location::SpanInde
 impl<'de> de::Deserializer<'de> for ByteInfoTupleDeser {
     type Error = Error;
 
-    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_any<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        self.deserialize_tuple(2, visitor)
+        Err(unreachable_deserialize_any("ByteInfoTupleDeser"))
     }
 
     fn deserialize_tuple<V>(self, _len: usize, visitor: V) -> Result<V::Value, Self::Error>
@@ -302,16 +307,9 @@ impl<'de> de::Deserializer<'de> for ByteInfoTupleDeser {
         })
     }
 
-    fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.deserialize_tuple(2, visitor)
-    }
-
     serde::forward_to_deserialize_any! {
         bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
-        bytes byte_buf option unit unit_struct newtype_struct
+        bytes byte_buf option unit unit_struct newtype_struct seq
         tuple_struct map struct enum identifier ignored_any
     }
 }
@@ -383,15 +381,4 @@ impl<'de> de::MapAccess<'de> for SpanMapAccess {
             _ => Err(Error::msg("invalid Span internal state")),
         }
     }
-}
-
-// NOTE: `Cfg` and `Events` are imported to make it obvious this module is tightly
-// coupled to the YAML deserializer internals (and not part of the public API).
-#[allow(dead_code)]
-/// Dummy function that references internal types so accidental decoupling is visible.
-///
-/// This module is intentionally not a generic “serde helpers” module: it depends on
-/// YAML-specific `Cfg` and the `Events` abstraction (notably `reference_location()`).
-fn _internal_tie_to_deser(cfg: Cfg, ev: &mut dyn Events) {
-    let _ = (cfg, ev);
 }

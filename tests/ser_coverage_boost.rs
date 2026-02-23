@@ -491,7 +491,7 @@ fn struct_with_various_field_types() {
     let m = Mixed {
         b: true,
         i: -42,
-        f: 3.14,
+        f: std::f64::consts::PI,
         s: "hello".into(),
         o: None,
         v: vec![1, 2],

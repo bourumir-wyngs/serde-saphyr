@@ -5,7 +5,11 @@
 //!
 //! These tests are disabled under Miri because they spawn external processes,
 //! which Miri does not support.
-#![cfg(not(miri))]
+//!
+//! These tests are also disabled for WASI because they invoke the compiled binary
+//! via `Command`, which is typically not supported in WASI environments.
+#![cfg(all(not(miri), not(target_os = "wasi")))]
+
 
 use std::io::Write;
 use std::process::Command;

@@ -21,10 +21,11 @@ pub enum PayloadWithSpanned {
     IntVariant { count: Spanned<u32> },
 }
 
-/// This test demonstrates that `Spanned<T>` inside untagged enum variants fails.
-/// This is a known limitation due to how serde handles untagged enums.
+/// This test demonstrates that `Spanned<T>` inside untagged enum variants succeeds
+/// but loses location information (Location::UNKNOWN). Previously this would fail;
+/// now the fallback plain-value path in `Spanned<T>::deserialize` allows it to succeed.
 #[test]
-fn test_spanned_inside_untagged_enum_fails() {
+fn test_spanned_inside_untagged_enum_succeeds_with_unknown_location() {
     let yaml = "message: hello";
 
     // Plain version works
@@ -36,19 +37,17 @@ fn test_spanned_inside_untagged_enum_fails() {
         }
     );
 
-    // Spanned inside untagged enum fails - this is expected
-    let spanned_result = serde_saphyr::from_str::<PayloadWithSpanned>(yaml);
-    assert!(
-        spanned_result.is_err(),
-        "Expected error when using Spanned<T> inside untagged enum"
-    );
-
-    // Verify the error message contains the helpful hint
-    let err_msg = spanned_result.unwrap_err().to_string();
-    assert!(
-        err_msg.contains("untagged"),
-        "Error message should mention untagged enums: {err_msg}"
-    );
+    // Spanned inside untagged enum now succeeds, but location info is unavailable
+    let spanned_result = serde_saphyr::from_str::<PayloadWithSpanned>(yaml)
+        .expect("Spanned inside untagged enum should now succeed");
+    match spanned_result {
+        PayloadWithSpanned::StringVariant { message } => {
+            assert_eq!(message.value, "hello");
+            // Location is unavailable through untagged enum buffering.
+            assert_eq!(message.referenced.line(), 0);
+        }
+        other => panic!("Expected StringVariant, got {other:?}"),
+    }
 }
 
 // ============================================================================
@@ -88,7 +87,7 @@ fn test_workaround_spanned_wrapping_entire_enum_int_variant() {
 }
 
 // ============================================================================
-// Limitation: Internally tagged enums also don't work
+// Internally tagged enums: work but lose location info (Location::UNKNOWN)
 // ============================================================================
 
 #[derive(Debug, Deserialize)]
@@ -99,17 +98,22 @@ pub enum InternallyTaggedPayload {
 }
 
 /// This test demonstrates that internally tagged enums (`#[serde(tag = "...")]`)
-/// also have the same limitation as untagged enums.
+/// now succeed but lose location information (Location::UNKNOWN), same as untagged enums.
 #[test]
-fn test_spanned_inside_internally_tagged_enum_fails() {
+fn test_spanned_inside_internally_tagged_enum_succeeds_with_unknown_location() {
     let yaml = "type: StringVariant\nmessage: hello";
 
-    // Internally tagged enums also fail - serde buffers content for these too
-    let result = serde_saphyr::from_str::<InternallyTaggedPayload>(yaml);
-    assert!(
-        result.is_err(),
-        "Expected error when using Spanned<T> inside internally tagged enum"
-    );
+    // Internally tagged enums now succeed, but location info is unavailable
+    let result = serde_saphyr::from_str::<InternallyTaggedPayload>(yaml)
+        .expect("Spanned inside internally tagged enum should now succeed");
+    match result {
+        InternallyTaggedPayload::StringVariant { message } => {
+            assert_eq!(message.value, "hello");
+            // Location is unavailable through internally tagged enum buffering.
+            assert_eq!(message.referenced.line(), 0);
+        }
+        other => panic!("Expected StringVariant, got {other:?}"),
+    }
 }
 
 // ============================================================================

@@ -194,12 +194,11 @@ fn snippet_crops_very_long_lines_around_error_column() {
     );
 }
 
-/// Test that using `Spanned<T>` inside an untagged enum produces an error.
-/// Note: serde's untagged enum handling swallows individual variant errors and only
-/// shows the generic "data did not match any variant" message. The helpful hint from
-/// `Spanned<T>` is generated but not propagated through serde's machinery.
+/// Test that using `Spanned<T>` inside an untagged enum succeeds but loses location info.
+/// Previously this would fail; now the fallback plain-value path in `Spanned<T>::deserialize`
+/// allows it to succeed with `Location::UNKNOWN` for both `referenced` and `defined`.
 #[test]
-fn spanned_inside_untagged_enum_shows_helpful_error() {
+fn spanned_inside_untagged_enum_succeeds_with_unknown_location() {
     use serde_saphyr::Spanned;
 
     #[derive(Debug, Deserialize)]
@@ -212,16 +211,18 @@ fn spanned_inside_untagged_enum_shows_helpful_error() {
 
     let yaml = "message: hello";
 
-    let err = from_str::<PayloadWithSpanned>(yaml).expect_err("Spanned inside untagged enum should fail");
-    let rendered = err.to_string();
-
-    // Serde's untagged enum handling swallows individual variant errors, so we only see
-    // the generic "untagged" error message. The helpful hint is generated internally
-    // but not propagated.
-    assert!(
-        rendered.contains("untagged"),
-        "expected error message to mention untagged enums, got:\n{rendered}"
-    );
+    // Location info is unavailable (Location::UNKNOWN)
+    // because serde's untagged enum buffers values through ContentDeserializer which
+    // discards the YAML deserializer context.
+    let result = from_str::<PayloadWithSpanned>(yaml)
+        .expect("Spanned inside untagged enum should now succeed");
+    match result {
+        PayloadWithSpanned::StringVariant { message } => {
+            assert_eq!(message.value, "hello");
+            assert_eq!(message.referenced.line(), 0, "location unavailable in untagged enum");
+        }
+        other => panic!("expected StringVariant, got {other:?}"),
+    }
 }
 
 #[test]
