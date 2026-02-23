@@ -47,8 +47,8 @@ value: !Pair
 #[test]
 fn test_tagged_pair_wrong_shape_scalar_should_error() {
     // arity>1 should *not* accept scalar
-    let err = std::panic::catch_unwind(|| serde_saphyr::<Context>(r#"value: !Pair "a""#));
-    assert!(err.is_err());
+    let err = serde_saphyr::from_str::<Context>(r#"value: !Pair "a""#).unwrap_err();
+    assert!(err.to_string().contains("expected sequence"));
 }
 
 fn serde_saphyr<T: DeserializeOwned + Debug>(yaml: &str) -> T {
