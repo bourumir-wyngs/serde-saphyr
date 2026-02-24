@@ -27,4 +27,4 @@ jobs:
       - name: Check public API compatibility
         uses: obi1kenobi/cargo-semver-checks-action@v2
         with:
-          baseline-ref: 0.0.18
+          baseline-rev: 0.0.18

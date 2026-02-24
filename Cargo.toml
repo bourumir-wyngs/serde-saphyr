@@ -100,3 +100,9 @@ required-features = ["figment"]
 
 [lints.rust]
 unsafe_code = "forbid"
+
+# `serde-saphyr` is moving away from struct literals. During the migration period, semver checks temporarily allow
+# adding fields to these structures, and the badge does not treat new fields as a breaking change
+# (which is correct when using the macros).
+[package.metadata.cargo-semver-checks.lints]
+constructible_struct_adds_field = "allow"
