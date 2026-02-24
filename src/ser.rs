@@ -445,6 +445,8 @@ pub struct YamlSerializer<'a, W: Write> {
     tagged_enums: bool,
     /// If true, empty maps are emitted as {} and lists as []
     empty_as_braces: bool,
+    /// If true, emit list items with a more compact indentation style under mapping keys.
+    compact_list_indent: bool,
     /// If true, automatically prefer YAML block scalars for plain strings:
     ///  - Strings containing newlines use literal style `|`.
     ///  - Single-line strings longer than `folded_wrap_col` use folded style `>`.
@@ -498,6 +500,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
             pending_inline_comment: None,
             tagged_enums: false,
             empty_as_braces: true,
+            compact_list_indent: false,
             prefer_block_scalars: true,
             pending_inline_map: false,
             pending_space_after_colon: false,
@@ -528,6 +531,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         s.anchor_gen = options.anchor_generator.take();
         s.tagged_enums = options.tagged_enums;
         s.empty_as_braces = options.empty_as_braces;
+        s.compact_list_indent = options.compact_list_indent;
         s.prefer_block_scalars = options.prefer_block_scalars;
         s.quote_all = options.quote_all;
         s.yaml_12 = options.yaml_12;
@@ -1432,8 +1436,14 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             // For sequences used as a mapping value, indent them one level deeper so the dash is
             // nested under the parent key (consistent with serde_yaml's formatting). Keep block
             // sequences inline only when they immediately follow another dash.
-            let depth_next = if inline_first || was_inline_value {
+            let depth_next = if inline_first {
                 base + 1
+            } else if was_inline_value {
+                if self.compact_list_indent && self.current_map_depth.is_some() {
+                    base
+                } else {
+                    base + 1
+                }
             } else {
                 base
             };
