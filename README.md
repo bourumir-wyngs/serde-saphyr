@@ -335,7 +335,7 @@ fn main() {
 }
 ```
 
-**API note:** `serde-saphyr` is moving away from [struct literals](https://doc.rust-lang.org/book/ch05-01-defining-structs.html) for its (`Options`, `SerializerOptions`, `Budget`). Struct literals and direct field access will be deprecated soon. In the first `1.x` release, these types will become `#[non_exhaustive]` to prevent direct instantiation. During the migration period, semver checks temporarily allow adding fields to these structures, and the badge does not treat new fields as a breaking change (which is correct when using the macros).
+**API note:** `serde-saphyr` is moving away from [struct literals](https://doc.rust-lang.org/book/ch05-01-defining-structs.html) for its configuration structs (`Options`, `SerializerOptions`, `Budget`). Struct literals and direct field access will be deprecated soon. In the first `1.x` release, these types will become `#[non_exhaustive]` to prevent direct instantiation. During the migration period, semver checks temporarily allow adding fields to these structures, and the badge does not treat new fields as a breaking change (which is correct when using the macros).
 
 ## Booleans
 
