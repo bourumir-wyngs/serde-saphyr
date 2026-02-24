@@ -116,6 +116,57 @@ bools:
     }
 
     #[test]
+    fn from_sample_platter_json_to_yaml_compact_list_indent() {
+        let json = r#"
+            {
+                "rainbow": ["red", "orange", "yellow", "green", "blue", "purple"],
+                "point": {
+                    "x": 12,
+                    "xy": -34
+                },
+                "bools": [true, false]
+            }
+        "#;
+
+        let mut json_deserializer = serde_json::Deserializer::from_str(json);
+
+        let mut yaml = String::new();
+        let mut yaml_serializer_options = serde_saphyr::ser_options! {
+            compact_list_indent: true,
+        };
+        let mut yaml_serializer =
+            serde_saphyr::Serializer::with_options(&mut yaml, &mut yaml_serializer_options);
+        serde_transcode::transcode(&mut json_deserializer, &mut yaml_serializer).unwrap();
+
+        assert_eq!(
+            yaml,
+            r#"rainbow:
+- red
+- orange
+- yellow
+- green
+- blue
+- purple
+point:
+  x: 12
+  xy: -34
+bools:
+- true
+- false
+"#
+        );
+        let roundtrip_json = transcode_yaml_to_json(&yaml);
+        assert_json_eq(
+            &roundtrip_json,
+            r#"{
+              "rainbow": ["red", "orange", "yellow", "green", "blue", "purple"],
+              "point": {"x": 12, "xy": -34},
+              "bools": [true, false]
+            }"#,
+        );
+    }
+
+    #[test]
     fn from_sample_platter_yaml_to_json() {
         let yaml = r#"rainbow:
   - red

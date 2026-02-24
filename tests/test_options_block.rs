@@ -1,3 +1,4 @@
+use serde::Deserialize;
 use serde_saphyr::{
     FoldStr, FoldString, LitStr, LitString, to_fmt_writer_with_options, to_string_with_options,
 };
@@ -87,9 +88,25 @@ fn foldstr_sequence_under_map_key() {
     struct Doc<'a> {
         items: Vec<FoldStr<'a>>,
     }
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct DocOwned {
+        items: Vec<String>,
+    }
     let d = Doc {
         items: vec![FoldStr("a"), FoldStr("b"), FoldStr("c")],
     };
     let out = to_string_with_options(&d, opts).unwrap();
     assert_eq!(out, "items:\n  - >\n    a\n  - >\n    b\n  - >\n    c\n");
+
+    let compact_opts = serde_saphyr::ser_options! {
+        min_fold_chars: 0,
+        compact_list_indent: true,
+    };
+    let compact_out = to_string_with_options(&d, compact_opts).unwrap();
+    assert_eq!(compact_out, "items:\n- >\n  a\n- >\n  b\n- >\n  c\n");
+    let parsed: DocOwned = serde_saphyr::from_str(&compact_out).unwrap();
+    assert_eq!(
+        parsed.items,
+        vec!["a\n".to_string(), "b\n".to_string(), "c\n".to_string()]
+    );
 }

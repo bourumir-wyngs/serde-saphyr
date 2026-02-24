@@ -1,6 +1,6 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-use serde_saphyr::{FoldStr, FoldString, LitStr, LitString, RcAnchor, to_string};
+use serde_saphyr::{FoldStr, FoldString, LitStr, LitString, RcAnchor, SerializerOptions, to_string, to_string_with_options};
 
 #[test]
 fn litstr_top_level() {
@@ -308,7 +308,7 @@ fn fold_string_in_block_sequence_item() {
 
 #[test]
 fn verdanta_case_fold() -> anyhow::Result<()> {
-    #[derive(Debug, Serialize, Clone)]
+    #[derive(Debug, Deserialize, Serialize, Clone)]
     pub struct Node2 {
         /// Id of this node, used in annotations.
         #[serde(skip)]
@@ -373,6 +373,28 @@ fn verdanta_case_fold() -> anyhow::Result<()> {
         yaml.contains("        description: >\n          02This is"),
         "Deeply nested description body must be indented deeper than its header"
     );
+
+    let opts = SerializerOptions {
+        compact_list_indent: true,
+        ..Default::default()
+    };
+    let compact_yaml = to_string_with_options(&object, opts)?;
+    assert!(
+        compact_yaml.contains("description: >\n  00This is"),
+        "Top-level description body must be indented"
+    );
+    assert!(
+        compact_yaml.contains("  description: >\n    01This is"),
+        "Nested description body must be indented deeper than its header"
+    );
+    assert!(
+        compact_yaml.contains("    description: >\n      02This is"),
+        "Deeply nested description body must be indented deeper than its header"
+    );
+    let parsed: RcAnchor<Node2> = serde_saphyr::from_str(&compact_yaml)?;
+    assert_eq!(parsed.name, object.name);
+    assert_eq!(parsed.children.len(), object.children.len());
+    assert_eq!(parsed.children[0].name, object.children[0].name);
     Ok(())
 }
 
@@ -382,9 +404,25 @@ fn litstr_sequence_under_map_key() {
     struct Doc<'a> {
         items: Vec<LitStr<'a>>,
     }
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct DocOwned {
+        items: Vec<String>,
+    }
     let d = Doc {
         items: vec![LitStr("a"), LitStr("b"), LitStr("c")],
     };
     let out = to_string(&d).unwrap();
     assert_eq!(out, "items:\n  - |-\n    a\n  - |-\n    b\n  - |-\n    c\n");
+
+    let opts = SerializerOptions {
+        compact_list_indent: true,
+        ..Default::default()
+    };
+    let compact_out = to_string_with_options(&d, opts).unwrap();
+    assert_eq!(compact_out, "items:\n- |-\n  a\n- |-\n  b\n- |-\n  c\n");
+    let parsed: DocOwned = serde_saphyr::from_str(&compact_out).unwrap();
+    assert_eq!(
+        parsed.items,
+        vec!["a".to_string(), "b".to_string(), "c".to_string()]
+    );
 }
