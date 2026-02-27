@@ -10,11 +10,11 @@
 
 [![crates.io](https://img.shields.io/crates/l/serde-saphyr.svg)](https://crates.io/crates/serde-saphyr)
 [![crates.io](https://img.shields.io/crates/v/serde-saphyr.svg)](https://crates.io/crates/serde-saphyr)
-[![0.0.18 compatibile (see API note)](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/api-compat.yml/badge.svg)](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/api-compat.yml)
+[![0.0.18 compatible (see API note)](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/api-compat.yml/badge.svg)](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/api-compat.yml)
 [![crates.io](https://img.shields.io/crates/d/serde-saphyr.svg)](https://crates.io/crates/serde-saphyr)
 
-**serde-saphyr** is a strongly typed YAML deserializer built on the top of slightly modified
-[`saphyr-parser`](https://crates.io/crates/saphyr-parser), published as [saphyr-parser-bw](https://crates.io/crates/saphyr-parser-bw). It aims to be **panic-free** on malformed input exclude `unsafe` code in library code. The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.” Try it online as WebAssembly application [here](https://verdanta.tech/yva/)
+**serde-saphyr** is a strongly typed YAML deserializer built on top of a slightly modified
+[`saphyr-parser`](https://crates.io/crates/saphyr-parser), published as [saphyr-parser-bw](https://crates.io/crates/saphyr-parser-bw). It aims to be **panic-free** on malformed input and to exclude `unsafe` code from the library. The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.” Try it online as a WebAssembly application [here](https://verdanta.tech/yva/).
 
 See [release history](https://github.com/bourumir-wyngs/serde-saphyr/releases) on GitHub.
 
@@ -54,7 +54,7 @@ alt="Relative median time vs baseline"
 width="70%">
 </p>
 
-As seen, serde-saphyr exceeds others by performance, even with budget check enabled.
+As you can see, serde-saphyr outperforms the others, even with the budget check enabled.
 
 ## Testing
 
@@ -202,7 +202,7 @@ error: line 3 column 23: invalid here, validation error: length is lower than 2 
 4 |  
 ```
 
-The integration of garde is gated and disabled by default, use `serde-saphyr = { version = "0.0.17", features = ["garde"] }` (or `features = ["validator"]`) in Cargo.toml` to enable it). 
+The integration of garde is feature-gated and disabled by default. Use `serde-saphyr = { version = "0.0.17", features = ["garde"] }` (or `features = ["validator"]`) in `Cargo.toml` to enable it.
 
 If you prefer to validate without validation crates and want to ensure that location information is always available, use the heavier approach with [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html) wrapper instead.
 
@@ -212,7 +212,7 @@ Duplicate key handling is configurable. By default it’s an error; “first win
 
 ## Multiple documents
 
-YAML streams can contain several documents separated by `---`/`...` markers. When deserializing with [serde_saphyr::from_multiple](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.from_multiple.html)`, you still need to supply the vector element type up front (`Vec<T>`). That does **not** lock you into a single shape: make the element an enum and each document will deserialize into the matching variant. This lets you mix different payloads in one stream while retaining strong typing on the Rust side.
+YAML streams can contain several documents separated by `---`/`...` markers. When deserializing with [`serde_saphyr::from_multiple`](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.from_multiple.html), you still need to supply the vector element type up front (`Vec<T>`). That does **not** lock you into a single shape: make the element an enum and each document will deserialize into the matching variant. This lets you mix different payloads in one stream while retaining strong typing on the Rust side.
 
 ```rust
 use serde::Deserialize;
@@ -339,7 +339,7 @@ fn main() {
 
 ## Booleans
 
-By default, if the target field is boolean, serde-saphyr will attempt to interpret standard YAML 1.1 values as boolean (not just 'false' but also 'no', etc).
+By default, if the target field is boolean, serde-saphyr will attempt to interpret standard YAML 1.1 values as boolean (not just `false` but also `no`, etc.).
 If you do not want this (or you are parsing into a JSON Value where it is wrongly inferred), enclose the value in quotes or set `strict_booleans` to true in [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html).
 
 ## Deserializing into abstract JSON Value
@@ -348,7 +348,7 @@ If you must work with abstract types, you can also deserialize YAML into [`serde
 
 ## Binary scalars
 
-`!!binary`-tagged YAML values are base64-decoded when deserializing into `Vec<u8>` or `String` (reporting an error if it is not valid UTF-8)
+`!!binary`-tagged YAML values are base64-decoded when deserializing into `Vec<u8>` or `String` (reporting an error if it is not valid UTF-8).
 
 ```rust
 use serde::Deserialize;
@@ -479,7 +479,7 @@ The concept that “Rust code is the schema” naturally extends to implemented 
 
 Fuzzing shows that certain adversarial inputs can make YAML parsers consume excessive time or memory, enabling denial-of-service scenarios. To counter this, `serde-saphyr` offers a fast, configurable pre-check via a [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html), available through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). Defaults are conservative; tighten them when you know your input shape, or disable the budget if you only parse YAML you generate yourself.
 During [reader](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.from_reader_with_options.html)-based deserialization, serde-saphyr does not buffer the entire payload; it parses incrementally, counting bytes and enforcing configured budgets. This design blocks denial-of-service attempts via excessively large inputs. When [streaming](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.read_with_options.html) from the reader through the iterator, other budget limits apply on a per-document basis, since such a reader may be expected to stream indefinitely. The total size of input is not limited in this case.
-To find the typical budget requirements for you file, use our [web demo](https://verdanta.tech/yva/) or [run the main() executable of this library, providing a YAML file path as the program parameter. You can also fetch the budget programmatically by registering a closure with [`Options::with_budget_report`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html#method.with_budget_report).
+To find the typical budget requirements for your file, use our [web demo](https://verdanta.tech/yva/) or run the `main()` executable of this library, providing a YAML file path as the program parameter. You can also fetch the budget programmatically by registering a closure with [`Options::with_budget_report`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html#method.with_budget_report).
 
 ## Serialization
 
@@ -550,20 +550,20 @@ Serde-saphyr can conceptually connect YAML anchors with Rust shared references (
 
 When anchors are highly repetitive and also large, packing them into references can make YAML more human-readable.
 
-To support round trip, library can also deserialize into these anchor structures, this serialization is identity-preserving. A field or structure that is defined once and subsequently referenced will exist as a single instance in memory, with all anchor fields pointing to it. This is crucial when the topology of references itself constitutes important information to be transferred.
+To support round-tripping, the library can also deserialize into these anchor structures; this deserialization is identity-preserving. A field or structure that is defined once and subsequently referenced will exist as a single instance in memory, with all anchor fields pointing to it. This is crucial when the topology of references itself constitutes important information to be transferred.
 
 ### Recursive YAML
 
-While recursive YAML is unusual, it is not forbidden by the specification. Real world examples and [requests to implement](https://github.com/saphyr-rs/saphyr/issues/24) exist.
+While recursive YAML is unusual, it is not forbidden by the specification. Real-world examples and [requests to implement it](https://github.com/saphyr-rs/saphyr/issues/24) exist.
 
-Serde-saphyr supports recursive structures but Rust requires to be about this very explicit. A structure that may hold recursive references to itself must be wrapped in a [RcRecursive<T>](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.RcRecursive.html), and any reference that points to it must be [RcRecursion<T>](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.RcRecursion.html). Arc varieties exist. See also [examples/recursive_yaml.rs](examples/recursive_yaml.rs).
+Serde-saphyr supports recursive structures, but Rust requires being very explicit about this. A structure that may hold recursive references to itself must be wrapped in a [`RcRecursive<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.RcRecursive.html), and any reference that points to it must be [`RcRecursion<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.RcRecursion.html). Arc varieties exist. See also [examples/recursive_yaml.rs](examples/recursive_yaml.rs).
 
 ### Controlling deserialization
 
 - Empty maps are serialized as {} and empty lists as [] by default.
-- Strings containing new lines, and very long strings are serialized as appropriate block scalars, except cases where they would need escaping (like ending with :).
-- Indentation is changeable.
-- The wrapper [Commented](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) allows to emit comment next to scalar or reference (handy when reference is far from definition and needs to be explained).
+- Strings containing newlines, and very long strings are serialized as appropriate block scalars, except in cases where they would need escaping (like ending with `:`).
+- Indentation is configurable.
+- The wrapper [Commented](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) allows emitting a comment next to a scalar or reference (handy when the reference is far from its definition and needs explanation).
 - The wrapper [SpaceAfter](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.SpaceAfter.html) adds an empty line after the wrapped value, useful for visually separating sections in the output YAML.
 - It is possible to request that all strings be **quoted** — using single quotes when no escape sequences are present, and double quotes otherwise. This is very explicit and unambiguous, but such YAML may be less readable for humans. Line wrapping is disabled in this mode.
 - YAML 1.1 booleans (`y`, `yes`, `on`, etc.) are normally quoted as both keys and values. If this is undesired (y is a coordinate), set `yaml_12` to true.
@@ -599,7 +599,7 @@ For maximum flexibility, use `Cow<'a, str>` which borrows when possible and owns
 The default error messages are **developer-oriented**. They may mention `serde-saphyr` APIs and
 options and include “action items” intended to help fix the problem.
 
-If error messages are shown to end users, switch to the built-in user-facing formatter, or provide
+If error messages are shown to end users, switch to the built-in user-facing formatter or provide
 your own formatter (for example, to translate messages into another language).
 
 See:
@@ -651,7 +651,7 @@ end-to-end `miette` example, see `examples/miette.rs`.
 
 ## Robotics
 
-The feature-gated "robotics" capability enables parsing of YAML extensions commonly used in robotics ([ROS](https://www.ros.org/blog/why-ros/) These extensions support conversion functions (deg, rad) and simple mathematical expressions such as deg(180), rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). This capability is gated behind the [robotics] feature and is not enabled by default. Additionally, **angle_conversions** must be set to true in the [Options](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). Just adding robotics feature is not sufficient to activate this mode of parsing. This parser is still just a simple expression calculator implemented directly in Rust, not some hook into a language interpreter.
+The feature-gated "robotics" capability enables parsing of YAML extensions commonly used in robotics ([ROS](https://www.ros.org/blog/why-ros/)). These extensions support conversion functions (deg, rad) and simple mathematical expressions such as deg(180), rad(pi), `1 + 2*(3 - 4/5)`, or rad(pi/2). This capability is gated behind the `robotics` feature and is not enabled by default. Additionally, **angle_conversions** must be set to true in the [Options](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). Just adding the robotics feature is not enough to activate this mode of parsing. This parser is still just a simple expression calculator implemented directly in Rust, not some hook into a language interpreter.
 
 ```yaml
 rad_tag: !radians 0.15 # value in radians, stays in radians
