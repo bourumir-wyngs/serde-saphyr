@@ -41,10 +41,10 @@ mod tests {
     #[test]
     fn cannot_borrow_transformed_error_construction() {
         let err = Error::cannot_borrow_transformed(TransformReason::EscapeSequence);
-        
+
         // The error should have unknown location initially
         assert!(err.location().is_none());
-        
+
         // Check the error message contains the reason
         let msg = format!("{}", err);
         assert!(msg.contains("cannot deserialize into &str"));
@@ -54,9 +54,15 @@ mod tests {
 
     #[test]
     fn transform_reason_equality() {
-        assert_eq!(TransformReason::EscapeSequence, TransformReason::EscapeSequence);
+        assert_eq!(
+            TransformReason::EscapeSequence,
+            TransformReason::EscapeSequence
+        );
         assert_eq!(TransformReason::LineFolding, TransformReason::LineFolding);
-        assert_ne!(TransformReason::EscapeSequence, TransformReason::LineFolding);
+        assert_ne!(
+            TransformReason::EscapeSequence,
+            TransformReason::LineFolding
+        );
     }
 
     #[test]
@@ -78,7 +84,7 @@ mod tests {
         // Verify the error message provides actionable guidance
         let err = Error::cannot_borrow_transformed(TransformReason::EscapeSequence);
         let msg = format!("{}", err);
-        
+
         // Should suggest using String or Cow<str>
         assert!(msg.contains("String") || msg.contains("Cow"));
         assert!(msg.contains("&str"));
@@ -94,14 +100,17 @@ mod tests {
             TransformReason::SingleQuoteEscape,
             TransformReason::InputNotBorrowable,
         ];
-        
+
         let messages: Vec<String> = reasons.iter().map(|r| format!("{}", r)).collect();
-        
+
         // Verify all messages are unique
         for (i, msg1) in messages.iter().enumerate() {
             for (j, msg2) in messages.iter().enumerate() {
                 if i != j {
-                    assert_ne!(msg1, msg2, "Transform reasons should have distinct messages");
+                    assert_ne!(
+                        msg1, msg2,
+                        "Transform reasons should have distinct messages"
+                    );
                 }
             }
         }
@@ -119,7 +128,7 @@ mod tests {
         // Verify the error for InputNotBorrowable provides helpful guidance
         let err = Error::cannot_borrow_transformed(TransformReason::InputNotBorrowable);
         let msg = format!("{}", err);
-        
+
         assert!(msg.contains("cannot deserialize into &str"));
         assert!(msg.contains("String") || msg.contains("Cow"));
     }
@@ -135,7 +144,7 @@ mod tests {
     #[test]
     fn error_variant_matches_cannot_borrow() {
         let err = Error::cannot_borrow_transformed(TransformReason::BlockScalarProcessing);
-        
+
         // Verify we can match on the error variant
         match err {
             Error::CannotBorrowTransformedString { reason, .. } => {

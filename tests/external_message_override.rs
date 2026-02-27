@@ -1,7 +1,7 @@
 #[cfg(any(feature = "garde", feature = "validator"))]
 use serde::Deserialize;
-use serde_saphyr::{DefaultMessageFormatter, Error, Location};
 use serde_saphyr::localizer::{ExternalMessage, ExternalMessageSource, Localizer};
+use serde_saphyr::{DefaultMessageFormatter, Error, Location};
 use std::borrow::Cow;
 
 struct OverrideAllExternal;

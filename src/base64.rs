@@ -1,5 +1,5 @@
-use crate::de::Error;
 use crate::Location;
+use crate::de::Error;
 
 /// Lookup table translating ASCII bytes to their base64 sextet value.
 ///

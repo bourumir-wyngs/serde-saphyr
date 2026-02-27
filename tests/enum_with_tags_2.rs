@@ -1,6 +1,6 @@
-use std::fmt::Debug;
-use serde::de::DeserializeOwned;
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
+use std::fmt::Debug;
 
 #[derive(Debug, PartialEq, Eq, Deserialize)]
 pub enum Value {
@@ -18,7 +18,9 @@ pub struct Context {
 fn test_tagged_expression_scalar() {
     assert_eq!(
         serde_saphyr::<Context>(r#"value: !Expression "1 + 1""#),
-        Context { value: Value::Expression("1 + 1".to_string()) }
+        Context {
+            value: Value::Expression("1 + 1".to_string())
+        }
     );
 }
 
@@ -26,7 +28,9 @@ fn test_tagged_expression_scalar() {
 fn test_tagged_pair_flow_seq() {
     assert_eq!(
         serde_saphyr::<Context>(r#"value: !Pair [a, 12]"#),
-        Context { value: Value::Pair("a".to_string(), 12) }
+        Context {
+            value: Value::Pair("a".to_string(), 12)
+        }
     );
 }
 
@@ -40,7 +44,9 @@ value: !Pair
   - 12
 "#
         ),
-        Context { value: Value::Pair("a".to_string(), 12) }
+        Context {
+            value: Value::Pair("a".to_string(), 12)
+        }
     );
 }
 

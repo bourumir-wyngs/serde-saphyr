@@ -1,5 +1,5 @@
 use serde::Serialize;
-use serde_saphyr::{to_string, to_string_with_options, SerializerOptions};
+use serde_saphyr::{SerializerOptions, to_string, to_string_with_options};
 
 #[test]
 fn compact_list_indent_default() {

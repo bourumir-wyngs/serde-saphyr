@@ -1,17 +1,16 @@
 //! Additional serializer tests to increase coverage of `src/ser.rs`.
 
-use std::collections::BTreeMap;
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 
 use serde_saphyr::{
-    to_string, to_string_with_options, Commented, FlowMap, FlowSeq, SpaceAfter,
-    LitStr, FoldStr, LitString, FoldString,
-    RcAnchor, RcRecursive, RcRecursion,
-    ArcWeakAnchor, ArcRecursive, ArcRecursion,
+    ArcRecursion, ArcRecursive, ArcWeakAnchor, Commented, FlowMap, FlowSeq, FoldStr, FoldString,
+    LitStr, LitString, RcAnchor, RcRecursion, RcRecursive, SpaceAfter, to_string,
+    to_string_with_options,
 };
 
 // ── Scalar primitives (i8, i16, u128, i128, f32, char) ──
@@ -37,7 +36,9 @@ fn serialize_bytes_inline_as_binary() {
         #[serde(with = "serde_bytes")]
         data: Vec<u8>,
     }
-    let b = B { data: vec![1, 2, 3] };
+    let b = B {
+        data: vec![1, 2, 3],
+    };
     let yaml = to_string(&b).unwrap();
     assert!(yaml.contains("!!binary"), "expected !!binary tag: {yaml}");
 }
@@ -87,7 +88,10 @@ fn quote_all_value_position() {
     m.insert("key", "value");
     let yaml = to_string_with_options(&m, opts).unwrap();
     // Keys go through KeyScalarSink which doesn't use quote_all; values do.
-    assert!(yaml.contains("'value'") || yaml.contains("\"value\""), "value should be quoted: {yaml}");
+    assert!(
+        yaml.contains("'value'") || yaml.contains("\"value\""),
+        "value should be quoted: {yaml}"
+    );
 }
 
 // ── SpaceAfter ──
@@ -99,9 +103,15 @@ fn space_after_emits_blank_line() {
         a: SpaceAfter<i32>,
         b: i32,
     }
-    let s = S { a: SpaceAfter(1), b: 2 };
+    let s = S {
+        a: SpaceAfter(1),
+        b: 2,
+    };
     let yaml = to_string(&s).unwrap();
-    assert!(yaml.contains("a: 1\n\n"), "expected blank line after a: {yaml}");
+    assert!(
+        yaml.contains("a: 1\n\n"),
+        "expected blank line after a: {yaml}"
+    );
 }
 
 // ── LitStr / FoldStr / LitString / FoldString ──
@@ -109,7 +119,10 @@ fn space_after_emits_blank_line() {
 #[test]
 fn lit_str_emits_literal_block() {
     let yaml = to_string(&LitStr("hello\nworld\n")).unwrap();
-    assert!(yaml.contains('|'), "expected literal block indicator: {yaml}");
+    assert!(
+        yaml.contains('|'),
+        "expected literal block indicator: {yaml}"
+    );
     assert!(yaml.contains("hello"), "expected content: {yaml}");
 }
 
@@ -117,13 +130,19 @@ fn lit_str_emits_literal_block() {
 fn fold_str_emits_folded_block_for_long_strings() {
     let long = "a ".repeat(50); // 100 chars, well above default threshold
     let yaml = to_string(&FoldStr(&long)).unwrap();
-    assert!(yaml.contains('>'), "expected folded block indicator: {yaml}");
+    assert!(
+        yaml.contains('>'),
+        "expected folded block indicator: {yaml}"
+    );
 }
 
 #[test]
 fn fold_str_short_string_stays_inline() {
     let yaml = to_string(&FoldStr("short")).unwrap();
-    assert!(!yaml.contains('>'), "short string should not use folded: {yaml}");
+    assert!(
+        !yaml.contains('>'),
+        "short string should not use folded: {yaml}"
+    );
 }
 
 #[test]
@@ -144,7 +163,9 @@ fn fold_string_owned_works() {
 #[test]
 fn tagged_enums_emit_yaml_tags() {
     #[derive(Serialize)]
-    enum Color { Red }
+    enum Color {
+        Red,
+    }
     let opts = serde_saphyr::ser_options! { tagged_enums: true };
     let yaml = to_string_with_options(&Color::Red, opts).unwrap();
     assert!(yaml.contains("!!Color"), "expected tag: {yaml}");
@@ -160,7 +181,10 @@ fn tuple_variant_serializes_as_mapping_with_seq() {
     }
     let yaml = to_string(&E::Pair(1, 2)).unwrap();
     assert!(yaml.contains("Pair"), "expected variant name: {yaml}");
-    assert!(yaml.contains("- 1") && yaml.contains("- 2"), "expected seq elements: {yaml}");
+    assert!(
+        yaml.contains("- 1") && yaml.contains("- 2"),
+        "expected seq elements: {yaml}"
+    );
 }
 
 // ── Struct variants ──
@@ -174,7 +198,10 @@ fn struct_variant_serializes_as_mapping() {
     let yaml = to_string(&E::Point { x: 1, y: 2 }).unwrap();
     assert!(yaml.contains("Point"), "expected variant name: {yaml}");
     assert!(yaml.contains("x: 1"), "expected x field: {yaml}");
-    assert!(yaml.contains("y") && yaml.contains(": 2"), "expected y field: {yaml}");
+    assert!(
+        yaml.contains("y") && yaml.contains(": 2"),
+        "expected y field: {yaml}"
+    );
 }
 
 #[test]
@@ -303,7 +330,9 @@ fn arc_recursion_dangling_serializes_as_null() {
 #[test]
 fn arc_weak_anchor_dangling_serializes_as_null() {
     #[derive(Serialize, Clone)]
-    struct N { v: i32 }
+    struct N {
+        v: i32,
+    }
     let weak = {
         let s = Arc::new(N { v: 1 });
         Arc::downgrade(&s)
@@ -331,7 +360,9 @@ fn custom_anchor_generator() {
 #[test]
 fn with_indent_changes_indentation() {
     #[derive(Serialize)]
-    struct S { a: Vec<i32> }
+    struct S {
+        a: Vec<i32>,
+    }
     let opts = serde_saphyr::ser_options! { indent_step: 4 };
     let yaml = to_string_with_options(&S { a: vec![1] }, opts).unwrap();
     // With 4-space indent, the list item should be indented by 4 spaces
@@ -352,7 +383,10 @@ fn flow_map_emits_braces() {
     m.insert("a", 1);
     m.insert("b", 2);
     let yaml = to_string(&FlowMap(m)).unwrap();
-    assert!(yaml.starts_with('{') && yaml.contains('}'), "expected flow map: {yaml}");
+    assert!(
+        yaml.starts_with('{') && yaml.contains('}'),
+        "expected flow map: {yaml}"
+    );
 }
 
 // ── Commented in flow context (suppressed) ──
@@ -360,7 +394,10 @@ fn flow_map_emits_braces() {
 #[test]
 fn commented_in_flow_context_suppresses_comment() {
     let yaml = to_string(&FlowSeq(vec![Commented(1, "note".into())])).unwrap();
-    assert!(!yaml.contains('#'), "comment should be suppressed in flow: {yaml}");
+    assert!(
+        !yaml.contains('#'),
+        "comment should be suppressed in flow: {yaml}"
+    );
 }
 
 // ── Empty collections ──
@@ -368,7 +405,9 @@ fn commented_in_flow_context_suppresses_comment() {
 #[test]
 fn empty_map_as_braces() {
     #[derive(Serialize)]
-    struct S { m: BTreeMap<String, i32> }
+    struct S {
+        m: BTreeMap<String, i32>,
+    }
     let s = S { m: BTreeMap::new() };
     let yaml = to_string(&s).unwrap();
     assert!(yaml.contains("{}"), "expected empty braces: {yaml}");
@@ -377,7 +416,9 @@ fn empty_map_as_braces() {
 #[test]
 fn empty_seq_as_brackets() {
     #[derive(Serialize)]
-    struct S { v: Vec<i32> }
+    struct S {
+        v: Vec<i32>,
+    }
     let s = S { v: vec![] };
     let yaml = to_string(&s).unwrap();
     assert!(yaml.contains("[]"), "expected empty brackets: {yaml}");
@@ -386,7 +427,9 @@ fn empty_seq_as_brackets() {
 #[test]
 fn empty_map_without_braces() {
     #[derive(Serialize)]
-    struct S { m: BTreeMap<String, i32> }
+    struct S {
+        m: BTreeMap<String, i32>,
+    }
     let s = S { m: BTreeMap::new() };
     let opts = serde_saphyr::ser_options! { empty_as_braces: false };
     let yaml = to_string_with_options(&s, opts).unwrap();
@@ -401,7 +444,10 @@ fn normal_tuple_struct_serializes_as_seq() {
     #[derive(Serialize)]
     struct Pair(i32, String);
     let yaml = to_string(&Pair(1, "two".into())).unwrap();
-    assert!(yaml.contains("- 1") && yaml.contains("- two"), "got: {yaml}");
+    assert!(
+        yaml.contains("- 1") && yaml.contains("- two"),
+        "got: {yaml}"
+    );
 }
 
 // ── Nested structures ──
@@ -409,10 +455,15 @@ fn normal_tuple_struct_serializes_as_seq() {
 #[test]
 fn nested_map_in_seq() {
     #[derive(Serialize)]
-    struct Inner { x: i32 }
+    struct Inner {
+        x: i32,
+    }
     let v = vec![Inner { x: 1 }, Inner { x: 2 }];
     let yaml = to_string(&v).unwrap();
-    assert!(yaml.contains("- x: 1") && yaml.contains("- x: 2"), "got: {yaml}");
+    assert!(
+        yaml.contains("- x: 1") && yaml.contains("- x: 2"),
+        "got: {yaml}"
+    );
 }
 
 #[test]
@@ -430,7 +481,10 @@ fn seq_in_map_value() {
 fn yaml_12_emits_directive() {
     let opts = serde_saphyr::ser_options! { yaml_12: true };
     let yaml = to_string_with_options(&42, opts).unwrap();
-    assert!(yaml.contains("%YAML 1.2"), "expected YAML directive: {yaml}");
+    assert!(
+        yaml.contains("%YAML 1.2"),
+        "expected YAML directive: {yaml}"
+    );
 }
 
 // ── Literal block with trailing newlines (chomp indicators) ──
@@ -524,7 +578,10 @@ fn auto_folded_for_long_single_line() {
 fn no_block_scalars_when_disabled() {
     let opts = serde_saphyr::ser_options! { prefer_block_scalars: false };
     let yaml = to_string_with_options(&"line1\nline2\n", opts).unwrap();
-    assert!(!yaml.contains('|') && !yaml.contains('>'), "should not use block: {yaml}");
+    assert!(
+        !yaml.contains('|') && !yaml.contains('>'),
+        "should not use block: {yaml}"
+    );
 }
 
 // ── Commented with empty comment ──
@@ -532,7 +589,10 @@ fn no_block_scalars_when_disabled() {
 #[test]
 fn commented_empty_string_no_comment_marker() {
     let yaml = to_string(&Commented(42, String::new())).unwrap();
-    assert!(!yaml.contains('#'), "empty comment should not emit #: {yaml}");
+    assert!(
+        !yaml.contains('#'),
+        "empty comment should not emit #: {yaml}"
+    );
     assert!(yaml.contains("42"), "value missing: {yaml}");
 }
 
@@ -585,7 +645,10 @@ fn single_quoted_escapes_embedded_quote() {
     let opts = serde_saphyr::ser_options! { quote_all: true };
     // A string with a backslash needs double quotes
     let yaml = to_string_with_options(&"back\\slash", opts).unwrap();
-    assert!(yaml.starts_with('"'), "expected double quotes for backslash: {yaml}");
+    assert!(
+        yaml.starts_with('"'),
+        "expected double quotes for backslash: {yaml}"
+    );
 }
 
 // ── Struct variant in sequence ──
@@ -599,7 +662,10 @@ fn struct_variant_in_sequence() {
     let v = vec![E::Point { x: 1, y: 2 }, E::Point { x: 3, y: 4 }];
     let yaml = to_string(&v).unwrap();
     assert!(yaml.contains("Point"), "got: {yaml}");
-    assert!(yaml.contains("x: 1") && yaml.contains("x: 3"), "got: {yaml}");
+    assert!(
+        yaml.contains("x: 1") && yaml.contains("x: 3"),
+        "got: {yaml}"
+    );
 }
 
 // ── Tuple variant in sequence ──
@@ -620,7 +686,9 @@ fn tuple_variant_in_sequence() {
 #[test]
 fn newtype_variant_with_struct_inner_as_map_value() {
     #[derive(Serialize)]
-    struct Inner { a: i32 }
+    struct Inner {
+        a: i32,
+    }
     #[derive(Serialize)]
     enum E {
         Wrap(Inner),
@@ -628,7 +696,10 @@ fn newtype_variant_with_struct_inner_as_map_value() {
     let mut m = BTreeMap::new();
     m.insert("k", E::Wrap(Inner { a: 5 }));
     let yaml = to_string(&m).unwrap();
-    assert!(yaml.contains("Wrap") && yaml.contains("a: 5"), "got: {yaml}");
+    assert!(
+        yaml.contains("Wrap") && yaml.contains("a: 5"),
+        "got: {yaml}"
+    );
 }
 
 // ── Map value that is itself a map (inline_value_start path) ──
@@ -640,7 +711,10 @@ fn map_value_is_map() {
     let mut outer = BTreeMap::new();
     outer.insert("nested", inner);
     let yaml = to_string(&outer).unwrap();
-    assert!(yaml.contains("nested:") && yaml.contains("x: 1"), "got: {yaml}");
+    assert!(
+        yaml.contains("nested:") && yaml.contains("x: 1"),
+        "got: {yaml}"
+    );
 }
 
 // ── Sequence value after block sibling ──
@@ -652,7 +726,10 @@ fn seq_value_after_block_sibling() {
         a: Vec<i32>,
         b: Vec<i32>,
     }
-    let s = S { a: vec![1], b: vec![2] };
+    let s = S {
+        a: vec![1],
+        b: vec![2],
+    };
     let yaml = to_string(&s).unwrap();
     assert!(yaml.contains("- 1") && yaml.contains("- 2"), "got: {yaml}");
 }
@@ -662,7 +739,10 @@ fn seq_value_after_block_sibling() {
 #[test]
 fn bool_at_line_start_in_seq() {
     let yaml = to_string(&vec![true, false]).unwrap();
-    assert!(yaml.contains("- true") && yaml.contains("- false"), "got: {yaml}");
+    assert!(
+        yaml.contains("- true") && yaml.contains("- false"),
+        "got: {yaml}"
+    );
 }
 
 // ── u128 as map key ──
@@ -743,7 +823,10 @@ fn space_after_with_seq() {
         items: SpaceAfter<Vec<i32>>,
         after: i32,
     }
-    let s = S { items: SpaceAfter(vec![1, 2]), after: 3 };
+    let s = S {
+        items: SpaceAfter(vec![1, 2]),
+        after: 3,
+    };
     let yaml = to_string(&s).unwrap();
     assert!(yaml.contains("after: 3"), "got: {yaml}");
 }
@@ -753,7 +836,9 @@ fn space_after_with_seq() {
 #[test]
 fn commented_with_map_value_ignores_comment() {
     #[derive(Serialize)]
-    struct Inner { x: i32 }
+    struct Inner {
+        x: i32,
+    }
     let yaml = to_string(&Commented(Inner { x: 1 }, "ignored".into())).unwrap();
     // Comments are ignored for complex values
     assert!(yaml.contains("x: 1"), "got: {yaml}");
@@ -782,7 +867,12 @@ fn flow_seq_as_struct_field() {
     struct S {
         v: FlowSeq<Vec<i32>>,
     }
-    let s = S { v: FlowSeq(vec![1, 2]) };
+    let s = S {
+        v: FlowSeq(vec![1, 2]),
+    };
     let yaml = to_string(&s).unwrap();
-    assert!(yaml.contains("v: [1, 2]"), "expected inline flow seq: {yaml}");
+    assert!(
+        yaml.contains("v: [1, 2]"),
+        "expected inline flow seq: {yaml}"
+    );
 }

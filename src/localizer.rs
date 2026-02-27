@@ -92,7 +92,10 @@ pub trait Localizer {
         if loc == Location::UNKNOWN {
             base
         } else {
-            Cow::Owned(format!("{base} at line {}, column {}", loc.line, loc.column))
+            Cow::Owned(format!(
+                "{base} at line {}, column {}",
+                loc.line, loc.column
+            ))
         }
     }
 
@@ -110,7 +113,10 @@ pub trait Localizer {
     ///
     /// Default: `format!(" (defined at line {line}, column {column})", ...)`.
     fn alias_defined_at(&self, defined: Location) -> String {
-        format!(" (defined at line {}, column {})", defined.line, defined.column)
+        format!(
+            " (defined at line {}, column {})",
+            defined.line, defined.column
+        )
     }
 
     // ---------------- Validation (plain text) glue ----------------
@@ -131,7 +137,9 @@ pub trait Localizer {
     ) -> String {
         let base = format!("validation error at {resolved_path}: {entry}");
         match loc {
-            Some(l) if l != Location::UNKNOWN => self.attach_location(Cow::Owned(base), l).into_owned(),
+            Some(l) if l != Location::UNKNOWN => {
+                self.attach_location(Cow::Owned(base), l).into_owned()
+            }
             _ => base,
         }
     }

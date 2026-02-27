@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use serde_saphyr::{FoldStr, FoldString, LitStr, LitString, RcAnchor, SerializerOptions, to_string, to_string_with_options};
+use serde_saphyr::{
+    FoldStr, FoldString, LitStr, LitString, RcAnchor, SerializerOptions, to_string,
+    to_string_with_options,
+};
 
 #[test]
 fn litstr_top_level() {
@@ -239,11 +242,7 @@ fn fold_string_does_not_wrap_on_tabs_roundtrips() {
     // become " \t" or "\t ", depending on where the break happened).
     //
     // Ensure we only ever wrap at ASCII spaces.
-    let s = format!(
-        "{}\t{}",
-        "a".repeat(120),
-        "b".repeat(120)
-    );
+    let s = format!("{}\t{}", "a".repeat(120), "b".repeat(120));
 
     let out = to_string(&FoldString(s.clone())).unwrap();
     assert!(out.starts_with(">\n  "));
@@ -261,11 +260,7 @@ fn fold_string_wraps_space_runs_roundtrips() {
     // spaces on round-trip, the emitter must effectively turn N spaces into:
     //   (N-1) spaces at end-of-line + folded-space
     // so that the reconstructed string has N spaces.
-    let s = format!(
-        "{}  {}",
-        "a".repeat(90),
-        "b".repeat(90)
-    );
+    let s = format!("{}  {}", "a".repeat(90), "b".repeat(90));
 
     let out = to_string(&FoldString(s.clone())).unwrap();
     assert!(out.starts_with(">\n  "));

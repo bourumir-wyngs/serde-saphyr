@@ -41,7 +41,6 @@ fn line_width_short_strings_not_wrapped() {
     };
 
     let opts = SerializerOptions {
-        
         ..Default::default()
     };
 
@@ -78,14 +77,11 @@ fn line_width_with_nested_structure() {
     };
 
     let opts = SerializerOptions {
-        
         ..Default::default()
     };
 
     let mut out = String::new();
     to_fmt_writer_with_options(&mut out, &doc, opts).unwrap();
-
-
 
     // Should wrap the string
     assert!(
@@ -114,14 +110,11 @@ fn line_width_custom_value() {
 
     // With line_width=40, this should wrap
     let opts = SerializerOptions {
-        
         ..Default::default()
     };
 
     let mut out = String::new();
     to_fmt_writer_with_options(&mut out, &doc, opts).unwrap();
-
-
 
     // Should wrap (plain scalar style)
     assert!(
@@ -148,7 +141,6 @@ fn line_width_preserves_multiline_strings() {
     };
 
     let opts = SerializerOptions {
-        
         prefer_block_scalars: true,
         ..Default::default()
     };
@@ -180,7 +172,6 @@ fn line_width_flow_style_not_wrapped() {
     };
 
     let opts = SerializerOptions {
-        
         ..Default::default()
     };
 
@@ -212,7 +203,6 @@ fn line_width_roundtrip() {
     };
 
     let opts = SerializerOptions {
-        
         ..Default::default()
     };
 

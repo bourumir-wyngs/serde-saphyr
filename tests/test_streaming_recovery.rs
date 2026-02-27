@@ -23,7 +23,11 @@ fn streaming_reader_recovers_after_deserialization_error() {
 
     let results: Vec<Result<Point, _>> = serde_saphyr::read(&mut reader).collect();
 
-    assert_eq!(results.len(), 2, "Should have 2 results (1 error + 1 success)");
+    assert_eq!(
+        results.len(),
+        2,
+        "Should have 2 results (1 error + 1 success)"
+    );
     assert!(results[0].is_err(), "First document should fail");
     assert!(results[1].is_ok(), "Second document should succeed");
     assert_eq!(results[1].as_ref().unwrap(), &Point { x: 10, y: 20 });
@@ -42,7 +46,10 @@ fn streaming_reader_recovers_multiple_errors() {
     let results: Vec<Result<Point, _>> = serde_saphyr::read(&mut reader).collect();
 
     assert_eq!(results.len(), 4, "Should have 4 results");
-    assert!(results[0].is_err(), "First document should fail (missing y)");
+    assert!(
+        results[0].is_err(),
+        "First document should fail (missing y)"
+    );
     assert!(results[1].is_err(), "Second document should fail (bad x)");
     assert!(results[2].is_ok(), "Third document should succeed");
     assert_eq!(results[2].as_ref().unwrap(), &Point { x: 100, y: 200 });
@@ -77,7 +84,8 @@ fn streaming_reader_recovers_from_nested_error() {
 
     // Doc 1: error in nested structure
     // Doc 2: valid
-    let yaml = b"name: first\npoint:\n  x: 1\n  y: bad\n---\nname: second\npoint:\n  x: 2\n  y: 3\n";
+    let yaml =
+        b"name: first\npoint:\n  x: 1\n  y: bad\n---\nname: second\npoint:\n  x: 2\n  y: 3\n";
     let mut reader = Cursor::new(&yaml[..]);
 
     let results: Vec<Result<Nested, _>> = serde_saphyr::read(&mut reader).collect();

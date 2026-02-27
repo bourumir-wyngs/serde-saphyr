@@ -10,13 +10,16 @@ pub use anchors::{
     RcWeakAnchor,
 };
 pub use de::{Budget, DuplicateKeyPolicy, Error, Options};
-pub use de_error::TransformReason;
 pub use de_error::CroppedRegion;
+pub use de_error::TransformReason;
 pub use de_error::{MessageFormatter, RenderOptions, SnippetMode, UserMessageFormatter};
-pub use localizer::{DefaultEnglishLocalizer, ExternalMessage, ExternalMessageSource, Localizer, DEFAULT_ENGLISH_LOCALIZER};
-pub use message_formatters::{DefaultMessageFormatter, DeveloperMessageFormatter};
+pub use localizer::{
+    DEFAULT_ENGLISH_LOCALIZER, DefaultEnglishLocalizer, ExternalMessage, ExternalMessageSource,
+    Localizer,
+};
 pub use location::{Location, Locations, Span};
 pub use long_strings::{FoldStr, FoldString, LitStr, LitString};
+pub use message_formatters::{DefaultMessageFormatter, DeveloperMessageFormatter};
 pub use ser::{Commented, FlowMap, FlowSeq, SpaceAfter};
 pub use spanned::Spanned;
 
@@ -38,14 +41,14 @@ mod anchors;
 mod base64;
 pub mod budget;
 mod de;
-mod message_formatters;
 mod de_error;
-#[path = "localizer.rs"]
-pub mod localizer;
 #[path = "de/snippet.rs"]
 mod de_snipped;
 mod live_events;
+#[path = "localizer.rs"]
+pub mod localizer;
 mod long_strings;
+mod message_formatters;
 pub mod options;
 mod parse_scalars;
 pub mod ser;
@@ -65,8 +68,8 @@ pub use de::{
     with_deserializer_from_str, with_deserializer_from_str_with_options,
 };
 
-mod serializer_options;
 mod macros;
+mod serializer_options;
 mod tags;
 
 pub(crate) mod ser_quoting;
@@ -342,10 +345,8 @@ where
 
     match src.peek() {
         Ok(Some(_)) => {
-            let err = Error::multiple_documents(
-                "use from_multiple or from_multiple_with_options",
-            )
-            .with_location(src.last_location());
+            let err = Error::multiple_documents("use from_multiple or from_multiple_with_options")
+                .with_location(src.last_location());
             return Err(maybe_with_snippet(err, input, with_snippet, crop_radius));
         }
         Ok(None) => {}
@@ -456,10 +457,8 @@ fn from_str_with_options_and_path_recorder<T: DeserializeOwned>(
 
     match src.peek() {
         Ok(Some(_)) => {
-            let err = Error::multiple_documents(
-                "use from_multiple or from_multiple_with_options",
-            )
-            .with_location(src.last_location());
+            let err = Error::multiple_documents("use from_multiple or from_multiple_with_options")
+                .with_location(src.last_location());
             return Err(maybe_with_snippet(err, input, with_snippet, crop_radius));
         }
         Ok(None) => {}
@@ -751,12 +750,10 @@ where
     // ignore the trailing garbage. Otherwise, surface the error.
     match src.peek() {
         Ok(Some(_)) => {
-            return Err(
-                Error::multiple_documents(
-                    "use read_valid or read_with_options_valid to obtain the iterator",
-                )
-                .with_location(src.last_location()),
-            );
+            return Err(Error::multiple_documents(
+                "use read_valid or read_with_options_valid to obtain the iterator",
+            )
+            .with_location(src.last_location()));
         }
         Ok(None) => {}
         Err(e) => {
@@ -1130,12 +1127,10 @@ where
     // ignore the trailing garbage. Otherwise, surface the error.
     match src.peek() {
         Ok(Some(_)) => {
-            return Err(
-                Error::multiple_documents(
-                    "use read_validate or read_with_options_validate to obtain the iterator",
-                )
-                .with_location(src.last_location()),
-            );
+            return Err(Error::multiple_documents(
+                "use read_validate or read_with_options_validate to obtain the iterator",
+            )
+            .with_location(src.last_location()));
         }
         Ok(None) => {}
         Err(e) => {
@@ -1467,10 +1462,7 @@ pub fn from_slice<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, Error> {
 /// let cfg: Config = serde_saphyr::from_slice_with_options(bytes, options).unwrap();
 /// assert_eq!(cfg.retries, 5);
 /// ```
-pub fn from_slice_with_options<'de, T>(
-    bytes: &'de [u8],
-    options: Options,
-) -> Result<T, Error>
+pub fn from_slice_with_options<'de, T>(bytes: &'de [u8], options: Options) -> Result<T, Error>
 where
     T: serde::Deserialize<'de>,
 {
@@ -1728,10 +1720,8 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
     match src.peek() {
         Ok(Some(_)) => {
             return Err(attach_snippet(
-                Error::multiple_documents(
-                    "use read or read_with_options to obtain the iterator",
-                )
-                .with_location(src.last_location()),
+                Error::multiple_documents("use read or read_with_options to obtain the iterator")
+                    .with_location(src.last_location()),
             ));
         }
         Ok(None) => {}

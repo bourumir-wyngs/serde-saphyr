@@ -10,8 +10,7 @@ fn test_serde_fail() {
         b: String,
         c: String,
     }
-    let cfgstr =
-        r###"
+    let cfgstr = r###"
         a: "value a"
         b: "value b"
         c: "value c"

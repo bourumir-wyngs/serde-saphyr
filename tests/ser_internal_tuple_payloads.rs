@@ -28,7 +28,10 @@ fn internal_yaml_anchor_tuple_struct_emits_anchor_then_alias() {
 
     // Be tolerant about whitespace/details; the key property is that the first element defines
     // an anchor and the second reuses it as an alias.
-    assert!(yaml.contains("&a1"), "expected anchor definition, got: {yaml}");
+    assert!(
+        yaml.contains("&a1"),
+        "expected anchor definition, got: {yaml}"
+    );
     assert!(yaml.contains("*a1"), "expected alias reuse, got: {yaml}");
 }
 
@@ -38,9 +41,12 @@ fn internal_yaml_weak_anchor_present_false_serializes_as_null() {
     let v = vec![YamlWeakAnchorPayload(55, false, "value_is_ignored")];
     let yaml = to_string(&v).expect("serialize __yaml_weak_anchor payload");
 
-    assert_eq!(yaml, indoc! {"\
+    assert_eq!(
+        yaml,
+        indoc! {"\
         - null
-    "});
+    "}
+    );
 }
 
 #[test]
@@ -52,7 +58,10 @@ fn internal_yaml_weak_anchor_present_true_emits_anchor_then_alias() {
     ];
     let yaml = to_string(&v).expect("serialize __yaml_weak_anchor present payload");
 
-    assert!(yaml.contains("&a1"), "expected anchor definition, got: {yaml}");
+    assert!(
+        yaml.contains("&a1"),
+        "expected anchor definition, got: {yaml}"
+    );
     assert!(yaml.contains("*a1"), "expected alias reuse, got: {yaml}");
 }
 

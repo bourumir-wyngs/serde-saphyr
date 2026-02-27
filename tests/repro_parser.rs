@@ -1,16 +1,16 @@
 #[test]
 fn test_parser_direct_borrowing() {
-    use saphyr_parser::{Parser, Event};
+    use saphyr_parser::{Event, Parser};
     use std::borrow::Cow;
 
     let input = "hello";
     let mut parser = Parser::new_from_str(input);
-    
+
     // StreamStart
     let _ = parser.next().unwrap().unwrap();
     // DocumentStart
     let _ = parser.next().unwrap().unwrap();
-    
+
     // Scalar
     let (event, _span) = parser.next().unwrap().unwrap();
     match event {
@@ -27,17 +27,17 @@ fn test_parser_direct_borrowing() {
 
 #[test]
 fn test_parser_direct_borrowing_quoted() {
-    use saphyr_parser::{Parser, Event};
+    use saphyr_parser::{Event, Parser};
     use std::borrow::Cow;
 
     let input = "\"hello world\"";
     let mut parser = Parser::new_from_str(input);
-    
+
     // StreamStart
     let _ = parser.next().unwrap().unwrap();
     // DocumentStart
     let _ = parser.next().unwrap().unwrap();
-    
+
     // Scalar
     let (event, _span) = parser.next().unwrap().unwrap();
     match event {

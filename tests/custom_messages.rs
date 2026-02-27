@@ -1,6 +1,6 @@
-use serde_saphyr::{Error, from_str};
-use serde_saphyr::from_slice;
 use serde_saphyr::UserMessageFormatter;
+use serde_saphyr::from_slice;
+use serde_saphyr::{Error, from_str};
 
 #[cfg(any(feature = "garde", feature = "validator"))]
 use serde_saphyr::{CroppedRegion, MessageFormatter};
@@ -31,15 +31,15 @@ fn test_user_formatter_quoting_required() {
     // Or just construct it if possible. Error variants are public.
     // But constructors are private.
     // Error::QuotingRequired is public.
-    
-    let err = Error::QuotingRequired { 
-        value: "foo:bar".to_string(), 
-        location: serde_saphyr::Location::UNKNOWN 
+
+    let err = Error::QuotingRequired {
+        value: "foo:bar".to_string(),
+        location: serde_saphyr::Location::UNKNOWN,
     };
-    
+
     let default_msg = err.to_string();
     assert!(default_msg.contains("The string value [foo:bar] must be quoted"));
-    
+
     let user_msg = err.render_with_formatter(&UserMessageFormatter);
     assert_eq!(user_msg, "value requires quoting");
 }
@@ -135,15 +135,15 @@ fn custom_formatter_is_used_for_nested_validator_errors_with_snippets() {
 #[test]
 fn test_miette_integration() {
     use serde_saphyr::miette::to_miette_report_with_formatter;
-    
+
     let yaml = "*unknown";
     let err = Error::UnknownAnchor {
         location: serde_saphyr::Location::UNKNOWN,
     };
-    
+
     let report = to_miette_report_with_formatter(&err, yaml, "test.yaml", &UserMessageFormatter);
     let out = report.to_string();
-    
+
     assert!(out.contains("reference to unknown value"));
     assert!(!out.contains("id unknown"));
 }

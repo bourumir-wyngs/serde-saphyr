@@ -63,14 +63,10 @@ mod ser_error_tests {
         };
         assert!(io_err.source().is_some());
 
-        let msg_err = Error::Message {
-            msg: "m".into(),
-        };
+        let msg_err = Error::Message { msg: "m".into() };
         assert!(msg_err.source().is_none());
 
-        let unexp = Error::Unexpected {
-            msg: "u".into(),
-        };
+        let unexp = Error::Unexpected { msg: "u".into() };
         assert!(unexp.source().is_none());
 
         let inv = Error::InvalidOptions("i".into());
@@ -168,7 +164,11 @@ mod zmij_format_tests {
         let s = round_trip(1e20);
         // Should have exponent sign
         assert!(
-            s.contains("e+") || s.contains("e-") || s.contains("E+") || s.contains("E-") || s.contains('.'),
+            s.contains("e+")
+                || s.contains("e-")
+                || s.contains("E+")
+                || s.contains("E-")
+                || s.contains('.'),
             "expected proper float format, got: {s}"
         );
     }
@@ -212,7 +212,10 @@ mod zmij_format_tests {
         struct W32 {
             v: f32,
         }
-        let s = serde_saphyr::to_string(&W32 { v: f32::NEG_INFINITY }).unwrap();
+        let s = serde_saphyr::to_string(&W32 {
+            v: f32::NEG_INFINITY,
+        })
+        .unwrap();
         assert!(s.contains("-.inf"));
     }
 
@@ -246,7 +249,13 @@ mod zmij_format_tests {
         struct W {
             v: f64,
         }
-        serde_saphyr::to_fmt_writer(&mut buf, &W { v: f64::NEG_INFINITY }).unwrap();
+        serde_saphyr::to_fmt_writer(
+            &mut buf,
+            &W {
+                v: f64::NEG_INFINITY,
+            },
+        )
+        .unwrap();
         assert!(buf.contains("-.inf"));
     }
 
@@ -291,7 +300,10 @@ mod zmij_format_tests {
             v: f64,
         }
         serde_saphyr::to_fmt_writer(&mut buf, &W { v: 1.23e20 }).unwrap();
-        assert!(buf.contains("e+"), "expected e+ exponent sign with decimal mantissa, got: {buf}");
+        assert!(
+            buf.contains("e+"),
+            "expected e+ exponent sign with decimal mantissa, got: {buf}"
+        );
     }
 
     #[test]
@@ -313,14 +325,17 @@ mod zmij_format_tests {
             v: f32,
         }
         serde_saphyr::to_fmt_writer(&mut buf, &W { v: 1e20f32 }).unwrap();
-        assert!(buf.contains("e"), "expected scientific notation, got: {buf}");
+        assert!(
+            buf.contains("e"),
+            "expected scientific notation, got: {buf}"
+        );
     }
 
     #[test]
     fn float_map_keys() {
         use serde::Serializer;
-        use std::hash::{Hash, Hasher};
         use std::collections::HashMap;
+        use std::hash::{Hash, Hasher};
 
         struct DummyF64(pub f64);
 
@@ -375,11 +390,11 @@ mod zmij_format_tests {
 
 mod localizer_tests {
     use super::*;
-    use serde_saphyr::localizer::{
-        DefaultEnglishLocalizer, ExternalMessage, ExternalMessageSource, Localizer,
-        DEFAULT_ENGLISH_LOCALIZER,
-    };
     use serde_saphyr::Location;
+    use serde_saphyr::localizer::{
+        DEFAULT_ENGLISH_LOCALIZER, DefaultEnglishLocalizer, ExternalMessage, ExternalMessageSource,
+        Localizer,
+    };
 
     #[test]
     fn attach_location_unknown() {
@@ -388,12 +403,10 @@ mod localizer_tests {
         assert_eq!(result, "base");
     }
 
-
     #[test]
     fn root_path_label() {
         assert_eq!(DEFAULT_ENGLISH_LOCALIZER.root_path_label(), "<root>");
     }
-
 
     #[test]
     fn validation_issue_line_no_location() {
@@ -404,15 +417,17 @@ mod localizer_tests {
 
     #[test]
     fn validation_issue_line_unknown_location() {
-        let s =
-            DEFAULT_ENGLISH_LOCALIZER.validation_issue_line("x", "y", Some(Location::UNKNOWN));
+        let s = DEFAULT_ENGLISH_LOCALIZER.validation_issue_line("x", "y", Some(Location::UNKNOWN));
         assert!(!s.contains("at line"));
     }
 
     #[test]
     fn join_validation_issues() {
         let lines = vec!["a".into(), "b".into()];
-        assert_eq!(DEFAULT_ENGLISH_LOCALIZER.join_validation_issues(&lines), "a\nb");
+        assert_eq!(
+            DEFAULT_ENGLISH_LOCALIZER.join_validation_issues(&lines),
+            "a\nb"
+        );
     }
 
     #[test]
@@ -445,7 +460,6 @@ mod localizer_tests {
         assert!(s.is_empty());
     }
 
-
     #[test]
     fn override_external_message_default_none() {
         let msg = ExternalMessage {
@@ -454,7 +468,11 @@ mod localizer_tests {
             code: None,
             params: &[],
         };
-        assert!(DEFAULT_ENGLISH_LOCALIZER.override_external_message(msg).is_none());
+        assert!(
+            DEFAULT_ENGLISH_LOCALIZER
+                .override_external_message(msg)
+                .is_none()
+        );
     }
 
     #[test]
@@ -504,10 +522,8 @@ mod with_deserializer_tests {
     #[test]
     fn from_str_basic() {
         let result: Simple =
-            serde_saphyr::with_deserializer_from_str("x: 42", |de| {
-                Simple::deserialize(de)
-            })
-            .unwrap();
+            serde_saphyr::with_deserializer_from_str("x: 42", |de| Simple::deserialize(de))
+                .unwrap();
         assert_eq!(result, Simple { x: 42 });
     }
 
@@ -516,10 +532,7 @@ mod with_deserializer_tests {
         // UTF-8 BOM should be stripped
         let input = "\u{FEFF}x: 99";
         let result: Simple =
-            serde_saphyr::with_deserializer_from_str(input, |de| {
-                Simple::deserialize(de)
-            })
-            .unwrap();
+            serde_saphyr::with_deserializer_from_str(input, |de| Simple::deserialize(de)).unwrap();
         assert_eq!(result, Simple { x: 99 });
     }
 
@@ -527,23 +540,21 @@ mod with_deserializer_tests {
     fn from_slice_basic() {
         let bytes = b"x: 7";
         let result: Simple =
-            serde_saphyr::with_deserializer_from_slice(bytes, |de| {
-                Simple::deserialize(de)
-            })
-            .unwrap();
+            serde_saphyr::with_deserializer_from_slice(bytes, |de| Simple::deserialize(de))
+                .unwrap();
         assert_eq!(result, Simple { x: 7 });
     }
 
     #[test]
     fn from_slice_invalid_utf8() {
         let bytes: &[u8] = &[0xFF, 0xFE, 0x00];
-        let err = serde_saphyr::with_deserializer_from_slice(bytes, |de| {
-            Simple::deserialize(de)
-        })
-        .unwrap_err();
+        let err = serde_saphyr::with_deserializer_from_slice(bytes, |de| Simple::deserialize(de))
+            .unwrap_err();
         let s = err.to_string();
-        assert!(s.contains("UTF-8") || s.contains("utf8") || s.contains("utf-8"),
-            "expected UTF-8 error, got: {s}");
+        assert!(
+            s.contains("UTF-8") || s.contains("utf8") || s.contains("utf-8"),
+            "expected UTF-8 error, got: {s}"
+        );
     }
 
     #[test]
@@ -551,20 +562,16 @@ mod with_deserializer_tests {
         let data = b"x: 3";
         let cursor = std::io::Cursor::new(data);
         let result: Simple =
-            serde_saphyr::with_deserializer_from_reader(cursor, |de| {
-                Simple::deserialize(de)
-            })
-            .unwrap();
+            serde_saphyr::with_deserializer_from_reader(cursor, |de| Simple::deserialize(de))
+                .unwrap();
         assert_eq!(result, Simple { x: 3 });
     }
 
     #[test]
     fn from_str_multiple_documents_error() {
         let input = "x: 1\n---\nx: 2";
-        let err = serde_saphyr::with_deserializer_from_str(input, |de| {
-            Simple::deserialize(de)
-        })
-        .unwrap_err();
+        let err = serde_saphyr::with_deserializer_from_str(input, |de| Simple::deserialize(de))
+            .unwrap_err();
         let s = err.to_string();
         assert!(
             s.contains("multiple") || s.contains("document"),
@@ -575,10 +582,8 @@ mod with_deserializer_tests {
     #[test]
     fn from_str_empty_eof() {
         // Empty input into bool should give EOF error
-        let err = serde_saphyr::with_deserializer_from_str("", |de| {
-            bool::deserialize(de)
-        })
-        .unwrap_err();
+        let err =
+            serde_saphyr::with_deserializer_from_str("", |de| bool::deserialize(de)).unwrap_err();
         let s = err.to_string();
         assert!(
             s.contains("end") || s.contains("EOF") || s.contains("eof"),
@@ -621,10 +626,13 @@ mod with_deserializer_tests {
     }
 }
 
-use serde_saphyr::{ArcAnchor, ArcRecursive, ArcRecursion, ArcWeakAnchor, RcAnchor, RcRecursive, RcRecursion, RcWeakAnchor};
+use serde_saphyr::{
+    ArcAnchor, ArcRecursion, ArcRecursive, ArcWeakAnchor, RcAnchor, RcRecursion, RcRecursive,
+    RcWeakAnchor,
+};
 use std::borrow::Borrow;
-use std::sync::Arc;
 use std::rc::Rc;
+use std::sync::Arc;
 
 mod anchors_tests {
     use super::*;

@@ -1,6 +1,6 @@
 use serde::Deserialize;
-use serde_saphyr::from_str;
 use serde_saphyr::Error;
+use serde_saphyr::from_str;
 
 fn unwrap_snippet(err: &Error) -> &Error {
     err.without_snippet()
@@ -37,7 +37,10 @@ fn expect_span_offset(err: &Error, offset: usize) {
 fn parser_scan_error_carries_span() {
     let err = from_str::<Vec<String>>(" [1, 2\n 3, 4 aaaaaa").expect_err("scan error expected");
     expect_location(&err, 1, 2); // unclosed bracket is at position 2, line is 1.
-    assert!(matches!(unwrap_snippet(&err), Error::ExternalMessage { .. }));
+    assert!(matches!(
+        unwrap_snippet(&err),
+        Error::ExternalMessage { .. }
+    ));
 }
 
 #[test]
@@ -337,7 +340,7 @@ fn with_snippet_enabled_for_from_slice_with_options() {
         yaml.as_bytes(),
         serde_saphyr::Options::default(),
     )
-        .expect_err("unknown anchor should error");
+    .expect_err("unknown anchor should error");
     let rendered = err.to_string();
 
     assert!(

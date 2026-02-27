@@ -59,7 +59,7 @@ fn test_quoted_multiline_wrap_with_block_scalars_enabled() {
 fn test_quoted_wrap_preserves_leading_spaces() {
     let options = SerializerOptions {
         indent_step: 2,
-        
+
         prefer_block_scalars: false,
         ..Default::default()
     };
@@ -81,4 +81,3 @@ fn test_quoted_wrap_preserves_leading_spaces() {
         output
     );
 }
-

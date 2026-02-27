@@ -71,14 +71,10 @@ fn main() {
             with_snippet: cfg!(feature = "miette") == false,
         }
     }
-    .with_budget_report(|report|
-        {
-            match serde_saphyr::to_string(&report) {
-                Ok(serialized) => println!("Budget report:\n{serialized}"),
-                Err(err) => eprintln!("Failed to serialize budget report: {err}"),
-            }
-        }
-    );
+    .with_budget_report(|report| match serde_saphyr::to_string(&report) {
+        Ok(serialized) => println!("Budget report:\n{serialized}"),
+        Err(err) => eprintln!("Failed to serialize budget report: {err}"),
+    });
 
     let r: Result<IgnoredAny, Error> = from_str_with_options(&content, options);
 

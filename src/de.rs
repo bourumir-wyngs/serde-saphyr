@@ -44,7 +44,6 @@ type FastHashSet<T> = HashSet<T, RandomState>;
 
 use crate::location::Locations;
 
-
 /// Attach both reference and defined locations to an error for alias replay scenarios.
 /// When both locations are known and different, creates an `AliasError` to report both.
 /// This is used for errors occurring when deserializing aliased values.
@@ -456,8 +455,18 @@ fn capture_node<'a>(ev: &mut dyn Events<'a>) -> Result<KeyNode<'a>, Error> {
                 location,
             })
         }
-        Ev::SeqStart { anchor, tag, raw_tag, location } => {
-            let mut events = vec![Ev::SeqStart { anchor, tag, raw_tag, location }];
+        Ev::SeqStart {
+            anchor,
+            tag,
+            raw_tag,
+            location,
+        } => {
+            let mut events = vec![Ev::SeqStart {
+                anchor,
+                tag,
+                raw_tag,
+                location,
+            }];
             let mut elements = Vec::new();
             loop {
                 match ev.peek()? {
@@ -1054,8 +1063,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         // Special-case binary: decode base64 and require valid UTF-8.
         if tag == SfTag::Binary && !self.cfg.ignore_binary_tag_for_string {
             let data = decode_base64_yaml(&value).map_err(|err| err.with_location(location))?;
-            let text = String::from_utf8(data)
-                .map_err(|_| Error::BinaryNotUtf8 { location })?;
+            let text = String::from_utf8(data).map_err(|_| Error::BinaryNotUtf8 { location })?;
             return Ok(text);
         }
 
@@ -1156,7 +1164,11 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     let _ = self.ev.next()?; // consume
                     return visitor.visit_unit();
                 }
-                if !is_plain || !tag.can_parse_into_string() || tag == &SfTag::Binary || tag == &SfTag::String {
+                if !is_plain
+                    || !tag.can_parse_into_string()
+                    || tag == &SfTag::Binary
+                    || tag == &SfTag::String
+                {
                     // For string-ish scalars, rely on the parser's own zero-copy capability:
                     // if the scalar is returned as `Cow::Borrowed`, we can pass it through.
                     // Otherwise we fall back to owning.
@@ -1244,12 +1256,12 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             }
             Some(Ev::SeqStart { .. }) => self.deserialize_seq(visitor),
             Some(Ev::MapStart { .. }) => self.deserialize_map(visitor),
-            Some(Ev::SeqEnd { location }) => {
-                Err(Error::UnexpectedSequenceEnd { location: *location })
-            }
-            Some(Ev::MapEnd { location }) => {
-                Err(Error::UnexpectedMappingEnd { location: *location })
-            }
+            Some(Ev::SeqEnd { location }) => Err(Error::UnexpectedSequenceEnd {
+                location: *location,
+            }),
+            Some(Ev::MapEnd { location }) => Err(Error::UnexpectedMappingEnd {
+                location: *location,
+            }),
             None => {
                 // When deserializing typeless positions (for example
                 // `serde_json::Value`) a completely empty document should be
@@ -1281,8 +1293,10 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 return Err(Error::InvalidBooleanStrict { location });
             }
         } else {
-            parse_yaml11_bool(s)
-                .map_err(|_| Error::InvalidScalar { ty: "boolean", location })?
+            parse_yaml11_bool(s).map_err(|_| Error::InvalidScalar {
+                ty: "boolean",
+                location,
+            })?
         };
         visitor.visit_bool(b)
     }
@@ -1314,7 +1328,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     /// Parse a signed 128-bit integer.
     fn deserialize_i128<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, _tag, location) = self.take_scalar_cow_with_location()?;
-        let v: i128 = parse_int_signed(s.as_ref(), "i128", location, self.cfg.legacy_octal_numbers)?;
+        let v: i128 =
+            parse_int_signed(s.as_ref(), "i128", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i128(v)
     }
 
@@ -1327,25 +1342,29 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     /// Parse an unsigned 16-bit integer.
     fn deserialize_u16<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, _tag, location) = self.take_scalar_cow_with_location()?;
-        let v: u16 = parse_int_unsigned(s.as_ref(), "u16", location, self.cfg.legacy_octal_numbers)?;
+        let v: u16 =
+            parse_int_unsigned(s.as_ref(), "u16", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u16(v)
     }
     /// Parse an unsigned 32-bit integer.
     fn deserialize_u32<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, _tag, location) = self.take_scalar_cow_with_location()?;
-        let v: u32 = parse_int_unsigned(s.as_ref(), "u32", location, self.cfg.legacy_octal_numbers)?;
+        let v: u32 =
+            parse_int_unsigned(s.as_ref(), "u32", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u32(v)
     }
     /// Parse an unsigned 64-bit integer.
     fn deserialize_u64<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, _tag, location) = self.take_scalar_cow_with_location()?;
-        let v: u64 = parse_int_unsigned(s.as_ref(), "u64", location, self.cfg.legacy_octal_numbers)?;
+        let v: u64 =
+            parse_int_unsigned(s.as_ref(), "u64", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u64(v)
     }
     /// Parse an unsigned 128-bit integer.
     fn deserialize_u128<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, _tag, location) = self.take_scalar_cow_with_location()?;
-        let v: u128 = parse_int_unsigned(s.as_ref(), "u128", location, self.cfg.legacy_octal_numbers)?;
+        let v: u128 =
+            parse_int_unsigned(s.as_ref(), "u128", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u128(v)
     }
 
@@ -1452,10 +1471,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             Err(err) => {
                 let msg = err.to_string();
                 if msg.contains("expected a borrowed string") {
-                    return Err(
-                        Error::cannot_borrow_transformed(cannot_borrow_reason)
-                            .with_location(location),
-                    );
+                    return Err(Error::cannot_borrow_transformed(cannot_borrow_reason)
+                        .with_location(location));
                 }
                 Err(err)
             }
@@ -1480,25 +1497,25 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             ..
         }) = self.ev.peek()?
         {
-             // If explicitly tagged as null, or plain null-like, this is not a valid String.
-             if (tag == &SfTag::Null || scalar_is_nullish(value, style)) && tag != &SfTag::String {
+            // If explicitly tagged as null, or plain null-like, this is not a valid String.
+            if (tag == &SfTag::Null || scalar_is_nullish(value, style)) && tag != &SfTag::String {
                 // Consume the scalar to anchor the error at the correct location.
                 let (_value, _tag, location) = self.take_scalar_event()?;
                 return Err(Error::NullIntoString { location });
-            } else if self.cfg.no_schema && maybe_not_string(value, style) && tag != &SfTag::String {
+            } else if self.cfg.no_schema && maybe_not_string(value, style) && tag != &SfTag::String
+            {
                 // Consume the scalar to anchor the error at the correct location.
                 let (value, _tag, location) = self.take_scalar_event()?;
                 return Err(Error::quoting_required(&value).with_location(location));
             }
             *location
         } else {
-             // Let take_string_scalar handle the error if it's not a scalar
-             return visitor.visit_string(self.take_string_scalar()?);
+            // Let take_string_scalar handle the error if it's not a scalar
+            return visitor.visit_string(self.take_string_scalar()?);
         };
 
         // Prefer `Cow::Borrowed` when the parser can provide it. Keep `!!binary` semantics.
-        if let Some(Ev::Scalar { tag, .. }) = self.ev.peek()?
-        {
+        if let Some(Ev::Scalar { tag, .. }) = self.ev.peek()? {
             if *tag == SfTag::Binary && !self.cfg.ignore_binary_tag_for_string {
                 return visitor.visit_string(self.take_string_scalar()?);
             }
@@ -1562,11 +1579,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             }
 
             // Scalar without binary tag → reject
-            Some(Ev::Scalar { location, .. }) => {
-                Err(Error::BytesNotSupportedMissingBinaryTag {
-                    location: *location,
-                })
-            }
+            Some(Ev::Scalar { location, .. }) => Err(Error::BytesNotSupportedMissingBinaryTag {
+                location: *location,
+            }),
 
             // Anything else is unexpected here
             Some(other) => Err(
@@ -1659,11 +1674,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             // End of a container where a value was expected: treat as unit in this subset
             Some(Ev::MapEnd { .. }) | Some(Ev::SeqEnd { .. }) => visitor.visit_unit(),
             // Anything else isn't a unit value
-            Some(other) => {
-                Err(Error::UnexpectedValueForUnit {
-                    location: other.location(),
-                })
-            }
+            Some(other) => Err(Error::UnexpectedValueForUnit {
+                location: other.location(),
+            }),
         }
     }
 
@@ -1883,10 +1896,13 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
                         let de =
                             YamlDeserializer::new_with_path_recorder(self.ev, self.cfg, recorder);
-                        let res = seed
-                            .deserialize(de)
-                            .map(Some)
-                            .map_err(|e| attach_alias_locations_if_missing(e, reference_location, defined_location));
+                        let res = seed.deserialize(de).map(Some).map_err(|e| {
+                            attach_alias_locations_if_missing(
+                                e,
+                                reference_location,
+                                defined_location,
+                            )
+                        });
 
                         recorder.current = prev;
                         self.idx += 1;
@@ -1895,9 +1911,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 }
 
                 let de = YamlDeserializer::new(self.ev, self.cfg);
-                seed.deserialize(de)
-                    .map(Some)
-                    .map_err(|e| attach_alias_locations_if_missing(e, reference_location, defined_location))
+                seed.deserialize(de).map(Some).map_err(|e| {
+                    attach_alias_locations_if_missing(e, reference_location, defined_location)
+                })
             }
         }
 
@@ -2080,8 +2096,13 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     #[cfg(any(feature = "garde", feature = "validator"))]
                     garde: None,
                 };
-                seed.deserialize(de)
-                    .map_err(|e| if e.location().is_none() { e.with_location(location) } else { e })
+                seed.deserialize(de).map_err(|e| {
+                    if e.location().is_none() {
+                        e.with_location(location)
+                    } else {
+                        e
+                    }
+                })
             }
 
             /// Push a batch of entries to the front of the pending queue in order.
@@ -2216,7 +2237,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         // those errors will incorrectly fall back to the container start.
                         match &mut self.fallback_guard {
                             Some(guard) => guard.replace_location(location),
-                            None => self.fallback_guard = Some(MissingFieldLocationGuard::new(location)),
+                            None => {
+                                self.fallback_guard = Some(MissingFieldLocationGuard::new(location))
+                            }
                         }
 
                         let key_value = self.deserialize_recorded_key(key_seed, events, kemn)?;
@@ -2343,7 +2366,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                                 let key_seed = match seed.take() {
                                     Some(s) => s,
                                     None => {
-                                        return Err(Error::InternalSeedReusedForMapKey { location });
+                                        return Err(Error::InternalSeedReusedForMapKey {
+                                            location,
+                                        });
                                     }
                                 };
 
@@ -2352,7 +2377,10 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                                 // attributed to this key.
                                 match &mut self.fallback_guard {
                                     Some(guard) => guard.replace_location(location),
-                                    None => self.fallback_guard = Some(MissingFieldLocationGuard::new(location)),
+                                    None => {
+                                        self.fallback_guard =
+                                            Some(MissingFieldLocationGuard::new(location))
+                                    }
                                 }
 
                                 let key_value =
@@ -2423,17 +2451,22 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                                 self.cfg,
                                 recorder,
                             );
-                            let res = seed
-                                .deserialize(de)
-                                .map_err(|e| attach_alias_locations_if_missing(e, reference_location, defined_location));
+                            let res = seed.deserialize(de).map_err(|e| {
+                                attach_alias_locations_if_missing(
+                                    e,
+                                    reference_location,
+                                    defined_location,
+                                )
+                            });
                             recorder.current = prev;
                             return res;
                         }
                     }
 
                     let de = YamlDeserializer::new(&mut replay, self.cfg);
-                    seed.deserialize(de)
-                        .map_err(|e| attach_alias_locations_if_missing(e, reference_location, defined_location))
+                    seed.deserialize(de).map_err(|e| {
+                        attach_alias_locations_if_missing(e, reference_location, defined_location)
+                    })
                 } else {
                     // Live stream: get both locations for potential alias error reporting.
                     let defined_location = self
@@ -2463,17 +2496,22 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                             let de = YamlDeserializer::new_with_path_recorder(
                                 self.ev, self.cfg, recorder,
                             );
-                            let res = seed
-                                .deserialize(de)
-                                .map_err(|e| attach_alias_locations_if_missing(e, reference_location, defined_location));
+                            let res = seed.deserialize(de).map_err(|e| {
+                                attach_alias_locations_if_missing(
+                                    e,
+                                    reference_location,
+                                    defined_location,
+                                )
+                            });
                             recorder.current = prev;
                             return res;
                         }
                     }
 
                     let de = YamlDeserializer::new(self.ev, self.cfg);
-                    seed.deserialize(de)
-                        .map_err(|e| attach_alias_locations_if_missing(e, reference_location, defined_location))
+                    seed.deserialize(de).map_err(|e| {
+                        attach_alias_locations_if_missing(e, reference_location, defined_location)
+                    })
                 }
             }
         }
@@ -2561,8 +2599,21 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         // Consume the scalar and re-emit it without the tag for payload deserialization
                         let ev = self.ev.next()?.unwrap();
                         let replay = match ev {
-                            Ev::Scalar { value, style, location, anchor, .. } => {
-                                vec![Ev::Scalar { value, tag: SfTag::String, raw_tag: None, style, location, anchor }]
+                            Ev::Scalar {
+                                value,
+                                style,
+                                location,
+                                anchor,
+                                ..
+                            } => {
+                                vec![Ev::Scalar {
+                                    value,
+                                    tag: SfTag::String,
+                                    raw_tag: None,
+                                    style,
+                                    location,
+                                    anchor,
+                                }]
                             }
                             other => vec![other],
                         };
@@ -2603,7 +2654,12 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     None => return Err(Error::eof().with_location(self.ev.last_location())),
                 }
             }
-            Some(Ev::SeqStart { tag, raw_tag, location, .. }) => {
+            Some(Ev::SeqStart {
+                tag,
+                raw_tag,
+                location,
+                ..
+            }) => {
                 if let Some(tag_name) = simple_tagged_enum_name(raw_tag, tag)
                     && _variants.contains(&tag_name.as_str())
                 {
@@ -2656,15 +2712,19 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         variant_location: start_loc,
                     });
                 }
-                return Err(
-                    Error::ExternallyTaggedEnumExpectedScalarOrMapping { location: *location },
-                );
+                return Err(Error::ExternallyTaggedEnumExpectedScalarOrMapping {
+                    location: *location,
+                });
             }
             Some(Ev::SeqEnd { location }) => {
-                return Err(Error::UnexpectedSequenceEnd { location: *location });
+                return Err(Error::UnexpectedSequenceEnd {
+                    location: *location,
+                });
             }
             Some(Ev::MapEnd { location }) => {
-                return Err(Error::UnexpectedMappingEnd { location: *location });
+                return Err(Error::UnexpectedMappingEnd {
+                    location: *location,
+                });
             }
             Some(Ev::Taken { location }) => {
                 return Err(Error::unexpected("consumed event").with_location(*location));
@@ -2707,11 +2767,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     variant_location,
                 } = self;
                 let v = seed.deserialize(variant.into_deserializer()).map_err(
-                    |err: serde::de::value::Error| {
-                        Error::SerdeVariantId {
-                            msg: err.to_string(),
-                            location: variant_location,
-                        }
+                    |err: serde::de::value::Error| Error::SerdeVariantId {
+                        msg: err.to_string(),
+                        location: variant_location,
                     },
                 )?;
                 Ok((v, VA { ev, cfg, map_mode }))
@@ -2748,7 +2806,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                             let _ = self.ev.next()?;
                             Ok(())
                         }
-                        Some(Ev::Scalar { value: s, style, .. }) if scalar_is_nullish(s, style) => {
+                        Some(Ev::Scalar {
+                            value: s, style, ..
+                        }) if scalar_is_nullish(s, style) => {
                             let _ = self.ev.next()?; // consume the null-like scalar
                             self.expect_map_end()
                         }
@@ -2777,7 +2837,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
                 let value = seed
                     .deserialize(YamlDeserializer::new(self.ev, self.cfg))
-                    .map_err(|e| attach_alias_locations_if_missing(e, reference_location, defined_location))?;
+                    .map_err(|e| {
+                        attach_alias_locations_if_missing(e, reference_location, defined_location)
+                    })?;
                 if self.map_mode {
                     self.expect_map_end()?;
                 }
@@ -2830,15 +2892,19 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             where
                 Vv: de::DeserializeSeed<'de>,
             {
-                let v = seed.deserialize(self.variant.clone().into_deserializer()).map_err(
-                    |err: serde::de::value::Error| {
-                        Error::SerdeVariantId {
-                            msg: err.to_string(),
-                            location: self.variant_location,
-                        }
+                let v = seed
+                    .deserialize(self.variant.clone().into_deserializer())
+                    .map_err(|err: serde::de::value::Error| Error::SerdeVariantId {
+                        msg: err.to_string(),
+                        location: self.variant_location,
+                    })?;
+                Ok((
+                    v,
+                    TaggedVA {
+                        replay: self.replay,
+                        cfg: self.cfg,
                     },
-                )?;
-                Ok((v, TaggedVA { replay: self.replay, cfg: self.cfg }))
+                ))
             }
         }
 

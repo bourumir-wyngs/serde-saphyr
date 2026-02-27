@@ -12,9 +12,9 @@
 
 #[cfg(test)]
 mod tests {
-    use serde::de::{self, Deserializer, Visitor};
     use serde::Deserialize;
-    use serde_saphyr::{from_str, Error};
+    use serde::de::{self, Deserializer, Visitor};
+    use serde_saphyr::{Error, from_str};
     use std::borrow::Cow;
     use std::fmt;
 

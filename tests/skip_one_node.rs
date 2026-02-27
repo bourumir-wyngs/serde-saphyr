@@ -2,8 +2,8 @@
 mod tests {
     use serde_json::Value;
     use serde_saphyr::Error;
-    use serde_saphyr::options::DuplicateKeyPolicy;
     use serde_saphyr::from_str_with_options;
+    use serde_saphyr::options::DuplicateKeyPolicy;
     use std::collections::BTreeMap;
 
     /// Parse a YAML mapping into a BTreeMap<String, serde_json::Value>,

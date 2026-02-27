@@ -17,8 +17,7 @@ fn deprecated_to_writer() {
 #[allow(deprecated)]
 fn deprecated_to_writer_with_options() {
     let mut buf = String::new();
-    serde_saphyr::to_writer_with_options(&mut buf, &"hello", SerializerOptions::default())
-        .unwrap();
+    serde_saphyr::to_writer_with_options(&mut buf, &"hello", SerializerOptions::default()).unwrap();
     assert!(buf.contains("hello"));
 }
 
@@ -362,10 +361,7 @@ fn serialize_flow_map() {
     }
     let mut m = BTreeMap::new();
     m.insert("a".into(), 1);
-    let s = serde_saphyr::to_string(&Doc {
-        data: FlowMap(m),
-    })
-    .unwrap();
+    let s = serde_saphyr::to_string(&Doc { data: FlowMap(m) }).unwrap();
     assert!(s.contains('{'));
 }
 
@@ -458,13 +454,7 @@ fn serialize_with_custom_indent() {
         indent_step: 4,
         ..Default::default()
     };
-    let s = serde_saphyr::to_string_with_options(
-        &Doc {
-            items: vec![1, 2],
-        },
-        opts,
-    )
-    .unwrap();
+    let s = serde_saphyr::to_string_with_options(&Doc { items: vec![1, 2] }, opts).unwrap();
     assert!(s.contains("items:"));
 }
 

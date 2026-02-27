@@ -2,8 +2,8 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
 
-use serde::ser::{SerializeSeq, Serializer};
 use serde::Serialize;
+use serde::ser::{SerializeSeq, Serializer};
 
 use serde_saphyr::{FlowMap, to_string};
 
@@ -118,7 +118,10 @@ fn map_keys_support_many_scalar_types_and_escape_when_needed() {
     let yaml = to_string(&m).expect("serialize string-key map");
 
     assert!(yaml.contains("plain: 1\n"), "missing plain key: {yaml}");
-    assert!(yaml.contains("\"a:b\": 2\n"), "missing quoted ':' key: {yaml}");
+    assert!(
+        yaml.contains("\"a:b\": 2\n"),
+        "missing quoted ':' key: {yaml}"
+    );
     assert!(
         yaml.contains("\"line\\nbreak\": 3\n"),
         "missing escaped newline key: {yaml}"
@@ -175,7 +178,10 @@ fn map_key_float_goes_through_float_formatting() {
     let mut m: BTreeMap<OrderedF64, i32> = BTreeMap::new();
     m.insert(OrderedF64::new(1.5), 1);
     let yaml = to_string(&m).expect("serialize float-key map");
-    assert!(yaml.contains("1.5: 1\n"), "unexpected float key formatting: {yaml}");
+    assert!(
+        yaml.contains("1.5: 1\n"),
+        "unexpected float key formatting: {yaml}"
+    );
 }
 
 #[test]
@@ -186,7 +192,10 @@ fn non_scalar_map_key_is_rejected() {
     // Block mappings support complex keys (`? ...`), so force flow style where keys must be scalars.
     let err = to_string(&FlowMap(m)).expect_err("expected error for non-scalar key in flow map");
     let msg = err.to_string();
-    assert!(msg.contains("non-scalar key"), "unexpected error message: {msg}");
+    assert!(
+        msg.contains("non-scalar key"),
+        "unexpected error message: {msg}"
+    );
 }
 
 #[test]
@@ -197,7 +206,10 @@ fn bytes_map_key_is_rejected() {
     // Block mappings support complex keys (`? ...`), so force flow style where keys must be scalars.
     let err = to_string(&FlowMap(m)).expect_err("expected error for bytes key in flow map");
     let msg = err.to_string();
-    assert!(msg.contains("non-scalar key"), "unexpected error message: {msg}");
+    assert!(
+        msg.contains("non-scalar key"),
+        "unexpected error message: {msg}"
+    );
 }
 
 #[test]
@@ -209,5 +221,8 @@ fn newtype_variant_map_key_is_rejected() {
     let err =
         to_string(&FlowMap(m)).expect_err("expected error for newtype variant key in flow map");
     let msg = err.to_string();
-    assert!(msg.contains("non-scalar key"), "unexpected error message: {msg}");
+    assert!(
+        msg.contains("non-scalar key"),
+        "unexpected error message: {msg}"
+    );
 }

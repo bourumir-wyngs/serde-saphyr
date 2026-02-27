@@ -26,13 +26,13 @@ use crate::buffered_input::{ChunkedChars, buffered_input_from_reader_with_limit}
 use crate::de::{AliasLimits, Budget, Error, Ev, Events, Location};
 use crate::de_error::budget_error;
 use crate::location::location_from_span;
+use crate::options::BudgetReportCallback;
 use crate::tags::SfTag;
 use saphyr_parser::{BufferedInput, Event, Parser, ScalarStyle, ScanError, Span, StrInput};
 use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::rc::Rc;
-use crate::options::BudgetReportCallback;
 
 type StreamReader<'a> = Box<dyn std::io::Read + 'a>;
 type StreamBufReader<'a> = std::io::BufReader<StreamReader<'a>>;
@@ -41,7 +41,6 @@ type StreamInput<'a> = BufferedInput<ChunkedChars<StreamBufReader<'a>>>;
 // Upstream implements `BorrowedInput<'static>` for it, so the parser's event lifetime is `'static`.
 // This is fine for our reader-based mode since we never borrow from the original input string.
 type StreamParser<'a> = Parser<'static, StreamInput<'a>>;
-
 
 /// This is enough to hold a single scalar that is common  case in YAML anchors.
 const SMALLVECT_INLINE: usize = 8;
@@ -338,9 +337,9 @@ impl<'a> LiveEvents<'a> {
                     {
                         return Err(Error::FoldedBlockScalarMustIndentContent { location });
                     }
-                    
+
                     let tag_s = SfTag::from_optional_cow(&tag);
-                    
+
                     if val.is_empty()
                         && anchor_id != 0
                         && matches!(style, ScalarStyle::SingleQuoted | ScalarStyle::DoubleQuoted)
@@ -457,7 +456,9 @@ impl<'a> LiveEvents<'a> {
                         return Err(Error::AliasExpansionLimitExceeded {
                             anchor_id,
                             expansions: count,
-                            max_expansions_per_anchor: self.alias_limits.max_alias_expansions_per_anchor,
+                            max_expansions_per_anchor: self
+                                .alias_limits
+                                .max_alias_expansions_per_anchor,
                             location,
                         });
                     }
@@ -524,12 +525,10 @@ impl<'a> LiveEvents<'a> {
                         // DocumentStart, signal multi-doc error; otherwise ignore anything else.
                         if let Some(Ok((Event::DocumentStart(_), span2))) = self.parser.next() {
                             let loc2 = location_from_span(&span2);
-                            return Err(
-                                Error::multiple_documents(
-                                    "use from_multiple or from_multiple_with_options",
-                                )
-                                .with_location(loc2),
-                            );
+                            return Err(Error::multiple_documents(
+                                "use from_multiple or from_multiple_with_options",
+                            )
+                            .with_location(loc2));
                         }
                         return Ok(None);
                     }
@@ -669,7 +668,9 @@ impl<'a> LiveEvents<'a> {
     fn bump_depth_on_end(&mut self) -> Result<(), Error> {
         for fr in &mut self.rec_stack {
             if fr.depth == 0 {
-                return Err(Error::InternalDepthUnderflow { location: Location::UNKNOWN });
+                return Err(Error::InternalDepthUnderflow {
+                    location: Location::UNKNOWN,
+                });
             }
             fr.depth -= 1;
         }
@@ -679,7 +680,9 @@ impl<'a> LiveEvents<'a> {
                 let done = self
                     .rec_stack
                     .pop()
-                    .ok_or(Error::InternalRecursionStackEmpty { location: Location::UNKNOWN })?;
+                    .ok_or(Error::InternalRecursionStackEmpty {
+                        location: Location::UNKNOWN,
+                    })?;
                 // Convert SmallVec into Box<[Ev]> and store by anchor_id.
                 self.ensure_anchor_capacity(done.id);
                 self.anchors[done.id] = Some(done.buf.into_vec().into_boxed_slice());

@@ -146,24 +146,16 @@ where
 
     let (radix, digits) = radix_and_digits(legacy_octal, rest);
     if radix == 10 {
-        let val_i128 = parse_decimal_signed_i128(digits, neg)
-            .ok_or_else(invalid)?;
-        return T::try_from(val_i128)
-            .map_err(|_| invalid());
+        let val_i128 = parse_decimal_signed_i128(digits, neg).ok_or_else(invalid)?;
+        return T::try_from(val_i128).map_err(|_| invalid());
     }
 
-    let mag = parse_digits_u128(digits, radix)
-        .ok_or_else(invalid)?;
+    let mag = parse_digits_u128(digits, radix).ok_or_else(invalid)?;
     let val_i128: i128 = if neg {
-        let mag_i128: i128 = mag
-            .try_into()
-            .map_err(|_| invalid())?;
-        mag_i128
-            .checked_neg()
-            .ok_or_else(invalid)?
+        let mag_i128: i128 = mag.try_into().map_err(|_| invalid())?;
+        mag_i128.checked_neg().ok_or_else(invalid)?
     } else {
-        mag.try_into()
-            .map_err(|_| invalid())?
+        mag.try_into().map_err(|_| invalid())?
     };
     T::try_from(val_i128).map_err(|_| invalid())
 }
@@ -187,14 +179,11 @@ where
     let (radix, digits) = radix_and_digits(legacy_octal, rest);
 
     if radix == 10 {
-        let val_u128 = parse_decimal_unsigned_u128(digits)
-            .ok_or_else(invalid)?;
-        return T::try_from(val_u128)
-            .map_err(|_| invalid());
+        let val_u128 = parse_decimal_unsigned_u128(digits).ok_or_else(invalid)?;
+        return T::try_from(val_u128).map_err(|_| invalid());
     }
 
-    let mag = parse_digits_u128(digits, radix)
-        .ok_or_else(invalid)?;
+    let mag = parse_digits_u128(digits, radix).ok_or_else(invalid)?;
     T::try_from(mag).map_err(|_| invalid())
 }
 
@@ -239,9 +228,10 @@ where
         ".nan" | "+.nan" | "-.nan" => Ok(T::nan()),
         ".inf" | "+.inf" => Ok(T::infinity()),
         "-.inf" => Ok(T::neg_infinity()),
-        _ => t
-            .parse::<T>()
-            .map_err(|_| Error::InvalidScalar { ty: "floating point", location }),
+        _ => t.parse::<T>().map_err(|_| Error::InvalidScalar {
+            ty: "floating point",
+            location,
+        }),
     }
 }
 
@@ -262,9 +252,10 @@ where
         ".nan" | "+.nan" | "-.nan" => Ok(T::nan()),
         ".inf" | "+.inf" => Ok(T::infinity()),
         "-.inf" => Ok(T::neg_infinity()),
-        _ => t
-            .parse::<T>()
-            .map_err(|_| Error::InvalidScalar { ty: "floating point", location }),
+        _ => t.parse::<T>().map_err(|_| Error::InvalidScalar {
+            ty: "floating point",
+            location,
+        }),
     }
 }
 

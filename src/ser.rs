@@ -31,11 +31,11 @@
 //! }
 
 use serde::de::{Deserialize, Deserializer};
+use serde::ser::Error as _;
 use serde::ser::{
     self, Serialize, SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant,
     SerializeTuple, SerializeTupleStruct, SerializeTupleVariant, Serializer,
 };
-use serde::ser::Error as _;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{self, Write};

@@ -108,7 +108,7 @@ fn spanned_deser_alias_referenced_vs_defined() {
     // b is an alias: referenced points to *anchor, defined points to &anchor
     assert_ne!(s.b.referenced, s.b.defined);
     assert_eq!(s.b.referenced.line(), 2); // *anchor is on line 2
-    assert_eq!(s.b.defined.line(), 1);    // &anchor is on line 1
+    assert_eq!(s.b.defined.line(), 1); // &anchor is on line 1
 }
 
 // ---------------------------------------------------------------------------

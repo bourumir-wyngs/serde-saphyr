@@ -98,7 +98,7 @@ fn test_quote_all_no_block_scalars() {
 fn test_quote_all_long_string_no_folding() {
     // When quote_all is enabled, long strings should NOT use folded block style
     let long_string = "This is a very long string that would normally be wrapped using folded block scalar style but should remain as a single quoted line when quote_all is enabled";
-    
+
     let opts = serde_saphyr::ser_options! {
         quote_all: true,
         prefer_block_scalars: true,

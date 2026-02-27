@@ -1,7 +1,7 @@
 //! Tests targeting previously uncovered lines in src/ser.rs.
 
 use serde::Serialize;
-use serde_saphyr::{to_string, RcAnchor, RcWeakAnchor, SerializerOptions};
+use serde_saphyr::{RcAnchor, RcWeakAnchor, SerializerOptions, to_string};
 use std::rc::Rc;
 
 // ~725: Control characters in double-quoted strings trigger \x{:02X} escape.
@@ -12,7 +12,11 @@ fn control_char_in_string_uses_hex_escape() {
     // \x7F = DEL, \x80 = padding char, \x9F = last C1 control
     let s = "hello\x7Fworld";
     let yaml = to_string(&s).unwrap();
-    assert!(yaml.contains("\\x7F"), "Expected \\x7F escape, got: {}", yaml);
+    assert!(
+        yaml.contains("\\x7F"),
+        "Expected \\x7F escape, got: {}",
+        yaml
+    );
 
     let s2 = "a\u{0080}b";
     let yaml2 = to_string(&s2).unwrap();
@@ -136,20 +140,13 @@ fn weak_anchor_alias_in_struct() {
     // The parent Rc is referenced via weak from two places but never via strong anchor,
     // so weak refs should serialize as null (not upgraded).
     let yaml = to_string(&root).unwrap();
-    assert!(
-        yaml.contains("name: root"),
-        "Missing root name: {}",
-        yaml
-    );
+    assert!(yaml.contains("name: root"), "Missing root name: {}", yaml);
 }
 
 // Struct variant with nested struct (deeper nesting for indentation coverage)
 #[derive(Serialize)]
 enum Deep {
-    Level {
-        inner: Inner,
-        list: Vec<Inner>,
-    },
+    Level { inner: Inner, list: Vec<Inner> },
 }
 
 #[derive(Serialize)]
@@ -206,7 +203,11 @@ fn inline_value_start_map_as_value() {
 fn control_char_dle_in_string() {
     let s = "a\x10b";
     let yaml = to_string(&s).unwrap();
-    assert!(yaml.contains("\\x10"), "Expected \\x10 escape, got: {}", yaml);
+    assert!(
+        yaml.contains("\\x10"),
+        "Expected \\x10 escape, got: {}",
+        yaml
+    );
 }
 
 // Map key with control character — exercises KeyScalarSink \u escape for keys
@@ -217,7 +218,11 @@ fn map_key_with_control_char() {
     m.insert("a\x01b".to_string(), 1);
     let yaml = to_string(&m).unwrap();
     // Key should be double-quoted with escape
-    assert!(yaml.contains("\\x01") || yaml.contains("\\u0001"), "Expected escape in key: {}", yaml);
+    assert!(
+        yaml.contains("\\x01") || yaml.contains("\\u0001"),
+        "Expected escape in key: {}",
+        yaml
+    );
 }
 
 // ~725: The \u{:04X} branch in write_quoted is dead code.
@@ -234,7 +239,11 @@ fn c1_control_char_uses_hex_escape() {
     // \u{008A} has no named escape, hits \x branch
     let s2 = "a\u{008A}b";
     let yaml2 = to_string(&s2).unwrap();
-    assert!(yaml2.contains("\\x8A"), "Expected \\x8A escape, got: {}", yaml2);
+    assert!(
+        yaml2.contains("\\x8A"),
+        "Expected \\x8A escape, got: {}",
+        yaml2
+    );
 }
 
 // ~556: Single-quote escape in write_single_quoted is dead code.
@@ -250,7 +259,11 @@ fn quote_all_with_single_quote_uses_double_quotes() {
     };
     let yaml = serde_saphyr::to_string_with_options(&"it's", opts).unwrap();
     // Should be double-quoted because single-quote triggers needs_double_quotes
-    assert!(yaml.contains("\"it's\""), "Expected double-quoted: {}", yaml);
+    assert!(
+        yaml.contains("\"it's\""),
+        "Expected double-quoted: {}",
+        yaml
+    );
 }
 
 // ~2061-2067: struct variant with a map field value exercises pending_space_after_colon
@@ -279,7 +292,9 @@ fn struct_variant_with_seq_field() {
     enum E {
         V { items: Vec<i32> },
     }
-    let val = E::V { items: vec![10, 20, 30] };
+    let val = E::V {
+        items: vec![10, 20, 30],
+    };
     let yaml = to_string(&val).unwrap();
     assert!(yaml.contains("V:"), "Missing variant: {}", yaml);
     assert!(yaml.contains("items:"), "Missing items: {}", yaml);

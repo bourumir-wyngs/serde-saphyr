@@ -1,6 +1,6 @@
-use std::rc::Rc;
 use crate::budget::Budget;
 use serde::{Deserialize, Serialize};
+use std::rc::Rc;
 
 /// Duplicate key handling policy for mappings.
 #[non_exhaustive]
@@ -129,7 +129,7 @@ pub struct Options {
 }
 
 pub type BudgetReportCallback =
-   Rc<std::cell::RefCell<dyn FnMut(crate::budget::BudgetReport) + 'static>>;
+    Rc<std::cell::RefCell<dyn FnMut(crate::budget::BudgetReport) + 'static>>;
 
 impl Options {
     /// Registers a budget-report callback. Any closure can be used,  including ones that
@@ -183,12 +183,22 @@ impl std::fmt::Debug for Options {
         f.debug_struct("Options")
             .field("budget", &self.budget)
             .field("budget_report", &self.budget_report)
-            .field("budget_report_cb", &if self.budget_report_cb.is_some() { "set" } else { "none" })
+            .field(
+                "budget_report_cb",
+                &if self.budget_report_cb.is_some() {
+                    "set"
+                } else {
+                    "none"
+                },
+            )
             .field("duplicate_keys", &self.duplicate_keys)
             .field("alias_limits", &self.alias_limits)
             .field("legacy_octal_numbers", &self.legacy_octal_numbers)
             .field("strict_booleans", &self.strict_booleans)
-            .field("ignore_binary_tag_for_string", &self.ignore_binary_tag_for_string)
+            .field(
+                "ignore_binary_tag_for_string",
+                &self.ignore_binary_tag_for_string,
+            )
             .field("angle_conversions", &self.angle_conversions)
             .field("no_schema", &self.no_schema)
             .field("with_snippet", &self.with_snippet)
@@ -225,13 +235,13 @@ mod tests {
         assert!(debug_str.contains("Options"));
         assert!(debug_str.contains("budget"));
         assert!(debug_str.contains("budget_report_cb: \"none\""));
-        
+
         // Test with callback
         let opts_with_cb = opts.with_budget_report(|_| {});
         let debug_str_cb = format!("{:?}", opts_with_cb);
         assert!(debug_str_cb.contains("budget_report_cb: \"set\""));
     }
-    
+
     #[test]
     fn test_alias_limits_default() {
         let limits = AliasLimits::default();

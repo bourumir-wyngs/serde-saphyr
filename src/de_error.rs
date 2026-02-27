@@ -1,6 +1,7 @@
-use crate::budget::BudgetBreach;
 use crate::Location;
-use crate::localizer::{ExternalMessageSource, Localizer, DEFAULT_ENGLISH_LOCALIZER};
+use crate::budget::BudgetBreach;
+use crate::de_snipped::fmt_snippet_window_offset_or_fallback;
+use crate::localizer::{DEFAULT_ENGLISH_LOCALIZER, ExternalMessageSource, Localizer};
 use crate::location::Locations;
 use crate::parse_scalars::{
     parse_int_signed, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish,
@@ -10,15 +11,14 @@ use crate::path_map::path_key_from_garde;
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::path_map::{PathKey, PathMap, format_path_with_resolved_leaf};
 use crate::tags::SfTag;
+use annotate_snippets::Level;
 use saphyr_parser::{ScalarStyle, ScanError};
 use serde::de::{self};
-use annotate_snippets::Level;
 use std::borrow::Cow;
 use std::cell::Cell;
 use std::fmt;
 #[cfg(feature = "validator")]
 use validator::{ValidationErrors, ValidationErrorsKind};
-use crate::de_snipped::fmt_snippet_window_offset_or_fallback;
 
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::localizer::ExternalMessage;
@@ -322,10 +322,14 @@ impl fmt::Display for TransformReason {
         match self {
             TransformReason::EscapeSequence => write!(f, "escape sequence processing"),
             TransformReason::LineFolding => write!(f, "line folding"),
-            TransformReason::MultiLineNormalization => write!(f, "multi-line whitespace normalization"),
+            TransformReason::MultiLineNormalization => {
+                write!(f, "multi-line whitespace normalization")
+            }
             TransformReason::BlockScalarProcessing => write!(f, "block scalar processing"),
             TransformReason::SingleQuoteEscape => write!(f, "single-quote escape processing"),
-            TransformReason::InputNotBorrowable => write!(f, "input is not available for borrowing"),
+            TransformReason::InputNotBorrowable => {
+                write!(f, "input is not available for borrowing")
+            }
             TransformReason::ParserReturnedOwned => write!(f, "parser returned an owned string"),
         }
     }
@@ -594,7 +598,9 @@ pub enum Error {
         location: Location,
     },
     /// Alias references a non-existent anchor.
-    UnknownAnchor { location: Location },
+    UnknownAnchor {
+        location: Location,
+    },
     /// Error related to an alias, with both reference (use-site) and defined (anchor) locations.
     ///
     /// This variant allows reporting both where an alias is used and where the anchor is defined,
@@ -687,7 +693,7 @@ impl Error {
 
         // Keep snippet coordinates aligned with parsers that ignore a leading UTF-8 BOM.
         let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
-        
+
         fn push_region_for_location(
             regions: &mut Vec<CroppedRegion>,
             text: &str,
@@ -721,10 +727,24 @@ impl Error {
         if let Error::ValidationError { report, locations } = &inner {
             for (path, _entry) in report.iter() {
                 let key = path_key_from_garde(path);
-                let (locs, _) = locations.search(&key).unwrap_or((Locations::UNKNOWN, String::new()));
-                push_region_for_location(&mut regions, text, &locs.reference_location, mapping, crop_radius);
+                let (locs, _) = locations
+                    .search(&key)
+                    .unwrap_or((Locations::UNKNOWN, String::new()));
+                push_region_for_location(
+                    &mut regions,
+                    text,
+                    &locs.reference_location,
+                    mapping,
+                    crop_radius,
+                );
                 if locs.defined_location != locs.reference_location {
-                    push_region_for_location(&mut regions, text, &locs.defined_location, mapping, crop_radius);
+                    push_region_for_location(
+                        &mut regions,
+                        text,
+                        &locs.defined_location,
+                        mapping,
+                        crop_radius,
+                    );
                 }
             }
         }
@@ -734,9 +754,21 @@ impl Error {
                 let (locs, _) = locations
                     .search(&issue.path)
                     .unwrap_or((Locations::UNKNOWN, String::new()));
-                push_region_for_location(&mut regions, text, &locs.reference_location, mapping, crop_radius);
+                push_region_for_location(
+                    &mut regions,
+                    text,
+                    &locs.reference_location,
+                    mapping,
+                    crop_radius,
+                );
                 if locs.defined_location != locs.reference_location {
-                    push_region_for_location(&mut regions, text, &locs.defined_location, mapping, crop_radius);
+                    push_region_for_location(
+                        &mut regions,
+                        text,
+                        &locs.defined_location,
+                        mapping,
+                        crop_radius,
+                    );
                 }
             }
         }
@@ -745,9 +777,21 @@ impl Error {
         // errors such as AliasError).
         if regions.is_empty() {
             if let Some(locs) = inner.locations() {
-                push_region_for_location(&mut regions, text, &locs.reference_location, mapping, crop_radius);
+                push_region_for_location(
+                    &mut regions,
+                    text,
+                    &locs.reference_location,
+                    mapping,
+                    crop_radius,
+                );
                 if locs.defined_location != locs.reference_location {
-                    push_region_for_location(&mut regions, text, &locs.defined_location, mapping, crop_radius);
+                    push_region_for_location(
+                        &mut regions,
+                        text,
+                        &locs.defined_location,
+                        mapping,
+                        crop_radius,
+                    );
                 }
             } else if let Some(loc) = inner.location() {
                 push_region_for_location(&mut regions, text, &loc, mapping, crop_radius);
@@ -781,7 +825,7 @@ impl Error {
 
         // Keep snippet coordinates aligned with parsers that ignore a leading UTF-8 BOM.
         let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
-        
+
         fn push_region_for_location(
             regions: &mut Vec<CroppedRegion>,
             text: &str,
@@ -813,10 +857,24 @@ impl Error {
         if let Error::ValidationError { report, locations } = &inner {
             for (path, _entry) in report.iter() {
                 let key = path_key_from_garde(path);
-                let (locs, _) = locations.search(&key).unwrap_or((Locations::UNKNOWN, String::new()));
-                push_region_for_location(&mut regions, text, &locs.reference_location, mapping, crop_radius);
+                let (locs, _) = locations
+                    .search(&key)
+                    .unwrap_or((Locations::UNKNOWN, String::new()));
+                push_region_for_location(
+                    &mut regions,
+                    text,
+                    &locs.reference_location,
+                    mapping,
+                    crop_radius,
+                );
                 if locs.defined_location != locs.reference_location {
-                    push_region_for_location(&mut regions, text, &locs.defined_location, mapping, crop_radius);
+                    push_region_for_location(
+                        &mut regions,
+                        text,
+                        &locs.defined_location,
+                        mapping,
+                        crop_radius,
+                    );
                 }
             }
         }
@@ -826,18 +884,42 @@ impl Error {
                 let (locs, _) = locations
                     .search(&issue.path)
                     .unwrap_or((Locations::UNKNOWN, String::new()));
-                push_region_for_location(&mut regions, text, &locs.reference_location, mapping, crop_radius);
+                push_region_for_location(
+                    &mut regions,
+                    text,
+                    &locs.reference_location,
+                    mapping,
+                    crop_radius,
+                );
                 if locs.defined_location != locs.reference_location {
-                    push_region_for_location(&mut regions, text, &locs.defined_location, mapping, crop_radius);
+                    push_region_for_location(
+                        &mut regions,
+                        text,
+                        &locs.defined_location,
+                        mapping,
+                        crop_radius,
+                    );
                 }
             }
         }
 
         if regions.is_empty() {
             if let Some(locs) = inner.locations() {
-                push_region_for_location(&mut regions, text, &locs.reference_location, mapping, crop_radius);
+                push_region_for_location(
+                    &mut regions,
+                    text,
+                    &locs.reference_location,
+                    mapping,
+                    crop_radius,
+                );
                 if locs.defined_location != locs.reference_location {
-                    push_region_for_location(&mut regions, text, &locs.defined_location, mapping, crop_radius);
+                    push_region_for_location(
+                        &mut regions,
+                        text,
+                        &locs.defined_location,
+                        mapping,
+                        crop_radius,
+                    );
                 }
             } else if let Some(loc) = inner.location() {
                 push_region_for_location(&mut regions, text, &loc, mapping, crop_radius);
@@ -889,11 +971,7 @@ impl Error {
             }
         }
 
-        RenderDisplay {
-            err: self,
-            options,
-        }
-        .to_string()
+        RenderDisplay { err: self, options }.to_string()
     }
 
     /// Construct a `Message` error with no known location.
@@ -1164,28 +1242,40 @@ impl Error {
             Error::AliasError { locations, .. } => Locations::primary_location(*locations),
             Error::WithSnippet { error, .. } => error.location(),
             #[cfg(feature = "garde")]
-            Error::ValidationError { report, locations } => report.iter().next().and_then(|(path, _)| {
-                let key = path_key_from_garde(path);
-                let (locs, _) = locations.search(&key)?;
-                let loc = if locs.reference_location != Location::UNKNOWN {
-                    locs.reference_location
-                } else {
-                    locs.defined_location
-                };
-                if loc != Location::UNKNOWN { Some(loc) } else { None }
-            }),
+            Error::ValidationError { report, locations } => {
+                report.iter().next().and_then(|(path, _)| {
+                    let key = path_key_from_garde(path);
+                    let (locs, _) = locations.search(&key)?;
+                    let loc = if locs.reference_location != Location::UNKNOWN {
+                        locs.reference_location
+                    } else {
+                        locs.defined_location
+                    };
+                    if loc != Location::UNKNOWN {
+                        Some(loc)
+                    } else {
+                        None
+                    }
+                })
+            }
             #[cfg(feature = "garde")]
             Error::ValidationErrors { errors } => errors.iter().find_map(|e| e.location()),
             #[cfg(feature = "validator")]
-            Error::ValidatorError { errors, locations } => collect_validator_issues(errors).first().and_then(|issue| {
-                let (locs, _) = locations.search(&issue.path)?;
-                let loc = if locs.reference_location != Location::UNKNOWN {
-                    locs.reference_location
-                } else {
-                    locs.defined_location
-                };
-                if loc != Location::UNKNOWN { Some(loc) } else { None }
-            }),
+            Error::ValidatorError { errors, locations } => {
+                collect_validator_issues(errors).first().and_then(|issue| {
+                    let (locs, _) = locations.search(&issue.path)?;
+                    let loc = if locs.reference_location != Location::UNKNOWN {
+                        locs.reference_location
+                    } else {
+                        locs.defined_location
+                    };
+                    if loc != Location::UNKNOWN {
+                        Some(loc)
+                    } else {
+                        None
+                    }
+                })
+            }
             #[cfg(feature = "validator")]
             Error::ValidatorErrors { errors } => errors.iter().find_map(|e| e.location()),
         }
@@ -1529,7 +1619,9 @@ fn fmt_error_rendered(
             // Renderer-level de-duplication for AliasError:
             // when we are about to show a secondary “defined here” window, drop the
             // default message suffix " (defined at …)" if present.
-            if dual_locations.is_some() && let Error::AliasError { locations, .. } = error.as_ref() {
+            if dual_locations.is_some()
+                && let Error::AliasError { locations, .. } = error.as_ref()
+            {
                 let suffix = l10n.alias_defined_at(locations.defined_location);
                 if let Some(stripped) = msg.as_ref().strip_suffix(&suffix) {
                     msg = Cow::Owned(stripped.to_string());
@@ -1565,8 +1657,9 @@ fn fmt_error_rendered(
                 Ok(())
             } else {
                 // Single location rendering.
-                let ctx = crate::de_snipped::Snippet::new(region.text.as_str(), "<input>", *crop_radius)
-                    .with_offset(region.start_line);
+                let ctx =
+                    crate::de_snipped::Snippet::new(region.text.as_str(), "<input>", *crop_radius)
+                        .with_offset(region.start_line);
                 ctx.fmt_or_fallback(f, Level::ERROR, l10n, msg.as_ref(), &location)
             }
         }
@@ -1596,15 +1689,9 @@ fn search_locations_with_ancestor_fallback(
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt_error_rendered(
-            f,
-            self,
-            RenderOptions::default(),
-        )
+        fmt_error_rendered(f, self, RenderOptions::default())
     }
 }
-
-
 
 #[cfg(feature = "garde")]
 fn fmt_validation_error_with_snippets_offset(
@@ -1712,7 +1799,6 @@ fn fmt_validation_error_with_snippets_offset(
     }
     Ok(())
 }
-
 
 #[cfg(feature = "validator")]
 fn fmt_validator_error_with_snippets_offset(
@@ -1866,7 +1952,13 @@ fn fmt_error_with_snippets_offset(
     };
     let ctx = crate::de_snipped::Snippet::new(region.text.as_str(), "<input>", crop_radius)
         .with_offset(region.start_line);
-    ctx.fmt_or_fallback(f, Level::ERROR, formatter.localizer(), msg.as_ref(), &location)
+    ctx.fmt_or_fallback(
+        f,
+        Level::ERROR,
+        formatter.localizer(),
+        msg.as_ref(),
+        &location,
+    )
 }
 
 #[cfg(feature = "validator")]
@@ -2009,7 +2101,6 @@ fn fmt_with_location(
     let out = l10n.attach_location(Cow::Borrowed(msg), *location);
     write!(f, "{out}")
 }
-
 
 /// Convert a budget breach report into a user-facing error.
 ///
@@ -2251,7 +2342,11 @@ mod tests {
         let rendered = wrapped.render();
 
         // Should contain the error message
-        assert!(rendered.contains("invalid value type"), "rendered: {}", rendered);
+        assert!(
+            rendered.contains("invalid value type"),
+            "rendered: {}",
+            rendered
+        );
 
         // When a secondary snippet window is shown, avoid duplicating the alias
         // "defined at …" suffix in the main message.
@@ -2261,16 +2356,28 @@ mod tests {
             rendered
         );
         // Should show "the value is used here" for the reference location
-        assert!(rendered.contains("the value is used here") || rendered.contains("use_it"), 
-            "rendered should show reference location context: {}", rendered);
+        assert!(
+            rendered.contains("the value is used here") || rendered.contains("use_it"),
+            "rendered should show reference location context: {}",
+            rendered
+        );
         // Should show "defined here" for the anchor location
-        assert!(rendered.contains("defined here") || rendered.contains("anchor"), 
-            "rendered should show defined location context: {}", rendered);
+        assert!(
+            rendered.contains("defined here") || rendered.contains("anchor"),
+            "rendered should show defined location context: {}",
+            rendered
+        );
         // Should mention both line numbers in some form
-        assert!(rendered.contains("5") || rendered.contains("use_it"), 
-            "rendered should reference line 5: {}", rendered);
-        assert!(rendered.contains("2") || rendered.contains("anchor"), 
-            "rendered should reference line 2: {}", rendered);
+        assert!(
+            rendered.contains("5") || rendered.contains("use_it"),
+            "rendered should reference line 5: {}",
+            rendered
+        );
+        assert!(
+            rendered.contains("2") || rendered.contains("anchor"),
+            "rendered should reference line 2: {}",
+            rendered
+        );
     }
 
     #[test]
@@ -2292,9 +2399,15 @@ mod tests {
         // Should contain the error message
         assert!(rendered.contains("test error"), "rendered: {}", rendered);
         // Should NOT show dual-snippet labels when locations are the same
-        assert!(!rendered.contains("defined here"), 
-            "should not show 'defined here' when locations are same: {}", rendered);
-        assert!(!rendered.contains("the value is used here"), 
-            "should not show 'value used here' when locations are same: {}", rendered);
+        assert!(
+            !rendered.contains("defined here"),
+            "should not show 'defined here' when locations are same: {}",
+            rendered
+        );
+        assert!(
+            !rendered.contains("the value is used here"),
+            "should not show 'value used here' when locations are same: {}",
+            rendered
+        );
     }
 }

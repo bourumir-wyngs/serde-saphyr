@@ -18,20 +18,53 @@ fn yaml12_emits_directive_and_does_not_quote_yaml11_boolean_spellings() {
     let mut out = String::new();
     serde_saphyr::to_fmt_writer_with_options(&mut out, &map, options).unwrap();
 
-    assert!(out.starts_with("%YAML 1.2\n"), "missing YAML 1.2 directive: {out}");
+    assert!(
+        out.starts_with("%YAML 1.2\n"),
+        "missing YAML 1.2 directive: {out}"
+    );
 
     // YAML 1.1-only boolean spellings should not be auto-quoted under yaml_12.
-    assert!(out.contains("\ny:"), "y key should be plain under yaml_12: {out}");
-    assert!(out.contains("\nn:"), "n key should be plain under yaml_12: {out}");
-    assert!(out.contains("\nyes:"), "yes key should be plain under yaml_12: {out}");
-    assert!(out.contains("\nno:"), "no key should be plain under yaml_12: {out}");
-    assert!(out.contains("\non:"), "on key should be plain under yaml_12: {out}");
-    assert!(out.contains("\noff:"), "off key should be plain under yaml_12: {out}");
+    assert!(
+        out.contains("\ny:"),
+        "y key should be plain under yaml_12: {out}"
+    );
+    assert!(
+        out.contains("\nn:"),
+        "n key should be plain under yaml_12: {out}"
+    );
+    assert!(
+        out.contains("\nyes:"),
+        "yes key should be plain under yaml_12: {out}"
+    );
+    assert!(
+        out.contains("\nno:"),
+        "no key should be plain under yaml_12: {out}"
+    );
+    assert!(
+        out.contains("\non:"),
+        "on key should be plain under yaml_12: {out}"
+    );
+    assert!(
+        out.contains("\noff:"),
+        "off key should be plain under yaml_12: {out}"
+    );
 
-    assert!(!out.contains("\"y\":"), "y key should not be quoted under yaml_12: {out}");
-    assert!(!out.contains("\"n\":"), "n key should not be quoted under yaml_12: {out}");
-    assert!(out.contains("\"true\":"), "true is a YAML 1.2 boolean literal and must stay quoted as a string key: {out}");
-    assert!(out.contains("\"0\":"), "numeric-looking string key must stay quoted: {out}");
+    assert!(
+        !out.contains("\"y\":"),
+        "y key should not be quoted under yaml_12: {out}"
+    );
+    assert!(
+        !out.contains("\"n\":"),
+        "n key should not be quoted under yaml_12: {out}"
+    );
+    assert!(
+        out.contains("\"true\":"),
+        "true is a YAML 1.2 boolean literal and must stay quoted as a string key: {out}"
+    );
+    assert!(
+        out.contains("\"0\":"),
+        "numeric-looking string key must stay quoted: {out}"
+    );
 }
 
 #[test]
@@ -56,10 +89,16 @@ fn yaml12_disables_auto_quoting_of_yaml11_boolean_spellings_in_values() {
     )
     .unwrap();
 
-    assert!(out_yaml12.starts_with("%YAML 1.2\n"), "missing YAML 1.2 directive: {out_yaml12}");
+    assert!(
+        out_yaml12.starts_with("%YAML 1.2\n"),
+        "missing YAML 1.2 directive: {out_yaml12}"
+    );
     assert!(
         out_yaml12.contains("k: yes"),
         "yaml_12 mode should not quote YAML 1.1 boolean spellings in values: {out_yaml12}"
     );
-    assert!(!out_yaml12.contains("k: \"yes\""), "yaml_12 mode should not quote: {out_yaml12}");
+    assert!(
+        !out_yaml12.contains("k: \"yes\""),
+        "yaml_12 mode should not quote: {out_yaml12}"
+    );
 }

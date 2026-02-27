@@ -219,7 +219,11 @@ fn spanned_inside_untagged_enum_succeeds_with_unknown_location() {
     match result {
         PayloadWithSpanned::StringVariant { message } => {
             assert_eq!(message.value, "hello");
-            assert_eq!(message.referenced.line(), 0, "location unavailable in untagged enum");
+            assert_eq!(
+                message.referenced.line(),
+                0,
+                "location unavailable in untagged enum"
+            );
         }
         other => panic!("expected StringVariant, got {other:?}"),
     }

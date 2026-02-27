@@ -10,7 +10,6 @@
 //! via `Command`, which is typically not supported in WASI environments.
 #![cfg(all(not(miri), not(target_os = "wasi")))]
 
-
 use std::io::Write;
 use std::process::Command;
 

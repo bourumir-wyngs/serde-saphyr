@@ -4,8 +4,8 @@ use annotate_snippets::{
     AnnotationKind, Level, Renderer, Snippet as AnnotateSnippet, renderer::DecorStyle,
 };
 
-use crate::localizer::Localizer;
 use crate::Location;
+use crate::localizer::Localizer;
 
 /// Borrowed YAML source information used for snippet rendering.
 ///
@@ -200,7 +200,10 @@ mod tests {
 
         let line = cropped.lines().next().unwrap();
         assert!(line.starts_with("key: "));
-        assert!(line.ends_with('…'), "expected ellipsis at end, got: {line:?}");
+        assert!(
+            line.ends_with('…'),
+            "expected ellipsis at end, got: {line:?}"
+        );
 
         // The original column must still map: col 6 points at the first 'A'.
         let off = col_to_byte_offset_in_line(line, 6).expect("col 6 offset");
@@ -226,9 +229,19 @@ mod tests {
 
         // With an error near the start of the line (col 6), `left_col` resolves to 1,
         // so context lines are expected to be right-truncated, not left-truncated.
-        assert!(before.ends_with('…'), "before line not right-truncated: {before:?}");
-        assert!(after.ends_with('…'), "after line not right-truncated: {after:?}");
-        assert!(before.len() < 256, "before line too large: {}", before.len());
+        assert!(
+            before.ends_with('…'),
+            "before line not right-truncated: {before:?}"
+        );
+        assert!(
+            after.ends_with('…'),
+            "after line not right-truncated: {after:?}"
+        );
+        assert!(
+            before.len() < 256,
+            "before line too large: {}",
+            before.len()
+        );
         assert!(after.len() < 256, "after line too large: {}", after.len());
 
         // Error line must keep its left prefix for column mapping.
@@ -299,9 +312,7 @@ impl<'a> Snippet<'a> {
                 if absolute_row < start_line {
                     return fmt_with_location(f, l10n, msg, location);
                 }
-                let relative = absolute_row
-                    .saturating_sub(start_line)
-                    .saturating_add(1);
+                let relative = absolute_row.saturating_sub(start_line).saturating_add(1);
                 (relative, absolute_row)
             }
         };
@@ -398,7 +409,6 @@ impl<'a> Snippet<'a> {
     }
 }
 
-
 /// Like [`fmt_snippet_window_or_fallback`], but renders against a text fragment whose line
 /// numbering may be offset.
 pub(crate) fn fmt_snippet_window_offset_or_fallback(
@@ -444,9 +454,7 @@ fn fmt_snippet_window_with_mapping_or_fallback(
             if absolute_row < start_line {
                 return Ok(());
             }
-            absolute_row
-                .saturating_sub(start_line)
-                .saturating_add(1)
+            absolute_row.saturating_sub(start_line).saturating_add(1)
         }
     };
 
@@ -505,9 +513,9 @@ fn fmt_snippet_window_with_mapping_or_fallback(
 
     let max_display_row = match mapping {
         LineMapping::Identity => window_end_row,
-        LineMapping::Offset { start_line } => start_line
-            .saturating_add(window_end_row)
-            .saturating_sub(1),
+        LineMapping::Offset { start_line } => {
+            start_line.saturating_add(window_end_row).saturating_sub(1)
+        }
     };
     let gutter_width = max_display_row.to_string().len();
     writeln!(f, "  |")?;

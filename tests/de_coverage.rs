@@ -213,7 +213,10 @@ fn enum_from_seq_error() {
     let err = serde_saphyr::from_str::<MyEnum>("[1, 2]\n").unwrap_err();
     let msg = err.to_string();
     assert!(
-        msg.contains("enum") || msg.contains("scalar") || msg.contains("mapping") || msg.contains("sequence"),
+        msg.contains("enum")
+            || msg.contains("scalar")
+            || msg.contains("mapping")
+            || msg.contains("sequence"),
         "unexpected error: {msg}"
     );
 }
@@ -316,8 +319,7 @@ fn string_from_binary_tag_decoded() {
 #[test]
 fn no_schema_plain_int_for_string_error() {
     let opts = serde_saphyr::options! { no_schema: true };
-    let err =
-        serde_saphyr::from_str_with_options::<WithString>("s: 42\n", opts).unwrap_err();
+    let err = serde_saphyr::from_str_with_options::<WithString>("s: 42\n", opts).unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("quot") || msg.contains("schema") || msg.contains("string"),
@@ -329,8 +331,7 @@ fn no_schema_plain_int_for_string_error() {
 #[test]
 fn no_schema_quoted_string_ok() {
     let opts = serde_saphyr::options! { no_schema: true };
-    let v: WithString =
-        serde_saphyr::from_str_with_options("s: \"hello\"\n", opts).unwrap();
+    let v: WithString = serde_saphyr::from_str_with_options("s: \"hello\"\n", opts).unwrap();
     assert_eq!(v.s, "hello");
 }
 
@@ -357,7 +358,8 @@ fn duplicate_key_error_policy() {
 /// Duplicate key with FirstWins policy → first value kept.
 #[test]
 fn duplicate_key_first_wins() {
-    let opts = serde_saphyr::options! { duplicate_keys: serde_saphyr::DuplicateKeyPolicy::FirstWins };
+    let opts =
+        serde_saphyr::options! { duplicate_keys: serde_saphyr::DuplicateKeyPolicy::FirstWins };
     let v: std::collections::HashMap<String, i32> =
         serde_saphyr::from_str_with_options("a: 1\na: 2\n", opts).unwrap();
     assert_eq!(v["a"], 1);
@@ -366,7 +368,8 @@ fn duplicate_key_first_wins() {
 /// Duplicate key with LastWins policy → last value kept.
 #[test]
 fn duplicate_key_last_wins() {
-    let opts = serde_saphyr::options! { duplicate_keys: serde_saphyr::DuplicateKeyPolicy::LastWins };
+    let opts =
+        serde_saphyr::options! { duplicate_keys: serde_saphyr::DuplicateKeyPolicy::LastWins };
     let v: std::collections::HashMap<String, i32> =
         serde_saphyr::from_str_with_options("a: 1\na: 2\n", opts).unwrap();
     assert_eq!(v["a"], 2);
@@ -388,13 +391,15 @@ struct WithU128 {
 
 #[test]
 fn deserialize_i128() {
-    let v: WithI128 = serde_saphyr::from_str("n: -170141183460469231731687303715884105728\n").unwrap();
+    let v: WithI128 =
+        serde_saphyr::from_str("n: -170141183460469231731687303715884105728\n").unwrap();
     assert_eq!(v.n, i128::MIN);
 }
 
 #[test]
 fn deserialize_u128() {
-    let v: WithU128 = serde_saphyr::from_str("n: 340282366920938463463374607431768211455\n").unwrap();
+    let v: WithU128 =
+        serde_saphyr::from_str("n: 340282366920938463463374607431768211455\n").unwrap();
     assert_eq!(v.n, u128::MAX);
 }
 
@@ -448,8 +453,7 @@ fn tuple_deserialization() {
 
 #[test]
 fn empty_map_deserialization() {
-    let v: std::collections::HashMap<String, i32> =
-        serde_saphyr::from_str("{}\n").unwrap();
+    let v: std::collections::HashMap<String, i32> = serde_saphyr::from_str("{}\n").unwrap();
     assert!(v.is_empty());
 }
 
@@ -485,8 +489,7 @@ struct IgnoreExtra {
 #[test]
 fn ignored_any_field() {
     // Extra fields in YAML are ignored via deserialize_ignored_any
-    let v: IgnoreExtra =
-        serde_saphyr::from_str("keep: 5\nextra_field: some_value\n").unwrap();
+    let v: IgnoreExtra = serde_saphyr::from_str("keep: 5\nextra_field: some_value\n").unwrap();
     assert_eq!(v.keep, 5);
 }
 
@@ -557,7 +560,10 @@ fn deserialize_any_negative_int() {
 #[test]
 fn deserialize_any_unsigned_int() {
     let v: serde_json::Value = serde_saphyr::from_str("42\n").unwrap();
-    assert_eq!(v, serde_json::Value::Number(serde_json::Number::from(42u64)));
+    assert_eq!(
+        v,
+        serde_json::Value::Number(serde_json::Number::from(42u64))
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -733,7 +739,10 @@ fn deserialize_any_legacy_octal() {
     let opts = serde_saphyr::options! { legacy_octal_numbers: true };
     let v: serde_json::Value = serde_saphyr::from_str_with_options("00777\n", opts).unwrap();
     // 00777 legacy octal = 511 decimal
-    assert_eq!(v, serde_json::Value::Number(serde_json::Number::from(511u64)));
+    assert_eq!(
+        v,
+        serde_json::Value::Number(serde_json::Number::from(511u64))
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -873,7 +882,10 @@ fn enum_non_string_map_key_error() {
     let err = serde_saphyr::from_str::<MyEnum>("? [1, 2]\n: value\n").unwrap_err();
     let msg = err.to_string();
     assert!(
-        msg.contains("string") || msg.contains("key") || msg.contains("enum") || msg.contains("scalar"),
+        msg.contains("string")
+            || msg.contains("key")
+            || msg.contains("enum")
+            || msg.contains("scalar"),
         "unexpected error: {msg}"
     );
 }
@@ -1065,8 +1077,7 @@ fn deserialize_any_no_schema_plain_number() {
     let opts = serde_saphyr::options! { no_schema: true };
     // no_schema only affects typed string deserialization paths (deserialize_str/string).
     // In deserialize_any (typeless), plain numbers are still parsed as numbers.
-    let v: serde_json::Value =
-        serde_saphyr::from_str_with_options("42\n", opts).unwrap();
+    let v: serde_json::Value = serde_saphyr::from_str_with_options("42\n", opts).unwrap();
     assert_eq!(v, serde_json::Value::Number(42.into()));
 }
 

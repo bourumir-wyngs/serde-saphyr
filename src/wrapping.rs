@@ -220,4 +220,3 @@ mod tests {
         assert_eq!(out, "AA \nBB\n");
     }
 }
-

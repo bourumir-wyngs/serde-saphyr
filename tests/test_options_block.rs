@@ -7,8 +7,12 @@ use serde_saphyr::{
 fn lit_wrappers_respect_min_fold_chars_option() {
     // Default: threshold 32, so a short single-line becomes plain scalar.
     let mut s = String::new();
-    to_fmt_writer_with_options(&mut s, &LitStr("short"), serde_saphyr::SerializerOptions::default())
-        .unwrap();
+    to_fmt_writer_with_options(
+        &mut s,
+        &LitStr("short"),
+        serde_saphyr::SerializerOptions::default(),
+    )
+    .unwrap();
     assert_eq!(s, "|-\n  short\n");
 
     // With min_fold_chars = 0, even a short single-line should use block style `|`.

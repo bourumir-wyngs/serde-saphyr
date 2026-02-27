@@ -1,6 +1,6 @@
+use crate::Location;
 use crate::de_error::{Error, MessageFormatter, UserMessageFormatter};
 use crate::localizer::{ExternalMessage, Localizer};
-use crate::Location;
 
 use std::borrow::Cow;
 
@@ -125,9 +125,7 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
             "alias expansion limit exceeded for anchor id {anchor_id}: {expansions} > {max_expansions_per_anchor}"
         )),
         Error::AliasReplayStackDepthExceeded {
-            depth,
-            max_depth,
-            ..
+            depth, max_depth, ..
         } => Cow::Owned(format!(
             "alias replay stack depth exceeded: depth={depth} > {max_depth}"
         )),
@@ -153,17 +151,13 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
             ..
         } => Cow::Owned(format!("invalid value: {unexpected}, expected {expected}")),
         Error::SerdeUnknownVariant {
-            variant,
-            expected,
-            ..
+            variant, expected, ..
         } => Cow::Owned(format!(
             "unknown variant `{variant}`, expected one of {}",
             expected.join(", ")
         )),
         Error::SerdeUnknownField {
-            field,
-            expected,
-            ..
+            field, expected, ..
         } => Cow::Owned(format!(
             "unknown field `{field}`, expected one of {}",
             expected.join(", ")
@@ -243,9 +237,10 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
             Cow::Owned(l10n.join_validation_issues(&lines))
         }
         #[cfg(feature = "garde")]
-        Error::ValidationErrors { errors } => {
-            Cow::Owned(format!("validation failed for {} document(s)", errors.len()))
-        }
+        Error::ValidationErrors { errors } => Cow::Owned(format!(
+            "validation failed for {} document(s)",
+            errors.len()
+        )),
         #[cfg(feature = "validator")]
         Error::ValidatorError { errors, locations } => {
             let l10n = formatter.localizer();
@@ -280,9 +275,10 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
             Cow::Owned(l10n.join_validation_issues(&lines))
         }
         #[cfg(feature = "validator")]
-        Error::ValidatorErrors { errors } => {
-            Cow::Owned(format!("validation failed for {} document(s)", errors.len()))
-        }
+        Error::ValidatorErrors { errors } => Cow::Owned(format!(
+            "validation failed for {} document(s)",
+            errors.len()
+        )),
     }
 }
 
@@ -337,13 +333,25 @@ fn user_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) -> 
         Error::BinaryNotUtf8 { .. } => {
             Cow::Borrowed("!!binary scalar is not valid UTF-8 so cannot be stored into string.")
         }
-        Error::InvalidBooleanStrict { .. } => Cow::Borrowed("invalid boolean (true or false expected)"),
-        Error::NullIntoString { .. } | Error::InvalidCharNull { .. } => Cow::Borrowed("null is not allowed here"),
-        Error::InvalidCharNotSingleScalar { .. } => Cow::Borrowed("only single character allowed here"),
+        Error::InvalidBooleanStrict { .. } => {
+            Cow::Borrowed("invalid boolean (true or false expected)")
+        }
+        Error::NullIntoString { .. } | Error::InvalidCharNull { .. } => {
+            Cow::Borrowed("null is not allowed here")
+        }
+        Error::InvalidCharNotSingleScalar { .. } => {
+            Cow::Borrowed("only single character allowed here")
+        }
         Error::BytesNotSupportedMissingBinaryTag { .. } => Cow::Borrowed("missing !!binary tag"),
-        Error::ExpectedEmptyMappingForUnitStruct { .. } => Cow::Borrowed("expected empty mapping here"),
-        Error::UnexpectedContainerEndWhileSkippingNode { .. } => Cow::Borrowed("unexpected container end"),
-        Error::AliasReplayCounterOverflow { .. } => Cow::Borrowed("YAML document too large or too complex"),
+        Error::ExpectedEmptyMappingForUnitStruct { .. } => {
+            Cow::Borrowed("expected empty mapping here")
+        }
+        Error::UnexpectedContainerEndWhileSkippingNode { .. } => {
+            Cow::Borrowed("unexpected container end")
+        }
+        Error::AliasReplayCounterOverflow { .. } => {
+            Cow::Borrowed("YAML document too large or too complex")
+        }
         Error::AliasReplayLimitExceeded {
             total_replayed_events,
             max_total_replayed_events,
@@ -359,11 +367,15 @@ fn user_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) -> 
         } => Cow::Owned(format!(
             "YAML document too large or too complex: anchor id {anchor_id}: {expansions} > {max_expansions_per_anchor}"
         )),
-        Error::AliasReplayStackDepthExceeded { depth, max_depth, .. } => Cow::Owned(format!(
+        Error::AliasReplayStackDepthExceeded {
+            depth, max_depth, ..
+        } => Cow::Owned(format!(
             "YAML document too large or too complex: depth={depth} > {max_depth}"
         )),
         Error::UnknownAnchor { .. } => Cow::Borrowed("reference to unknown value"),
-        Error::RecursiveReferencesRequireWeakTypes { .. } => Cow::Borrowed("Recursive reference not allowed here"),
+        Error::RecursiveReferencesRequireWeakTypes { .. } => {
+            Cow::Borrowed("Recursive reference not allowed here")
+        }
         Error::DuplicateMappingKey { key, .. } => match key {
             Some(k) => Cow::Owned(format!("duplicate mapping key: {k} not allowed here")),
             None => Cow::Borrowed("duplicate mapping key not allowed here"),
@@ -418,9 +430,9 @@ impl UserMessageFormatter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Location;
     use crate::de_error::{Error, MessageFormatter, TransformReason};
     use crate::location::Locations;
-    use crate::Location;
 
     fn loc() -> Location {
         Location::UNKNOWN
@@ -445,14 +457,20 @@ mod tests {
     #[test]
     fn default_hook_error() {
         let formatter = DefaultMessageFormatter;
-        let err = Error::HookError { msg: "hook msg".to_owned(), location: loc() };
+        let err = Error::HookError {
+            msg: "hook msg".to_owned(),
+            location: loc(),
+        };
         assert_eq!(formatter.format_message(&err), "hook msg");
     }
 
     #[test]
     fn default_serde_variant_id() {
         let formatter = DefaultMessageFormatter;
-        let err = Error::SerdeVariantId { msg: "variant id msg".to_owned(), location: loc() };
+        let err = Error::SerdeVariantId {
+            msg: "variant id msg".to_owned(),
+            location: loc(),
+        };
         assert_eq!(formatter.format_message(&err), "variant id msg");
     }
 
@@ -481,14 +499,20 @@ mod tests {
     fn default_unexpected_container_end_while_skipping() {
         let formatter = DefaultMessageFormatter;
         let err = Error::UnexpectedContainerEndWhileSkippingNode { location: loc() };
-        assert_eq!(formatter.format_message(&err), "unexpected container end while skipping node");
+        assert_eq!(
+            formatter.format_message(&err),
+            "unexpected container end while skipping node"
+        );
     }
 
     #[test]
     fn default_internal_seed_reused() {
         let formatter = DefaultMessageFormatter;
         let err = Error::InternalSeedReusedForMapKey { location: loc() };
-        assert_eq!(formatter.format_message(&err), "internal error: seed reused for map key");
+        assert_eq!(
+            formatter.format_message(&err),
+            "internal error: seed reused for map key"
+        );
     }
 
     #[test]
@@ -502,14 +526,20 @@ mod tests {
     fn default_alias_replay_counter_overflow() {
         let formatter = DefaultMessageFormatter;
         let err = Error::AliasReplayCounterOverflow { location: loc() };
-        assert_eq!(formatter.format_message(&err), "alias replay counter overflow");
+        assert_eq!(
+            formatter.format_message(&err),
+            "alias replay counter overflow"
+        );
     }
 
     #[test]
     fn default_folded_block_scalar() {
         let formatter = DefaultMessageFormatter;
         let err = Error::FoldedBlockScalarMustIndentContent { location: loc() };
-        assert_eq!(formatter.format_message(&err), "folded block scalars must indent their content");
+        assert_eq!(
+            formatter.format_message(&err),
+            "folded block scalars must indent their content"
+        );
     }
 
     #[test]
@@ -523,14 +553,20 @@ mod tests {
     fn default_internal_recursion_stack_empty() {
         let formatter = DefaultMessageFormatter;
         let err = Error::InternalRecursionStackEmpty { location: loc() };
-        assert_eq!(formatter.format_message(&err), "internal recursion stack empty");
+        assert_eq!(
+            formatter.format_message(&err),
+            "internal recursion stack empty"
+        );
     }
 
     #[test]
     fn default_recursive_references_require_weak_types() {
         let formatter = DefaultMessageFormatter;
         let err = Error::RecursiveReferencesRequireWeakTypes { location: loc() };
-        assert_eq!(formatter.format_message(&err), "recursive references require weak recursion types");
+        assert_eq!(
+            formatter.format_message(&err),
+            "recursive references require weak recursion types"
+        );
     }
 
     #[test]
@@ -577,27 +613,38 @@ mod tests {
     fn default_unexpected_container_end_while_reading_key() {
         let formatter = DefaultMessageFormatter;
         let err = Error::UnexpectedContainerEndWhileReadingKeyNode { location: loc() };
-        assert_eq!(formatter.format_message(&err), "unexpected container end while reading key");
+        assert_eq!(
+            formatter.format_message(&err),
+            "unexpected container end while reading key"
+        );
     }
 
     #[test]
     fn default_expected_mapping_end_after_enum_variant() {
         let formatter = DefaultMessageFormatter;
         let err = Error::ExpectedMappingEndAfterEnumVariantValue { location: loc() };
-        assert_eq!(formatter.format_message(&err), "expected end of mapping after enum variant value");
+        assert_eq!(
+            formatter.format_message(&err),
+            "expected end of mapping after enum variant value"
+        );
     }
 
     #[test]
     fn default_container_end_mismatch() {
         let formatter = DefaultMessageFormatter;
         let err = Error::ContainerEndMismatch { location: loc() };
-        assert_eq!(formatter.format_message(&err), "list or mapping end with no start");
+        assert_eq!(
+            formatter.format_message(&err),
+            "list or mapping end with no start"
+        );
     }
 
     #[test]
     fn default_io_error() {
         let formatter = DefaultMessageFormatter;
-        let err = Error::IOError { cause: std::io::Error::other("disk full") };
+        let err = Error::IOError {
+            cause: std::io::Error::other("disk full"),
+        };
         let msg = formatter.format_message(&err);
         assert!(msg.contains("IO error"), "got: {msg}");
         assert!(msg.contains("disk full"), "got: {msg}");
@@ -619,7 +666,10 @@ mod tests {
         let ref_loc = Location::new(1, 0);
         let err = Error::AliasError {
             msg: "alias msg".to_owned(),
-            locations: Locations { reference_location: ref_loc, defined_location: Location::UNKNOWN },
+            locations: Locations {
+                reference_location: ref_loc,
+                defined_location: Location::UNKNOWN,
+            },
         };
         // r != UNKNOWN and d == UNKNOWN → returns msg as-is
         assert_eq!(formatter.format_message(&err), "alias msg");
@@ -632,7 +682,10 @@ mod tests {
         let def_loc = Location::new(5, 0);
         let err = Error::AliasError {
             msg: "alias msg".to_owned(),
-            locations: Locations { reference_location: ref_loc, defined_location: def_loc },
+            locations: Locations {
+                reference_location: ref_loc,
+                defined_location: def_loc,
+            },
         };
         // _r != UNKNOWN, d != UNKNOWN, d != r → appends defined-at suffix
         let msg = formatter.format_message(&err);
@@ -665,15 +718,24 @@ mod tests {
     #[test]
     fn user_multiple_documents() {
         let formatter = UserMessageFormatter;
-        let err = Error::MultipleDocuments { hint: "use from_str_multidoc", location: loc() };
-        assert_eq!(formatter.format_message(&err), "only single YAML document expected but multiple found");
+        let err = Error::MultipleDocuments {
+            hint: "use from_str_multidoc",
+            location: loc(),
+        };
+        assert_eq!(
+            formatter.format_message(&err),
+            "only single YAML document expected but multiple found"
+        );
     }
 
     #[test]
     fn user_invalid_utf8_input() {
         let formatter = UserMessageFormatter;
         let err = Error::InvalidUtf8Input;
-        assert_eq!(formatter.format_message(&err), "YAML parser input is not valid UTF-8");
+        assert_eq!(
+            formatter.format_message(&err),
+            "YAML parser input is not valid UTF-8"
+        );
     }
 
     #[test]
@@ -687,7 +749,10 @@ mod tests {
     fn user_invalid_boolean_strict() {
         let formatter = UserMessageFormatter;
         let err = Error::InvalidBooleanStrict { location: loc() };
-        assert_eq!(formatter.format_message(&err), "invalid boolean (true or false expected)");
+        assert_eq!(
+            formatter.format_message(&err),
+            "invalid boolean (true or false expected)"
+        );
     }
 
     #[test]
@@ -708,7 +773,10 @@ mod tests {
     fn user_invalid_char_not_single_scalar() {
         let formatter = UserMessageFormatter;
         let err = Error::InvalidCharNotSingleScalar { location: loc() };
-        assert_eq!(formatter.format_message(&err), "only single character allowed here");
+        assert_eq!(
+            formatter.format_message(&err),
+            "only single character allowed here"
+        );
     }
 
     #[test]
@@ -722,7 +790,10 @@ mod tests {
     fn user_expected_empty_mapping_for_unit_struct() {
         let formatter = UserMessageFormatter;
         let err = Error::ExpectedEmptyMappingForUnitStruct { location: loc() };
-        assert_eq!(formatter.format_message(&err), "expected empty mapping here");
+        assert_eq!(
+            formatter.format_message(&err),
+            "expected empty mapping here"
+        );
     }
 
     #[test]
@@ -736,7 +807,10 @@ mod tests {
     fn user_alias_replay_counter_overflow() {
         let formatter = UserMessageFormatter;
         let err = Error::AliasReplayCounterOverflow { location: loc() };
-        assert_eq!(formatter.format_message(&err), "YAML document too large or too complex");
+        assert_eq!(
+            formatter.format_message(&err),
+            "YAML document too large or too complex"
+        );
     }
 
     #[test]
@@ -790,13 +864,19 @@ mod tests {
     fn user_recursive_references_require_weak_types() {
         let formatter = UserMessageFormatter;
         let err = Error::RecursiveReferencesRequireWeakTypes { location: loc() };
-        assert_eq!(formatter.format_message(&err), "Recursive reference not allowed here");
+        assert_eq!(
+            formatter.format_message(&err),
+            "Recursive reference not allowed here"
+        );
     }
 
     #[test]
     fn user_duplicate_mapping_key_with_key() {
         let formatter = UserMessageFormatter;
-        let err = Error::DuplicateMappingKey { key: Some("mykey".to_owned()), location: loc() };
+        let err = Error::DuplicateMappingKey {
+            key: Some("mykey".to_owned()),
+            location: loc(),
+        };
         let msg = formatter.format_message(&err);
         assert!(msg.contains("mykey"), "got: {msg}");
         assert!(msg.contains("duplicate"), "got: {msg}");
@@ -805,7 +885,10 @@ mod tests {
     #[test]
     fn user_duplicate_mapping_key_without_key() {
         let formatter = UserMessageFormatter;
-        let err = Error::DuplicateMappingKey { key: None, location: loc() };
+        let err = Error::DuplicateMappingKey {
+            key: None,
+            location: loc(),
+        };
         let msg = formatter.format_message(&err);
         assert!(msg.contains("duplicate"), "got: {msg}");
     }
@@ -813,7 +896,10 @@ mod tests {
     #[test]
     fn user_quoting_required() {
         let formatter = UserMessageFormatter;
-        let err = Error::QuotingRequired { value: "yes".to_owned(), location: loc() };
+        let err = Error::QuotingRequired {
+            value: "yes".to_owned(),
+            location: loc(),
+        };
         assert_eq!(formatter.format_message(&err), "value requires quoting");
     }
 
@@ -821,7 +907,10 @@ mod tests {
     fn user_budget() {
         use crate::budget::BudgetBreach;
         let formatter = UserMessageFormatter;
-        let err = Error::Budget { breach: BudgetBreach::Events { events: 9999 }, location: loc() };
+        let err = Error::Budget {
+            breach: BudgetBreach::Events { events: 9999 },
+            location: loc(),
+        };
         let msg = formatter.format_message(&err);
         assert!(msg.contains("too large or too complex"), "got: {msg}");
     }
@@ -878,4 +967,3 @@ mod tests {
         assert_eq!(formatter.format_message(&err), "unexpected end of input");
     }
 }
-

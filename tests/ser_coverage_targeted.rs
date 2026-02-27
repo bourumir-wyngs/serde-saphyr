@@ -1,13 +1,13 @@
 //! Targeted tests to increase coverage of `src/ser.rs`.
 
-use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
 use serde::Serialize;
 use serde_saphyr::{
-    to_string, to_string_with_options, ArcAnchor, ArcRecursion, ArcRecursive, ArcWeakAnchor,
-    Commented, FlowMap, FlowSeq, FoldStr, FoldString, LitStr, LitString, RcAnchor, RcRecursion,
-    RcRecursive, RcWeakAnchor, SerializerOptions, SpaceAfter,
+    ArcAnchor, ArcRecursion, ArcRecursive, ArcWeakAnchor, Commented, FlowMap, FlowSeq, FoldStr,
+    FoldString, LitStr, LitString, RcAnchor, RcRecursion, RcRecursive, RcWeakAnchor,
+    SerializerOptions, SpaceAfter, to_string, to_string_with_options,
 };
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 
 // ── with_indent constructor ───────────────────────────────────────────────────
 
@@ -27,7 +27,10 @@ fn with_indent_constructor_produces_correct_indentation() {
         Outer { a: Inner { x: 1 } }.serialize(&mut ser).unwrap();
     }
     // 4-space indent means "x" is indented by 4 spaces
-    assert!(out.contains("    x:"), "expected 4-space indent, got:\n{out}");
+    assert!(
+        out.contains("    x:"),
+        "expected 4-space indent, got:\n{out}"
+    );
 }
 
 // ── quote_all mode ────────────────────────────────────────────────────────────
@@ -74,7 +77,10 @@ fn bool_key_in_map() {
     m.insert(true, "yes");
     m.insert(false, "no");
     let yaml = to_string(&m).unwrap();
-    assert!(yaml.contains("true:") || yaml.contains("false:"), "yaml: {yaml}");
+    assert!(
+        yaml.contains("true:") || yaml.contains("false:"),
+        "yaml: {yaml}"
+    );
 }
 
 #[test]
@@ -232,7 +238,10 @@ fn unit_variant_key_in_map() {
     m.insert(Color::Red, 1);
     m.insert(Color::Blue, 2);
     let yaml = to_string(&m).unwrap();
-    assert!(yaml.contains("Red:") || yaml.contains("Blue:"), "yaml: {yaml}");
+    assert!(
+        yaml.contains("Red:") || yaml.contains("Blue:"),
+        "yaml: {yaml}"
+    );
 }
 
 #[test]
@@ -260,10 +269,22 @@ fn collect_str_key_in_map() {
             s.collect_str(&self.0)
         }
     }
-    impl PartialEq for DisplayKey { fn eq(&self, o: &Self) -> bool { self.0 == o.0 } }
+    impl PartialEq for DisplayKey {
+        fn eq(&self, o: &Self) -> bool {
+            self.0 == o.0
+        }
+    }
     impl Eq for DisplayKey {}
-    impl PartialOrd for DisplayKey { fn partial_cmp(&self, o: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(o)) } }
-    impl Ord for DisplayKey { fn cmp(&self, o: &Self) -> std::cmp::Ordering { self.0.cmp(&o.0) } }
+    impl PartialOrd for DisplayKey {
+        fn partial_cmp(&self, o: &Self) -> Option<std::cmp::Ordering> {
+            Some(self.cmp(o))
+        }
+    }
+    impl Ord for DisplayKey {
+        fn cmp(&self, o: &Self) -> std::cmp::Ordering {
+            self.0.cmp(&o.0)
+        }
+    }
     let mut m = BTreeMap::new();
     m.insert(DisplayKey(42), "val");
     let yaml = to_string(&m).unwrap();
@@ -281,7 +302,10 @@ fn arc_weak_anchor_dangling_emits_null() {
         // arc dropped here, weak becomes dangling
     };
     let yaml = to_string(&weak).unwrap();
-    assert!(yaml.contains("null"), "expected null for dangling weak: {yaml}");
+    assert!(
+        yaml.contains("null"),
+        "expected null for dangling weak: {yaml}"
+    );
 }
 
 // ── ArcRecursion with dangling weak ref (None branch) ────────────────────────
@@ -294,7 +318,10 @@ fn arc_recursion_dangling_emits_null() {
         // arc_rec dropped here
     };
     let yaml = to_string(&weak).unwrap();
-    assert!(yaml.contains("null"), "expected null for dangling arc recursion: {yaml}");
+    assert!(
+        yaml.contains("null"),
+        "expected null for dangling arc recursion: {yaml}"
+    );
 }
 
 // ── ArcRecursive with initialized value ──────────────────────────────────────
@@ -321,7 +348,10 @@ fn lit_str_one_trailing_newline_uses_clip() {
     let s = LitStr("hello\n");
     let yaml = to_string(&s).unwrap();
     // literal block with clip (no indicator after |)
-    assert!(yaml.contains("|\n") || yaml.contains("| \n") || yaml.starts_with("|"), "expected clip: {yaml}");
+    assert!(
+        yaml.contains("|\n") || yaml.contains("| \n") || yaml.starts_with("|"),
+        "expected clip: {yaml}"
+    );
 }
 
 #[test]
@@ -336,7 +366,9 @@ fn lit_str_two_trailing_newlines_uses_keep() {
 
 #[test]
 fn fold_str_no_trailing_newline() {
-    let s = FoldStr("a long string that should be folded because it is long enough to trigger folding behavior");
+    let s = FoldStr(
+        "a long string that should be folded because it is long enough to trigger folding behavior",
+    );
     let yaml = to_string(&s).unwrap();
     assert!(yaml.contains('>'), "expected folded block: {yaml}");
 }
@@ -362,7 +394,10 @@ fn prefer_block_scalars_auto_fold_with_trailing_newlines() {
     };
     // multiline string with multiple trailing newlines -> auto folded with keep
     let yaml = to_string_with_options(&"line one\nline two\n\n", opts).unwrap();
-    assert!(yaml.contains('>') || yaml.contains('|'), "expected block scalar: {yaml}");
+    assert!(
+        yaml.contains('>') || yaml.contains('|'),
+        "expected block scalar: {yaml}"
+    );
 }
 
 // ── serialize_bool at line start (indent path) ───────────────────────────────
@@ -382,13 +417,19 @@ fn bool_value_in_struct_indented() {
 #[test]
 fn i128_value_serialized() {
     let yaml = to_string(&i128::MAX).unwrap();
-    assert!(yaml.contains("170141183460469231731687303715884105727"), "yaml: {yaml}");
+    assert!(
+        yaml.contains("170141183460469231731687303715884105727"),
+        "yaml: {yaml}"
+    );
 }
 
 #[test]
 fn u128_value_serialized() {
     let yaml = to_string(&u128::MAX).unwrap();
-    assert!(yaml.contains("340282366920938463463374607431768211455"), "yaml: {yaml}");
+    assert!(
+        yaml.contains("340282366920938463463374607431768211455"),
+        "yaml: {yaml}"
+    );
 }
 
 // ── serialize_char ────────────────────────────────────────────────────────────
@@ -433,7 +474,10 @@ fn quote_all_single_quote_in_string_escaped() {
     };
     let yaml = to_string_with_options(&"it's", opts).unwrap();
     // "it's" contains a single quote; in quote_all mode it may use double quotes
-    assert!(yaml.contains("it") && yaml.contains("s"), "expected quoted string: {yaml}");
+    assert!(
+        yaml.contains("it") && yaml.contains("s"),
+        "expected quoted string: {yaml}"
+    );
 }
 
 // ── write_anchor_name: multi-digit anchor id ─────────────────────────────────
@@ -444,7 +488,10 @@ fn many_anchors_produce_multi_digit_ids() {
     let values: Vec<RcAnchor<i32>> = (0..15).map(|i| RcAnchor(std::rc::Rc::new(i))).collect();
     let yaml = to_string(&values).unwrap();
     // Should contain anchor names like &a10 or higher
-    assert!(yaml.contains("&a10") || yaml.contains("&a11"), "yaml: {yaml}");
+    assert!(
+        yaml.contains("&a10") || yaml.contains("&a11"),
+        "yaml: {yaml}"
+    );
 }
 
 // ── Commented in flow context (suppresses comment) ───────────────────────────
@@ -456,7 +503,10 @@ fn commented_in_flow_seq_suppresses_comment() {
     // In flow context, comment is suppressed; value still present
     assert!(yaml.contains("42"), "yaml: {yaml}");
     // Comment should NOT appear in flow
-    assert!(!yaml.contains("# note"), "comment should be suppressed in flow: {yaml}");
+    assert!(
+        !yaml.contains("# note"),
+        "comment should be suppressed in flow: {yaml}"
+    );
 }
 
 // ── serialize_bytes ───────────────────────────────────────────────────────────
@@ -482,7 +532,10 @@ fn str_key_with_colon_gets_quoted() {
     m.insert("key:with:colons", "val");
     let yaml = to_string(&m).unwrap();
     // Key with colons must be quoted
-    assert!(yaml.contains('"') || yaml.contains('\''), "expected quoted key: {yaml}");
+    assert!(
+        yaml.contains('"') || yaml.contains('\''),
+        "expected quoted key: {yaml}"
+    );
 }
 
 // ── serialize_none / serialize_some ──────────────────────────────────────────
@@ -520,7 +573,10 @@ fn rc_weak_anchor_dangling_emits_null() {
         // rc dropped here
     };
     let yaml = to_string(&weak).unwrap();
-    assert!(yaml.contains("null"), "expected null for dangling rc weak: {yaml}");
+    assert!(
+        yaml.contains("null"),
+        "expected null for dangling rc weak: {yaml}"
+    );
 }
 
 // ── RcRecursion dangling ──────────────────────────────────────────────────────
@@ -535,7 +591,10 @@ fn rc_recursion_dangling_emits_null() {
         // rc_rec dropped here
     };
     let yaml = to_string(&weak).unwrap();
-    assert!(yaml.contains("null"), "expected null for dangling rc recursion: {yaml}");
+    assert!(
+        yaml.contains("null"),
+        "expected null for dangling rc recursion: {yaml}"
+    );
 }
 
 // ── FlowMap as struct field ───────────────────────────────────────────────────
@@ -618,10 +677,22 @@ fn non_scalar_key_produces_complex_key_syntax() {
             seq.end()
         }
     }
-    impl PartialEq for SeqKey { fn eq(&self, _: &Self) -> bool { true } }
+    impl PartialEq for SeqKey {
+        fn eq(&self, _: &Self) -> bool {
+            true
+        }
+    }
     impl Eq for SeqKey {}
-    impl PartialOrd for SeqKey { fn partial_cmp(&self, o: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(o)) } }
-    impl Ord for SeqKey { fn cmp(&self, _: &Self) -> std::cmp::Ordering { std::cmp::Ordering::Equal } }
+    impl PartialOrd for SeqKey {
+        fn partial_cmp(&self, o: &Self) -> Option<std::cmp::Ordering> {
+            Some(self.cmp(o))
+        }
+    }
+    impl Ord for SeqKey {
+        fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+            std::cmp::Ordering::Equal
+        }
+    }
 
     let mut m = BTreeMap::new();
     m.insert(SeqKey, "val");
@@ -635,7 +706,10 @@ fn non_scalar_key_produces_complex_key_syntax() {
 fn i64_min_max_serialized() {
     let yaml_min = to_string(&i64::MIN).unwrap();
     let yaml_max = to_string(&i64::MAX).unwrap();
-    assert!(yaml_min.contains("-9223372036854775808"), "yaml: {yaml_min}");
+    assert!(
+        yaml_min.contains("-9223372036854775808"),
+        "yaml: {yaml_min}"
+    );
     assert!(yaml_max.contains("9223372036854775807"), "yaml: {yaml_max}");
 }
 
@@ -652,9 +726,14 @@ fn u64_max_serialized() {
 #[test]
 fn u128_as_map_value_not_at_line_start() {
     #[derive(Serialize)]
-    struct S { val: u128 }
+    struct S {
+        val: u128,
+    }
     let yaml = to_string(&S { val: u128::MAX }).unwrap();
-    assert!(yaml.contains("340282366920938463463374607431768211455"), "yaml: {yaml}");
+    assert!(
+        yaml.contains("340282366920938463463374607431768211455"),
+        "yaml: {yaml}"
+    );
 }
 
 // ── i128 as map value (not at line start) ────────────────────────────────────
@@ -662,9 +741,14 @@ fn u128_as_map_value_not_at_line_start() {
 #[test]
 fn i128_as_map_value_not_at_line_start() {
     #[derive(Serialize)]
-    struct S { val: i128 }
+    struct S {
+        val: i128,
+    }
     let yaml = to_string(&S { val: i128::MIN }).unwrap();
-    assert!(yaml.contains("-170141183460469231731687303715884105728"), "yaml: {yaml}");
+    assert!(
+        yaml.contains("-170141183460469231731687303715884105728"),
+        "yaml: {yaml}"
+    );
 }
 
 // ── bool as map value (not at line start, covers serialize_bool indent branch) ─
@@ -672,9 +756,15 @@ fn i128_as_map_value_not_at_line_start() {
 #[test]
 fn bool_as_map_value_not_at_line_start() {
     #[derive(Serialize)]
-    struct S { a: bool, b: bool }
+    struct S {
+        a: bool,
+        b: bool,
+    }
     let yaml = to_string(&S { a: true, b: false }).unwrap();
-    assert!(yaml.contains("a: true") && yaml.contains("b: false"), "yaml: {yaml}");
+    assert!(
+        yaml.contains("a: true") && yaml.contains("b: false"),
+        "yaml: {yaml}"
+    );
 }
 
 // ── alias written not at line start (map value position) ─────────────────────
@@ -683,12 +773,16 @@ fn bool_as_map_value_not_at_line_start() {
 fn alias_as_map_value_not_at_line_start() {
     use std::rc::Rc;
     #[derive(Serialize)]
-    struct S { a: RcAnchor<i32>, b: RcAnchor<i32> }
+    struct S {
+        a: RcAnchor<i32>,
+        b: RcAnchor<i32>,
+    }
     let shared = Rc::new(42i32);
     let yaml = to_string(&S {
         a: RcAnchor(shared.clone()),
         b: RcAnchor(shared.clone()),
-    }).unwrap();
+    })
+    .unwrap();
     assert!(yaml.contains('*'), "expected alias: {yaml}");
 }
 
@@ -697,9 +791,19 @@ fn alias_as_map_value_not_at_line_start() {
 #[test]
 fn block_seq_after_block_value_forces_newline() {
     #[derive(Serialize)]
-    struct S { first: Vec<i32>, second: Vec<i32> }
-    let yaml = to_string(&S { first: vec![1, 2], second: vec![3, 4] }).unwrap();
-    assert!(yaml.contains("first:") && yaml.contains("second:"), "yaml: {yaml}");
+    struct S {
+        first: Vec<i32>,
+        second: Vec<i32>,
+    }
+    let yaml = to_string(&S {
+        first: vec![1, 2],
+        second: vec![3, 4],
+    })
+    .unwrap();
+    assert!(
+        yaml.contains("first:") && yaml.contains("second:"),
+        "yaml: {yaml}"
+    );
 }
 
 // ── block map as map value after another block value (forces newline) ─────────
@@ -707,11 +811,23 @@ fn block_seq_after_block_value_forces_newline() {
 #[test]
 fn block_map_after_block_value_forces_newline() {
     #[derive(Serialize)]
-    struct Inner { x: i32 }
+    struct Inner {
+        x: i32,
+    }
     #[derive(Serialize)]
-    struct S { first: Inner, second: Inner }
-    let yaml = to_string(&S { first: Inner { x: 1 }, second: Inner { x: 2 } }).unwrap();
-    assert!(yaml.contains("first:") && yaml.contains("second:"), "yaml: {yaml}");
+    struct S {
+        first: Inner,
+        second: Inner,
+    }
+    let yaml = to_string(&S {
+        first: Inner { x: 1 },
+        second: Inner { x: 2 },
+    })
+    .unwrap();
+    assert!(
+        yaml.contains("first:") && yaml.contains("second:"),
+        "yaml: {yaml}"
+    );
 }
 
 // ── flow seq inside flow seq (nested in_flow > 0) ────────────────────────────
@@ -729,7 +845,10 @@ fn flow_seq_inside_flow_seq() {
 fn flow_map_inside_flow_seq() {
     let v = FlowSeq(vec![FlowMap(BTreeMap::from([("a", 1i32)]))]);
     let yaml = to_string(&v).unwrap();
-    assert!(yaml.contains("{a: 1}"), "expected flow map in flow seq: {yaml}");
+    assert!(
+        yaml.contains("{a: 1}"),
+        "expected flow map in flow seq: {yaml}"
+    );
 }
 
 // ── write_quoted: unicode escape \u{:04X} for chars 0x100-0xFFFF ─────────────
@@ -740,19 +859,35 @@ fn write_quoted_null_escape() {
     let mut m = BTreeMap::new();
     m.insert("key\x00null", "val");
     let yaml = to_string(&m).unwrap();
-    assert!(yaml.contains("\\0") || yaml.contains("\\u0000"), "expected NUL escape: {yaml}");
+    assert!(
+        yaml.contains("\\0") || yaml.contains("\\u0000"),
+        "expected NUL escape: {yaml}"
+    );
 }
 
 #[test]
 fn write_quoted_named_escapes_in_value() {
     // Values with control chars go through write_quoted which uses named escapes
     // Use quote_all to force quoting of a value containing control chars
-    let opts = SerializerOptions { quote_all: true, ..Default::default() };
+    let opts = SerializerOptions {
+        quote_all: true,
+        ..Default::default()
+    };
     // BEL \x07 -> \a, BS \x08 -> \b, VT \x0b -> \v, FF \x0c -> \f, ESC \x1b -> \e
-    for (ch, expected) in [('\x07', "\\a"), ('\x08', "\\b"), ('\x0b', "\\v"), ('\x0c', "\\f"), ('\x1b', "\\e")] {
+    for (ch, expected) in [
+        ('\x07', "\\a"),
+        ('\x08', "\\b"),
+        ('\x0b', "\\v"),
+        ('\x0c', "\\f"),
+        ('\x1b', "\\e"),
+    ] {
         let s = format!("x{}y", ch);
         let yaml = to_string_with_options(&s.as_str(), opts).unwrap();
-        assert!(yaml.contains(expected), "expected {expected} for char {:?}: {yaml}", ch);
+        assert!(
+            yaml.contains(expected),
+            "expected {expected} for char {:?}: {yaml}",
+            ch
+        );
     }
     // NUL \x00 -> \0
     let s = "x\x00y";
@@ -782,19 +917,25 @@ fn write_quoted_control_char_escapes() {
     // Control chars in keys force double-quoting; verify \x hex escapes are used
     // (the serializer uses \xHH for chars 0x01-0x1F range via \u{:04X} or \x{:02X})
     let cases: Vec<(&str, &str)> = vec![
-        ("\x07", "07"),   // BEL -> \u0007 or \x07
-        ("\x08", "08"),   // BS
-        ("\x0b", "0B"),   // VT
-        ("\x0c", "0C"),   // FF
-        ("\x1b", "1B"),   // ESC
+        ("\x07", "07"), // BEL -> \u0007 or \x07
+        ("\x08", "08"), // BS
+        ("\x0b", "0B"), // VT
+        ("\x0c", "0C"), // FF
+        ("\x1b", "1B"), // ESC
     ];
     for (input, hex) in cases {
         let mut m = BTreeMap::new();
         m.insert(input, "val");
         let yaml = to_string(&m).unwrap();
         // The key should be quoted and contain some escape
-        assert!(yaml.contains('"') || yaml.contains("\\u") || yaml.contains("\\x") || yaml.contains(hex),
-            "expected escape for {:?}: {yaml}", input);
+        assert!(
+            yaml.contains('"')
+                || yaml.contains("\\u")
+                || yaml.contains("\\x")
+                || yaml.contains(hex),
+            "expected escape for {:?}: {yaml}",
+            input
+        );
     }
 }
 
@@ -868,7 +1009,10 @@ fn key_with_double_quote_gets_escaped() {
     m.insert("key\"with\"quotes", "val");
     let yaml = to_string(&m).unwrap();
     // Key must be quoted (single or double) since it contains a double quote
-    assert!(yaml.contains('"') || yaml.contains('\''), "expected quoted key: {yaml}");
+    assert!(
+        yaml.contains('"') || yaml.contains('\''),
+        "expected quoted key: {yaml}"
+    );
 }
 
 // ── Block scalar with leading spaces (indentation indicator) ──────────────────
@@ -898,7 +1042,10 @@ fn prefer_block_scalars_with_leading_spaces() {
         ..Default::default()
     };
     let yaml = to_string_with_options(&"  leading spaces\n", opts).unwrap();
-    assert!(yaml.contains('|') || yaml.contains('>') || yaml.contains('"'), "yaml: {yaml}");
+    assert!(
+        yaml.contains('|') || yaml.contains('>') || yaml.contains('"'),
+        "yaml: {yaml}"
+    );
 }
 
 // ── ArcAnchor: alias reuse ────────────────────────────────────────────────────
@@ -991,7 +1138,11 @@ fn space_after_in_block_adds_blank_line() {
         a: SpaceAfter<i32>,
         b: i32,
     }
-    let yaml = to_string(&S { a: SpaceAfter(1), b: 2 }).unwrap();
+    let yaml = to_string(&S {
+        a: SpaceAfter(1),
+        b: 2,
+    })
+    .unwrap();
     assert!(yaml.contains("a: 1"), "yaml: {yaml}");
     assert!(yaml.contains("b: 2"), "yaml: {yaml}");
     // There should be a blank line between a and b
@@ -1007,7 +1158,11 @@ fn nested_block_seq_as_map_value_then_another_key() {
         items: Vec<i32>,
         count: i32,
     }
-    let yaml = to_string(&S { items: vec![1, 2, 3], count: 3 }).unwrap();
+    let yaml = to_string(&S {
+        items: vec![1, 2, 3],
+        count: 3,
+    })
+    .unwrap();
     assert!(yaml.contains("items:"), "yaml: {yaml}");
     assert!(yaml.contains("count: 3"), "yaml: {yaml}");
 }
@@ -1017,10 +1172,19 @@ fn nested_block_seq_as_map_value_then_another_key() {
 #[test]
 fn nested_block_map_as_map_value_then_another_key() {
     #[derive(Serialize)]
-    struct Inner { x: i32 }
+    struct Inner {
+        x: i32,
+    }
     #[derive(Serialize)]
-    struct Outer { inner: Inner, after: i32 }
-    let yaml = to_string(&Outer { inner: Inner { x: 1 }, after: 2 }).unwrap();
+    struct Outer {
+        inner: Inner,
+        after: i32,
+    }
+    let yaml = to_string(&Outer {
+        inner: Inner { x: 1 },
+        after: 2,
+    })
+    .unwrap();
     assert!(yaml.contains("inner:"), "yaml: {yaml}");
     assert!(yaml.contains("after: 2"), "yaml: {yaml}");
 }
@@ -1034,7 +1198,9 @@ fn empty_block_seq_as_map_value_with_empty_as_braces() {
         ..Default::default()
     };
     #[derive(Serialize)]
-    struct S { items: Vec<i32> }
+    struct S {
+        items: Vec<i32>,
+    }
     let yaml = to_string_with_options(&S { items: vec![] }, opts).unwrap();
     assert!(yaml.contains("[]"), "yaml: {yaml}");
 }
@@ -1048,7 +1214,9 @@ fn empty_block_map_as_map_value_with_empty_as_braces() {
         ..Default::default()
     };
     #[derive(Serialize)]
-    struct S { m: BTreeMap<String, i32> }
+    struct S {
+        m: BTreeMap<String, i32>,
+    }
     let yaml = to_string_with_options(&S { m: BTreeMap::new() }, opts).unwrap();
     assert!(yaml.contains("{}"), "yaml: {yaml}");
 }
@@ -1076,8 +1244,14 @@ fn tuple_variant_serialized() {
     }
     let yaml = to_string(&Shape::Rect(2.0, 3.0)).unwrap();
     assert!(yaml.contains("Rect"), "expected variant name: {yaml}");
-    assert!(yaml.contains("2.0") || yaml.contains("2."), "expected first field: {yaml}");
-    assert!(yaml.contains("3.0") || yaml.contains("3."), "expected second field: {yaml}");
+    assert!(
+        yaml.contains("2.0") || yaml.contains("2."),
+        "expected first field: {yaml}"
+    );
+    assert!(
+        yaml.contains("3.0") || yaml.contains("3."),
+        "expected second field: {yaml}"
+    );
 }
 
 // ── Struct variant serialization ──────────────────────────────────────────────
@@ -1091,7 +1265,10 @@ fn struct_variant_serialized() {
     let yaml = to_string(&Event::Move { x: 10, y: 20 }).unwrap();
     assert!(yaml.contains("Move"), "expected variant name: {yaml}");
     assert!(yaml.contains("x: 10"), "expected first field: {yaml}");
-    assert!(yaml.contains("y: 20") || yaml.contains("\"y\": 20"), "expected second field: {yaml}");
+    assert!(
+        yaml.contains("y: 20") || yaml.contains("\"y\": 20"),
+        "expected second field: {yaml}"
+    );
 }
 
 // ── to_io_writer ──────────────────────────────────────────────────────────────
@@ -1146,13 +1323,16 @@ fn newtype_variant_tagged_enums() {
 #[test]
 fn seq_of_structs_inline_map_after_dash() {
     #[derive(Serialize)]
-    struct Item { name: &'static str, val: i32 }
-    let v = vec![
-        Item { name: "a", val: 1 },
-        Item { name: "b", val: 2 },
-    ];
+    struct Item {
+        name: &'static str,
+        val: i32,
+    }
+    let v = vec![Item { name: "a", val: 1 }, Item { name: "b", val: 2 }];
     let yaml = to_string(&v).unwrap();
-    assert!(yaml.contains("name: a") || yaml.contains("name:"), "yaml: {yaml}");
+    assert!(
+        yaml.contains("name: a") || yaml.contains("name:"),
+        "yaml: {yaml}"
+    );
 }
 
 // ── Seq of seqs (nested block seq under dash) ─────────────────────────────────
@@ -1210,7 +1390,10 @@ fn prefer_block_scalars_one_trailing_newline() {
         ..Default::default()
     };
     let yaml = to_string_with_options(&"line one\nline two\n", opts).unwrap();
-    assert!(yaml.contains('>') || yaml.contains('|'), "expected block scalar: {yaml}");
+    assert!(
+        yaml.contains('>') || yaml.contains('|'),
+        "expected block scalar: {yaml}"
+    );
 }
 
 // ── prefer_block_scalars no trailing newline (strip) ─────────────────────────
@@ -1222,7 +1405,10 @@ fn prefer_block_scalars_no_trailing_newline() {
         ..Default::default()
     };
     let yaml = to_string_with_options(&"line one\nline two", opts).unwrap();
-    assert!(yaml.contains('>') || yaml.contains('|') || yaml.contains('"'), "yaml: {yaml}");
+    assert!(
+        yaml.contains('>') || yaml.contains('|') || yaml.contains('"'),
+        "yaml: {yaml}"
+    );
 }
 
 // ── write_single_quoted: single quote doubling ────────────────────────────────
@@ -1277,15 +1463,25 @@ fn deep_nesting_with_leading_spaces_falls_back_to_quoted() {
     // indent_n > 9 with leading spaces triggers the fallback to quoted string
     // Need depth > 4 with default indent_step=2: 2*(depth+1) > 9 => depth >= 4
     #[derive(Serialize)]
-    struct L5 { val: LitStr<'static> }
+    struct L5 {
+        val: LitStr<'static>,
+    }
     #[derive(Serialize)]
-    struct L4 { inner: L5 }
+    struct L4 {
+        inner: L5,
+    }
     #[derive(Serialize)]
-    struct L3 { inner: L4 }
+    struct L3 {
+        inner: L4,
+    }
     #[derive(Serialize)]
-    struct L2 { inner: L3 }
+    struct L2 {
+        inner: L3,
+    }
     #[derive(Serialize)]
-    struct L1 { inner: L2 }
+    struct L1 {
+        inner: L2,
+    }
 
     let v = L1 {
         inner: L2 {
@@ -1293,10 +1489,10 @@ fn deep_nesting_with_leading_spaces_falls_back_to_quoted() {
                 inner: L4 {
                     inner: L5 {
                         val: LitStr("  leading spaces content\n"),
-                    }
-                }
-            }
-        }
+                    },
+                },
+            },
+        },
     };
     // Should not panic; falls back to quoted string when indent_n > 9
     let yaml = to_string(&v).unwrap();
@@ -1341,7 +1537,10 @@ fn arc_recursive_uninitialized_returns_error() {
     let arc_rec = ArcRecursive::<i32>(Arc::new(Mutex::new(None)));
     // Serializing ArcRecursive with None should return an error
     let result = to_string(&arc_rec);
-    assert!(result.is_err(), "expected error for uninitialized ArcRecursive");
+    assert!(
+        result.is_err(),
+        "expected error for uninitialized ArcRecursive"
+    );
 }
 
 // ── RcRecursive with uninitialized value (error path) ────────────────────────
@@ -1352,7 +1551,10 @@ fn rc_recursive_uninitialized_returns_error() {
     use std::rc::Rc;
     let rc_rec = RcRecursive::<i32>(Rc::new(RefCell::new(None)));
     let result = to_string(&rc_rec);
-    assert!(result.is_err(), "expected error for uninitialized RcRecursive");
+    assert!(
+        result.is_err(),
+        "expected error for uninitialized RcRecursive"
+    );
 }
 
 // ── Commented with newline in comment (sanitized to space) ───────────────────
@@ -1363,7 +1565,10 @@ fn commented_newline_in_comment_sanitized() {
     let yaml = to_string(&v).unwrap();
     // Newline in comment should be replaced with space
     assert!(yaml.contains("42"), "yaml: {yaml}");
-    assert!(!yaml.contains('\n') || yaml.lines().count() <= 2, "yaml: {yaml}");
+    assert!(
+        !yaml.contains('\n') || yaml.lines().count() <= 2,
+        "yaml: {yaml}"
+    );
 }
 
 // ── yaml_12 option emits YAML directive ──────────────────────────────────────
@@ -1375,7 +1580,10 @@ fn yaml_12_option_emits_directive() {
         ..Default::default()
     };
     let yaml = to_string_with_options(&42i32, opts).unwrap();
-    assert!(yaml.contains("%YAML 1.2"), "expected YAML 1.2 directive: {yaml}");
+    assert!(
+        yaml.contains("%YAML 1.2"),
+        "expected YAML 1.2 directive: {yaml}"
+    );
 }
 
 // ── Deserialize impls for wrappers ────────────────────────────────────────────
@@ -1455,6 +1663,9 @@ fn custom_anchor_generator_used() {
     let b = RcAnchor(shared.clone());
     let v = vec![a, b];
     let yaml = to_string_with_options(&v, opts).unwrap();
-    assert!(yaml.contains("myanchor"), "expected custom anchor name: {yaml}");
+    assert!(
+        yaml.contains("myanchor"),
+        "expected custom anchor name: {yaml}"
+    );
     assert!(yaml.contains('*'), "expected alias: {yaml}");
 }

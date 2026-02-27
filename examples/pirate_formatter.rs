@@ -23,8 +23,8 @@
 //!   when the error value is wrapped in `Error::WithSnippet`, which depends on the parsing
 //!   options (see the validation examples below).
 
-use serde_saphyr::{Error, Localizer, Location, MessageFormatter, UserMessageFormatter};
 use serde::Deserialize;
+use serde_saphyr::{Error, Localizer, Location, MessageFormatter, UserMessageFormatter};
 use std::borrow::Cow;
 
 /// Pirate wording for message pieces that are formatted *outside* `MessageFormatter::format_message`.
@@ -71,7 +71,11 @@ impl Localizer for PirateLocalizer {
         if loc == serde_saphyr::Location::UNKNOWN {
             String::new()
         } else {
-            format!("Bug lurks on line {}, then {} runes in", loc.line(), loc.column())
+            format!(
+                "Bug lurks on line {}, then {} runes in",
+                loc.line(),
+                loc.column()
+            )
         }
     }
 
@@ -82,7 +86,8 @@ impl Localizer for PirateLocalizer {
     fn value_comes_from_the_anchor(&self, def: Location) -> String {
         format!(
             "  | This scribble hails from the anchor at line {}, column {}:",
-            def.line(), def.column()
+            def.line(),
+            def.column()
         )
     }
 
@@ -107,15 +112,13 @@ impl MessageFormatter for PirateFormatter {
         let default = UserMessageFormatter.with_localizer(&PirateLocalizer);
         match err {
             Error::Eof { .. } => Cow::Borrowed("Arrr! The scroll be endin' too soon, matey!"),
-            Error::MultipleDocuments { .. } => Cow::Borrowed(
-                "Yer scroll be split into many tales, but we be expectin' just one!",
-            ),
-            Error::CannotBorrowTransformedString { .. } => Cow::Borrowed(
-                "That string got mangled by the waves",
-            ),
-            Error::UnknownAnchor { .. } => {
-                Cow::Borrowed("Mark be missing from the map!")
+            Error::MultipleDocuments { .. } => {
+                Cow::Borrowed("Yer scroll be split into many tales, but we be expectin' just one!")
             }
+            Error::CannotBorrowTransformedString { .. } => {
+                Cow::Borrowed("That string got mangled by the waves")
+            }
+            Error::UnknownAnchor { .. } => Cow::Borrowed("Mark be missing from the map!"),
 
             // For other errors, we can delegate to the user-facing formatter.
             // Localizer stays pirate-speak.
@@ -127,7 +130,7 @@ impl MessageFormatter for PirateFormatter {
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 struct CrewMember {
-    name: String
+    name: String,
 }
 
 fn main() {
@@ -138,10 +141,7 @@ fn main() {
     let result: Result<CrewMember, _> = serde_saphyr::from_str(yaml_multiple_docs);
 
     if let Err(e) = result {
-        println!(
-            "\n[Developer Error]:\n{}",
-            e.render()
-        );
+        println!("\n[Developer Error]:\n{}", e.render());
         println!(
             "\n[User Error]:\n{}",
             e.render_with_formatter(&UserMessageFormatter)
@@ -163,10 +163,7 @@ fn main() {
     let result: Result<Vec<String>, _> = serde_saphyr::from_str(yaml_anchor);
 
     if let Err(e) = result {
-        println!(
-            "\n[Developer Error]:\n{}",
-            e.render()
-        );
+        println!("\n[Developer Error]:\n{}", e.render());
         println!(
             "\n[User Error]:\n{}",
             e.render_with_formatter(&UserMessageFormatter)
@@ -180,16 +177,15 @@ fn main() {
     // Example 2: EOF
     let yaml_eof = "";
     println!("\n\n--- Attempting to parse empty YAML into String ---");
-    
+
     let result: Result<String, _> = serde_saphyr::from_str(yaml_eof);
-    
+
     match result {
-        Ok(_) => println!("Surprise! It parsed successfully (which is unexpected for empty input -> String)."),
+        Ok(_) => println!(
+            "Surprise! It parsed successfully (which is unexpected for empty input -> String)."
+        ),
         Err(e) => {
-            println!(
-                "\n[Developer Error]:\n{}",
-                e.render()
-            );
+            println!("\n[Developer Error]:\n{}", e.render());
             println!(
                 "\n[User Error]:\n{}",
                 e.render_with_formatter(&UserMessageFormatter)
@@ -209,10 +205,7 @@ fn main() {
     let result: Result<&str, _> = serde_saphyr::from_str(yaml_transformed_str);
 
     if let Err(e) = result {
-        println!(
-            "\n[Developer Error]:\n{}",
-            e.render()
-        );
+        println!("\n[Developer Error]:\n{}", e.render());
         println!(
             "\n[User Error]:\n{}",
             e.render_with_formatter(&UserMessageFormatter)
@@ -250,8 +243,14 @@ fn main() {
         )
         .expect_err("validation error expected");
 
-        println!("\n[User Error]:\n{}", err.render_with_formatter(&UserMessageFormatter));
-        println!("\n[Pirate Error]:\n{}", err.render_with_formatter(&PirateFormatter));
+        println!(
+            "\n[User Error]:\n{}",
+            err.render_with_formatter(&UserMessageFormatter)
+        );
+        println!(
+            "\n[Pirate Error]:\n{}",
+            err.render_with_formatter(&PirateFormatter)
+        );
     }
 
     #[cfg(feature = "validator")]
@@ -269,7 +268,9 @@ fn main() {
 
         // The anchor &short defines "x" (too short), and *short references it for nickname
         let yaml = "name: &short \"x\"\nnickname: *short\n";
-        println!("\n\n--- Attempting to parse YAML with validator validation error (dual-snippet) ---");
+        println!(
+            "\n\n--- Attempting to parse YAML with validator validation error (dual-snippet) ---"
+        );
         println!("{}", yaml.trim());
 
         let err = serde_saphyr::from_str_with_options_validate::<Cfg>(
@@ -278,7 +279,13 @@ fn main() {
         )
         .expect_err("validation error expected");
 
-        println!("\n[User Error]:\n{}", err.render_with_formatter(&UserMessageFormatter));
-        println!("\n[Pirate Error]:\n{}", err.render_with_formatter(&PirateFormatter));
+        println!(
+            "\n[User Error]:\n{}",
+            err.render_with_formatter(&UserMessageFormatter)
+        );
+        println!(
+            "\n[Pirate Error]:\n{}",
+            err.render_with_formatter(&PirateFormatter)
+        );
     }
 }

@@ -1,4 +1,4 @@
-use serde_saphyr::{to_fmt_writer_with_options, SerializerOptions};
+use serde_saphyr::{SerializerOptions, to_fmt_writer_with_options};
 
 /// Test that block_scalar_chomp: Strip forces `|-` and strips trailing newlines
 #[test]
@@ -119,9 +119,3 @@ fn nested_block_scalar_strip_for_go_compat() {
     // Sanity-check we produced some YAML.
     assert!(!buf.is_empty());
 }
-
-
-
-
-
-

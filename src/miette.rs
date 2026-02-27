@@ -9,7 +9,6 @@ use miette::{Diagnostic, LabeledSpan, NamedSource, SourceSpan};
 
 use crate::Error;
 use crate::Location;
-use crate::{MessageFormatter, RenderOptions};
 use crate::de_snipped::sanitize_terminal_snippet_preserve_len;
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::location::Locations;
@@ -17,6 +16,7 @@ use crate::location::Locations;
 use crate::path_map::path_key_from_garde;
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::path_map::{PathKey, PathMap, format_path_with_resolved_leaf};
+use crate::{MessageFormatter, RenderOptions};
 
 #[cfg(feature = "validator")]
 use validator::{ValidationErrors, ValidationErrorsKind};
@@ -394,10 +394,9 @@ fn to_source_span(src: &NamedSource<String>, location: &Location) -> Option<Sour
         return None;
     }
 
-    let (byte_off, mut byte_len): (usize, usize) = if let (Some(off), Some(len)) = (
-        location.span().byte_offset(),
-        location.span().byte_len(),
-    ) {
+    let (byte_off, mut byte_len): (usize, usize) = if let (Some(off), Some(len)) =
+        (location.span().byte_offset(), location.span().byte_len())
+    {
         (off as usize, len as usize)
     } else {
         // The parser provides character-based offsets/lengths, while miette expects
@@ -449,7 +448,6 @@ fn to_source_span(src: &NamedSource<String>, location: &Location) -> Option<Sour
     Some(SourceSpan::new(byte_off.into(), byte_len))
 }
 
-
 #[cfg(all(test, feature = "miette"))]
 mod tests {
     use super::*;
@@ -463,8 +461,10 @@ mod tests {
             location: Location {
                 line: 1,
                 column: 4,
-                span: crate::Span { byte_info: (0, 0), 
-                    offset: "a: definitely\n".find("definitely").unwrap() as crate::location::SpanIndex,
+                span: crate::Span {
+                    byte_info: (0, 0),
+                    offset: "a: definitely\n".find("definitely").unwrap()
+                        as crate::location::SpanIndex,
                     len: 3,
                 },
             },
@@ -497,7 +497,8 @@ mod tests {
                 line: 1,
                 // Column is 1-indexed and character-based; set consistently with the span
                 column: (char_off as u32) + 1,
-                span: crate::Span { byte_info: (0, 0), 
+                span: crate::Span {
+                    byte_info: (0, 0),
                     offset: char_off as crate::location::SpanIndex,
                     len: ascii_slice.len() as crate::location::SpanIndex,
                 },
@@ -528,7 +529,8 @@ mod tests {
             location: Location {
                 line: 1,
                 column: (start_char as u32) + 1,
-                span: crate::Span { byte_info: (0, 0), 
+                span: crate::Span {
+                    byte_info: (0, 0),
                     offset: start_char as crate::location::SpanIndex,
                     len: value_chars.chars().count() as crate::location::SpanIndex,
                 },
@@ -556,7 +558,8 @@ mod tests {
             location: Location {
                 line: 1,
                 column: (start_char as u32) + 1,
-                span: crate::Span { byte_info: (0, 0), 
+                span: crate::Span {
+                    byte_info: (0, 0),
                     offset: start_char as crate::location::SpanIndex,
                     len: 0,
                 },
@@ -584,7 +587,8 @@ mod tests {
             location: Location {
                 line: 1,
                 column: (start_char as u32) + 1,
-                span: crate::Span { byte_info: (0, 0), 
+                span: crate::Span {
+                    byte_info: (0, 0),
                     offset: start_char as crate::location::SpanIndex,
                     len: 1000,
                 },
@@ -613,7 +617,8 @@ mod tests {
             location: Location {
                 line: 3,
                 column: 1,
-                span: crate::Span { byte_info: (0, 0), 
+                span: crate::Span {
+                    byte_info: (0, 0),
                     offset: start_char as crate::location::SpanIndex,
                     len: target.chars().count() as crate::location::SpanIndex,
                 },
@@ -656,7 +661,8 @@ mod tests {
         let referenced_loc = Location {
             line: 3,
             column: 15,
-            span: crate::Span { byte_info: (0, 0), 
+            span: crate::Span {
+                byte_info: (0, 0),
                 offset: use_offset as crate::location::SpanIndex,
                 len: 2,
             },
@@ -664,7 +670,8 @@ mod tests {
         let defined_loc = Location {
             line: 2,
             column: 18,
-            span: crate::Span { byte_info: (0, 0), 
+            span: crate::Span {
+                byte_info: (0, 0),
                 offset: def_offset as crate::location::SpanIndex,
                 len: 3,
             },
@@ -732,7 +739,8 @@ mod tests {
         let referenced_loc = Location {
             line: 3,
             column: 15,
-            span: crate::Span { byte_info: (0, 0), 
+            span: crate::Span {
+                byte_info: (0, 0),
                 offset: use_offset as crate::location::SpanIndex,
                 len: 2,
             },
@@ -740,7 +748,8 @@ mod tests {
         let defined_loc = Location {
             line: 2,
             column: 18,
-            span: crate::Span { byte_info: (0, 0), 
+            span: crate::Span {
+                byte_info: (0, 0),
                 offset: def_offset as crate::location::SpanIndex,
                 len: 3,
             },
@@ -796,7 +805,8 @@ mod tests {
         let referenced_loc = Location {
             line: 2,
             column: 8,
-            span: crate::Span { byte_info: (0, 0), 
+            span: crate::Span {
+                byte_info: (0, 0),
                 offset: use_offset as crate::location::SpanIndex,
                 len: 2,
             },
@@ -804,7 +814,8 @@ mod tests {
         let defined_loc = Location {
             line: 1,
             column: 13,
-            span: crate::Span { byte_info: (0, 0), 
+            span: crate::Span {
+                byte_info: (0, 0),
                 offset: def_offset as crate::location::SpanIndex,
                 len: 5,
             },
@@ -819,7 +830,10 @@ mod tests {
         };
 
         let diag = build_diagnostic(&err, Arc::clone(&src), RenderOptions::default().formatter);
-        assert_eq!(diag.message, "invalid value for alias (defined at line 1, column 13)");
+        assert_eq!(
+            diag.message,
+            "invalid value for alias (defined at line 1, column 13)"
+        );
 
         let labels = &diag.labels;
         assert_eq!(labels.len(), 2, "expected 2 labels, got: {labels:?}");
@@ -847,7 +861,8 @@ mod tests {
         let loc = Location {
             line: 1,
             column: 8,
-            span: crate::Span { byte_info: (0, 0), 
+            span: crate::Span {
+                byte_info: (0, 0),
                 offset: offset as crate::location::SpanIndex,
                 len: 5,
             },
@@ -866,6 +881,10 @@ mod tests {
 
         // When both locations are the same, should only have one label
         let labels = &diag.labels;
-        assert_eq!(labels.len(), 1, "expected 1 label when locations are same, got: {labels:?}");
+        assert_eq!(
+            labels.len(),
+            1,
+            "expected 1 label when locations are same, got: {labels:?}"
+        );
     }
 }

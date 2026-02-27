@@ -4,8 +4,8 @@
 //! `Spanned<T>` appears inside a `#[serde(flatten)]` struct, because serde's
 //! `ContentDeserializer` dispatches plain scalars directly to the visitor.
 
-use serde::de::{self, Deserializer, Visitor};
 use serde::Deserialize;
+use serde::de::{self, Deserializer, Visitor};
 use serde_saphyr::Spanned;
 
 // ── Helper: flatten wrapper ──────────────────────────────────────────────────
@@ -297,9 +297,10 @@ impl<'de> Deserializer<'de> for BadOuterDeser {
     ) -> Result<V::Value, Self::Error> {
         // Call visit_map instead of visit_newtype_struct — SpannedVisitor doesn't
         // implement visit_map, so serde's default will call expecting().
-        visitor.visit_map(serde::de::value::MapDeserializer::new(
-            std::iter::empty::<(String, String)>(),
-        ))
+        visitor.visit_map(serde::de::value::MapDeserializer::new(std::iter::empty::<(
+            String,
+            String,
+        )>()))
     }
 
     serde::forward_to_deserialize_any! {
@@ -340,7 +341,11 @@ fn spanned_serialize_roundtrip() {
 
 #[test]
 fn spanned_new_constructor() {
-    let s = Spanned::new(42u32, serde_saphyr::Location::UNKNOWN, serde_saphyr::Location::UNKNOWN);
+    let s = Spanned::new(
+        42u32,
+        serde_saphyr::Location::UNKNOWN,
+        serde_saphyr::Location::UNKNOWN,
+    );
     assert_eq!(s.value, 42);
 }
 
@@ -348,7 +353,11 @@ fn spanned_new_constructor() {
 
 #[test]
 fn spanned_clone_debug_eq() {
-    let a = Spanned::new("hello".to_string(), serde_saphyr::Location::UNKNOWN, serde_saphyr::Location::UNKNOWN);
+    let a = Spanned::new(
+        "hello".to_string(),
+        serde_saphyr::Location::UNKNOWN,
+        serde_saphyr::Location::UNKNOWN,
+    );
     let b = a.clone();
     assert_eq!(a, b);
     let dbg = format!("{:?}", a);

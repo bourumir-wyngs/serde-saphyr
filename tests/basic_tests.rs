@@ -254,7 +254,7 @@ mod tests {
     mod hardening_policy_fixed_yaml_tests {
         use super::*;
         use serde::Deserialize;
-        use serde_saphyr::{from_str_with_options};
+        use serde_saphyr::from_str_with_options;
         use std::collections::HashMap;
 
         // ---------- Duplicate key policy: LastWins ----------
