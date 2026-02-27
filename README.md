@@ -444,9 +444,28 @@ production:
     // Assert parsed config matches expected
     assert_eq!(parsed, expected);
 }
-```
 
 Merge keys are standard in YAML 1.1. Although YAML 1.2 no longer includes merge keys in its specification, it doesn't explicitly disallow them either, and many parsers implement this feature.
+
+```
+### Tuple enum variants
+It is possible to deserialize tuple enum variants:
+
+```rust
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+pub enum Value {
+  Expression(String),
+  Pair(String, i32),
+}
+
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+pub struct Context {
+    value: Value,
+}
+```
+
+`serde_saphyr::from_str::<Context>(yaml)` would take the `value: !Expression 1 + 1` or `value: !Pair [a, 12]`. Both YAML lists and Rust tuples allow their elements to have different types.
+
 
 ## Rust types as schema
 
