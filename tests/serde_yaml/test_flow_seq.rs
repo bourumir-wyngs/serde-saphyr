@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_saphyr::{FlowSeq, SerializerOptions, to_string, to_string_with_options};
+use serde_saphyr::{FlowSeq, to_string, to_string_with_options};
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 struct Data {
@@ -13,7 +13,10 @@ fn flow_sequence_renders_with_brackets() {
         flow: FlowSeq(vec![1, 2, 3]),
         block: vec![4, 5, 6],
     };
-    let yaml = to_string(&data).unwrap();
+    let opts = serde_saphyr::ser_options! {
+        compact_list_indent: false,
+    };
+    let yaml = to_string_with_options(&data, opts).unwrap();
     assert_eq!(yaml, "flow: [1, 2, 3]\nblock:\n  - 4\n  - 5\n  - 6\n");
 }
 
@@ -23,11 +26,7 @@ fn flow_sequence_renders_with_brackets_compact_indent() {
         flow: FlowSeq(vec![1, 2, 3]),
         block: vec![4, 5, 6],
     };
-    let opts = SerializerOptions {
-        compact_list_indent: true,
-        ..Default::default()
-    };
-    let yaml = to_string_with_options(&data, opts).unwrap();
+    let yaml = to_string(&data).unwrap();
     assert_eq!(yaml, "flow: [1, 2, 3]\nblock:\n- 4\n- 5\n- 6\n");
     let parsed: Data = serde_saphyr::from_str(&yaml).unwrap();
     assert_eq!(parsed, data);

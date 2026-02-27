@@ -1,5 +1,5 @@
 use serde::Serialize;
-use serde_saphyr::{SerializerOptions, to_string, to_string_with_options};
+use serde_saphyr::{to_string_with_options, SerializerOptions};
 
 #[test]
 fn compact_list_indent_default() {
@@ -34,7 +34,10 @@ fn compact_list_indent_default() {
         }],
     };
 
-    let yaml = to_string(&spec).unwrap();
+    let opts = serde_saphyr::ser_options!  {
+        compact_list_indent: false,
+    };
+    let yaml = to_string_with_options(&spec, opts).unwrap();
     let lines: Vec<&str> = yaml.lines().collect();
     assert_eq!(lines[0], "containers:");
     assert_eq!(lines[1], "  - env:");

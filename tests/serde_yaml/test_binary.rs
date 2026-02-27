@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_saphyr::{self as yaml, SerializerOptions};
+use serde_saphyr::{self as yaml};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 struct Data {
@@ -36,7 +36,10 @@ fn test_serialize_vec_as_sequence() {
     let data = Data {
         data: b"hi".to_vec(),
     };
-    let yaml_str = yaml::to_string(&data).unwrap();
+    let opts = serde_saphyr::ser_options! {
+        compact_list_indent: false,
+    };
+    let yaml_str = yaml::to_string_with_options(&data, opts).unwrap();
     assert_eq!(yaml_str, "data:\n  - 104\n  - 105\n");
 }
 
@@ -45,11 +48,7 @@ fn test_serialize_vec_as_sequence_compact_indent() {
     let data = Data {
         data: b"hi".to_vec(),
     };
-    let opts = SerializerOptions {
-        compact_list_indent: true,
-        ..Default::default()
-    };
-    let yaml_str = yaml::to_string_with_options(&data, opts).unwrap();
+    let yaml_str = yaml::to_string(&data).unwrap();
     assert_eq!(yaml_str, "data:\n- 104\n- 105\n");
     let parsed: Data = yaml::from_str(&yaml_str).unwrap();
     assert_eq!(parsed, data);

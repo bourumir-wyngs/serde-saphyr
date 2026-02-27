@@ -353,7 +353,10 @@ fn verdanta_case_fold() -> anyhow::Result<()> {
 
     let object = RcAnchor::wrapping(node);
 
-    let yaml = to_string(&object)?;
+    let opts = serde_saphyr::ser_options!  {
+        compact_list_indent: false,
+    };
+    let yaml = to_string_with_options(&object, opts)?;
 
     // Block scalar bodies must be indented deeper than the `description: >` header.
     assert!(
@@ -406,7 +409,10 @@ fn litstr_sequence_under_map_key() {
     let d = Doc {
         items: vec![LitStr("a"), LitStr("b"), LitStr("c")],
     };
-    let out = to_string(&d).unwrap();
+    let opts = serde_saphyr::ser_options! {
+        compact_list_indent: false,
+    };
+    let out = to_string_with_options(&d, opts).unwrap();
     assert_eq!(out, "items:\n  - |-\n    a\n  - |-\n    b\n  - |-\n    c\n");
 
     let opts = SerializerOptions {

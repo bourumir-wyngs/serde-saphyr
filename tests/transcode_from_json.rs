@@ -83,6 +83,7 @@ bools:
         let mut yaml = String::new();
         let mut yaml_serializer_options = serde_saphyr::ser_options! {
             indent_step: 2,
+            compact_list_indent: false,
         };
         let mut yaml_serializer =
             serde_saphyr::Serializer::with_options(&mut yaml, &mut yaml_serializer_options);

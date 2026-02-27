@@ -86,7 +86,7 @@ fn fold_owned_variant_respects_wrap() {
 
 #[test]
 fn foldstr_sequence_under_map_key() {
-    let opts = serde_saphyr::ser_options! { min_fold_chars: 0 };
+    let opts = serde_saphyr::ser_options! { min_fold_chars: 0, compact_list_indent: false };
 
     #[derive(serde::Serialize)]
     struct Doc<'a> {

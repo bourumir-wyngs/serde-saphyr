@@ -62,7 +62,7 @@ pub struct SerializerOptions {
     /// 0 value is invalid and will result and error when trying to deserialize, because
     /// no indentation would produce invalid YAML otherwise.
     pub indent_step: usize,
-    /// When enabled, emit list items with a more compact indentation style. Off by default.
+    /// When enabled, emit list items with a more compact indentation style. On by default.
     /// ```yaml
     ///       containers:
     ///       - env:
@@ -157,7 +157,7 @@ impl Default for SerializerOptions {
         // Defaults mirror internal constants used by the serializer.
         Self {
             indent_step: 2,
-            compact_list_indent: false,
+            compact_list_indent: true,
             anchor_generator: None,
             min_fold_chars: MIN_FOLD_CHARS,
             folded_wrap_chars: FOLDED_WRAP_CHARS,

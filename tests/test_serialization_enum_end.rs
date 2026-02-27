@@ -21,7 +21,10 @@ fn saphyr_serialization_enum() {
     let foo = Foo {
         bars: vec![Bar::Zip(Zip { a: 1, b: 2 }), Bar::Zip(Zip { a: 3, b: 4 })],
     };
-    let serialized = serde_saphyr::to_string(&foo).unwrap();
+    let opts = serde_saphyr::ser_options! {
+        compact_list_indent: false,
+    };
+    let serialized = serde_saphyr::to_string_with_options(&foo, opts).unwrap();
     assert_eq!(
         serialized,
         "bars:\n  - Zip:\n      a: 1\n      b: 2\n  - Zip:\n      a: 3\n      b: 4\n"
