@@ -463,9 +463,7 @@ pub struct Context {
     value: Value,
 }
 ```
-
 `serde_saphyr::from_str::<Context>(yaml)` would take the `value: !Expression 1 + 1` or `value: !Pair [a, 12]`. Both YAML lists and Rust tuples allow their elements to have different types.
-
 
 ## Rust types as schema
 
