@@ -2604,35 +2604,57 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 }
             }
             Some(Ev::SeqStart { tag, raw_tag, location, .. }) => {
-                if let Some(tag_name) = simple_tagged_enum_name(raw_tag, tag) {
-                    if _variants.contains(&tag_name.as_str()) {
-                        // Consume the SeqStart, collect all events until SeqEnd, replay as untagged sequence
-                        let seq_start = self.ev.next()?.unwrap();
-                        let start_loc = seq_start.location();
-                        let mut replay_events: Vec<Ev<'de>> = Vec::new();
-                        // Re-emit SeqStart without tag
-                        if let Ev::SeqStart { anchor, location, .. } = seq_start {
-                            replay_events.push(Ev::SeqStart { anchor, tag: SfTag::None, raw_tag: None, location });
-                        }
-                        let mut depth = 1usize;
-                        while depth > 0 {
-                            match self.ev.next()? {
-                                Some(ev @ Ev::SeqStart { .. }) => { depth += 1; replay_events.push(ev); }
-                                Some(ev @ Ev::SeqEnd { .. }) => { depth -= 1; replay_events.push(ev); }
-                                Some(ev @ Ev::MapStart { .. }) => { depth += 1; replay_events.push(ev); }
-                                Some(ev @ Ev::MapEnd { .. }) => { depth -= 1; replay_events.push(ev); }
-                                Some(ev) => { replay_events.push(ev); }
-                                None => return Err(Error::eof().with_location(self.ev.last_location())),
-                            }
-                        }
-                        let replay = Box::new(ReplayEvents::new(replay_events));
-                        return visitor.visit_enum(TaggedEA {
-                            replay,
-                            cfg: self.cfg,
-                            variant: tag_name,
-                            variant_location: start_loc,
+                if let Some(tag_name) = simple_tagged_enum_name(raw_tag, tag)
+                    && _variants.contains(&tag_name.as_str())
+                {
+                    // Consume the SeqStart, collect all events until SeqEnd, replay as untagged sequence
+                    let seq_start = self.ev.next()?.unwrap();
+                    let start_loc = seq_start.location();
+                    let mut replay_events: Vec<Ev<'de>> = Vec::new();
+                    // Re-emit SeqStart without tag
+                    if let Ev::SeqStart {
+                        anchor, location, ..
+                    } = seq_start
+                    {
+                        replay_events.push(Ev::SeqStart {
+                            anchor,
+                            tag: SfTag::None,
+                            raw_tag: None,
+                            location,
                         });
                     }
+                    let mut depth = 1usize;
+                    while depth > 0 {
+                        match self.ev.next()? {
+                            Some(ev @ Ev::SeqStart { .. }) => {
+                                depth += 1;
+                                replay_events.push(ev);
+                            }
+                            Some(ev @ Ev::SeqEnd { .. }) => {
+                                depth -= 1;
+                                replay_events.push(ev);
+                            }
+                            Some(ev @ Ev::MapStart { .. }) => {
+                                depth += 1;
+                                replay_events.push(ev);
+                            }
+                            Some(ev @ Ev::MapEnd { .. }) => {
+                                depth -= 1;
+                                replay_events.push(ev);
+                            }
+                            Some(ev) => {
+                                replay_events.push(ev);
+                            }
+                            None => return Err(Error::eof().with_location(self.ev.last_location())),
+                        }
+                    }
+                    let replay = Box::new(ReplayEvents::new(replay_events));
+                    return visitor.visit_enum(TaggedEA {
+                        replay,
+                        cfg: self.cfg,
+                        variant: tag_name,
+                        variant_location: start_loc,
+                    });
                 }
                 return Err(
                     Error::ExternallyTaggedEnumExpectedScalarOrMapping { location: *location },

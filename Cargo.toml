@@ -1,6 +1,6 @@
 [package]
 name = "serde-saphyr"
-version = "0.0.20"
+version = "0.0.21"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "YAML (de)serializer for Serde, emphasizing panic-free parsing and good error reporting"
