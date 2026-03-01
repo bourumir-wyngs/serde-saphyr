@@ -16,14 +16,18 @@ impl RequireIndent {
     ///
     /// For [`Uniform`](RequireIndent::Uniform), the first non-zero indentation encountered is
     /// remembered, and subsequent calls compare against that stored value.
-    pub fn is_valid(&mut self, n: usize) -> bool {
-        match self {
+    ///
+    /// Returns `Ok(())` if valid, or an [`Error::IndentationError`](crate::de_error::Error::IndentationError)
+    /// with [`Location::UNKNOWN`](crate::Location) — the caller is expected to attach the
+    /// correct location later via [`Error::with_location`](crate::de_error::Error::with_location).
+    pub fn is_valid(&mut self, n: usize) -> Result<(), crate::de_error::Error> {
+        let ok = match self {
             RequireIndent::Unchecked => true,
             RequireIndent::Divisible(d) => n % *d == 0,
             RequireIndent::Even => n % 2 == 0,
             RequireIndent::Uniform(remembered) => {
                 if n == 0 {
-                    return true;
+                    return Ok(());
                 }
                 match *remembered {
                     None => {
@@ -33,6 +37,15 @@ impl RequireIndent {
                     Some(expected) => n % expected == 0,
                 }
             }
+        };
+        if ok {
+            Ok(())
+        } else {
+            Err(crate::de_error::Error::IndentationError {
+                required: self.clone(),
+                actual: n,
+                location: crate::location::Location::UNKNOWN,
+            })
         }
     }
 }
@@ -46,10 +59,10 @@ mod tests {
     #[test]
     fn unchecked_always_valid() {
         let mut r = RequireIndent::Unchecked;
-        assert!(r.is_valid(0));
-        assert!(r.is_valid(1));
-        assert!(r.is_valid(7));
-        assert!(r.is_valid(100));
+        r.is_valid(0).unwrap();
+        r.is_valid(1).unwrap();
+        r.is_valid(7).unwrap();
+        r.is_valid(100).unwrap();
     }
 
     // --- is_valid: Divisible ---
@@ -57,20 +70,20 @@ mod tests {
     #[test]
     fn divisible_by_4() {
         let mut r = RequireIndent::Divisible(4);
-        assert!(r.is_valid(0));
-        assert!(r.is_valid(4));
-        assert!(r.is_valid(8));
-        assert!(!r.is_valid(1));
-        assert!(!r.is_valid(3));
-        assert!(!r.is_valid(5));
+        r.is_valid(0).unwrap();
+        r.is_valid(4).unwrap();
+        r.is_valid(8).unwrap();
+        r.is_valid(1).unwrap_err();
+        r.is_valid(3).unwrap_err();
+        r.is_valid(5).unwrap_err();
     }
 
     #[test]
     fn divisible_by_1() {
         let mut r = RequireIndent::Divisible(1);
-        assert!(r.is_valid(0));
-        assert!(r.is_valid(1));
-        assert!(r.is_valid(999));
+        r.is_valid(0).unwrap();
+        r.is_valid(1).unwrap();
+        r.is_valid(999).unwrap();
     }
 
     // --- is_valid: Even ---
@@ -78,18 +91,18 @@ mod tests {
     #[test]
     fn even_accepts_even_numbers() {
         let mut r = RequireIndent::Even;
-        assert!(r.is_valid(0));
-        assert!(r.is_valid(2));
-        assert!(r.is_valid(4));
-        assert!(r.is_valid(100));
+        r.is_valid(0).unwrap();
+        r.is_valid(2).unwrap();
+        r.is_valid(4).unwrap();
+        r.is_valid(100).unwrap();
     }
 
     #[test]
     fn even_rejects_odd_numbers() {
         let mut r = RequireIndent::Even;
-        assert!(!r.is_valid(1));
-        assert!(!r.is_valid(3));
-        assert!(!r.is_valid(99));
+        r.is_valid(1).unwrap_err();
+        r.is_valid(3).unwrap_err();
+        r.is_valid(99).unwrap_err();
     }
 
     // --- is_valid: Uniform ---
@@ -97,33 +110,33 @@ mod tests {
     #[test]
     fn uniform_remembers_first_nonzero() {
         let mut r = RequireIndent::Uniform(None);
-        assert!(r.is_valid(0)); // zero always passes, doesn't set
+        r.is_valid(0).unwrap(); // zero always passes, doesn't set
         assert_eq!(r, RequireIndent::Uniform(None));
-        assert!(r.is_valid(4)); // sets remembered to 4
+        r.is_valid(4).unwrap(); // sets remembered to 4
         assert_eq!(r, RequireIndent::Uniform(Some(4)));
     }
 
     #[test]
     fn uniform_accepts_multiples_of_remembered() {
         let mut r = RequireIndent::Uniform(Some(2));
-        assert!(r.is_valid(0));
-        assert!(r.is_valid(2));
-        assert!(r.is_valid(4));
-        assert!(r.is_valid(6));
+        r.is_valid(0).unwrap();
+        r.is_valid(2).unwrap();
+        r.is_valid(4).unwrap();
+        r.is_valid(6).unwrap();
     }
 
     #[test]
     fn uniform_rejects_non_multiples() {
         let mut r = RequireIndent::Uniform(Some(4));
-        assert!(!r.is_valid(3));
-        assert!(!r.is_valid(5));
-        assert!(!r.is_valid(7));
+        r.is_valid(3).unwrap_err();
+        r.is_valid(5).unwrap_err();
+        r.is_valid(7).unwrap_err();
     }
 
     #[test]
     fn uniform_zero_always_valid_even_after_set() {
         let mut r = RequireIndent::Uniform(Some(3));
-        assert!(r.is_valid(0));
+        r.is_valid(0).unwrap();
     }
 
     // --- Display ---
