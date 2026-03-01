@@ -1486,13 +1486,35 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         variant: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeTupleVariant> {
+        // If we are the value of a mapping key, YAML forbids keeping a nested mapping
+        // on the same line (e.g., "key: Variant:"). Move the variant mapping to the next line
+        // indented under the parent mapping's base depth.
+        if self.pending_space_after_colon {
+            self.pending_space_after_colon = false;
+            self.newline()?;
+            let base = self.current_map_depth.unwrap_or(self.depth) + 1;
+            self.write_indent(base)?;
+            self.write_plain_or_quoted(variant)?;
+            self.out.write_str(":\n")?;
+            self.at_line_start = true;
+            let depth_next = base + 1;
+            return Ok(TupleVariantSer {
+                ser: self,
+                depth: depth_next,
+            });
+        }
+        // Otherwise (top-level or sequence context).
         if self.at_line_start {
             self.write_indent(self.depth)?;
         }
         self.write_plain_or_quoted(variant)?;
         self.out.write_str(":\n")?;
         self.at_line_start = true;
-        let depth_next = self.depth + 1;
+        let mut depth_next = self.depth + 1;
+        if let Some(d) = self.after_dash_depth.take() {
+            depth_next = d + 2;
+            self.pending_inline_map = false;
+        }
         Ok(TupleVariantSer {
             ser: self,
             depth: depth_next,
