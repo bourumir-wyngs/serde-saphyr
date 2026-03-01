@@ -337,6 +337,11 @@ fn main() {
 
 **API note:** `serde-saphyr` is moving away from [struct literals](https://doc.rust-lang.org/book/ch05-01-defining-structs.html) for its configuration structs (`Options`, `SerializerOptions`, `Budget`). Struct literals and direct field access will be deprecated soon. In the first `1.x` release, these types will become `#[non_exhaustive]` to prevent direct instantiation. During the migration period, semver checks temporarily allow adding fields to these structures, and the badge does not treat new fields as a breaking change (which is correct when using the macros).
 
+## Indentation checking
+Adding or removing a single space in YAML indentation may result in a document that is still syntactically correct but semantically wrong. To mitigate such issues, `serde-saphyr` can enforce indentation rules during deserialization via [`RequireIndent`](https://docs.rs/serde-saphyr/latest/serde_saphyr/enum.RequireIndent.html).
+
+You can require the number of indentation columns to be consistent throughout the document, ensure it is even, or enforce that it is divisible by a specific number (for example, 4 or 6). Configure the desired policy using `Options`.
+
 ## Booleans
 
 By default, if the target field is boolean, serde-saphyr will attempt to interpret standard YAML 1.1 values as boolean (not just `false` but also `no`, etc.).

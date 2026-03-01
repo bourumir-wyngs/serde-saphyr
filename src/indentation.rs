@@ -1,5 +1,94 @@
-/// Requirements for indentation validation.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// Requirements for indentation validation during YAML deserialization.
+///
+/// When set via [`options!`](crate::options), the deserializer validates every
+/// parser-reported indentation level against the chosen policy.
+///
+/// # Variants
+///
+/// | Variant | Accepts |
+/// |---------|---------|
+/// | [`Unchecked`](Self::Unchecked) | Any indentation (default) |
+/// | [`Divisible(n)`](Self::Divisible) | Indentation divisible by `n` |
+/// | [`Even`](Self::Even) | Even indentation (0, 2, 4, …) |
+/// | [`Uniform`](Self::Uniform) | Consistent indentation throughout the document |
+///
+/// # Examples
+///
+/// ## Enforcing even indentation
+///
+/// ```rust
+/// use serde_json::Value;
+///
+/// // This YAML uses 2-space indentation — accepted by `Even`.
+/// let yaml = r#"
+/// server:
+///   host: localhost
+///   port: 8080
+/// "#;
+/// let options = serde_saphyr::options! {
+///     require_indent: serde_saphyr::RequireIndent::Even,
+/// };
+/// let result = serde_saphyr::from_str_with_options::<Value>(yaml, options);
+/// assert!(result.is_ok());
+/// ```
+///
+/// ```rust
+/// use serde_json::Value;
+///
+/// // This YAML uses 3-space indentation — rejected by `Even`.
+/// let yaml = r#"
+/// server:
+///    host: localhost
+/// "#;
+/// let options = serde_saphyr::options! {
+///     require_indent: serde_saphyr::RequireIndent::Even,
+/// };
+/// let result = serde_saphyr::from_str_with_options::<Value>(yaml, options);
+/// assert!(result.is_err());
+/// ```
+///
+/// ## Enforcing indentation divisible by 4
+///
+/// ```rust
+/// use serde_json::Value;
+///
+/// // 4-space indentation — accepted by `Divisible(4)`.
+/// let yaml = r#"
+/// database:
+///     host: db.local
+///     port: 5432
+/// "#;
+/// let options = serde_saphyr::options! {
+///     require_indent: serde_saphyr::RequireIndent::Divisible(4),
+/// };
+/// assert!(serde_saphyr::from_str_with_options::<Value>(yaml, options).is_ok());
+/// ```
+///
+/// ## Enforcing uniform indentation
+///
+/// ```rust
+/// use serde_json::Value;
+///
+/// // Consistent 2-space indentation throughout.
+/// let yaml = r#"
+/// app:
+///   name: demo
+///   version: 1
+/// "#;
+/// let options = serde_saphyr::options! {
+///     require_indent: serde_saphyr::RequireIndent::Uniform(None),
+/// };
+/// assert!(serde_saphyr::from_str_with_options::<Value>(yaml, options).is_ok());
+/// ```
+///
+/// ## YAML sample that triggers an indentation error
+///
+/// ```yaml
+/// # With RequireIndent::Even, this document would fail:
+/// config:
+///    debug: true    # 3-space indent — odd, rejected
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum RequireIndent {
     /// No indentation checking is performed.
     Unchecked,

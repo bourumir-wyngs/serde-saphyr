@@ -329,6 +329,7 @@ where
         options.budget_report_cb,
         options.alias_limits,
         false,
+        options.require_indent,
     );
     let value_res = crate::anchor_store::with_document_scope(|| {
         T::deserialize(crate::de::YamlDeserializer::new(&mut src, cfg))
@@ -434,6 +435,7 @@ fn from_str_with_options_and_path_recorder<T: DeserializeOwned>(
         options.budget_report_cb,
         options.alias_limits,
         false,
+        options.require_indent,
     );
 
     let mut recorder = crate::path_map::PathRecorder::new();
@@ -578,6 +580,7 @@ where
         options.budget_report_cb,
         options.alias_limits,
         false,
+        options.require_indent,
     );
     let mut values = Vec::new();
     let mut validation_errors: Vec<Error> = Vec::new();
@@ -715,6 +718,7 @@ where
         options.alias_limits,
         false,
         EnforcingPolicy::AllContent,
+        options.require_indent,
     );
 
     let mut recorder = crate::path_map::PathRecorder::new();
@@ -884,6 +888,7 @@ where
         options.alias_limits,
         false,
         EnforcingPolicy::PerDocument,
+        options.require_indent,
     );
 
     ReadValidIter::<T> {
@@ -962,6 +967,7 @@ where
         options.budget_report_cb,
         options.alias_limits,
         false,
+        options.require_indent,
     );
     let mut values = Vec::new();
     let mut validation_errors: Vec<Error> = Vec::new();
@@ -1092,6 +1098,7 @@ where
         options.alias_limits,
         false,
         EnforcingPolicy::AllContent,
+        options.require_indent,
     );
 
     let mut recorder = crate::path_map::PathRecorder::new();
@@ -1258,6 +1265,7 @@ where
         options.alias_limits,
         false,
         EnforcingPolicy::PerDocument,
+        options.require_indent,
     );
 
     ReadValidateIter::<T> {
@@ -1371,6 +1379,7 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
         options.budget_report_cb,
         options.alias_limits,
         false,
+        options.require_indent,
     );
     let mut values = Vec::new();
 
@@ -1681,6 +1690,7 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
         options.alias_limits,
         false,
         EnforcingPolicy::AllContent,
+        options.require_indent,
     );
 
     // Helper to attach snippet to an error using the RingReader's context
@@ -1969,6 +1979,7 @@ where
         options.alias_limits,
         false,
         EnforcingPolicy::PerDocument,
+        options.require_indent,
     );
 
     ReadIter::<T> {

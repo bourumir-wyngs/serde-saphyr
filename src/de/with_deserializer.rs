@@ -95,6 +95,7 @@ where
         options.budget_report_cb,
         options.alias_limits,
         false,
+        options.require_indent.clone(),
     );
 
     let wrap_err = |e| crate::maybe_with_snippet(e, input, with_snippet, crop_radius);
@@ -174,6 +175,7 @@ where
         options.alias_limits,
         false,
         EnforcingPolicy::AllContent,
+        options.require_indent.clone(),
     );
 
     let wrap_err = |e| e;

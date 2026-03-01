@@ -117,6 +117,9 @@ pub(crate) struct LiveEvents<'a> {
 
     /// Error reference that is checked at the end of parsing.
     error: Rc<RefCell<Option<std::io::Error>>>,
+
+    /// Indentation requirement to validate against parser-reported indentation hints.
+    require_indent: crate::RequireIndent,
 }
 
 /// A single alias-replay stack frame (one active `*alias` expansion).
@@ -163,6 +166,7 @@ impl<'a> LiveEvents<'a> {
         alias_limits: AliasLimits,
         stop_at_doc_end: bool,
         policy: EnforcingPolicy,
+        require_indent: crate::RequireIndent,
     ) -> Self {
         // Build a streaming character iterator from the byte reader, honoring input byte cap if configured
         let max_bytes = budget.as_ref().and_then(|b| b.max_reader_input_bytes);
@@ -191,6 +195,8 @@ impl<'a> LiveEvents<'a> {
             seen_doc_end: false,
 
             error,
+
+            require_indent,
         }
     }
 }
@@ -212,6 +218,7 @@ impl<'a> LiveEvents<'a> {
         budget_report_cb: Option<BudgetReportCallback>,
         alias_limits: AliasLimits,
         stop_at_doc_end: bool,
+        require_indent: crate::RequireIndent,
     ) -> Self {
         let input = input.strip_prefix('\u{FEFF}').unwrap_or(input);
         Self {
@@ -238,6 +245,8 @@ impl<'a> LiveEvents<'a> {
 
             // Error field is provided but for string, nothing is ever reported
             error: Rc::new(RefCell::new(None)),
+
+            require_indent,
         }
     }
 
@@ -322,6 +331,13 @@ impl<'a> LiveEvents<'a> {
         while let Some(item) = self.parser.next() {
             let (raw, span) = item.map_err(Error::from_scan_error)?;
             let location = location_from_span(&span);
+
+            // Validate indentation if the parser provided a hint for this span.
+            if let Some(indent) = span.indent {
+                self.require_indent
+                    .is_valid(indent)
+                    .map_err(|err| err.with_location(location))?;
+            }
 
             if let Some(ref mut budget) = self.budget
                 && let Err(breach) = budget.observe(&raw)
@@ -596,6 +612,11 @@ impl<'a> LiveEvents<'a> {
 
         self.total_replayed_events = 0;
         self.seen_doc_end = false;
+
+        // Reset uniform indentation memory for the new document.
+        if let crate::RequireIndent::Uniform(ref mut remembered) = self.require_indent {
+            *remembered = None;
+        }
     }
 
     /// Observe the configured budget for a replayed (injected) event.
