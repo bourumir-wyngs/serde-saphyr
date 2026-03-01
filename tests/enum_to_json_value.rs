@@ -1,18 +1,3 @@
-use serde::Deserialize;
-
-#[derive(Deserialize, Debug)]
-enum AnonymousValues {
-    Unit,
-    Newtype(i32),
-    Tuple(i32, String),
-}
-
-#[derive(Deserialize, Debug)]
-enum NamedValues {
-    Struct { x: i32, y: String },
-    Empty {},
-}
-
 #[test]
 fn print_enum_deserialization_yaml_to_json_value() {
     let yaml_inputs: Vec<(&str, &str)> = vec![
