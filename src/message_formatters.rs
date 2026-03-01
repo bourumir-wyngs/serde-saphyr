@@ -189,6 +189,11 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
         Error::CannotBorrowTransformedString { reason, .. } => Cow::Owned(format!(
             "input does not contain value verbatim so cannot deserialize into &str ({reason}); use String or Cow<str> instead",
         )),
+        Error::IndentationError {
+            required, actual, ..
+        } => Cow::Owned(format!(
+            "indentation error: expected {required}, found {actual} spaces"
+        )),
         Error::IOError { cause } => Cow::Owned(format!("IO error: {cause}")),
         Error::AliasError { msg, locations } => {
             let l10n = formatter.localizer();
@@ -387,6 +392,11 @@ fn user_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) -> 
         Error::CannotBorrowTransformedString { .. } => {
             Cow::Borrowed("Only single string with no escape sequences is allowed here")
         }
+        Error::IndentationError {
+            required, actual, ..
+        } => Cow::Owned(format!(
+            "incorrect indentation: expected {required}, found {actual} spaces"
+        )),
 
         // All cases when the standard message is good enough.
         _ => default_format_message(formatter, err),

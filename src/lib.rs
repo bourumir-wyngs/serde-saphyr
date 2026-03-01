@@ -10,6 +10,7 @@ pub use anchors::{
     RcWeakAnchor,
 };
 pub use de::{Budget, DuplicateKeyPolicy, Error, Options};
+pub use indentation::RequireIndent;
 pub use de_error::CroppedRegion;
 pub use de_error::TransformReason;
 pub use de_error::{MessageFormatter, RenderOptions, SnippetMode, UserMessageFormatter};
@@ -42,8 +43,9 @@ mod base64;
 pub mod budget;
 mod de;
 mod de_error;
+mod indentation;
 #[path = "de/snippet.rs"]
-mod de_snipped;
+mod de_snippet;
 mod live_events;
 #[path = "localizer.rs"]
 pub mod localizer;

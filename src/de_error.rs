@@ -1,6 +1,6 @@
 use crate::Location;
 use crate::budget::BudgetBreach;
-use crate::de_snipped::fmt_snippet_window_offset_or_fallback;
+use crate::de_snippet::fmt_snippet_window_offset_or_fallback;
 use crate::localizer::{DEFAULT_ENGLISH_LOCALIZER, ExternalMessageSource, Localizer};
 use crate::location::Locations;
 use crate::parse_scalars::{
@@ -642,6 +642,15 @@ pub enum Error {
         location: Location,
     },
 
+    /// Indentation does not meet the configured [`RequireIndent`] requirement.
+    IndentationError {
+        /// The indentation requirement that was violated.
+        required: crate::indentation::RequireIndent,
+        /// The actual indentation (in spaces) that was found.
+        actual: usize,
+        location: Location,
+    },
+
     /// Wrap an error with the full input text, enabling rustc-like snippet rendering.
     WithSnippet {
         /// Cropped source windows used for snippet rendering.
@@ -698,14 +707,14 @@ impl Error {
             regions: &mut Vec<CroppedRegion>,
             text: &str,
             location: &Location,
-            mapping: crate::de_snipped::LineMapping,
+            mapping: crate::de_snippet::LineMapping,
             crop_radius: usize,
         ) {
             if crop_radius == 0 || *location == Location::UNKNOWN {
                 return;
             }
             let (cropped, start_line) =
-                crate::de_snipped::crop_source_window(text, location, mapping, crop_radius);
+                crate::de_snippet::crop_source_window(text, location, mapping, crop_radius);
             if cropped.is_empty() {
                 return;
             }
@@ -719,7 +728,7 @@ impl Error {
         }
 
         let mut regions: Vec<CroppedRegion> = Vec::new();
-        let mapping = crate::de_snipped::LineMapping::Identity;
+        let mapping = crate::de_snippet::LineMapping::Identity;
 
         // Validation errors may contain multiple independent issue locations; pre-crop
         // one region per issue so we can later pick the region that covers the issue.
@@ -830,14 +839,14 @@ impl Error {
             regions: &mut Vec<CroppedRegion>,
             text: &str,
             location: &Location,
-            mapping: crate::de_snipped::LineMapping,
+            mapping: crate::de_snippet::LineMapping,
             crop_radius: usize,
         ) {
             if crop_radius == 0 || *location == Location::UNKNOWN {
                 return;
             }
             let (cropped, region_start_line) =
-                crate::de_snipped::crop_source_window(text, location, mapping, crop_radius);
+                crate::de_snippet::crop_source_window(text, location, mapping, crop_radius);
             if cropped.is_empty() {
                 return;
             }
@@ -851,7 +860,7 @@ impl Error {
         }
 
         let mut regions: Vec<CroppedRegion> = Vec::new();
-        let mapping = crate::de_snipped::LineMapping::Offset { start_line };
+        let mapping = crate::de_snippet::LineMapping::Offset { start_line };
 
         #[cfg(feature = "garde")]
         if let Error::ValidationError { report, locations } = &inner {
@@ -1141,7 +1150,8 @@ impl Error {
             | Error::UnknownAnchor { location, .. }
             | Error::QuotingRequired { location, .. }
             | Error::Budget { location, .. }
-            | Error::CannotBorrowTransformedString { location, .. } => {
+            | Error::CannotBorrowTransformedString { location, .. }
+            | Error::IndentationError { location, .. } => {
                 *location = set_location;
             }
             Error::InvalidUtf8Input => {}
@@ -1230,7 +1240,8 @@ impl Error {
             | Error::UnknownAnchor { location, .. }
             | Error::QuotingRequired { location, .. }
             | Error::Budget { location, .. }
-            | Error::CannotBorrowTransformedString { location, .. } => {
+            | Error::CannotBorrowTransformedString { location, .. }
+            | Error::IndentationError { location, .. } => {
                 if location != &Location::UNKNOWN {
                     Some(*location)
                 } else {
@@ -1340,7 +1351,8 @@ impl Error {
             | Error::UnknownAnchor { location, .. }
             | Error::QuotingRequired { location, .. }
             | Error::Budget { location, .. }
-            | Error::CannotBorrowTransformedString { location, .. } => Locations::same(location),
+            | Error::CannotBorrowTransformedString { location, .. }
+            | Error::IndentationError { location, .. } => Locations::same(location),
             Error::InvalidUtf8Input => None,
             Error::IOError { .. } => None,
             Error::AliasError { locations, .. } => Some(*locations),
@@ -1634,7 +1646,7 @@ fn fmt_error_rendered(
 
                 let used_region = pick_cropped_region(regions, &ref_loc).unwrap_or(region);
                 let label = l10n.value_used_here();
-                let ctx = crate::de_snipped::Snippet::new(
+                let ctx = crate::de_snippet::Snippet::new(
                     used_region.text.as_str(),
                     label.as_ref(),
                     *crop_radius,
@@ -1658,7 +1670,7 @@ fn fmt_error_rendered(
             } else {
                 // Single location rendering.
                 let ctx =
-                    crate::de_snipped::Snippet::new(region.text.as_str(), "<input>", *crop_radius)
+                    crate::de_snippet::Snippet::new(region.text.as_str(), "<input>", *crop_radius)
                         .with_offset(region.start_line);
                 ctx.fmt_or_fallback(f, Level::ERROR, l10n, msg.as_ref(), &location)
             }
@@ -1740,7 +1752,7 @@ fn fmt_validation_error_with_snippets_offset(
             (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
                 let label = l10n.defined();
                 if let Some(region) = pick_cropped_region(regions, &r) {
-                    let ctx = crate::de_snipped::Snippet::new(
+                    let ctx = crate::de_snippet::Snippet::new(
                         region.text.as_str(),
                         label.as_ref(),
                         crop_radius,
@@ -1754,7 +1766,7 @@ fn fmt_validation_error_with_snippets_offset(
             (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
                 let label = l10n.defined_here();
                 if let Some(region) = pick_cropped_region(regions, &d) {
-                    let ctx = crate::de_snipped::Snippet::new(
+                    let ctx = crate::de_snippet::Snippet::new(
                         region.text.as_str(),
                         label.as_ref(),
                         crop_radius,
@@ -1769,7 +1781,7 @@ fn fmt_validation_error_with_snippets_offset(
                 let label = l10n.value_used_here();
                 let invalid_here = l10n.invalid_here(&base_msg);
                 if let Some(region) = pick_cropped_region(regions, &r) {
-                    let ctx = crate::de_snipped::Snippet::new(
+                    let ctx = crate::de_snippet::Snippet::new(
                         region.text.as_str(),
                         label.as_ref(),
                         crop_radius,
@@ -1782,7 +1794,7 @@ fn fmt_validation_error_with_snippets_offset(
                 writeln!(f)?;
                 writeln!(f, "{}", l10n.value_comes_from_the_anchor(d))?;
                 if let Some(region) = pick_cropped_region(regions, &d) {
-                    crate::de_snipped::fmt_snippet_window_offset_or_fallback(
+                    crate::de_snippet::fmt_snippet_window_offset_or_fallback(
                         f,
                         l10n,
                         &d,
@@ -1837,7 +1849,7 @@ fn fmt_validator_error_with_snippets_offset(
             (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
                 let label = l10n.defined();
                 if let Some(region) = pick_cropped_region(regions, &r) {
-                    let ctx = crate::de_snipped::Snippet::new(
+                    let ctx = crate::de_snippet::Snippet::new(
                         region.text.as_str(),
                         label.as_ref(),
                         crop_radius,
@@ -1851,7 +1863,7 @@ fn fmt_validator_error_with_snippets_offset(
             (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
                 let label = l10n.defined_here();
                 if let Some(region) = pick_cropped_region(regions, &d) {
-                    let ctx = crate::de_snipped::Snippet::new(
+                    let ctx = crate::de_snippet::Snippet::new(
                         region.text.as_str(),
                         label.as_ref(),
                         crop_radius,
@@ -1866,7 +1878,7 @@ fn fmt_validator_error_with_snippets_offset(
                 let label = l10n.value_used_here();
                 let invalid_here = l10n.invalid_here(&base_msg);
                 if let Some(region) = pick_cropped_region(regions, &r) {
-                    let ctx = crate::de_snipped::Snippet::new(
+                    let ctx = crate::de_snippet::Snippet::new(
                         region.text.as_str(),
                         label.as_ref(),
                         crop_radius,
@@ -1879,7 +1891,7 @@ fn fmt_validator_error_with_snippets_offset(
                 writeln!(f)?;
                 writeln!(f, "{}", l10n.value_comes_from_the_anchor(d))?;
                 if let Some(region) = pick_cropped_region(regions, &d) {
-                    crate::de_snipped::fmt_snippet_window_offset_or_fallback(
+                    crate::de_snippet::fmt_snippet_window_offset_or_fallback(
                         f,
                         l10n,
                         &d,
@@ -1950,7 +1962,7 @@ fn fmt_error_with_snippets_offset(
     let Some(region) = pick_cropped_region(regions, &location) else {
         return fmt_with_location(f, formatter.localizer(), msg.as_ref(), &location);
     };
-    let ctx = crate::de_snipped::Snippet::new(region.text.as_str(), "<input>", crop_radius)
+    let ctx = crate::de_snippet::Snippet::new(region.text.as_str(), "<input>", crop_radius)
         .with_offset(region.start_line);
     ctx.fmt_or_fallback(
         f,

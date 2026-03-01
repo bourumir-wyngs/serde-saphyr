@@ -9,7 +9,7 @@ use miette::{Diagnostic, LabeledSpan, NamedSource, SourceSpan};
 
 use crate::Error;
 use crate::Location;
-use crate::de_snipped::sanitize_terminal_snippet_preserve_len;
+use crate::de_snippet::sanitize_terminal_snippet_preserve_len;
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::location::Locations;
 #[cfg(feature = "garde")]

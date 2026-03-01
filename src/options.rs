@@ -1,4 +1,5 @@
 use crate::budget::Budget;
+use crate::indentation::RequireIndent;
 use serde::{Deserialize, Serialize};
 use std::rc::Rc;
 
@@ -126,6 +127,9 @@ pub struct Options {
     ///
     /// If set to `0`, snippet wrapping is disabled (the original, unwrapped error is returned).
     pub crop_radius: usize,
+
+    /// Indentation requirement for the parsed document.
+    pub require_indent: RequireIndent,
 }
 
 pub type BudgetReportCallback =
@@ -173,6 +177,7 @@ impl Default for Options {
             no_schema: false,
             with_snippet: true,
             crop_radius: 64,
+            require_indent: RequireIndent::Unchecked,
         }
     }
 }
@@ -203,6 +208,7 @@ impl std::fmt::Debug for Options {
             .field("no_schema", &self.no_schema)
             .field("with_snippet", &self.with_snippet)
             .field("crop_radius", &self.crop_radius)
+            .field("require_indent", &self.require_indent)
             .finish()
     }
 }
@@ -226,6 +232,7 @@ mod tests {
         assert!(!opts.no_schema);
         assert!(opts.with_snippet);
         assert_eq!(opts.crop_radius, 64);
+        assert_eq!(opts.require_indent, RequireIndent::Unchecked);
     }
 
     #[test]

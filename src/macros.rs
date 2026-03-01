@@ -17,15 +17,51 @@
 /// ```
 #[macro_export]
 macro_rules! options {
-    ( $( $field:ident : $value:expr ),* $(,)? ) => {{
+    ( $( $tt:tt )* ) => {{
         let mut opt = $crate::Options::default();
-        $(
+        $crate::__serde_saphyr_options_apply!(opt, $( $tt )*);
+        opt
+    }};
+}
+
+/// Implementation detail for [`options!`].
+///
+/// This is `#[macro_export]` so that `$crate::...` can resolve it from expansions in
+/// downstream crates.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __serde_saphyr_options_apply {
+    // End.
+    ($opt:ident,) => {};
+    ($opt:ident) => {};
+
+    // Compile-time rejection of `Divisible(0)` when written as a literal.
+    ($opt:ident, require_indent : $crate::RequireIndent::Divisible(0) $(, $($rest:tt)*)? ) => {{
+        compile_error!("`Divisible` indentation must be non-zero");
+    }};
+
+    // Special-case `require_indent` to enforce `Divisible` is non-zero at runtime.
+    ($opt:ident, require_indent : $value:expr $(, $($rest:tt)*)? ) => {{
+        {
+            let val = $value;
+            if let $crate::RequireIndent::Divisible(n) = &val {
+                assert!(*n != 0, "`Divisible` indentation must be non-zero");
+            }
             #[allow(deprecated)]
             {
-                opt.$field = $value;
+                $opt.require_indent = val;
             }
-        )*
-        opt
+        }
+        $( $crate::__serde_saphyr_options_apply!($opt, $($rest)*); )?
+    }};
+
+    // Generic field assignment.
+    ($opt:ident, $field:ident : $value:expr $(, $($rest:tt)*)? ) => {{
+        #[allow(deprecated)]
+        {
+            $opt.$field = $value;
+        }
+        $( $crate::__serde_saphyr_options_apply!($opt, $($rest)*); )?
     }};
 }
 
