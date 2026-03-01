@@ -158,6 +158,7 @@ struct InjectFrame {
 }
 
 impl<'a> LiveEvents<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn from_reader<R: std::io::Read + 'a>(
         inputs: R,
         budget: Option<Budget>,

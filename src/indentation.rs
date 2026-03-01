@@ -112,8 +112,8 @@ impl RequireIndent {
     pub fn is_valid(&mut self, n: usize) -> Result<(), crate::de_error::Error> {
         let ok = match self {
             RequireIndent::Unchecked => true,
-            RequireIndent::Divisible(d) => n % *d == 0,
-            RequireIndent::Even => n % 2 == 0,
+            RequireIndent::Divisible(d) => n.is_multiple_of(*d),
+            RequireIndent::Even => n.is_multiple_of(2),
             RequireIndent::Uniform(remembered) => {
                 if n == 0 {
                     return Ok(());
@@ -123,7 +123,7 @@ impl RequireIndent {
                         *remembered = Some(n);
                         true
                     }
-                    Some(expected) => n % expected == 0,
+                    Some(expected) => n.is_multiple_of(expected),
                 }
             }
         };
@@ -131,10 +131,22 @@ impl RequireIndent {
             Ok(())
         } else {
             Err(crate::de_error::Error::IndentationError {
-                required: self.clone(),
+                required: *self,
                 actual: n,
                 location: crate::location::Location::UNKNOWN,
             })
+        }
+    }
+}
+
+impl std::fmt::Display for RequireIndent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RequireIndent::Unchecked => write!(f, "unchecked"),
+            RequireIndent::Divisible(n) => write!(f, "divisible by {n}"),
+            RequireIndent::Even => write!(f, "even"),
+            RequireIndent::Uniform(Some(n)) => write!(f, "uniform ({n} spaces)"),
+            RequireIndent::Uniform(None) => write!(f, "uniform"),
         }
     }
 }
@@ -256,17 +268,5 @@ mod tests {
             RequireIndent::Uniform(Some(2)).to_string(),
             "uniform (2 spaces)"
         );
-    }
-}
-
-impl std::fmt::Display for RequireIndent {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RequireIndent::Unchecked => write!(f, "unchecked"),
-            RequireIndent::Divisible(n) => write!(f, "divisible by {n}"),
-            RequireIndent::Even => write!(f, "even"),
-            RequireIndent::Uniform(Some(n)) => write!(f, "uniform ({n} spaces)"),
-            RequireIndent::Uniform(None) => write!(f, "uniform"),
-        }
     }
 }
