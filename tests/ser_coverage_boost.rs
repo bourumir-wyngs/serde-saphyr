@@ -360,13 +360,25 @@ fn custom_anchor_generator() {
 #[test]
 fn with_indent_changes_indentation() {
     #[derive(Serialize)]
-    struct S {
-        a: Vec<i32>,
+    struct S<'a> {
+        d: &'a str
+    }
+
+    #[derive(Serialize)]
+    struct E<'a> {
+        a: &'a S<'a>
     }
     let opts = serde_saphyr::ser_options! { indent_step: 4 };
-    let yaml = to_string_with_options(&S { a: vec![1] }, opts).unwrap();
+    let s = S {
+        d: "abc"
+    };
+    let e = E {
+        a: &s
+    };
+    let yaml = to_string_with_options(&e, opts).unwrap();
     // With 4-space indent, the list item should be indented by 4 spaces
-    assert!(yaml.contains("    - 1"), "expected 4-space indent: {yaml}");
+    eprintln!("{}", yaml);
+    assert!(yaml.contains("    d: abc"), "expected 4-space indent: {yaml}");
 }
 
 // ── Flow sequences and maps ──
