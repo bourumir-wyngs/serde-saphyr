@@ -25,6 +25,7 @@ use crate::budget::{BudgetEnforcer, EnforcingPolicy};
 use crate::buffered_input::{ChunkedChars, buffered_input_from_reader_with_limit};
 use crate::de::{AliasLimits, Budget, Error, Ev, Events, Location};
 use crate::de_error::budget_error;
+use crate::include::{create_parser, create_parser_from_str};
 use crate::location::location_from_span;
 use crate::options::BudgetReportCallback;
 use crate::tags::SfTag;
@@ -172,7 +173,7 @@ impl<'a> LiveEvents<'a> {
         // Build a streaming character iterator from the byte reader, honoring input byte cap if configured
         let max_bytes = budget.as_ref().and_then(|b| b.max_reader_input_bytes);
         let (input, error) = buffered_input_from_reader_with_limit(inputs, max_bytes);
-        let parser = Parser::new(input);
+        let parser = create_parser(input);
         Self {
             produced_any_in_doc: false,
             synthesized_null_emitted: false,
@@ -225,7 +226,7 @@ impl<'a> LiveEvents<'a> {
         Self {
             produced_any_in_doc: false,
             synthesized_null_emitted: false,
-            parser: SaphyrParser::StringParser(Parser::new_from_str(input)),
+            parser: SaphyrParser::StringParser(create_parser_from_str(input)),
             input: Some(input),
             look: None,
             inject: Vec::with_capacity(2),

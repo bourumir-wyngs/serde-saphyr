@@ -43,6 +43,7 @@ mod base64;
 pub mod budget;
 mod de;
 mod de_error;
+mod include;
 mod indentation;
 #[path = "de/snippet.rs"]
 mod de_snippet;
