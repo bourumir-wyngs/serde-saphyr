@@ -25,11 +25,11 @@ use crate::budget::{BudgetEnforcer, EnforcingPolicy};
 use crate::buffered_input::{ChunkedChars, buffered_input_from_reader_with_limit};
 use crate::de::{AliasLimits, Budget, Error, Ev, Events, Location};
 use crate::de_error::budget_error;
-use crate::include::{create_parser, create_parser_from_str};
+use crate::include::{create_parser, create_parser_from_str, BaseParser};
 use crate::location::location_from_span;
 use crate::options::BudgetReportCallback;
 use crate::tags::SfTag;
-use saphyr_parser::{BufferedInput, Event, Parser, ScalarStyle, ScanError, Span, StrInput};
+use saphyr_parser::{BufferedInput, Event, ScalarStyle, ScanError, Span, StrInput};
 use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -41,7 +41,7 @@ type StreamInput<'a> = BufferedInput<ChunkedChars<StreamBufReader<'a>>>;
 // NOTE: `BufferedInput` is a streaming input without stable backing storage.
 // Upstream implements `BorrowedInput<'static>` for it, so the parser's event lifetime is `'static`.
 // This is fine for our reader-based mode since we never borrow from the original input string.
-type StreamParser<'a> = Parser<'static, StreamInput<'a>>;
+type StreamParser<'a> = BaseParser<'static, StreamInput<'a>>;
 
 /// This is enough to hold a single scalar that is common  case in YAML anchors.
 const SMALLVECT_INLINE: usize = 8;
@@ -59,7 +59,7 @@ struct RecFrame<'a> {
 
 /// Handle input polymorphism
 pub(crate) enum SaphyrParser<'a> {
-    StringParser(Parser<'a, StrInput<'a>>),
+    StringParser(BaseParser<'a, StrInput<'a>>),
     StreamParser(StreamParser<'a>),
 }
 
