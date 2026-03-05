@@ -19,6 +19,8 @@ pub(crate) enum SfTag {
     String,
     /// Non-specific tag "!" (no resolution) — we force scalar to be treated as string
     NonSpecific,
+    /// !include tag - include external resource
+    Include,
     // Custom angle tags supported by angles_hook
     Degrees,
     Radians,
@@ -76,6 +78,10 @@ static TAG_LOOKUP_MAP: LazyLock<BTreeMap<&'static str, SfTag>> = LazyLock::new(|
         ("!binary", SfTag::Binary),
         ("tag:yaml.org,2002:binary", SfTag::Binary),
         ("tag:yaml.org,2002:!binary", SfTag::Binary),
+        // include
+        ("!include", SfTag::Include),
+        ("tag:yaml.org,2002:include", SfTag::Include),
+        ("tag:yaml.org,2002:!include", SfTag::Include),
         // angles (custom)
         ("!degrees", SfTag::Degrees),
         ("tag:yaml.org,2002:degrees", SfTag::Degrees),
@@ -114,6 +120,7 @@ impl SfTag {
             | SfTag::Seq
             | SfTag::Map
             | SfTag::TimeStamp
+            | SfTag::Include
             | SfTag::Degrees
             | SfTag::Radians
             | SfTag::NonSpecific => false,
