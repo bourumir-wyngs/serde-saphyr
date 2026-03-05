@@ -3,6 +3,12 @@ use crate::indentation::RequireIndent;
 use serde::{Deserialize, Serialize};
 use std::rc::Rc;
 
+#[cfg(feature = "include")]
+use std::borrow::Cow;
+
+#[cfg(feature = "include")]
+use saphyr_parser::{StrInput, parser_stack::ParserStack};
+
 /// Duplicate key handling policy for mappings.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -130,7 +136,24 @@ pub struct Options {
 
     /// Indentation requirement for the parsed document.
     pub require_indent: RequireIndent,
+
+    /// Optional include resolver callback.
+    ///
+    /// When provided, it can push parsers onto the internal parser stack to resolve `!include`
+    ///-like constructs.
+    ///
+    /// Currently unused.
+    #[cfg(feature = "include")]
+    #[serde(skip)]
+    pub include_resolver: Option<IncludeResolverCallback>,
 }
+
+#[cfg(feature = "include")]
+pub type IncludeResolverCallback =
+    Rc<std::cell::RefCell<dyn for<'input, 'res> FnMut(
+        Cow<'res, str>,
+        &mut ParserStack<'input, core::iter::Empty<char>, StrInput<'input>>,
+    ) + 'static>>;
 
 pub type BudgetReportCallback =
     Rc<std::cell::RefCell<dyn FnMut(crate::budget::BudgetReport) + 'static>>;
@@ -178,6 +201,9 @@ impl Default for Options {
             with_snippet: true,
             crop_radius: 64,
             require_indent: RequireIndent::Unchecked,
+
+            #[cfg(feature = "include")]
+            include_resolver: None,
         }
     }
 }
@@ -209,6 +235,23 @@ impl std::fmt::Debug for Options {
             .field("with_snippet", &self.with_snippet)
             .field("crop_radius", &self.crop_radius)
             .field("require_indent", &self.require_indent)
+            .field(
+                "include_resolver",
+                &{
+                    #[cfg(feature = "include")]
+                    {
+                        if self.include_resolver.is_some() {
+                            "set"
+                        } else {
+                            "none"
+                        }
+                    }
+                    #[cfg(not(feature = "include"))]
+                    {
+                        "disabled"
+                    }
+                },
+            )
             .finish()
     }
 }
@@ -233,6 +276,9 @@ mod tests {
         assert!(opts.with_snippet);
         assert_eq!(opts.crop_radius, 64);
         assert_eq!(opts.require_indent, RequireIndent::Unchecked);
+
+        #[cfg(feature = "include")]
+        assert!(opts.include_resolver.is_none());
     }
 
     #[test]
@@ -242,6 +288,9 @@ mod tests {
         assert!(debug_str.contains("Options"));
         assert!(debug_str.contains("budget"));
         assert!(debug_str.contains("budget_report_cb: \"none\""));
+
+        #[cfg(feature = "include")]
+        assert!(debug_str.contains("include_resolver: \"none\""));
 
         // Test with callback
         let opts_with_cb = opts.with_budget_report(|_| {});
