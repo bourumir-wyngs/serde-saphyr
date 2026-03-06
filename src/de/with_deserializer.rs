@@ -178,6 +178,8 @@ where
         false,
         EnforcingPolicy::AllContent,
         options.require_indent,
+        #[cfg(feature = "include")]
+        None,
     );
 
     let wrap_err = |e| e;

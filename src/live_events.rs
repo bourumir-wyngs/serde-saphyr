@@ -70,6 +70,14 @@ impl<'input> SaphyrParser<'input> {
             SaphyrParser::StreamParser(parser) => parser.next(),
         }
     }
+
+    #[cfg(feature = "include")]
+    fn resolve(&mut self, include_str: &str) -> Result<(), ScanError> {
+        match self {
+            SaphyrParser::StringParser(parser) => parser.resolve(include_str),
+            SaphyrParser::StreamParser(parser) => parser.resolve(include_str),
+        }
+    }
 }
 
 /// Live event source that wraps `saphyr_parser::Parser` and:
@@ -169,10 +177,15 @@ impl<'a> LiveEvents<'a> {
         stop_at_doc_end: bool,
         policy: EnforcingPolicy,
         require_indent: crate::RequireIndent,
+        #[cfg(feature = "include")]
+        resolver: Option<Box<dyn FnMut(&str) -> Result<String, saphyr_parser::ScanError> + 'static>>,
     ) -> Self {
         // Build a streaming character iterator from the byte reader, honoring input byte cap if configured
         let max_bytes = budget.as_ref().and_then(|b| b.max_reader_input_bytes);
         let (input, error) = buffered_input_from_reader_with_limit(inputs, max_bytes);
+        #[cfg(feature = "include")]
+        let parser = create_parser(input, resolver);
+        #[cfg(not(feature = "include"))]
         let parser = create_parser(input);
         Self {
             produced_any_in_doc: false,
@@ -363,6 +376,14 @@ impl<'a> LiveEvents<'a> {
                     }
 
                     let tag_s = SfTag::from_optional_cow(&tag);
+
+                    #[cfg(feature = "include")]
+                    if tag_s == SfTag::Include {
+                        if let Err(e) = self.parser.resolve(&val) {
+                            return Err(Error::from_scan_error(e).with_location(location));
+                        }
+                        continue;
+                    }
 
                     if val.is_empty()
                         && anchor_id != 0

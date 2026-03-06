@@ -798,6 +798,8 @@ where
         false,
         EnforcingPolicy::AllContent,
         options.require_indent,
+        #[cfg(feature = "include")]
+        None,
     );
 
     let mut recorder = crate::path_map::PathRecorder::new();
@@ -968,6 +970,8 @@ where
         false,
         EnforcingPolicy::PerDocument,
         options.require_indent,
+        #[cfg(feature = "include")]
+        None,
     );
 
     ReadValidIter::<T> {
@@ -1180,6 +1184,8 @@ where
         false,
         EnforcingPolicy::AllContent,
         options.require_indent,
+        #[cfg(feature = "include")]
+        None,
     );
 
     let mut recorder = crate::path_map::PathRecorder::new();
@@ -1347,6 +1353,8 @@ where
         false,
         EnforcingPolicy::PerDocument,
         options.require_indent,
+        #[cfg(feature = "include")]
+        None,
     );
 
     ReadValidateIter::<T> {
@@ -1783,6 +1791,94 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
         false,
         EnforcingPolicy::AllContent,
         options.require_indent,
+        #[cfg(feature = "include")]
+        None,
+    );
+
+    // Helper to attach snippet to an error using the RingReader's context
+    let attach_snippet = |e: Error| -> Error {
+        if crop_radius == 0 {
+            return e;
+        }
+        match shared_ring.get_recent() {
+            Ok(snapshot) => {
+                let text = String::from_utf8_lossy(&snapshot.bytes);
+                e.with_snippet_offset(&text, snapshot.start_line, crop_radius)
+            }
+            Err(_) => e, // If we can't get the snapshot, return the error as-is
+        }
+    };
+
+    let value_res = crate::anchor_store::with_document_scope(|| {
+        T::deserialize(crate::de::YamlDeserializer::new(&mut src, cfg))
+    });
+    let value = match value_res {
+        Ok(v) => v,
+        Err(e) => {
+            if src.synthesized_null_emitted() {
+                // If the only thing in the input was an empty document (synthetic null),
+                // surface this as an EOF error to preserve expected error semantics
+                // for incompatible target types (e.g., bool).
+                return Err(attach_snippet(
+                    Error::eof().with_location(src.last_location()),
+                ));
+            } else {
+                return Err(attach_snippet(e));
+            }
+        }
+    };
+
+    // After finishing first document, peek ahead to detect either another document/content
+    // or trailing garbage. If a scan error occurs but we have seen a DocumentEnd ("..."),
+    // ignore the trailing garbage. Otherwise, surface the error.
+    match src.peek() {
+        Ok(Some(_)) => {
+            return Err(attach_snippet(
+                Error::multiple_documents("use read or read_with_options to obtain the iterator")
+                    .with_location(src.last_location()),
+            ));
+        }
+        Ok(None) => {}
+        Err(e) => {
+            if src.seen_doc_end() {
+                // Trailing garbage after a proper document end marker is ignored.
+            } else {
+                return Err(attach_snippet(e));
+            }
+        }
+    }
+
+    if let Err(e) = src.finish() {
+        return Err(attach_snippet(e));
+    }
+    Ok(value)
+}
+
+#[cfg(feature = "include")]
+#[allow(deprecated)]
+pub fn from_reader_with_options_with_resolver<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
+    reader: R,
+    options: Options,
+    #[cfg(feature = "include")] resolver: Option<Box<dyn FnMut(&str) -> Result<String, saphyr_parser::ScanError> + 'static>>,
+) -> Result<T, Error> {
+    let cfg = crate::de::Cfg::from_options(&options);
+    let crop_radius = options.crop_radius;
+
+    // Wrap the reader in a SharedRingReader to capture context for error snippets
+    let shared_ring = ring_reader::SharedRingReader::new(reader);
+    let ring_handle = ring_reader::SharedRingReaderHandle::new(&shared_ring);
+
+    let mut src = LiveEvents::from_reader(
+        ring_handle,
+        options.budget,
+        options.budget_report,
+        options.budget_report_cb,
+        options.alias_limits,
+        false,
+        EnforcingPolicy::AllContent,
+        options.require_indent,
+        #[cfg(feature = "include")]
+        resolver,
     );
 
     // Helper to attach snippet to an error using the RingReader's context
@@ -2072,6 +2168,8 @@ where
         false,
         EnforcingPolicy::PerDocument,
         options.require_indent,
+        #[cfg(feature = "include")]
+        None,
     );
 
     ReadIter::<T> {

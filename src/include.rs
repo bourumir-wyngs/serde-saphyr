@@ -11,11 +11,17 @@ pub(crate) type BaseParser<'a, I> = Parser<'a, I>;
 
 #[cfg(feature = "include")]
 #[inline]
-pub(crate) fn create_parser<'a, I>(input: I) -> BaseParser<'a, I>
+pub(crate) fn create_parser<'input, I>(
+    input: I,
+    resolver: Option<Box<dyn FnMut(&str) -> Result<String, saphyr_parser::ScanError> + 'input>>,
+) -> BaseParser<'input, I>
 where
-    I: BorrowedInput<'a>,
+    I: BorrowedInput<'input>,
 {
     let mut stack = ParserStack::new();
+    if let Some(mut r) = resolver {
+        stack.set_resolver(move |s| r(s));
+    }
     stack.push_custom_parser(Parser::new(input), "main".to_string());
     stack
 }
