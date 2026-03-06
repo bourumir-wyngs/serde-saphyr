@@ -23,6 +23,10 @@ pub use long_strings::{FoldStr, FoldString, LitStr, LitString};
 pub use message_formatters::{DefaultMessageFormatter, DeveloperMessageFormatter};
 pub use ser::{Commented, FlowMap, FlowSeq, SpaceAfter};
 pub use spanned::Spanned;
+pub use input_source::InputSource;
+
+#[cfg(feature = "include")]
+pub use include_stack::{IncludeResolveError, IncludeResolver};
 
 use crate::budget::EnforcingPolicy;
 use crate::de::{Ev, Events};
@@ -56,6 +60,10 @@ pub mod options;
 mod parse_scalars;
 pub mod ser;
 mod spanned;
+mod input_source;
+
+#[cfg(feature = "include")]
+mod include_stack;
 
 #[cfg(any(feature = "garde", feature = "validator"))]
 pub mod path_map;
@@ -371,7 +379,12 @@ where
 }
 
 #[cfg(feature = "include")]
-fn from_str_with_options_impl_with_resolver<'de, T>(input: &'de str, options: Options, #[cfg(feature = "include")] resolver: Option<Box<dyn FnMut(&str) -> Result<String, saphyr_parser::ScanError> + 'de>>) -> Result<T, Error>
+fn from_str_with_options_impl_with_resolver<'de, T>(
+    input: &'de str,
+    options: Options,
+    #[cfg(feature = "include")]
+    resolver: Option<Box<IncludeResolver<'de>>>,
+) -> Result<T, Error>
 where
     T: serde::de::Deserialize<'de>,
 {
@@ -477,7 +490,12 @@ where
 }
 
 #[cfg(feature = "include")]
-pub fn from_str_with_options_with_resolver<'de, T>(input: &'de str, options: Options, #[cfg(feature = "include")] resolver: Option<Box<dyn FnMut(&str) -> Result<String, saphyr_parser::ScanError> + 'de>>) -> Result<T, Error>
+pub fn from_str_with_options_with_resolver<'de, T>(
+    input: &'de str,
+    options: Options,
+    #[cfg(feature = "include")]
+    resolver: Option<Box<IncludeResolver<'de>>>,
+) -> Result<T, Error>
 where
     T: serde::de::Deserialize<'de>,
 {
@@ -1573,7 +1591,12 @@ where
 }
 
 #[cfg(feature = "include")]
-pub fn from_slice_with_options_with_resolver<'de, T>(bytes: &'de [u8], options: Options, #[cfg(feature = "include")] resolver: Option<Box<dyn FnMut(&str) -> Result<String, saphyr_parser::ScanError> + 'de>>) -> Result<T, Error>
+pub fn from_slice_with_options_with_resolver<'de, T>(
+    bytes: &'de [u8],
+    options: Options,
+    #[cfg(feature = "include")]
+    resolver: Option<Box<IncludeResolver<'de>>>,
+) -> Result<T, Error>
 where
     T: serde::Deserialize<'de>,
 {
@@ -1859,7 +1882,8 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
 pub fn from_reader_with_options_with_resolver<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
     reader: R,
     options: Options,
-    #[cfg(feature = "include")] resolver: Option<Box<dyn FnMut(&str) -> Result<String, saphyr_parser::ScanError> + 'static>>,
+    #[cfg(feature = "include")]
+    resolver: Option<Box<IncludeResolver<'static>>>,
 ) -> Result<T, Error> {
     let cfg = crate::de::Cfg::from_options(&options);
     let crop_radius = options.crop_radius;

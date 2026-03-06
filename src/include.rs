@@ -1,47 +1,45 @@
-use saphyr_parser::{BorrowedInput, Parser, StrInput};
+use saphyr_parser::Parser;
+
+#[cfg(not(feature = "include"))]
+use saphyr_parser::StrInput;
 
 #[cfg(feature = "include")]
-use saphyr_parser::parser_stack::ParserStack;
+use crate::include_stack::{IncludeResolver, ParserStack};
 
 #[cfg(feature = "include")]
-pub(crate) type BaseParser<'a, I> = ParserStack<'a, core::iter::Empty<char>, I>;
+use crate::buffered_input::{ReaderInput, ReaderInputError};
+
+#[cfg(feature = "include")]
+pub(crate) type BaseParser<'a> = ParserStack<'a>;
 
 #[cfg(not(feature = "include"))]
 pub(crate) type BaseParser<'a, I> = Parser<'a, I>;
 
 #[cfg(feature = "include")]
 #[inline]
-pub(crate) fn create_parser<'input, I>(
-    input: I,
-    resolver: Option<Box<dyn FnMut(&str) -> Result<String, saphyr_parser::ScanError> + 'input>>,
-) -> BaseParser<'input, I>
-where
-    I: BorrowedInput<'input>,
-{
-    let mut stack = ParserStack::new();
+pub(crate) fn create_parser_from_reader_input<'input>(
+    input: ReaderInput<'input>,
+    io_error: ReaderInputError,
+    resolver: Option<Box<IncludeResolver<'input>>>,
+) -> ParserStack<'input> {
+    let mut stack = ParserStack::new(io_error);
     if let Some(mut r) = resolver {
         stack.set_resolver(move |s| r(s));
     }
-    stack.push_custom_parser(Parser::new(input), "main".to_string());
+    stack.push_stream_parser(Parser::new(input), "main".to_string());
     stack
 }
 
-#[cfg(not(feature = "include"))]
-#[inline]
-pub(crate) fn create_parser<'a, I>(input: I) -> BaseParser<'a, I>
-where
-    I: BorrowedInput<'a>,
-{
-    Parser::new(input)
-}
+// Note: in non-include builds we construct the parser directly where needed.
 
 #[cfg(feature = "include")]
 #[inline]
 pub(crate) fn create_parser_from_str<'a>(
     input: &'a str,
-    resolver: Option<Box<dyn FnMut(&str) -> Result<String, saphyr_parser::ScanError> + 'a>>,
-) -> BaseParser<'a, StrInput<'a>> {
-    let mut stack = ParserStack::new();
+    io_error: ReaderInputError,
+    resolver: Option<Box<IncludeResolver<'a>>>,
+) -> ParserStack<'a> {
+    let mut stack = ParserStack::new(io_error);
     if let Some(mut r) = resolver {
         stack.set_resolver(move |s| r(s));
     }

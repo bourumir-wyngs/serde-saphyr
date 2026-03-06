@@ -1,4 +1,6 @@
 use serde::Deserialize;
+#[cfg(feature = "include")]
+use serde_saphyr::{IncludeResolveError, InputSource};
 use serde_saphyr::Options;
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -12,14 +14,11 @@ fn test_reader_resolver() {
     let yaml = "foo: !include bar.yaml\n";
     let cursor = std::io::Cursor::new(yaml.as_bytes());
     
-    let resolver = Box::new(|s: &str| -> Result<String, saphyr_parser::ScanError> {
+    let resolver = Box::new(|s: &str| -> Result<InputSource, IncludeResolveError> {
         if s == "bar.yaml" {
-            Ok("bar_value\n".to_string())
+            Ok(InputSource::Text("bar_value\n".to_string()))
         } else {
-            // Saphyr's ScanError needs a marker and string.
-            // Using dummy marker values: index, line, col
-            let marker = saphyr_parser::Marker::new(0, 1, 0);
-            Err(saphyr_parser::ScanError::new(marker, "File not found".to_string()))
+            Err(IncludeResolveError::Message("File not found".to_string()))
         }
     });
 
@@ -37,12 +36,11 @@ fn test_reader_resolver() {
 fn test_str_resolver() {
     let yaml = "foo: !include bar.yaml\n";
     
-    let resolver = Box::new(|s: &str| -> Result<String, saphyr_parser::ScanError> {
+    let resolver = Box::new(|s: &str| -> Result<InputSource, IncludeResolveError> {
         if s == "bar.yaml" {
-            Ok("bar_value\n".to_string())
+            Ok(InputSource::Text("bar_value\n".to_string()))
         } else {
-            let marker = saphyr_parser::Marker::new(0, 1, 0);
-            Err(saphyr_parser::ScanError::new(marker, "File not found".to_string()))
+            Err(IncludeResolveError::Message("File not found".to_string()))
         }
     });
 
@@ -60,12 +58,11 @@ fn test_str_resolver() {
 fn test_slice_resolver() {
     let yaml = b"foo: !include bar.yaml\n";
     
-    let resolver = Box::new(|s: &str| -> Result<String, saphyr_parser::ScanError> {
+    let resolver = Box::new(|s: &str| -> Result<InputSource, IncludeResolveError> {
         if s == "bar.yaml" {
-            Ok("bar_value\n".to_string())
+            Ok(InputSource::Text("bar_value\n".to_string()))
         } else {
-            let marker = saphyr_parser::Marker::new(0, 1, 0);
-            Err(saphyr_parser::ScanError::new(marker, "File not found".to_string()))
+            Err(IncludeResolveError::Message("File not found".to_string()))
         }
     });
 

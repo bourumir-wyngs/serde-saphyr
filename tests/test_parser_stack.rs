@@ -9,7 +9,7 @@ fn test_parser_stack_eof_error() {
     stack.push_str_parser(Parser::new_from_str("[ 1, 2"), "main".to_string());
     
     let mut events = Vec::new();
-    while let Some(res) = stack.next() {
+    for res in stack {
         match res {
             Ok((ev, span)) => {
                 println!("{:?} {:?}", ev, span);
