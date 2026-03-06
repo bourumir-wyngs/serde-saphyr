@@ -31,14 +31,22 @@ where
 
 #[cfg(feature = "include")]
 #[inline]
-pub(crate) fn create_parser_from_str(input: &'_ str) -> BaseParser<'_, StrInput<'_>> {
+pub(crate) fn create_parser_from_str<'a>(
+    input: &'a str,
+    resolver: Option<Box<dyn FnMut(&str) -> Result<String, saphyr_parser::ScanError> + 'a>>,
+) -> BaseParser<'a, StrInput<'a>> {
     let mut stack = ParserStack::new();
+    if let Some(mut r) = resolver {
+        stack.set_resolver(move |s| r(s));
+    }
     stack.push_str_parser(Parser::new_from_str(input), "main".to_string());
     stack
 }
 
 #[cfg(not(feature = "include"))]
 #[inline]
-pub(crate) fn create_parser_from_str(input: &'_ str) -> BaseParser<'_, StrInput<'_>> {
+pub(crate) fn create_parser_from_str<'a>(
+    input: &'a str,
+) -> BaseParser<'a, StrInput<'a>> {
     Parser::new_from_str(input)
 }

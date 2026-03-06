@@ -96,6 +96,8 @@ where
         options.alias_limits,
         false,
         options.require_indent,
+        #[cfg(feature = "include")]
+        None,
     );
 
     let wrap_err = |e| crate::maybe_with_snippet(e, input, with_snippet, crop_radius);

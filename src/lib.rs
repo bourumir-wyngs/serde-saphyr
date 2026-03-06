@@ -331,6 +331,72 @@ where
         options.alias_limits,
         false,
         options.require_indent,
+        #[cfg(feature = "include")]
+        None,
+    );
+    let value_res = crate::anchor_store::with_document_scope(|| {
+        T::deserialize(crate::de::YamlDeserializer::new(&mut src, cfg))
+    });
+    let value = match value_res {
+        Ok(v) => v,
+        Err(e) => {
+            if src.synthesized_null_emitted() {
+                let err = Error::eof().with_location(src.last_location());
+                return Err(maybe_with_snippet(err, input, with_snippet, crop_radius));
+            } else {
+                return Err(maybe_with_snippet(e, input, with_snippet, crop_radius));
+            }
+        }
+    };
+
+    match src.peek() {
+        Ok(Some(_)) => {
+            let err = Error::multiple_documents("use from_multiple or from_multiple_with_options")
+                .with_location(src.last_location());
+            return Err(maybe_with_snippet(err, input, with_snippet, crop_radius));
+        }
+        Ok(None) => {}
+        Err(e) => {
+            if src.seen_doc_end() {
+                // Trailing garbage after a proper document end marker is ignored.
+            } else {
+                return Err(maybe_with_snippet(e, input, with_snippet, crop_radius));
+            }
+        }
+    }
+
+    src.finish()
+        .map_err(|e| maybe_with_snippet(e, input, with_snippet, crop_radius))?;
+    Ok(value)
+}
+
+#[cfg(feature = "include")]
+fn from_str_with_options_impl_with_resolver<'de, T>(input: &'de str, options: Options, #[cfg(feature = "include")] resolver: Option<Box<dyn FnMut(&str) -> Result<String, saphyr_parser::ScanError> + 'de>>) -> Result<T, Error>
+where
+    T: serde::de::Deserialize<'de>,
+{
+    // Normalize: ignore a single leading UTF-8 BOM if present.
+    let input = if let Some(rest) = input.strip_prefix('\u{FEFF}') {
+        rest
+    } else {
+        input
+    };
+
+    let with_snippet = options.with_snippet;
+    let crop_radius = options.crop_radius;
+
+    let cfg = crate::de::Cfg::from_options(&options);
+    // Do not stop at DocumentEnd; we'll probe for trailing content/errors explicitly.
+    let mut src = LiveEvents::from_str(
+        input,
+        options.budget,
+        options.budget_report,
+        options.budget_report_cb,
+        options.alias_limits,
+        false,
+        options.require_indent,
+        #[cfg(feature = "include")]
+        resolver,
     );
     let value_res = crate::anchor_store::with_document_scope(|| {
         T::deserialize(crate::de::YamlDeserializer::new(&mut src, cfg))
@@ -410,6 +476,14 @@ where
     from_str_with_options_impl(input, options)
 }
 
+#[cfg(feature = "include")]
+pub fn from_str_with_options_with_resolver<'de, T>(input: &'de str, options: Options, #[cfg(feature = "include")] resolver: Option<Box<dyn FnMut(&str) -> Result<String, saphyr_parser::ScanError> + 'de>>) -> Result<T, Error>
+where
+    T: serde::de::Deserialize<'de>,
+{
+    from_str_with_options_impl_with_resolver(input, options, #[cfg(feature = "include")] resolver)
+}
+
 /// Deserialize a single YAML document with configurable [`Options`], and also
 /// return a map from validation paths to source [`Location`]s.
 #[cfg(any(feature = "garde", feature = "validator"))]
@@ -437,6 +511,8 @@ fn from_str_with_options_and_path_recorder<T: DeserializeOwned>(
         options.alias_limits,
         false,
         options.require_indent,
+        #[cfg(feature = "include")]
+        None,
     );
 
     let mut recorder = crate::path_map::PathRecorder::new();
@@ -582,6 +658,8 @@ where
         options.alias_limits,
         false,
         options.require_indent,
+        #[cfg(feature = "include")]
+        None,
     );
     let mut values = Vec::new();
     let mut validation_errors: Vec<Error> = Vec::new();
@@ -969,6 +1047,8 @@ where
         options.alias_limits,
         false,
         options.require_indent,
+        #[cfg(feature = "include")]
+        None,
     );
     let mut values = Vec::new();
     let mut validation_errors: Vec<Error> = Vec::new();
@@ -1381,6 +1461,8 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
         options.alias_limits,
         false,
         options.require_indent,
+        #[cfg(feature = "include")]
+        None,
     );
     let mut values = Vec::new();
 
@@ -1480,6 +1562,15 @@ where
 {
     let s = std::str::from_utf8(bytes).map_err(|_| Error::InvalidUtf8Input)?;
     from_str_with_options(s, options)
+}
+
+#[cfg(feature = "include")]
+pub fn from_slice_with_options_with_resolver<'de, T>(bytes: &'de [u8], options: Options, #[cfg(feature = "include")] resolver: Option<Box<dyn FnMut(&str) -> Result<String, saphyr_parser::ScanError> + 'de>>) -> Result<T, Error>
+where
+    T: serde::Deserialize<'de>,
+{
+    let s = std::str::from_utf8(bytes).map_err(|_| Error::InvalidUtf8Input)?;
+    from_str_with_options_with_resolver(s, options, #[cfg(feature = "include")] resolver)
 }
 
 /// Deserialize multiple YAML documents from a UTF-8 byte slice into a vector of `T`.

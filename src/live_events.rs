@@ -221,12 +221,18 @@ impl<'a> LiveEvents<'a> {
         alias_limits: AliasLimits,
         stop_at_doc_end: bool,
         require_indent: crate::RequireIndent,
+        #[cfg(feature = "include")]
+        resolver: Option<Box<dyn FnMut(&str) -> Result<String, saphyr_parser::ScanError> + 'a>>,
     ) -> Self {
         let input = input.strip_prefix('\u{FEFF}').unwrap_or(input);
+        #[cfg(feature = "include")]
+        let parser = create_parser_from_str(input, resolver);
+        #[cfg(not(feature = "include"))]
+        let parser = create_parser_from_str(input);
         Self {
             produced_any_in_doc: false,
             synthesized_null_emitted: false,
-            parser: SaphyrParser::StringParser(create_parser_from_str(input)),
+            parser: SaphyrParser::StringParser(parser),
             input: Some(input),
             look: None,
             inject: Vec::with_capacity(2),
