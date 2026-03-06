@@ -111,7 +111,7 @@ impl SfTag {
 
     pub(crate) fn can_parse_into_string(&self) -> bool {
         match self {
-            SfTag::None | SfTag::String | SfTag::Other => true,
+            SfTag::None | SfTag::String | SfTag::Other | SfTag::Include => true,
             SfTag::Binary
             | SfTag::Int
             | SfTag::Float
@@ -120,7 +120,6 @@ impl SfTag {
             | SfTag::Seq
             | SfTag::Map
             | SfTag::TimeStamp
-            | SfTag::Include
             | SfTag::Degrees
             | SfTag::Radians
             | SfTag::NonSpecific => false,
