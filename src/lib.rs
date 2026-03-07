@@ -1713,6 +1713,44 @@ pub fn to_string_multiple<T: serde::Serialize>(
     Ok(out)
 }
 
+/// Serialize multiple documents into a YAML string with configurabe `Options`.
+///
+/// Serializes each value in the provided slice as an individual YAML document.
+/// Documents are separated by a standard YAML document start marker ("---\n").
+/// No marker is emitted before the first document.
+///
+/// Example
+///
+/// ```rust
+/// use serde::Serialize;
+///
+/// #[derive(Serialize)]
+/// struct Point { coords: Vec<i32> }
+///
+/// let docs = vec![Point { coords: vec![0,1] }, Point { coords: vec![3,2] }];
+/// let options = serde_saphyr::ser_options! {
+///     indent_step: 2,
+///     compact_list_indent: true
+/// };
+/// let out = serde_saphyr::to_string_multiple_with_options(&docs, options).unwrap();
+/// assert_eq!(out, "coords:\n- 0\n- 1\n---\ncoords:\n- 3\n- 2\n");
+/// ```
+pub fn to_string_multiple_with_options<T: serde::Serialize>(
+    values: &[T],
+    options: SerializerOptions,
+) -> std::result::Result<String, crate::ser::Error> {
+    let mut out = String::new();
+    let mut first = true;
+    for v in values {
+        if !first {
+            out.push_str("---\n");
+        }
+        first = false;
+        to_fmt_writer_with_options(&mut out, v, options)?;
+    }
+    Ok(out)
+}
+
 /// Deserialize a single YAML document from any `std::io::Read`.
 ///
 ///
