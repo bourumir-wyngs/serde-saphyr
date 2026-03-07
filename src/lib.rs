@@ -1614,16 +1614,7 @@ pub fn from_slice_multiple_with_options<T: DeserializeOwned>(
 pub fn to_string_multiple<T: serde::Serialize>(
     values: &[T],
 ) -> std::result::Result<String, crate::ser::Error> {
-    let mut out = String::new();
-    let mut first = true;
-    for v in values {
-        if !first {
-            out.push_str("---\n");
-        }
-        first = false;
-        to_fmt_writer(&mut out, v)?;
-    }
-    Ok(out)
+    to_string_multiple_with_options(values, SerializerOptions::default())
 }
 
 /// Serialize multiple documents into a YAML string with configurabe `Options`.
