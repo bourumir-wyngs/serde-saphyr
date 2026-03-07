@@ -1617,7 +1617,7 @@ pub fn to_string_multiple<T: serde::Serialize>(
     to_string_multiple_with_options(values, SerializerOptions::default())
 }
 
-/// Serialize multiple documents into a YAML string with configurabe `Options`.
+/// Serialize multiple documents into a YAML string with configurable `Options`.
 ///
 /// Serializes each value in the provided slice as an individual YAML document.
 /// Documents are separated by a standard YAML document start marker ("---\n").
