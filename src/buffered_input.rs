@@ -200,13 +200,8 @@ pub fn buffered_input_from_reader_with_limit<'a, R: Read + 'a>(
     reader: R,
     max_bytes: Option<usize>,
 ) -> (ReaderInput<'a>, ReaderInputError) {
-    // Auto-detect encoding (BOM or guess), decode to UTF-8 on the fly.
-    let decoder = DecodeReaderBytesBuilder::new()
-        .encoding(None) // None = sniff BOM / use heuristics; set Some(encoding) to force
-        .build(reader);
-
     let error: ReaderInputError = Rc::new(RefCell::new(None));
-    let input = buffered_input_from_reader_with_limit_shared(decoder, max_bytes, error.clone());
+    let input = buffered_input_from_reader_with_limit_shared(reader, max_bytes, error.clone());
     (input, error)
 }
 
@@ -219,7 +214,13 @@ pub fn buffered_input_from_reader_with_limit_shared<'a, R: Read + 'a>(
     max_bytes: Option<usize>,
     error: ReaderInputError,
 ) -> ReaderInput<'a> {
-    let br = BufReader::new(Box::new(reader) as DynReader<'a>);
+    // Auto-detect encoding (BOM or guess), decode to UTF-8 on the fly.
+    let decoder = DecodeReaderBytesBuilder::new()
+        .encoding(None) // None = sniff BOM / use heuristics; set Some(encoding) to force
+        .bom_override(true)
+        .build(reader);
+
+    let br = BufReader::new(Box::new(decoder) as DynReader<'a>);
     let char_iter = ChunkedChars::new(br, max_bytes, error);
     ReaderInput::new(BufferedInput::new(char_iter))
 }

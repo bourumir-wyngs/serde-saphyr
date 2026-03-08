@@ -29,7 +29,7 @@ impl<'input> ParserStack<'input> {
 
     pub fn set_resolver(
         &mut self,
-        resolver: impl FnMut(&str) -> Result<ResolvedInclude, IncludeResolveError> + 'input,
+        resolver: impl FnMut(crate::input_source::IncludeRequest<'_>) -> Result<ResolvedInclude, IncludeResolveError> + 'input,
     ) {
         self.include_resolver = Some(Box::new(resolver));
     }
@@ -47,7 +47,17 @@ impl<'input> ParserStack<'input> {
             return Err(crate::de_error::Error::msg("No include resolver set for parser stack.").with_location(location));
         };
 
-        let resolved = match resolver(include_str) {
+        let stack: Vec<String> = self.inner.stack().into_iter().collect();
+        let from_name = stack.last().map(|s| s.as_str()).unwrap_or("");
+        
+        let request = crate::input_source::IncludeRequest {
+            spec: include_str,
+            from_name,
+            stack: stack.clone(),
+            location,
+        };
+
+        let resolved = match resolver(request) {
             Ok(r) => r,
             Err(e) => {
                 let stack = self.inner.stack().into_iter().collect();

@@ -20,17 +20,18 @@ struct Config {
 fn test_error_chain() {
     let yaml = "foo: !include foo.yaml\n";
     
-    let options = Options::default().with_include_resolver(|s: std::borrow::Cow<str>| -> Result<ResolvedInclude, IncludeResolveError> {
+    let options = Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
+        let s = req.spec;
         if s == "foo.yaml" {
             Ok(ResolvedInclude {
-                id: s.clone().into_owned(),
-                name: s.into_owned(),
+                id: s.to_string(),
+                name: s.to_string(),
                 source: InputSource::Text("bar: !include bar.yaml\n".to_string())
             })
         } else if s == "bar.yaml" {
             Ok(ResolvedInclude {
-                id: s.clone().into_owned(),
-                name: s.into_owned(),
+                id: s.to_string(),
+                name: s.to_string(),
                 source: InputSource::Text("]\n".to_string())
             })
         } else {
@@ -54,7 +55,7 @@ fn test_error_chain() {
 fn test_resolve_error_chain() {
     let yaml = "foo: !include missing.yaml\n";
     
-    let options = Options::default().with_include_resolver(|_s: std::borrow::Cow<str>| -> Result<ResolvedInclude, IncludeResolveError> {
+    let options = Options::default().with_include_resolver(|_req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
         Err(IncludeResolveError::Message("File not found".to_string()))
     });
 

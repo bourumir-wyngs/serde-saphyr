@@ -17,11 +17,12 @@ fn test_reader_resolver() {
     let yaml = "foo: !include bar.yaml\n";
     let cursor = std::io::Cursor::new(yaml.as_bytes());
     
-    let options = Options::default().with_include_resolver(|s: std::borrow::Cow<str>| -> Result<ResolvedInclude, IncludeResolveError> {
+    let options = Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
+        let s = req.spec;
         if s == "bar.yaml" {
             Ok(ResolvedInclude {
-                id: s.clone().into_owned(),
-                name: s.into_owned(),
+                id: s.to_string(),
+                name: s.to_string(),
                 source: InputSource::Text("bar_value\n".to_string())
             })
         } else {
@@ -42,11 +43,12 @@ fn test_reader_resolver() {
 fn test_str_resolver() {
     let yaml = "foo: !include bar.yaml\n";
     
-    let options = Options::default().with_include_resolver(|s: std::borrow::Cow<str>| -> Result<ResolvedInclude, IncludeResolveError> {
+    let options = Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
+        let s = req.spec;
         if s == "bar.yaml" {
             Ok(ResolvedInclude {
-                id: s.clone().into_owned(),
-                name: s.into_owned(),
+                id: s.to_string(),
+                name: s.to_string(),
                 source: InputSource::Text("bar_value\n".to_string())
             })
         } else {
@@ -67,11 +69,12 @@ fn test_str_resolver() {
 fn test_slice_resolver() {
     let yaml = b"foo: !include bar.yaml\n";
     
-    let options = Options::default().with_include_resolver(|s: std::borrow::Cow<str>| -> Result<ResolvedInclude, IncludeResolveError> {
+    let options = Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
+        let s = req.spec;
         if s == "bar.yaml" {
             Ok(ResolvedInclude {
-                id: s.clone().into_owned(),
-                name: s.into_owned(),
+                id: s.to_string(),
+                name: s.to_string(),
                 source: InputSource::Text("bar_value\n".to_string())
             })
         } else {
@@ -93,11 +96,12 @@ fn test_nested_reader_budget() {
     let yaml = "foo: !include bar.yaml\n";
     let cursor = std::io::Cursor::new(yaml.as_bytes());
 
-    let mut options = Options::default().with_include_resolver(|s: std::borrow::Cow<str>| -> Result<ResolvedInclude, IncludeResolveError> {
+    let mut options = Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
+        let s = req.spec;
         if s == "bar.yaml" {
             Ok(ResolvedInclude {
-                id: s.clone().into_owned(),
-                name: s.into_owned(),
+                id: s.to_string(),
+                name: s.to_string(),
                 // A reader that exceeds the budget: 15 bytes long
                 source: InputSource::from_reader(std::io::Cursor::new(b"long_bar_value\n"))
             })
@@ -132,11 +136,11 @@ fn test_nested_reader_budget() {
 #[test]
 fn test_cyclic_include() {
     use serde_saphyr::{InputSource, ResolvedInclude};
-    use std::borrow::Cow;
     let input = "
 root: !include self.yaml
 ";
-    let resolver = |s: Cow<'_, str>| -> Result<ResolvedInclude, _> {
+    let resolver = |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, _> {
+        let s = req.spec;
         Ok(ResolvedInclude {
             id: s.to_string(),
             name: s.to_string(),
@@ -154,13 +158,13 @@ root: !include self.yaml
 #[test]
 fn test_repeated_includes_not_cyclic() {
     use serde_saphyr::{InputSource, ResolvedInclude};
-    use std::borrow::Cow;
     let input = "
 list:
   - !include item.yaml
   - !include item.yaml
 ";
-    let resolver = |s: Cow<'_, str>| -> Result<ResolvedInclude, _> {
+    let resolver = |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, _> {
+        let s = req.spec;
         Ok(ResolvedInclude {
             id: s.to_string(),
             name: s.to_string(),

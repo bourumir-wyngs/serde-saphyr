@@ -23,13 +23,13 @@ pub use long_strings::{FoldStr, FoldString, LitStr, LitString};
 pub use message_formatters::{DefaultMessageFormatter, DeveloperMessageFormatter};
 pub use ser::{Commented, FlowMap, FlowSeq, SpaceAfter};
 pub use spanned::Spanned;
-pub use input_source::{IncludeResolveError, IncludeResolver, InputSource, ResolvedInclude};
+pub use input_source::{IncludeResolveError, IncludeResolver, IncludeRequest, InputSource, ResolvedInclude};
 
 #[cfg(feature = "include")]
 pub(crate) fn resolver_from_options<'a>(options: &Options) -> Option<Box<crate::input_source::IncludeResolver<'a>>> {
     options.include_resolver.clone().map(|rc_refcell| {
-        Box::new(move |s: &str| {
-            rc_refcell.borrow_mut()(std::borrow::Cow::Borrowed(s))
+        Box::new(move |req: crate::input_source::IncludeRequest<'_>| {
+            rc_refcell.borrow_mut()(req)
         }) as Box<crate::input_source::IncludeResolver<'a>>
     })
 }

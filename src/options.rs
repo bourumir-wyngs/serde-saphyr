@@ -3,8 +3,6 @@ use crate::indentation::RequireIndent;
 use serde::{Deserialize, Serialize};
 use std::rc::Rc;
 
-#[cfg(feature = "include")]
-use std::borrow::Cow;
 
 // Intentionally no `saphyr_parser` imports here: include resolvers are handled in serde-saphyr.
 
@@ -149,7 +147,7 @@ pub struct Options {
 
 #[cfg(feature = "include")]
 pub type IncludeResolverCallback = Rc<std::cell::RefCell<
-    dyn for<'res> FnMut(Cow<'res, str>) -> Result<crate::ResolvedInclude, crate::IncludeResolveError>
+    dyn for<'res> FnMut(crate::input_source::IncludeRequest<'res>) -> Result<crate::ResolvedInclude, crate::IncludeResolveError>
         + 'static,
 >>;
 
@@ -185,7 +183,7 @@ impl Options {
     #[cfg(feature = "include")]
     pub fn with_include_resolver<F>(mut self, cb: F) -> Self
     where
-        F: for<'res> FnMut(Cow<'res, str>) -> Result<crate::ResolvedInclude, crate::IncludeResolveError> + 'static,
+        F: for<'res> FnMut(crate::input_source::IncludeRequest<'res>) -> Result<crate::ResolvedInclude, crate::IncludeResolveError> + 'static,
     {
         self.include_resolver = Some(Rc::new(std::cell::RefCell::new(cb)));
         self

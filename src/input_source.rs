@@ -34,8 +34,20 @@ impl From<std::io::Error> for IncludeResolveError {
     }
 }
 
+/// A request passed to the include resolver to resolve an include directive.
+pub struct IncludeRequest<'a> {
+    /// The include specification (e.g. the path or URL).
+    pub spec: &'a str,
+    /// The name of the file or source currently being parsed (top of the include stack).
+    pub from_name: &'a str,
+    /// The full chain of inclusions leading to this request, with the current file at the end.
+    pub stack: Vec<String>,
+    /// The location in the source file where the include was requested.
+    pub location: crate::Location,
+}
+
 /// A type alias for the include resolver closure.
-pub type IncludeResolver<'a> = dyn FnMut(&str) -> Result<ResolvedInclude, IncludeResolveError> + 'a;
+pub type IncludeResolver<'a> = dyn FnMut(IncludeRequest<'_>) -> Result<ResolvedInclude, IncludeResolveError> + 'a;
 
 impl InputSource {
     #[inline]
