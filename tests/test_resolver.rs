@@ -1,8 +1,11 @@
+#[cfg(feature = "include")]
 use serde::Deserialize;
 #[cfg(feature = "include")]
 use serde_saphyr::{IncludeResolveError, InputSource, ResolvedInclude};
+#[cfg(feature = "include")]
 use serde_saphyr::Options;
 
+#[cfg(feature = "include")]
 #[derive(Debug, Deserialize, PartialEq)]
 struct Config {
     foo: String,
@@ -125,6 +128,7 @@ fn test_nested_reader_budget() {
 }
 
 
+#[cfg(feature = "include")]
 #[test]
 fn test_cyclic_include() {
     use serde_saphyr::{InputSource, ResolvedInclude};

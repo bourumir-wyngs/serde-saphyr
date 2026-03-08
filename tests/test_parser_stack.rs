@@ -1,3 +1,4 @@
+#[cfg(feature = "include")]
 use saphyr_parser::Parser;
 #[cfg(feature = "include")]
 use saphyr_parser::parser_stack::ParserStack;

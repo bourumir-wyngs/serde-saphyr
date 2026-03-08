@@ -252,6 +252,7 @@ impl<'a> LiveEvents<'a> {
         resolver: Option<Box<IncludeResolver<'a>>>,
     ) -> Self {
         let input = input.strip_prefix('\u{FEFF}').unwrap_or(input);
+        #[cfg(feature = "include")]
         let max_bytes = budget.as_ref().and_then(|b| b.max_reader_input_bytes);
         #[cfg(feature = "include")]
         // Share the IO error cell with potential reader-based includes.
@@ -406,9 +407,7 @@ impl<'a> LiveEvents<'a> {
 
                     #[cfg(feature = "include")]
                     if tag_s == SfTag::Include {
-                        if let Err(e) = self.parser.resolve(&val, location) {
-                            return Err(e);
-                        }
+                        self.parser.resolve(&val, location)?;
                         continue;
                     }
 

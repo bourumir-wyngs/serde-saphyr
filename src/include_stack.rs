@@ -50,7 +50,7 @@ impl<'input> ParserStack<'input> {
         let resolved = match resolver(include_str) {
             Ok(r) => r,
             Err(e) => {
-                let stack = self.inner.stack().into_iter().map(String::from).collect();
+                let stack = self.inner.stack().into_iter().collect();
                 return Err(crate::de_error::Error::ResolverError {
                     target: include_str.to_string(),
                     error: e,

@@ -1,17 +1,21 @@
+#[cfg(feature = "include")]
 use serde::Deserialize;
 #[cfg(feature = "include")]
 use serde_saphyr::{IncludeResolveError, InputSource, ResolvedInclude, Options, from_str_with_options};
 
+#[cfg(feature = "include")]
 #[derive(Debug, Deserialize, PartialEq)]
 struct Foo {
     bar: String,
 }
 
+#[cfg(feature = "include")]
 #[derive(Debug, Deserialize, PartialEq)]
 struct Config {
     foo: Foo,
 }
 
+#[cfg(feature = "include")]
 #[test]
 fn test_error_chain() {
     let yaml = "foo: !include foo.yaml\n";
@@ -45,6 +49,7 @@ fn test_error_chain() {
     }
 }
 
+#[cfg(feature = "include")]
 #[test]
 fn test_resolve_error_chain() {
     let yaml = "foo: !include missing.yaml\n";
