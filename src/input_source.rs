@@ -8,7 +8,7 @@ pub enum InputSource {
     /// Owned text.
     Text(String),
     /// Owned reader (streaming).
-    Reader(Box<dyn Read + Send + 'static>),
+    Reader(Box<dyn Read + 'static>),
 }
 
 /// A resolved include containing the source identity and the content.
@@ -58,7 +58,7 @@ impl InputSource {
     #[inline]
     pub fn from_reader<R>(r: R) -> Self
     where
-        R: Read + Send + 'static,
+        R: Read + 'static,
     {
         Self::Reader(Box::new(r))
     }

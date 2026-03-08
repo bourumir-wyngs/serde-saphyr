@@ -138,8 +138,6 @@ pub struct Options {
     ///
     /// When provided, it can push parsers onto the internal parser stack to resolve `!include`
     ///-like constructs.
-    ///
-    /// Currently unused.
     #[cfg(feature = "include")]
     #[serde(skip)]
     pub include_resolver: Option<IncludeResolverCallback>,

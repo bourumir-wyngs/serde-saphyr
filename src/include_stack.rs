@@ -87,7 +87,7 @@ impl<'input> ParserStack<'input> {
             InputSource::Text(s) => {
                 let cursor = std::io::Cursor::new(s.into_bytes());
                 let input = buffered_input_from_reader_with_limit_shared(
-                    Box::new(cursor),
+                    cursor,
                     self.max_reader_input_bytes,
                     self.io_error.clone()
                 );
