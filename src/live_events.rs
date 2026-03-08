@@ -486,11 +486,9 @@ impl<'a> LiveEvents<'a> {
                     return Ok(Some(ev));
                 }
 
-                Event::MappingStart(anchor_id, tag) => {
-                    let tag_s = SfTag::from_optional_cow(&tag);
-
+                Event::MappingStart(anchor_id, _tag) => {
                     #[cfg(feature = "include")]
-                    if tag_s == SfTag::Include {
+                    if SfTag::from_optional_cow(&_tag) == SfTag::Include {
                         return Err(Error::UnsupportedIncludeForm { location });
                     }
 

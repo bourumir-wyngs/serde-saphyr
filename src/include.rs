@@ -26,8 +26,8 @@ pub(crate) fn create_parser_from_reader_input<'input>(
     resolver: Option<Box<IncludeResolver<'input>>>,
 ) -> ParserStack<'input> {
     let mut stack = ParserStack::new(io_error, max_reader_input_bytes);
-    if let Some(mut r) = resolver {
-        stack.set_resolver(move |s| r(s));
+    if let Some(r) = resolver {
+        stack.set_resolver(r);
     }
     stack.push_stream_parser(Parser::new(input), "main".to_string());
     stack
@@ -44,8 +44,8 @@ pub(crate) fn create_parser_from_str<'a>(
     resolver: Option<Box<IncludeResolver<'a>>>,
 ) -> ParserStack<'a> {
     let mut stack = ParserStack::new(io_error, max_reader_input_bytes);
-    if let Some(mut r) = resolver {
-        stack.set_resolver(move |s| r(s));
+    if let Some(r) = resolver {
+        stack.set_resolver(r);
     }
     stack.push_str_parser(Parser::new_from_str(input), "main".to_string());
     stack

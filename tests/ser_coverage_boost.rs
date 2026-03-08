@@ -377,7 +377,6 @@ fn with_indent_changes_indentation() {
     };
     let yaml = to_string_with_options(&e, opts).unwrap();
     // With 4-space indent, the list item should be indented by 4 spaces
-    eprintln!("{}", yaml);
     assert!(yaml.contains("    d: abc"), "expected 4-space indent: {yaml}");
 }
 

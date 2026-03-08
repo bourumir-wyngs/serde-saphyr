@@ -10,15 +10,17 @@ fn test_parser_stack_eof_error() {
     stack.push_str_parser(Parser::new_from_str("[ 1, 2"), "main".to_string());
     
     let mut events = Vec::new();
+    let mut errors = Vec::new();
     for res in stack {
         match res {
-            Ok((ev, span)) => {
-                println!("{:?} {:?}", ev, span);
+            Ok((ev, _span)) => {
                 events.push(ev);
             }
             Err(e) => {
-                println!("Error: {:?}", e);
+                errors.push(e);
             }
         }
     }
+    assert_eq!(errors.len(), 1);
+    assert!(format!("{:?}", errors[0]).contains("unclosed bracket"));
 }

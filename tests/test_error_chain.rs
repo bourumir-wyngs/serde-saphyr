@@ -44,10 +44,10 @@ fn test_error_chain() {
         options,
     );
     
-    println!("RESULT: {:?}", res);
-    if let Err(e) = res {
-        println!("ERROR MESSAGE:\n{}", e);
-    }
+    let err = res.unwrap_err();
+    let err_msg = err.to_string();
+    assert!(err_msg.contains("bar.yaml"));
+    assert!(err_msg.contains("foo.yaml"));
 }
 
 #[cfg(feature = "include")]
@@ -64,7 +64,8 @@ fn test_resolve_error_chain() {
         options,
     );
     
-    if let Err(e) = res {
-        println!("RESOLVE ERROR MESSAGE:\n{}", e);
-    }
+    let err = res.unwrap_err();
+    let err_msg = err.to_string();
+    assert!(err_msg.contains("missing.yaml"));
+    assert!(err_msg.contains("File not found"));
 }
