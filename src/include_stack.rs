@@ -61,12 +61,16 @@ impl<'input> ParserStack<'input> {
         };
 
         if self.active_ids.iter().any(|(_, id)| id == &resolved.id) {
+            let stack = self.inner.stack().into_iter().collect();
             return Err(crate::de_error::Error::CyclicInclude {
                 id: resolved.id,
+                stack,
                 location,
             });
         }
-        self.active_ids.push((self.inner.stack().len(), resolved.id));
+        // Track the include as active at the depth of the pushed parser.
+        let include_depth = self.inner.stack().len() + 1;
+        self.active_ids.push((include_depth, resolved.id));
 
         let name = resolved.name;
         match resolved.source {

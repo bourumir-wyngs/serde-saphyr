@@ -182,8 +182,13 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
         }
         Error::ContainerEndMismatch { .. } => Cow::Borrowed("list or mapping end with no start"),
         Error::UnknownAnchor { .. } => Cow::Borrowed("alias references unknown anchor"),
-        Error::CyclicInclude { id, .. } => {
-            Cow::Owned(format!("cyclic include detected: {id}"))
+        Error::CyclicInclude { id, stack, .. } => {
+            let mut full_msg = format!("cyclic include detected: {id}");
+            if !stack.is_empty() {
+                full_msg.push_str("\nwhile processing include from ");
+                full_msg.push_str(&stack.join(" -> "));
+            }
+            Cow::Owned(full_msg)
         }
         Error::ResolverError { target, error, stack, .. } => {
             let mut full_msg = format!("failed to resolve include {target:?}");

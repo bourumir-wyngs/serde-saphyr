@@ -149,3 +149,26 @@ root: !include self.yaml
     let err_msg = result.unwrap_err().to_string();
     assert!(err_msg.contains("cyclic include detected"), "{}", err_msg);
 }
+
+#[cfg(feature = "include")]
+#[test]
+fn test_repeated_includes_not_cyclic() {
+    use serde_saphyr::{InputSource, ResolvedInclude};
+    use std::borrow::Cow;
+    let input = "
+list:
+  - !include item.yaml
+  - !include item.yaml
+";
+    let resolver = |s: Cow<'_, str>| -> Result<ResolvedInclude, _> {
+        Ok(ResolvedInclude {
+            id: s.to_string(),
+            name: s.to_string(),
+            source: InputSource::from_string("value".to_string()),
+        })
+    };
+    let options = serde_saphyr::Options::default().with_include_resolver(resolver);
+    // Should not fail with cyclic include error
+    let result: Result<serde::de::IgnoredAny, _> = serde_saphyr::from_str_with_options(input, options);
+    assert!(result.is_ok(), "Expected Ok, got {:?}", result.unwrap_err());
+}

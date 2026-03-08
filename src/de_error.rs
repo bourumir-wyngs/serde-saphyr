@@ -605,6 +605,7 @@ pub enum Error {
     /// Cyclic include detected.
     CyclicInclude {
         id: String,
+        stack: Vec<String>,
         location: Location,
     },
     /// Failed to resolve include
