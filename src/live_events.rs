@@ -438,6 +438,12 @@ impl<'a> LiveEvents<'a> {
 
                 Event::SequenceStart(anchor_id, tag) => {
                     let tag_s = SfTag::from_optional_cow(&tag);
+
+                    #[cfg(feature = "include")]
+                    if tag_s == SfTag::Include {
+                        return Err(Error::UnsupportedIncludeForm { location });
+                    }
+
                     let ev = Ev::SeqStart {
                         anchor: anchor_id,
                         tag: tag_s,
@@ -480,7 +486,14 @@ impl<'a> LiveEvents<'a> {
                     return Ok(Some(ev));
                 }
 
-                Event::MappingStart(anchor_id, _tag) => {
+                Event::MappingStart(anchor_id, tag) => {
+                    let tag_s = SfTag::from_optional_cow(&tag);
+
+                    #[cfg(feature = "include")]
+                    if tag_s == SfTag::Include {
+                        return Err(Error::UnsupportedIncludeForm { location });
+                    }
+
                     let ev = Ev::MapStart {
                         anchor: anchor_id,
                         location,

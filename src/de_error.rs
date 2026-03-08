@@ -608,6 +608,10 @@ pub enum Error {
         stack: Vec<String>,
         location: Location,
     },
+    /// `!include` currently only supports the scalar form: `!include <path>`
+    UnsupportedIncludeForm {
+        location: Location,
+    },
     /// Failed to resolve include
     ResolverError {
         target: String,
@@ -1163,6 +1167,7 @@ impl Error {
             | Error::ContainerEndMismatch { location, .. }
             | Error::UnknownAnchor { location, .. }
             | Error::CyclicInclude { location, .. }
+            | Error::UnsupportedIncludeForm { location, .. }
             | Error::ResolverError { location, .. }
             | Error::QuotingRequired { location, .. }
             | Error::Budget { location, .. }
@@ -1255,6 +1260,7 @@ impl Error {
             | Error::ContainerEndMismatch { location, .. }
             | Error::UnknownAnchor { location, .. }
             | Error::CyclicInclude { location, .. }
+            | Error::UnsupportedIncludeForm { location, .. }
             | Error::ResolverError { location, .. }
             | Error::QuotingRequired { location, .. }
             | Error::Budget { location, .. }
@@ -1368,6 +1374,7 @@ impl Error {
             | Error::ContainerEndMismatch { location, .. }
             | Error::UnknownAnchor { location, .. }
             | Error::CyclicInclude { location, .. }
+            | Error::UnsupportedIncludeForm { location, .. }
             | Error::ResolverError { location, .. }
             | Error::QuotingRequired { location, .. }
             | Error::Budget { location, .. }

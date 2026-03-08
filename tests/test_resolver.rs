@@ -176,3 +176,24 @@ list:
     let result: Result<serde::de::IgnoredAny, _> = serde_saphyr::from_str_with_options(input, options);
     assert!(result.is_ok(), "Expected Ok, got {:?}", result.unwrap_err());
 }
+
+#[cfg(feature = "include")]
+#[test]
+fn test_unsupported_include_form() {
+    let input = "
+foo: !include { \"path\": \"file_b.yml\", \"extension\": \"txt\" }
+";
+    // We shouldn't even reach the resolver, so a dummy one is fine.
+    let resolver = |_req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+        Err(serde_saphyr::IncludeResolveError::Message("Not reached".to_string()))
+    };
+    let options = serde_saphyr::Options::default().with_include_resolver(resolver);
+    let result: Result<Config, _> = serde_saphyr::from_str_with_options(input, options);
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("currently only supports the scalar form"),
+        "Expected unsupported include form error, got: {}",
+        err_msg
+    );
+}

@@ -190,6 +190,9 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
             }
             Cow::Owned(full_msg)
         }
+        Error::UnsupportedIncludeForm { .. } => {
+            Cow::Borrowed("!include currently only supports the scalar form: !include <path>")
+        }
         Error::ResolverError { target, error, stack, .. } => {
             let mut full_msg = format!("failed to resolve include {target:?}");
             if !stack.is_empty() {
@@ -401,6 +404,9 @@ fn user_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) -> 
         )),
         Error::UnknownAnchor { .. } => Cow::Borrowed("reference to unknown value"),
         Error::CyclicInclude { .. } => Cow::Borrowed("cyclic include detected"),
+        Error::UnsupportedIncludeForm { .. } => {
+            Cow::Borrowed("!include currently only supports the scalar form: !include <path>")
+        }
         Error::ResolverError { .. } => Cow::Borrowed("failed to resolve include"),
         Error::RecursiveReferencesRequireWeakTypes { .. } => {
             Cow::Borrowed("Recursive reference not allowed here")
