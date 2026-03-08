@@ -23,6 +23,16 @@ pub use long_strings::{FoldStr, FoldString, LitStr, LitString};
 pub use message_formatters::{DefaultMessageFormatter, DeveloperMessageFormatter};
 pub use ser::{Commented, FlowMap, FlowSeq, SpaceAfter};
 pub use spanned::Spanned;
+pub use input_source::{IncludeResolveError, IncludeResolver, InputSource, ResolvedInclude};
+
+#[cfg(feature = "include")]
+pub(crate) fn resolver_from_options<'a>(options: &Options) -> Option<Box<crate::input_source::IncludeResolver<'a>>> {
+    options.include_resolver.clone().map(|rc_refcell| {
+        Box::new(move |s: &str| {
+            rc_refcell.borrow_mut()(std::borrow::Cow::Borrowed(s))
+        }) as Box<crate::input_source::IncludeResolver<'a>>
+    })
+}
 
 use crate::budget::EnforcingPolicy;
 use crate::de::{Ev, Events};
@@ -56,6 +66,10 @@ pub mod options;
 mod parse_scalars;
 pub mod ser;
 mod spanned;
+mod input_source;
+
+#[cfg(feature = "include")]
+mod include_stack;
 
 #[cfg(any(feature = "garde", feature = "validator"))]
 pub mod path_map;
@@ -325,14 +339,14 @@ where
     // Do not stop at DocumentEnd; we'll probe for trailing content/errors explicitly.
     let mut src = LiveEvents::from_str(
         input,
-        options.budget,
+        options.budget.clone(),
         options.budget_report,
-        options.budget_report_cb,
+        options.budget_report_cb.clone(),
         options.alias_limits,
         false,
         options.require_indent,
         #[cfg(feature = "include")]
-        None,
+        resolver_from_options(&options),
     );
     let value_res = crate::anchor_store::with_document_scope(|| {
         T::deserialize(crate::de::YamlDeserializer::new(&mut src, cfg))
@@ -370,69 +384,6 @@ where
     Ok(value)
 }
 
-#[cfg(feature = "include")]
-fn from_str_with_options_impl_with_resolver<'de, T>(input: &'de str, options: Options, #[cfg(feature = "include")] resolver: Option<Box<dyn FnMut(&str) -> Result<String, saphyr_parser::ScanError> + 'de>>) -> Result<T, Error>
-where
-    T: serde::de::Deserialize<'de>,
-{
-    // Normalize: ignore a single leading UTF-8 BOM if present.
-    let input = if let Some(rest) = input.strip_prefix('\u{FEFF}') {
-        rest
-    } else {
-        input
-    };
-
-    let with_snippet = options.with_snippet;
-    let crop_radius = options.crop_radius;
-
-    let cfg = crate::de::Cfg::from_options(&options);
-    // Do not stop at DocumentEnd; we'll probe for trailing content/errors explicitly.
-    let mut src = LiveEvents::from_str(
-        input,
-        options.budget,
-        options.budget_report,
-        options.budget_report_cb,
-        options.alias_limits,
-        false,
-        options.require_indent,
-        #[cfg(feature = "include")]
-        resolver,
-    );
-    let value_res = crate::anchor_store::with_document_scope(|| {
-        T::deserialize(crate::de::YamlDeserializer::new(&mut src, cfg))
-    });
-    let value = match value_res {
-        Ok(v) => v,
-        Err(e) => {
-            if src.synthesized_null_emitted() {
-                let err = Error::eof().with_location(src.last_location());
-                return Err(maybe_with_snippet(err, input, with_snippet, crop_radius));
-            } else {
-                return Err(maybe_with_snippet(e, input, with_snippet, crop_radius));
-            }
-        }
-    };
-
-    match src.peek() {
-        Ok(Some(_)) => {
-            let err = Error::multiple_documents("use from_multiple or from_multiple_with_options")
-                .with_location(src.last_location());
-            return Err(maybe_with_snippet(err, input, with_snippet, crop_radius));
-        }
-        Ok(None) => {}
-        Err(e) => {
-            if src.seen_doc_end() {
-                // Trailing garbage after a proper document end marker is ignored.
-            } else {
-                return Err(maybe_with_snippet(e, input, with_snippet, crop_radius));
-            }
-        }
-    }
-
-    src.finish()
-        .map_err(|e| maybe_with_snippet(e, input, with_snippet, crop_radius))?;
-    Ok(value)
-}
 
 /// Deserialize a single YAML document with configurable [`Options`].
 ///
@@ -476,13 +427,6 @@ where
     from_str_with_options_impl(input, options)
 }
 
-#[cfg(feature = "include")]
-pub fn from_str_with_options_with_resolver<'de, T>(input: &'de str, options: Options, #[cfg(feature = "include")] resolver: Option<Box<dyn FnMut(&str) -> Result<String, saphyr_parser::ScanError> + 'de>>) -> Result<T, Error>
-where
-    T: serde::de::Deserialize<'de>,
-{
-    from_str_with_options_impl_with_resolver(input, options, #[cfg(feature = "include")] resolver)
-}
 
 /// Deserialize a single YAML document with configurable [`Options`], and also
 /// return a map from validation paths to source [`Location`]s.
@@ -505,14 +449,14 @@ fn from_str_with_options_and_path_recorder<T: DeserializeOwned>(
     let cfg = crate::de::Cfg::from_options(&options);
     let mut src = LiveEvents::from_str(
         input,
-        options.budget,
+        options.budget.clone(),
         options.budget_report,
-        options.budget_report_cb,
+        options.budget_report_cb.clone(),
         options.alias_limits,
         false,
         options.require_indent,
         #[cfg(feature = "include")]
-        None,
+        resolver_from_options(&options),
     );
 
     let mut recorder = crate::path_map::PathRecorder::new();
@@ -652,14 +596,14 @@ where
     let cfg = crate::de::Cfg::from_options(&options);
     let mut src = LiveEvents::from_str(
         input,
-        options.budget,
+        options.budget.clone(),
         options.budget_report,
-        options.budget_report_cb,
+        options.budget_report_cb.clone(),
         options.alias_limits,
         false,
         options.require_indent,
         #[cfg(feature = "include")]
-        None,
+        resolver_from_options(&options),
     );
     let mut values = Vec::new();
     let mut validation_errors: Vec<Error> = Vec::new();
@@ -1045,14 +989,14 @@ where
     let cfg = crate::de::Cfg::from_options(&options);
     let mut src = LiveEvents::from_str(
         input,
-        options.budget,
+        options.budget.clone(),
         options.budget_report,
-        options.budget_report_cb,
+        options.budget_report_cb.clone(),
         options.alias_limits,
         false,
         options.require_indent,
         #[cfg(feature = "include")]
-        None,
+        resolver_from_options(&options),
     );
     let mut values = Vec::new();
     let mut validation_errors: Vec<Error> = Vec::new();
@@ -1463,14 +1407,14 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
     let cfg = crate::de::Cfg::from_options(&options);
     let mut src = LiveEvents::from_str(
         input,
-        options.budget,
+        options.budget.clone(),
         options.budget_report,
-        options.budget_report_cb,
+        options.budget_report_cb.clone(),
         options.alias_limits,
         false,
         options.require_indent,
         #[cfg(feature = "include")]
-        None,
+        resolver_from_options(&options),
     );
     let mut values = Vec::new();
 
@@ -1572,14 +1516,6 @@ where
     from_str_with_options(s, options)
 }
 
-#[cfg(feature = "include")]
-pub fn from_slice_with_options_with_resolver<'de, T>(bytes: &'de [u8], options: Options, #[cfg(feature = "include")] resolver: Option<Box<dyn FnMut(&str) -> Result<String, saphyr_parser::ScanError> + 'de>>) -> Result<T, Error>
-where
-    T: serde::Deserialize<'de>,
-{
-    let s = std::str::from_utf8(bytes).map_err(|_| Error::InvalidUtf8Input)?;
-    from_str_with_options_with_resolver(s, options, #[cfg(feature = "include")] resolver)
-}
 
 /// Deserialize multiple YAML documents from a UTF-8 byte slice into a vector of `T`.
 ///
@@ -1784,15 +1720,15 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
 
     let mut src = LiveEvents::from_reader(
         ring_handle,
-        options.budget,
+        options.budget.clone(),
         options.budget_report,
-        options.budget_report_cb,
+        options.budget_report_cb.clone(),
         options.alias_limits,
         false,
         EnforcingPolicy::AllContent,
         options.require_indent,
         #[cfg(feature = "include")]
-        None,
+        resolver_from_options(&options),
     );
 
     // Helper to attach snippet to an error using the RingReader's context
@@ -1854,91 +1790,6 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
     Ok(value)
 }
 
-#[cfg(feature = "include")]
-#[allow(deprecated)]
-pub fn from_reader_with_options_with_resolver<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
-    reader: R,
-    options: Options,
-    #[cfg(feature = "include")] resolver: Option<Box<dyn FnMut(&str) -> Result<String, saphyr_parser::ScanError> + 'static>>,
-) -> Result<T, Error> {
-    let cfg = crate::de::Cfg::from_options(&options);
-    let crop_radius = options.crop_radius;
-
-    // Wrap the reader in a SharedRingReader to capture context for error snippets
-    let shared_ring = ring_reader::SharedRingReader::new(reader);
-    let ring_handle = ring_reader::SharedRingReaderHandle::new(&shared_ring);
-
-    let mut src = LiveEvents::from_reader(
-        ring_handle,
-        options.budget,
-        options.budget_report,
-        options.budget_report_cb,
-        options.alias_limits,
-        false,
-        EnforcingPolicy::AllContent,
-        options.require_indent,
-        #[cfg(feature = "include")]
-        resolver,
-    );
-
-    // Helper to attach snippet to an error using the RingReader's context
-    let attach_snippet = |e: Error| -> Error {
-        if crop_radius == 0 {
-            return e;
-        }
-        match shared_ring.get_recent() {
-            Ok(snapshot) => {
-                let text = String::from_utf8_lossy(&snapshot.bytes);
-                e.with_snippet_offset(&text, snapshot.start_line, crop_radius)
-            }
-            Err(_) => e, // If we can't get the snapshot, return the error as-is
-        }
-    };
-
-    let value_res = crate::anchor_store::with_document_scope(|| {
-        T::deserialize(crate::de::YamlDeserializer::new(&mut src, cfg))
-    });
-    let value = match value_res {
-        Ok(v) => v,
-        Err(e) => {
-            if src.synthesized_null_emitted() {
-                // If the only thing in the input was an empty document (synthetic null),
-                // surface this as an EOF error to preserve expected error semantics
-                // for incompatible target types (e.g., bool).
-                return Err(attach_snippet(
-                    Error::eof().with_location(src.last_location()),
-                ));
-            } else {
-                return Err(attach_snippet(e));
-            }
-        }
-    };
-
-    // After finishing first document, peek ahead to detect either another document/content
-    // or trailing garbage. If a scan error occurs but we have seen a DocumentEnd ("..."),
-    // ignore the trailing garbage. Otherwise, surface the error.
-    match src.peek() {
-        Ok(Some(_)) => {
-            return Err(attach_snippet(
-                Error::multiple_documents("use read or read_with_options to obtain the iterator")
-                    .with_location(src.last_location()),
-            ));
-        }
-        Ok(None) => {}
-        Err(e) => {
-            if src.seen_doc_end() {
-                // Trailing garbage after a proper document end marker is ignored.
-            } else {
-                return Err(attach_snippet(e));
-            }
-        }
-    }
-
-    if let Err(e) = src.finish() {
-        return Err(attach_snippet(e));
-    }
-    Ok(value)
-}
 
 /// Create an iterator over YAML documents from any `std::io::Read` using default options.
 ///

@@ -22,26 +22,35 @@
 //! injection is exhausted.
 
 use crate::budget::{BudgetEnforcer, EnforcingPolicy};
-use crate::buffered_input::{ChunkedChars, buffered_input_from_reader_with_limit};
+
+#[cfg(not(feature = "include"))]
+use crate::buffered_input::ReaderInput;
+
+use crate::buffered_input::buffered_input_from_reader_with_limit;
 use crate::de::{AliasLimits, Budget, Error, Ev, Events, Location};
 use crate::de_error::budget_error;
-use crate::include::{create_parser, create_parser_from_str, BaseParser};
+#[cfg(feature = "include")]
+use crate::include::create_parser_from_reader_input;
+use crate::include::{create_parser_from_str, BaseParser};
+#[cfg(feature = "include")]
+use crate::input_source::IncludeResolver;
 use crate::location::location_from_span;
 use crate::options::BudgetReportCallback;
 use crate::tags::SfTag;
-use saphyr_parser::{BufferedInput, Event, ScalarStyle, ScanError, Span, StrInput};
+use saphyr_parser::{Event, ScalarStyle, ScanError, Span};
+
+#[cfg(not(feature = "include"))]
+use saphyr_parser::StrInput;
 use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-type StreamReader<'a> = Box<dyn std::io::Read + 'a>;
-type StreamBufReader<'a> = std::io::BufReader<StreamReader<'a>>;
-type StreamInput<'a> = BufferedInput<ChunkedChars<StreamBufReader<'a>>>;
-// NOTE: `BufferedInput` is a streaming input without stable backing storage.
-// Upstream implements `BorrowedInput<'static>` for it, so the parser's event lifetime is `'static`.
-// This is fine for our reader-based mode since we never borrow from the original input string.
-type StreamParser<'a> = BaseParser<'static, StreamInput<'a>>;
+#[cfg(feature = "include")]
+type StreamParser<'a> = BaseParser<'a>;
+
+#[cfg(not(feature = "include"))]
+type StreamParser<'a> = saphyr_parser::Parser<'a, ReaderInput<'a>>;
 
 /// This is enough to hold a single scalar that is common  case in YAML anchors.
 const SMALLVECT_INLINE: usize = 8;
@@ -59,6 +68,10 @@ struct RecFrame<'a> {
 
 /// Handle input polymorphism
 pub(crate) enum SaphyrParser<'a> {
+    #[cfg(feature = "include")]
+    StringParser(BaseParser<'a>),
+
+    #[cfg(not(feature = "include"))]
     StringParser(BaseParser<'a, StrInput<'a>>),
     StreamParser(StreamParser<'a>),
 }
@@ -72,10 +85,10 @@ impl<'input> SaphyrParser<'input> {
     }
 
     #[cfg(feature = "include")]
-    fn resolve(&mut self, include_str: &str) -> Result<(), ScanError> {
+    fn resolve(&mut self, include_str: &str, location: crate::Location) -> Result<(), crate::de_error::Error> {
         match self {
-            SaphyrParser::StringParser(parser) => parser.resolve(include_str),
-            SaphyrParser::StreamParser(parser) => parser.resolve(include_str),
+            SaphyrParser::StringParser(parser) => parser.resolve(include_str, location),
+            SaphyrParser::StreamParser(parser) => parser.resolve(include_str, location),
         }
     }
 }
@@ -178,15 +191,15 @@ impl<'a> LiveEvents<'a> {
         policy: EnforcingPolicy,
         require_indent: crate::RequireIndent,
         #[cfg(feature = "include")]
-        resolver: Option<Box<dyn FnMut(&str) -> Result<String, saphyr_parser::ScanError> + 'static>>,
+        resolver: Option<Box<IncludeResolver<'static>>>,
     ) -> Self {
         // Build a streaming character iterator from the byte reader, honoring input byte cap if configured
         let max_bytes = budget.as_ref().and_then(|b| b.max_reader_input_bytes);
         let (input, error) = buffered_input_from_reader_with_limit(inputs, max_bytes);
         #[cfg(feature = "include")]
-        let parser = create_parser(input, resolver);
+        let parser = create_parser_from_reader_input(input, error.clone(), max_bytes, resolver);
         #[cfg(not(feature = "include"))]
-        let parser = create_parser(input);
+        let parser = saphyr_parser::Parser::new(input);
         Self {
             produced_any_in_doc: false,
             synthesized_null_emitted: false,
@@ -226,6 +239,7 @@ impl<'a> LiveEvents<'a> {
     ///
     /// # Returns
     /// A configured `LiveEvents` ready to stream events.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn from_str(
         input: &'a str,
         budget: Option<Budget>,
@@ -235,11 +249,15 @@ impl<'a> LiveEvents<'a> {
         stop_at_doc_end: bool,
         require_indent: crate::RequireIndent,
         #[cfg(feature = "include")]
-        resolver: Option<Box<dyn FnMut(&str) -> Result<String, saphyr_parser::ScanError> + 'a>>,
+        resolver: Option<Box<IncludeResolver<'a>>>,
     ) -> Self {
         let input = input.strip_prefix('\u{FEFF}').unwrap_or(input);
+        let max_bytes = budget.as_ref().and_then(|b| b.max_reader_input_bytes);
         #[cfg(feature = "include")]
-        let parser = create_parser_from_str(input, resolver);
+        // Share the IO error cell with potential reader-based includes.
+        let error = Rc::new(RefCell::new(None));
+        #[cfg(feature = "include")]
+        let parser = create_parser_from_str(input, error.clone(), max_bytes, resolver);
         #[cfg(not(feature = "include"))]
         let parser = create_parser_from_str(input);
         Self {
@@ -264,8 +282,17 @@ impl<'a> LiveEvents<'a> {
             stop_at_doc_end,
             seen_doc_end: false,
 
-            // Error field is provided but for string, nothing is ever reported
-            error: Rc::new(RefCell::new(None)),
+            // Used to surface IO errors from reader-based includes.
+            error: {
+                #[cfg(feature = "include")]
+                {
+                    error
+                }
+                #[cfg(not(feature = "include"))]
+                {
+                    Rc::new(RefCell::new(None))
+                }
+            },
 
             require_indent,
         }
@@ -379,8 +406,8 @@ impl<'a> LiveEvents<'a> {
 
                     #[cfg(feature = "include")]
                     if tag_s == SfTag::Include {
-                        if let Err(e) = self.parser.resolve(&val) {
-                            return Err(Error::from_scan_error(e).with_location(location));
+                        if let Err(e) = self.parser.resolve(&val, location) {
+                            return Err(e);
                         }
                         continue;
                     }

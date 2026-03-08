@@ -182,6 +182,23 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
         }
         Error::ContainerEndMismatch { .. } => Cow::Borrowed("list or mapping end with no start"),
         Error::UnknownAnchor { .. } => Cow::Borrowed("alias references unknown anchor"),
+        Error::CyclicInclude { id, .. } => {
+            Cow::Owned(format!("cyclic include detected: {id}"))
+        }
+        Error::ResolverError { target, error, stack, .. } => {
+            let mut full_msg = format!("failed to resolve include {target:?}");
+            if !stack.is_empty() {
+                full_msg.push_str("\nwhile processing include from ");
+                full_msg.push_str(&stack.join(" -> "));
+            }
+            full_msg.push('\n');
+            let msg = match error {
+                crate::input_source::IncludeResolveError::Io(e) => e.to_string(),
+                crate::input_source::IncludeResolveError::Message(m) => m.clone(),
+            };
+            full_msg.push_str(&msg);
+            Cow::Owned(full_msg)
+        }
         Error::Budget { breach, .. } => Cow::Owned(format!("budget breached: {breach:?}")),
         Error::QuotingRequired { value, .. } => {
             Cow::Owned(format!("The string value [{value}] must be quoted"))
@@ -378,6 +395,8 @@ fn user_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) -> 
             "YAML document too large or too complex: depth={depth} > {max_depth}"
         )),
         Error::UnknownAnchor { .. } => Cow::Borrowed("reference to unknown value"),
+        Error::CyclicInclude { .. } => Cow::Borrowed("cyclic include detected"),
+        Error::ResolverError { .. } => Cow::Borrowed("failed to resolve include"),
         Error::RecursiveReferencesRequireWeakTypes { .. } => {
             Cow::Borrowed("Recursive reference not allowed here")
         }

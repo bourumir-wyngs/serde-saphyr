@@ -7,14 +7,81 @@
 //! (BOM-aware), then buffering via `BufReader`.
 
 use encoding_rs_io::DecodeReaderBytesBuilder;
-use saphyr_parser::BufferedInput;
+use saphyr_parser::{BorrowedInput, BufferedInput, Input};
 use std::cell::RefCell;
 use std::io::{self, BufReader, Error, Read};
 use std::rc::Rc;
 
 type DynReader<'a> = Box<dyn Read + 'a>;
 type DynBufReader<'a> = BufReader<DynReader<'a>>;
-pub type ReaderInput<'a> = BufferedInput<ChunkedChars<DynBufReader<'a>>>;
+
+/// Streaming YAML input backed by a reader.
+///
+/// This does **not** support zero-copy borrowing of scalar slices, so
+/// [`BorrowedInput::slice_borrowed`] always returns `None`.
+pub struct ReaderInput<'a>(BufferedInput<ChunkedChars<DynBufReader<'a>>>);
+
+impl<'a> ReaderInput<'a> {
+    #[inline]
+    pub fn new(inner: BufferedInput<ChunkedChars<DynBufReader<'a>>>) -> Self {
+        Self(inner)
+    }
+}
+
+impl<'a> Input for ReaderInput<'a> {
+    #[inline]
+    fn lookahead(&mut self, count: usize) {
+        self.0.lookahead(count);
+    }
+
+    #[inline]
+    fn buflen(&self) -> usize {
+        self.0.buflen()
+    }
+
+    #[inline]
+    fn bufmaxlen(&self) -> usize {
+        self.0.bufmaxlen()
+    }
+
+    #[inline]
+    fn raw_read_ch(&mut self) -> char {
+        self.0.raw_read_ch()
+    }
+
+    #[inline]
+    fn raw_read_non_breakz_ch(&mut self) -> Option<char> {
+        self.0.raw_read_non_breakz_ch()
+    }
+
+    #[inline]
+    fn skip(&mut self) {
+        self.0.skip();
+    }
+
+    #[inline]
+    fn skip_n(&mut self, count: usize) {
+        self.0.skip_n(count);
+    }
+
+    #[inline]
+    fn peek(&self) -> char {
+        self.0.peek()
+    }
+
+    #[inline]
+    fn peek_nth(&self, n: usize) -> char {
+        self.0.peek_nth(n)
+    }
+}
+
+impl<'a> BorrowedInput<'a> for ReaderInput<'a> {
+    #[inline]
+    fn slice_borrowed(&self, _start: usize, _end: usize) -> Option<&'a str> {
+        None
+    }
+}
+
 pub type ReaderInputError = Rc<RefCell<Option<Error>>>;
 
 pub struct ChunkedChars<R: Read> {
@@ -139,32 +206,37 @@ pub fn buffered_input_from_reader_with_limit<'a, R: Read + 'a>(
         .build(reader);
 
     let error: ReaderInputError = Rc::new(RefCell::new(None));
+    let input = buffered_input_from_reader_with_limit_shared(decoder, max_bytes, error.clone());
+    (input, error)
+}
 
-    let br = BufReader::new(Box::new(decoder) as DynReader<'a>);
-    let char_iter = ChunkedChars::new(br, max_bytes, error.clone());
-
-    (BufferedInput::new(char_iter), error)
+/// Like [`buffered_input_from_reader_with_limit`] but uses an existing shared error cell.
+///
+/// This is used to ensure IO errors from nested include readers are observable by the
+/// top-level consumer.
+pub fn buffered_input_from_reader_with_limit_shared<'a, R: Read + 'a>(
+    reader: R,
+    max_bytes: Option<usize>,
+    error: ReaderInputError,
+) -> ReaderInput<'a> {
+    let br = BufReader::new(Box::new(reader) as DynReader<'a>);
+    let char_iter = ChunkedChars::new(br, max_bytes, error);
+    ReaderInput::new(BufferedInput::new(char_iter))
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::buffered_input::{ChunkedChars, buffered_input_from_reader_with_limit};
-    use saphyr_parser::{BufferedInput, Event, Parser};
-    use std::io::{BufReader, Cursor, Read};
+    use crate::buffered_input::buffered_input_from_reader_with_limit;
+    use crate::buffered_input::ReaderInput;
+    use saphyr_parser::{Event, Parser};
+    use std::io::{Cursor, Read};
 
-    type TestParser = Parser<
-        'static,
-        BufferedInput<super::ChunkedChars<std::io::BufReader<Box<dyn std::io::Read>>>>,
-    >;
-
-    pub fn buffered_input_from_reader<'a, R: Read + 'a>(
-        reader: R,
-    ) -> BufferedInput<ChunkedChars<BufReader<Box<dyn Read + 'a>>>> {
+    pub fn buffered_input_from_reader<'a, R: Read + 'a>(reader: R) -> ReaderInput<'a> {
         buffered_input_from_reader_with_limit(reader, None).0
     }
 
     // Helper to collect a few core events for assertions without being fragile
-    fn gather_core_events(mut p: TestParser) -> Vec<Event<'static>> {
+    fn gather_core_events<'a>(mut p: Parser<'a, super::ReaderInput<'a>>) -> Vec<Event<'a>> {
         let mut events = Vec::new();
         for item in &mut p {
             match item {

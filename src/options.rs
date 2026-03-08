@@ -6,8 +6,7 @@ use std::rc::Rc;
 #[cfg(feature = "include")]
 use std::borrow::Cow;
 
-#[cfg(feature = "include")]
-use saphyr_parser::{StrInput, parser_stack::ParserStack};
+// Intentionally no `saphyr_parser` imports here: include resolvers are handled in serde-saphyr.
 
 /// Duplicate key handling policy for mappings.
 #[non_exhaustive]
@@ -149,11 +148,10 @@ pub struct Options {
 }
 
 #[cfg(feature = "include")]
-pub type IncludeResolverCallback =
-    Rc<std::cell::RefCell<dyn for<'input, 'res> FnMut(
-        Cow<'res, str>,
-        &mut ParserStack<'input, core::iter::Empty<char>, StrInput<'input>>,
-    ) + 'static>>;
+pub type IncludeResolverCallback = Rc<std::cell::RefCell<
+    dyn for<'res> FnMut(Cow<'res, str>) -> Result<crate::ResolvedInclude, crate::IncludeResolveError>
+        + 'static,
+>>;
 
 pub type BudgetReportCallback =
     Rc<std::cell::RefCell<dyn FnMut(crate::budget::BudgetReport) + 'static>>;
@@ -180,6 +178,16 @@ impl Options {
         F: FnMut(crate::budget::BudgetReport) + 'static,
     {
         self.budget_report_cb = Some(Rc::new(std::cell::RefCell::new(cb)));
+        self
+    }
+
+    /// Sets the include resolver callback to be used during parsing.
+    #[cfg(feature = "include")]
+    pub fn with_include_resolver<F>(mut self, cb: F) -> Self
+    where
+        F: for<'res> FnMut(Cow<'res, str>) -> Result<crate::ResolvedInclude, crate::IncludeResolveError> + 'static,
+    {
+        self.include_resolver = Some(Rc::new(std::cell::RefCell::new(cb)));
         self
     }
 }

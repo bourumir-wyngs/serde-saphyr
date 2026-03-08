@@ -87,6 +87,8 @@ where
     let crop_radius = options.crop_radius;
 
     let cfg = Cfg::from_options(&options);
+    #[cfg(feature = "include")]
+    let resolver = crate::resolver_from_options(&options);
     // Do not stop at DocumentEnd; we'll probe for trailing content/errors explicitly.
     let mut src = LiveEvents::from_str(
         input,
@@ -97,7 +99,7 @@ where
         false,
         options.require_indent,
         #[cfg(feature = "include")]
-        None,
+        resolver,
     );
 
     let wrap_err = |e| crate::maybe_with_snippet(e, input, with_snippet, crop_radius);
@@ -169,6 +171,8 @@ where
     R: std::io::Read,
 {
     let cfg = Cfg::from_options(&options);
+    #[cfg(feature = "include")]
+    let resolver = crate::resolver_from_options(&options);
     let mut src = LiveEvents::from_reader(
         reader,
         options.budget,
@@ -179,7 +183,7 @@ where
         EnforcingPolicy::AllContent,
         options.require_indent,
         #[cfg(feature = "include")]
-        None,
+        resolver,
     );
 
     let wrap_err = |e| e;

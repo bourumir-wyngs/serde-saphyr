@@ -3,6 +3,7 @@ use crate::budget::BudgetBreach;
 use crate::de_snippet::fmt_snippet_window_offset_or_fallback;
 use crate::localizer::{DEFAULT_ENGLISH_LOCALIZER, ExternalMessageSource, Localizer};
 use crate::location::Locations;
+use crate::input_source::IncludeResolveError;
 use crate::parse_scalars::{
     parse_int_signed, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish,
 };
@@ -601,6 +602,18 @@ pub enum Error {
     UnknownAnchor {
         location: Location,
     },
+    /// Cyclic include detected.
+    CyclicInclude {
+        id: String,
+        location: Location,
+    },
+    /// Failed to resolve include
+    ResolverError {
+        target: String,
+        error: IncludeResolveError,
+        stack: Vec<String>,
+        location: Location,
+    },
     /// Error related to an alias, with both reference (use-site) and defined (anchor) locations.
     ///
     /// This variant allows reporting both where an alias is used and where the anchor is defined,
@@ -1148,6 +1161,8 @@ impl Error {
             | Error::HookError { location, .. }
             | Error::ContainerEndMismatch { location, .. }
             | Error::UnknownAnchor { location, .. }
+            | Error::CyclicInclude { location, .. }
+            | Error::ResolverError { location, .. }
             | Error::QuotingRequired { location, .. }
             | Error::Budget { location, .. }
             | Error::CannotBorrowTransformedString { location, .. }
@@ -1238,6 +1253,8 @@ impl Error {
             | Error::HookError { location, .. }
             | Error::ContainerEndMismatch { location, .. }
             | Error::UnknownAnchor { location, .. }
+            | Error::CyclicInclude { location, .. }
+            | Error::ResolverError { location, .. }
             | Error::QuotingRequired { location, .. }
             | Error::Budget { location, .. }
             | Error::CannotBorrowTransformedString { location, .. }
@@ -1349,6 +1366,8 @@ impl Error {
             | Error::HookError { location, .. }
             | Error::ContainerEndMismatch { location, .. }
             | Error::UnknownAnchor { location, .. }
+            | Error::CyclicInclude { location, .. }
+            | Error::ResolverError { location, .. }
             | Error::QuotingRequired { location, .. }
             | Error::Budget { location, .. }
             | Error::CannotBorrowTransformedString { location, .. }
