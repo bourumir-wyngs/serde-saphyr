@@ -819,7 +819,6 @@ pub(crate) trait Events<'de> {
     ///
     /// Note: This method is part of the zero-copy deserialization infrastructure.
     /// It will be used when full `Deserialize<'de>` support is implemented.
-    #[allow(dead_code)]
     fn input_for_borrowing(&self) -> Option<&'de str> {
         None // Default: borrowing not supported
     }

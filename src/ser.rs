@@ -39,8 +39,8 @@ use serde::ser::{
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{self, Write};
-use std::rc::{Rc, Weak as RcWeak};
-use std::sync::{Arc, Mutex, Weak as ArcWeak};
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use crate::long_strings::{NAME_FOLD_STR, NAME_LIT_STR};
 use crate::serializer_options::{FOLDED_WRAP_CHARS, MIN_FOLD_CHARS, SerializerOptions};
@@ -151,17 +151,6 @@ pub use crate::long_strings::{FoldStr, FoldString, LitStr, LitString};
 // serializer can intercept them in a single pass.
 // ------------------------------------------------------------
 
-// Strong: "__yaml_anchor" tuple-struct => [ptr, value]
-#[allow(dead_code)]
-struct RcStrongPayload<'a, T>(&'a Rc<T>);
-#[allow(dead_code)]
-struct ArcStrongPayload<'a, T>(&'a Arc<T>);
-
-// Weak: "__yaml_weak_anchor" tuple-struct => [ptr, present, value]
-#[allow(dead_code)]
-struct RcWeakPayload<'a, T>(&'a RcWeak<T>);
-#[allow(dead_code)]
-struct ArcWeakPayload<'a, T>(&'a ArcWeak<T>);
 
 // Recursive weak payloads: defer locking/borrowing until actual value serialization.
 struct RcRecursivePayload<'a, T>(&'a Rc<RefCell<Option<T>>>);
