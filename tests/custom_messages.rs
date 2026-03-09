@@ -86,6 +86,7 @@ fn custom_formatter_is_used_for_nested_validation_errors_with_snippets() {
             start_line: 1,
             end_line: 1,
             source_name: "test.yaml".into(),
+            location: serde_saphyr::Location::UNKNOWN,
         }],
         crop_radius: 2,
         error: Box::new(Error::ValidationErrors {
@@ -122,6 +123,7 @@ fn custom_formatter_is_used_for_nested_validator_errors_with_snippets() {
             start_line: 1,
             end_line: 1,
             source_name: "test.yaml".into(),
+            location: serde_saphyr::Location::UNKNOWN,
         }],
         crop_radius: 2,
         error: Box::new(Error::ValidatorErrors {

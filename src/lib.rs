@@ -1438,10 +1438,22 @@ pub(crate) fn maybe_with_snippet_from_events(
     }
 
     #[cfg(feature = "include")]
-    if let Some((source_name, source_text)) = events.include_snippet_source() {
-        // If the error happens inside an included file, we use that file's content for the snippet.
-        // This is preferred over the top-level input.
-        return err.with_snippet_named(source_text, source_name, crop_radius);
+    if let Some(loc) = err.location() {
+        if let Some((source_name, source_text)) = events.get_resolved_snippet(loc.source_id()) {
+            // If the error happens inside an included file, we use that file's content for the snippet.
+            // This is preferred over the top-level input.
+            let mut err_with_snippet = err.with_snippet_named(source_text, source_name, crop_radius);
+            
+            let stack_snippets = events.include_stack_snippets();
+            for i in (1..stack_snippets.len()).rev() {
+                let include_loc = stack_snippets[i].2;
+                let (parent_name, parent_text, _) = stack_snippets[i - 1];
+                if include_loc != crate::Location::UNKNOWN {
+                    err_with_snippet = err_with_snippet.with_additional_snippet_named(parent_text, parent_name, &include_loc, crop_radius);
+                }
+            }
+            return err_with_snippet;
+        }
     }
 
     maybe_with_snippet(err, input, with_snippet, crop_radius)

@@ -12,6 +12,8 @@ type InnerStack<'input> = saphyr_parser::parser_stack::ParserStack<'input, core:
 pub(crate) struct SnippetFrame {
     pub(crate) name: String,
     pub(crate) text: String,
+    #[allow(dead_code)]
+    pub(crate) include_location: crate::Location,
 }
 
 /// A parser stack that supports serde-saphyr includes.
@@ -26,6 +28,9 @@ pub struct ParserStack<'input> {
     max_reader_input_bytes: Option<usize>,
     active_ids: Vec<(usize, String)>,
     snippet_frames: Vec<Option<SnippetFrame>>,
+    next_source_id: u32,
+    active_source_ids: Vec<u32>,
+    pub(crate) resolved_sources: std::collections::HashMap<u32, SnippetFrame>,
 }
 
 impl<'input> ParserStack<'input> {
@@ -38,6 +43,9 @@ impl<'input> ParserStack<'input> {
             max_reader_input_bytes,
             active_ids: Vec::new(),
             snippet_frames: Vec::new(),
+            next_source_id: 0,
+            active_source_ids: Vec::new(),
+            resolved_sources: std::collections::HashMap::new(),
         }
     }
 
@@ -63,6 +71,12 @@ impl<'input> ParserStack<'input> {
         name: String,
         snippet: Option<SnippetFrame>,
     ) {
+        let source_id = self.next_source_id;
+        self.next_source_id += 1;
+        self.active_source_ids.push(source_id);
+        if let Some(s) = &snippet {
+            self.resolved_sources.insert(source_id, s.clone());
+        }
         self.inner.push_str_parser(parser, name);
         self.snippet_frames.push(snippet);
     }
@@ -73,10 +87,21 @@ impl<'input> ParserStack<'input> {
         name: String,
         snippet: Option<SnippetFrame>,
     ) {
+        let source_id = self.next_source_id;
+        self.next_source_id += 1;
+        self.active_source_ids.push(source_id);
+        if let Some(s) = &snippet {
+            self.resolved_sources.insert(source_id, s.clone());
+        }
         self.inner.push_custom_parser(parser, name);
         self.snippet_frames.push(snippet);
     }
 
+    pub fn current_source_id(&self) -> u32 {
+        self.active_source_ids.last().copied().unwrap_or(0)
+    }
+
+    #[allow(dead_code)]
     pub fn active_include_snippet_source(&self) -> Option<(&str, &str)> {
         if self.inner.stack().len() <= 1 {
             return None;
@@ -86,6 +111,15 @@ impl<'input> ParserStack<'input> {
             .last()
             .and_then(|frame| frame.as_ref())
             .map(|frame| (frame.name.as_str(), frame.text.as_str()))
+    }
+
+    #[allow(dead_code)]
+    pub fn include_stack_snippets(&self) -> Vec<(&str, &str, crate::Location)> {
+        self.snippet_frames
+            .iter()
+            .filter_map(|frame| frame.as_ref())
+            .map(|frame| (frame.name.as_str(), frame.text.as_str(), frame.include_location))
+            .collect()
     }
 
     pub fn resolve(&mut self, include_str: &str, location: crate::Location) -> Result<(), crate::de_error::Error> {
@@ -134,6 +168,7 @@ impl<'input> ParserStack<'input> {
                 let snippet = SnippetFrame {
                     name: name.clone(),
                     text: s.clone(),
+                    include_location: location,
                 };
                 let cursor = std::io::Cursor::new(s.into_bytes());
                 let input = buffered_input_from_reader_with_limit_shared(
@@ -172,6 +207,7 @@ impl<'input> Iterator for ParserStack<'input> {
                 let current_len = self.inner.stack().len();
                 self.active_ids.retain(|(depth, _)| *depth <= current_len);
                 self.snippet_frames.truncate(current_len);
+                self.active_source_ids.truncate(current_len);
                 other
             }
         }

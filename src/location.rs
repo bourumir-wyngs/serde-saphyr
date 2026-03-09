@@ -181,6 +181,9 @@ pub struct Location {
     /// Byte offsets are available for string source but not from the reader.
     #[serde(default)]
     pub(crate) span: Span,
+    /// Numeric id of the source where this location is from.
+    #[serde(default)]
+    pub(crate) source_id: u32,
 }
 
 impl Location {
@@ -202,6 +205,12 @@ impl Location {
     pub fn span(&self) -> Span {
         self.span
     }
+
+    /// Numeric id of the source.
+    #[inline]
+    pub fn source_id(&self) -> u32 {
+        self.source_id
+    }
 }
 
 impl Location {
@@ -212,6 +221,7 @@ impl Location {
         line: 0,
         column: 0,
         span: Span::UNKNOWN,
+        source_id: 0,
     };
 
     /// Create a new location record.
@@ -226,11 +236,17 @@ impl Location {
             line: line as u32,
             column: column as u32,
             span: Span::UNKNOWN,
+            source_id: 0,
         }
     }
 
     pub(crate) const fn with_span(mut self, span: Span) -> Self {
         self.span = span;
+        self
+    }
+
+    pub(crate) const fn with_source_id(mut self, source_id: u32) -> Self {
+        self.source_id = source_id;
         self
     }
 }

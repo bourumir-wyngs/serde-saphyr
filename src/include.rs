@@ -29,7 +29,7 @@ pub(crate) fn create_parser_from_reader_input<'input>(
     if let Some(r) = resolver {
         stack.set_resolver(r);
     }
-    stack.push_stream_parser(Parser::new(input), "main".to_string());
+    stack.push_stream_parser(Parser::new(input), "<input>".to_string());
     stack
 }
 
@@ -49,10 +49,11 @@ pub(crate) fn create_parser_from_str<'a>(
     }
     stack.push_str_parser_with_snippet(
         Parser::new_from_str(input),
-        "main".to_string(),
+        "<input>".to_string(),
         Some(crate::include_stack::SnippetFrame {
-            name: "main".to_string(),
+            name: "<input>".to_string(),
             text: input.to_string(),
+            include_location: crate::Location::UNKNOWN,
         }),
     );
     stack

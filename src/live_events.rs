@@ -93,10 +93,33 @@ impl<'input> SaphyrParser<'input> {
     }
 
     #[cfg(feature = "include")]
-    fn include_snippet_source(&self) -> Option<(&str, &str)> {
+    fn get_resolved_snippet(&self, source_id: u32) -> Option<(&str, &str)> {
         match self {
-            SaphyrParser::StringParser(parser) => parser.active_include_snippet_source(),
-            SaphyrParser::StreamParser(parser) => parser.active_include_snippet_source(),
+            SaphyrParser::StringParser(parser) => parser.resolved_sources.get(&source_id).map(|s| (s.name.as_str(), s.text.as_str())),
+            SaphyrParser::StreamParser(parser) => parser.resolved_sources.get(&source_id).map(|s| (s.name.as_str(), s.text.as_str())),
+        }
+    }
+
+    fn current_source_id(&self) -> u32 {
+        #[cfg(feature = "include")]
+        {
+            match self {
+                SaphyrParser::StringParser(parser) => parser.current_source_id(),
+                SaphyrParser::StreamParser(parser) => parser.current_source_id(),
+            }
+        }
+        #[cfg(not(feature = "include"))]
+        {
+            0
+        }
+    }
+
+    #[cfg(feature = "include")]
+    #[allow(dead_code)]
+    fn include_stack_snippets(&self) -> Vec<(&str, &str, crate::Location)> {
+        match self {
+            SaphyrParser::StringParser(parser) => parser.include_stack_snippets(),
+            SaphyrParser::StreamParser(parser) => parser.include_stack_snippets(),
         }
     }
 }
@@ -386,8 +409,17 @@ impl<'a> LiveEvents<'a> {
 
         // 2) Pull from the real parser
         while let Some(item) = self.parser.next() {
-            let (raw, span) = item.map_err(Error::from_scan_error)?;
-            let location = location_from_span(&span);
+            let (raw, span) = match item {
+                Ok(v) => v,
+                Err(e) => {
+                    let mut err = Error::from_scan_error(e);
+                    if let Some(loc) = err.location() {
+                        err = err.with_location(loc.with_source_id(self.parser.current_source_id()));
+                    }
+                    return Err(err);
+                }
+            };
+            let location = location_from_span(&span).with_source_id(self.parser.current_source_id());
 
             // Validate indentation if the parser provided a hint for this span.
             if let Some(indent) = span.indent {
@@ -620,7 +652,7 @@ impl<'a> LiveEvents<'a> {
                         // after an explicit end marker. If the very next token is a
                         // DocumentStart, signal multi-doc error; otherwise ignore anything else.
                         if let Some(Ok((Event::DocumentStart(_), span2))) = self.parser.next() {
-                            let loc2 = location_from_span(&span2);
+                            let loc2 = location_from_span(&span2).with_source_id(self.parser.current_source_id());
                             return Err(Error::multiple_documents(
                                 "use from_multiple or from_multiple_with_options",
                             )
@@ -880,8 +912,14 @@ impl<'a> LiveEvents<'a> {
     }
 
     #[cfg(feature = "include")]
-    pub(crate) fn include_snippet_source(&self) -> Option<(&str, &str)> {
-        self.parser.include_snippet_source()
+    pub(crate) fn get_resolved_snippet(&self, source_id: u32) -> Option<(&str, &str)> {
+        self.parser.get_resolved_snippet(source_id)
+    }
+
+    #[cfg(feature = "include")]
+    #[allow(dead_code)]
+    pub(crate) fn include_stack_snippets(&self) -> Vec<(&str, &str, crate::Location)> {
+        self.parser.include_stack_snippets()
     }
 
     /// Skip events until the next document boundary or EOF.
@@ -905,7 +943,7 @@ impl<'a> LiveEvents<'a> {
                 // Syntax error while skipping; treat as EOF
                 return false;
             };
-            let location = location_from_span(&span);
+            let location = location_from_span(&span).with_source_id(self.parser.current_source_id());
             self.last_location = location;
 
             match raw {

@@ -338,6 +338,7 @@ mod tests {
             line: 42,
             column: 7,
             span: crate::location::Span::UNKNOWN,
+            source_id: 0,
         }
     }
 
@@ -417,6 +418,7 @@ mod tests {
             line: 1,
             column: 1,
             span: crate::location::Span::UNKNOWN,
+            source_id: 0,
         }
     }
 

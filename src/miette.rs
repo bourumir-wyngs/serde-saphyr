@@ -467,6 +467,7 @@ mod tests {
                         as crate::location::SpanIndex,
                     len: 3,
                 },
+                source_id: 0,
             },
         };
 
@@ -502,6 +503,7 @@ mod tests {
                     offset: char_off as crate::location::SpanIndex,
                     len: ascii_slice.len() as crate::location::SpanIndex,
                 },
+                source_id: 0,
             },
         };
 
@@ -534,6 +536,7 @@ mod tests {
                     offset: start_char as crate::location::SpanIndex,
                     len: value_chars.chars().count() as crate::location::SpanIndex,
                 },
+                source_id: 0,
             },
         };
 
@@ -563,6 +566,7 @@ mod tests {
                     offset: start_char as crate::location::SpanIndex,
                     len: 0,
                 },
+                source_id: 0,
             },
         };
 
@@ -592,6 +596,7 @@ mod tests {
                     offset: start_char as crate::location::SpanIndex,
                     len: 1000,
                 },
+                source_id: 0,
             },
         };
 
@@ -622,6 +627,7 @@ mod tests {
                     offset: start_char as crate::location::SpanIndex,
                     len: target.chars().count() as crate::location::SpanIndex,
                 },
+                source_id: 0,
             },
         };
 
@@ -666,6 +672,7 @@ mod tests {
                 offset: use_offset as crate::location::SpanIndex,
                 len: 2,
             },
+                source_id: 0,
         };
         let defined_loc = Location {
             line: 2,
@@ -675,6 +682,7 @@ mod tests {
                 offset: def_offset as crate::location::SpanIndex,
                 len: 3,
             },
+                source_id: 0,
         };
 
         let mut locations = PathMap::new();
@@ -744,6 +752,7 @@ mod tests {
                 offset: use_offset as crate::location::SpanIndex,
                 len: 2,
             },
+                source_id: 0,
         };
         let defined_loc = Location {
             line: 2,
@@ -753,6 +762,7 @@ mod tests {
                 offset: def_offset as crate::location::SpanIndex,
                 len: 3,
             },
+                source_id: 0,
         };
 
         let mut locations = PathMap::new();
@@ -810,6 +820,7 @@ mod tests {
                 offset: use_offset as crate::location::SpanIndex,
                 len: 2,
             },
+                source_id: 0,
         };
         let defined_loc = Location {
             line: 1,
@@ -819,6 +830,7 @@ mod tests {
                 offset: def_offset as crate::location::SpanIndex,
                 len: 5,
             },
+                source_id: 0,
         };
 
         let err = Error::AliasError {
@@ -866,6 +878,7 @@ mod tests {
                 offset: offset as crate::location::SpanIndex,
                 len: 5,
             },
+                source_id: 0,
         };
 
         let err = Error::AliasError {
