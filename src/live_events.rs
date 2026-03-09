@@ -91,6 +91,14 @@ impl<'input> SaphyrParser<'input> {
             SaphyrParser::StreamParser(parser) => parser.resolve(include_str, location),
         }
     }
+
+    #[cfg(feature = "include")]
+    fn include_snippet_source(&self) -> Option<(&str, &str)> {
+        match self {
+            SaphyrParser::StringParser(parser) => parser.active_include_snippet_source(),
+            SaphyrParser::StreamParser(parser) => parser.active_include_snippet_source(),
+        }
+    }
 }
 
 /// Live event source that wraps `saphyr_parser::Parser` and:
@@ -869,6 +877,11 @@ impl<'a> LiveEvents<'a> {
     }
     pub(crate) fn synthesized_null_emitted(&self) -> bool {
         self.synthesized_null_emitted
+    }
+
+    #[cfg(feature = "include")]
+    pub(crate) fn include_snippet_source(&self) -> Option<(&str, &str)> {
+        self.parser.include_snippet_source()
     }
 
     /// Skip events until the next document boundary or EOF.

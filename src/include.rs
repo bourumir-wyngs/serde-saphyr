@@ -47,7 +47,14 @@ pub(crate) fn create_parser_from_str<'a>(
     if let Some(r) = resolver {
         stack.set_resolver(r);
     }
-    stack.push_str_parser(Parser::new_from_str(input), "main".to_string());
+    stack.push_str_parser_with_snippet(
+        Parser::new_from_str(input),
+        "main".to_string(),
+        Some(crate::include_stack::SnippetFrame {
+            name: "main".to_string(),
+            text: input.to_string(),
+        }),
+    );
     stack
 }
 

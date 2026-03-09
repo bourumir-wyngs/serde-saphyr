@@ -85,6 +85,7 @@ fn custom_formatter_is_used_for_nested_validation_errors_with_snippets() {
             text: yaml.to_string(),
             start_line: 1,
             end_line: 1,
+            source_name: "test.yaml".into(),
         }],
         crop_radius: 2,
         error: Box::new(Error::ValidationErrors {
@@ -120,6 +121,7 @@ fn custom_formatter_is_used_for_nested_validator_errors_with_snippets() {
             text: yaml.to_string(),
             start_line: 1,
             end_line: 1,
+            source_name: "test.yaml".into(),
         }],
         crop_radius: 2,
         error: Box::new(Error::ValidatorErrors {

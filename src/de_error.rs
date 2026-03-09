@@ -179,6 +179,8 @@ impl<'a> RenderOptions<'a> {
 pub struct CroppedRegion {
     /// Cropped source text used for snippet rendering.
     pub text: String,
+    /// Source name/path displayed in snippet headers.
+    pub source_name: String,
     /// The 1-based line number in the *original* input where `text` starts.
     pub start_line: usize,
     /// The 1-based line number in the *original* input where `text` ends (inclusive).
@@ -711,6 +713,17 @@ impl Error {
     #[cold]
     #[inline(never)]
     pub(crate) fn with_snippet(self, text: &str, crop_radius: usize) -> Self {
+        self.with_snippet_named(text, "<input>", crop_radius)
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn with_snippet_named(
+        self,
+        text: &str,
+        source_name: &str,
+        crop_radius: usize,
+    ) -> Self {
         // Avoid nesting snippet wrappers: keep the innermost error and rebuild the
         // wrapper with freshly cropped source window.
         let inner = match self {
@@ -724,6 +737,7 @@ impl Error {
         fn push_region_for_location(
             regions: &mut Vec<CroppedRegion>,
             text: &str,
+            source_name: &str,
             location: &Location,
             mapping: crate::de_snippet::LineMapping,
             crop_radius: usize,
@@ -740,6 +754,7 @@ impl Error {
             let end_line = start_line.saturating_add(lines.saturating_sub(1));
             regions.push(CroppedRegion {
                 text: cropped,
+                source_name: source_name.to_string(),
                 start_line,
                 end_line,
             });
@@ -760,6 +775,7 @@ impl Error {
                 push_region_for_location(
                     &mut regions,
                     text,
+                    source_name,
                     &locs.reference_location,
                     mapping,
                     crop_radius,
@@ -768,6 +784,7 @@ impl Error {
                     push_region_for_location(
                         &mut regions,
                         text,
+                        source_name,
                         &locs.defined_location,
                         mapping,
                         crop_radius,
@@ -784,6 +801,7 @@ impl Error {
                 push_region_for_location(
                     &mut regions,
                     text,
+                    source_name,
                     &locs.reference_location,
                     mapping,
                     crop_radius,
@@ -792,6 +810,7 @@ impl Error {
                     push_region_for_location(
                         &mut regions,
                         text,
+                        source_name,
                         &locs.defined_location,
                         mapping,
                         crop_radius,
@@ -807,6 +826,7 @@ impl Error {
                 push_region_for_location(
                     &mut regions,
                     text,
+                    source_name,
                     &locs.reference_location,
                     mapping,
                     crop_radius,
@@ -815,13 +835,21 @@ impl Error {
                     push_region_for_location(
                         &mut regions,
                         text,
+                        source_name,
                         &locs.defined_location,
                         mapping,
                         crop_radius,
                     );
                 }
             } else if let Some(loc) = inner.location() {
-                push_region_for_location(&mut regions, text, &loc, mapping, crop_radius);
+                push_region_for_location(
+                    &mut regions,
+                    text,
+                    source_name,
+                    &loc,
+                    mapping,
+                    crop_radius,
+                );
             }
         }
 
@@ -845,6 +873,18 @@ impl Error {
         start_line: usize,
         crop_radius: usize,
     ) -> Self {
+        self.with_snippet_offset_named(text, start_line, "<input>", crop_radius)
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn with_snippet_offset_named(
+        self,
+        text: &str,
+        start_line: usize,
+        source_name: &str,
+        crop_radius: usize,
+    ) -> Self {
         let inner = match self {
             Error::WithSnippet { error, .. } => *error,
             other => other,
@@ -856,6 +896,7 @@ impl Error {
         fn push_region_for_location(
             regions: &mut Vec<CroppedRegion>,
             text: &str,
+            source_name: &str,
             location: &Location,
             mapping: crate::de_snippet::LineMapping,
             crop_radius: usize,
@@ -872,6 +913,7 @@ impl Error {
             let end_line = region_start_line.saturating_add(lines.saturating_sub(1));
             regions.push(CroppedRegion {
                 text: cropped,
+                source_name: source_name.to_string(),
                 start_line: region_start_line,
                 end_line,
             });
@@ -890,6 +932,7 @@ impl Error {
                 push_region_for_location(
                     &mut regions,
                     text,
+                    source_name,
                     &locs.reference_location,
                     mapping,
                     crop_radius,
@@ -898,6 +941,7 @@ impl Error {
                     push_region_for_location(
                         &mut regions,
                         text,
+                        source_name,
                         &locs.defined_location,
                         mapping,
                         crop_radius,
@@ -914,6 +958,7 @@ impl Error {
                 push_region_for_location(
                     &mut regions,
                     text,
+                    source_name,
                     &locs.reference_location,
                     mapping,
                     crop_radius,
@@ -922,6 +967,7 @@ impl Error {
                     push_region_for_location(
                         &mut regions,
                         text,
+                        source_name,
                         &locs.defined_location,
                         mapping,
                         crop_radius,
@@ -935,6 +981,7 @@ impl Error {
                 push_region_for_location(
                     &mut regions,
                     text,
+                    source_name,
                     &locs.reference_location,
                     mapping,
                     crop_radius,
@@ -943,13 +990,21 @@ impl Error {
                     push_region_for_location(
                         &mut regions,
                         text,
+                        source_name,
                         &locs.defined_location,
                         mapping,
                         crop_radius,
                     );
                 }
             } else if let Some(loc) = inner.location() {
-                push_region_for_location(&mut regions, text, &loc, mapping, crop_radius);
+                push_region_for_location(
+                    &mut regions,
+                    text,
+                    source_name,
+                    &loc,
+                    mapping,
+                    crop_radius,
+                );
             }
         }
 
@@ -1314,6 +1369,14 @@ impl Error {
             #[cfg(feature = "validator")]
             Error::ValidatorErrors { errors } => errors.iter().find_map(|e| e.location()),
         }
+    }
+
+    /// If the error has a known source name, return it.
+    pub fn source_name(&self) -> Option<&str> {
+        self.location().and_then(|_l| {
+            // Currently source names are not tracked inside Location.
+            None
+        })
     }
 
     /// Return a pair of locations associated with this error.
@@ -1696,9 +1759,12 @@ fn fmt_error_rendered(
                 Ok(())
             } else {
                 // Single location rendering.
-                let ctx =
-                    crate::de_snippet::Snippet::new(region.text.as_str(), "<input>", *crop_radius)
-                        .with_offset(region.start_line);
+                let ctx = crate::de_snippet::Snippet::new(
+                    region.text.as_str(),
+                    region.source_name.as_str(),
+                    *crop_radius,
+                )
+                .with_offset(region.start_line);
                 ctx.fmt_or_fallback(f, Level::ERROR, l10n, msg.as_ref(), &location)
             }
         }
@@ -1989,8 +2055,12 @@ fn fmt_error_with_snippets_offset(
     let Some(region) = pick_cropped_region(regions, &location) else {
         return fmt_with_location(f, formatter.localizer(), msg.as_ref(), &location);
     };
-    let ctx = crate::de_snippet::Snippet::new(region.text.as_str(), "<input>", crop_radius)
-        .with_offset(region.start_line);
+    let ctx = crate::de_snippet::Snippet::new(
+        region.text.as_str(),
+        region.source_name.as_str(),
+        crop_radius,
+    )
+    .with_offset(region.start_line);
     ctx.fmt_or_fallback(
         f,
         Level::ERROR,

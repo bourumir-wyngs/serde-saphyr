@@ -8,6 +8,12 @@ use saphyr_parser::{Event, Parser, ScanError, Span, StrInput};
 
 type InnerStack<'input> = saphyr_parser::parser_stack::ParserStack<'input, core::iter::Empty<char>, ReaderInput<'input>>;
 
+#[derive(Clone, Debug)]
+pub(crate) struct SnippetFrame {
+    pub(crate) name: String,
+    pub(crate) text: String,
+}
+
 /// A parser stack that supports serde-saphyr includes.
 ///
 /// This delegates all anchor handling to `saphyr_parser::parser_stack::ParserStack` (which has
@@ -19,12 +25,20 @@ pub struct ParserStack<'input> {
     io_error: ReaderInputError,
     max_reader_input_bytes: Option<usize>,
     active_ids: Vec<(usize, String)>,
+    snippet_frames: Vec<Option<SnippetFrame>>,
 }
 
 impl<'input> ParserStack<'input> {
     #[must_use]
     pub fn new(io_error: ReaderInputError, max_reader_input_bytes: Option<usize>) -> Self {
-        Self { inner: InnerStack::new(), include_resolver: None, io_error, max_reader_input_bytes, active_ids: Vec::new() }
+        Self {
+            inner: InnerStack::new(),
+            include_resolver: None,
+            io_error,
+            max_reader_input_bytes,
+            active_ids: Vec::new(),
+            snippet_frames: Vec::new(),
+        }
     }
 
     pub fn set_resolver(
@@ -34,12 +48,44 @@ impl<'input> ParserStack<'input> {
         self.include_resolver = Some(Box::new(resolver));
     }
 
+    #[allow(dead_code)]
     pub fn push_str_parser(&mut self, parser: Parser<'input, StrInput<'input>>, name: String) {
-        self.inner.push_str_parser(parser, name);
+        self.push_str_parser_with_snippet(parser, name, None);
     }
 
     pub fn push_stream_parser(&mut self, parser: Parser<'input, ReaderInput<'input>>, name: String) {
+        self.push_stream_parser_with_snippet(parser, name, None);
+    }
+
+    pub(crate) fn push_str_parser_with_snippet(
+        &mut self,
+        parser: Parser<'input, StrInput<'input>>,
+        name: String,
+        snippet: Option<SnippetFrame>,
+    ) {
+        self.inner.push_str_parser(parser, name);
+        self.snippet_frames.push(snippet);
+    }
+
+    fn push_stream_parser_with_snippet(
+        &mut self,
+        parser: Parser<'input, ReaderInput<'input>>,
+        name: String,
+        snippet: Option<SnippetFrame>,
+    ) {
         self.inner.push_custom_parser(parser, name);
+        self.snippet_frames.push(snippet);
+    }
+
+    pub fn active_include_snippet_source(&self) -> Option<(&str, &str)> {
+        if self.inner.stack().len() <= 1 {
+            return None;
+        }
+
+        self.snippet_frames
+            .last()
+            .and_then(|frame| frame.as_ref())
+            .map(|frame| (frame.name.as_str(), frame.text.as_str()))
     }
 
     pub fn resolve(&mut self, include_str: &str, location: crate::Location) -> Result<(), crate::de_error::Error> {
@@ -85,6 +131,10 @@ impl<'input> ParserStack<'input> {
         let name = resolved.name;
         match resolved.source {
             InputSource::Text(s) => {
+                let snippet = SnippetFrame {
+                    name: name.clone(),
+                    text: s.clone(),
+                };
                 let cursor = std::io::Cursor::new(s.into_bytes());
                 let input = buffered_input_from_reader_with_limit_shared(
                     cursor,
@@ -92,12 +142,12 @@ impl<'input> ParserStack<'input> {
                     self.io_error.clone()
                 );
                 let parser = Parser::new(input);
-                self.push_stream_parser(parser, name);
+                self.push_stream_parser_with_snippet(parser, name, Some(snippet));
             }
             InputSource::Reader(r) => {
                 let input = buffered_input_from_reader_with_limit_shared(r, self.max_reader_input_bytes, self.io_error.clone());
                 let parser = Parser::new(input);
-                self.push_stream_parser(parser, name);
+                self.push_stream_parser_with_snippet(parser, name, None);
             }
         }
         Ok(())
@@ -121,6 +171,7 @@ impl<'input> Iterator for ParserStack<'input> {
             other => {
                 let current_len = self.inner.stack().len();
                 self.active_ids.retain(|(depth, _)| *depth <= current_len);
+                self.snippet_frames.truncate(current_len);
                 other
             }
         }
