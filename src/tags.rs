@@ -5,6 +5,67 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
 
+const INCLUDE_TAG_PLAIN: [&str; 3] = [
+    "!include",
+    "tag:yaml.org,2002:include",
+    "tag:yaml.org,2002:!include",
+];
+
+const INCLUDE_TAG_WITH_FRAGMENT_PREFIX: [&str; 3] = [
+    "!include#",
+    "tag:yaml.org,2002:include#",
+    "tag:yaml.org,2002:!include#",
+];
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum IncludeTag {
+    NotInclude,
+    Plain,
+    WithFragment(String),
+    InvalidFragment,
+}
+
+pub(crate) fn parse_include_tag(tag: &Option<Cow<Tag>>) -> IncludeTag {
+    let Some(tag) = tag else {
+        return IncludeTag::NotInclude;
+    };
+
+    let raw = tag.to_string();
+    if INCLUDE_TAG_PLAIN.contains(&raw.as_str()) {
+        return IncludeTag::Plain;
+    }
+
+    for prefix in INCLUDE_TAG_WITH_FRAGMENT_PREFIX {
+        if let Some(fragment) = raw.strip_prefix(prefix) {
+            if fragment.is_empty() {
+                return IncludeTag::InvalidFragment;
+            }
+            return IncludeTag::WithFragment(fragment.to_string());
+        }
+    }
+
+    IncludeTag::NotInclude
+}
+
+pub(crate) fn include_spec_from_tag_and_value(
+    tag: &Option<Cow<Tag>>,
+    value: &str,
+) -> Result<Option<String>, &'static str> {
+    match parse_include_tag(tag) {
+        IncludeTag::NotInclude => Ok(None),
+        IncludeTag::Plain => Ok(Some(value.to_string())),
+        IncludeTag::WithFragment(fragment) => {
+            if value.contains('#') {
+                return Err("include spec must not contain '#' when using !include#fragment tag form");
+            }
+            Ok(Some(format!("{value}#{fragment}")))
+        }
+        IncludeTag::InvalidFragment => {
+            Err("!include tag fragment must not be empty (expected !include#anchor_name)")
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum SfTag {
     None,
@@ -97,6 +158,13 @@ static TAG_LOOKUP_MAP: LazyLock<BTreeMap<&'static str, SfTag>> = LazyLock::new(|
 
 impl SfTag {
     pub(crate) fn from_optional_cow(tag: &Option<Cow<Tag>>) -> SfTag {
+        match parse_include_tag(tag) {
+            IncludeTag::Plain | IncludeTag::WithFragment(_) | IncludeTag::InvalidFragment => {
+                return SfTag::Include;
+            }
+            IncludeTag::NotInclude => {}
+        }
+
         match tag {
             Some(cow) => {
                 let key = cow.to_string();

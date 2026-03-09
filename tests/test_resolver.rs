@@ -197,3 +197,50 @@ foo: !include { \"path\": \"file_b.yml\", \"extension\": \"txt\" }
         err_msg
     );
 }
+
+#[cfg(feature = "include")]
+#[test]
+fn test_include_fragment_tag_merges_into_spec() {
+    let yaml = "foo: !include#user_fragment bar.yaml\n";
+
+    let options = Options::default().with_include_resolver(
+        |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
+            if req.spec == "bar.yaml#user_fragment" {
+                Ok(ResolvedInclude {
+                    id: req.spec.to_string(),
+                    name: req.spec.to_string(),
+                    source: InputSource::Text("bar_value\n".to_string()),
+                })
+            } else {
+                Err(IncludeResolveError::Message(format!(
+                    "Unexpected include spec: {}",
+                    req.spec
+                )))
+            }
+        },
+    );
+
+    let config: Config = serde_saphyr::from_str_with_options(yaml, options).unwrap();
+    assert_eq!(config.foo, "bar_value");
+}
+
+#[cfg(feature = "include")]
+#[test]
+fn test_include_fragment_tag_and_fragment_in_spec_is_rejected() {
+    let yaml = "foo: !include#user_fragment bar.yaml#from_spec\n";
+
+    let options = Options::default().with_include_resolver(
+        |_req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
+            Err(IncludeResolveError::Message("resolver should not be called".to_string()))
+        },
+    );
+
+    let result: Result<Config, _> = serde_saphyr::from_str_with_options(yaml, options);
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("must not contain '#'"),
+        "Expected include fragment form validation error, got: {}",
+        err
+    );
+}
