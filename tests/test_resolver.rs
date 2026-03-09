@@ -244,3 +244,143 @@ fn test_include_fragment_tag_and_fragment_in_spec_is_rejected() {
         err
     );
 }
+
+#[cfg(feature = "include")]
+#[test]
+fn test_input_source_convenience_methods() {
+    use std::io::Read;
+    use serde_saphyr::{InputSource, IncludeResolveError};
+
+    let text_source = InputSource::from_string("hello".to_string());
+    match text_source {
+        InputSource::Text(s) => assert_eq!(s, "hello"),
+        _ => panic!("Expected Text variant"),
+    }
+
+    let cursor = std::io::Cursor::new(b"world".to_vec());
+    let mut reader_source = InputSource::from_reader(cursor);
+    match reader_source {
+        InputSource::Reader(ref mut r) => {
+            let mut buf = String::new();
+            r.read_to_string(&mut buf).unwrap();
+            assert_eq!(buf, "world");
+        }
+        _ => panic!("Expected Reader variant"),
+    }
+
+    let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+    let resolve_err = IncludeResolveError::from(io_err);
+    match resolve_err {
+        IncludeResolveError::Io(e) => assert_eq!(e.kind(), std::io::ErrorKind::NotFound),
+        _ => panic!("Expected Io variant"),
+    }
+}
+
+#[cfg(feature = "include")]
+#[test]
+fn test_successful_reader_resolver() {
+    let yaml = "foo: !include bar.yaml\n";
+    let cursor = std::io::Cursor::new(yaml.as_bytes());
+    
+    let options = serde_saphyr::Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+        if req.spec == "bar.yaml" {
+            Ok(serde_saphyr::ResolvedInclude {
+                id: req.spec.to_string(),
+                name: req.spec.to_string(),
+                source: serde_saphyr::InputSource::from_reader(std::io::Cursor::new(b"bar_value\n"))
+            })
+        } else {
+            Err(serde_saphyr::IncludeResolveError::Message("Not found".to_string()))
+        }
+    });
+
+    let config: Config = serde_saphyr::from_reader_with_options(cursor, options).unwrap();
+    assert_eq!(config.foo, "bar_value");
+}
+
+#[cfg(feature = "include")]
+#[test]
+fn test_anchors_in_same_included_content() {
+    let yaml = "foo: !include bar.yaml\n";
+
+    let options = serde_saphyr::Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+        if req.spec == "bar.yaml" {
+            Ok(serde_saphyr::ResolvedInclude {
+                id: req.spec.to_string(),
+                name: req.spec.to_string(),
+                source: serde_saphyr::InputSource::from_string("a: &anchor value\nb: *anchor\n".to_string())
+            })
+        } else {
+            Err(serde_saphyr::IncludeResolveError::Message("Not found".to_string()))
+        }
+    });
+
+    let config: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>> = 
+        serde_saphyr::from_str_with_options(yaml, options).unwrap();
+    
+    let foo = config.get("foo").unwrap();
+    assert_eq!(foo.get("a").unwrap(), "value");
+    assert_eq!(foo.get("b").unwrap(), "value");
+}
+
+#[cfg(feature = "include")]
+#[test]
+fn test_anchors_across_included_content() {
+    // Tests defining an anchor in one included content and referencing it in another included content.
+    // It should fail because anchors are isolated per file.
+    let yaml = "
+file1: !include def.yaml
+file2: !include ref.yaml
+";
+
+    let options = serde_saphyr::Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+        if req.spec == "def.yaml" {
+            Ok(serde_saphyr::ResolvedInclude {
+                id: req.spec.to_string(),
+                name: req.spec.to_string(),
+                source: serde_saphyr::InputSource::from_string("&anchor value_from_def\n".to_string())
+            })
+        } else if req.spec == "ref.yaml" {
+            Ok(serde_saphyr::ResolvedInclude {
+                id: req.spec.to_string(),
+                name: req.spec.to_string(),
+                source: serde_saphyr::InputSource::from_string("*anchor\n".to_string())
+            })
+        } else {
+            Err(serde_saphyr::IncludeResolveError::Message("Not found".to_string()))
+        }
+    });
+
+    let result: Result<std::collections::BTreeMap<String, String>, _> = 
+        serde_saphyr::from_str_with_options(yaml, options);
+        
+    assert!(result.is_err(), "Expected an error because anchors are isolated per inclusion");
+}
+
+#[cfg(feature = "include")]
+#[test]
+fn test_anchors_parent_to_include() {
+    // Tests defining an anchor in the parent file and referencing it in an included file.
+    // It should fail because anchors are isolated per file.
+    let yaml = "
+parent_def: &parent_anchor parent_value
+child_ref: !include ref.yaml
+";
+
+    let options = serde_saphyr::Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+        if req.spec == "ref.yaml" {
+            Ok(serde_saphyr::ResolvedInclude {
+                id: req.spec.to_string(),
+                name: req.spec.to_string(),
+                source: serde_saphyr::InputSource::from_string("*parent_anchor\n".to_string())
+            })
+        } else {
+            Err(serde_saphyr::IncludeResolveError::Message("Not found".to_string()))
+        }
+    });
+
+    let result: Result<std::collections::BTreeMap<String, String>, _> = 
+        serde_saphyr::from_str_with_options(yaml, options);
+        
+    assert!(result.is_err(), "Expected an error because anchors are isolated per inclusion");
+}

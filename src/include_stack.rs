@@ -213,3 +213,40 @@ impl<'input> Iterator for ParserStack<'input> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_unused_methods() {
+        let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let mut stack = ParserStack::new(io_error, None);
+        
+        let parser = Parser::new_from_str("foo: bar");
+        stack.push_str_parser(parser, "test.yaml".to_string());
+        
+        // At depth 1, active_include_snippet_source is None
+        assert_eq!(stack.active_include_snippet_source(), None);
+        
+        stack.push_str_parser_with_snippet(
+            Parser::new_from_str("baz"), 
+            "test2.yaml".to_string(), 
+            Some(SnippetFrame {
+                name: "test2.yaml".to_string(),
+                text: "baz".to_string(),
+                include_location: crate::Location::UNKNOWN,
+            })
+        );
+        
+        // At depth > 1, active_include_snippet_source returns the top snippet
+        let src = stack.active_include_snippet_source().unwrap();
+        assert_eq!(src.0, "test2.yaml");
+        assert_eq!(src.1, "baz");
+
+        let snippets = stack.include_stack_snippets();
+        assert_eq!(snippets.len(), 1);
+        assert_eq!(snippets[0].0, "test2.yaml");
+        assert_eq!(snippets[0].1, "baz");
+    }
+}
