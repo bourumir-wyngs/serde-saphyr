@@ -98,6 +98,14 @@ name = "validator_validate"
 required-features = ["validator"]
 
 [[example]]
+name = "include_with_merge"
+required-features = ["include"]
+
+[[example]]
+name = "include_error"
+required-features = ["include"]
+
+[[example]]
 name = "figment_yaml"
 required-features = ["figment"]
 

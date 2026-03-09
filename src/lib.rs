@@ -1418,7 +1418,7 @@ pub(crate) fn maybe_with_snippet(
 pub(crate) fn maybe_with_snippet_from_events(
     err: Error,
     input: &str,
-    events: &crate::live_events::LiveEvents<'_>,
+    #[allow(unused_variables)] events: &crate::live_events::LiveEvents<'_>,
     with_snippet: bool,
     crop_radius: usize,
 ) -> Error {

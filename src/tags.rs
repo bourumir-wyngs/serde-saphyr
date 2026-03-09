@@ -47,6 +47,7 @@ pub(crate) fn parse_include_tag(tag: &Option<Cow<Tag>>) -> IncludeTag {
     IncludeTag::NotInclude
 }
 
+#[cfg(feature = "include")]
 pub(crate) fn include_spec_from_tag_and_value(
     tag: &Option<Cow<Tag>>,
     value: &str,

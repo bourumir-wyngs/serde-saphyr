@@ -1,3 +1,5 @@
+#![cfg(feature = "include")]
+
 use serde::Deserialize;
 use serde_saphyr::{from_str_with_options, IncludeRequest, IncludeResolveError, Options, ResolvedInclude};
 

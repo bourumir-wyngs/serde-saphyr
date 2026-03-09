@@ -863,6 +863,7 @@ impl Error {
         }
     }
 
+    #[cfg(feature = "include")]
     #[cold]
     #[inline(never)]
     pub(crate) fn with_additional_snippet_named(
