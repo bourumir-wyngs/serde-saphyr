@@ -387,6 +387,59 @@ child_ref: !include ref.yaml
 
 #[cfg(feature = "include")]
 #[test]
+fn test_include_entire_mapping() {
+    let yaml = "
+my_mapping: !include some_mapping.yaml
+";
+
+    let options = serde_saphyr::Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+        if req.spec == "some_mapping.yaml" {
+            Ok(serde_saphyr::ResolvedInclude {
+                id: req.spec.to_string(),
+                name: req.spec.to_string(),
+                source: serde_saphyr::InputSource::from_string("c: 3\nd: 4\n".to_string())
+            })
+        } else {
+            Err(serde_saphyr::IncludeResolveError::Message("Not found".to_string()))
+        }
+    });
+
+    let result: std::collections::BTreeMap<String, std::collections::BTreeMap<String, i32>> = 
+        serde_saphyr::from_str_with_options(yaml, options).unwrap();
+        
+    let mapping = result.get("my_mapping").unwrap();
+    assert_eq!(mapping.get("c").unwrap(), &3);
+    assert_eq!(mapping.get("d").unwrap(), &4);
+}
+
+#[cfg(feature = "include")]
+#[test]
+fn test_include_list() {
+    let yaml = "
+my_list: !include some_list.yaml
+";
+
+    let options = serde_saphyr::Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+        if req.spec == "some_list.yaml" {
+            Ok(serde_saphyr::ResolvedInclude {
+                id: req.spec.to_string(),
+                name: req.spec.to_string(),
+                source: serde_saphyr::InputSource::from_string("[1, 2, 3]\n".to_string())
+            })
+        } else {
+            Err(serde_saphyr::IncludeResolveError::Message("Not found".to_string()))
+        }
+    });
+
+    let result: std::collections::BTreeMap<String, Vec<i32>> = 
+        serde_saphyr::from_str_with_options(yaml, options).unwrap();
+        
+    let list = result.get("my_list").unwrap();
+    assert_eq!(list, &vec![1, 2, 3]);
+}
+
+#[cfg(feature = "include")]
+#[test]
 fn test_include_with_merge() {
     let yaml = "
 base:

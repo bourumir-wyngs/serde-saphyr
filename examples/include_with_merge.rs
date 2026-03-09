@@ -16,6 +16,8 @@ struct ServerConfig {
 struct Environments {
     production: ServerConfig,
     staging: ServerConfig,
+    default_server: ServerConfig,
+    supported_versions: Vec<u32>,
 }
 
 fn main() {
@@ -33,6 +35,12 @@ staging:
   host: api.staging.internal
   log_level: debug
   max_connections: 50
+
+# including entire mapping
+default_server: !include base_config.yaml
+
+# including the list
+supported_versions: !include versions.yaml
 "#;
 
     // The included base configuration file (simulated by the resolver)
@@ -50,6 +58,12 @@ max_connections: 1000
                 id: req.spec.to_string(),
                 name: req.spec.to_string(),
                 source: InputSource::Text(base_yaml.to_string()),
+            })
+        } else if req.spec == "versions.yaml" {
+            Ok(ResolvedInclude {
+                id: req.spec.to_string(),
+                name: req.spec.to_string(),
+                source: InputSource::Text("[1, 2, 3]".to_string()),
             })
         } else {
             Err(IncludeResolveError::Message(format!(
@@ -75,4 +89,11 @@ max_connections: 1000
     assert_eq!(config.staging.port, 8080); // Inherited
     assert_eq!(config.staging.log_level, "debug"); // Overridden
     assert_eq!(config.staging.max_connections, 50); // Overridden
+
+    assert_eq!(config.default_server.host, "localhost");
+    assert_eq!(config.default_server.port, 8080);
+    assert_eq!(config.default_server.log_level, "info");
+    assert_eq!(config.default_server.max_connections, 1000);
+
+    assert_eq!(config.supported_versions, vec![1, 2, 3]);
 }

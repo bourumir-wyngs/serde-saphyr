@@ -449,10 +449,42 @@ production:
     // Assert parsed config matches expected
     assert_eq!(parsed, expected);
 }
+```
 
 Merge keys are standard in YAML 1.1. Although YAML 1.2 no longer includes merge keys in its specification, it doesn't explicitly disallow them either, and many parsers implement this feature.
 
+## Includes
+
+`serde-saphyr` allows resolving `!include` tags via a custom resolver configured in [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). This is useful for splitting large configuration files.
+
+When using a single `!include` directly as a value, it works naturally for replacing a scalar, sequence, or an entire mapping:
+
+```yaml
+# Replacing the entire mapping value
+my_mapping: !include my_mapping.yaml
+
+# Supplying a list/sequence value
+my_list: !include my_list.yaml
 ```
+
+However, if you want to include a mapping and **merge** its keys into a parent mapping alongside other keys, you **must** use the merge key (`<<`). Attempting to list `!include` inside a mapping without a merge key is invalid YAML syntax:
+
+```yaml
+# INVALID: `!include` is treated as a key missing a value (`:`)
+a: 1
+!include my_mapping.yaml
+b: 2
+```
+
+Instead, use the merge key to correctly inject the included mapping:
+
+```yaml
+# VALID: merges the contents of my_mapping.yaml
+a: 1
+<<: !include my_mapping.yaml
+b: 2
+```
+
 ### Tuple enum variants
 It is possible to deserialize tuple enum variants:
 
