@@ -1413,13 +1413,6 @@ impl Error {
         }
     }
 
-    /// If the error has a known source name, return it.
-    pub fn source_name(&self) -> Option<&str> {
-        self.location().and_then(|_l| {
-            // Currently source names are not tracked inside Location.
-            None
-        })
-    }
 
     /// Return a pair of locations associated with this error.
     ///

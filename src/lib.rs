@@ -1411,17 +1411,6 @@ pub(crate) fn maybe_with_snippet(
         return err;
     }
 
-    // Check if the error's source name matches the top-level input.
-    // Most errors from `saphyr-parser` will have a source name like "main" or "<input>".
-    // If it's something else and we don't have it in `events`, we might be showing
-    // the wrong snippet if we just use `input`.
-    if let Some(name) = err.source_name() {
-        if name != "main" && name != "<input>" && name != "" {
-            // It's an error from some other source, but we don't have its content here.
-            // Better to show no snippet than a wrong one.
-            return err;
-        }
-    }
 
     err.with_snippet(input, crop_radius)
 }
@@ -1438,8 +1427,8 @@ pub(crate) fn maybe_with_snippet_from_events(
     }
 
     #[cfg(feature = "include")]
-    if let Some(loc) = err.location() {
-        if let Some((source_name, source_text)) = events.get_resolved_snippet(loc.source_id()) {
+    if let Some(loc) = err.location()
+        && let Some((source_name, source_text)) = events.get_resolved_snippet(loc.source_id()) {
             // If the error happens inside an included file, we use that file's content for the snippet.
             // This is preferred over the top-level input.
             let mut err_with_snippet = err.with_snippet_named(source_text, source_name, crop_radius);
@@ -1454,7 +1443,6 @@ pub(crate) fn maybe_with_snippet_from_events(
             }
             return err_with_snippet;
         }
-    }
 
     maybe_with_snippet(err, input, with_snippet, crop_radius)
 }
