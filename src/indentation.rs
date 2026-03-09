@@ -12,6 +12,10 @@
 /// | [`Even`](Self::Even) | Even indentation (0, 2, 4, …) |
 /// | [`Uniform`](Self::Uniform) | Consistent indentation throughout the document |
 ///
+/// *Important:* if there are multiple documents in the YAML input, or added with !include,
+/// indentation requirements apply to all of them. For Uniform, indentation is required to be
+/// consistent across all included documents as well.
+///
 /// # Examples
 ///
 /// ## Enforcing even indentation
