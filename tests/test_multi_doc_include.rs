@@ -1,6 +1,5 @@
-use serde_saphyr::from_str;
-
 #[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)]
 struct Root {
     foo: String,
 }
@@ -8,7 +7,7 @@ struct Root {
 #[test]
 fn test_multi_doc_include() {
     let yaml = "foo: !include multi.yaml\n";
-    let mut options = serde_saphyr::Options::default();
+    let options = serde_saphyr::Options::default();
     let options = options.with_include_resolver(|req| {
         Ok(serde_saphyr::ResolvedInclude {
             id: req.spec.to_string(),

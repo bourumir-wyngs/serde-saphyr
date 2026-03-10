@@ -166,7 +166,10 @@ impl<'input> ParserStack<'input> {
 
         let name = resolved.name;
         match resolved.source {
-            InputSource::Text(s) => {
+            InputSource::Text(mut s) => {
+                if s.trim().is_empty() {
+                    s = "~".to_string();
+                }
                 let snippet = SnippetFrame {
                     name: name.clone(),
                     text: s.clone(),

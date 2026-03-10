@@ -173,6 +173,9 @@ pub(crate) struct LiveEvents<'a> {
 
     /// Indentation requirement to validate against parser-reported indentation hints.
     require_indent: crate::RequireIndent,
+
+    #[cfg(feature = "include")]
+    pending_include_anchor: usize,
 }
 
 /// A single alias-replay stack frame (one active `*alias` expansion).
@@ -256,6 +259,8 @@ impl<'a> LiveEvents<'a> {
             error,
 
             require_indent,
+            #[cfg(feature = "include")]
+            pending_include_anchor: 0,
         }
     }
 }
@@ -327,6 +332,8 @@ impl<'a> LiveEvents<'a> {
             },
 
             require_indent,
+            #[cfg(feature = "include")]
+            pending_include_anchor: 0,
         }
     }
 
@@ -435,7 +442,7 @@ impl<'a> LiveEvents<'a> {
             }
 
             match raw {
-                Event::Scalar(val, mut style, anchor_id, tag) => {
+                Event::Scalar(val, mut style, mut anchor_id, tag) => {
                     if matches!(style, ScalarStyle::Folded)
                         && span.start.col() == 0
                         && !val.trim().is_empty()
@@ -450,11 +457,20 @@ impl<'a> LiveEvents<'a> {
                         match crate::tags::include_spec_from_tag_and_value(&tag, &val) {
                             Ok(Some(include_spec)) => {
                                 self.parser.resolve(&include_spec, location)?;
+                                self.pending_include_anchor = anchor_id;
                                 continue;
                             }
                             Ok(None) => {}
                             Err(msg) => return Err(Error::msg(msg).with_location(location)),
                         }
+                    }
+
+                    #[cfg(feature = "include")]
+                    if self.pending_include_anchor != 0 {
+                        if anchor_id == 0 {
+                            anchor_id = self.pending_include_anchor;
+                        }
+                        self.pending_include_anchor = 0;
                     }
 
                     if val.is_empty()
@@ -482,12 +498,20 @@ impl<'a> LiveEvents<'a> {
                     return Ok(Some(ev));
                 }
 
-                Event::SequenceStart(anchor_id, tag) => {
+                Event::SequenceStart(mut anchor_id, tag) => {
                     let tag_s = SfTag::from_optional_cow(&tag);
 
                     #[cfg(feature = "include")]
                     if !matches!(crate::tags::parse_include_tag(&tag), crate::tags::IncludeTag::NotInclude) {
                         return Err(Error::UnsupportedIncludeForm { location });
+                    }
+
+                    #[cfg(feature = "include")]
+                    if self.pending_include_anchor != 0 {
+                        if anchor_id == 0 {
+                            anchor_id = self.pending_include_anchor;
+                        }
+                        self.pending_include_anchor = 0;
                     }
 
                     let ev = Ev::SeqStart {
@@ -532,10 +556,18 @@ impl<'a> LiveEvents<'a> {
                     return Ok(Some(ev));
                 }
 
-                Event::MappingStart(anchor_id, _tag) => {
+                Event::MappingStart(mut anchor_id, _tag) => {
                     #[cfg(feature = "include")]
                     if !matches!(crate::tags::parse_include_tag(&_tag), crate::tags::IncludeTag::NotInclude) {
                         return Err(Error::UnsupportedIncludeForm { location });
+                    }
+
+                    #[cfg(feature = "include")]
+                    if self.pending_include_anchor != 0 {
+                        if anchor_id == 0 {
+                            anchor_id = self.pending_include_anchor;
+                        }
+                        self.pending_include_anchor = 0;
                     }
 
                     let ev = Ev::MapStart {
@@ -573,6 +605,11 @@ impl<'a> LiveEvents<'a> {
                 }
 
                 Event::Alias(anchor_id) => {
+                    #[cfg(feature = "include")]
+                    {
+                        self.pending_include_anchor = 0;
+                    }
+
                     // Alias replay hardening.
                     if anchor_id >= self.per_anchor_expansions.len() {
                         self.per_anchor_expansions.resize(anchor_id + 1, 0);

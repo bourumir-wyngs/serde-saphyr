@@ -467,3 +467,65 @@ base:
     assert_eq!(base.get("b").unwrap(), &2);
     assert_eq!(base.get("override").unwrap(), &2);
 }
+
+#[cfg(feature = "include")]
+#[test]
+fn test_anchor_on_include_site() {
+    let yaml = "
+base:
+  inc: &A !include child.yaml
+  ref: *A
+";
+
+    let options = serde_saphyr::Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+        if req.spec == "child.yaml" {
+            Ok(serde_saphyr::ResolvedInclude {
+                id: req.spec.to_string(),
+                name: req.spec.to_string(),
+                source: serde_saphyr::InputSource::from_string("a: 1\nb: 2\n".to_string())
+            })
+        } else {
+            Err(serde_saphyr::IncludeResolveError::Message("Not found".to_string()))
+        }
+    });
+
+    let result: std::collections::BTreeMap<String, std::collections::BTreeMap<String, std::collections::BTreeMap<String, i32>>> = 
+        serde_saphyr::from_str_with_options(yaml, options).unwrap();
+        
+    let base = result.get("base").unwrap();
+    let inc = base.get("inc").unwrap();
+    let ref_ = base.get("ref").unwrap();
+    
+    assert_eq!(inc.get("a").unwrap(), &1);
+    assert_eq!(ref_.get("a").unwrap(), &1);
+}
+
+#[cfg(feature = "include")]
+#[test]
+fn test_anchor_on_empty_include() {
+    let yaml = "
+base:
+  inc: !include empty.yaml
+  next: value
+";
+
+    let options = serde_saphyr::Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+        if req.spec == "empty.yaml" {
+            Ok(serde_saphyr::ResolvedInclude {
+                id: req.spec.to_string(),
+                name: req.spec.to_string(),
+                source: serde_saphyr::InputSource::from_string("".to_string())
+            })
+        } else {
+            Err(serde_saphyr::IncludeResolveError::Message("Not found".to_string()))
+        }
+    });
+
+    let result: std::collections::BTreeMap<String, std::collections::BTreeMap<String, Option<String>>> = 
+        serde_saphyr::from_str_with_options(yaml, options).unwrap();
+        
+    println!("result: {:#?}", result);
+    let base = result.get("base").unwrap();
+    let inc = base.get("inc").unwrap();
+    assert_eq!(inc, &None); // The empty include resolves to a null value.
+}
