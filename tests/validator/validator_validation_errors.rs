@@ -141,3 +141,32 @@ fn read_with_options_validate_validates_each_document_in_iterator() {
 
     assert!(it.next().is_none(), "iterator must end after an error");
 }
+
+#[cfg(feature = "include")]
+#[test]
+fn from_str_with_options_validate_reports_validator_error_from_included_input() {
+    let yaml = "a: !include child.yaml\n";
+    let options = serde_saphyr::Options::default().with_include_resolver(
+        |req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+            if req.spec == "child.yaml" {
+                Ok(serde_saphyr::ResolvedInclude {
+                    id: req.spec.to_string(),
+                    name: req.spec.to_string(),
+                    source: serde_saphyr::InputSource::from_string("\"\"\n".to_string()),
+                })
+            } else {
+                Err(serde_saphyr::IncludeResolveError::Message("not found".to_string()))
+            }
+        },
+    );
+
+    let err = serde_saphyr::from_str_with_options_validate::<Root>(yaml, options)
+        .expect_err("included value must fail validator rule");
+    match &err {
+        Error::ValidatorError { .. } => {}
+        Error::WithSnippet { error, .. } if matches!(**error, Error::ValidatorError { .. }) => {}
+        other => panic!("expected ValidatorError, got: {other:?}"),
+    }
+    let location = err.location().expect("validator error should expose a location");
+    assert_eq!(location.source_id(), 2, "expected included source id, got: {location:?}");
+}

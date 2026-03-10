@@ -43,7 +43,7 @@ impl<'input> ParserStack<'input> {
             max_reader_input_bytes,
             active_ids: Vec::new(),
             snippet_frames: Vec::new(),
-            next_source_id: 0,
+            next_source_id: 1,
             active_source_ids: Vec::new(),
             resolved_sources: std::collections::HashMap::new(),
         }
@@ -257,5 +257,19 @@ mod tests {
         assert_eq!(snippets.len(), 1);
         assert_eq!(snippets[0].0, "test2.yaml");
         assert_eq!(snippets[0].1, "baz");
+    }
+
+    #[test]
+    fn source_ids_start_from_one_and_zero_stays_unknown() {
+        let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let mut stack = ParserStack::new(io_error, None);
+
+        assert_eq!(stack.current_source_id(), 0);
+
+        stack.push_str_parser(Parser::new_from_str("root: 1"), "root.yaml".to_string());
+        assert_eq!(stack.current_source_id(), 1);
+
+        stack.push_str_parser(Parser::new_from_str("child: 2"), "child.yaml".to_string());
+        assert_eq!(stack.current_source_id(), 2);
     }
 }

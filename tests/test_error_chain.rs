@@ -142,3 +142,18 @@ fn test_resolve_error_chain() {
     assert!(err_msg.contains("missing.yaml"));
     assert!(err_msg.contains("File not found"));
 }
+
+#[cfg(all(feature = "include", feature = "miette"))]
+#[test]
+fn test_miette_report_for_nested_include_chain_has_related_include_entries() {
+    let yaml = "foo: !include foo.yaml\n";
+    let options = nested_scalar_include_options("'broken\n");
+
+    let err = from_str_with_options::<Config>(yaml, options).expect_err("syntax error expected");
+    let report = serde_saphyr::miette::to_miette_report(&err, yaml, "root.yaml");
+    let rendered = format!("{report:?}");
+
+    assert!(rendered.contains("included from here"), "{rendered}");
+    assert!(rendered.contains("foo.yaml"), "{rendered}");
+    assert!(rendered.contains("bar.yaml"), "{rendered}");
+}

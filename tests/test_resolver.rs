@@ -12,6 +12,18 @@ struct Config {
 }
 
 #[cfg(feature = "include")]
+#[derive(Debug, Deserialize, PartialEq)]
+struct NestedConfig {
+    foo: NestedFoo,
+}
+
+#[cfg(feature = "include")]
+#[derive(Debug, Deserialize, PartialEq)]
+struct NestedFoo {
+    bar: String,
+}
+
+#[cfg(feature = "include")]
 #[test]
 fn test_reader_resolver() {
     let yaml = "foo: !include bar.yaml\n";
@@ -179,6 +191,56 @@ list:
 
 #[cfg(feature = "include")]
 #[test]
+fn test_resolver_request_ancestry_from_name_and_from_id() {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    let input = "foo: !include child.yaml\n";
+    let seen: Rc<RefCell<Vec<(String, String, Option<String>, Vec<String>)>>> =
+        Rc::new(RefCell::new(Vec::new()));
+    let seen_in_resolver = Rc::clone(&seen);
+
+    let options = serde_saphyr::Options::default().with_include_resolver(
+        move |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
+            seen_in_resolver.borrow_mut().push((
+                req.spec.to_string(),
+                req.from_name.to_string(),
+                req.from_id.map(str::to_string),
+                req.stack.clone(),
+            ));
+
+            let source = match req.spec {
+                "child.yaml" => "bar: !include grand.yaml\n",
+                "grand.yaml" => "deep_value\n",
+                _ => return Err(IncludeResolveError::Message("unexpected include".to_string())),
+            };
+
+            Ok(ResolvedInclude {
+                id: req.spec.to_string(),
+                name: req.spec.to_string(),
+                source: InputSource::from_string(source.to_string()),
+            })
+        },
+    );
+
+    let cfg: NestedConfig = serde_saphyr::from_str_with_options(input, options).unwrap();
+    assert_eq!(cfg.foo.bar, "deep_value");
+
+    let entries = seen.borrow();
+    assert_eq!(entries.len(), 2);
+
+    assert_eq!(entries[0].0, "child.yaml");
+    assert_eq!(entries[0].2, None);
+    assert_eq!(entries[0].3.last().map(String::as_str), Some(entries[0].1.as_str()));
+
+    assert_eq!(entries[1].0, "grand.yaml");
+    assert_eq!(entries[1].1, "child.yaml");
+    assert_eq!(entries[1].2.as_deref(), Some("child.yaml"));
+    assert_eq!(entries[1].3, vec![entries[0].1.clone(), "child.yaml".to_string()]);
+}
+
+#[cfg(feature = "include")]
+#[test]
 fn test_unsupported_include_form() {
     let input = "
 foo: !include { \"path\": \"file_b.yml\", \"extension\": \"txt\" }
@@ -316,6 +378,62 @@ fn test_successful_reader_resolver() {
 
     let config: Config = serde_saphyr::from_reader_with_options(cursor, options).unwrap();
     assert_eq!(config.foo, "bar_value");
+}
+
+#[cfg(feature = "include")]
+#[test]
+fn test_reader_include_syntax_error() {
+    let yaml = "foo: !include bad.yaml\n";
+    let cursor = std::io::Cursor::new(yaml.as_bytes());
+
+    let options = serde_saphyr::Options::default().with_include_resolver(
+        |req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+            if req.spec == "bad.yaml" {
+                Ok(serde_saphyr::ResolvedInclude {
+                    id: req.spec.to_string(),
+                    name: req.spec.to_string(),
+                    source: serde_saphyr::InputSource::from_reader(std::io::Cursor::new(b"'unterminated\n")),
+                })
+            } else {
+                Err(serde_saphyr::IncludeResolveError::Message("Not found".to_string()))
+            }
+        },
+    );
+
+    let err = serde_saphyr::from_reader_with_options::<_, Config>(cursor, options)
+        .expect_err("reader include syntax must fail");
+    let rendered = err.to_string();
+
+    assert!(rendered.contains("bad.yaml"), "{rendered}");
+    assert!(rendered.contains("while parsing") || rendered.contains("did not find expected"), "{rendered}");
+}
+
+#[cfg(feature = "include")]
+#[test]
+fn test_reader_include_type_error() {
+    let yaml = "foo: !include bad.yaml\n";
+    let cursor = std::io::Cursor::new(yaml.as_bytes());
+
+    let options = serde_saphyr::Options::default().with_include_resolver(
+        |req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+            if req.spec == "bad.yaml" {
+                Ok(serde_saphyr::ResolvedInclude {
+                    id: req.spec.to_string(),
+                    name: req.spec.to_string(),
+                    source: serde_saphyr::InputSource::from_reader(std::io::Cursor::new(b"nested: true\n")),
+                })
+            } else {
+                Err(serde_saphyr::IncludeResolveError::Message("Not found".to_string()))
+            }
+        },
+    );
+
+    let err = serde_saphyr::from_reader_with_options::<_, Config>(cursor, options)
+        .expect_err("reader include type mismatch must fail");
+    let rendered = err.to_string();
+
+    assert!(rendered.contains("bad.yaml"), "{rendered}");
+    assert!(rendered.contains("invalid type") || rendered.contains("expected"), "{rendered}");
 }
 
 #[cfg(feature = "include")]

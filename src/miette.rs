@@ -200,14 +200,17 @@ fn build_diagnostic(
         Error::WithSnippet { error, regions: snippet_regions, .. } => {
             let mut diag = build_diagnostic(error.without_snippet(), src, formatter, snippet_regions);
 
-            let mut used_sources = std::collections::HashSet::new();
-            used_sources.insert(diag.src.name().to_string());
-            for r in &diag.related {
-                used_sources.insert(r.src.name().to_string());
-            }
+            let mut used_regions = std::collections::HashSet::new();
 
             for region in snippet_regions {
-                if !used_sources.contains(&region.source_name) {
+                let key = (
+                    region.source_name.as_str(),
+                    region.location.source_id(),
+                    region.start_line,
+                    region.end_line,
+                );
+
+                if used_regions.insert(key) {
                     let (synthetic_src, span) = get_source_and_span(&diag.src, &region.location, snippet_regions);
                     if let Some(span) = span {
                         diag.related.push(ErrorDiagnostic {
@@ -216,7 +219,6 @@ fn build_diagnostic(
                             labels: vec![LabeledSpan::new_with_span(None, span)],
                             related: Vec::new(),
                         });
-                        used_sources.insert(region.source_name.clone());
                     }
                 }
             }
@@ -621,6 +623,110 @@ mod tests {
         let (picked_src, picked_span) = get_source_and_span(&src, &location, &regions);
         assert!(picked_src.inner().contains("region_value"));
         assert!(picked_span.is_some());
+    }
+
+    #[test]
+    fn get_source_and_span_uses_source_id_to_disambiguate_overlapping_lines_between_root_and_include() {
+        let src: Arc<NamedSource<String>> = Arc::new(NamedSource::new(
+            "root.yaml",
+            "root: 1\nconflict: root_value\n".to_owned(),
+        ));
+        let location = Location {
+            line: 2,
+            column: 11,
+            span: crate::Span {
+                byte_info: (0, 0),
+                offset: 0,
+                len: 10,
+            },
+            source_id: 1,
+        };
+
+        let regions = vec![
+            CroppedRegion {
+                text: "root: 1\nconflict: root_value\n".to_string(),
+                source_name: "root.yaml".to_string(),
+                start_line: 1,
+                end_line: 2,
+                location: Location {
+                    line: 2,
+                    column: 11,
+                    span: crate::Span::UNKNOWN,
+                    source_id: 1,
+                },
+            },
+            CroppedRegion {
+                text: "foo: 1\nconflict: include_value\n".to_string(),
+                source_name: "child.yaml".to_string(),
+                start_line: 1,
+                end_line: 2,
+                location: Location {
+                    line: 2,
+                    column: 11,
+                    span: crate::Span::UNKNOWN,
+                    source_id: 2,
+                },
+            },
+        ];
+
+        let (picked_src, picked_span) = get_source_and_span(&src, &location, &regions);
+        assert!(picked_src.inner().contains("root_value"));
+        assert!(!picked_src.inner().contains("include_value"));
+        assert!(picked_span.is_some());
+    }
+
+    #[test]
+    fn with_snippet_keeps_related_entries_for_same_name_different_sources() {
+        let src: Arc<NamedSource<String>> =
+            Arc::new(NamedSource::new("input.yaml", "root: 1\n".to_owned()));
+
+        let err = Error::WithSnippet {
+            error: Box::new(Error::Message {
+                msg: "invalid value".to_owned(),
+                location: Location {
+                    line: 2,
+                    column: 6,
+                    span: crate::Span {
+                        byte_info: (0, 0),
+                        offset: 0,
+                        len: 5,
+                    },
+                    source_id: 2,
+                },
+            }),
+            crop_radius: 2,
+            regions: vec![
+                CroppedRegion {
+                    text: "x: 1\nbad: parent_value\n".to_string(),
+                    source_name: "dup.yaml".to_string(),
+                    start_line: 1,
+                    end_line: 2,
+                    location: Location {
+                        line: 2,
+                        column: 6,
+                        span: crate::Span::UNKNOWN,
+                        source_id: 1,
+                    },
+                },
+                CroppedRegion {
+                    text: "x: 1\nbad: child_value\n".to_string(),
+                    source_name: "dup.yaml".to_string(),
+                    start_line: 1,
+                    end_line: 2,
+                    location: Location {
+                        line: 2,
+                        column: 6,
+                        span: crate::Span::UNKNOWN,
+                        source_id: 2,
+                    },
+                },
+            ],
+        };
+
+        let diag = build_diagnostic(&err, Arc::clone(&src), RenderOptions::default().formatter, &[]);
+        assert_eq!(diag.related.len(), 2);
+        assert!(diag.related.iter().any(|d| d.src.inner().contains("parent_value")));
+        assert!(diag.related.iter().any(|d| d.src.inner().contains("child_value")));
     }
 
     #[test]
