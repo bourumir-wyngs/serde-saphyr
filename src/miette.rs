@@ -10,6 +10,7 @@ use miette::{Diagnostic, LabeledSpan, NamedSource, SourceSpan};
 use crate::Error;
 use crate::Location;
 use crate::de_snippet::sanitize_terminal_snippet_preserve_len;
+use crate::de_error::CroppedRegion;
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::location::Locations;
 #[cfg(feature = "garde")]
@@ -53,7 +54,7 @@ pub fn to_miette_report_with_formatter(
 ) -> miette::Report {
     let sanitized_source = sanitize_terminal_snippet_preserve_len(source.to_owned());
     let src = Arc::new(NamedSource::new(file, sanitized_source));
-    let diag = build_diagnostic(err.without_snippet(), src, formatter);
+    let diag = build_diagnostic(err, src, formatter, &[]);
     miette::Report::new(diag)
 }
 
@@ -98,6 +99,7 @@ fn build_diagnostic(
     err: &Error,
     src: Arc<NamedSource<String>>,
     formatter: &dyn MessageFormatter,
+    regions: &[CroppedRegion],
 ) -> ErrorDiagnostic {
     match err {
         #[cfg(feature = "garde")]
@@ -110,6 +112,7 @@ fn build_diagnostic(
                     &path_key,
                     &entry.to_string(),
                     locations,
+                    regions,
                 ));
             }
 
@@ -136,6 +139,7 @@ fn build_diagnostic(
                     e.without_snippet(),
                     Arc::clone(&src),
                     formatter,
+                    regions,
                 ));
             }
 
@@ -154,7 +158,7 @@ fn build_diagnostic(
 
             for (path, entry) in entries {
                 related.push(build_validation_entry_diagnostic(
-                    &src, &path, &entry, locations,
+                    &src, &path, &entry, locations, regions,
                 ));
             }
 
@@ -181,6 +185,7 @@ fn build_diagnostic(
                     e.without_snippet(),
                     Arc::clone(&src),
                     formatter,
+                    regions,
                 ));
             }
 
@@ -192,20 +197,44 @@ fn build_diagnostic(
             }
         }
 
-        Error::WithSnippet { error, .. } => {
-            build_diagnostic(error.without_snippet(), src, formatter)
+        Error::WithSnippet { error, regions: snippet_regions, .. } => {
+            let mut diag = build_diagnostic(error.without_snippet(), src, formatter, snippet_regions);
+
+            let mut used_sources = std::collections::HashSet::new();
+            used_sources.insert(diag.src.name().to_string());
+            for r in &diag.related {
+                used_sources.insert(r.src.name().to_string());
+            }
+
+            for region in snippet_regions {
+                if !used_sources.contains(&region.source_name) {
+                    let (synthetic_src, span) = get_source_and_span(&diag.src, &region.location, snippet_regions);
+                    if let Some(span) = span {
+                        diag.related.push(ErrorDiagnostic {
+                            message: "included from here".to_owned(),
+                            src: synthetic_src,
+                            labels: vec![LabeledSpan::new_with_span(None, span)],
+                            related: Vec::new(),
+                        });
+                        used_sources.insert(region.source_name.clone());
+                    }
+                }
+            }
+
+            diag
         }
 
         Error::AliasError { msg: _, locations } => {
-            let labels = build_alias_labels(
+            let (actual_src, labels) = build_alias_labels(
                 &src,
                 locations.reference_location,
                 locations.defined_location,
+                regions,
             );
 
             ErrorDiagnostic {
                 message: formatter.format_message(err).into_owned(),
-                src,
+                src: actual_src,
                 labels,
                 related: Vec::new(),
             }
@@ -213,9 +242,13 @@ fn build_diagnostic(
 
         other => {
             let mut labels = Vec::new();
-            if let Some(loc) = other.location()
-                && let Some(span) = to_source_span(&src, &loc)
-            {
+            let (actual_src, span) = if let Some(loc) = other.location() {
+                get_source_and_span(&src, &loc, regions)
+            } else {
+                (Arc::clone(&src), None)
+            };
+
+            if let Some(span) = span {
                 labels.push(LabeledSpan::new_with_span(
                     Some(formatter.format_message(other).into_owned()),
                     span,
@@ -224,7 +257,7 @@ fn build_diagnostic(
 
             ErrorDiagnostic {
                 message: formatter.format_message(other).into_owned(),
-                src,
+                src: actual_src,
                 labels,
                 related: Vec::new(),
             }
@@ -238,6 +271,7 @@ fn build_validation_entry_diagnostic(
     path_key: &PathKey,
     entry: &str,
     locations: &PathMap,
+    regions: &[CroppedRegion],
 ) -> ErrorDiagnostic {
     let original_leaf = path_key
         .leaf_string()
@@ -266,11 +300,11 @@ fn build_validation_entry_diagnostic(
     let resolved_path = format_path_with_resolved_leaf(path_key, &resolved_leaf);
     let base_msg = format!("validation error: {entry} for `{resolved_path}`");
 
-    let labels = build_validation_labels(src, ref_loc, def_loc);
+    let (actual_src, labels) = build_validation_labels(src, ref_loc, def_loc, regions);
 
     ErrorDiagnostic {
         message: base_msg,
-        src: Arc::clone(src),
+        src: actual_src,
         labels,
         related: Vec::new(),
     }
@@ -281,38 +315,33 @@ fn build_validation_labels(
     src: &Arc<NamedSource<String>>,
     ref_loc: Location,
     def_loc: Location,
-) -> Vec<LabeledSpan> {
+    regions: &[CroppedRegion],
+) -> (Arc<NamedSource<String>>, Vec<LabeledSpan>) {
     let mut labels = Vec::new();
 
-    // Primary label: use-site (alias/merge) if known, otherwise definition.
-    if ref_loc != Location::UNKNOWN {
-        if let Some(span) = to_source_span(src, &ref_loc) {
-            labels.push(LabeledSpan::new_with_span(
-                Some("the value is used here".to_owned()),
-                span,
-            ));
+    let primary_loc = if ref_loc != Location::UNKNOWN { ref_loc } else { def_loc };
+    let (primary_src, span) = get_source_and_span(src, &primary_loc, regions);
+
+    if let Some(span) = span {
+        labels.push(LabeledSpan::new_with_span(
+            Some(if ref_loc != Location::UNKNOWN { "the value is used here".to_owned() } else { "defined here".to_owned() }),
+            span,
+        ));
+    }
+
+    if def_loc != Location::UNKNOWN && def_loc != ref_loc {
+        let (def_src, def_span) = get_source_and_span(src, &def_loc, regions);
+        if Arc::ptr_eq(&primary_src, &def_src) || def_src.name() == primary_src.name() {
+            if let Some(span) = def_span {
+                labels.push(LabeledSpan::new_with_span(
+                    Some("defined here".to_owned()),
+                    span,
+                ));
+            }
         }
-    } else if def_loc != Location::UNKNOWN
-        && let Some(span) = to_source_span(src, &def_loc)
-    {
-        labels.push(LabeledSpan::new_with_span(
-            Some("defined here".to_owned()),
-            span,
-        ));
     }
 
-    // Secondary label: definition site when it is distinct and known.
-    if def_loc != Location::UNKNOWN
-        && def_loc != ref_loc
-        && let Some(span) = to_source_span(src, &def_loc)
-    {
-        labels.push(LabeledSpan::new_with_span(
-            Some("defined here".to_owned()),
-            span,
-        ));
-    }
-
-    labels
+    (primary_src, labels)
 }
 
 /// Build labels for an alias error with both reference and defined locations.
@@ -320,38 +349,33 @@ fn build_alias_labels(
     src: &Arc<NamedSource<String>>,
     ref_loc: Location,
     def_loc: Location,
-) -> Vec<LabeledSpan> {
+    regions: &[CroppedRegion],
+) -> (Arc<NamedSource<String>>, Vec<LabeledSpan>) {
     let mut labels = Vec::new();
 
-    // Primary label: use-site (alias) if known, otherwise definition.
-    if ref_loc != Location::UNKNOWN {
-        if let Some(span) = to_source_span(src, &ref_loc) {
-            labels.push(LabeledSpan::new_with_span(
-                Some("the value is used here".to_owned()),
-                span,
-            ));
+    let primary_loc = if ref_loc != Location::UNKNOWN { ref_loc } else { def_loc };
+    let (primary_src, span) = get_source_and_span(src, &primary_loc, regions);
+
+    if let Some(span) = span {
+        labels.push(LabeledSpan::new_with_span(
+            Some(if ref_loc != Location::UNKNOWN { "the value is used here".to_owned() } else { "defined here".to_owned() }),
+            span,
+        ));
+    }
+
+    if def_loc != Location::UNKNOWN && def_loc != ref_loc {
+        let (def_src, def_span) = get_source_and_span(src, &def_loc, regions);
+        if Arc::ptr_eq(&primary_src, &def_src) || def_src.name() == primary_src.name() {
+            if let Some(span) = def_span {
+                labels.push(LabeledSpan::new_with_span(
+                    Some("anchor defined here".to_owned()),
+                    span,
+                ));
+            }
         }
-    } else if def_loc != Location::UNKNOWN
-        && let Some(span) = to_source_span(src, &def_loc)
-    {
-        labels.push(LabeledSpan::new_with_span(
-            Some("defined here".to_owned()),
-            span,
-        ));
     }
 
-    // Secondary label: definition site when it is distinct and known.
-    if def_loc != Location::UNKNOWN
-        && def_loc != ref_loc
-        && let Some(span) = to_source_span(src, &def_loc)
-    {
-        labels.push(LabeledSpan::new_with_span(
-            Some("anchor defined here".to_owned()),
-            span,
-        ));
-    }
-
-    labels
+    (primary_src, labels)
 }
 
 #[cfg(feature = "validator")]
@@ -387,6 +411,59 @@ fn collect_validator_entries_inner(
             }
         }
     }
+}
+
+
+fn get_source_and_span<'a>(
+    src: &'a Arc<NamedSource<String>>,
+    location: &Location,
+    regions: &[CroppedRegion],
+) -> (Arc<NamedSource<String>>, Option<SourceSpan>) {
+    if *location == Location::UNKNOWN {
+        return (Arc::clone(src), None);
+    }
+
+    let region = regions.iter().find(|r| {
+        let line = location.line as usize;
+        r.start_line <= line && line <= r.end_line
+    }).or_else(|| regions.first());
+
+    if let Some(region) = region {
+        let start_line = region.start_line.saturating_sub(1);
+        let mut padded_text = String::new();
+        for _ in 0..start_line {
+            padded_text.push('\n');
+        }
+        padded_text.push_str(&region.text);
+
+        let synthetic_src = Arc::new(NamedSource::new(region.source_name.as_str(), padded_text.clone()));
+
+        let mut byte_off = 0;
+        let mut found = false;
+        for (i, line) in padded_text.split_terminator('\n').enumerate() {
+            if i + 1 == location.line as usize {
+                let col = location.column as usize;
+                let char_off = col.saturating_sub(1);
+                let line_byte_off = line.char_indices().nth(char_off).map(|(idx, _)| idx).unwrap_or(line.len());
+                byte_off += line_byte_off;
+                found = true;
+                break;
+            }
+            byte_off += line.len() + 1; // +1 for \n
+        }
+
+        if found {
+            let mut char_len = location.span().len() as usize;
+            if char_len == 0 {
+                char_len = 1;
+            }
+            let remainder = &padded_text[byte_off..];
+            let byte_len = remainder.char_indices().nth(char_len).map(|(idx, _)| idx).unwrap_or(remainder.len()).max(1);
+            return (synthetic_src, Some(SourceSpan::new(byte_off.into(), byte_len)));
+        }
+    }
+
+    (Arc::clone(src), to_source_span(src, location))
 }
 
 fn to_source_span(src: &NamedSource<String>, location: &Location) -> Option<SourceSpan> {
@@ -471,7 +548,7 @@ mod tests {
             },
         };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src), RenderOptions::default().formatter);
+        let diag = build_diagnostic(&err, Arc::clone(&src), RenderOptions::default().formatter, &[]);
         let labels: Vec<_> = diag.labels().unwrap().collect();
         assert_eq!(labels.len(), 1);
         assert_eq!(
@@ -507,7 +584,7 @@ mod tests {
             },
         };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src), RenderOptions::default().formatter);
+        let diag = build_diagnostic(&err, Arc::clone(&src), RenderOptions::default().formatter, &[]);
         let labels: Vec<_> = diag.labels().unwrap().collect();
         assert_eq!(labels.len(), 1);
         // miette expects byte offsets; ensure we converted from chars to bytes correctly
@@ -540,7 +617,7 @@ mod tests {
             },
         };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src), RenderOptions::default().formatter);
+        let diag = build_diagnostic(&err, Arc::clone(&src), RenderOptions::default().formatter, &[]);
         let labels: Vec<_> = diag.labels().unwrap().collect();
         assert_eq!(labels.len(), 1);
         assert_eq!(labels[0].inner().offset(), start_byte);
@@ -570,7 +647,7 @@ mod tests {
             },
         };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src), RenderOptions::default().formatter);
+        let diag = build_diagnostic(&err, Arc::clone(&src), RenderOptions::default().formatter, &[]);
         let labels: Vec<_> = diag.labels().unwrap().collect();
         assert_eq!(labels.len(), 1);
         assert_eq!(labels[0].inner().offset(), start_byte);
@@ -600,7 +677,7 @@ mod tests {
             },
         };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src), RenderOptions::default().formatter);
+        let diag = build_diagnostic(&err, Arc::clone(&src), RenderOptions::default().formatter, &[]);
         let labels: Vec<_> = diag.labels().unwrap().collect();
         assert_eq!(labels.len(), 1);
         assert_eq!(labels[0].inner().offset(), start_byte);
@@ -631,7 +708,7 @@ mod tests {
             },
         };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src), RenderOptions::default().formatter);
+        let diag = build_diagnostic(&err, Arc::clone(&src), RenderOptions::default().formatter, &[]);
         let labels: Vec<_> = diag.labels().unwrap().collect();
         assert_eq!(labels.len(), 1);
         assert_eq!(labels[0].inner().offset(), start_byte);
@@ -700,7 +777,7 @@ mod tests {
 
         let err = Error::ValidatorError { errors, locations };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src), RenderOptions::default().formatter);
+        let diag = build_diagnostic(&err, Arc::clone(&src), RenderOptions::default().formatter, &[]);
         assert_eq!(diag.message, "validation failed");
         assert_eq!(diag.related.len(), 1);
 
@@ -780,7 +857,7 @@ mod tests {
 
         let err = Error::ValidationError { report, locations };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src), RenderOptions::default().formatter);
+        let diag = build_diagnostic(&err, Arc::clone(&src), RenderOptions::default().formatter, &[]);
         assert_eq!(diag.message, "validation failed");
         assert_eq!(diag.related.len(), 1);
 
@@ -841,7 +918,7 @@ mod tests {
             },
         };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src), RenderOptions::default().formatter);
+        let diag = build_diagnostic(&err, Arc::clone(&src), RenderOptions::default().formatter, &[]);
         assert_eq!(
             diag.message,
             "invalid value for alias (defined at line 1, column 13)"
@@ -889,7 +966,7 @@ mod tests {
             },
         };
 
-        let diag = build_diagnostic(&err, Arc::clone(&src), RenderOptions::default().formatter);
+        let diag = build_diagnostic(&err, Arc::clone(&src), RenderOptions::default().formatter, &[]);
         assert_eq!(diag.message, "invalid value");
 
         // When both locations are the same, should only have one label

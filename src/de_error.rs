@@ -1890,6 +1890,8 @@ fn fmt_validation_error_with_snippets_offset(
             .unwrap_or(Cow::Borrowed(entry_raw.as_str()));
         let base_msg = l10n.validation_base_message(entry.as_ref(), &resolved_path);
 
+        let mut rendered_regions = Vec::new();
+
         match (ref_loc, def_loc) {
             (Location::UNKNOWN, Location::UNKNOWN) => {
                 write!(f, "{base_msg}")?;
@@ -1897,6 +1899,7 @@ fn fmt_validation_error_with_snippets_offset(
             (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
                 let label = l10n.defined();
                 if let Some(region) = pick_cropped_region(regions, &r) {
+                    rendered_regions.push(region as *const _);
                     let ctx = crate::de_snippet::Snippet::new(
                         region.text.as_str(),
                         label.as_ref(),
@@ -1911,6 +1914,7 @@ fn fmt_validation_error_with_snippets_offset(
             (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
                 let label = l10n.defined_here();
                 if let Some(region) = pick_cropped_region(regions, &d) {
+                    rendered_regions.push(region as *const _);
                     let ctx = crate::de_snippet::Snippet::new(
                         region.text.as_str(),
                         label.as_ref(),
@@ -1926,6 +1930,7 @@ fn fmt_validation_error_with_snippets_offset(
                 let label = l10n.value_used_here();
                 let invalid_here = l10n.invalid_here(&base_msg);
                 if let Some(region) = pick_cropped_region(regions, &r) {
+                    rendered_regions.push(region as *const _);
                     let ctx = crate::de_snippet::Snippet::new(
                         region.text.as_str(),
                         label.as_ref(),
@@ -1939,6 +1944,7 @@ fn fmt_validation_error_with_snippets_offset(
                 writeln!(f)?;
                 writeln!(f, "{}", l10n.value_comes_from_the_anchor(d))?;
                 if let Some(region) = pick_cropped_region(regions, &d) {
+                    rendered_regions.push(region as *const _);
                     crate::de_snippet::fmt_snippet_window_offset_or_fallback(
                         f,
                         l10n,
@@ -1952,6 +1958,21 @@ fn fmt_validation_error_with_snippets_offset(
                     fmt_with_location(f, l10n, l10n.defined_window().as_ref(), &d)?;
                 }
             }
+        }
+
+        for extra_region in regions {
+            if rendered_regions.contains(&(extra_region as *const _)) {
+                continue;
+            }
+            writeln!(f)?;
+            writeln!(f, "included from here:")?;
+            let extra_ctx = crate::de_snippet::Snippet::new(
+                extra_region.text.as_str(),
+                extra_region.source_name.as_str(),
+                crop_radius,
+            )
+            .with_offset(extra_region.start_line);
+            extra_ctx.fmt_or_fallback(f, Level::NOTE, l10n, "", &extra_region.location)?;
         }
     }
     Ok(())
@@ -1987,6 +2008,8 @@ fn fmt_validator_error_with_snippets_offset(
         let entry = issue.display_entry_overridden(l10n, ExternalMessageSource::Validator);
         let base_msg = l10n.validation_base_message(&entry, &resolved_path);
 
+        let mut rendered_regions = Vec::new();
+
         match (locs.reference_location, locs.defined_location) {
             (Location::UNKNOWN, Location::UNKNOWN) => {
                 write!(f, "{base_msg}")?;
@@ -1994,6 +2017,7 @@ fn fmt_validator_error_with_snippets_offset(
             (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
                 let label = l10n.defined();
                 if let Some(region) = pick_cropped_region(regions, &r) {
+                    rendered_regions.push(region as *const _);
                     let ctx = crate::de_snippet::Snippet::new(
                         region.text.as_str(),
                         label.as_ref(),
@@ -2008,6 +2032,7 @@ fn fmt_validator_error_with_snippets_offset(
             (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
                 let label = l10n.defined_here();
                 if let Some(region) = pick_cropped_region(regions, &d) {
+                    rendered_regions.push(region as *const _);
                     let ctx = crate::de_snippet::Snippet::new(
                         region.text.as_str(),
                         label.as_ref(),
@@ -2023,6 +2048,7 @@ fn fmt_validator_error_with_snippets_offset(
                 let label = l10n.value_used_here();
                 let invalid_here = l10n.invalid_here(&base_msg);
                 if let Some(region) = pick_cropped_region(regions, &r) {
+                    rendered_regions.push(region as *const _);
                     let ctx = crate::de_snippet::Snippet::new(
                         region.text.as_str(),
                         label.as_ref(),
@@ -2036,6 +2062,7 @@ fn fmt_validator_error_with_snippets_offset(
                 writeln!(f)?;
                 writeln!(f, "{}", l10n.value_comes_from_the_anchor(d))?;
                 if let Some(region) = pick_cropped_region(regions, &d) {
+                    rendered_regions.push(region as *const _);
                     crate::de_snippet::fmt_snippet_window_offset_or_fallback(
                         f,
                         l10n,
@@ -2049,6 +2076,21 @@ fn fmt_validator_error_with_snippets_offset(
                     fmt_with_location(f, l10n, l10n.defined_window().as_ref(), &d)?;
                 }
             }
+        }
+
+        for extra_region in regions {
+            if rendered_regions.contains(&(extra_region as *const _)) {
+                continue;
+            }
+            writeln!(f)?;
+            writeln!(f, "included from here:")?;
+            let extra_ctx = crate::de_snippet::Snippet::new(
+                extra_region.text.as_str(),
+                extra_region.source_name.as_str(),
+                crop_radius,
+            )
+            .with_offset(extra_region.start_line);
+            extra_ctx.fmt_or_fallback(f, Level::NOTE, l10n, "", &extra_region.location)?;
         }
     }
 
