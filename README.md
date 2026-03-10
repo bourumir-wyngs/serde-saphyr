@@ -457,6 +457,7 @@ Merge keys are standard in YAML 1.1. Although YAML 1.2 no longer includes merge 
 
 `serde-saphyr` allows resolving `!include` tags via a custom resolver configured in [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). This is useful for splitting large configuration files.
 
+
 When using a single `!include` directly as a value, it works naturally for replacing a scalar, sequence, or an entire mapping:
 
 ```yaml
@@ -484,6 +485,8 @@ a: 1
 <<: !include my_mapping.yaml
 b: 2
 ```
+
+The included source must contain exactly one YAML document.
 
 ### Tuple enum variants
 It is possible to deserialize tuple enum variants:
