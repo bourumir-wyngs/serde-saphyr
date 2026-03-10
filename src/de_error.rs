@@ -924,6 +924,7 @@ impl Error {
     /// This is similar to `with_snippet`, but the `text` is a fragment that starts
     /// at `start_line` (1-based) rather than at line 1. The renderer will adjust
     /// line numbers accordingly.
+    #[cfg(test)]
     #[cold]
     #[inline(never)]
     pub(crate) fn with_snippet_offset(
@@ -935,6 +936,7 @@ impl Error {
         self.with_snippet_offset_named(text, start_line, "<input>", crop_radius)
     }
 
+    #[cfg(test)]
     #[cold]
     #[inline(never)]
     pub(crate) fn with_snippet_offset_named(

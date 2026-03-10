@@ -1441,6 +1441,14 @@ pub(crate) fn maybe_with_snippet_from_events(
                     err_with_snippet = err_with_snippet.with_additional_snippet_named(parent_text, parent_name, &include_loc, crop_radius);
                 }
             }
+
+            if stack_snippets.len() == 1 {
+                let include_loc = stack_snippets[0].2;
+                if include_loc != crate::Location::UNKNOWN {
+                    err_with_snippet = err_with_snippet
+                        .with_additional_snippet_named(input, "input", &include_loc, crop_radius);
+                }
+            }
             return err_with_snippet;
         }
 
@@ -1881,6 +1889,7 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
     options: Options,
 ) -> Result<T, Error> {
     let cfg = crate::de::Cfg::from_options(&options);
+    let with_snippet = options.with_snippet;
     let crop_radius = options.crop_radius;
 
     // Wrap the reader in a SharedRingReader to capture context for error snippets
@@ -1901,14 +1910,14 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
     );
 
     // Helper to attach snippet to an error using the RingReader's context
-    let attach_snippet = |e: Error| -> Error {
-        if crop_radius == 0 {
+    let attach_snippet = |e: Error, src_ref: &LiveEvents<'_>| -> Error {
+        if !with_snippet || crop_radius == 0 {
             return e;
         }
         match shared_ring.get_recent() {
             Ok(snapshot) => {
                 let text = String::from_utf8_lossy(&snapshot.bytes);
-                e.with_snippet_offset(&text, snapshot.start_line, crop_radius)
+                maybe_with_snippet_from_events(e, &text, src_ref, with_snippet, crop_radius)
             }
             Err(_) => e, // If we can't get the snapshot, return the error as-is
         }
@@ -1926,9 +1935,10 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
                 // for incompatible target types (e.g., bool).
                 return Err(attach_snippet(
                     Error::eof().with_location(src.last_location()),
+                    &src,
                 ));
             } else {
-                return Err(attach_snippet(e));
+                return Err(attach_snippet(e, &src));
             }
         }
     };
@@ -1941,6 +1951,7 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
             return Err(attach_snippet(
                 Error::multiple_documents("use read or read_with_options to obtain the iterator")
                     .with_location(src.last_location()),
+                &src,
             ));
         }
         Ok(None) => {}
@@ -1948,13 +1959,13 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
             if src.seen_doc_end() {
                 // Trailing garbage after a proper document end marker is ignored.
             } else {
-                return Err(attach_snippet(e));
+                return Err(attach_snippet(e, &src));
             }
         }
     }
 
     if let Err(e) = src.finish() {
-        return Err(attach_snippet(e));
+        return Err(attach_snippet(e, &src));
     }
     Ok(value)
 }

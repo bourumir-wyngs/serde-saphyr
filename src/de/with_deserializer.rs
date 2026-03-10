@@ -16,7 +16,7 @@ fn deserialize_with_scope<'de, R, F, W>(
 ) -> Result<R, Error>
 where
     for<'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<R, Error>,
-    W: Fn(Error) -> Error,
+    W: Fn(Error, &LiveEvents<'de>) -> Error,
 {
     let value_res = crate::anchor_store::with_document_scope(|| f(YamlDeserializer::new(src, cfg)));
     match value_res {
@@ -26,9 +26,9 @@ where
                 // If the only thing in the input was an empty document (synthetic null),
                 // surface this as an EOF error to preserve expected error semantics
                 // for incompatible target types (e.g., bool).
-                Err(wrap_err(Error::eof().with_location(src.last_location())))
+                Err(wrap_err(Error::eof().with_location(src.last_location()), src))
             } else {
-                Err(wrap_err(e))
+                Err(wrap_err(e, src))
             }
         }
     }
@@ -40,7 +40,7 @@ fn enforce_single_document_and_finish<'de, W>(
     wrap_err: W,
 ) -> Result<(), Error>
 where
-    W: Fn(Error) -> Error,
+    W: Fn(Error, &LiveEvents<'de>) -> Error,
 {
     // After finishing first document, peek ahead to detect either another document/content
     // or trailing garbage. If a scan error occurs but we have seen a DocumentEnd ("..."),
@@ -49,6 +49,7 @@ where
         Ok(Some(_)) => {
             return Err(wrap_err(
                 Error::multiple_documents(multiple_docs_hint).with_location(src.last_location()),
+                src,
             ));
         }
         Ok(None) => {}
@@ -56,12 +57,12 @@ where
             if src.seen_doc_end() {
                 // Trailing garbage after a proper document end marker is ignored.
             } else {
-                return Err(wrap_err(e));
+                return Err(wrap_err(e, src));
             }
         }
     }
 
-    src.finish().map_err(wrap_err)
+    src.finish().map_err(|e| wrap_err(e, src))
 }
 
 /// Create a streaming [`crate::Deserializer`] for a YAML string and run a closure against it.
@@ -102,7 +103,9 @@ where
         resolver,
     );
 
-    let wrap_err = |e| crate::maybe_with_snippet(e, input, with_snippet, crop_radius);
+    let wrap_err = |e, src: &LiveEvents<'de>| {
+        crate::maybe_with_snippet_from_events(e, input, src, with_snippet, crop_radius)
+    };
 
     let value = deserialize_with_scope(&mut src, cfg, f, wrap_err)?;
     enforce_single_document_and_finish(
@@ -170,11 +173,15 @@ where
     for<'de, 'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<Out, Error>,
     R: std::io::Read,
 {
+    let with_snippet = options.with_snippet;
+    let crop_radius = options.crop_radius;
     let cfg = Cfg::from_options(&options);
     #[cfg(feature = "include")]
     let resolver = crate::resolver_from_options(&options);
+    let shared_ring = crate::ring_reader::SharedRingReader::new(reader);
+    let ring_handle = crate::ring_reader::SharedRingReaderHandle::new(&shared_ring);
     let mut src = LiveEvents::from_reader(
-        reader,
+        ring_handle,
         options.budget,
         options.budget_report,
         options.budget_report_cb,
@@ -186,7 +193,18 @@ where
         resolver,
     );
 
-    let wrap_err = |e| e;
+    let wrap_err = |e, src: &LiveEvents<'_>| {
+        if !with_snippet || crop_radius == 0 {
+            return e;
+        }
+        match shared_ring.get_recent() {
+            Ok(snapshot) => {
+                let text = String::from_utf8_lossy(&snapshot.bytes);
+                crate::maybe_with_snippet_from_events(e, &text, src, with_snippet, crop_radius)
+            }
+            Err(_) => e,
+        }
+    };
 
     let value = deserialize_with_scope(&mut src, cfg, f, wrap_err)?;
     enforce_single_document_and_finish(
