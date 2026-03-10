@@ -56,6 +56,10 @@ impl<'input> ParserStack<'input> {
         self.include_resolver = Some(Box::new(resolver));
     }
 
+    pub fn has_resolver(&self) -> bool {
+        self.include_resolver.is_some()
+    }
+
     #[allow(dead_code)]
     pub fn push_str_parser(&mut self, parser: Parser<'input, StrInput<'input>>, name: String) {
         self.push_str_parser_with_snippet(parser, name, None);

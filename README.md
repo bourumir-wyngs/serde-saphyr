@@ -486,7 +486,7 @@ a: 1
 b: 2
 ```
 
-The included source must contain exactly one YAML document.
+The included source must contain exactly one YAML document. `!include` if gated behind the `include` feature flag. If it is not enabled, or the resolver is not set, `!include` tag has no special treatment.
 
 ### Tuple enum variants
 It is possible to deserialize tuple enum variants:

@@ -93,6 +93,14 @@ impl<'input> SaphyrParser<'input> {
     }
 
     #[cfg(feature = "include")]
+    fn has_resolver(&self) -> bool {
+        match self {
+            SaphyrParser::StringParser(parser) => parser.has_resolver(),
+            SaphyrParser::StreamParser(parser) => parser.has_resolver(),
+        }
+    }
+
+    #[cfg(feature = "include")]
     fn get_resolved_snippet(&self, source_id: u32) -> Option<(&str, &str)> {
         match self {
             SaphyrParser::StringParser(parser) => parser.resolved_sources.get(&source_id).map(|s| (s.name.as_str(), s.text.as_str())),
@@ -453,7 +461,7 @@ impl<'a> LiveEvents<'a> {
                     let tag_s = SfTag::from_optional_cow(&tag);
 
                     #[cfg(feature = "include")]
-                    if tag_s == SfTag::Include {
+                    if tag_s == SfTag::Include && self.parser.has_resolver() {
                         match crate::tags::include_spec_from_tag_and_value(&tag, &val) {
                             Ok(Some(include_spec)) => {
                                 self.parser.resolve(&include_spec, location)?;

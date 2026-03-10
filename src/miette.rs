@@ -331,13 +331,13 @@ fn build_validation_labels(
 
     if def_loc != Location::UNKNOWN && def_loc != ref_loc {
         let (def_src, def_span) = get_source_and_span(src, &def_loc, regions);
-        if Arc::ptr_eq(&primary_src, &def_src) || def_src.name() == primary_src.name() {
-            if let Some(span) = def_span {
-                labels.push(LabeledSpan::new_with_span(
-                    Some("defined here".to_owned()),
-                    span,
-                ));
-            }
+        if (Arc::ptr_eq(&primary_src, &def_src) || def_src.name() == primary_src.name())
+            && let Some(span) = def_span
+        {
+            labels.push(LabeledSpan::new_with_span(
+                Some("defined here".to_owned()),
+                span,
+            ));
         }
     }
 
@@ -365,13 +365,13 @@ fn build_alias_labels(
 
     if def_loc != Location::UNKNOWN && def_loc != ref_loc {
         let (def_src, def_span) = get_source_and_span(src, &def_loc, regions);
-        if Arc::ptr_eq(&primary_src, &def_src) || def_src.name() == primary_src.name() {
-            if let Some(span) = def_span {
-                labels.push(LabeledSpan::new_with_span(
-                    Some("anchor defined here".to_owned()),
-                    span,
-                ));
-            }
+        if (Arc::ptr_eq(&primary_src, &def_src) || def_src.name() == primary_src.name())
+            && let Some(span) = def_span
+        {
+            labels.push(LabeledSpan::new_with_span(
+                Some("anchor defined here".to_owned()),
+                span,
+            ));
         }
     }
 
@@ -414,8 +414,8 @@ fn collect_validator_entries_inner(
 }
 
 
-fn get_source_and_span<'a>(
-    src: &'a Arc<NamedSource<String>>,
+fn get_source_and_span(
+    src: &Arc<NamedSource<String>>,
     location: &Location,
     regions: &[CroppedRegion],
 ) -> (Arc<NamedSource<String>>, Option<SourceSpan>) {
