@@ -200,6 +200,26 @@ foo: !include { \"path\": \"file_b.yml\", \"extension\": \"txt\" }
 
 #[cfg(feature = "include")]
 #[test]
+fn test_include_sequence_form_without_resolver_is_not_treated_as_include() {
+    let input = "
+foo: !include [file_b.yml]
+";
+    let result: Result<serde::de::IgnoredAny, _> = serde_saphyr::from_str_with_options(input, Options::default());
+    assert!(result.is_ok(), "Expected Ok without resolver, got: {:?}", result);
+}
+
+#[cfg(feature = "include")]
+#[test]
+fn test_include_mapping_form_without_resolver_is_not_treated_as_include() {
+    let input = "
+foo: !include { path: file_b.yml, extension: txt }
+";
+    let result: Result<serde::de::IgnoredAny, _> = serde_saphyr::from_str_with_options(input, Options::default());
+    assert!(result.is_ok(), "Expected Ok without resolver, got: {:?}", result);
+}
+
+#[cfg(feature = "include")]
+#[test]
 fn test_include_fragment_tag_merges_into_spec() {
     let yaml = "foo: !include#user_fragment bar.yaml\n";
 

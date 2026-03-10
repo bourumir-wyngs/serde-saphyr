@@ -510,7 +510,9 @@ impl<'a> LiveEvents<'a> {
                     let tag_s = SfTag::from_optional_cow(&tag);
 
                     #[cfg(feature = "include")]
-                    if !matches!(crate::tags::parse_include_tag(&tag), crate::tags::IncludeTag::NotInclude) {
+                    if self.parser.has_resolver()
+                        && !matches!(crate::tags::parse_include_tag(&tag), crate::tags::IncludeTag::NotInclude)
+                    {
                         return Err(Error::UnsupportedIncludeForm { location });
                     }
 
@@ -566,7 +568,9 @@ impl<'a> LiveEvents<'a> {
 
                 Event::MappingStart(mut anchor_id, _tag) => {
                     #[cfg(feature = "include")]
-                    if !matches!(crate::tags::parse_include_tag(&_tag), crate::tags::IncludeTag::NotInclude) {
+                    if self.parser.has_resolver()
+                        && !matches!(crate::tags::parse_include_tag(&_tag), crate::tags::IncludeTag::NotInclude)
+                    {
                         return Err(Error::UnsupportedIncludeForm { location });
                     }
 
