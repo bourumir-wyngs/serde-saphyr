@@ -423,10 +423,26 @@ fn get_source_and_span(
         return (Arc::clone(src), None);
     }
 
-    let region = regions.iter().find(|r| {
-        let line = location.line as usize;
-        r.start_line <= line && line <= r.end_line
-    }).or_else(|| regions.first());
+    let line = location.line as usize;
+    let location_source_id = location.source_id();
+    let region = regions
+        .iter()
+        .find(|r| {
+            location_source_id != 0
+                && r.location.source_id() == location_source_id
+                && r.start_line <= line
+                && line <= r.end_line
+        })
+        .or_else(|| {
+            regions.iter().find(|r| {
+                r.start_line <= line
+                    && line <= r.end_line
+                    && (location_source_id == 0
+                        || r.location.source_id() == 0
+                        || r.location.source_id() == location_source_id)
+            })
+        })
+        .or_else(|| regions.first());
 
     if let Some(region) = region {
         let start_line = region.start_line.saturating_sub(1);
@@ -528,6 +544,84 @@ fn to_source_span(src: &NamedSource<String>, location: &Location) -> Option<Sour
 #[cfg(all(test, feature = "miette"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn get_source_and_span_prefers_region_with_matching_source_id() {
+        let src: Arc<NamedSource<String>> = Arc::new(NamedSource::new("input.yaml", "root: 1\n".to_owned()));
+        let location = Location {
+            line: 2,
+            column: 7,
+            span: crate::Span {
+                byte_info: (0, 0),
+                offset: 0,
+                len: 5,
+            },
+            source_id: 2,
+        };
+
+        let regions = vec![
+            CroppedRegion {
+                text: "a: 1\nbad: parent_value\n".to_string(),
+                source_name: "parent.yaml".to_string(),
+                start_line: 1,
+                end_line: 2,
+                location: Location {
+                    line: 2,
+                    column: 6,
+                    span: crate::Span::UNKNOWN,
+                    source_id: 1,
+                },
+            },
+            CroppedRegion {
+                text: "x: 1\nbad: child_value\n".to_string(),
+                source_name: "child.yaml".to_string(),
+                start_line: 1,
+                end_line: 2,
+                location: Location {
+                    line: 2,
+                    column: 6,
+                    span: crate::Span::UNKNOWN,
+                    source_id: 2,
+                },
+            },
+        ];
+
+        let (picked_src, picked_span) = get_source_and_span(&src, &location, &regions);
+        assert!(picked_src.inner().contains("child_value"));
+        assert!(picked_span.is_some());
+    }
+
+    #[test]
+    fn get_source_and_span_keeps_line_fallback_when_source_id_unknown() {
+        let src: Arc<NamedSource<String>> = Arc::new(NamedSource::new("input.yaml", "root: 1\n".to_owned()));
+        let location = Location {
+            line: 2,
+            column: 7,
+            span: crate::Span {
+                byte_info: (0, 0),
+                offset: 0,
+                len: 5,
+            },
+            source_id: 0,
+        };
+
+        let regions = vec![CroppedRegion {
+            text: "x: 1\nbad: region_value\n".to_string(),
+            source_name: "region.yaml".to_string(),
+            start_line: 1,
+            end_line: 2,
+            location: Location {
+                line: 2,
+                column: 6,
+                span: crate::Span::UNKNOWN,
+                source_id: 33,
+            },
+        }];
+
+        let (picked_src, picked_span) = get_source_and_span(&src, &location, &regions);
+        assert!(picked_src.inner().contains("region_value"));
+        assert!(picked_span.is_some());
+    }
 
     #[test]
     fn basic_error_has_primary_label_span() {

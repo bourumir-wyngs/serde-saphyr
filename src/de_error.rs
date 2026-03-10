@@ -190,12 +190,29 @@ pub struct CroppedRegion {
 }
 
 impl CroppedRegion {
+    fn covers_exact_source(&self, location: &Location) -> bool {
+        if location == &Location::UNKNOWN {
+            return false;
+        }
+        let source_id = location.source_id();
+        source_id != 0 && self.location.source_id() == source_id && self.covers_line(location)
+    }
+
+    fn covers_line(&self, location: &Location) -> bool {
+        let line = location.line as usize;
+        self.start_line <= line && line <= self.end_line
+    }
+
     fn covers(&self, location: &Location) -> bool {
         if location == &Location::UNKNOWN {
             return false;
         }
-        let line = location.line as usize;
-        self.start_line <= line && line <= self.end_line
+        if !self.covers_line(location) {
+            return false;
+        }
+        let region_source_id = self.location.source_id();
+        let location_source_id = location.source_id();
+        region_source_id == 0 || location_source_id == 0 || region_source_id == location_source_id
     }
 }
 
@@ -1593,7 +1610,8 @@ fn pick_cropped_region<'a>(
 ) -> Option<&'a CroppedRegion> {
     regions
         .iter()
-        .find(|r| r.covers(location))
+        .find(|r| r.covers_exact_source(location))
+        .or_else(|| regions.iter().find(|r| r.covers(location)))
         .or_else(|| regions.first())
 }
 
