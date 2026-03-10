@@ -812,15 +812,15 @@ where
     let cfg = crate::de::Cfg::from_options(&options);
     let mut src = LiveEvents::from_reader(
         reader,
-        options.budget,
+        options.budget.clone(),
         options.budget_report,
-        options.budget_report_cb,
+        options.budget_report_cb.clone(),
         options.alias_limits,
         false,
         EnforcingPolicy::AllContent,
         options.require_indent,
         #[cfg(feature = "include")]
-        None,
+        resolver_from_options(&options),
     );
 
     let mut recorder = crate::path_map::PathRecorder::new();
@@ -984,15 +984,15 @@ where
     let cfg = crate::de::Cfg::from_options(&options);
     let src = LiveEvents::from_reader(
         reader,
-        options.budget,
+        options.budget.clone(),
         options.budget_report,
-        options.budget_report_cb,
+        options.budget_report_cb.clone(),
         options.alias_limits,
         false,
         EnforcingPolicy::PerDocument,
         options.require_indent,
         #[cfg(feature = "include")]
-        None,
+        resolver_from_options(&options),
     );
 
     ReadValidIter::<T> {
@@ -1213,15 +1213,15 @@ where
     let cfg = crate::de::Cfg::from_options(&options);
     let mut src = LiveEvents::from_reader(
         reader,
-        options.budget,
+        options.budget.clone(),
         options.budget_report,
-        options.budget_report_cb,
+        options.budget_report_cb.clone(),
         options.alias_limits,
         false,
         EnforcingPolicy::AllContent,
         options.require_indent,
         #[cfg(feature = "include")]
-        None,
+        resolver_from_options(&options),
     );
 
     let mut recorder = crate::path_map::PathRecorder::new();
@@ -1382,15 +1382,15 @@ where
     let cfg = crate::de::Cfg::from_options(&options);
     let src = LiveEvents::from_reader(
         reader,
-        options.budget,
+        options.budget.clone(),
         options.budget_report,
-        options.budget_report_cb,
+        options.budget_report_cb.clone(),
         options.alias_limits,
         false,
         EnforcingPolicy::PerDocument,
         options.require_indent,
         #[cfg(feature = "include")]
-        None,
+        resolver_from_options(&options),
     );
 
     ReadValidateIter::<T> {
@@ -2181,15 +2181,15 @@ where
     let cfg = crate::de::Cfg::from_options(&options);
     let src = LiveEvents::from_reader(
         reader,
-        options.budget,
+        options.budget.clone(),
         options.budget_report,
-        options.budget_report_cb,
+        options.budget_report_cb.clone(),
         options.alias_limits,
         false,
         EnforcingPolicy::PerDocument,
         options.require_indent,
         #[cfg(feature = "include")]
-        None,
+        resolver_from_options(&options),
     );
 
     ReadIter::<T> {
