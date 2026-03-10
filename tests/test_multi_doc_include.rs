@@ -1,3 +1,5 @@
+#![cfg(feature = "include")]
+
 #[derive(Debug, serde::Deserialize)]
 #[allow(dead_code)]
 struct Root {

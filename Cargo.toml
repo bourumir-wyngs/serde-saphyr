@@ -36,9 +36,9 @@ validator = { version = ">= 0.11, < 0.21", optional = true, features = ["derive"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 
 [features]
-default = ["include"]
+default = []
 
-# Enables include processing
+# Enables !include tag processing (also resolver must be set)
 include = []
 
 # Enables integration with the `garde` validation crate.
