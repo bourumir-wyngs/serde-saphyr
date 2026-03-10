@@ -40,6 +40,8 @@ pub struct IncludeRequest<'a> {
     pub spec: &'a str,
     /// The name of the file or source currently being parsed (top of the include stack).
     pub from_name: &'a str,
+    /// The canonical identity of the source currently being parsed, or None for the root parser.
+    pub from_id: Option<&'a str>,
     /// The full chain of inclusions leading to this request, with the current file at the end.
     pub stack: Vec<String>,
     /// The location in the source file where the include was requested.

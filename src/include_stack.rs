@@ -129,10 +129,12 @@ impl<'input> ParserStack<'input> {
 
         let stack: Vec<String> = self.inner.stack().into_iter().collect();
         let from_name = stack.last().map(|s| s.as_str()).unwrap_or("");
+        let from_id = self.active_ids.last().map(|(_, id)| id.as_str());
         
         let request = crate::input_source::IncludeRequest {
             spec: include_str,
             from_name,
+            from_id,
             stack: stack.clone(),
             location,
         };
