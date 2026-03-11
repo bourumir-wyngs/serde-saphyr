@@ -2012,40 +2012,13 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
     options: Options,
 ) -> Result<T, Error> {
     let cfg = crate::de::Cfg::from_options(&options);
-    let with_snippet = options.with_snippet;
-    let crop_radius = options.crop_radius;
-
-    // Wrap the reader in a SharedRingReader to capture context for error snippets
-    let shared_ring = ring_reader::SharedRingReader::new(reader);
-    let ring_handle = ring_reader::SharedRingReaderHandle::new(&shared_ring);
+    let (snippet_ctx, ring_handle) = ReaderSnippetContext::new(
+        reader,
+        options.with_snippet,
+        options.crop_radius,
+    );
 
     let mut src = LiveEvents::from_reader(ring_handle, options, false, EnforcingPolicy::AllContent);
-
-    // Helper to attach snippet to an error using the RingReader's context
-    let attach_snippet = |e: Error, src_ref: &LiveEvents<'_>| -> Error {
-        if !with_snippet || crop_radius == 0 {
-            return e;
-        }
-        match shared_ring.get_recent() {
-            Ok(snapshot) => {
-                let text = String::from_utf8_lossy(&snapshot.bytes);
-                let root = RootFragment {
-                    text: text.as_ref(),
-                    start_line: snapshot.start_line,
-                    source_name: "input",
-                };
-                maybe_with_snippet_from_events_and_root_fragment(
-                    e,
-                    Some(&root),
-                    text.as_ref(),
-                    src_ref,
-                    with_snippet,
-                    crop_radius,
-                )
-            }
-            Err(_) => e, // If we can't get the snapshot, return the error as-is
-        }
-    };
 
     let value_res = crate::anchor_store::with_document_scope(|| {
         T::deserialize(crate::de::YamlDeserializer::new(&mut src, cfg))
@@ -2057,12 +2030,12 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
                 // If the only thing in the input was an empty document (synthetic null),
                 // surface this as an EOF error to preserve expected error semantics
                 // for incompatible target types (e.g., bool).
-                return Err(attach_snippet(
+                return Err(snippet_ctx.attach_snippet(
                     Error::eof().with_location(src.last_location()),
                     &src,
                 ));
             } else {
-                return Err(attach_snippet(e, &src));
+                return Err(snippet_ctx.attach_snippet(e, &src));
             }
         }
     };
@@ -2072,7 +2045,7 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
     // ignore the trailing garbage. Otherwise, surface the error.
     match src.peek() {
         Ok(Some(_)) => {
-            return Err(attach_snippet(
+            return Err(snippet_ctx.attach_snippet(
                 Error::multiple_documents("use read or read_with_options to obtain the iterator")
                     .with_location(src.last_location()),
                 &src,
@@ -2083,13 +2056,13 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
             if src.seen_doc_end() {
                 // Trailing garbage after a proper document end marker is ignored.
             } else {
-                return Err(attach_snippet(e, &src));
+                return Err(snippet_ctx.attach_snippet(e, &src));
             }
         }
     }
 
     if let Err(e) = src.finish() {
-        return Err(attach_snippet(e, &src));
+        return Err(snippet_ctx.attach_snippet(e, &src));
     }
     Ok(value)
 }

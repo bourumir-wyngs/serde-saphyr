@@ -486,14 +486,27 @@ a: 1
 b: 2
 ```
 
-The included source must contain exactly one YAML document. `!include` is gated behind the `include` feature flag. If it is not enabled, or the resolver is not set, this tag has no special treatment.
+`!include` is gated behind the `include` feature flag. If it is not enabled, or the resolver is not set, this tag has no special treatment. The `include` feature allows resolvers that do not access the filesystem. For the most common case, where files are included from the filesystem, `include_fs` must be enabled as well. Then the most common way to enable includes looks like this:
 
-Resolver return type affects diagnostics quality:
+```rust
+fn main() {
+    let options = options! {}
+        .with_filesystem_root("examples").expect("failed to create filesystem include resolver");
 
-- `InputSource::Text` keeps full included text available for snippets and include-chain notes.
-- `InputSource::Reader` keeps streaming behavior (no full buffering), but diagnostics for nested include failures can be less detailed because full snippet text for that include is not retained.
+    let config: Config = from_str_with_options(yaml_to_parse, options)
+        .expect("failed to parse filesystem include example");
+}
+```
 
-If your use case prioritizes error diagnostics (for example with `SafeFileResolver`), prefer returning `InputSource::Text` when practical.
+You can alternatively use [`SafeFileResolver`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.SafeFileResolver.html) to configure more options, or provide your own [`IncludeResolver`](https://docs.rs/serde-saphyr/latest/serde_saphyr/type.IncludeResolver.html) callback that resolves a name into YAML text, which can be useful for custom storage backends or generated YAML without using the filesystem.
+
+Instead of including the whole document, you can also include only the value of a specific anchor defined in the included YAML document:
+```yaml
+  !include my_mapping.yaml#anchor_name
+```
+Otherwise, the anchor scope is restricted to the document where it is defined. Overriding a parent anchor value somewhere deep inside included content would be challenging to debug and could even become a security issue.
+
+The included source must contain exactly one YAML document.
 
 ### Tuple enum variants
 It is possible to deserialize tuple enum variants:

@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use serde_saphyr::{from_str_with_options, Options};
+use serde_saphyr::{from_str_with_options, options};
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct Config {
@@ -20,7 +20,8 @@ selected_users: &users !include#users value.yaml
 repeated_users: *users
 "#;
 
-    let options = Options::default()
+    let options = options! {}
+        // Assuming we are running in a project root folder where "examples" is subfolder.
         .with_filesystem_root("examples")
         .expect("failed to create filesystem include resolver");
 
