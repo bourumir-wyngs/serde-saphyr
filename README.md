@@ -504,7 +504,7 @@ Instead of including the whole document, you can also include only the value of 
   !include my_mapping.yaml#anchor_name
 ```
 
-`SafeFileResolver` has a build in capability for anchor extraction. For flexibility, custom [`IncludeResolver`](https://docs.rs/serde-saphyr/latest/serde_saphyr/type.IncludeResolver.html) implementations must do this on their own, splitting anchor from the reference and then returning [`InputSource::AnchoredText`](https://docs.rs/serde-saphyr/latest/serde_saphyr/enum.InputSource.html#variant.AnchoredText).
+`SafeFileResolver` has a built-in capability for anchor extraction. For flexibility, custom [`IncludeResolver`](https://docs.rs/serde-saphyr/latest/serde_saphyr/type.IncludeResolver.html) implementations must do this on their own, splitting anchor from the reference and then returning [`InputSource::AnchoredText`](https://docs.rs/serde-saphyr/latest/serde_saphyr/enum.InputSource.html#variant.AnchoredText).
 
 Other than stated, the anchor scope is restricted to the document where it is defined. Overriding a parent anchor value somewhere deep inside included content would be challenging to debug and could even become a security issue. 
 
