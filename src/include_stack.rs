@@ -296,16 +296,16 @@ impl<'input> ParserStack<'input> {
     }
 }
 
-struct CollectedAnchorEvents<'input> {
-    events: Vec<(Event<'input>, Span)>,
+struct CollectedAnchorEvents {
+    events: Vec<(Event<'static>, Span)>,
     anchor_offset: usize,
 }
 
-fn collect_anchor_events<'input>(
+fn collect_anchor_events(
     text: &str,
     target_anchor: &str,
     anchor_offset: usize,
-) -> Result<CollectedAnchorEvents<'input>, String> {
+) -> Result<CollectedAnchorEvents, String> {
     let mut anchor_names = Vec::new();
     let mut scanner = Scanner::new(StrInput::new(text));
     for token in &mut scanner {
@@ -320,8 +320,7 @@ fn collect_anchor_events<'input>(
         ));
     }
 
-    let leaked_text: &'input str = Box::leak(text.to_string().into_boxed_str());
-    let mut parser = Parser::new_from_str(leaked_text);
+    let mut parser = Parser::new_from_str(text);
     parser.set_anchor_offset(anchor_offset);
 
     let mut anchor_index = 0usize;
@@ -506,4 +505,5 @@ mod tests {
         stack.push_str_parser(Parser::new_from_str("child: 2"), "child.yaml".to_string());
         assert_eq!(stack.current_source_id(), 2);
     }
+
 }
