@@ -460,7 +460,7 @@ where
 fn from_str_with_options_and_path_recorder<T: DeserializeOwned>(
     input: &str,
     options: Options,
-) -> Result<(T, crate::path_map::PathRecorder), Error> {
+) -> Result<(T, crate::path_map::PathRecorder, LiveEvents<'_>), Error> {
     // Normalize: ignore a single leading UTF-8 BOM if present.
     let input = if let Some(rest) = input.strip_prefix('\u{FEFF}') {
         rest
@@ -545,7 +545,7 @@ fn from_str_with_options_and_path_recorder<T: DeserializeOwned>(
         ));
     }
 
-    Ok((value, recorder))
+    Ok((value, recorder, src))
 }
 
 /// Deserialize a single YAML document from a YAML string and validate it with `garde`.
@@ -569,11 +569,10 @@ where
     T: DeserializeOwned + garde::Validate,
     <T as garde::Validate>::Context: Default,
 {
-    let snippet_options = options.clone();
     let with_snippet = options.with_snippet;
     let crop_radius = options.crop_radius;
 
-    let (v, recorder) = from_str_with_options_and_path_recorder::<T>(input, options)?;
+    let (v, recorder, src) = from_str_with_options_and_path_recorder::<T>(input, options)?;
     match Validate::validate(&v) {
         Ok(()) => Ok(v),
         Err(report) => {
@@ -581,10 +580,10 @@ where
                 report,
                 locations: recorder.map,
             };
-            Err(maybe_with_snippet_with_replayed_events(
+            Err(maybe_with_snippet_from_events(
                 err,
                 input,
-                &snippet_options,
+                &src,
                 with_snippet,
                 crop_radius,
             ))
@@ -604,11 +603,10 @@ pub fn from_str_with_options_context_valid<T>(
 where
     T: DeserializeOwned + garde::Validate,
 {
-    let snippet_options = options.clone();
     let with_snippet = options.with_snippet;
     let crop_radius = options.crop_radius;
 
-    let (v, recorder) = from_str_with_options_and_path_recorder::<T>(input, options)?;
+    let (v, recorder, src) = from_str_with_options_and_path_recorder::<T>(input, options)?;
     match Validate::validate_with(&v, context) {
         Ok(()) => Ok(v),
         Err(report) => {
@@ -616,10 +614,10 @@ where
                 report,
                 locations: recorder.map,
             };
-            Err(maybe_with_snippet_with_replayed_events(
+            Err(maybe_with_snippet_from_events(
                 err,
                 input,
-                &snippet_options,
+                &src,
                 with_snippet,
                 crop_radius,
             ))
@@ -988,11 +986,10 @@ pub fn from_str_with_options_validate<T>(input: &str, options: Options) -> Resul
 where
     T: DeserializeOwned + ValidatorValidate,
 {
-    let snippet_options = options.clone();
     let with_snippet = options.with_snippet;
     let crop_radius = options.crop_radius;
 
-    let (v, recorder) = from_str_with_options_and_path_recorder::<T>(input, options)?;
+    let (v, recorder, src) = from_str_with_options_and_path_recorder::<T>(input, options)?;
     match ValidatorValidate::validate(&v) {
         Ok(()) => Ok(v),
         Err(errors) => {
@@ -1000,10 +997,10 @@ where
                 errors,
                 locations: recorder.map,
             };
-            Err(maybe_with_snippet_with_replayed_events(
+            Err(maybe_with_snippet_from_events(
                 err,
                 input,
-                &snippet_options,
+                &src,
                 with_snippet,
                 crop_radius,
             ))
@@ -1382,6 +1379,62 @@ fn with_root_additional_snippet(
     }
 }
 
+#[cfg(feature = "include")]
+fn recorded_source_snippet_chain<'a>(
+    events: &'a crate::live_events::LiveEvents<'_>,
+    location: &crate::Location,
+) -> Option<Vec<&'a crate::include_stack::RecordedSource>> {
+    let chain = events.recorded_source_chain(location.source_id());
+    chain.first()?.text.as_deref()?;
+    Some(chain)
+}
+
+#[cfg(feature = "include")]
+fn with_recorded_source_snippets(
+    err: Error,
+    root: Option<&RootFragment<'_>>,
+    input: &str,
+    chain: &[&crate::include_stack::RecordedSource],
+    crop_radius: usize,
+) -> Error {
+    let current = chain[0];
+    let source_text = current
+        .text
+        .as_deref()
+        .expect("recorded source snippet chain must start with text-backed source");
+    let mut err_with_snippet = err.with_snippet_named(source_text, current.name.as_str(), crop_radius);
+
+    for window in chain.windows(2) {
+        let child = window[0];
+        let parent = window[1];
+        if child.include_location == crate::Location::UNKNOWN {
+            continue;
+        }
+
+        match parent.text.as_deref() {
+            Some(parent_text) => {
+                err_with_snippet = err_with_snippet.with_additional_snippet_named(
+                    parent_text,
+                    parent.name.as_str(),
+                    &child.include_location,
+                    crop_radius,
+                );
+            }
+            None if parent.parent_source_id.is_none() => {
+                err_with_snippet = with_root_additional_snippet(
+                    err_with_snippet,
+                    root,
+                    input,
+                    &child.include_location,
+                    crop_radius,
+                );
+            }
+            None => {}
+        }
+    }
+    err_with_snippet
+}
+
 pub(crate) fn maybe_with_snippet_from_events_and_root_fragment(
     err: Error,
     root: Option<&RootFragment<'_>>,
@@ -1395,34 +1448,11 @@ pub(crate) fn maybe_with_snippet_from_events_and_root_fragment(
     }
 
     #[cfg(feature = "include")]
-    if let Some(loc) = err.location()
-        && let Some((source_name, source_text)) = events.get_resolved_snippet(loc.source_id()) {
-            let mut err_with_snippet = err.with_snippet_named(source_text, source_name, crop_radius);
-
-            let stack_snippets = events.include_stack_snippets();
-            for i in (1..stack_snippets.len()).rev() {
-                let include_loc = stack_snippets[i].2;
-                let (parent_name, parent_text, _) = stack_snippets[i - 1];
-                if include_loc != crate::Location::UNKNOWN {
-                    err_with_snippet =
-                        err_with_snippet.with_additional_snippet_named(parent_text, parent_name, &include_loc, crop_radius);
-                }
-            }
-
-            if stack_snippets.len() == 1 {
-                let include_loc = stack_snippets[0].2;
-                if include_loc != crate::Location::UNKNOWN {
-                    err_with_snippet = with_root_additional_snippet(
-                        err_with_snippet,
-                        root,
-                        input,
-                        &include_loc,
-                        crop_radius,
-                    );
-                }
-            }
-            return err_with_snippet;
+    if let Some(loc) = err.location() {
+        if let Some(chain) = recorded_source_snippet_chain(events, &loc) {
+            return with_recorded_source_snippets(err, root, input, &chain, crop_radius);
         }
+    }
 
     match root {
         Some(root) => err.with_snippet_offset_named(
@@ -1452,35 +1482,6 @@ pub(crate) fn maybe_with_snippet_from_events(
     )
 }
 
-#[cfg(feature = "include")]
-fn maybe_with_snippet_with_replayed_events(
-    err: Error,
-    input: &str,
-    options: &Options,
-    with_snippet: bool,
-    crop_radius: usize,
-) -> Error {
-    if !(with_snippet && crop_radius > 0 && err.location().is_some()) {
-        return err;
-    }
-
-    let mut replay = LiveEvents::from_str(input, options.clone(), false);
-
-    while let Ok(Some(_)) = replay.next() {}
-
-    maybe_with_snippet_from_events(err, input, &replay, with_snippet, crop_radius)
-}
-
-#[cfg(not(feature = "include"))]
-fn maybe_with_snippet_with_replayed_events(
-    err: Error,
-    input: &str,
-    _options: &Options,
-    with_snippet: bool,
-    crop_radius: usize,
-) -> Error {
-    maybe_with_snippet(err, input, with_snippet, crop_radius)
-}
 
 /// Deserialize multiple YAML documents from a single string into a vector of `T`.
 /// Completely empty documents are ignored and not included into returned vector.

@@ -16,6 +16,16 @@ pub(crate) struct SnippetFrame {
     pub(crate) include_location: crate::Location,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct RecordedSource {
+    #[allow(dead_code)]
+    pub(crate) source_id: u32,
+    pub(crate) parent_source_id: Option<u32>,
+    pub(crate) name: String,
+    pub(crate) text: Option<String>,
+    pub(crate) include_location: crate::Location,
+}
+
 /// A parser stack that supports serde-saphyr includes.
 ///
 /// This delegates all anchor handling to `saphyr_parser::parser_stack::ParserStack` (which has
@@ -30,7 +40,7 @@ pub struct ParserStack<'input> {
     snippet_frames: Vec<Option<SnippetFrame>>,
     next_source_id: u32,
     active_source_ids: Vec<u32>,
-    pub(crate) resolved_sources: std::collections::HashMap<u32, SnippetFrame>,
+    pub(crate) resolved_sources: std::collections::HashMap<u32, RecordedSource>,
 }
 
 impl<'input> ParserStack<'input> {
@@ -77,10 +87,22 @@ impl<'input> ParserStack<'input> {
     ) {
         let source_id = self.next_source_id;
         self.next_source_id += 1;
+        let parent_source_id = self.active_source_ids.last().copied();
         self.active_source_ids.push(source_id);
-        if let Some(s) = &snippet {
-            self.resolved_sources.insert(source_id, s.clone());
-        }
+        let recorded = RecordedSource {
+            source_id,
+            parent_source_id,
+            name: snippet
+                .as_ref()
+                .map(|s| s.name.clone())
+                .unwrap_or_else(|| name.clone()),
+            text: snippet.as_ref().map(|s| s.text.clone()),
+            include_location: snippet
+                .as_ref()
+                .map(|s| s.include_location)
+                .unwrap_or(crate::Location::UNKNOWN),
+        };
+        self.resolved_sources.insert(source_id, recorded);
         self.inner.push_str_parser(parser, name);
         self.snippet_frames.push(snippet);
     }
@@ -93,16 +115,40 @@ impl<'input> ParserStack<'input> {
     ) {
         let source_id = self.next_source_id;
         self.next_source_id += 1;
+        let parent_source_id = self.active_source_ids.last().copied();
         self.active_source_ids.push(source_id);
-        if let Some(s) = &snippet {
-            self.resolved_sources.insert(source_id, s.clone());
-        }
+        let recorded = RecordedSource {
+            source_id,
+            parent_source_id,
+            name: snippet
+                .as_ref()
+                .map(|s| s.name.clone())
+                .unwrap_or_else(|| name.clone()),
+            text: snippet.as_ref().map(|s| s.text.clone()),
+            include_location: snippet
+                .as_ref()
+                .map(|s| s.include_location)
+                .unwrap_or(crate::Location::UNKNOWN),
+        };
+        self.resolved_sources.insert(source_id, recorded);
         self.inner.push_custom_parser(parser, name);
         self.snippet_frames.push(snippet);
     }
 
     pub fn current_source_id(&self) -> u32 {
         self.active_source_ids.last().copied().unwrap_or(0)
+    }
+
+    pub(crate) fn recorded_source_chain(&self, source_id: u32) -> Vec<&RecordedSource> {
+        let mut chain = Vec::new();
+        let mut current = self.resolved_sources.get(&source_id);
+        while let Some(source) = current {
+            chain.push(source);
+            current = source
+                .parent_source_id
+                .and_then(|parent_source_id| self.resolved_sources.get(&parent_source_id));
+        }
+        chain
     }
 
     #[allow(dead_code)]

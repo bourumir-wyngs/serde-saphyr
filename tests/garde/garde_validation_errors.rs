@@ -2,6 +2,9 @@ use garde::Validate;
 use serde::Deserialize;
 use serde_saphyr::Error;
 
+#[cfg(feature = "include")]
+use std::{cell::RefCell, rc::Rc};
+
 #[derive(Debug, Deserialize, Validate)]
 struct Root {
     #[garde(length(min = 1))]
@@ -70,6 +73,20 @@ struct InnerMap {
 struct NestedMapRoot {
     #[garde(dive)]
     outer: std::collections::HashMap<String, InnerMap>,
+}
+
+#[cfg(feature = "include")]
+#[derive(Debug, Deserialize, Validate)]
+struct IncludeValidationRoot {
+    #[garde(dive)]
+    a: IncludeValidationLeaf,
+}
+
+#[cfg(feature = "include")]
+#[derive(Debug, Deserialize, Validate)]
+struct IncludeValidationLeaf {
+    #[garde(length(min = 1))]
+    value: String,
 }
 
 #[test]
@@ -412,4 +429,75 @@ fn from_str_with_options_valid_reports_garde_error_from_included_input() {
         rendered.contains("| \"\""),
         "expected snippet to render included content, got: {rendered}"
     );
+}
+
+#[cfg(feature = "include")]
+#[test]
+fn validation_does_not_replay_include_resolver() {
+    let calls = Rc::new(RefCell::new(Vec::new()));
+    let calls_for_resolver = Rc::clone(&calls);
+    let options = serde_saphyr::Options::default().with_include_resolver(move |req: serde_saphyr::IncludeRequest| {
+        calls_for_resolver.borrow_mut().push(req.spec.to_string());
+        match req.spec {
+            "child.yaml" => Ok(serde_saphyr::ResolvedInclude {
+                id: req.spec.to_string(),
+                name: req.spec.to_string(),
+                source: serde_saphyr::InputSource::from_string("value: !include grandchild.yaml\n".to_string()),
+            }),
+            "grandchild.yaml" => Ok(serde_saphyr::ResolvedInclude {
+                id: req.spec.to_string(),
+                name: req.spec.to_string(),
+                source: serde_saphyr::InputSource::from_string("\"\"\n".to_string()),
+            }),
+            other => Err(serde_saphyr::IncludeResolveError::Message(format!("unexpected include: {other}"))),
+        }
+    });
+
+    let yaml = "a: !include child.yaml\n";
+
+    let err = serde_saphyr::from_str_with_options_valid::<IncludeValidationRoot>(yaml, options)
+        .expect_err("included value must fail garde rule");
+
+    match &err {
+        Error::ValidationError { .. } => {}
+        Error::WithSnippet { error, .. } if matches!(**error, Error::ValidationError { .. }) => {}
+        other => panic!("expected ValidationError, got: {other:?}"),
+    }
+    assert_eq!(
+        calls.borrow().as_slice(),
+        ["child.yaml", "grandchild.yaml"],
+        "validation failure must not replay the include resolver"
+    );
+}
+
+#[cfg(feature = "include")]
+#[test]
+fn validation_include_chain_built_from_recorded_sources() {
+    let yaml = "a: !include child.yaml\n";
+    let options = serde_saphyr::Options::default().with_include_resolver(
+        |req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+            match req.spec {
+                "child.yaml" => Ok(serde_saphyr::ResolvedInclude {
+                    id: req.spec.to_string(),
+                    name: req.spec.to_string(),
+                    source: serde_saphyr::InputSource::from_string("value: !include grandchild.yaml\n".to_string()),
+                }),
+                "grandchild.yaml" => Ok(serde_saphyr::ResolvedInclude {
+                    id: req.spec.to_string(),
+                    name: req.spec.to_string(),
+                    source: serde_saphyr::InputSource::from_string("\"\"\n".to_string()),
+                }),
+                other => Err(serde_saphyr::IncludeResolveError::Message(format!("unexpected include: {other}"))),
+            }
+        },
+    );
+
+    let err = serde_saphyr::from_str_with_options_valid::<IncludeValidationRoot>(yaml, options)
+        .expect_err("included value must fail garde rule");
+    let rendered = err.to_string();
+
+    assert!(rendered.contains("--> (defined):1:1"), "expected deepest included source snippet, got: {rendered}");
+    assert!(rendered.contains("included from here:"), "expected include-chain notes, got: {rendered}");
+    assert!(rendered.contains("--> child.yaml:1:17"), "expected intermediate include-site snippet, got: {rendered}");
+    assert!(rendered.contains("--> <input>:1:13"), "expected root include-site snippet, got: {rendered}");
 }

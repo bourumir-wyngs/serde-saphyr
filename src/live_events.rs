@@ -99,10 +99,10 @@ impl<'input> SaphyrParser<'input> {
     }
 
     #[cfg(feature = "include")]
-    fn get_resolved_snippet(&self, source_id: u32) -> Option<(&str, &str)> {
+    fn recorded_source_chain(&self, source_id: u32) -> Vec<&crate::include_stack::RecordedSource> {
         match self {
-            SaphyrParser::StringParser(parser) => parser.resolved_sources.get(&source_id).map(|s| (s.name.as_str(), s.text.as_str())),
-            SaphyrParser::StreamParser(parser) => parser.resolved_sources.get(&source_id).map(|s| (s.name.as_str(), s.text.as_str())),
+            SaphyrParser::StringParser(parser) => parser.recorded_source_chain(source_id),
+            SaphyrParser::StreamParser(parser) => parser.recorded_source_chain(source_id),
         }
     }
 
@@ -961,8 +961,11 @@ impl<'a> LiveEvents<'a> {
     }
 
     #[cfg(feature = "include")]
-    pub(crate) fn get_resolved_snippet(&self, source_id: u32) -> Option<(&str, &str)> {
-        self.parser.get_resolved_snippet(source_id)
+    pub(crate) fn recorded_source_chain(
+        &self,
+        source_id: u32,
+    ) -> Vec<&crate::include_stack::RecordedSource> {
+        self.parser.recorded_source_chain(source_id)
     }
 
     #[cfg(feature = "include")]
