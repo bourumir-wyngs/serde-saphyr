@@ -389,20 +389,28 @@ fn read_with_options_valid_validates_each_document_in_iterator() {
         .next()
         .expect("must yield second document")
         .expect_err("second document must fail validation");
-    assert!(matches!(err, Error::ValidationError { .. }));
+    match &err {
+        Error::ValidationError { .. } => {}
+        Error::WithSnippet { error, .. } if matches!(**error, Error::ValidationError { .. }) => {}
+        other => panic!("expected ValidationError, got: {other:?}"),
+    }
 
     let rendered = err.to_string();
     assert!(
-        rendered.contains("validation error at a:"),
+        rendered.contains("validation error"),
         "expected validation message, got: {rendered}"
     );
     assert!(
-        rendered.contains("at line 3, column 4"),
+        rendered.contains("line 3 column 4"),
         "expected second-doc location, got: {rendered}"
     );
     assert!(
-        !rendered.contains("<input>"),
-        "expected no snippet rendering, got: {rendered}"
+        rendered.contains(":3:4"),
+        "expected reader snippet location, got: {rendered}"
+    );
+    assert!(
+        rendered.contains("3 | a: \"\""),
+        "expected second-doc snippet contents, got: {rendered}"
     );
 
     assert!(it.next().is_none(), "iterator must end after an error");

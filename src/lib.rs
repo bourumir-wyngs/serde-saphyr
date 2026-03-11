@@ -896,15 +896,17 @@ where
     T: DeserializeOwned + garde::Validate + 'a,
     <T as garde::Validate>::Context: Default,
 {
-    struct ReadValidIter<'a, T> {
+    struct ReadValidIter<'a, R, T> {
+        snippet_ctx: ReaderSnippetContext<&'a mut R>,
         src: LiveEvents<'a>, // borrows from `reader`
         cfg: crate::de::Cfg,
         finished: bool,
         _marker: std::marker::PhantomData<T>,
     }
 
-    impl<'a, T> Iterator for ReadValidIter<'a, T>
+    impl<'a, R, T> Iterator for ReadValidIter<'a, R, T>
     where
+        R: Read + 'a,
         T: DeserializeOwned + garde::Validate + 'a,
         <T as garde::Validate>::Context: Default,
     {
@@ -934,12 +936,13 @@ where
                         let value = match value_res {
                             Ok(v) => v,
                             Err(e) => {
+                                let err = self.snippet_ctx.attach_snippet(e, &self.src);
                                 // After a deserialization error, skip remaining events in the
                                 // current document and try to recover at the next document boundary.
                                 if !self.src.skip_to_next_document() {
                                     self.finished = true;
                                 }
-                                return Some(Err(e));
+                                return Some(Err(err));
                             }
                         };
 
@@ -949,24 +952,27 @@ where
                                 // Validation errors occur after successful deserialization,
                                 // so the parser is already at the document boundary.
                                 // No need to skip or mark as finished - continue to next document.
-                                return Some(Err(Error::ValidationError {
-                                    report,
-                                    locations: recorder.map,
-                                }));
+                                return Some(Err(self.snippet_ctx.attach_snippet(
+                                    Error::ValidationError {
+                                        report,
+                                        locations: recorder.map,
+                                    },
+                                    &self.src,
+                                )));
                             }
                         }
                     }
                     Ok(None) => {
                         self.finished = true;
                         if let Err(e) = self.src.finish() {
-                            return Some(Err(e));
+                            return Some(Err(self.snippet_ctx.attach_snippet(e, &self.src)));
                         }
                         return None;
                     }
                     Err(e) => {
                         self.finished = true;
                         let _ = self.src.finish();
-                        return Some(Err(e));
+                        return Some(Err(self.snippet_ctx.attach_snippet(e, &self.src)));
                     }
                 }
             }
@@ -974,9 +980,15 @@ where
     }
 
     let cfg = crate::de::Cfg::from_options(&options);
-    let src = LiveEvents::from_reader(reader, options, false, EnforcingPolicy::PerDocument);
+    let (snippet_ctx, ring_handle) = ReaderSnippetContext::new(
+        reader,
+        options.with_snippet,
+        options.crop_radius,
+    );
+    let src = LiveEvents::from_reader(ring_handle, options, false, EnforcingPolicy::PerDocument);
 
-    ReadValidIter::<T> {
+    ReadValidIter::<R, T> {
+        snippet_ctx,
         src,
         cfg,
         finished: false,
@@ -1286,15 +1298,17 @@ where
     R: Read + 'a,
     T: DeserializeOwned + ValidatorValidate + 'a,
 {
-    struct ReadValidateIter<'a, T> {
+    struct ReadValidateIter<'a, R, T> {
+        snippet_ctx: ReaderSnippetContext<&'a mut R>,
         src: LiveEvents<'a>, // borrows from `reader`
         cfg: crate::de::Cfg,
         finished: bool,
         _marker: std::marker::PhantomData<T>,
     }
 
-    impl<'a, T> Iterator for ReadValidateIter<'a, T>
+    impl<'a, R, T> Iterator for ReadValidateIter<'a, R, T>
     where
+        R: Read + 'a,
         T: DeserializeOwned + ValidatorValidate + 'a,
     {
         type Item = Result<T, Error>;
@@ -1323,12 +1337,13 @@ where
                         let value = match value_res {
                             Ok(v) => v,
                             Err(e) => {
+                                let err = self.snippet_ctx.attach_snippet(e, &self.src);
                                 // After a deserialization error, skip remaining events in the
                                 // current document and try to recover at the next document boundary.
                                 if !self.src.skip_to_next_document() {
                                     self.finished = true;
                                 }
-                                return Some(Err(e));
+                                return Some(Err(err));
                             }
                         };
 
@@ -1338,24 +1353,27 @@ where
                                 // Validation errors occur after successful deserialization,
                                 // so the parser is already at the document boundary.
                                 // No need to skip or mark as finished - continue to next document.
-                                return Some(Err(Error::ValidatorError {
-                                    errors,
-                                    locations: recorder.map,
-                                }));
+                                return Some(Err(self.snippet_ctx.attach_snippet(
+                                    Error::ValidatorError {
+                                        errors,
+                                        locations: recorder.map,
+                                    },
+                                    &self.src,
+                                )));
                             }
                         }
                     }
                     Ok(None) => {
                         self.finished = true;
                         if let Err(e) = self.src.finish() {
-                            return Some(Err(e));
+                            return Some(Err(self.snippet_ctx.attach_snippet(e, &self.src)));
                         }
                         return None;
                     }
                     Err(e) => {
                         self.finished = true;
                         let _ = self.src.finish();
-                        return Some(Err(e));
+                        return Some(Err(self.snippet_ctx.attach_snippet(e, &self.src)));
                     }
                 }
             }
@@ -1363,9 +1381,15 @@ where
     }
 
     let cfg = crate::de::Cfg::from_options(&options);
-    let src = LiveEvents::from_reader(reader, options, false, EnforcingPolicy::PerDocument);
+    let (snippet_ctx, ring_handle) = ReaderSnippetContext::new(
+        reader,
+        options.with_snippet,
+        options.crop_radius,
+    );
+    let src = LiveEvents::from_reader(ring_handle, options, false, EnforcingPolicy::PerDocument);
 
-    ReadValidateIter::<T> {
+    ReadValidateIter::<R, T> {
+        snippet_ctx,
         src,
         cfg,
         finished: false,
