@@ -180,6 +180,17 @@ impl<'input> ParserStack<'input> {
         chain
     }
 
+    fn sync_source_tracking(&mut self, current_len: usize) {
+        self.active_ids.retain(|(depth, _)| *depth <= current_len);
+        self.snippet_frames.truncate(current_len);
+        self.active_source_ids.truncate(current_len);
+    }
+
+    pub(crate) fn prune_resolved_sources(&mut self) {
+        self.resolved_sources
+            .retain(|id, _| self.active_source_ids.contains(id));
+    }
+
     #[allow(dead_code)]
     pub fn active_include_snippet_source(&self) -> Option<(&str, &str)> {
         if self.inner.stack().len() <= 1 {
@@ -439,6 +450,9 @@ impl<'input> Iterator for ParserStack<'input> {
         let pre_stack = self.inner.stack();
         match self.inner.next() {
             Some(Err(e)) => {
+                // Do not sync source tracking yet on error. The caller (like `LiveEvents`)
+                // needs `current_source_id()` to map the error location correctly.
+                // If they continue iterating, the next `Ok` event will sync it.
                 if pre_stack.len() > 1 {
                     let msg = format!("{}\nwhile parsing {}", e.info(), pre_stack.join(" -> "));
                     Some(Err(ScanError::new(*e.marker(), msg)))
@@ -446,11 +460,15 @@ impl<'input> Iterator for ParserStack<'input> {
                     Some(Err(e))
                 }
             }
+            Some(Ok((Event::DocumentStart(explicit), span))) => {
+                self.sync_source_tracking(self.inner.stack().len());
+                if self.inner.stack().len() == 1 {
+                    self.prune_resolved_sources();
+                }
+                Some(Ok((Event::DocumentStart(explicit), span)))
+            }
             other => {
-                let current_len = self.inner.stack().len();
-                self.active_ids.retain(|(depth, _)| *depth <= current_len);
-                self.snippet_frames.truncate(current_len);
-                self.active_source_ids.truncate(current_len);
+                self.sync_source_tracking(self.inner.stack().len());
                 other
             }
         }
@@ -505,6 +523,74 @@ mod tests {
 
         stack.push_str_parser(Parser::new_from_str("child: 2"), "child.yaml".to_string());
         assert_eq!(stack.current_source_id(), 2);
+    }
+
+    #[test]
+    fn resolved_sources_retained_after_included_parser_pops() {
+        let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let mut stack = ParserStack::new(io_error, None);
+        stack.set_resolver(|req| {
+            assert_eq!(req.spec, "child.yaml");
+            Ok(ResolvedInclude {
+                id: "child.yaml".to_string(),
+                name: "child.yaml".to_string(),
+                source: InputSource::Text("child: 1\n".to_string()),
+            })
+        });
+
+        stack.push_str_parser(Parser::new_from_str("root: 1\n"), "root.yaml".to_string());
+        assert_eq!(stack.resolved_sources.len(), 1);
+
+        stack
+            .resolve("child.yaml", crate::Location::UNKNOWN)
+            .expect("child include resolves");
+        assert_eq!(stack.current_source_id(), 2);
+        assert_eq!(stack.resolved_sources.len(), 2);
+
+        while stack.current_source_id() == 2 {
+            let item = stack.next().expect("child parser still yields events");
+            assert!(item.is_ok(), "child parser should parse successfully");
+        }
+
+        assert_eq!(stack.current_source_id(), 1);
+        assert_eq!(stack.resolved_sources.len(), 2);
+        assert!(stack.resolved_sources.contains_key(&1));
+        assert!(stack.resolved_sources.contains_key(&2));
+    }
+
+    #[test]
+    fn resolved_sources_pruned_on_next_document_start() {
+        let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let mut stack = ParserStack::new(io_error, None);
+
+        // A stream with two documents
+        stack.push_str_parser(Parser::new_from_str("first: 1\n---\nsecond: 2\n"), "multi.yaml".to_string());
+        
+        // Push a dummy child source ID to simulate an include during the first document
+        stack.resolved_sources.insert(999, RecordedSource {
+            source_id: 999,
+            parent_source_id: Some(1),
+            name: "dummy.yaml".to_string(),
+            text: None,
+            include_location: crate::Location::UNKNOWN,
+        });
+
+        // Read until the first document finishes and the second document starts
+        let mut doc_starts = 0;
+        while let Some(item) = stack.next() {
+            if let Ok((Event::DocumentStart(_), _)) = item {
+                doc_starts += 1;
+                if doc_starts == 2 {
+                    break;
+                }
+            }
+        }
+
+        assert_eq!(doc_starts, 2);
+        // The root source (id 1) should be retained, but the dummy child (id 999) pruned
+        assert!(stack.resolved_sources.contains_key(&1));
+        assert!(!stack.resolved_sources.contains_key(&999));
+        assert_eq!(stack.resolved_sources.len(), 1);
     }
 
 }

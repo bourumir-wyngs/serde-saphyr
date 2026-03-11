@@ -128,6 +128,7 @@ impl<'input> SaphyrParser<'input> {
             SaphyrParser::StreamParser(parser) => parser.include_stack_snippets(),
         }
     }
+
 }
 
 /// Live event source that wraps `saphyr_parser::Parser` and:

@@ -1631,10 +1631,30 @@ fn pick_cropped_region<'a>(
     regions: &'a [CroppedRegion],
     location: &Location,
 ) -> Option<&'a CroppedRegion> {
+    let source_id = location.source_id();
+
+    if source_id != 0 {
+        if let Some(region) = regions.iter().find(|r| r.covers_exact_source(location)) {
+            return Some(region);
+        }
+        if let Some(region) = regions
+            .iter()
+            .find(|r| r.location.source_id() == source_id)
+        {
+            return Some(region);
+        }
+        if let Some(region) = regions
+            .iter()
+            .find(|r| r.location.source_id() == 0 && r.covers(location))
+        {
+            return Some(region);
+        }
+        return None;
+    }
+
     regions
         .iter()
-        .find(|r| r.covers_exact_source(location))
-        .or_else(|| regions.iter().find(|r| r.covers(location)))
+        .find(|r| r.covers(location))
         .or_else(|| regions.first())
 }
 

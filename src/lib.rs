@@ -535,16 +535,6 @@ fn from_str_with_options_and_path_recorder<T: DeserializeOwned>(
         }
     }
 
-    if let Err(e) = src.finish() {
-        return Err(maybe_with_snippet_from_events(
-            e,
-            input,
-            &src,
-            with_snippet,
-            crop_radius,
-        ));
-    }
-
     Ok((value, recorder, src))
 }
 
@@ -572,9 +562,20 @@ where
     let with_snippet = options.with_snippet;
     let crop_radius = options.crop_radius;
 
-    let (v, recorder, src) = from_str_with_options_and_path_recorder::<T>(input, options)?;
+    let (v, recorder, mut src) = from_str_with_options_and_path_recorder::<T>(input, options)?;
     match Validate::validate(&v) {
-        Ok(()) => Ok(v),
+        Ok(()) => {
+            if let Err(e) = src.finish() {
+                return Err(maybe_with_snippet_from_events(
+                    e,
+                    input,
+                    &src,
+                    with_snippet,
+                    crop_radius,
+                ));
+            }
+            Ok(v)
+        }
         Err(report) => {
             let err = Error::ValidationError {
                 report,
@@ -606,9 +607,20 @@ where
     let with_snippet = options.with_snippet;
     let crop_radius = options.crop_radius;
 
-    let (v, recorder, src) = from_str_with_options_and_path_recorder::<T>(input, options)?;
+    let (v, recorder, mut src) = from_str_with_options_and_path_recorder::<T>(input, options)?;
     match Validate::validate_with(&v, context) {
-        Ok(()) => Ok(v),
+        Ok(()) => {
+            if let Err(e) = src.finish() {
+                return Err(maybe_with_snippet_from_events(
+                    e,
+                    input,
+                    &src,
+                    with_snippet,
+                    crop_radius,
+                ));
+            }
+            Ok(v)
+        }
         Err(report) => {
             let err = Error::ValidationError {
                 report,
@@ -1018,9 +1030,20 @@ where
     let with_snippet = options.with_snippet;
     let crop_radius = options.crop_radius;
 
-    let (v, recorder, src) = from_str_with_options_and_path_recorder::<T>(input, options)?;
+    let (v, recorder, mut src) = from_str_with_options_and_path_recorder::<T>(input, options)?;
     match ValidatorValidate::validate(&v) {
-        Ok(()) => Ok(v),
+        Ok(()) => {
+            if let Err(e) = src.finish() {
+                return Err(maybe_with_snippet_from_events(
+                    e,
+                    input,
+                    &src,
+                    with_snippet,
+                    crop_radius,
+                ));
+            }
+            Ok(v)
+        }
         Err(errors) => {
             let err = Error::ValidatorError {
                 errors,
