@@ -54,7 +54,7 @@ fn write_utf16le(path: &Path, text: &str) {
 }
 
 #[test]
-fn safe_file_resolver_resolves_top_level_include_from_root() {
+fn safe_file_resolver_top_level_relative() {
     let temp = TempDir::new().unwrap();
     write_text(&temp.path().join("value.yaml"), "bar_value\n");
 
@@ -67,7 +67,7 @@ fn safe_file_resolver_resolves_top_level_include_from_root() {
 }
 
 #[test]
-fn safe_file_resolver_resolves_nested_include_relative_to_parent_file() {
+fn safe_file_resolver_nested_relative_from_parent_id() {
     let temp = TempDir::new().unwrap();
     write_text(
         &temp.path().join("env/prod.yaml"),
@@ -104,7 +104,7 @@ fn safe_file_resolver_uses_root_file_parent_for_top_level_relative_includes() {
 }
 
 #[test]
-fn safe_file_resolver_rejects_paths_escaping_root() {
+fn safe_file_resolver_rejects_escape() {
     let temp = TempDir::new().unwrap();
     let allow_root = temp.path().join("allowed");
     fs::create_dir_all(&allow_root).unwrap();
@@ -138,7 +138,7 @@ fn safe_file_resolver_rejects_absolute_paths() {
 }
 
 #[test]
-fn safe_file_resolver_rejects_fragment_specs() {
+fn safe_file_resolver_fragment_policy_is_explicit() {
     let temp = TempDir::new().unwrap();
     let resolver = SafeFileResolver::new(temp.path()).unwrap();
     let err = resolver.resolve(request("value.yaml#section", "", None)).unwrap_err();
@@ -150,7 +150,7 @@ fn safe_file_resolver_rejects_fragment_specs() {
 }
 
 #[test]
-fn safe_file_resolver_rejects_root_file_self_include_early() {
+fn safe_file_resolver_rejects_self_include() {
     let temp = TempDir::new().unwrap();
     let root_file = temp.path().join("root.yaml");
     write_text(&root_file, "foo: !include root.yaml\n");
@@ -168,7 +168,7 @@ fn safe_file_resolver_rejects_root_file_self_include_early() {
 }
 
 #[test]
-fn safe_file_resolver_decodes_utf16le_in_text_mode() {
+fn safe_file_resolver_text_mode_decodes_bom() {
     let temp = TempDir::new().unwrap();
     write_utf16le(&temp.path().join("value.yaml"), "bar_value\n");
 
@@ -197,6 +197,23 @@ fn safe_file_resolver_streaming_mode_still_works() {
 
 #[cfg(unix)]
 #[test]
+fn safe_file_resolver_symlink_policy_follow_within_root() {
+    use std::os::unix::fs::symlink;
+
+    let temp = TempDir::new().unwrap();
+    let target = temp.path().join("allowed/real.yaml");
+    write_text(&target, "bar_value\n");
+    symlink(&target, temp.path().join("allowed/link.yaml")).unwrap();
+
+    let resolver = SafeFileResolver::new(temp.path().join("allowed")).unwrap();
+    let options = Options::default().with_include_resolver(resolver.into_callback());
+
+    let parsed: ScalarConfig = from_str_with_options("foo: !include link.yaml\n", options).unwrap();
+    assert_eq!(parsed.foo, "bar_value");
+}
+
+#[cfg(unix)]
+#[test]
 fn safe_file_resolver_rejects_symlink_escape_even_when_following_symlinks() {
     use std::os::unix::fs::symlink;
 
@@ -218,7 +235,7 @@ fn safe_file_resolver_rejects_symlink_escape_even_when_following_symlinks() {
 
 #[cfg(unix)]
 #[test]
-fn safe_file_resolver_can_reject_internal_symlinks_by_policy() {
+fn safe_file_resolver_symlink_policy_reject() {
     use std::os::unix::fs::symlink;
 
     let temp = TempDir::new().unwrap();
