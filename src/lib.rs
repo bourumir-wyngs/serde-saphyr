@@ -337,17 +337,7 @@ where
 
     let cfg = crate::de::Cfg::from_options(&options);
     // Do not stop at DocumentEnd; we'll probe for trailing content/errors explicitly.
-    let mut src = LiveEvents::from_str(
-        input,
-        options.budget.clone(),
-        options.budget_report,
-        options.budget_report_cb.clone(),
-        options.alias_limits,
-        false,
-        options.require_indent,
-        #[cfg(feature = "include")]
-        resolver_from_options(&options),
-    );
+    let mut src = LiveEvents::from_str(input, options, false);
     let value_res = crate::anchor_store::with_document_scope(|| {
         T::deserialize(crate::de::YamlDeserializer::new(&mut src, cfg))
     });
@@ -478,17 +468,7 @@ fn from_str_with_options_and_path_recorder<T: DeserializeOwned>(
     let crop_radius = options.crop_radius;
 
     let cfg = crate::de::Cfg::from_options(&options);
-    let mut src = LiveEvents::from_str(
-        input,
-        options.budget.clone(),
-        options.budget_report,
-        options.budget_report_cb.clone(),
-        options.alias_limits,
-        false,
-        options.require_indent,
-        #[cfg(feature = "include")]
-        resolver_from_options(&options),
-    );
+    let mut src = LiveEvents::from_str(input, options, false);
 
     let mut recorder = crate::path_map::PathRecorder::new();
 
@@ -670,17 +650,7 @@ where
     let crop_radius = options.crop_radius;
 
     let cfg = crate::de::Cfg::from_options(&options);
-    let mut src = LiveEvents::from_str(
-        input,
-        options.budget.clone(),
-        options.budget_report,
-        options.budget_report_cb.clone(),
-        options.alias_limits,
-        false,
-        options.require_indent,
-        #[cfg(feature = "include")]
-        resolver_from_options(&options),
-    );
+    let mut src = LiveEvents::from_str(input, options, false);
     let mut values = Vec::new();
     let mut validation_errors: Vec<Error> = Vec::new();
 
@@ -824,18 +794,7 @@ where
     <T as garde::Validate>::Context: Default,
 {
     let cfg = crate::de::Cfg::from_options(&options);
-    let mut src = LiveEvents::from_reader(
-        reader,
-        options.budget.clone(),
-        options.budget_report,
-        options.budget_report_cb.clone(),
-        options.alias_limits,
-        false,
-        EnforcingPolicy::AllContent,
-        options.require_indent,
-        #[cfg(feature = "include")]
-        resolver_from_options(&options),
-    );
+    let mut src = LiveEvents::from_reader(reader, options, false, EnforcingPolicy::AllContent);
 
     let mut recorder = crate::path_map::PathRecorder::new();
 
@@ -996,18 +955,7 @@ where
     }
 
     let cfg = crate::de::Cfg::from_options(&options);
-    let src = LiveEvents::from_reader(
-        reader,
-        options.budget.clone(),
-        options.budget_report,
-        options.budget_report_cb.clone(),
-        options.alias_limits,
-        false,
-        EnforcingPolicy::PerDocument,
-        options.require_indent,
-        #[cfg(feature = "include")]
-        resolver_from_options(&options),
-    );
+    let src = LiveEvents::from_reader(reader, options, false, EnforcingPolicy::PerDocument);
 
     ReadValidIter::<T> {
         src,
@@ -1085,17 +1033,7 @@ where
     let crop_radius = options.crop_radius;
 
     let cfg = crate::de::Cfg::from_options(&options);
-    let mut src = LiveEvents::from_str(
-        input,
-        options.budget.clone(),
-        options.budget_report,
-        options.budget_report_cb.clone(),
-        options.alias_limits,
-        false,
-        options.require_indent,
-        #[cfg(feature = "include")]
-        resolver_from_options(&options),
-    );
+    let mut src = LiveEvents::from_str(input, options, false);
     let mut values = Vec::new();
     let mut validation_errors: Vec<Error> = Vec::new();
 
@@ -1232,18 +1170,7 @@ where
     T: DeserializeOwned + ValidatorValidate,
 {
     let cfg = crate::de::Cfg::from_options(&options);
-    let mut src = LiveEvents::from_reader(
-        reader,
-        options.budget.clone(),
-        options.budget_report,
-        options.budget_report_cb.clone(),
-        options.alias_limits,
-        false,
-        EnforcingPolicy::AllContent,
-        options.require_indent,
-        #[cfg(feature = "include")]
-        resolver_from_options(&options),
-    );
+    let mut src = LiveEvents::from_reader(reader, options, false, EnforcingPolicy::AllContent);
 
     let mut recorder = crate::path_map::PathRecorder::new();
 
@@ -1401,18 +1328,7 @@ where
     }
 
     let cfg = crate::de::Cfg::from_options(&options);
-    let src = LiveEvents::from_reader(
-        reader,
-        options.budget.clone(),
-        options.budget_report,
-        options.budget_report_cb.clone(),
-        options.alias_limits,
-        false,
-        EnforcingPolicy::PerDocument,
-        options.require_indent,
-        #[cfg(feature = "include")]
-        resolver_from_options(&options),
-    );
+    let src = LiveEvents::from_reader(reader, options, false, EnforcingPolicy::PerDocument);
 
     ReadValidateIter::<T> {
         src,
@@ -1488,16 +1404,7 @@ fn maybe_with_snippet_with_replayed_events(
         return err;
     }
 
-    let mut replay = LiveEvents::from_str(
-        input,
-        options.budget.clone(),
-        options.budget_report,
-        options.budget_report_cb.clone(),
-        options.alias_limits,
-        false,
-        options.require_indent,
-        resolver_from_options(options),
-    );
+    let mut replay = LiveEvents::from_str(input, options.clone(), false);
 
     while let Ok(Some(_)) = replay.next() {}
 
@@ -1598,17 +1505,7 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
     let crop_radius = options.crop_radius;
 
     let cfg = crate::de::Cfg::from_options(&options);
-    let mut src = LiveEvents::from_str(
-        input,
-        options.budget.clone(),
-        options.budget_report,
-        options.budget_report_cb.clone(),
-        options.alias_limits,
-        false,
-        options.require_indent,
-        #[cfg(feature = "include")]
-        resolver_from_options(&options),
-    );
+    let mut src = LiveEvents::from_str(input, options, false);
     let mut values = Vec::new();
 
     loop {
@@ -1956,18 +1853,7 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
     let shared_ring = ring_reader::SharedRingReader::new(reader);
     let ring_handle = ring_reader::SharedRingReaderHandle::new(&shared_ring);
 
-    let mut src = LiveEvents::from_reader(
-        ring_handle,
-        options.budget.clone(),
-        options.budget_report,
-        options.budget_report_cb.clone(),
-        options.alias_limits,
-        false,
-        EnforcingPolicy::AllContent,
-        options.require_indent,
-        #[cfg(feature = "include")]
-        resolver_from_options(&options),
-    );
+    let mut src = LiveEvents::from_reader(ring_handle, options, false, EnforcingPolicy::AllContent);
 
     // Helper to attach snippet to an error using the RingReader's context
     let attach_snippet = |e: Error, src_ref: &LiveEvents<'_>| -> Error {
@@ -2250,18 +2136,7 @@ where
     }
 
     let cfg = crate::de::Cfg::from_options(&options);
-    let src = LiveEvents::from_reader(
-        reader,
-        options.budget.clone(),
-        options.budget_report,
-        options.budget_report_cb.clone(),
-        options.alias_limits,
-        false,
-        EnforcingPolicy::PerDocument,
-        options.require_indent,
-        #[cfg(feature = "include")]
-        resolver_from_options(&options),
-    );
+    let src = LiveEvents::from_reader(reader, options, false, EnforcingPolicy::PerDocument);
 
     ReadIter::<T> {
         src,

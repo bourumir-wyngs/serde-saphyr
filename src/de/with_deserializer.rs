@@ -88,20 +88,8 @@ where
     let crop_radius = options.crop_radius;
 
     let cfg = Cfg::from_options(&options);
-    #[cfg(feature = "include")]
-    let resolver = crate::resolver_from_options(&options);
     // Do not stop at DocumentEnd; we'll probe for trailing content/errors explicitly.
-    let mut src = LiveEvents::from_str(
-        input,
-        options.budget,
-        options.budget_report,
-        options.budget_report_cb,
-        options.alias_limits,
-        false,
-        options.require_indent,
-        #[cfg(feature = "include")]
-        resolver,
-    );
+    let mut src = LiveEvents::from_str(input, options, false);
 
     let wrap_err = |e, src: &LiveEvents<'de>| {
         crate::maybe_with_snippet_from_events(e, input, src, with_snippet, crop_radius)
@@ -176,22 +164,9 @@ where
     let with_snippet = options.with_snippet;
     let crop_radius = options.crop_radius;
     let cfg = Cfg::from_options(&options);
-    #[cfg(feature = "include")]
-    let resolver = crate::resolver_from_options(&options);
     let shared_ring = crate::ring_reader::SharedRingReader::new(reader);
     let ring_handle = crate::ring_reader::SharedRingReaderHandle::new(&shared_ring);
-    let mut src = LiveEvents::from_reader(
-        ring_handle,
-        options.budget,
-        options.budget_report,
-        options.budget_report_cb,
-        options.alias_limits,
-        false,
-        EnforcingPolicy::AllContent,
-        options.require_indent,
-        #[cfg(feature = "include")]
-        resolver,
-    );
+    let mut src = LiveEvents::from_reader(ring_handle, options, false, EnforcingPolicy::AllContent);
 
     let wrap_err = |e, src: &LiveEvents<'_>| {
         if !with_snippet || crop_radius == 0 {
