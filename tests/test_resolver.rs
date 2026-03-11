@@ -168,6 +168,43 @@ root: !include self.yaml
 
 #[cfg(feature = "include")]
 #[test]
+fn cycle_detection_keys_off_id_not_name() {
+    use serde_saphyr::{InputSource, ResolvedInclude};
+
+    let input = "
+root: !include aliases/first.yaml
+";
+    let resolver = |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, _> {
+        let (id, name, source) = match req.spec {
+            "aliases/first.yaml" => (
+                "/canonical/shared.yaml",
+                "aliases/first.yaml",
+                "root2: !include aliases/second.yaml",
+            ),
+            "aliases/second.yaml" => (
+                "/canonical/shared.yaml",
+                "aliases/second.yaml",
+                "root3: terminal_value",
+            ),
+            _ => unreachable!("unexpected include spec: {}", req.spec),
+        };
+
+        Ok(ResolvedInclude {
+            id: id.to_string(),
+            name: name.to_string(),
+            source: InputSource::from_string(source.to_string()),
+        })
+    };
+    let options = serde_saphyr::Options::default().with_include_resolver(resolver);
+    let result: Result<serde::de::IgnoredAny, _> = serde_saphyr::from_str_with_options(input, options);
+
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("cyclic include detected"), "{}", err_msg);
+}
+
+#[cfg(feature = "include")]
+#[test]
 fn test_repeated_includes_not_cyclic() {
     use serde_saphyr::{InputSource, ResolvedInclude};
     let input = "
@@ -191,7 +228,7 @@ list:
 
 #[cfg(feature = "include")]
 #[test]
-fn test_resolver_request_ancestry_from_name_and_from_id() {
+fn resolver_request_uses_canonical_from_id_and_display_from_name() {
     use std::cell::RefCell;
     use std::rc::Rc;
 
@@ -215,9 +252,15 @@ fn test_resolver_request_ancestry_from_name_and_from_id() {
                 _ => return Err(IncludeResolveError::Message("unexpected include".to_string())),
             };
 
+            let (id, name) = match req.spec {
+                "child.yaml" => ("/workspace/includes/child.yaml", "child.yaml"),
+                "grand.yaml" => ("/workspace/includes/grand.yaml", "nested/grand.yaml"),
+                _ => unreachable!("already handled unexpected include"),
+            };
+
             Ok(ResolvedInclude {
-                id: req.spec.to_string(),
-                name: req.spec.to_string(),
+                id: id.to_string(),
+                name: name.to_string(),
                 source: InputSource::from_string(source.to_string()),
             })
         },
@@ -232,10 +275,11 @@ fn test_resolver_request_ancestry_from_name_and_from_id() {
     assert_eq!(entries[0].0, "child.yaml");
     assert_eq!(entries[0].2, None);
     assert_eq!(entries[0].3.last().map(String::as_str), Some(entries[0].1.as_str()));
+    assert_eq!(entries[0].1, "<input>");
 
     assert_eq!(entries[1].0, "grand.yaml");
     assert_eq!(entries[1].1, "child.yaml");
-    assert_eq!(entries[1].2.as_deref(), Some("child.yaml"));
+    assert_eq!(entries[1].2.as_deref(), Some("/workspace/includes/child.yaml"));
     assert_eq!(entries[1].3, vec![entries[0].1.clone(), "child.yaml".to_string()]);
 }
 
