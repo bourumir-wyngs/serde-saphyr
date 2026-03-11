@@ -48,7 +48,18 @@ fn request<'a>(spec: &'a str, from_name: &'a str, from_id: Option<&'a str>) -> I
         from_name,
         from_id,
         stack: Vec::new(),
+        size_remaining: None,
         location: Location::UNKNOWN,
+    }
+}
+
+fn include_error_message(err: serde_saphyr::IncludeResolveError) -> String {
+    match err {
+        serde_saphyr::IncludeResolveError::Message(msg) => msg,
+        serde_saphyr::IncludeResolveError::Io(e) => e.to_string(),
+        serde_saphyr::IncludeResolveError::SizeLimitExceeded(size, limit) => {
+            format!("include size {size} bytes exceeds remaining size limit {limit} bytes")
+        }
     }
 }
 
@@ -191,10 +202,7 @@ fn safe_file_resolver_rejects_escape() {
 
     let resolver = SafeFileResolver::new(&allow_root).unwrap();
     let err = resolver.resolve(request("../outside.yaml", "", None)).unwrap_err();
-    let msg = match err {
-        serde_saphyr::IncludeResolveError::Message(msg) => msg,
-        serde_saphyr::IncludeResolveError::Io(e) => e.to_string(),
-    };
+    let msg = include_error_message(err);
     assert!(msg.contains("outside the configured root"), "{}", msg);
 }
 
@@ -209,10 +217,7 @@ fn safe_file_resolver_rejects_absolute_paths() {
     let resolver = SafeFileResolver::new(&allow_root).unwrap();
     let spec = absolute_target.to_string_lossy().into_owned();
     let err = resolver.resolve(request(&spec, "", None)).unwrap_err();
-    let msg = match err {
-        serde_saphyr::IncludeResolveError::Message(msg) => msg,
-        serde_saphyr::IncludeResolveError::Io(e) => e.to_string(),
-    };
+    let msg = include_error_message(err);
     assert!(msg.contains("absolute include paths are not allowed"), "{}", msg);
 }
 
@@ -239,10 +244,7 @@ fn safe_file_resolver_rejects_self_include() {
         .with_root_file(&root_file)
         .unwrap();
     let err = resolver.resolve(request("root.yaml", "", None)).unwrap_err();
-    let msg = match err {
-        serde_saphyr::IncludeResolveError::Message(msg) => msg,
-        serde_saphyr::IncludeResolveError::Io(e) => e.to_string(),
-    };
+    let msg = include_error_message(err);
     assert!(msg.contains("configured root file itself"), "{}", msg);
 }
 
@@ -305,10 +307,7 @@ fn safe_file_resolver_rejects_symlink_escape_even_when_following_symlinks() {
 
     let resolver = SafeFileResolver::new(&allow_root).unwrap();
     let err = resolver.resolve(request("link.yaml", "", None)).unwrap_err();
-    let msg = match err {
-        serde_saphyr::IncludeResolveError::Message(msg) => msg,
-        serde_saphyr::IncludeResolveError::Io(e) => e.to_string(),
-    };
+    let msg = include_error_message(err);
     assert!(msg.contains("outside the configured root"), "{}", msg);
 }
 
@@ -326,9 +325,6 @@ fn safe_file_resolver_symlink_policy_reject() {
         .unwrap()
         .with_symlink_policy(SymlinkPolicy::Reject);
     let err = resolver.resolve(request("link.yaml", "", None)).unwrap_err();
-    let msg = match err {
-        serde_saphyr::IncludeResolveError::Message(msg) => msg,
-        serde_saphyr::IncludeResolveError::Io(e) => e.to_string(),
-    };
+    let msg = include_error_message(err);
     assert!(msg.contains("traverses a symlink"), "{}", msg);
 }

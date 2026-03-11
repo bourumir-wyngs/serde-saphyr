@@ -396,6 +396,7 @@ mod tests {
             from_id: None,
             stack: vec!["<input>".to_string()],
             location: crate::Location::UNKNOWN,
+            size_remaining: None,
         })
         .unwrap();
 

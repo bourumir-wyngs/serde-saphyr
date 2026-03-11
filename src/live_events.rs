@@ -241,11 +241,12 @@ impl<'a> LiveEvents<'a> {
         let max_inclusion_depth = budget
             .as_ref()
             .map_or(crate::Budget::default().max_inclusion_depth, |b| b.max_inclusion_depth);
-        let (input, error) = buffered_input_from_reader_with_limit(inputs, max_bytes);
+        let (input, error, reader_bytes_read) = buffered_input_from_reader_with_limit(inputs, max_bytes);
         #[cfg(feature = "include")]
         let parser = create_parser_from_reader_input(
             input,
             error.clone(),
+            reader_bytes_read,
             max_bytes,
             max_inclusion_depth,
             resolver,
@@ -317,9 +318,12 @@ impl<'a> LiveEvents<'a> {
         // Share the IO error cell with potential reader-based includes.
         let error = Rc::new(RefCell::new(None));
         #[cfg(feature = "include")]
+        let reader_bytes_read = Rc::new(std::cell::Cell::new(0));
+        #[cfg(feature = "include")]
         let parser = create_parser_from_str(
             input,
             error.clone(),
+            reader_bytes_read,
             max_bytes,
             max_inclusion_depth,
             resolver,

@@ -1,6 +1,10 @@
 #[cfg(feature = "include")]
 use serde::Deserialize;
 #[cfg(feature = "include")]
+use std::cell::RefCell;
+#[cfg(feature = "include")]
+use std::rc::Rc;
+#[cfg(feature = "include")]
 use serde_saphyr::{IncludeResolveError, InputSource, ResolvedInclude};
 #[cfg(feature = "include")]
 use serde_saphyr::Options;
@@ -21,6 +25,13 @@ struct NestedConfig {
 #[derive(Debug, Deserialize, PartialEq)]
 struct NestedFoo {
     bar: String,
+}
+
+#[cfg(feature = "include")]
+#[derive(Debug, Deserialize)]
+struct QuotaConfig {
+    pad: u32,
+    inc: std::collections::BTreeMap<String, String>,
 }
 
 #[cfg(feature = "include")]
@@ -711,4 +722,37 @@ base:
     let base = result.get("base").unwrap();
     let inc = base.get("inc").unwrap();
     assert_eq!(inc, &None); // The empty include resolves to a null value.
+}
+
+#[cfg(feature = "include")]
+#[test]
+fn test_include_request_reports_remaining_reader_quota() {
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let seen_in_resolver = seen.clone();
+    let yaml = "pad: 12345\ninc: !include child.yaml\n";
+    let options = serde_saphyr::options! {
+        budget: serde_saphyr::budget! {
+            max_reader_input_bytes: Some(64),
+        },
+    }
+    .with_include_resolver(move |req: serde_saphyr::IncludeRequest| {
+        seen_in_resolver.borrow_mut().push(req.size_remaining);
+        Ok(serde_saphyr::ResolvedInclude {
+            id: req.spec.to_string(),
+            name: req.spec.to_string(),
+            source: serde_saphyr::InputSource::from_string("value: ok\n".to_string()),
+        })
+    });
+
+    let parsed: QuotaConfig =
+        serde_saphyr::from_reader_with_options(std::io::Cursor::new(yaml.as_bytes()), options)
+            .unwrap();
+    assert_eq!(parsed.pad, 12345);
+    assert_eq!(parsed.inc.get("value").map(String::as_str), Some("ok"));
+
+    let remaining = seen.borrow();
+    assert_eq!(remaining.len(), 1);
+    let remaining = remaining[0].expect("remaining quota should be reported");
+    assert!(remaining < 64, "remaining quota should shrink after root bytes are read");
+    assert!(remaining >= "value: ok\n".len());
 }

@@ -185,6 +185,12 @@ impl SafeFileResolver {
                 canonical_target.display()
             )));
         }
+        if let Some(remaining) = req.size_remaining {
+            let size = usize::try_from(metadata.len()).unwrap_or(usize::MAX);
+            if size > remaining {
+                return Err(IncludeResolveError::SizeLimitExceeded(size, remaining));
+            }
+        }
 
         let id = path_to_string(&canonical_target);
         if req.from_id.is_none()
@@ -487,6 +493,7 @@ mod tests {
                 from_name: "<input>",
                 from_id: None,
                 stack: vec!["<input>".to_string()],
+                size_remaining: None,
                 location: crate::Location::UNKNOWN,
             })
             .unwrap();
@@ -507,6 +514,7 @@ mod tests {
                 from_name: "<input>",
                 from_id: None,
                 stack: vec!["<input>".to_string()],
+                size_remaining: None,
                 location: crate::Location::UNKNOWN,
             })
             .unwrap();
@@ -514,6 +522,30 @@ mod tests {
         assert!(matches!(
             resolved.source,
             InputSource::AnchoredText { ref anchor, .. } if anchor == "defaults"
+        ));
+    }
+
+    #[test]
+    fn safe_file_resolver_rejects_files_larger_than_remaining_quota() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("child.yaml"), "value: 123\n").unwrap();
+
+        let resolver = SafeFileResolver::new(root).unwrap();
+        let error = resolver
+            .resolve(IncludeRequest {
+                spec: "child.yaml",
+                from_name: "<input>",
+                from_id: None,
+                stack: vec!["<input>".to_string()],
+                size_remaining: Some(4),
+                location: crate::Location::UNKNOWN,
+            })
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            IncludeResolveError::SizeLimitExceeded(size, 4) if size > 4
         ));
     }
 }

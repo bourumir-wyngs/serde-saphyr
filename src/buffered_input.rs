@@ -8,7 +8,7 @@
 
 use encoding_rs_io::DecodeReaderBytesBuilder;
 use saphyr_parser::{BorrowedInput, BufferedInput, Input};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::io::{self, BufReader, Error, Read};
 use std::rc::Rc;
 
@@ -82,13 +82,14 @@ impl<'a> BorrowedInput<'a> for ReaderInput<'a> {
     }
 }
 
-pub type ReaderInputError = Rc<RefCell<Option<Error>>>;
+pub(crate) type ReaderInputError = Rc<RefCell<Option<Error>>>;
+pub(crate) type ReaderInputBytesRead = Rc<Cell<usize>>;
 
 pub struct ChunkedChars<R: Read> {
     /// Optional hard cap on total decoded UTF-8 bytes yielded by this iterator.
     max_bytes: Option<usize>,
-    /// Running count of decoded bytes yielded so far (from the underlying reader).
-    total_bytes: usize,
+    /// Running count of decoded bytes yielded so far across all readers sharing this budget.
+    bytes_read: ReaderInputBytesRead,
     /// The underlying reader that already yields UTF-8 bytes (typically a
     /// `BufReader<DecodeReaderBytes<...>>`). It is read incrementally.
     reader: R,
@@ -98,10 +99,15 @@ pub struct ChunkedChars<R: Read> {
 }
 
 impl<R: Read> ChunkedChars<R> {
-    pub fn new(reader: R, max_bytes: Option<usize>, err: Rc<RefCell<Option<Error>>>) -> Self {
+    pub fn new(
+        reader: R,
+        max_bytes: Option<usize>,
+        err: Rc<RefCell<Option<Error>>>,
+        bytes_read: ReaderInputBytesRead,
+    ) -> Self {
         Self {
             max_bytes,
-            total_bytes: 0,
+            bytes_read,
             reader,
             err,
         }
@@ -168,8 +174,9 @@ impl<R: Read> Iterator for ChunkedChars<R> {
 
         // Enforce byte limit if configured
         let add = needed;
+        let total_bytes = self.bytes_read.get();
         if let Some(limit) = self.max_bytes {
-            let new_total = self.total_bytes.saturating_add(add);
+            let new_total = total_bytes.saturating_add(add);
             if new_total > limit {
                 self.err.replace(Some(io::Error::new(
                     io::ErrorKind::FileTooLarge,
@@ -177,9 +184,9 @@ impl<R: Read> Iterator for ChunkedChars<R> {
                 )));
                 return None;
             }
-            self.total_bytes = new_total;
+            self.bytes_read.set(new_total);
         } else {
-            self.total_bytes = self.total_bytes.saturating_add(add);
+            self.bytes_read.set(total_bytes.saturating_add(add));
         }
 
         // Validate assembled bytes as UTF-8 and extract the char
@@ -199,10 +206,16 @@ impl<R: Read> Iterator for ChunkedChars<R> {
 pub fn buffered_input_from_reader_with_limit<'a, R: Read + 'a>(
     reader: R,
     max_bytes: Option<usize>,
-) -> (ReaderInput<'a>, ReaderInputError) {
+) -> (ReaderInput<'a>, ReaderInputError, ReaderInputBytesRead) {
     let error: ReaderInputError = Rc::new(RefCell::new(None));
-    let input = buffered_input_from_reader_with_limit_shared(reader, max_bytes, error.clone());
-    (input, error)
+    let bytes_read: ReaderInputBytesRead = Rc::new(Cell::new(0));
+    let input = buffered_input_from_reader_with_limit_shared(
+        reader,
+        max_bytes,
+        error.clone(),
+        bytes_read.clone(),
+    );
+    (input, error, bytes_read)
 }
 
 /// Like [`buffered_input_from_reader_with_limit`] but uses an existing shared error cell.
@@ -213,6 +226,7 @@ pub fn buffered_input_from_reader_with_limit_shared<'a, R: Read + 'a>(
     reader: R,
     max_bytes: Option<usize>,
     error: ReaderInputError,
+    bytes_read: ReaderInputBytesRead,
 ) -> ReaderInput<'a> {
     // Auto-detect encoding (BOM or guess), decode to UTF-8 on the fly.
     let decoder = DecodeReaderBytesBuilder::new()
@@ -221,7 +235,7 @@ pub fn buffered_input_from_reader_with_limit_shared<'a, R: Read + 'a>(
         .build(reader);
 
     let br = BufReader::new(Box::new(decoder) as DynReader<'a>);
-    let char_iter = ChunkedChars::new(br, max_bytes, error);
+    let char_iter = ChunkedChars::new(br, max_bytes, error, bytes_read);
     ReaderInput::new(BufferedInput::new(char_iter))
 }
 

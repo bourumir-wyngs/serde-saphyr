@@ -70,6 +70,7 @@ pub struct ResolvedInclude {
 pub enum IncludeResolveError {
     Io(std::io::Error),
     Message(String),
+    SizeLimitExceeded(usize, usize),
 }
 
 impl From<std::io::Error> for IncludeResolveError {
@@ -88,6 +89,8 @@ pub struct IncludeRequest<'a> {
     pub from_id: Option<&'a str>,
     /// The full chain of inclusions leading to this request, with the current file at the end.
     pub stack: Vec<String>,
+    /// Remaining decoded byte quota available for additional reader-backed input, if configured.
+    pub size_remaining: Option<usize>,
     /// The location in the source file where the include was requested.
     pub location: crate::Location,
 }
@@ -137,7 +140,6 @@ pub struct IncludeRequest<'a> {
 ///
 /// let options = options! {}.with_include_resolver(|req: IncludeRequest<'_>| {
 ///     assert_eq!(req.spec, "virtual://users.yaml");
-///     assert_eq!(req.from_id, None);
 ///     assert_eq!(req.from_name, "<input>");
 ///
 ///     if req.spec == "virtual://users.yaml" {

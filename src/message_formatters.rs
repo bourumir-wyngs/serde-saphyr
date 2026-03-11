@@ -203,6 +203,9 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
             let msg = match error {
                 crate::input_source::IncludeResolveError::Io(e) => e.to_string(),
                 crate::input_source::IncludeResolveError::Message(m) => m.clone(),
+                crate::input_source::IncludeResolveError::SizeLimitExceeded(size, limit) => {
+                    format!("include size {size} bytes exceeds remaining size limit {limit} bytes")
+                }
             };
             full_msg.push_str(&msg);
             Cow::Owned(full_msg)
