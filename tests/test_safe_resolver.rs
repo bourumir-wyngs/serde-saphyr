@@ -1,9 +1,9 @@
-#![cfg(all(feature = "include", not(miri), not(target_os = "wasi")))]
+#![cfg(all(feature = "include_fs", not(miri), not(target_os = "wasi")))]
 
 use serde::Deserialize;
 use serde_saphyr::{
-    from_str_with_options, IncludeRequest, Location, Options, SafeFileReadMode, SafeFileResolver,
-    SymlinkPolicy,
+    from_str_with_options, IncludeRequest, InputSource, Location, Options, SafeFileReadMode,
+    SafeFileResolver, SymlinkPolicy,
 };
 use std::fs;
 use std::path::Path;
@@ -20,8 +20,26 @@ struct NestedConfig {
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
+struct UsersConfig {
+    foo: Vec<User>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct AnchoredUsersConfig {
+    selected_users: Vec<User>,
+    repeated_users: Vec<User>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
 struct InnerConfig {
     bar: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct User {
+    id: u32,
+    name: String,
+    roles: Vec<String>,
 }
 
 fn request<'a>(spec: &'a str, from_name: &'a str, from_id: Option<&'a str>) -> IncludeRequest<'a> {
@@ -64,6 +82,67 @@ fn safe_file_resolver_top_level_relative() {
 
     let parsed: ScalarConfig = from_str_with_options("foo: !include value.yaml\n", options).unwrap();
     assert_eq!(parsed.foo, "bar_value");
+}
+
+#[test]
+fn options_with_filesystem_root_uses_safe_file_resolver() {
+    let temp = TempDir::new().unwrap();
+    write_text(&temp.path().join("value.yaml"), "bar_value\n");
+
+    let options = Options::default().with_filesystem_root(temp.path()).unwrap();
+
+    let parsed: ScalarConfig = from_str_with_options("foo: !include value.yaml\n", options).unwrap();
+    assert_eq!(parsed.foo, "bar_value");
+}
+
+#[test]
+fn safe_file_resolver_supports_path_fragment_syntax() {
+    let temp = TempDir::new().unwrap();
+    write_text(
+        &temp.path().join("value.yaml"),
+        "users: &users\n  - id: 1\n    name: Alice\n    roles: [admin]\n  - id: 2\n    name: Bob\n    roles: [viewer]\n",
+    );
+
+    let resolver = SafeFileResolver::new(temp.path()).unwrap();
+    let resolved = resolver.resolve(request("value.yaml#users", "", None)).unwrap();
+    match resolved.source {
+        InputSource::AnchoredText { text, anchor } => {
+            assert_eq!(anchor, "users");
+            assert!(text.contains("users: &users"));
+            assert!(text.contains("name: Alice"));
+            assert!(text.contains("name: Bob"));
+        }
+        InputSource::Text(text) => assert_eq!(
+            text,
+            "- id: 1\n  name: Alice\n  roles: [admin]\n- id: 2\n  name: Bob\n  roles: [viewer]"
+        ),
+        InputSource::Reader(_) => panic!("fragment include should be materialized as text"),
+    }
+
+    let options = Options::default().with_filesystem_root(temp.path()).unwrap();
+
+    let parsed: UsersConfig = from_str_with_options("foo: !include value.yaml#users\n", options).unwrap();
+    assert_eq!(parsed.foo.len(), 2);
+    assert_eq!(parsed.foo[0].name, "Alice");
+    assert_eq!(parsed.foo[1].name, "Bob");
+}
+
+#[test]
+fn safe_file_resolver_preserves_fragment_anchor_for_aliases() {
+    let temp = TempDir::new().unwrap();
+    write_text(
+        &temp.path().join("value.yaml"),
+        "users: &users\n  - id: 1\n    name: Alice\n    roles: [admin]\n  - id: 2\n    name: Bob\n    roles: [viewer]\n",
+    );
+
+    let options = Options::default().with_filesystem_root(temp.path()).unwrap();
+
+    let parsed: AnchoredUsersConfig = from_str_with_options(
+        "selected_users: &users !include#users value.yaml\nrepeated_users: *users\n",
+        options,
+    )
+    .unwrap();
+    assert_eq!(parsed.selected_users, parsed.repeated_users);
 }
 
 #[test]
@@ -138,15 +217,15 @@ fn safe_file_resolver_rejects_absolute_paths() {
 }
 
 #[test]
-fn safe_file_resolver_fragment_policy_is_explicit() {
+fn safe_file_resolver_reports_missing_fragment() {
     let temp = TempDir::new().unwrap();
-    let resolver = SafeFileResolver::new(temp.path()).unwrap();
-    let err = resolver.resolve(request("value.yaml#section", "", None)).unwrap_err();
-    let msg = match err {
-        serde_saphyr::IncludeResolveError::Message(msg) => msg,
-        serde_saphyr::IncludeResolveError::Io(e) => e.to_string(),
-    };
-    assert!(msg.contains("does not support include fragments"), "{}", msg);
+    write_text(&temp.path().join("value.yaml"), "users: &users []\n");
+
+    let options = Options::default().with_filesystem_root(temp.path()).unwrap();
+    let err = from_str_with_options::<ScalarConfig>("foo: !include value.yaml#section\n", options)
+        .unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("fragment 'section' was not found"), "{}", msg);
 }
 
 #[test]

@@ -157,12 +157,13 @@ impl SafeFileResolver {
     /// own callback logic. For direct integration with [`crate::Options`], use
     /// [`SafeFileResolver::into_callback`].
     pub fn resolve(&self, req: IncludeRequest<'_>) -> Result<ResolvedInclude, IncludeResolveError> {
-        let spec_path = Path::new(req.spec);
+        let (path_spec, fragment) = split_include_spec(req.spec)?;
+        let spec_path = Path::new(path_spec);
         validate_relative_include_spec(spec_path, req.spec)?;
 
         let base_dir = self.base_dir_for_request(&req)?;
         if self.symlink_policy == SymlinkPolicy::Reject {
-            self.reject_symlinks_in_spec_path(&base_dir, spec_path, req.spec)?;
+            self.reject_symlinks_in_spec_path(&base_dir, spec_path, path_spec)?;
         }
 
         let joined = base_dir.join(spec_path);
@@ -195,12 +196,20 @@ impl SafeFileResolver {
             )));
         }
 
-        let name = display_name(&self.allow_root, &canonical_target);
-        let source = match self.read_mode {
-            SafeFileReadMode::Text => {
+        let base_name = display_name(&self.allow_root, &canonical_target);
+        let name = match fragment {
+            Some(fragment) => format!("{base_name}#{fragment}"),
+            None => base_name,
+        };
+        let source = match (self.read_mode, fragment) {
+            (_, Some(fragment)) => InputSource::AnchoredText {
+                text: read_decoded_file(&canonical_target)?,
+                anchor: fragment.to_string(),
+            },
+            (SafeFileReadMode::Text, None) => {
                 InputSource::from_string(read_decoded_file(&canonical_target)?)
             }
-            SafeFileReadMode::Reader => {
+            (SafeFileReadMode::Reader, None) => {
                 InputSource::from_reader(fs::File::open(&canonical_target)?)
             }
         };
@@ -335,6 +344,30 @@ fn read_decoded_file(path: &Path) -> Result<String, IncludeResolveError> {
 }
 
 #[cfg(feature = "include")]
+fn split_include_spec(raw_spec: &str) -> Result<(&str, Option<&str>), IncludeResolveError> {
+    let Some((path, fragment)) = raw_spec.split_once('#') else {
+        return Ok((raw_spec, None));
+    };
+    if path.is_empty() {
+        return Err(IncludeResolveError::Message(
+            "include path must not be empty".to_string(),
+        ));
+    }
+    if fragment.is_empty() {
+        return Err(IncludeResolveError::Message(
+            "include fragment must not be empty".to_string(),
+        ));
+    }
+    if fragment.contains('#') {
+        return Err(IncludeResolveError::Message(format!(
+            "include fragment must not contain '#': {}",
+            raw_spec
+        )));
+    }
+    Ok((path, Some(fragment)))
+}
+
+#[cfg(feature = "include")]
 fn canonicalize_existing_dir(path: &Path) -> io::Result<PathBuf> {
     let canonical = fs::canonicalize(path)?;
     let metadata = fs::metadata(&canonical)?;
@@ -370,13 +403,6 @@ fn validate_relative_include_spec(
     if raw_spec.is_empty() {
         return Err(IncludeResolveError::Message(
             "include path must not be empty".to_string(),
-        ));
-    }
-
-    if raw_spec.contains('#') {
-        return Err(IncludeResolveError::Message(
-            "SafeFileResolver does not support include fragments ('#'); use a custom resolver for fragment-aware includes"
-                .to_string(),
         ));
     }
 

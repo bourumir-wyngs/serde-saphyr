@@ -41,6 +41,9 @@ default = []
 # Enables !include tag processing (also resolver must be set)
 include = []
 
+# Enables the filesystem-backed `SafeFileResolver` for `!include` processing.
+include_fs = ["include"]
+
 # Enables integration with the `garde` validation crate.
 garde = ["dep:garde"]
 
@@ -104,6 +107,10 @@ required-features = ["include"]
 [[example]]
 name = "include_error"
 required-features = ["include"]
+
+[[example]]
+name = "include_filesystem"
+required-features = ["include_fs"]
 
 [[example]]
 name = "figment_yaml"

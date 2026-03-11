@@ -2,7 +2,7 @@ use crate::buffered_input::{
     buffered_input_from_reader_with_limit_shared, ReaderInput, ReaderInputError,
 };
 use crate::input_source::{IncludeResolveError, IncludeResolver, InputSource, ResolvedInclude};
-use saphyr_parser::{Event, Parser, ScanError, Span, StrInput};
+use saphyr_parser::{Event, Parser, ScanError, Scanner, Span, StrInput, TokenType};
 
 
 
@@ -135,6 +135,34 @@ impl<'input> ParserStack<'input> {
         self.snippet_frames.push(snippet);
     }
 
+    fn push_replay_parser_with_snippet(
+        &mut self,
+        parser: saphyr_parser::parser_stack::ReplayParser<'input>,
+        name: String,
+        snippet: Option<SnippetFrame>,
+    ) {
+        let source_id = self.next_source_id;
+        self.next_source_id += 1;
+        let parent_source_id = self.active_source_ids.last().copied();
+        self.active_source_ids.push(source_id);
+        let recorded = RecordedSource {
+            source_id,
+            parent_source_id,
+            name: snippet
+                .as_ref()
+                .map(|s| s.name.clone())
+                .unwrap_or_else(|| name.clone()),
+            text: snippet.as_ref().map(|s| s.text.clone()),
+            include_location: snippet
+                .as_ref()
+                .map(|s| s.include_location)
+                .unwrap_or(crate::Location::UNKNOWN),
+        };
+        self.resolved_sources.insert(source_id, recorded);
+        self.inner.push_replay_parser(parser, name);
+        self.snippet_frames.push(snippet);
+    }
+
     pub fn current_source_id(&self) -> u32 {
         self.active_source_ids.last().copied().unwrap_or(0)
     }
@@ -239,8 +267,168 @@ impl<'input> ParserStack<'input> {
                 let parser = Parser::new(input);
                 self.push_stream_parser_with_snippet(parser, name, None);
             }
+            InputSource::AnchoredText { mut text, anchor } => {
+                if text.trim().is_empty() {
+                    text = "~".to_string();
+                }
+                let snippet = SnippetFrame {
+                    name: name.clone(),
+                    text: text.clone(),
+                    include_location: location,
+                };
+                let events = collect_anchor_events(&text, &anchor, self.inner.current_anchor_offset())
+                    .map_err(|error| {
+                    crate::de_error::Error::ResolverError {
+                        target: include_str.to_string(),
+                        error: crate::IncludeResolveError::Message(error),
+                        stack: self.inner.stack().into_iter().collect(),
+                        location,
+                    }
+                })?;
+                self.push_replay_parser_with_snippet(
+                    saphyr_parser::parser_stack::ReplayParser::new(events.events, events.anchor_offset),
+                    name,
+                    Some(snippet),
+                );
+            }
         }
         Ok(())
+    }
+}
+
+struct CollectedAnchorEvents<'input> {
+    events: Vec<(Event<'input>, Span)>,
+    anchor_offset: usize,
+}
+
+fn collect_anchor_events<'input>(
+    text: &str,
+    target_anchor: &str,
+    anchor_offset: usize,
+) -> Result<CollectedAnchorEvents<'input>, String> {
+    let mut anchor_names = Vec::new();
+    let mut scanner = Scanner::new(StrInput::new(text));
+    for token in &mut scanner {
+        if let TokenType::Anchor(name) = token.1 {
+            anchor_names.push(name.into_owned());
+        }
+    }
+    if let Some(err) = scanner.get_error() {
+        return Err(format!(
+            "failed to scan include fragment '{}': {}",
+            target_anchor, err
+        ));
+    }
+
+    let leaked_text: &'input str = Box::leak(text.to_string().into_boxed_str());
+    let mut parser = Parser::new_from_str(leaked_text);
+    parser.set_anchor_offset(anchor_offset);
+
+    let mut anchor_index = 0usize;
+    let mut collecting = false;
+    let mut depth = 0usize;
+    let mut events = Vec::new();
+    while let Some(event) = parser.next_event() {
+        let (event, span) = event.map_err(|err| {
+            format!(
+                "failed to parse include fragment '{}': {}",
+                target_anchor, err
+            )
+        })?;
+        let anchor_id = match &event {
+            Event::Scalar(_, _, anchor_id, _)
+            | Event::SequenceStart(anchor_id, _)
+            | Event::MappingStart(anchor_id, _) => *anchor_id,
+            _ => 0,
+        };
+        if anchor_id == 0 {
+            if collecting {
+                match event {
+                    Event::SequenceStart(_, _) | Event::MappingStart(_, _) => depth += 1,
+                    Event::SequenceEnd | Event::MappingEnd => {
+                        if depth == 0 {
+                            return Err(format!(
+                                "include fragment '{}' became unbalanced while replaying events",
+                                target_anchor
+                            ));
+                        }
+                        depth -= 1;
+                    }
+                    _ => {}
+                }
+                events.push((own_event(event), span));
+                if depth == 0 {
+                    break;
+                }
+            }
+            continue;
+        }
+
+        let Some(anchor_name) = anchor_names.get(anchor_index) else {
+            return Err(format!(
+                "failed to map include anchor '{}' to parser events",
+                target_anchor
+            ));
+        };
+        anchor_index += 1;
+
+        if collecting {
+            events.push((own_event(event), span));
+            if depth == 0 {
+                break;
+            }
+            continue;
+        }
+
+        if anchor_name == target_anchor {
+            depth = match &event {
+                Event::Scalar(_, _, _, _) => 0,
+                Event::SequenceStart(_, _) | Event::MappingStart(_, _) => 1,
+                _ => 0,
+            };
+            events.push((own_event(event), span));
+            if depth == 0 {
+                break;
+            }
+            collecting = true;
+        }
+    }
+
+    if events.is_empty() {
+        Err(format!(
+            "include fragment '{}' was not found",
+            target_anchor
+        ))
+    } else {
+        Ok(CollectedAnchorEvents {
+            events,
+            anchor_offset: parser.get_anchor_offset(),
+        })
+    }
+}
+
+fn own_event(event: Event<'_>) -> Event<'static> {
+    match event {
+        Event::Nothing => Event::Nothing,
+        Event::StreamStart => Event::StreamStart,
+        Event::StreamEnd => Event::StreamEnd,
+        Event::DocumentStart(explicit) => Event::DocumentStart(explicit),
+        Event::DocumentEnd => Event::DocumentEnd,
+        Event::Alias(anchor_id) => Event::Alias(anchor_id),
+        Event::Scalar(value, style, anchor_id, tag) => Event::Scalar(
+            std::borrow::Cow::Owned(value.into_owned()),
+            style,
+            anchor_id,
+            tag.map(|tag| std::borrow::Cow::Owned(tag.into_owned())),
+        ),
+        Event::SequenceStart(anchor_id, tag) => {
+            Event::SequenceStart(anchor_id, tag.map(|tag| std::borrow::Cow::Owned(tag.into_owned())))
+        }
+        Event::SequenceEnd => Event::SequenceEnd,
+        Event::MappingStart(anchor_id, tag) => {
+            Event::MappingStart(anchor_id, tag.map(|tag| std::borrow::Cow::Owned(tag.into_owned())))
+        }
+        Event::MappingEnd => Event::MappingEnd,
     }
 }
 

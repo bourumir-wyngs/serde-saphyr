@@ -1,6 +1,10 @@
 use crate::budget::Budget;
 use crate::indentation::RequireIndent;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "include_fs")]
+use std::io;
+#[cfg(feature = "include_fs")]
+use std::path::Path;
 use std::rc::Rc;
 
 
@@ -186,6 +190,55 @@ impl Options {
         self.include_resolver = Some(Rc::new(std::cell::RefCell::new(cb)));
         self
     }
+
+    /// Configures a [`crate::SafeFileResolver`] rooted at `path` for `!include` lookups.
+    ///
+    /// This is a convenience for:
+    ///
+    /// ```rust,no_run
+    /// # #[cfg(feature = "include_fs")]
+    /// # fn main() -> Result<(), std::io::Error> {
+    /// # use serde_saphyr::{Options, SafeFileResolver};
+    /// let options = Options::default()
+    ///     .with_include_resolver(SafeFileResolver::new("./configs")?.into_callback());
+    /// # let _ = options;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// It enables filesystem-backed `!include` resolution while keeping every included file
+    /// confined to the canonicalized `path` root.
+    ///
+    /// ```rust,no_run
+    /// # #[cfg(feature = "include_fs")]
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// use serde::Deserialize;
+    /// use serde_saphyr::{from_str_with_options, Options};
+    ///
+    /// #[derive(Debug, Deserialize)]
+    /// struct User {
+    ///     name: String,
+    /// }
+    ///
+    /// #[derive(Debug, Deserialize)]
+    /// struct Config {
+    ///     users: Vec<User>,
+    /// }
+    ///
+    /// let yaml = "users: !include#users value.yaml\n";
+    /// let options = Options::default().with_filesystem_root("./examples")?;
+    /// let config: Config = from_str_with_options(yaml, options)?;
+    /// # let _ = config;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[cfg(feature = "include_fs")]
+    pub fn with_filesystem_root<P>(self, path: P) -> io::Result<Self>
+    where
+        P: AsRef<Path>,
+    {
+        Ok(self.with_include_resolver(crate::SafeFileResolver::new(path)?.into_callback()))
+    }
 }
 
 impl Default for Options {
@@ -264,6 +317,9 @@ impl std::fmt::Debug for Options {
 mod tests {
     use super::*;
 
+    #[cfg(feature = "include_fs")]
+    use std::path::PathBuf;
+
     #[test]
     fn test_options_default() {
         let opts = Options::default();
@@ -308,5 +364,13 @@ mod tests {
         assert_eq!(limits.max_total_replayed_events, 1_000_000);
         assert_eq!(limits.max_replay_stack_depth, 64);
         assert_eq!(limits.max_alias_expansions_per_anchor, usize::MAX);
+    }
+
+    #[cfg(feature = "include_fs")]
+    #[test]
+    fn test_with_filesystem_root_sets_include_resolver() {
+        let root = PathBuf::from(".");
+        let opts = Options::default().with_filesystem_root(&root).unwrap();
+        assert!(opts.include_resolver.is_some());
     }
 }

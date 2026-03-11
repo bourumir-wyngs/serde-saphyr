@@ -475,9 +475,7 @@ impl<'a> LiveEvents<'a> {
 
                     #[cfg(feature = "include")]
                     if self.pending_include_anchor != 0 {
-                        if anchor_id == 0 {
-                            anchor_id = self.pending_include_anchor;
-                        }
+                        anchor_id = self.pending_include_anchor;
                         self.pending_include_anchor = 0;
                     }
 
@@ -518,9 +516,7 @@ impl<'a> LiveEvents<'a> {
 
                     #[cfg(feature = "include")]
                     if self.pending_include_anchor != 0 {
-                        if anchor_id == 0 {
-                            anchor_id = self.pending_include_anchor;
-                        }
+                        anchor_id = self.pending_include_anchor;
                         self.pending_include_anchor = 0;
                     }
 
@@ -576,9 +572,7 @@ impl<'a> LiveEvents<'a> {
 
                     #[cfg(feature = "include")]
                     if self.pending_include_anchor != 0 {
-                        if anchor_id == 0 {
-                            anchor_id = self.pending_include_anchor;
-                        }
+                        anchor_id = self.pending_include_anchor;
                         self.pending_include_anchor = 0;
                     }
 

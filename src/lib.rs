@@ -21,7 +21,7 @@ pub use localizer::{
 pub use location::{Location, Locations, Span};
 pub use long_strings::{FoldStr, FoldString, LitStr, LitString};
 pub use message_formatters::{DefaultMessageFormatter, DeveloperMessageFormatter};
-#[cfg(feature = "include")]
+#[cfg(feature = "include_fs")]
 pub use safe_resolver::{SafeFileReadMode, SafeFileResolver, SymlinkPolicy};
 pub use ser::{Commented, FlowMap, FlowSeq, SpaceAfter};
 pub use spanned::Spanned;
@@ -67,7 +67,7 @@ mod message_formatters;
 pub mod options;
 mod parse_scalars;
 pub mod ser;
-#[cfg(feature = "include")]
+#[cfg(feature = "include_fs")]
 mod safe_resolver;
 mod spanned;
 mod input_source;

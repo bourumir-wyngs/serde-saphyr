@@ -7,6 +7,8 @@ use std::io::Read;
 pub enum InputSource {
     /// Owned text.
     Text(String),
+    /// Owned text together with an anchor fragment that should become the first parsed node.
+    AnchoredText { text: String, anchor: String },
     /// Owned reader (streaming).
     Reader(Box<dyn Read + 'static>),
 }
@@ -15,6 +17,11 @@ impl std::fmt::Debug for InputSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Text(text) => f.debug_tuple("Text").field(text).finish(),
+            Self::AnchoredText { text, anchor } => f
+                .debug_struct("AnchoredText")
+                .field("anchor", anchor)
+                .field("text", text)
+                .finish(),
             Self::Reader(_) => f.write_str("Reader(..)"),
         }
     }
