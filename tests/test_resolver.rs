@@ -232,9 +232,10 @@ fn resolver_request_uses_canonical_from_id_and_display_from_name() {
     use std::cell::RefCell;
     use std::rc::Rc;
 
+    type SeenEntry = (String, String, Option<String>, Vec<String>);
+
     let input = "foo: !include child.yaml\n";
-    let seen: Rc<RefCell<Vec<(String, String, Option<String>, Vec<String>)>>> =
-        Rc::new(RefCell::new(Vec::new()));
+    let seen: Rc<RefCell<Vec<SeenEntry>>> = Rc::new(RefCell::new(Vec::new()));
     let seen_in_resolver = Rc::clone(&seen);
 
     let options = serde_saphyr::Options::default().with_include_resolver(

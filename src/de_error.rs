@@ -958,22 +958,6 @@ impl Error {
         self
     }
 
-    /// Attach a snippet from a partial YAML fragment (e.g., from `RingReader`).
-    ///
-    /// This is similar to `with_snippet`, but the `text` is a fragment that starts
-    /// at `start_line` (1-based) rather than at line 1. The renderer will adjust
-    /// line numbers accordingly.
-    #[cold]
-    #[inline(never)]
-    pub(crate) fn with_snippet_offset(
-        self,
-        text: &str,
-        start_line: usize,
-        crop_radius: usize,
-    ) -> Self {
-        self.with_snippet_offset_named(text, start_line, "<input>", crop_radius)
-    }
-
     #[cold]
     #[inline(never)]
     pub(crate) fn with_snippet_offset_named(
@@ -2500,7 +2484,7 @@ mod tests {
             location: Location::new(11, 1),
         };
 
-        let wrapped = err.with_snippet_offset(text, 10, 50);
+        let wrapped = err.with_snippet_offset_named(text, 10, "<input>", 50);
         let Error::WithSnippet { regions, .. } = wrapped else {
             panic!("expected WithSnippet wrapper");
         };
@@ -2569,8 +2553,8 @@ mod tests {
         let text = "input";
         let start_line = 1;
         let radius = 1;
-        let inner = base.with_snippet_offset(text, start_line, radius);
-        let outer = inner.with_snippet_offset(text, start_line, radius);
+        let inner = base.with_snippet_offset_named(text, start_line, "<input>", radius);
+        let outer = inner.with_snippet_offset_named(text, start_line, "<input>", radius);
         let rendered = outer.render_with_options(RenderOptions::new(&Custom));
         assert!(rendered.contains("CUSTOM: original"));
     }

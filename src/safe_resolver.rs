@@ -185,15 +185,14 @@ impl SafeFileResolver {
         }
 
         let id = path_to_string(&canonical_target);
-        if req.from_id.is_none() {
-            if let Some(root_source_id) = &self.root_source_id {
-                if root_source_id == &id {
-                    return Err(IncludeResolveError::Message(format!(
-                        "include target '{}' resolves to the configured root file itself",
-                        req.spec
-                    )));
-                }
-            }
+        if req.from_id.is_none()
+            && let Some(root_source_id) = &self.root_source_id
+            && root_source_id == &id
+        {
+            return Err(IncludeResolveError::Message(format!(
+                "include target '{}' resolves to the configured root file itself",
+                req.spec
+            )));
         }
 
         let name = display_name(&self.allow_root, &canonical_target);

@@ -1529,10 +1529,10 @@ pub(crate) fn maybe_with_snippet_from_events_and_root_fragment(
     }
 
     #[cfg(feature = "include")]
-    if let Some(loc) = err.location() {
-        if let Some(chain) = recorded_source_snippet_chain(events, &loc) {
-            return with_recorded_source_snippets(err, root, input, &chain, crop_radius);
-        }
+    if let Some(loc) = err.location()
+        && let Some(chain) = recorded_source_snippet_chain(events, &loc)
+    {
+        return with_recorded_source_snippets(err, root, input, &chain, crop_radius);
     }
 
     match root {
