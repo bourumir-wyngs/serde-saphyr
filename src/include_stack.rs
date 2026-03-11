@@ -577,7 +577,7 @@ mod tests {
 
         // Read until the first document finishes and the second document starts
         let mut doc_starts = 0;
-        while let Some(item) = stack.next() {
+        for item in stack.by_ref() {
             if let Ok((Event::DocumentStart(_), _)) = item {
                 doc_starts += 1;
                 if doc_starts == 2 {
