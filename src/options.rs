@@ -318,7 +318,11 @@ mod tests {
     use super::*;
 
     #[cfg(feature = "include_fs")]
+    use crate::input_source::{IncludeRequest, InputSource};
+    #[cfg(feature = "include_fs")]
     use std::path::PathBuf;
+    #[cfg(feature = "include_fs")]
+    use tempfile::tempdir;
 
     #[test]
     fn test_options_default() {
@@ -372,5 +376,29 @@ mod tests {
         let root = PathBuf::from(".");
         let opts = Options::default().with_filesystem_root(&root).unwrap();
         assert!(opts.include_resolver.is_some());
+    }
+
+    #[cfg(feature = "include_fs")]
+    #[test]
+    fn test_with_filesystem_root_uses_reader_default_for_regular_files() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("child.yaml"), "value: 1\n").unwrap();
+
+        let opts = Options::default().with_filesystem_root(dir.path()).unwrap();
+        let mut resolver = opts
+            .include_resolver
+            .as_ref()
+            .expect("resolver set")
+            .borrow_mut();
+        let resolved = resolver(IncludeRequest {
+            spec: "child.yaml",
+            from_name: "<input>",
+            from_id: None,
+            stack: vec!["<input>".to_string()],
+            location: crate::Location::UNKNOWN,
+        })
+        .unwrap();
+
+        assert!(matches!(resolved.source, InputSource::Reader(_)));
     }
 }

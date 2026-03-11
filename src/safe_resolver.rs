@@ -13,17 +13,17 @@ use std::path::{Component, Path, PathBuf};
 #[cfg(feature = "include")]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SafeFileReadMode {
-    /// Read and decode the file eagerly into a `String`.
-    ///
-    /// This is the default because it gives the best error snippets for nested includes while
-    /// still using BOM-aware decoding for common Unicode encodings.
-    #[default]
-    Text,
     /// Stream the file through a reader.
     ///
-    /// This may use less memory for large inputs, but nested include diagnostics are weaker
-    /// because the full included source text is not retained.
+    /// This is the default because it avoids reading whole files into memory up front and allows
+    /// reader-size budgets to apply during parsing.
+    #[default]
     Reader,
+    /// Read and decode the file eagerly into a `String`.
+    ///
+    /// This preserves better error snippets for nested includes while still using BOM-aware
+    /// decoding for common Unicode encodings.
+    Text,
 }
 
 /// Policy for symlink handling in [`SafeFileResolver`].
@@ -65,9 +65,10 @@ pub enum SymlinkPolicy {
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 ///
-/// By default, files are decoded into text with BOM-aware Unicode decoding. That preserves better
-/// snippet diagnostics for nested includes. If you prefer streaming, switch to
-/// [`SafeFileReadMode::Reader`].
+/// By default, files are streamed to the parser so reader-size budgets can be enforced without
+/// first materializing the whole file in memory. If you prefer eager BOM-aware text decoding for
+/// better nested-include snippets, switch to [`SafeFileReadMode::Text`]. Fragment includes still
+/// read the full source text because anchor extraction requires it.
 #[cfg(feature = "include")]
 #[derive(Clone, Debug)]
 pub struct SafeFileResolver {
@@ -99,7 +100,7 @@ impl SafeFileResolver {
             root_base_dir: allow_root.clone(),
             allow_root,
             root_source_id: None,
-            read_mode: SafeFileReadMode::Text,
+            read_mode: SafeFileReadMode::Reader,
             symlink_policy: SymlinkPolicy::FollowWithinRoot,
         })
     }
@@ -466,4 +467,53 @@ fn invalid_input(message: impl Into<String>) -> io::Error {
 #[cfg(feature = "include")]
 fn path_to_string(path: &Path) -> String {
     path.as_os_str().to_string_lossy().into_owned()
+}
+
+#[cfg(all(test, feature = "include_fs"))]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn safe_file_resolver_streams_regular_files_by_default() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("child.yaml"), "value: 1\n").unwrap();
+
+        let resolver = SafeFileResolver::new(root).unwrap();
+        let resolved = resolver
+            .resolve(IncludeRequest {
+                spec: "child.yaml",
+                from_name: "<input>",
+                from_id: None,
+                stack: vec!["<input>".to_string()],
+                location: crate::Location::UNKNOWN,
+            })
+            .unwrap();
+
+        assert!(matches!(resolved.source, InputSource::Reader(_)));
+    }
+
+    #[test]
+    fn safe_file_resolver_keeps_fragment_includes_text_backed() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("child.yaml"), "defaults: &defaults\n  value: 1\n").unwrap();
+
+        let resolver = SafeFileResolver::new(root).unwrap();
+        let resolved = resolver
+            .resolve(IncludeRequest {
+                spec: "child.yaml#defaults",
+                from_name: "<input>",
+                from_id: None,
+                stack: vec!["<input>".to_string()],
+                location: crate::Location::UNKNOWN,
+            })
+            .unwrap();
+
+        assert!(matches!(
+            resolved.source,
+            InputSource::AnchoredText { ref anchor, .. } if anchor == "defaults"
+        ));
+    }
 }
