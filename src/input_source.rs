@@ -7,7 +7,34 @@ use std::io::Read;
 pub enum InputSource {
     /// Owned text.
     Text(String),
-    /// Owned text together with an anchor fragment that should become the first parsed node.
+    /// Owned YAML text together with the name of an anchor to extract from it.
+    ///
+    /// This is mainly intended for resolvers that support include specs such as
+    /// `path/to/file.yaml#anchor_name`. In that case, the resolver still receives the full
+    /// include spec via [`IncludeRequest::spec`], splits the file part from the fragment itself,
+    /// reads the target document, and returns:
+    ///
+    /// ```rust
+    /// # use serde_saphyr::InputSource;
+    /// let source = InputSource::AnchoredText {
+    ///     text: "defaults: &defaults\n  enabled: true\nfeature: *defaults\n".to_owned(),
+    ///     anchor: "defaults".to_owned(),
+    /// };
+    /// ```
+    ///
+    /// During parsing, `serde-saphyr` will parse `text`, find the node tagged with `&defaults`,
+    /// and replay only that anchored node as the included value. Conceptually, this makes:
+    ///
+    /// ```yaml
+    /// settings: !include config.yaml#defaults
+    /// ```
+    ///
+    /// behave as if `settings` directly contained the YAML node anchored as `&defaults` inside
+    /// `config.yaml`.
+    ///
+    /// Use [`InputSource::Text`] when the whole document should be included, and use
+    /// [`InputSource::AnchoredText`] only when you want the include to resolve to a specific
+    /// anchored fragment.
     AnchoredText { text: String, anchor: String },
     /// Owned reader (streaming).
     Reader(Box<dyn Read + 'static>),
