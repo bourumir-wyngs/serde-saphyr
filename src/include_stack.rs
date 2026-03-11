@@ -312,16 +312,28 @@ struct CollectedAnchorEvents {
     events: Vec<(Event<'static>, Span)>,
     anchor_offset: usize,
 }
+
+fn anchored_event_initial_depth(event: &Event<'_>) -> usize {
+    match event {
+        Event::SequenceStart(_, _) | Event::MappingStart(_, _) => 1,
+        _ => 0,
+    }
+}
+
 fn collect_anchor_events(
     text: &str,
     target_anchor: &str,
     anchor_offset: usize,
 ) -> Result<CollectedAnchorEvents, String> {
-    let mut anchor_names = Vec::new();
+    let mut anchor_defs: Vec<(String, usize)> = Vec::new();
+    let mut alias_names: Vec<String> = Vec::new();
     let mut scanner = Scanner::new(StrInput::new(text));
     for token in &mut scanner {
-        if let TokenType::Anchor(name) = token.1 {
-            anchor_names.push(name.into_owned());
+        let marker_offset = token.0.start.index();
+        match token.1 {
+            TokenType::Anchor(name) => anchor_defs.push((name.into_owned(), marker_offset)),
+            TokenType::Alias(name) => alias_names.push(name.into_owned()),
+            _ => {}
         }
     }
     if let Some(err) = scanner.get_error() {
@@ -332,9 +344,6 @@ fn collect_anchor_events(
     }
     let mut parser = Parser::new_from_str(text);
     parser.set_anchor_offset(anchor_offset);
-    let mut anchor_index = 0usize;
-    let mut collecting = false;
-    let mut depth = 0usize;
     let mut events = Vec::new();
     while let Some(event) = parser.next_event() {
         let (event, span) = event.map_err(|err| {
@@ -343,15 +352,27 @@ fn collect_anchor_events(
                 target_anchor, err
             )
         })?;
-        let anchor_id = match &event {
-            Event::Scalar(_, _, anchor_id, _)
-            | Event::SequenceStart(anchor_id, _)
-            | Event::MappingStart(anchor_id, _) => *anchor_id,
-            _ => 0,
-        };
-        if anchor_id == 0 {
-            if collecting {
-                match event {
+        events.push((own_event(event), span));
+    }
+
+    let mut anchor_nodes_by_name: std::collections::BTreeMap<String, Vec<(Event<'static>, Span)>> =
+        std::collections::BTreeMap::new();
+    let mut event_cursor = 0usize;
+    for (name, offset) in &anchor_defs {
+        while event_cursor < events.len() && events[event_cursor].1.start.index() < *offset {
+            event_cursor += 1;
+        }
+        if event_cursor >= events.len() {
+            break;
+        }
+        let start = event_cursor;
+        let mut end = start;
+        let mut depth = anchored_event_initial_depth(&events[start].0);
+        if depth == 0 {
+            end = start;
+        } else {
+            for idx in (start + 1)..events.len() {
+                match &events[idx].0 {
                     Event::SequenceStart(_, _) | Event::MappingStart(_, _) => depth += 1,
                     Event::SequenceEnd | Event::MappingEnd => {
                         if depth == 0 {
@@ -361,54 +382,41 @@ fn collect_anchor_events(
                             ));
                         }
                         depth -= 1;
+                        if depth == 0 {
+                            end = idx;
+                            break;
+                        }
                     }
                     _ => {}
                 }
-                events.push((own_event(event), span));
-                if depth == 0 {
-                    break;
+            }
+        }
+        anchor_nodes_by_name.insert(name.clone(), events[start..=end].to_vec());
+        event_cursor = start + 1;
+    }
+
+    let mut target_events = anchor_nodes_by_name
+        .get(target_anchor)
+        .cloned()
+        .ok_or_else(|| format!("include fragment '{}' was not found", target_anchor))?;
+
+    let mut alias_index = 0usize;
+    for idx in 0..target_events.len() {
+        if matches!(target_events[idx].0, Event::Alias(_)) {
+            let alias_name = alias_names.get(alias_index).cloned();
+            alias_index += 1;
+            if let Some(alias_name) = alias_name {
+                if let Some(alias_events) = anchor_nodes_by_name.get(&alias_name) {
+                    target_events.splice(idx..=idx, alias_events.clone());
                 }
             }
-            continue;
-        }
-        let Some(anchor_name) = anchor_names.get(anchor_index) else {
-            return Err(format!(
-                "failed to map include anchor '{}' to parser events",
-                target_anchor
-            ));
-        };
-        anchor_index += 1;
-        if collecting {
-            events.push((own_event(event), span));
-            if depth == 0 {
-                break;
-            }
-            continue;
-        }
-        if anchor_name == target_anchor {
-            depth = match &event {
-                Event::Scalar(_, _, _, _) => 0,
-                Event::SequenceStart(_, _) | Event::MappingStart(_, _) => 1,
-                _ => 0,
-            };
-            events.push((own_event(event), span));
-            if depth == 0 {
-                break;
-            }
-            collecting = true;
         }
     }
-    if events.is_empty() {
-        Err(format!(
-            "include fragment '{}' was not found",
-            target_anchor
-        ))
-    } else {
-        Ok(CollectedAnchorEvents {
-            events,
-            anchor_offset: parser.get_anchor_offset(),
-        })
-    }
+
+    Ok(CollectedAnchorEvents {
+        events: target_events,
+        anchor_offset: parser.get_anchor_offset(),
+    })
 }
 fn own_event(event: Event<'_>) -> Event<'static> {
     match event {
@@ -467,6 +475,45 @@ impl<'input> Iterator for ParserStack<'input> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn collect_anchor_events_expands_aliases_defined_outside_target_anchor() {
+        let mut scanner = Scanner::new(StrInput::new(
+            "base: &base\n  name: Alice\n\nselected: &selected\n  user: *base\n",
+        ));
+        let mut scanned = Vec::new();
+        for token in &mut scanner {
+            if let TokenType::Anchor(name) = token.1 {
+                scanned.push(name.into_owned());
+            }
+        }
+        assert_eq!(scanned, vec!["base".to_string(), "selected".to_string()]);
+
+        let collected = collect_anchor_events(
+            "base: &base\n  name: Alice\n\nselected: &selected\n  user: *base\n",
+            "selected",
+            0,
+        )
+        .expect("anchor collection should succeed");
+
+        let has_user_key = collected.events.iter().any(|(event, _)| {
+            matches!(event, Event::Scalar(value, _, _, _) if value.as_ref() == "user")
+        });
+        let has_name_key = collected.events.iter().any(|(event, _)| {
+            matches!(event, Event::Scalar(value, _, _, _) if value.as_ref() == "name")
+        });
+
+        assert!(has_user_key, "target mapping key should be preserved");
+        assert!(has_name_key, "alias value should be expanded from prerequisite anchor");
+        assert!(
+            !collected
+                .events
+                .iter()
+                .any(|(event, _)| matches!(event, Event::Alias(_))),
+            "expanded event stream should not retain unresolved aliases"
+        );
+    }
+
     #[test]
     fn test_unused_methods() {
         let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));

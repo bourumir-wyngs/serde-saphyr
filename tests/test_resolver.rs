@@ -581,6 +581,56 @@ child_ref: !include ref.yaml
 
 #[cfg(feature = "include")]
 #[test]
+fn test_include_fragment_replays_prerequisite_anchor_definitions() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Selected {
+        user: std::collections::BTreeMap<String, String>,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Root {
+        cfg: Selected,
+    }
+
+    let yaml = "cfg: !include value.yaml#selected\n";
+
+    let options = serde_saphyr::Options::default().with_include_resolver(
+        |req: serde_saphyr::IncludeRequest|
+         -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+            if req.spec == "value.yaml#selected" {
+                Ok(serde_saphyr::ResolvedInclude {
+                    id: req.spec.to_string(),
+                    name: req.spec.to_string(),
+                    source: serde_saphyr::InputSource::AnchoredText {
+                        text: "base: &base\n  name: Alice\n\nselected: &selected\n  user: *base\n"
+                            .to_string(),
+                        anchor: "selected".to_string(),
+                    },
+                })
+            } else {
+                Err(serde_saphyr::IncludeResolveError::Message(
+                    "Not found".to_string(),
+                ))
+            }
+        },
+    );
+
+    let parsed: Root = serde_saphyr::from_str_with_options(yaml, options)
+        .expect("fragment include should replay prerequisite anchor definitions");
+
+    let mut expected_user = std::collections::BTreeMap::new();
+    expected_user.insert("name".to_string(), "Alice".to_string());
+
+    assert_eq!(
+        parsed,
+        Root {
+            cfg: Selected { user: expected_user }
+        }
+    );
+}
+
+#[cfg(feature = "include")]
+#[test]
 fn test_include_entire_mapping() {
     let yaml = "
 my_mapping: !include some_mapping.yaml
