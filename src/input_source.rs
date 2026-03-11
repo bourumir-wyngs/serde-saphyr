@@ -11,7 +11,17 @@ pub enum InputSource {
     Reader(Box<dyn Read + 'static>),
 }
 
+impl std::fmt::Debug for InputSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Text(text) => f.debug_tuple("Text").field(text).finish(),
+            Self::Reader(_) => f.write_str("Reader(..)"),
+        }
+    }
+}
+
 /// A resolved include containing the source identity and the content.
+#[derive(Debug)]
 pub struct ResolvedInclude {
     /// The canonical identity of the included source, used for cycle detection and absolute paths.
     pub id: String,

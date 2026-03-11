@@ -1,0 +1,238 @@
+#![cfg(all(feature = "include", not(miri), not(target_os = "wasi")))]
+
+use serde::Deserialize;
+use serde_saphyr::{
+    from_str_with_options, IncludeRequest, Location, Options, SafeFileReadMode, SafeFileResolver,
+    SymlinkPolicy,
+};
+use std::fs;
+use std::path::Path;
+use tempfile::TempDir;
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct ScalarConfig {
+    foo: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct NestedConfig {
+    foo: InnerConfig,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct InnerConfig {
+    bar: String,
+}
+
+fn request<'a>(spec: &'a str, from_name: &'a str, from_id: Option<&'a str>) -> IncludeRequest<'a> {
+    IncludeRequest {
+        spec,
+        from_name,
+        from_id,
+        stack: Vec::new(),
+        location: Location::UNKNOWN,
+    }
+}
+
+fn write_text(path: &Path, text: &str) {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).unwrap();
+    }
+    fs::write(path, text).unwrap();
+}
+
+fn write_utf16le(path: &Path, text: &str) {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).unwrap();
+    }
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&[0xFF, 0xFE]);
+    for unit in text.encode_utf16() {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    fs::write(path, bytes).unwrap();
+}
+
+#[test]
+fn safe_file_resolver_resolves_top_level_include_from_root() {
+    let temp = TempDir::new().unwrap();
+    write_text(&temp.path().join("value.yaml"), "bar_value\n");
+
+    let options = Options::default().with_include_resolver(
+        SafeFileResolver::new(temp.path()).unwrap().into_callback(),
+    );
+
+    let parsed: ScalarConfig = from_str_with_options("foo: !include value.yaml\n", options).unwrap();
+    assert_eq!(parsed.foo, "bar_value");
+}
+
+#[test]
+fn safe_file_resolver_resolves_nested_include_relative_to_parent_file() {
+    let temp = TempDir::new().unwrap();
+    write_text(
+        &temp.path().join("env/prod.yaml"),
+        "bar: !include ../shared/value.yaml\n",
+    );
+    write_text(&temp.path().join("shared/value.yaml"), "nested_value\n");
+
+    let options = Options::default().with_include_resolver(
+        SafeFileResolver::new(temp.path()).unwrap().into_callback(),
+    );
+
+    let parsed: NestedConfig =
+        from_str_with_options("foo: !include env/prod.yaml\n", options).unwrap();
+    assert_eq!(parsed.foo.bar, "nested_value");
+}
+
+#[test]
+fn safe_file_resolver_uses_root_file_parent_for_top_level_relative_includes() {
+    let temp = TempDir::new().unwrap();
+    let allow_root = temp.path().join("config");
+    let root_file = allow_root.join("env/prod/root.yaml");
+    write_text(&root_file, "foo: !include ../common/value.yaml\n");
+    write_text(&allow_root.join("env/common/value.yaml"), "from_root_file\n");
+
+    let resolver = SafeFileResolver::new(&allow_root)
+        .unwrap()
+        .with_root_file(&root_file)
+        .unwrap();
+    let options = Options::default().with_include_resolver(resolver.into_callback());
+
+    let parsed: ScalarConfig =
+        from_str_with_options("foo: !include ../common/value.yaml\n", options).unwrap();
+    assert_eq!(parsed.foo, "from_root_file");
+}
+
+#[test]
+fn safe_file_resolver_rejects_paths_escaping_root() {
+    let temp = TempDir::new().unwrap();
+    let allow_root = temp.path().join("allowed");
+    fs::create_dir_all(&allow_root).unwrap();
+    write_text(&temp.path().join("outside.yaml"), "outside\n");
+
+    let resolver = SafeFileResolver::new(&allow_root).unwrap();
+    let err = resolver.resolve(request("../outside.yaml", "", None)).unwrap_err();
+    let msg = match err {
+        serde_saphyr::IncludeResolveError::Message(msg) => msg,
+        serde_saphyr::IncludeResolveError::Io(e) => e.to_string(),
+    };
+    assert!(msg.contains("outside the configured root"), "{}", msg);
+}
+
+#[test]
+fn safe_file_resolver_rejects_absolute_paths() {
+    let temp = TempDir::new().unwrap();
+    let allow_root = temp.path().join("allowed");
+    fs::create_dir_all(&allow_root).unwrap();
+    let absolute_target = temp.path().join("absolute.yaml");
+    write_text(&absolute_target, "absolute\n");
+
+    let resolver = SafeFileResolver::new(&allow_root).unwrap();
+    let spec = absolute_target.to_string_lossy().into_owned();
+    let err = resolver.resolve(request(&spec, "", None)).unwrap_err();
+    let msg = match err {
+        serde_saphyr::IncludeResolveError::Message(msg) => msg,
+        serde_saphyr::IncludeResolveError::Io(e) => e.to_string(),
+    };
+    assert!(msg.contains("absolute include paths are not allowed"), "{}", msg);
+}
+
+#[test]
+fn safe_file_resolver_rejects_fragment_specs() {
+    let temp = TempDir::new().unwrap();
+    let resolver = SafeFileResolver::new(temp.path()).unwrap();
+    let err = resolver.resolve(request("value.yaml#section", "", None)).unwrap_err();
+    let msg = match err {
+        serde_saphyr::IncludeResolveError::Message(msg) => msg,
+        serde_saphyr::IncludeResolveError::Io(e) => e.to_string(),
+    };
+    assert!(msg.contains("does not support include fragments"), "{}", msg);
+}
+
+#[test]
+fn safe_file_resolver_rejects_root_file_self_include_early() {
+    let temp = TempDir::new().unwrap();
+    let root_file = temp.path().join("root.yaml");
+    write_text(&root_file, "foo: !include root.yaml\n");
+
+    let resolver = SafeFileResolver::new(temp.path())
+        .unwrap()
+        .with_root_file(&root_file)
+        .unwrap();
+    let err = resolver.resolve(request("root.yaml", "", None)).unwrap_err();
+    let msg = match err {
+        serde_saphyr::IncludeResolveError::Message(msg) => msg,
+        serde_saphyr::IncludeResolveError::Io(e) => e.to_string(),
+    };
+    assert!(msg.contains("configured root file itself"), "{}", msg);
+}
+
+#[test]
+fn safe_file_resolver_decodes_utf16le_in_text_mode() {
+    let temp = TempDir::new().unwrap();
+    write_utf16le(&temp.path().join("value.yaml"), "bar_value\n");
+
+    let resolver = SafeFileResolver::new(temp.path())
+        .unwrap()
+        .with_read_mode(SafeFileReadMode::Text);
+    let options = Options::default().with_include_resolver(resolver.into_callback());
+
+    let parsed: ScalarConfig = from_str_with_options("foo: !include value.yaml\n", options).unwrap();
+    assert_eq!(parsed.foo, "bar_value");
+}
+
+#[test]
+fn safe_file_resolver_streaming_mode_still_works() {
+    let temp = TempDir::new().unwrap();
+    write_text(&temp.path().join("value.yaml"), "bar_value\n");
+
+    let resolver = SafeFileResolver::new(temp.path())
+        .unwrap()
+        .with_read_mode(SafeFileReadMode::Reader);
+    let options = Options::default().with_include_resolver(resolver.into_callback());
+
+    let parsed: ScalarConfig = from_str_with_options("foo: !include value.yaml\n", options).unwrap();
+    assert_eq!(parsed.foo, "bar_value");
+}
+
+#[cfg(unix)]
+#[test]
+fn safe_file_resolver_rejects_symlink_escape_even_when_following_symlinks() {
+    use std::os::unix::fs::symlink;
+
+    let temp = TempDir::new().unwrap();
+    let allow_root = temp.path().join("allowed");
+    fs::create_dir_all(&allow_root).unwrap();
+    let outside = temp.path().join("outside.yaml");
+    write_text(&outside, "outside\n");
+    symlink(&outside, allow_root.join("link.yaml")).unwrap();
+
+    let resolver = SafeFileResolver::new(&allow_root).unwrap();
+    let err = resolver.resolve(request("link.yaml", "", None)).unwrap_err();
+    let msg = match err {
+        serde_saphyr::IncludeResolveError::Message(msg) => msg,
+        serde_saphyr::IncludeResolveError::Io(e) => e.to_string(),
+    };
+    assert!(msg.contains("outside the configured root"), "{}", msg);
+}
+
+#[cfg(unix)]
+#[test]
+fn safe_file_resolver_can_reject_internal_symlinks_by_policy() {
+    use std::os::unix::fs::symlink;
+
+    let temp = TempDir::new().unwrap();
+    let target = temp.path().join("allowed/real.yaml");
+    write_text(&target, "bar_value\n");
+    symlink(&target, temp.path().join("allowed/link.yaml")).unwrap();
+
+    let resolver = SafeFileResolver::new(temp.path().join("allowed"))
+        .unwrap()
+        .with_symlink_policy(SymlinkPolicy::Reject);
+    let err = resolver.resolve(request("link.yaml", "", None)).unwrap_err();
+    let msg = match err {
+        serde_saphyr::IncludeResolveError::Message(msg) => msg,
+        serde_saphyr::IncludeResolveError::Io(e) => e.to_string(),
+    };
+    assert!(msg.contains("traverses a symlink"), "{}", msg);
+}
