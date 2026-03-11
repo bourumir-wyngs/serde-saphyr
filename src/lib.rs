@@ -696,9 +696,10 @@ where
                             report,
                             locations: recorder.map,
                         };
-                        validation_errors.push(maybe_with_snippet(
+                        validation_errors.push(maybe_with_snippet_from_events(
                             err,
                             input,
+                            &src,
                             with_snippet,
                             crop_radius,
                         ));
@@ -1078,9 +1079,10 @@ where
                             errors,
                             locations: recorder.map,
                         };
-                        validation_errors.push(maybe_with_snippet(
+                        validation_errors.push(maybe_with_snippet_from_events(
                             err,
                             input,
+                            &src,
                             with_snippet,
                             crop_radius,
                         ));

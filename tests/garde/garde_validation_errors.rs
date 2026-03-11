@@ -501,3 +501,52 @@ fn validation_include_chain_built_from_recorded_sources() {
     assert!(rendered.contains("--> child.yaml:1:17"), "expected intermediate include-site snippet, got: {rendered}");
     assert!(rendered.contains("--> <input>:1:13"), "expected root include-site snippet, got: {rendered}");
 }
+
+#[cfg(feature = "include")]
+#[test]
+fn garde_multidoc_validation_in_included_file_renders_included_snippet() {
+    let yaml = "a: \"ok\"\n---\na: !include child.yaml\n";
+    let options = serde_saphyr::Options::default().with_include_resolver(
+        |req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+            match req.spec {
+                "child.yaml" => Ok(serde_saphyr::ResolvedInclude {
+                    id: req.spec.to_string(),
+                    name: req.spec.to_string(),
+                    source: serde_saphyr::InputSource::from_string("\"\"\n".to_string()),
+                }),
+                other => Err(serde_saphyr::IncludeResolveError::Message(format!("unexpected include: {other}"))),
+            }
+        },
+    );
+
+    let err = serde_saphyr::from_multiple_with_options_valid::<Root>(yaml, options)
+        .expect_err("included value in second document must fail garde rule");
+
+    let Error::ValidationErrors { errors } = &err else {
+        panic!("expected ValidationErrors, got: {err:?}");
+    };
+    assert_eq!(errors.len(), 1, "expected one failing document, got: {errors:?}");
+
+    let rendered = err.to_string();
+    assert!(rendered.contains("--> (defined):1:1"), "expected included file content as primary snippet, got: {rendered}");
+    assert!(rendered.contains("| \"\""), "expected included content in snippet, got: {rendered}");
+    assert!(rendered.contains("--> <input>:3:13"), "expected second document include-site snippet, got: {rendered}");
+}
+
+#[test]
+fn multidoc_validation_anchor_origin_renders_defined_here() {
+    let yaml = concat!("a: \"ok\"\n", "b: \"ok\"\n", "---\n", "a: &A \"x\"\n", "b: *A\n");
+
+    let err = serde_saphyr::from_multiple_with_options_valid::<AnchorRoot>(yaml, Default::default())
+        .expect_err("anchored value in second document must fail garde rule");
+
+    let Error::ValidationErrors { errors } = &err else {
+        panic!("expected ValidationErrors, got: {err:?}");
+    };
+    assert_eq!(errors.len(), 1, "expected one failing document, got: {errors:?}");
+
+    let rendered = err.to_string();
+    assert!(rendered.contains("the value is used here:5:4"), "expected alias use-site from second document, got: {rendered}");
+    assert!(rendered.contains("This value comes indirectly from the anchor at line 4 column 7:"), "expected anchor origin note, got: {rendered}");
+    assert!(rendered.contains("line 4 column 7"), "expected anchor definition location from second document, got: {rendered}");
+}
