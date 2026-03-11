@@ -337,8 +337,9 @@ fn collect_anchor_events(
 ) -> Result<CollectedAnchorEvents, String> {
     let mut anchor_defs: Vec<(String, usize)> = Vec::new();
     let mut alias_names: Vec<String> = Vec::new();
+    let text_bytes = text.as_bytes();
     let scanner_input = buffered_input_from_reader_with_limit_shared(
-        std::io::Cursor::new(text.as_bytes().to_vec()),
+        std::io::Cursor::new(text_bytes),
         max_reader_input_bytes,
         io_error.clone(),
         reader_bytes_read.clone(),
@@ -365,7 +366,7 @@ fn collect_anchor_events(
         ));
     }
     let parser_input = buffered_input_from_reader_with_limit_shared(
-        std::io::Cursor::new(text.as_bytes().to_vec()),
+        std::io::Cursor::new(text_bytes),
         max_reader_input_bytes,
         io_error.clone(),
         reader_bytes_read,
@@ -405,8 +406,8 @@ fn collect_anchor_events(
         if depth == 0 {
             end = start;
         } else {
-            for idx in (start + 1)..events.len() {
-                match &events[idx].0 {
+            for (idx, (event, _)) in events.iter().enumerate().skip(start + 1) {
+                match event {
                     Event::SequenceStart(_, _) | Event::MappingStart(_, _) => depth += 1,
                     Event::SequenceEnd | Event::MappingEnd => {
                         if depth == 0 {
@@ -437,12 +438,12 @@ fn collect_anchor_events(
     let mut alias_index = 0usize;
     for idx in 0..target_events.len() {
         if matches!(target_events[idx].0, Event::Alias(_)) {
-            let alias_name = alias_names.get(alias_index).cloned();
+            let alias_name = alias_names.get(alias_index);
             alias_index += 1;
-            if let Some(alias_name) = alias_name {
-                if let Some(alias_events) = anchor_nodes_by_name.get(&alias_name) {
-                    target_events.splice(idx..=idx, alias_events.clone());
-                }
+            if let Some(alias_name) = alias_name
+                && let Some(alias_events) = anchor_nodes_by_name.get(alias_name.as_str())
+            {
+                target_events.splice(idx..=idx, alias_events.clone());
             }
         }
     }

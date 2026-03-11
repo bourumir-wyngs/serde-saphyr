@@ -242,6 +242,8 @@ impl<'a> LiveEvents<'a> {
             .as_ref()
             .map_or(crate::Budget::default().max_inclusion_depth, |b| b.max_inclusion_depth);
         let (input, error, reader_bytes_read) = buffered_input_from_reader_with_limit(inputs, max_bytes);
+        #[cfg(not(feature = "include"))]
+        let _ = &reader_bytes_read;
         #[cfg(feature = "include")]
         let parser = create_parser_from_reader_input(
             input,
@@ -475,7 +477,9 @@ impl<'a> LiveEvents<'a> {
             }
 
             match raw {
-                Event::Scalar(val, mut style, mut anchor_id, tag) => {
+                Event::Scalar(val, mut style, anchor_id, tag) => {
+                    #[cfg(feature = "include")]
+                    let mut anchor_id = anchor_id;
                     if matches!(style, ScalarStyle::Folded)
                         && span.start.col() == 0
                         && !val.trim().is_empty()
@@ -529,7 +533,9 @@ impl<'a> LiveEvents<'a> {
                     return Ok(Some(ev));
                 }
 
-                Event::SequenceStart(mut anchor_id, tag) => {
+                Event::SequenceStart(anchor_id, tag) => {
+                    #[cfg(feature = "include")]
+                    let mut anchor_id = anchor_id;
                     let tag_s = SfTag::from_optional_cow(&tag);
 
                     #[cfg(feature = "include")]
@@ -587,7 +593,9 @@ impl<'a> LiveEvents<'a> {
                     return Ok(Some(ev));
                 }
 
-                Event::MappingStart(mut anchor_id, _tag) => {
+                Event::MappingStart(anchor_id, _tag) => {
+                    #[cfg(feature = "include")]
+                    let mut anchor_id = anchor_id;
                     #[cfg(feature = "include")]
                     if self.parser.has_resolver()
                         && !matches!(crate::tags::parse_include_tag(&_tag), crate::tags::IncludeTag::NotInclude)

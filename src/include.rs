@@ -1,4 +1,6 @@
 use saphyr_parser::Parser;
+
+#[cfg(feature = "include")]
 use std::rc::Rc;
 
 #[cfg(not(feature = "include"))]
