@@ -237,9 +237,19 @@ impl<'a> LiveEvents<'a> {
 
         // Build a streaming character iterator from the byte reader, honoring input byte cap if configured
         let max_bytes = budget.as_ref().and_then(|b| b.max_reader_input_bytes);
+        #[cfg(feature = "include")]
+        let max_inclusion_depth = budget
+            .as_ref()
+            .map_or(crate::Budget::default().max_inclusion_depth, |b| b.max_inclusion_depth);
         let (input, error) = buffered_input_from_reader_with_limit(inputs, max_bytes);
         #[cfg(feature = "include")]
-        let parser = create_parser_from_reader_input(input, error.clone(), max_bytes, resolver);
+        let parser = create_parser_from_reader_input(
+            input,
+            error.clone(),
+            max_bytes,
+            max_inclusion_depth,
+            resolver,
+        );
         #[cfg(not(feature = "include"))]
         let parser = saphyr_parser::Parser::new(input);
         Self {
@@ -300,10 +310,20 @@ impl<'a> LiveEvents<'a> {
         #[cfg(feature = "include")]
         let max_bytes = budget.as_ref().and_then(|b| b.max_reader_input_bytes);
         #[cfg(feature = "include")]
+        let max_inclusion_depth = budget
+            .as_ref()
+            .map_or(crate::Budget::default().max_inclusion_depth, |b| b.max_inclusion_depth);
+        #[cfg(feature = "include")]
         // Share the IO error cell with potential reader-based includes.
         let error = Rc::new(RefCell::new(None));
         #[cfg(feature = "include")]
-        let parser = create_parser_from_str(input, error.clone(), max_bytes, resolver);
+        let parser = create_parser_from_str(
+            input,
+            error.clone(),
+            max_bytes,
+            max_inclusion_depth,
+            resolver,
+        );
         #[cfg(not(feature = "include"))]
         let parser = create_parser_from_str(input);
         Self {

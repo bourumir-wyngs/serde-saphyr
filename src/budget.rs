@@ -74,6 +74,13 @@ pub struct Budget {
     ///
     /// Default: 2,000
     pub max_depth: usize,
+    /// Maximum allowed `!include` nesting depth.
+    ///
+    /// This limits how many nested included parsers may be active below the root
+    /// document at once. A value of `0` disables includes entirely.
+    ///
+    /// Default: 24
+    pub max_inclusion_depth: u32,
     /// Maximum number of YAML documents in the stream.
     ///
     /// Default: 1,024. If enforcing policy is "per document", this is ignored.
@@ -119,6 +126,7 @@ impl Default for Budget {
             max_aliases: 50_000,                             // liberal absolute cap
             max_anchors: 50_000,
             max_depth: 2_000,                         // protects stack/CPU
+            max_inclusion_depth: 24,
             max_documents: 1_024,                     // doc separator storms
             max_nodes: 250_000,                       // sequences + maps + scalars
             max_total_scalar_bytes: 64 * 1024 * 1024, // 64 MiB of scalar text
@@ -158,6 +166,12 @@ pub enum BudgetBreach {
     Depth {
         /// Maximum depth reached when the breach occurred.
         depth: usize,
+    },
+
+    /// The include nesting depth exceeded [`Budget::max_inclusion_depth`].
+    InclusionDepth {
+        /// Include nesting depth reached when the breach occurred.
+        depth: u32,
     },
 
     /// The number of YAML documents exceeded [`Budget::max_documents`].
@@ -708,5 +722,12 @@ e: *A
         assert!(report.breached.is_none());
         assert_eq!(report.aliases, 3);
         assert_eq!(report.anchors, 1);
+    }
+
+    #[test]
+    fn budget_default_sets_max_inclusion_depth() {
+        let budget = Budget::default();
+
+        assert_eq!(budget.max_inclusion_depth, 24);
     }
 }

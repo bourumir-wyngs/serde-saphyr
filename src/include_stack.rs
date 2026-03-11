@@ -4,11 +4,7 @@ use crate::buffered_input::{
 use crate::input_source::{IncludeResolveError, IncludeResolver, InputSource, ResolvedInclude};
 use saphyr_parser::{Event, Parser, ScanError, Scanner, Span, StrInput, TokenType};
 use std::rc::Rc;
-
-
-
 type InnerStack<'input> = saphyr_parser::parser_stack::ParserStack<'input, core::iter::Empty<char>, ReaderInput<'input>>;
-
 #[derive(Clone, Debug)]
 pub(crate) struct SnippetFrame {
     pub(crate) name: String,
@@ -16,7 +12,6 @@ pub(crate) struct SnippetFrame {
     #[allow(dead_code)]
     pub(crate) include_location: crate::Location,
 }
-
 #[derive(Clone, Debug)]
 pub(crate) struct RecordedSource {
     #[allow(dead_code)]
@@ -26,7 +21,6 @@ pub(crate) struct RecordedSource {
     pub(crate) text: Option<Rc<str>>,
     pub(crate) include_location: crate::Location,
 }
-
 /// A parser stack that supports serde-saphyr includes.
 ///
 /// This delegates all anchor handling to `saphyr_parser::parser_stack::ParserStack` (which has
@@ -37,21 +31,26 @@ pub struct ParserStack<'input> {
     include_resolver: Option<Box<IncludeResolver<'input>>>,
     io_error: ReaderInputError,
     max_reader_input_bytes: Option<usize>,
+    max_inclusion_depth: u32,
     active_ids: Vec<(usize, String)>,
     snippet_frames: Vec<Option<SnippetFrame>>,
     next_source_id: u32,
     active_source_ids: Vec<u32>,
     pub(crate) resolved_sources: std::collections::HashMap<u32, RecordedSource>,
 }
-
 impl<'input> ParserStack<'input> {
     #[must_use]
-    pub fn new(io_error: ReaderInputError, max_reader_input_bytes: Option<usize>) -> Self {
+    pub fn new(
+        io_error: ReaderInputError,
+        max_reader_input_bytes: Option<usize>,
+        max_inclusion_depth: u32,
+    ) -> Self {
         Self {
             inner: InnerStack::new(),
             include_resolver: None,
             io_error,
             max_reader_input_bytes,
+            max_inclusion_depth,
             active_ids: Vec::new(),
             snippet_frames: Vec::new(),
             next_source_id: 1,
@@ -59,27 +58,22 @@ impl<'input> ParserStack<'input> {
             resolved_sources: std::collections::HashMap::new(),
         }
     }
-
     pub fn set_resolver(
         &mut self,
         resolver: impl FnMut(crate::input_source::IncludeRequest<'_>) -> Result<ResolvedInclude, IncludeResolveError> + 'input,
     ) {
         self.include_resolver = Some(Box::new(resolver));
     }
-
     pub fn has_resolver(&self) -> bool {
         self.include_resolver.is_some()
     }
-
     #[allow(dead_code)]
     pub fn push_str_parser(&mut self, parser: Parser<'input, StrInput<'input>>, name: String) {
         self.push_str_parser_with_snippet(parser, name, None);
     }
-
     pub fn push_stream_parser(&mut self, parser: Parser<'input, ReaderInput<'input>>, name: String) {
         self.push_stream_parser_with_snippet(parser, name, None);
     }
-
     pub(crate) fn push_str_parser_with_snippet(
         &mut self,
         parser: Parser<'input, StrInput<'input>>,
@@ -107,7 +101,6 @@ impl<'input> ParserStack<'input> {
         self.inner.push_str_parser(parser, name);
         self.snippet_frames.push(snippet);
     }
-
     fn push_stream_parser_with_snippet(
         &mut self,
         parser: Parser<'input, ReaderInput<'input>>,
@@ -135,7 +128,6 @@ impl<'input> ParserStack<'input> {
         self.inner.push_custom_parser(parser, name);
         self.snippet_frames.push(snippet);
     }
-
     fn push_replay_parser_with_snippet(
         &mut self,
         parser: saphyr_parser::parser_stack::ReplayParser<'input>,
@@ -163,11 +155,9 @@ impl<'input> ParserStack<'input> {
         self.inner.push_replay_parser(parser, name);
         self.snippet_frames.push(snippet);
     }
-
     pub fn current_source_id(&self) -> u32 {
         self.active_source_ids.last().copied().unwrap_or(0)
     }
-
     pub(crate) fn recorded_source_chain(&self, source_id: u32) -> Vec<&RecordedSource> {
         let mut chain = Vec::new();
         let mut current = self.resolved_sources.get(&source_id);
@@ -179,30 +169,25 @@ impl<'input> ParserStack<'input> {
         }
         chain
     }
-
     fn sync_source_tracking(&mut self, current_len: usize) {
         self.active_ids.retain(|(depth, _)| *depth <= current_len);
         self.snippet_frames.truncate(current_len);
         self.active_source_ids.truncate(current_len);
     }
-
     pub(crate) fn prune_resolved_sources(&mut self) {
         self.resolved_sources
             .retain(|id, _| self.active_source_ids.contains(id));
     }
-
     #[allow(dead_code)]
     pub fn active_include_snippet_source(&self) -> Option<(&str, &str)> {
         if self.inner.stack().len() <= 1 {
             return None;
         }
-
         self.snippet_frames
             .last()
             .and_then(|frame| frame.as_ref())
             .map(|frame| (frame.name.as_str(), frame.text.as_ref()))
     }
-
     #[allow(dead_code)]
     pub fn include_stack_snippets(&self) -> Vec<(&str, &str, crate::Location)> {
         self.snippet_frames
@@ -211,16 +196,22 @@ impl<'input> ParserStack<'input> {
             .map(|frame| (frame.name.as_str(), frame.text.as_ref(), frame.include_location))
             .collect()
     }
-
     pub fn resolve(&mut self, include_str: &str, location: crate::Location) -> Result<(), crate::de_error::Error> {
         let Some(resolver) = &mut self.include_resolver else {
             return Err(crate::de_error::Error::msg("No include resolver set for parser stack.").with_location(location));
         };
 
+        let include_depth = self.inner.stack().len() as u32;
+        if include_depth > self.max_inclusion_depth {
+            return Err(crate::de_error::Error::Budget {
+                breach: crate::budget::BudgetBreach::InclusionDepth { depth: include_depth },
+                location,
+            });
+        }
         let stack: Vec<String> = self.inner.stack().into_iter().collect();
         let from_name = stack.last().map(|s| s.as_str()).unwrap_or("");
         let from_id = self.active_ids.last().map(|(_, id)| id.as_str());
-        
+
         let request = crate::input_source::IncludeRequest {
             spec: include_str,
             from_name,
@@ -228,7 +219,6 @@ impl<'input> ParserStack<'input> {
             stack: stack.clone(),
             location,
         };
-
         let resolved = match resolver(request) {
             Ok(r) => r,
             Err(e) => {
@@ -241,7 +231,6 @@ impl<'input> ParserStack<'input> {
                 });
             }
         };
-
         if self.active_ids.iter().any(|(_, id)| id == &resolved.id) {
             let stack = self.inner.stack().into_iter().collect();
             return Err(crate::de_error::Error::CyclicInclude {
@@ -251,9 +240,8 @@ impl<'input> ParserStack<'input> {
             });
         }
         // Track the include as active at the depth of the pushed parser.
-        let include_depth = self.inner.stack().len() + 1;
-        self.active_ids.push((include_depth, resolved.id));
-
+        let active_depth = self.inner.stack().len() + 1;
+        self.active_ids.push((active_depth, resolved.id));
         let name = resolved.name;
         match resolved.source {
             InputSource::Text(mut s) => {
@@ -307,12 +295,10 @@ impl<'input> ParserStack<'input> {
         Ok(())
     }
 }
-
 struct CollectedAnchorEvents {
     events: Vec<(Event<'static>, Span)>,
     anchor_offset: usize,
 }
-
 fn collect_anchor_events(
     text: &str,
     target_anchor: &str,
@@ -331,10 +317,8 @@ fn collect_anchor_events(
             target_anchor, err
         ));
     }
-
     let mut parser = Parser::new_from_str(text);
     parser.set_anchor_offset(anchor_offset);
-
     let mut anchor_index = 0usize;
     let mut collecting = false;
     let mut depth = 0usize;
@@ -374,7 +358,6 @@ fn collect_anchor_events(
             }
             continue;
         }
-
         let Some(anchor_name) = anchor_names.get(anchor_index) else {
             return Err(format!(
                 "failed to map include anchor '{}' to parser events",
@@ -382,7 +365,6 @@ fn collect_anchor_events(
             ));
         };
         anchor_index += 1;
-
         if collecting {
             events.push((own_event(event), span));
             if depth == 0 {
@@ -390,7 +372,6 @@ fn collect_anchor_events(
             }
             continue;
         }
-
         if anchor_name == target_anchor {
             depth = match &event {
                 Event::Scalar(_, _, _, _) => 0,
@@ -404,7 +385,6 @@ fn collect_anchor_events(
             collecting = true;
         }
     }
-
     if events.is_empty() {
         Err(format!(
             "include fragment '{}' was not found",
@@ -417,7 +397,6 @@ fn collect_anchor_events(
         })
     }
 }
-
 fn own_event(event: Event<'_>) -> Event<'static> {
     match event {
         Event::Nothing => Event::Nothing,
@@ -442,10 +421,8 @@ fn own_event(event: Event<'_>) -> Event<'static> {
         Event::MappingEnd => Event::MappingEnd,
     }
 }
-
 impl<'input> Iterator for ParserStack<'input> {
     type Item = Result<(Event<'input>, Span), ScanError>;
-
     fn next(&mut self) -> Option<Self::Item> {
         let pre_stack = self.inner.stack();
         match self.inner.next() {
@@ -474,61 +451,53 @@ impl<'input> Iterator for ParserStack<'input> {
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn test_unused_methods() {
         let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
-        let mut stack = ParserStack::new(io_error, None);
-        
+        let mut stack = ParserStack::new(io_error, None, u32::MAX);
+
         let parser = Parser::new_from_str("foo: bar");
         stack.push_str_parser(parser, "test.yaml".to_string());
-        
+
         // At depth 1, active_include_snippet_source is None
         assert_eq!(stack.active_include_snippet_source(), None);
-        
+
         stack.push_str_parser_with_snippet(
-            Parser::new_from_str("baz"), 
-            "test2.yaml".to_string(), 
+            Parser::new_from_str("baz"),
+            "test2.yaml".to_string(),
             Some(SnippetFrame {
                 name: "test2.yaml".to_string(),
                 text: Rc::from("baz"),
                 include_location: crate::Location::UNKNOWN,
             })
         );
-        
+
         // At depth > 1, active_include_snippet_source returns the top snippet
         let src = stack.active_include_snippet_source().unwrap();
         assert_eq!(src.0, "test2.yaml");
         assert_eq!(src.1, "baz");
-
         let snippets = stack.include_stack_snippets();
         assert_eq!(snippets.len(), 1);
         assert_eq!(snippets[0].0, "test2.yaml");
         assert_eq!(snippets[0].1, "baz");
     }
-
     #[test]
     fn source_ids_start_from_one_and_zero_stays_unknown() {
         let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
-        let mut stack = ParserStack::new(io_error, None);
-
+        let mut stack = ParserStack::new(io_error, None, u32::MAX);
         assert_eq!(stack.current_source_id(), 0);
-
         stack.push_str_parser(Parser::new_from_str("root: 1"), "root.yaml".to_string());
         assert_eq!(stack.current_source_id(), 1);
-
         stack.push_str_parser(Parser::new_from_str("child: 2"), "child.yaml".to_string());
         assert_eq!(stack.current_source_id(), 2);
     }
-
     #[test]
     fn resolved_sources_retained_after_included_parser_pops() {
         let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
-        let mut stack = ParserStack::new(io_error, None);
+        let mut stack = ParserStack::new(io_error, None, u32::MAX);
         stack.set_resolver(|req| {
             assert_eq!(req.spec, "child.yaml");
             Ok(ResolvedInclude {
@@ -537,35 +506,29 @@ mod tests {
                 source: InputSource::Text("child: 1\n".to_string()),
             })
         });
-
         stack.push_str_parser(Parser::new_from_str("root: 1\n"), "root.yaml".to_string());
         assert_eq!(stack.resolved_sources.len(), 1);
-
         stack
             .resolve("child.yaml", crate::Location::UNKNOWN)
             .expect("child include resolves");
         assert_eq!(stack.current_source_id(), 2);
         assert_eq!(stack.resolved_sources.len(), 2);
-
         while stack.current_source_id() == 2 {
             let item = stack.next().expect("child parser still yields events");
             assert!(item.is_ok(), "child parser should parse successfully");
         }
-
         assert_eq!(stack.current_source_id(), 1);
         assert_eq!(stack.resolved_sources.len(), 2);
         assert!(stack.resolved_sources.contains_key(&1));
         assert!(stack.resolved_sources.contains_key(&2));
     }
-
     #[test]
     fn resolved_sources_pruned_on_next_document_start() {
         let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
-        let mut stack = ParserStack::new(io_error, None);
-
+        let mut stack = ParserStack::new(io_error, None, u32::MAX);
         // A stream with two documents
         stack.push_str_parser(Parser::new_from_str("first: 1\n---\nsecond: 2\n"), "multi.yaml".to_string());
-        
+
         // Push a dummy child source ID to simulate an include during the first document
         stack.resolved_sources.insert(999, RecordedSource {
             source_id: 999,
@@ -574,7 +537,6 @@ mod tests {
             text: None,
             include_location: crate::Location::UNKNOWN,
         });
-
         // Read until the first document finishes and the second document starts
         let mut doc_starts = 0;
         for item in stack.by_ref() {
@@ -585,7 +547,6 @@ mod tests {
                 }
             }
         }
-
         assert_eq!(doc_starts, 2);
         // The root source (id 1) should be retained, but the dummy child (id 999) pruned
         assert!(stack.resolved_sources.contains_key(&1));
@@ -593,4 +554,94 @@ mod tests {
         assert_eq!(stack.resolved_sources.len(), 1);
     }
 
+    #[test]
+    fn max_inclusion_depth_zero_disables_includes() {
+        let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let mut stack = ParserStack::new(io_error, None, 0);
+        stack.set_resolver(|_| {
+            Ok(ResolvedInclude {
+                id: "child.yaml".to_string(),
+                name: "child.yaml".to_string(),
+                source: InputSource::Text("child: 1\n".to_string()),
+            })
+        });
+        stack.push_str_parser(Parser::new_from_str("root: 1\n"), "root.yaml".to_string());
+
+        let err = stack
+            .resolve("child.yaml", crate::Location::UNKNOWN)
+            .expect_err("include depth 0 should reject includes");
+
+        assert!(matches!(
+            err,
+            crate::de_error::Error::Budget {
+                breach: crate::budget::BudgetBreach::InclusionDepth { depth: 1 },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn max_inclusion_depth_allows_nested_includes_up_to_limit() {
+        let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let mut stack = ParserStack::new(io_error, None, 2);
+        stack.set_resolver(|req| match req.spec {
+            "child.yaml" => Ok(ResolvedInclude {
+                id: "child.yaml".to_string(),
+                name: "child.yaml".to_string(),
+                source: InputSource::Text("child: 1\n".to_string()),
+            }),
+            "grandchild.yaml" => Ok(ResolvedInclude {
+                id: "grandchild.yaml".to_string(),
+                name: "grandchild.yaml".to_string(),
+                source: InputSource::Text("grandchild: 1\n".to_string()),
+            }),
+            other => panic!("unexpected include request: {other}"),
+        });
+        stack.push_str_parser(Parser::new_from_str("root: 1\n"), "root.yaml".to_string());
+
+        stack
+            .resolve("child.yaml", crate::Location::UNKNOWN)
+            .expect("first include within limit");
+        stack
+            .resolve("grandchild.yaml", crate::Location::UNKNOWN)
+            .expect("second include within limit");
+
+        assert_eq!(stack.current_source_id(), 3);
+    }
+
+    #[test]
+    fn max_inclusion_depth_rejects_nested_include_beyond_limit() {
+        let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let mut stack = ParserStack::new(io_error, None, 1);
+        stack.set_resolver(|req| match req.spec {
+            "child.yaml" => Ok(ResolvedInclude {
+                id: "child.yaml".to_string(),
+                name: "child.yaml".to_string(),
+                source: InputSource::Text("child: 1\n".to_string()),
+            }),
+            "grandchild.yaml" => Ok(ResolvedInclude {
+                id: "grandchild.yaml".to_string(),
+                name: "grandchild.yaml".to_string(),
+                source: InputSource::Text("grandchild: 1\n".to_string()),
+            }),
+            other => panic!("unexpected include request: {other}"),
+        });
+        stack.push_str_parser(Parser::new_from_str("root: 1\n"), "root.yaml".to_string());
+
+        stack
+            .resolve("child.yaml", crate::Location::UNKNOWN)
+            .expect("first include within limit");
+
+        let err = stack
+            .resolve("grandchild.yaml", crate::Location::UNKNOWN)
+            .expect_err("second include should exceed limit");
+
+        assert!(matches!(
+            err,
+            crate::de_error::Error::Budget {
+                breach: crate::budget::BudgetBreach::InclusionDepth { depth: 2 },
+                ..
+            }
+        ));
+    }
 }
