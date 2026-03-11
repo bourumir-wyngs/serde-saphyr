@@ -175,7 +175,19 @@ where
         match shared_ring.get_recent() {
             Ok(snapshot) => {
                 let text = String::from_utf8_lossy(&snapshot.bytes);
-                crate::maybe_with_snippet_from_events(e, &text, src, with_snippet, crop_radius)
+                let root = crate::RootFragment {
+                    text: text.as_ref(),
+                    start_line: snapshot.start_line,
+                    source_name: "input",
+                };
+                crate::maybe_with_snippet_from_events_and_root_fragment(
+                    e,
+                    Some(&root),
+                    text.as_ref(),
+                    src,
+                    with_snippet,
+                    crop_radius,
+                )
             }
             Err(_) => e,
         }

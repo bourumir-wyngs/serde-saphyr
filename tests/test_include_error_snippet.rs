@@ -127,3 +127,36 @@ fn test_include_error_snippet_with_deserializer_helpers() {
     assert!(reader_err.contains("b: !include included.yaml"));
     assert!(reader_err.contains("string"));
 }
+
+#[test]
+fn reader_root_include_site_snippet_uses_snapshot_start_line() {
+    let mut main_yaml = String::new();
+    for i in 1..50 {
+        main_yaml.push_str(&format!("pad{i}: ok\n"));
+    }
+    main_yaml.push_str("b: !include included.yaml\n");
+
+    let included_yaml = "\nstring\n";
+    let options = Options::default().with_include_resolver(
+        |req: IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
+            if req.spec == "included.yaml" {
+                Ok(ResolvedInclude {
+                    id: "included.yaml".to_string(),
+                    name: "included.yaml".to_string(),
+                    source: serde_saphyr::InputSource::from_string(included_yaml.to_string()),
+                })
+            } else {
+                Err(IncludeResolveError::Message(format!("file not found: {}", req.spec)))
+            }
+        },
+    );
+
+    let result: Result<Config, _> = from_reader_with_options(Cursor::new(main_yaml), options);
+    assert!(result.is_err());
+
+    let err_str = result.unwrap_err().to_string();
+    assert!(err_str.contains("included from here:"), "unexpected diagnostic: {err_str}");
+    assert!(err_str.contains("--> input:50:"), "root include-site snippet should use absolute line 50: {err_str}");
+    assert!(err_str.contains("b: !include included.yaml"), "unexpected diagnostic: {err_str}");
+    assert!(err_str.contains("--> included.yaml:"), "primary snippet should still point at the included source: {err_str}");
+}

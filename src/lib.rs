@@ -1356,8 +1356,35 @@ pub(crate) fn maybe_with_snippet(
     err.with_snippet(input, crop_radius)
 }
 
-pub(crate) fn maybe_with_snippet_from_events(
+pub(crate) struct RootFragment<'a> {
+    pub text: &'a str,
+    pub start_line: usize,
+    pub source_name: &'a str,
+}
+
+#[cfg(feature = "include")]
+fn with_root_additional_snippet(
     err: Error,
+    root: Option<&RootFragment<'_>>,
+    input: &str,
+    location: &crate::Location,
+    crop_radius: usize,
+) -> Error {
+    match root {
+        Some(root) => err.with_additional_snippet_offset_named(
+            root.text,
+            root.start_line,
+            root.source_name,
+            location,
+            crop_radius,
+        ),
+        None => err.with_additional_snippet_named(input, "input", location, crop_radius),
+    }
+}
+
+pub(crate) fn maybe_with_snippet_from_events_and_root_fragment(
+    err: Error,
+    root: Option<&RootFragment<'_>>,
     input: &str,
     #[allow(unused_variables)] events: &crate::live_events::LiveEvents<'_>,
     with_snippet: bool,
@@ -1370,30 +1397,59 @@ pub(crate) fn maybe_with_snippet_from_events(
     #[cfg(feature = "include")]
     if let Some(loc) = err.location()
         && let Some((source_name, source_text)) = events.get_resolved_snippet(loc.source_id()) {
-            // If the error happens inside an included file, we use that file's content for the snippet.
-            // This is preferred over the top-level input.
             let mut err_with_snippet = err.with_snippet_named(source_text, source_name, crop_radius);
-            
+
             let stack_snippets = events.include_stack_snippets();
             for i in (1..stack_snippets.len()).rev() {
                 let include_loc = stack_snippets[i].2;
                 let (parent_name, parent_text, _) = stack_snippets[i - 1];
                 if include_loc != crate::Location::UNKNOWN {
-                    err_with_snippet = err_with_snippet.with_additional_snippet_named(parent_text, parent_name, &include_loc, crop_radius);
+                    err_with_snippet =
+                        err_with_snippet.with_additional_snippet_named(parent_text, parent_name, &include_loc, crop_radius);
                 }
             }
 
             if stack_snippets.len() == 1 {
                 let include_loc = stack_snippets[0].2;
                 if include_loc != crate::Location::UNKNOWN {
-                    err_with_snippet = err_with_snippet
-                        .with_additional_snippet_named(input, "input", &include_loc, crop_radius);
+                    err_with_snippet = with_root_additional_snippet(
+                        err_with_snippet,
+                        root,
+                        input,
+                        &include_loc,
+                        crop_radius,
+                    );
                 }
             }
             return err_with_snippet;
         }
 
-    maybe_with_snippet(err, input, with_snippet, crop_radius)
+    match root {
+        Some(root) => err.with_snippet_offset_named(
+            root.text,
+            root.start_line,
+            root.source_name,
+            crop_radius,
+        ),
+        None => maybe_with_snippet(err, input, with_snippet, crop_radius),
+    }
+}
+
+pub(crate) fn maybe_with_snippet_from_events(
+    err: Error,
+    input: &str,
+    #[allow(unused_variables)] events: &crate::live_events::LiveEvents<'_>,
+    with_snippet: bool,
+    crop_radius: usize,
+) -> Error {
+    maybe_with_snippet_from_events_and_root_fragment(
+        err,
+        None,
+        input,
+        events,
+        with_snippet,
+        crop_radius,
+    )
 }
 
 #[cfg(feature = "include")]
@@ -1867,7 +1923,19 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
         match shared_ring.get_recent() {
             Ok(snapshot) => {
                 let text = String::from_utf8_lossy(&snapshot.bytes);
-                maybe_with_snippet_from_events(e, &text, src_ref, with_snippet, crop_radius)
+                let root = RootFragment {
+                    text: text.as_ref(),
+                    start_line: snapshot.start_line,
+                    source_name: "input",
+                };
+                maybe_with_snippet_from_events_and_root_fragment(
+                    e,
+                    Some(&root),
+                    text.as_ref(),
+                    src_ref,
+                    with_snippet,
+                    crop_radius,
+                )
             }
             Err(_) => e, // If we can't get the snapshot, return the error as-is
         }

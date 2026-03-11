@@ -880,7 +880,6 @@ impl Error {
         }
     }
 
-    #[cfg(feature = "include")]
     #[cold]
     #[inline(never)]
     pub(crate) fn with_additional_snippet_named(
@@ -919,12 +918,51 @@ impl Error {
         self
     }
 
+    #[cfg(feature = "include")]
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn with_additional_snippet_offset_named(
+        mut self,
+        text: &str,
+        start_line: usize,
+        source_name: &str,
+        location: &Location,
+        crop_radius: usize,
+    ) -> Self {
+        if crop_radius == 0 || *location == Location::UNKNOWN {
+            return self;
+        }
+
+        let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
+        let mapping = crate::de_snippet::LineMapping::Offset { start_line };
+
+        let (cropped, start_line) =
+            crate::de_snippet::crop_source_window(text, location, mapping, crop_radius);
+        if cropped.is_empty() {
+            return self;
+        }
+        let lines = line_count_including_trailing_empty_line(cropped.as_str());
+        let end_line = start_line.saturating_add(lines.saturating_sub(1));
+
+        let region = CroppedRegion {
+            text: cropped,
+            source_name: source_name.to_string(),
+            start_line,
+            end_line,
+            location: *location,
+        };
+
+        if let Error::WithSnippet { ref mut regions, .. } = self {
+            regions.push(region);
+        }
+        self
+    }
+
     /// Attach a snippet from a partial YAML fragment (e.g., from `RingReader`).
     ///
     /// This is similar to `with_snippet`, but the `text` is a fragment that starts
     /// at `start_line` (1-based) rather than at line 1. The renderer will adjust
     /// line numbers accordingly.
-    #[cfg(test)]
     #[cold]
     #[inline(never)]
     pub(crate) fn with_snippet_offset(
@@ -936,7 +974,6 @@ impl Error {
         self.with_snippet_offset_named(text, start_line, "<input>", crop_radius)
     }
 
-    #[cfg(test)]
     #[cold]
     #[inline(never)]
     pub(crate) fn with_snippet_offset_named(

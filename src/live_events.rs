@@ -32,7 +32,6 @@ use crate::de_error::budget_error;
 #[cfg(feature = "include")]
 use crate::include::create_parser_from_reader_input;
 use crate::include::{create_parser_from_str, BaseParser};
-#[cfg(feature = "include")]
 use crate::location::location_from_span;
 use crate::options::BudgetReportCallback;
 use crate::tags::SfTag;

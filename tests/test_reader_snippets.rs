@@ -206,3 +206,22 @@ fn reader_utf8_content() {
         err_str
     );
 }
+
+#[test]
+fn reader_root_snippet_uses_snapshot_start_line() {
+    let mut yaml = String::new();
+    for i in 1..50 {
+        yaml.push_str(&format!("line{i}: ok\n"));
+    }
+    yaml.push_str("broken: [unterminated\n");
+
+    let result: Result<serde_json::Value, _> = serde_saphyr::from_reader(Cursor::new(yaml));
+    assert!(result.is_err());
+
+    let err_str = result.unwrap_err().to_string();
+    assert!(err_str.contains("line 50"), "unexpected diagnostic: {err_str}");
+    assert!(
+        !err_str.contains("--> <input>:1:"),
+        "snapshot-backed root snippet should not reset to line 1: {err_str}"
+    );
+}
