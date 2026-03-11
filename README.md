@@ -508,7 +508,7 @@ Instead of including the whole document, you can also include only the value of 
 
 Other than stated, the anchor scope is restricted to the document where it is defined. Overriding a parent anchor value somewhere deep inside included content would be challenging to debug and could even become a security issue. 
 
-The included source must contain exactly one YAML document.
+When including the whole document, only a single document is supported as an included source. If we search for anchors, all documents in the included content will be scanned.
 
 ### Tuple enum variants
 It is possible to deserialize tuple enum variants:
