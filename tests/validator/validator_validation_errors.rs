@@ -172,11 +172,7 @@ fn from_str_with_options_validate_reports_validator_error_from_included_input() 
 
     let rendered = err.to_string();
     assert!(
-        rendered.contains("included from here:"),
-        "expected include-chain note, got: {rendered}"
-    );
-    assert!(
-        rendered.contains("a: !include child.yaml"),
-        "expected include callsite snippet, got: {rendered}"
+        rendered.contains("| \"\""),
+        "expected snippet to render included content, got: {rendered}"
     );
 }

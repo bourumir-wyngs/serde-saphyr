@@ -585,6 +585,7 @@ where
     T: DeserializeOwned + garde::Validate,
     <T as garde::Validate>::Context: Default,
 {
+    let snippet_options = options.clone();
     let with_snippet = options.with_snippet;
     let crop_radius = options.crop_radius;
 
@@ -596,7 +597,13 @@ where
                 report,
                 locations: recorder.map,
             };
-            Err(maybe_with_snippet(err, input, with_snippet, crop_radius))
+            Err(maybe_with_snippet_with_replayed_events(
+                err,
+                input,
+                &snippet_options,
+                with_snippet,
+                crop_radius,
+            ))
         }
     }
 }
@@ -613,6 +620,7 @@ pub fn from_str_with_options_context_valid<T>(
 where
     T: DeserializeOwned + garde::Validate,
 {
+    let snippet_options = options.clone();
     let with_snippet = options.with_snippet;
     let crop_radius = options.crop_radius;
 
@@ -624,7 +632,13 @@ where
                 report,
                 locations: recorder.map,
             };
-            Err(maybe_with_snippet(err, input, with_snippet, crop_radius))
+            Err(maybe_with_snippet_with_replayed_events(
+                err,
+                input,
+                &snippet_options,
+                with_snippet,
+                crop_radius,
+            ))
         }
     }
 }
@@ -1022,6 +1036,7 @@ pub fn from_str_with_options_validate<T>(input: &str, options: Options) -> Resul
 where
     T: DeserializeOwned + ValidatorValidate,
 {
+    let snippet_options = options.clone();
     let with_snippet = options.with_snippet;
     let crop_radius = options.crop_radius;
 
@@ -1033,7 +1048,13 @@ where
                 errors,
                 locations: recorder.map,
             };
-            Err(maybe_with_snippet(err, input, with_snippet, crop_radius))
+            Err(maybe_with_snippet_with_replayed_events(
+                err,
+                input,
+                &snippet_options,
+                with_snippet,
+                crop_radius,
+            ))
         }
     }
 }
@@ -1452,6 +1473,45 @@ pub(crate) fn maybe_with_snippet_from_events(
             return err_with_snippet;
         }
 
+    maybe_with_snippet(err, input, with_snippet, crop_radius)
+}
+
+#[cfg(feature = "include")]
+fn maybe_with_snippet_with_replayed_events(
+    err: Error,
+    input: &str,
+    options: &Options,
+    with_snippet: bool,
+    crop_radius: usize,
+) -> Error {
+    if !(with_snippet && crop_radius > 0 && err.location().is_some()) {
+        return err;
+    }
+
+    let mut replay = LiveEvents::from_str(
+        input,
+        options.budget.clone(),
+        options.budget_report,
+        options.budget_report_cb.clone(),
+        options.alias_limits,
+        false,
+        options.require_indent,
+        resolver_from_options(options),
+    );
+
+    while let Ok(Some(_)) = replay.next() {}
+
+    maybe_with_snippet_from_events(err, input, &replay, with_snippet, crop_radius)
+}
+
+#[cfg(not(feature = "include"))]
+fn maybe_with_snippet_with_replayed_events(
+    err: Error,
+    input: &str,
+    _options: &Options,
+    with_snippet: bool,
+    crop_radius: usize,
+) -> Error {
     maybe_with_snippet(err, input, with_snippet, crop_radius)
 }
 
