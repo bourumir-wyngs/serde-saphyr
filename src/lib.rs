@@ -26,7 +26,7 @@ pub use spanned::Spanned;
 pub use input_source::{IncludeResolveError, IncludeResolver, IncludeRequest, InputSource, ResolvedInclude};
 
 #[cfg(feature = "include")]
-pub(crate) fn resolver_from_options<'a>(options: &Options) -> Option<Box<crate::input_source::IncludeResolver<'a>>> {
+pub(crate) fn resolver_from_options<'a>(options: Options) -> Option<Box<crate::input_source::IncludeResolver<'a>>> {
     options.include_resolver.clone().map(|rc_refcell| {
         Box::new(move |req: crate::input_source::IncludeRequest<'_>| {
             rc_refcell.borrow_mut()(req)

@@ -33,7 +33,6 @@ use crate::de_error::budget_error;
 use crate::include::create_parser_from_reader_input;
 use crate::include::{create_parser_from_str, BaseParser};
 #[cfg(feature = "include")]
-use crate::input_source::IncludeResolver;
 use crate::location::location_from_span;
 use crate::options::BudgetReportCallback;
 use crate::tags::SfTag;
@@ -224,17 +223,17 @@ struct InjectFrame {
 impl<'a> LiveEvents<'a> {
     pub(crate) fn from_reader<R: std::io::Read + 'a>(
         inputs: R,
-        options: Options,
+        mut options: Options,
         stop_at_doc_end: bool,
         policy: EnforcingPolicy,
     ) -> Self {
-        let budget = options.budget;
-        let budget_report = options.budget_report;
-        let budget_report_cb = options.budget_report_cb;
+        let budget = options.budget.take();
+        let budget_report = options.budget_report.take();
+        let budget_report_cb = options.budget_report_cb.take();
         let alias_limits = options.alias_limits;
         let require_indent = options.require_indent;
         #[cfg(feature = "include")]
-        let resolver = crate::resolver_from_options(&options);
+        let resolver = crate::resolver_from_options(options);
 
         // Build a streaming character iterator from the byte reader, honoring input byte cap if configured
         let max_bytes = budget.as_ref().and_then(|b| b.max_reader_input_bytes);
@@ -286,16 +285,16 @@ impl<'a> LiveEvents<'a> {
     /// A configured `LiveEvents` ready to stream events.
     pub(crate) fn from_str(
         input: &'a str,
-        options: Options,
+        mut options: Options,
         stop_at_doc_end: bool,
     ) -> Self {
-        let budget = options.budget;
-        let budget_report = options.budget_report;
-        let budget_report_cb = options.budget_report_cb;
+        let budget = options.budget.take();
+        let budget_report = options.budget_report.take();
+        let budget_report_cb = options.budget_report_cb.take();
         let alias_limits = options.alias_limits;
         let require_indent = options.require_indent;
         #[cfg(feature = "include")]
-        let resolver = crate::resolver_from_options(&options);
+        let resolver = crate::resolver_from_options(options);
 
         let input = input.strip_prefix('\u{FEFF}').unwrap_or(input);
         #[cfg(feature = "include")]
