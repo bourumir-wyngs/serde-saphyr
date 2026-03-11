@@ -772,8 +772,8 @@ where
 }
 
 /// Deserialize a single YAML document from a reader and validate it with `garde`.
-/// As there is no access to the full text of the document, the error message will not contain
-/// a snippet.
+/// Snippets are attached on a best-effort basis for streamed root input, are available for
+/// included text sources, and may be unavailable for included reader sources.
 #[cfg(feature = "garde")]
 pub fn from_reader_valid<R: std::io::Read, T>(reader: R) -> Result<T, Error>
 where
@@ -784,8 +784,8 @@ where
 }
 
 /// Deserialize a single YAML document from a reader with options and validate it with `garde`.
-/// As there is no access to the full text of the document, the error message will not contain
-/// a snippet.
+/// Snippets are attached on a best-effort basis for streamed root input, are available for
+/// included text sources, and may be unavailable for included reader sources.
 #[cfg(feature = "garde")]
 #[allow(deprecated)]
 pub fn from_reader_with_options_valid<R: std::io::Read, T>(
@@ -797,7 +797,12 @@ where
     <T as garde::Validate>::Context: Default,
 {
     let cfg = crate::de::Cfg::from_options(&options);
-    let mut src = LiveEvents::from_reader(reader, options, false, EnforcingPolicy::AllContent);
+    let (snippet_ctx, ring_handle) = ReaderSnippetContext::new(
+        reader,
+        options.with_snippet,
+        options.crop_radius,
+    );
+    let mut src = LiveEvents::from_reader(ring_handle, options, false, EnforcingPolicy::AllContent);
 
     let mut recorder = crate::path_map::PathRecorder::new();
 
@@ -815,18 +820,24 @@ where
                 // If the only thing in the input was an empty document (synthetic null),
                 // surface this as an EOF error to preserve expected error semantics
                 // for incompatible target types (e.g., bool).
-                return Err(Error::eof().with_location(src.last_location()));
+                return Err(snippet_ctx.attach_snippet(
+                    Error::eof().with_location(src.last_location()),
+                    &src,
+                ));
             } else {
-                return Err(e);
+                return Err(snippet_ctx.attach_snippet(e, &src));
             }
         }
     };
 
     if let Err(report) = Validate::validate(&value) {
-        return Err(Error::ValidationError {
-            report,
-            locations: recorder.map,
-        });
+        return Err(snippet_ctx.attach_snippet(
+            Error::ValidationError {
+                report,
+                locations: recorder.map,
+            },
+            &src,
+        ));
     }
 
     // After finishing first document, peek ahead to detect either another document/content
@@ -834,28 +845,33 @@ where
     // ignore the trailing garbage. Otherwise, surface the error.
     match src.peek() {
         Ok(Some(_)) => {
-            return Err(Error::multiple_documents(
-                "use read_valid or read_with_options_valid to obtain the iterator",
-            )
-            .with_location(src.last_location()));
+            return Err(snippet_ctx.attach_snippet(
+                Error::multiple_documents(
+                    "use read_valid or read_with_options_valid to obtain the iterator",
+                )
+                .with_location(src.last_location()),
+                &src,
+            ));
         }
         Ok(None) => {}
         Err(e) => {
             if src.seen_doc_end() {
                 // Trailing garbage after a proper document end marker is ignored.
             } else {
-                return Err(e);
+                return Err(snippet_ctx.attach_snippet(e, &src));
             }
         }
     }
 
-    src.finish()?;
+    if let Err(e) = src.finish() {
+        return Err(snippet_ctx.attach_snippet(e, &src));
+    }
     Ok(value)
 }
 
 /// Create an iterator over validated YAML documents from a reader.
-/// As there is no access to the full text of the document, the error message will not contain
-/// a snippet.
+/// Root streamed input gets snippets on a best-effort basis; included text sources retain full
+/// snippets, while included reader sources may not have snippet text available.
 #[cfg(feature = "garde")]
 pub fn read_valid<'a, R, T>(reader: &'a mut R) -> impl Iterator<Item = Result<T, Error>> + 'a
 where
@@ -867,8 +883,8 @@ where
 }
 
 /// Create an iterator over validated YAML documents from a reader with configurable options.
-/// As there is no access to the full text of the document, the error message will not contain
-/// a snippet.
+/// Root streamed input gets snippets on a best-effort basis; included text sources retain full
+/// snippets, while included reader sources may not have snippet text available.
 #[cfg(feature = "garde")]
 #[allow(deprecated)]
 pub fn read_with_options_valid<'a, R, T>(
@@ -1150,8 +1166,8 @@ where
 }
 
 /// Deserialize a single YAML document from a reader and validate it with `validator`.
-/// As there is no access to the full text of the document, the error message will not contain
-/// a snippet.
+/// Snippets are attached on a best-effort basis for streamed root input, are available for
+/// included text sources, and may be unavailable for included reader sources.
 #[cfg(feature = "validator")]
 pub fn from_reader_validate<R: std::io::Read, T>(reader: R) -> Result<T, Error>
 where
@@ -1161,8 +1177,8 @@ where
 }
 
 /// Deserialize a single YAML document from a reader with options and validate it with `validator`.
-/// As there is no access to the full text of the document, the error message will not contain
-/// a snippet.
+/// Snippets are attached on a best-effort basis for streamed root input, are available for
+/// included text sources, and may be unavailable for included reader sources.
 #[cfg(feature = "validator")]
 #[allow(deprecated)]
 pub fn from_reader_with_options_validate<R: std::io::Read, T>(
@@ -1173,7 +1189,12 @@ where
     T: DeserializeOwned + ValidatorValidate,
 {
     let cfg = crate::de::Cfg::from_options(&options);
-    let mut src = LiveEvents::from_reader(reader, options, false, EnforcingPolicy::AllContent);
+    let (snippet_ctx, ring_handle) = ReaderSnippetContext::new(
+        reader,
+        options.with_snippet,
+        options.crop_radius,
+    );
+    let mut src = LiveEvents::from_reader(ring_handle, options, false, EnforcingPolicy::AllContent);
 
     let mut recorder = crate::path_map::PathRecorder::new();
 
@@ -1191,18 +1212,24 @@ where
                 // If the only thing in the input was an empty document (synthetic null),
                 // surface this as an EOF error to preserve expected error semantics
                 // for incompatible target types (e.g., bool).
-                return Err(Error::eof().with_location(src.last_location()));
+                return Err(snippet_ctx.attach_snippet(
+                    Error::eof().with_location(src.last_location()),
+                    &src,
+                ));
             } else {
-                return Err(e);
+                return Err(snippet_ctx.attach_snippet(e, &src));
             }
         }
     };
 
     if let Err(errors) = ValidatorValidate::validate(&value) {
-        return Err(Error::ValidatorError {
-            errors,
-            locations: recorder.map,
-        });
+        return Err(snippet_ctx.attach_snippet(
+            Error::ValidatorError {
+                errors,
+                locations: recorder.map,
+            },
+            &src,
+        ));
     }
 
     // After finishing first document, peek ahead to detect either another document/content
@@ -1210,28 +1237,33 @@ where
     // ignore the trailing garbage. Otherwise, surface the error.
     match src.peek() {
         Ok(Some(_)) => {
-            return Err(Error::multiple_documents(
-                "use read_validate or read_with_options_validate to obtain the iterator",
-            )
-            .with_location(src.last_location()));
+            return Err(snippet_ctx.attach_snippet(
+                Error::multiple_documents(
+                    "use read_validate or read_with_options_validate to obtain the iterator",
+                )
+                .with_location(src.last_location()),
+                &src,
+            ));
         }
         Ok(None) => {}
         Err(e) => {
             if src.seen_doc_end() {
                 // Trailing garbage after a proper document end marker is ignored.
             } else {
-                return Err(e);
+                return Err(snippet_ctx.attach_snippet(e, &src));
             }
         }
     }
 
-    src.finish()?;
+    if let Err(e) = src.finish() {
+        return Err(snippet_ctx.attach_snippet(e, &src));
+    }
     Ok(value)
 }
 
 /// Create an iterator over validated YAML documents from a reader.
-/// As there is no access to the full text of the document, the error message will not contain
-/// a snippet.
+/// Root streamed input gets snippets on a best-effort basis; included text sources retain full
+/// snippets, while included reader sources may not have snippet text available.
 #[cfg(feature = "validator")]
 pub fn read_validate<'a, R, T>(reader: &'a mut R) -> impl Iterator<Item = Result<T, Error>> + 'a
 where
@@ -1242,8 +1274,8 @@ where
 }
 
 /// Create an iterator over validated YAML documents from a reader with configurable options.
-/// As there is no access to the full text of the document, the error message will not contain
-/// a snippet.
+/// Root streamed input gets snippets on a best-effort basis; included text sources retain full
+/// snippets, while included reader sources may not have snippet text available.
 #[cfg(feature = "validator")]
 #[allow(deprecated)]
 pub fn read_with_options_validate<'a, R, T>(
@@ -1359,6 +1391,53 @@ pub(crate) struct RootFragment<'a> {
     pub text: &'a str,
     pub start_line: usize,
     pub source_name: &'a str,
+}
+
+struct ReaderSnippetContext<R> {
+    shared_ring: ring_reader::SharedRingReader<R>,
+    with_snippet: bool,
+    crop_radius: usize,
+}
+
+impl<R: Read> ReaderSnippetContext<R> {
+    fn new(reader: R, with_snippet: bool, crop_radius: usize) -> (Self, ring_reader::SharedRingReaderHandle<R>) {
+        let shared_ring = ring_reader::SharedRingReader::new(reader);
+        let ring_handle = ring_reader::SharedRingReaderHandle::new(&shared_ring);
+        (
+            Self {
+                shared_ring,
+                with_snippet,
+                crop_radius,
+            },
+            ring_handle,
+        )
+    }
+
+    fn attach_snippet(&self, err: Error, src: &LiveEvents<'_>) -> Error {
+        if !self.with_snippet || self.crop_radius == 0 {
+            return err;
+        }
+
+        match self.shared_ring.get_recent() {
+            Ok(snapshot) => {
+                let text = String::from_utf8_lossy(&snapshot.bytes);
+                let root = RootFragment {
+                    text: text.as_ref(),
+                    start_line: snapshot.start_line,
+                    source_name: "input",
+                };
+                maybe_with_snippet_from_events_and_root_fragment(
+                    err,
+                    Some(&root),
+                    text.as_ref(),
+                    src,
+                    self.with_snippet,
+                    self.crop_radius,
+                )
+            }
+            Err(_) => err,
+        }
+    }
 }
 
 #[cfg(feature = "include")]
