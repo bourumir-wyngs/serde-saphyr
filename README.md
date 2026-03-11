@@ -488,6 +488,13 @@ b: 2
 
 The included source must contain exactly one YAML document. `!include` is gated behind the `include` feature flag. If it is not enabled, or the resolver is not set, this tag has no special treatment.
 
+Resolver return type affects diagnostics quality:
+
+- `InputSource::Text` keeps full included text available for snippets and include-chain notes.
+- `InputSource::Reader` keeps streaming behavior (no full buffering), but diagnostics for nested include failures can be less detailed because full snippet text for that include is not retained.
+
+If your use case prioritizes error diagnostics (for example with `SafeFileResolver`), prefer returning `InputSource::Text` when practical.
+
 ### Tuple enum variants
 It is possible to deserialize tuple enum variants:
 

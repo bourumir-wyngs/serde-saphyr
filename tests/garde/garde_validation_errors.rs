@@ -406,4 +406,14 @@ fn from_str_with_options_valid_reports_garde_error_from_included_input() {
     }
     let location = err.location().expect("garde validation error should expose a location");
     assert_eq!(location.source_id(), 2, "expected included source id, got: {location:?}");
+
+    let rendered = err.to_string();
+    assert!(
+        rendered.contains("included from here:"),
+        "expected include-chain note, got: {rendered}"
+    );
+    assert!(
+        rendered.contains("a: !include child.yaml"),
+        "expected include callsite snippet, got: {rendered}"
+    );
 }
