@@ -3,6 +3,7 @@ use crate::buffered_input::{
 };
 use crate::input_source::{IncludeResolveError, IncludeResolver, InputSource, ResolvedInclude};
 use saphyr_parser::{Event, Parser, ScanError, Scanner, Span, StrInput, TokenType};
+use std::rc::Rc;
 
 
 
@@ -11,7 +12,7 @@ type InnerStack<'input> = saphyr_parser::parser_stack::ParserStack<'input, core:
 #[derive(Clone, Debug)]
 pub(crate) struct SnippetFrame {
     pub(crate) name: String,
-    pub(crate) text: String,
+    pub(crate) text: Rc<str>,
     #[allow(dead_code)]
     pub(crate) include_location: crate::Location,
 }
@@ -22,7 +23,7 @@ pub(crate) struct RecordedSource {
     pub(crate) source_id: u32,
     pub(crate) parent_source_id: Option<u32>,
     pub(crate) name: String,
-    pub(crate) text: Option<String>,
+    pub(crate) text: Option<Rc<str>>,
     pub(crate) include_location: crate::Location,
 }
 
@@ -188,7 +189,7 @@ impl<'input> ParserStack<'input> {
         self.snippet_frames
             .last()
             .and_then(|frame| frame.as_ref())
-            .map(|frame| (frame.name.as_str(), frame.text.as_str()))
+            .map(|frame| (frame.name.as_str(), frame.text.as_ref()))
     }
 
     #[allow(dead_code)]
@@ -196,7 +197,7 @@ impl<'input> ParserStack<'input> {
         self.snippet_frames
             .iter()
             .filter_map(|frame| frame.as_ref())
-            .map(|frame| (frame.name.as_str(), frame.text.as_str(), frame.include_location))
+            .map(|frame| (frame.name.as_str(), frame.text.as_ref(), frame.include_location))
             .collect()
     }
 
@@ -250,10 +251,10 @@ impl<'input> ParserStack<'input> {
                 }
                 let snippet = SnippetFrame {
                     name: name.clone(),
-                    text: s.clone(),
+                    text: Rc::from(s),
                     include_location: location,
                 };
-                let cursor = std::io::Cursor::new(s.into_bytes());
+                let cursor = std::io::Cursor::new(snippet.text.as_ref().as_bytes().to_vec());
                 let input = buffered_input_from_reader_with_limit_shared(
                     cursor,
                     self.max_reader_input_bytes,
@@ -273,7 +274,7 @@ impl<'input> ParserStack<'input> {
                 }
                 let snippet = SnippetFrame {
                     name: name.clone(),
-                    text: text.clone(),
+                    text: Rc::from(text.as_str()),
                     include_location: location,
                 };
                 let events = collect_anchor_events(&text, &anchor, self.inner.current_anchor_offset())
@@ -476,7 +477,7 @@ mod tests {
             "test2.yaml".to_string(), 
             Some(SnippetFrame {
                 name: "test2.yaml".to_string(),
-                text: "baz".to_string(),
+                text: Rc::from("baz"),
                 include_location: crate::Location::UNKNOWN,
             })
         );
