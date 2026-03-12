@@ -373,9 +373,15 @@ fn collect_anchor_events(
             )
         })?;
         events.push((own_event(event), span));
+        if events.len() > budget.max_events {
+            return Err(format!(
+                "include fragment '{}' exceeds maximum allowed events limit of {}",
+                target_anchor, budget.max_events
+            ));
+        }
     }
 
-    let mut anchor_nodes_by_name: std::collections::BTreeMap<String, Vec<(Event<'static>, Span)>> =
+    let mut anchor_nodes_by_name: std::collections::BTreeMap<String, std::ops::RangeInclusive<usize>> =
         std::collections::BTreeMap::new();
     let mut event_cursor = 0usize;
     let mut alias_id_to_name: std::collections::HashMap<usize, String> = std::collections::HashMap::new();
@@ -423,7 +429,7 @@ fn collect_anchor_events(
                 }
             }
         }
-        anchor_nodes_by_name.insert(name.clone(), events[start..=end].to_vec());
+        anchor_nodes_by_name.insert(name.clone(), start..=end);
         event_cursor = start + 1;
     }
 
@@ -433,16 +439,11 @@ fn collect_anchor_events(
         .ok_or_else(|| format!("include fragment '{}' was not found", target_anchor))?;
 
     let mut expanded_events = Vec::new();
-    let mut to_process: Vec<(Event<'static>, Span)> = target_events.into_iter().rev().collect();
+    let mut to_process: Vec<usize> = target_events.rev().collect();
     let mut expansion_count = 0;
     
-    while let Some((event, span)) = to_process.pop() {
-        if expanded_events.len() > budget.max_events {
-            return Err(format!(
-                "include fragment '{}' exceeds maximum allowed events limit of {}",
-                target_anchor, budget.max_events
-            ));
-        }
+    while let Some(event_index) = to_process.pop() {
+        let (event, span) = &events[event_index];
         if let Event::Alias(id) = &event {
             if let Some(alias_name) = alias_id_to_name.get(id) {
                 if let Some(alias_events) = anchor_nodes_by_name.get(alias_name) {
@@ -453,14 +454,20 @@ fn collect_anchor_events(
                             target_anchor, budget.max_aliases
                         ));
                     }
-                    for e in alias_events.iter().rev() {
-                        to_process.push(e.clone());
+                    for alias_event_index in alias_events.clone().rev() {
+                        to_process.push(alias_event_index);
                     }
                     continue;
                 }
             }
         }
-        expanded_events.push((event, span));
+        expanded_events.push((event.clone(), *span));
+        if expanded_events.len() > budget.max_events {
+            return Err(format!(
+                "include fragment '{}' exceeds maximum allowed events limit of {}",
+                target_anchor, budget.max_events
+            ));
+        }
     }
 
     Ok(CollectedAnchorEvents {
@@ -576,6 +583,29 @@ mod tests {
         .expect("materialized fragment should parse without shared reader counting");
 
         assert!(!collected.events.is_empty(), "materialized fragment should still parse");
+    }
+
+    #[test]
+    fn collect_anchor_events_enforces_max_events_while_collecting_raw_events() {
+        let budget = crate::Budget {
+            max_events: 6,
+            ..crate::Budget::default()
+        };
+
+        let error = match collect_anchor_events(
+            "first: 1\nsecond: 2\nselected: &selected 3\n",
+            "selected",
+            0,
+            &budget,
+        ) {
+            Ok(_) => panic!("raw event collection should stop once the budget is exceeded"),
+            Err(error) => error,
+        };
+
+        assert!(
+            error.contains("exceeds maximum allowed events limit of 6"),
+            "unexpected error: {error}"
+        );
     }
 
     #[test]
