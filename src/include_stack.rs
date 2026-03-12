@@ -4,7 +4,15 @@ use crate::buffered_input::{
 };
 use crate::input_source::{IncludeResolveError, IncludeResolver, InputSource, ResolvedInclude};
 use saphyr_parser::{Event, Parser, ScanError, Scanner, Span, StrInput, TokenType};
-use std::rc::Rc;
+use std::{
+    borrow::Cow,
+    cell::{Cell, RefCell},
+    collections::{HashMap, HashSet},
+    io::Cursor,
+    ops::RangeInclusive,
+    rc::Rc,
+};
+
 type InnerStack<'input> = saphyr_parser::parser_stack::ParserStack<'input, core::iter::Empty<char>, ReaderInput<'input>>;
 #[derive(Clone, Debug)]
 pub(crate) struct SnippetFrame {
@@ -37,7 +45,7 @@ pub struct ParserStack<'input> {
     snippet_frames: Vec<Option<SnippetFrame>>,
     next_source_id: u32,
     active_source_ids: Vec<u32>,
-    pub(crate) resolved_sources: std::collections::HashMap<u32, RecordedSource>,
+    pub(crate) resolved_sources: HashMap<u32, RecordedSource>,
 }
 impl<'input> ParserStack<'input> {
     #[must_use]
@@ -56,7 +64,7 @@ impl<'input> ParserStack<'input> {
             snippet_frames: Vec::new(),
             next_source_id: 1,
             active_source_ids: Vec::new(),
-            resolved_sources: std::collections::HashMap::new(),
+            resolved_sources: HashMap::new(),
         }
     }
     pub fn set_resolver(
@@ -176,8 +184,9 @@ impl<'input> ParserStack<'input> {
         self.active_source_ids.truncate(current_len);
     }
     pub(crate) fn prune_resolved_sources(&mut self) {
+        let active_source_ids: HashSet<u32> = self.active_source_ids.iter().copied().collect();
         self.resolved_sources
-            .retain(|id, _| self.active_source_ids.contains(id));
+            .retain(|id, _| active_source_ids.contains(id));
     }
     #[allow(dead_code)]
     pub fn active_include_snippet_source(&self) -> Option<(&str, &str)> {
@@ -209,15 +218,19 @@ impl<'input> ParserStack<'input> {
                 location,
             });
         }
-        let stack: Vec<String> = self.inner.stack().into_iter().collect();
-        let from_name = stack.last().map(|s| s.as_str()).unwrap_or("");
+        let from_name = self
+            .active_source_ids
+            .last()
+            .and_then(|source_id| self.resolved_sources.get(source_id))
+            .map(|source| source.name.as_str())
+            .unwrap_or("");
         let from_id = self.active_ids.last().map(|(_, id)| id.as_str());
 
         let request = crate::input_source::IncludeRequest {
             spec: include_str,
             from_name,
             from_id,
-            stack: stack.clone(),
+            stack: self.inner.stack().into_iter().collect(),
             size_remaining: self
                 .budget.max_reader_input_bytes
                 .map(|limit| limit.saturating_sub(self.reader_bytes_read.get())),
@@ -257,7 +270,7 @@ impl<'input> ParserStack<'input> {
                     text: Rc::from(s),
                     include_location: location,
                 };
-                let cursor = std::io::Cursor::new(snippet.text.as_ref().as_bytes().to_vec());
+                let cursor = Cursor::new(snippet.text.as_ref().as_bytes().to_vec());
                 let input = buffered_input_from_reader_with_limit_shared(
                     cursor,
                     self.budget.max_reader_input_bytes,
@@ -392,18 +405,17 @@ fn collect_anchor_events(
         }
     }
 
-    let mut anchor_nodes_by_name: std::collections::BTreeMap<String, std::ops::RangeInclusive<usize>> =
-        std::collections::BTreeMap::new();
+    let mut anchor_nodes_by_name: HashMap<String, RangeInclusive<usize>> =
+        HashMap::with_capacity(anchor_defs.len());
     let mut event_cursor = 0usize;
-    let mut alias_id_to_name: std::collections::HashMap<usize, String> = std::collections::HashMap::new();
-    let mut alias_index_counter = 0usize;
+    let mut alias_id_to_name: HashMap<usize, String> = HashMap::with_capacity(alias_names.len());
+    let mut alias_names = alias_names.into_iter();
 
     for (event, _) in &events {
-        if let Event::Alias(id) = event {
-            if let Some(name) = alias_names.get(alias_index_counter) {
-                alias_id_to_name.insert(*id, name.clone());
-            }
-            alias_index_counter += 1;
+        if let Event::Alias(id) = event
+            && let Some(name) = alias_names.next()
+        {
+            alias_id_to_name.insert(*id, name);
         }
     }
 
@@ -452,25 +464,24 @@ fn collect_anchor_events(
     let mut expanded_events = Vec::new();
     let mut to_process: Vec<usize> = target_events.rev().collect();
     let mut expansion_count = 0;
-    
+
     while let Some(event_index) = to_process.pop() {
         let (event, span) = &events[event_index];
-        if let Event::Alias(id) = &event {
-            if let Some(alias_name) = alias_id_to_name.get(id) {
-                if let Some(alias_events) = anchor_nodes_by_name.get(alias_name) {
-                    expansion_count += 1;
-                    if expansion_count > budget.max_aliases {
-                        return Err(format!(
-                            "include fragment '{}' exceeds included alias expansion limit of {}",
-                            target_anchor, budget.max_aliases
-                        ));
-                    }
-                    for alias_event_index in alias_events.clone().rev() {
-                        to_process.push(alias_event_index);
-                    }
-                    continue;
-                }
+        if let Event::Alias(id) = &event
+            && let Some(alias_name) = alias_id_to_name.get(id)
+            && let Some(alias_events) = anchor_nodes_by_name.get(alias_name)
+        {
+            expansion_count += 1;
+            if expansion_count > budget.max_aliases {
+                return Err(format!(
+                    "include fragment '{}' exceeds included alias expansion limit of {}",
+                    target_anchor, budget.max_aliases
+                ));
             }
+            for alias_event_index in alias_events.clone().rev() {
+                to_process.push(alias_event_index);
+            }
+            continue;
         }
         expanded_events.push((event.clone(), *span));
         if expanded_events.len() > budget.max_events {
@@ -495,17 +506,17 @@ fn own_event(event: Event<'_>) -> Event<'static> {
         Event::DocumentEnd => Event::DocumentEnd,
         Event::Alias(anchor_id) => Event::Alias(anchor_id),
         Event::Scalar(value, style, anchor_id, tag) => Event::Scalar(
-            std::borrow::Cow::Owned(value.into_owned()),
+            Cow::Owned(value.into_owned()),
             style,
             anchor_id,
-            tag.map(|tag| std::borrow::Cow::Owned(tag.into_owned())),
+            tag.map(|tag| Cow::Owned(tag.into_owned())),
         ),
         Event::SequenceStart(anchor_id, tag) => {
-            Event::SequenceStart(anchor_id, tag.map(|tag| std::borrow::Cow::Owned(tag.into_owned())))
+            Event::SequenceStart(anchor_id, tag.map(|tag| Cow::Owned(tag.into_owned())))
         }
         Event::SequenceEnd => Event::SequenceEnd,
         Event::MappingStart(anchor_id, tag) => {
-            Event::MappingStart(anchor_id, tag.map(|tag| std::borrow::Cow::Owned(tag.into_owned())))
+            Event::MappingStart(anchor_id, tag.map(|tag| Cow::Owned(tag.into_owned())))
         }
         Event::MappingEnd => Event::MappingEnd,
     }
@@ -637,8 +648,8 @@ mod tests {
 
     #[test]
     fn test_unused_methods() {
-        let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
-        let reader_bytes_read = std::rc::Rc::new(std::cell::Cell::new(0));
+        let io_error = Rc::new(RefCell::new(None));
+        let reader_bytes_read = Rc::new(Cell::new(0));
         let mut stack = ParserStack::new(io_error, reader_bytes_read, &crate::Budget::default());
 
         let parser = Parser::new_from_str("foo: bar");
@@ -668,8 +679,8 @@ mod tests {
     }
     #[test]
     fn source_ids_start_from_one_and_zero_stays_unknown() {
-        let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
-        let reader_bytes_read = std::rc::Rc::new(std::cell::Cell::new(0));
+        let io_error = Rc::new(RefCell::new(None));
+        let reader_bytes_read = Rc::new(Cell::new(0));
         let mut stack = ParserStack::new(io_error, reader_bytes_read, &crate::Budget::default());
         assert_eq!(stack.current_source_id(), 0);
         stack.push_str_parser(Parser::new_from_str("root: 1"), "root.yaml".to_string());
@@ -679,8 +690,8 @@ mod tests {
     }
     #[test]
     fn resolved_sources_retained_after_included_parser_pops() {
-        let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
-        let reader_bytes_read = std::rc::Rc::new(std::cell::Cell::new(0));
+        let io_error = Rc::new(RefCell::new(None));
+        let reader_bytes_read = Rc::new(Cell::new(0));
         let mut stack = ParserStack::new(io_error, reader_bytes_read, &crate::Budget::default());
         stack.set_resolver(|req| {
             assert_eq!(req.spec, "child.yaml");
@@ -708,8 +719,8 @@ mod tests {
     }
     #[test]
     fn resolved_sources_pruned_on_next_document_start() {
-        let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
-        let reader_bytes_read = std::rc::Rc::new(std::cell::Cell::new(0));
+        let io_error = Rc::new(RefCell::new(None));
+        let reader_bytes_read = Rc::new(Cell::new(0));
         let mut stack = ParserStack::new(io_error, reader_bytes_read, &crate::Budget::default());
         // A stream with two documents
         stack.push_str_parser(Parser::new_from_str("first: 1\n---\nsecond: 2\n"), "multi.yaml".to_string());
@@ -741,10 +752,12 @@ mod tests {
 
     #[test]
     fn max_inclusion_depth_zero_disables_includes() {
-        let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
-        let reader_bytes_read = std::rc::Rc::new(std::cell::Cell::new(0));
-        let mut budget = crate::Budget::default();
-        budget.max_inclusion_depth = 0;
+        let io_error = Rc::new(RefCell::new(None));
+        let reader_bytes_read = Rc::new(Cell::new(0));
+        let budget = crate::Budget {
+            max_inclusion_depth: 0,
+            ..crate::Budget::default()
+        };
         let mut stack = ParserStack::new(io_error, reader_bytes_read, &budget);
         stack.set_resolver(|_| {
             Ok(ResolvedInclude {
@@ -770,10 +783,12 @@ mod tests {
 
     #[test]
     fn max_inclusion_depth_allows_nested_includes_up_to_limit() {
-        let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
-        let reader_bytes_read = std::rc::Rc::new(std::cell::Cell::new(0));
-        let mut budget = crate::Budget::default();
-        budget.max_inclusion_depth = 2;
+        let io_error = Rc::new(RefCell::new(None));
+        let reader_bytes_read = Rc::new(Cell::new(0));
+        let budget = crate::Budget {
+            max_inclusion_depth: 2,
+            ..crate::Budget::default()
+        };
         let mut stack = ParserStack::new(io_error, reader_bytes_read, &budget);
         stack.set_resolver(|req| match req.spec {
             "child.yaml" => Ok(ResolvedInclude {
@@ -802,10 +817,12 @@ mod tests {
 
     #[test]
     fn max_inclusion_depth_rejects_nested_include_beyond_limit() {
-        let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
-        let reader_bytes_read = std::rc::Rc::new(std::cell::Cell::new(0));
-        let mut budget = crate::Budget::default();
-        budget.max_inclusion_depth = 1;
+        let io_error = Rc::new(RefCell::new(None));
+        let reader_bytes_read = Rc::new(Cell::new(0));
+        let budget = crate::Budget {
+            max_inclusion_depth: 1,
+            ..crate::Budget::default()
+        };
         let mut stack = ParserStack::new(io_error, reader_bytes_read, &budget);
         stack.set_resolver(|req| match req.spec {
             "child.yaml" => Ok(ResolvedInclude {
