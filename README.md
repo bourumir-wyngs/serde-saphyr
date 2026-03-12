@@ -455,7 +455,7 @@ Merge keys are standard in YAML 1.1. Although YAML 1.2 no longer includes merge 
 
 ## Includes
 
-The need for include YAML (not part of the official specs) is seen from the popularity of command-line [yaml-include](https://crates.io/crates/yaml-include) crate. That crate is very feature-complete. However, if YAML parser and validator are separate from pre-processor, they usually only report the line number and snippet in the processed document. For large documents with multiple and deep includes, this gets challenging to interpret.
+The need for include YAML (not part of the official specs) is seen from the popularity of command-line [yaml-include](https://crates.io/crates/yaml-include) crate. That crate is very feature-complete. However, if YAML parser and validator are separate from pre-processor, they usually only report the line number and snippet in the processed document. For large documents with multiple and deep includes, this gets challenging to interpret. YAML indentation and security requirements like path confinement or anchor isolation make "quick adding" include non-trivial.  
 
 `serde-saphyr` allows resolving `!include` tags via a custom resolver configured in [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). When using a single `!include` directly as a value, it works naturally for replacing a scalar, sequence, or an entire mapping:
 

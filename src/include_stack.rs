@@ -365,7 +365,15 @@ fn collect_anchor_events(
     for token in &mut scanner {
         let marker_offset = token.0.start.index();
         match token.1 {
-            TokenType::Anchor(name) => anchor_defs.push((name.into_owned(), marker_offset)),
+            TokenType::Anchor(name) => {
+                anchor_defs.push((name.into_owned(), marker_offset));
+                if anchor_defs.len() > budget.max_anchors {
+                    return Err(format!(
+                        "include fragment '{}' exceeds maximum allowed anchors limit of {}",
+                        target_anchor, budget.max_anchors
+                    ));
+                }
+            }
             TokenType::Alias(name) => alias_names.push(name.into_owned()),
             _ => {}
         }
@@ -379,6 +387,7 @@ fn collect_anchor_events(
     let mut parser = Parser::new_from_str(text);
     parser.set_anchor_offset(anchor_offset);
     let mut events = Vec::new();
+    let mut current_depth: usize = 0;
     while let Some(event) = parser.next_event() {
         let (event, span) = event.map_err(|err| {
             format!(
@@ -394,6 +403,21 @@ fn collect_anchor_events(
                     target_anchor
                 ));
             }
+        }
+        match &event {
+            Event::SequenceStart(_, _) | Event::MappingStart(_, _) => {
+                current_depth += 1;
+                if current_depth > budget.max_depth {
+                    return Err(format!(
+                        "include fragment '{}' exceeds maximum allowed nesting depth of {}",
+                        target_anchor, budget.max_depth
+                    ));
+                }
+            }
+            Event::SequenceEnd | Event::MappingEnd => {
+                current_depth = current_depth.saturating_sub(1);
+            }
+            _ => {}
         }
         events.push((own_event(event), span));
         if events.len() > budget.max_events {
@@ -626,6 +650,37 @@ mod tests {
 
         assert!(
             error.contains("exceeds maximum allowed events limit of 6"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn collect_anchor_events_enforces_max_depth() {
+        let budget = crate::Budget {
+            max_depth: 2,
+            ..crate::Budget::default()
+        };
+        // 3 levels of nesting: mapping > sequence > mapping
+        let yaml = "root: &root\n  items:\n    - nested:\n        deep: value\n";
+        let error = collect_anchor_events(yaml, "root", 0, &budget)
+            .expect_err("should reject deeply nested fragment");
+        assert!(
+            error.contains("exceeds maximum allowed nesting depth of 2"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn collect_anchor_events_enforces_max_anchors() {
+        let budget = crate::Budget {
+            max_anchors: 1,
+            ..crate::Budget::default()
+        };
+        let yaml = "a: &a 1\nb: &b 2\nc: &c 3\n";
+        let error = collect_anchor_events(yaml, "a", 0, &budget)
+            .expect_err("should reject too many anchors");
+        assert!(
+            error.contains("exceeds maximum allowed anchors limit of 1"),
             "unexpected error: {error}"
         );
     }
