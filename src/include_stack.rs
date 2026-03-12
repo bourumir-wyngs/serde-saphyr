@@ -32,8 +32,7 @@ pub struct ParserStack<'input> {
     include_resolver: Option<Box<IncludeResolver<'input>>>,
     io_error: ReaderInputError,
     reader_bytes_read: ReaderInputBytesRead,
-    max_reader_input_bytes: Option<usize>,
-    max_inclusion_depth: u32,
+    budget: crate::Budget,
     active_ids: Vec<(usize, String)>,
     snippet_frames: Vec<Option<SnippetFrame>>,
     next_source_id: u32,
@@ -45,16 +44,14 @@ impl<'input> ParserStack<'input> {
     pub fn new(
         io_error: ReaderInputError,
         reader_bytes_read: ReaderInputBytesRead,
-        max_reader_input_bytes: Option<usize>,
-        max_inclusion_depth: u32,
+        budget: &crate::Budget,
     ) -> Self {
         Self {
             inner: InnerStack::new(),
             include_resolver: None,
             io_error,
             reader_bytes_read,
-            max_reader_input_bytes,
-            max_inclusion_depth,
+            budget: budget.clone(),
             active_ids: Vec::new(),
             snippet_frames: Vec::new(),
             next_source_id: 1,
@@ -206,7 +203,7 @@ impl<'input> ParserStack<'input> {
         };
 
         let include_depth = self.inner.stack().len() as u32;
-        if include_depth > self.max_inclusion_depth {
+        if include_depth > self.budget.max_inclusion_depth {
             return Err(crate::de_error::Error::Budget {
                 breach: crate::budget::BudgetBreach::InclusionDepth { depth: include_depth },
                 location,
@@ -222,7 +219,7 @@ impl<'input> ParserStack<'input> {
             from_id,
             stack: stack.clone(),
             size_remaining: self
-                .max_reader_input_bytes
+                .budget.max_reader_input_bytes
                 .map(|limit| limit.saturating_sub(self.reader_bytes_read.get())),
             location,
         };
@@ -263,7 +260,7 @@ impl<'input> ParserStack<'input> {
                 let cursor = std::io::Cursor::new(snippet.text.as_ref().as_bytes().to_vec());
                 let input = buffered_input_from_reader_with_limit_shared(
                     cursor,
-                    self.max_reader_input_bytes,
+                    self.budget.max_reader_input_bytes,
                     self.io_error.clone(),
                     self.reader_bytes_read.clone(),
                 );
@@ -273,7 +270,7 @@ impl<'input> ParserStack<'input> {
             InputSource::Reader(r) => {
                 let input = buffered_input_from_reader_with_limit_shared(
                     r,
-                    self.max_reader_input_bytes,
+                    self.budget.max_reader_input_bytes,
                     self.io_error.clone(),
                     self.reader_bytes_read.clone(),
                 );
@@ -282,7 +279,7 @@ impl<'input> ParserStack<'input> {
             }
             InputSource::AnchoredText { mut text, anchor } => {
                 let text_len = text.len();
-                if let Some(limit) = self.max_reader_input_bytes {
+                if let Some(limit) = self.budget.max_reader_input_bytes {
                     let current = self.reader_bytes_read.get();
                     if current + text_len > limit {
                         return Err(crate::de_error::Error::ResolverError {
@@ -310,7 +307,7 @@ impl<'input> ParserStack<'input> {
                     &text,
                     &anchor,
                     self.inner.current_anchor_offset(),
-                    self.max_reader_input_bytes,
+                    &self.budget,
                     self.io_error.clone(),
                     self.reader_bytes_read.clone(),
                 )
@@ -348,7 +345,7 @@ fn collect_anchor_events(
     text: &str,
     target_anchor: &str,
     anchor_offset: usize,
-    max_reader_input_bytes: Option<usize>,
+    budget: &crate::Budget,
     io_error: ReaderInputError,
     reader_bytes_read: ReaderInputBytesRead,
 ) -> Result<CollectedAnchorEvents, String> {
@@ -357,7 +354,7 @@ fn collect_anchor_events(
     let text_bytes = text.as_bytes();
     let scanner_input = buffered_input_from_reader_with_limit_shared(
         std::io::Cursor::new(text_bytes),
-        max_reader_input_bytes,
+        budget.max_reader_input_bytes,
         io_error.clone(),
         reader_bytes_read.clone(),
     );
@@ -384,7 +381,7 @@ fn collect_anchor_events(
     }
     let parser_input = buffered_input_from_reader_with_limit_shared(
         std::io::Cursor::new(text_bytes),
-        max_reader_input_bytes,
+        budget.max_reader_input_bytes,
         io_error.clone(),
         reader_bytes_read,
     );
@@ -469,14 +466,20 @@ fn collect_anchor_events(
     let mut expansion_count = 0;
     
     while let Some((event, span)) = to_process.pop() {
+        if expanded_events.len() > budget.max_events {
+            return Err(format!(
+                "include fragment '{}' exceeds maximum allowed events limit of {}",
+                target_anchor, budget.max_events
+            ));
+        }
         if let Event::Alias(id) = &event {
             if let Some(alias_name) = alias_id_to_name.get(id) {
                 if let Some(alias_events) = anchor_nodes_by_name.get(alias_name) {
                     expansion_count += 1;
-                    if expansion_count > 6 {
+                    if expansion_count > budget.max_aliases {
                         return Err(format!(
-                            "include fragment '{}' exceeds included alias expansion limit of 6",
-                            target_anchor
+                            "include fragment '{}' exceeds included alias expansion limit of {}",
+                            target_anchor, budget.max_aliases
                         ));
                     }
                     for e in alias_events.iter().rev() {
@@ -569,7 +572,7 @@ mod tests {
             "base: &base\n  name: Alice\n\nselected: &selected\n  user: *base\n",
             "selected",
             0,
-            None,
+            &crate::Budget::default(),
             std::rc::Rc::new(std::cell::RefCell::new(None)),
             std::rc::Rc::new(std::cell::Cell::new(0)),
         )
@@ -595,11 +598,13 @@ mod tests {
 
     #[test]
     fn collect_anchor_events_respects_reader_input_budget() {
+        let mut budget = crate::Budget::default();
+        budget.max_reader_input_bytes = Some(1);
         let err = collect_anchor_events(
             "base: &base\n  name: Alice\n",
             "base",
             0,
-            Some(1),
+            &budget,
             std::rc::Rc::new(std::cell::RefCell::new(None)),
             std::rc::Rc::new(std::cell::Cell::new(0)),
         );
@@ -618,7 +623,7 @@ mod tests {
     fn test_unused_methods() {
         let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
         let reader_bytes_read = std::rc::Rc::new(std::cell::Cell::new(0));
-        let mut stack = ParserStack::new(io_error, reader_bytes_read, None, u32::MAX);
+        let mut stack = ParserStack::new(io_error, reader_bytes_read, &crate::Budget::default());
 
         let parser = Parser::new_from_str("foo: bar");
         stack.push_str_parser(parser, "test.yaml".to_string());
@@ -649,7 +654,7 @@ mod tests {
     fn source_ids_start_from_one_and_zero_stays_unknown() {
         let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
         let reader_bytes_read = std::rc::Rc::new(std::cell::Cell::new(0));
-        let mut stack = ParserStack::new(io_error, reader_bytes_read, None, u32::MAX);
+        let mut stack = ParserStack::new(io_error, reader_bytes_read, &crate::Budget::default());
         assert_eq!(stack.current_source_id(), 0);
         stack.push_str_parser(Parser::new_from_str("root: 1"), "root.yaml".to_string());
         assert_eq!(stack.current_source_id(), 1);
@@ -660,7 +665,7 @@ mod tests {
     fn resolved_sources_retained_after_included_parser_pops() {
         let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
         let reader_bytes_read = std::rc::Rc::new(std::cell::Cell::new(0));
-        let mut stack = ParserStack::new(io_error, reader_bytes_read, None, u32::MAX);
+        let mut stack = ParserStack::new(io_error, reader_bytes_read, &crate::Budget::default());
         stack.set_resolver(|req| {
             assert_eq!(req.spec, "child.yaml");
             Ok(ResolvedInclude {
@@ -689,7 +694,7 @@ mod tests {
     fn resolved_sources_pruned_on_next_document_start() {
         let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
         let reader_bytes_read = std::rc::Rc::new(std::cell::Cell::new(0));
-        let mut stack = ParserStack::new(io_error, reader_bytes_read, None, u32::MAX);
+        let mut stack = ParserStack::new(io_error, reader_bytes_read, &crate::Budget::default());
         // A stream with two documents
         stack.push_str_parser(Parser::new_from_str("first: 1\n---\nsecond: 2\n"), "multi.yaml".to_string());
 
@@ -722,7 +727,9 @@ mod tests {
     fn max_inclusion_depth_zero_disables_includes() {
         let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
         let reader_bytes_read = std::rc::Rc::new(std::cell::Cell::new(0));
-        let mut stack = ParserStack::new(io_error, reader_bytes_read, None, 0);
+        let mut budget = crate::Budget::default();
+        budget.max_inclusion_depth = 0;
+        let mut stack = ParserStack::new(io_error, reader_bytes_read, &budget);
         stack.set_resolver(|_| {
             Ok(ResolvedInclude {
                 id: "child.yaml".to_string(),
@@ -749,7 +756,9 @@ mod tests {
     fn max_inclusion_depth_allows_nested_includes_up_to_limit() {
         let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
         let reader_bytes_read = std::rc::Rc::new(std::cell::Cell::new(0));
-        let mut stack = ParserStack::new(io_error, reader_bytes_read, None, 2);
+        let mut budget = crate::Budget::default();
+        budget.max_inclusion_depth = 2;
+        let mut stack = ParserStack::new(io_error, reader_bytes_read, &budget);
         stack.set_resolver(|req| match req.spec {
             "child.yaml" => Ok(ResolvedInclude {
                 id: "child.yaml".to_string(),
@@ -779,7 +788,9 @@ mod tests {
     fn max_inclusion_depth_rejects_nested_include_beyond_limit() {
         let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
         let reader_bytes_read = std::rc::Rc::new(std::cell::Cell::new(0));
-        let mut stack = ParserStack::new(io_error, reader_bytes_read, None, 1);
+        let mut budget = crate::Budget::default();
+        budget.max_inclusion_depth = 1;
+        let mut stack = ParserStack::new(io_error, reader_bytes_read, &budget);
         stack.set_resolver(|req| match req.spec {
             "child.yaml" => Ok(ResolvedInclude {
                 id: "child.yaml".to_string(),

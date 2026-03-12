@@ -26,15 +26,13 @@ pub(crate) fn create_parser_from_reader_input<'input>(
     input: ReaderInput<'input>,
     io_error: ReaderInputError,
     reader_bytes_read: ReaderInputBytesRead,
-    max_reader_input_bytes: Option<usize>,
-    max_inclusion_depth: u32,
+    budget: &crate::Budget,
     resolver: Option<Box<IncludeResolver<'input>>>,
 ) -> ParserStack<'input> {
     let mut stack = ParserStack::new(
         io_error,
         reader_bytes_read,
-        max_reader_input_bytes,
-        max_inclusion_depth,
+        budget,
     );
     if let Some(r) = resolver {
         stack.set_resolver(r);
@@ -51,15 +49,13 @@ pub(crate) fn create_parser_from_str<'a>(
     input: &'a str,
     io_error: ReaderInputError,
     reader_bytes_read: ReaderInputBytesRead,
-    max_reader_input_bytes: Option<usize>,
-    max_inclusion_depth: u32,
+    budget: &crate::Budget,
     resolver: Option<Box<IncludeResolver<'a>>>,
 ) -> ParserStack<'a> {
     let mut stack = ParserStack::new(
         io_error,
         reader_bytes_read,
-        max_reader_input_bytes,
-        max_inclusion_depth,
+        budget,
     );
     if let Some(r) = resolver {
         stack.set_resolver(r);
@@ -96,8 +92,7 @@ mod tests {
             input,
             io_error,
             std::rc::Rc::new(std::cell::Cell::new(0)),
-            None,
-            24,
+            &crate::Budget::default(),
             None,
         );
 

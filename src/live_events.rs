@@ -238,9 +238,9 @@ impl<'a> LiveEvents<'a> {
         // Build a streaming character iterator from the byte reader, honoring input byte cap if configured
         let max_bytes = budget.as_ref().and_then(|b| b.max_reader_input_bytes);
         #[cfg(feature = "include")]
-        let max_inclusion_depth = budget
-            .as_ref()
-            .map_or(crate::Budget::default().max_inclusion_depth, |b| b.max_inclusion_depth);
+        let default_budget = crate::Budget::default();
+        #[cfg(feature = "include")]
+        let resolved_budget = budget.as_ref().unwrap_or(&default_budget);
         let (input, error, reader_bytes_read) = buffered_input_from_reader_with_limit(inputs, max_bytes);
         #[cfg(not(feature = "include"))]
         let _ = &reader_bytes_read;
@@ -249,8 +249,7 @@ impl<'a> LiveEvents<'a> {
             input,
             error.clone(),
             reader_bytes_read,
-            max_bytes,
-            max_inclusion_depth,
+            resolved_budget,
             resolver,
         );
         #[cfg(not(feature = "include"))]
@@ -311,11 +310,9 @@ impl<'a> LiveEvents<'a> {
 
         let input = input.strip_prefix('\u{FEFF}').unwrap_or(input);
         #[cfg(feature = "include")]
-        let max_bytes = budget.as_ref().and_then(|b| b.max_reader_input_bytes);
+        let default_budget = crate::Budget::default();
         #[cfg(feature = "include")]
-        let max_inclusion_depth = budget
-            .as_ref()
-            .map_or(crate::Budget::default().max_inclusion_depth, |b| b.max_inclusion_depth);
+        let resolved_budget = budget.as_ref().unwrap_or(&default_budget);
         #[cfg(feature = "include")]
         // Share the IO error cell with potential reader-based includes.
         let error = Rc::new(RefCell::new(None));
@@ -326,8 +323,7 @@ impl<'a> LiveEvents<'a> {
             input,
             error.clone(),
             reader_bytes_read,
-            max_bytes,
-            max_inclusion_depth,
+            resolved_budget,
             resolver,
         );
         #[cfg(not(feature = "include"))]
