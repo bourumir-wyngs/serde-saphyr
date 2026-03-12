@@ -327,6 +327,7 @@ impl<'input> ParserStack<'input> {
         Ok(())
     }
 }
+#[derive(Debug)]
 struct CollectedAnchorEvents {
     events: Vec<(Event<'static>, Span)>,
     anchor_offset: usize,
@@ -345,6 +346,7 @@ fn collect_anchor_events(
     anchor_offset: usize,
     budget: &crate::Budget,
 ) -> Result<CollectedAnchorEvents, String> {
+    let mut document_count = 0usize;
     let mut anchor_defs: Vec<(String, usize)> = Vec::new();
     let mut alias_names: Vec<String> = Vec::new();
     let mut scanner = Scanner::new(StrInput::new(text));
@@ -372,6 +374,15 @@ fn collect_anchor_events(
                 target_anchor, err
             )
         })?;
+        if matches!(event, Event::DocumentStart(_)) {
+            document_count += 1;
+            if document_count > 1 {
+                return Err(format!(
+                    "include fragment '{}' must come from a single YAML document",
+                    target_anchor
+                ));
+            }
+        }
         events.push((own_event(event), span));
         if events.len() > budget.max_events {
             return Err(format!(
@@ -604,6 +615,22 @@ mod tests {
 
         assert!(
             error.contains("exceeds maximum allowed events limit of 6"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn collect_anchor_events_rejects_multi_document_sources() {
+        let error = collect_anchor_events(
+            "first: &first 1\n---\nselected: &selected\n  user: *first\n",
+            "selected",
+            0,
+            &crate::Budget::default(),
+        )
+        .expect_err("fragment collection should reject multi-document sources");
+
+        assert!(
+            error.contains("must come from a single YAML document"),
             "unexpected error: {error}"
         );
     }
