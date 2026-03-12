@@ -393,6 +393,18 @@ fn collect_anchor_events(
     let mut anchor_nodes_by_name: std::collections::BTreeMap<String, Vec<(Event<'static>, Span)>> =
         std::collections::BTreeMap::new();
     let mut event_cursor = 0usize;
+    let mut alias_id_to_name: std::collections::HashMap<usize, String> = std::collections::HashMap::new();
+    let mut alias_index_counter = 0usize;
+
+    for (event, _) in &events {
+        if let Event::Alias(id) = event {
+            if let Some(name) = alias_names.get(alias_index_counter) {
+                alias_id_to_name.insert(*id, name.clone());
+            }
+            alias_index_counter += 1;
+        }
+    }
+
     for (name, offset) in &anchor_defs {
         while event_cursor < events.len() && events[event_cursor].1.start.index() < *offset {
             event_cursor += 1;
@@ -430,26 +442,38 @@ fn collect_anchor_events(
         event_cursor = start + 1;
     }
 
-    let mut target_events = anchor_nodes_by_name
+    let target_events = anchor_nodes_by_name
         .get(target_anchor)
         .cloned()
         .ok_or_else(|| format!("include fragment '{}' was not found", target_anchor))?;
 
-    let mut alias_index = 0usize;
-    for idx in 0..target_events.len() {
-        if matches!(target_events[idx].0, Event::Alias(_)) {
-            let alias_name = alias_names.get(alias_index);
-            alias_index += 1;
-            if let Some(alias_name) = alias_name
-                && let Some(alias_events) = anchor_nodes_by_name.get(alias_name.as_str())
-            {
-                target_events.splice(idx..=idx, alias_events.clone());
+    let mut expanded_events = Vec::new();
+    let mut to_process: Vec<(Event<'static>, Span)> = target_events.into_iter().rev().collect();
+    let mut expansion_count = 0;
+    
+    while let Some((event, span)) = to_process.pop() {
+        if let Event::Alias(id) = &event {
+            if let Some(alias_name) = alias_id_to_name.get(id) {
+                if let Some(alias_events) = anchor_nodes_by_name.get(alias_name) {
+                    expansion_count += 1;
+                    if expansion_count > 6 {
+                        return Err(format!(
+                            "include fragment '{}' exceeds included alias expansion limit of 6",
+                            target_anchor
+                        ));
+                    }
+                    for e in alias_events.iter().rev() {
+                        to_process.push(e.clone());
+                    }
+                    continue;
+                }
             }
         }
+        expanded_events.push((event, span));
     }
 
     Ok(CollectedAnchorEvents {
-        events: target_events,
+        events: expanded_events,
         anchor_offset: parser.get_anchor_offset(),
     })
 }
