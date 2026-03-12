@@ -281,6 +281,23 @@ impl<'input> ParserStack<'input> {
                 self.push_stream_parser_with_snippet(parser, name, None);
             }
             InputSource::AnchoredText { mut text, anchor } => {
+                let text_len = text.len();
+                if let Some(limit) = self.max_reader_input_bytes {
+                    let current = self.reader_bytes_read.get();
+                    if current + text_len > limit {
+                        return Err(crate::de_error::Error::ResolverError {
+                            target: include_str.to_string(),
+                            error: crate::IncludeResolveError::Message(format!(
+                                "input byte limit {} exceeded by {} included bytes",
+                                limit, text_len
+                            )),
+                            stack: self.inner.stack().into_iter().collect(),
+                            location,
+                        });
+                    }
+                    self.reader_bytes_read.set(current + text_len);
+                }
+
                 if text.trim().is_empty() {
                     text = "~".to_string();
                 }
