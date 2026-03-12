@@ -6,7 +6,6 @@ use crate::input_source::{IncludeResolveError, IncludeResolver, InputSource, Res
 use saphyr_parser::{Event, Parser, ScanError, Scanner, Span, StrInput, TokenType};
 use std::{
     borrow::Cow,
-    cell::{Cell, RefCell},
     collections::{HashMap, HashSet},
     io::Cursor,
     ops::RangeInclusive,
@@ -554,6 +553,7 @@ impl<'input> Iterator for ParserStack<'input> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::{Cell, RefCell};
 
     #[test]
     fn collect_anchor_events_expands_aliases_defined_outside_target_anchor() {
