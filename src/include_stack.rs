@@ -308,8 +308,6 @@ impl<'input> ParserStack<'input> {
                     &anchor,
                     self.inner.current_anchor_offset(),
                     &self.budget,
-                    self.io_error.clone(),
-                    self.reader_bytes_read.clone(),
                 )
                     .map_err(|error| {
                     crate::de_error::Error::ResolverError {
@@ -346,19 +344,10 @@ fn collect_anchor_events(
     target_anchor: &str,
     anchor_offset: usize,
     budget: &crate::Budget,
-    io_error: ReaderInputError,
-    reader_bytes_read: ReaderInputBytesRead,
 ) -> Result<CollectedAnchorEvents, String> {
     let mut anchor_defs: Vec<(String, usize)> = Vec::new();
     let mut alias_names: Vec<String> = Vec::new();
-    let text_bytes = text.as_bytes();
-    let scanner_input = buffered_input_from_reader_with_limit_shared(
-        std::io::Cursor::new(text_bytes),
-        budget.max_reader_input_bytes,
-        io_error.clone(),
-        reader_bytes_read.clone(),
-    );
-    let mut scanner = Scanner::new(scanner_input);
+    let mut scanner = Scanner::new(StrInput::new(text));
     for token in &mut scanner {
         let marker_offset = token.0.start.index();
         match token.1 {
@@ -367,25 +356,13 @@ fn collect_anchor_events(
             _ => {}
         }
     }
-    if let Some(err) = io_error.borrow().as_ref() {
-        return Err(format!(
-            "failed to scan include fragment '{}': {}",
-            target_anchor, err
-        ));
-    }
     if let Some(err) = scanner.get_error() {
         return Err(format!(
             "failed to scan include fragment '{}': {}",
             target_anchor, err
         ));
     }
-    let parser_input = buffered_input_from_reader_with_limit_shared(
-        std::io::Cursor::new(text_bytes),
-        budget.max_reader_input_bytes,
-        io_error.clone(),
-        reader_bytes_read,
-    );
-    let mut parser = Parser::new(parser_input);
+    let mut parser = Parser::new_from_str(text);
     parser.set_anchor_offset(anchor_offset);
     let mut events = Vec::new();
     while let Some(event) = parser.next_event() {
@@ -396,12 +373,6 @@ fn collect_anchor_events(
             )
         })?;
         events.push((own_event(event), span));
-    }
-    if let Some(err) = io_error.borrow().as_ref() {
-        return Err(format!(
-            "failed to parse include fragment '{}': {}",
-            target_anchor, err
-        ));
     }
 
     let mut anchor_nodes_by_name: std::collections::BTreeMap<String, Vec<(Event<'static>, Span)>> =
@@ -573,8 +544,6 @@ mod tests {
             "selected",
             0,
             &crate::Budget::default(),
-            std::rc::Rc::new(std::cell::RefCell::new(None)),
-            std::rc::Rc::new(std::cell::Cell::new(0)),
         )
         .expect("anchor collection should succeed");
 
@@ -597,26 +566,16 @@ mod tests {
     }
 
     #[test]
-    fn collect_anchor_events_respects_reader_input_budget() {
-        let mut budget = crate::Budget::default();
-        budget.max_reader_input_bytes = Some(1);
-        let err = collect_anchor_events(
+    fn collect_anchor_events_uses_materialized_text_without_reader_budget_counter() {
+        let collected = collect_anchor_events(
             "base: &base\n  name: Alice\n",
             "base",
             0,
-            &budget,
-            std::rc::Rc::new(std::cell::RefCell::new(None)),
-            std::rc::Rc::new(std::cell::Cell::new(0)),
-        );
-        let err = match err {
-            Ok(_) => panic!("budget should reject oversized anchored fragment input"),
-            Err(err) => err,
-        };
+            &crate::Budget::default(),
+        )
+        .expect("materialized fragment should parse without shared reader counting");
 
-        assert!(
-            err.contains("failed to scan include fragment 'base'"),
-            "unexpected error: {err}"
-        );
+        assert!(!collected.events.is_empty(), "materialized fragment should still parse");
     }
 
     #[test]
