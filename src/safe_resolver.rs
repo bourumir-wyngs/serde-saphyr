@@ -26,14 +26,17 @@ pub enum SafeFileReadMode {
     Text,
 }
 
-/// Policy for symlink handling in [`SafeFileResolver`].
+/// Policy for symlink handling in [`SafeFileResolver`]. Default is reject (safest).
+/// Symlinks withing the specified root can be enabled, but not arbitrary symlinks.
 #[cfg(feature = "include")]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SymlinkPolicy {
     /// Follow symlinks, but only if the final canonical target remains inside the configured root.
-    #[default]
     FollowWithinRoot,
-    /// Reject any include path that traverses a symlink.
+
+    /// Reject any include path that traverses a symlink. This guards against TOCTOU
+    /// (Time-of-Check to Time-of-Use) exploit.
+    #[default]
     Reject,
 }
 
