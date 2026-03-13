@@ -9,6 +9,7 @@
 //! These tests are also disabled for WASI because they invoke the compiled binary
 //! via `Command`, which is typically not supported in WASI environments.
 #![cfg(all(not(miri), not(target_os = "wasi")))]
+#![cfg(all(feature = "include", feature = "include_fs"))]
 
 use std::io::Write;
 use std::process::Command;
