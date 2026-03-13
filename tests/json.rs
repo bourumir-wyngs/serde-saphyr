@@ -9,3 +9,11 @@ fn json_null() {
     assert_eq!(into_option, None);
     assert_eq!(into_json_value, serde_json::Value::Null);
 }
+
+#[test]
+fn valid_json() {
+    // Claimed to be "Valid JSON that would not parse as YAML"
+    let yaml = "{\n\t\"abc\":\"xyz\"\n}";
+    let value = serde_saphyr::from_str::<serde_json::Value>(yaml).unwrap();
+    assert_eq!(value["abc"], "xyz");
+}
