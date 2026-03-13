@@ -388,6 +388,7 @@ fn collect_anchor_events(
     parser.set_anchor_offset(anchor_offset);
     let mut events = Vec::new();
     let mut current_depth: usize = 0;
+    let mut total_scalar_bytes: usize = 0;
     while let Some(event) = parser.next_event() {
         let (event, span) = event.map_err(|err| {
             format!(
@@ -418,6 +419,15 @@ fn collect_anchor_events(
                 current_depth = current_depth.saturating_sub(1);
             }
             _ => {}
+        }
+        if let Event::Scalar(ref value, _, _, _) = event {
+            total_scalar_bytes = total_scalar_bytes.saturating_add(value.len());
+            if total_scalar_bytes > budget.max_total_scalar_bytes {
+                return Err(format!(
+                    "include fragment '{}' exceeds maximum allowed total scalar bytes of {}",
+                    target_anchor, budget.max_total_scalar_bytes
+                ));
+            }
         }
         events.push((own_event(event), span));
         if events.len() > budget.max_events {
@@ -681,6 +691,21 @@ mod tests {
             .expect_err("should reject too many anchors");
         assert!(
             error.contains("exceeds maximum allowed anchors limit of 1"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn collect_anchor_events_enforces_max_total_scalar_bytes() {
+        let budget = crate::Budget {
+            max_total_scalar_bytes: 5,
+            ..crate::Budget::default()
+        };
+        let yaml = "a: &a hello_world\nb: &b tiny\n";
+        let error = collect_anchor_events(yaml, "a", 0, &budget)
+            .expect_err("should reject when scalar bytes exceed budget");
+        assert!(
+            error.contains("exceeds maximum allowed total scalar bytes of 5"),
             "unexpected error: {error}"
         );
     }
