@@ -120,3 +120,27 @@ fn invalid_yaml_file_plain_mode_exits_three() {
     // Plain mode always includes "invalid" in the output
     assert!(stderr.contains("invalid"), "stderr: {stderr}");
 }
+
+#[test]
+fn include_flag_parses_successfully() {
+    let tmp_dir = tempfile::tempdir().expect("create temp dir");
+    let root_path = tmp_dir.path().join("root.yaml");
+    let included_path = tmp_dir.path().join("included.yaml");
+
+    std::fs::write(&root_path, "a: !include included.yaml\n").unwrap();
+    std::fs::write(&included_path, "b: 2\n").unwrap();
+
+    let root_path_str = root_path.to_str().unwrap();
+    let dir_str = tmp_dir.path().to_str().unwrap();
+
+    let (stdout, stderr, code) = run_binary(&["--include", dir_str, root_path_str]);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(stdout.contains("Budget report"), "stdout: {stdout}");
+}
+
+#[test]
+fn missing_include_path_prints_error_and_exits_one() {
+    let (_stdout, stderr, code) = run_binary(&["--include"]);
+    assert_eq!(code, 1);
+    assert!(stderr.contains("Missing path for --include"), "stderr: {stderr}");
+}

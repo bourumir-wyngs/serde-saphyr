@@ -769,3 +769,9 @@ If you want to keep the previous plain-text error output even when built with `m
 ```bash
 serde-saphyr --plain path/to/file.yaml
 ```
+
+If you want to allow file inclusion (`!include` tags) during parsing, configure the filesystem root path using `--include`:
+
+```bash
+serde-saphyr --include path/to/root path/to/file.yaml
+```

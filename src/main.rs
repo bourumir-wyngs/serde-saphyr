@@ -6,13 +6,14 @@ use serde::de::IgnoredAny;
 use serde_saphyr::{Error, from_str_with_options};
 
 fn usage() -> &'static str {
-    "Usage: serde-saphyr [--plain] <path>\n\
+    "Usage: serde-saphyr [--plain] [--include <path>] <path>\n\
 \n\
 Reads the YAML file at <path> and prints a budget summary.\n\
 It can also be used as a YAML validator.\n\
 \n\
 Options:\n\
-  --plain   Disable miette formatting and print errors in plain text"
+  --plain           Disable miette formatting and print errors in plain text\n\
+  --include <path>  Configure parser to allow file inclusion from <path> directory"
 }
 
 /// Read YAML file and print budget summary. This tool allows to check approximate
@@ -20,10 +21,21 @@ Options:\n\
 fn main() {
     let mut plain = false;
     let mut path: Option<String> = None;
+    let mut include_path: Option<String> = None;
 
-    for arg in std::env::args().skip(1) {
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
         match arg.as_str() {
             "--plain" => plain = true,
+            "--include" => {
+                include_path = match args.next() {
+                    Some(p) => Some(p),
+                    None => {
+                        eprintln!("Missing path for --include\n\n{}", usage());
+                        exit(1);
+                    }
+                };
+            }
             "--help" | "-h" => {
                 println!("{}", usage());
                 return;
@@ -59,7 +71,7 @@ fn main() {
     };
 
     #[allow(deprecated)]
-    let options = if plain {
+    let mut options = if plain {
         serde_saphyr::options! {
             // Plain mode uses serde-saphyr's own snippet rendering.
             with_snippet: true,
@@ -75,6 +87,10 @@ fn main() {
         Ok(serialized) => println!("Budget report:\n{serialized}"),
         Err(err) => eprintln!("Failed to serialize budget report: {err}"),
     });
+
+    if let Some(path) = include_path {
+        options = options.with_filesystem_root(&path).expect("failed to create filesystem include resolver");
+    }
 
     let r: Result<IgnoredAny, Error> = from_str_with_options(&content, options);
 
