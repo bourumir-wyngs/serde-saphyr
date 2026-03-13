@@ -71,6 +71,7 @@ The test suite currently includes over 1000 passing tests, including the fully c
 - **serde_json::Value** is supported when parsing without target structure defined.
 - **[Serializer](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Serializer.html)** and **[Deserializer](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Deserializer.html)** are public (due to how it's implemented, Deserializer is available in the closure only).
 - Serialized floats are official YAML floats.
+- Correct handling for JSON-style Unicode surrogate pairs
 - **robotic extensions** to support YAML dialect common in robotics (see below).
 
 ## WebAssembly
