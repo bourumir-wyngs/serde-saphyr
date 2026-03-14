@@ -520,6 +520,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn safe_file_resolver_streams_regular_files_by_default() {
         let dir = tempdir().unwrap();
         let root = dir.path();
@@ -541,6 +542,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn safe_file_resolver_keeps_fragment_includes_text_backed() {
         let dir = tempdir().unwrap();
         let root = dir.path();
@@ -565,6 +567,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn safe_file_resolver_rejects_files_larger_than_remaining_quota() {
         let dir = tempdir().unwrap();
         let root = dir.path();

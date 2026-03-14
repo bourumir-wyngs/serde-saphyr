@@ -372,6 +372,7 @@ mod tests {
 
     #[cfg(feature = "include_fs")]
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_with_filesystem_root_sets_include_resolver() {
         let root = PathBuf::from(".");
         let opts = Options::default().with_filesystem_root(&root).unwrap();
@@ -380,6 +381,7 @@ mod tests {
 
     #[cfg(feature = "include_fs")]
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_with_filesystem_root_uses_reader_default_for_regular_files() {
         let dir = tempdir().unwrap();
         std::fs::write(dir.path().join("child.yaml"), "value: 1\n").unwrap();
