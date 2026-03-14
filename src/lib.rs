@@ -25,7 +25,7 @@ pub use message_formatters::{DefaultMessageFormatter, DeveloperMessageFormatter}
 pub use safe_resolver::{SafeFileReadMode, SafeFileResolver, SymlinkPolicy};
 pub use ser::{Commented, FlowMap, FlowSeq, SpaceAfter};
 pub use spanned::Spanned;
-pub use input_source::{IncludeResolveError, IncludeResolver, IncludeRequest, InputSource, ResolvedInclude};
+pub use input_source::{IncludeResolveError, ResolveProblem, IncludeResolver, IncludeRequest, InputSource, ResolvedInclude};
 
 #[cfg(feature = "include")]
 pub(crate) fn resolver_from_options<'a>(options: Options) -> Option<Box<crate::input_source::IncludeResolver<'a>>> {

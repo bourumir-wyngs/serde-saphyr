@@ -1,5 +1,5 @@
 #[cfg(feature = "include")]
-use crate::input_source::{IncludeRequest, IncludeResolveError, InputSource, ResolvedInclude};
+use crate::input_source::{IncludeRequest, IncludeResolveError, InputSource, ResolvedInclude, ResolveProblem};
 #[cfg(feature = "include")]
 use encoding_rs_io::DecodeReaderBytesBuilder;
 #[cfg(feature = "include")]
@@ -42,12 +42,19 @@ pub enum SymlinkPolicy {
 
 /// A filesystem-backed include resolver that confines all resolved files to a configured root.
 ///
-/// This resolver is meant for `!include` use cases where you want a safe default for local files:
+/// # Safety Features
 ///
-/// - include paths must be relative
-/// - targets are canonicalized before use
-/// - resolved targets must stay inside the configured root directory
-/// - display names are made relative to that root when possible
+/// This resolver implements multiple layers of security to prevent path traversal, arbitrary
+/// file read vulnerabilities, and other common inclusion risks:
+///
+/// - **Root Confinement**: All resolved canonical targets must reside strictly within the configured root directory.
+/// - **No Absolute Paths**: Include directives specifying absolute paths are immediately rejected.
+/// - **Symlink Restrictions**: Symlink traversal can be rejected entirely (default) or restricted to the root directory, preventing TOCTOU attacks.
+/// - **File Type Validation**: Included targets must be regular files. Directories and special files are rejected.
+/// - **Extension Allowlist**: Only files ending in `.yml` or `.yaml` are accepted.
+/// - **Hidden File Rejection**: Files starting with a dot (`.`) are explicitly rejected.
+/// - **Cycle Detection**: Self-inclusion and recursive inclusion cycles are prevented.
+/// - **Budget Enforcement**: When using `Reader` mode, parser size limits apply natively to prevent DoS via massive files.
 ///
 /// Typical usage is to configure a resolver once and hand it to the deserializer for every
 /// `!include` lookup:
@@ -172,20 +179,20 @@ impl SafeFileResolver {
 
         let joined = base_dir.join(spec_path);
         let canonical_target = fs::canonicalize(&joined).map_err(|e| {
-            IncludeResolveError::Message(format!(
-                "failed to resolve include '{}' from '{}': {}",
-                req.spec,
-                base_dir.display(),
-                e
-            ))
+            IncludeResolveError::FileInclude(Box::new(ResolveProblem::ResolveFailed {
+                spec: req.spec.to_string(),
+                base_dir: base_dir.display().to_string(),
+                err: e,
+            }))
         })?;
         self.ensure_inside_root(&canonical_target, req.spec)?;
 
         let metadata = fs::metadata(&canonical_target)?;
         if !metadata.is_file() {
-            return Err(IncludeResolveError::Message(format!(
-                "include target '{}' is not a regular file",
-                canonical_target.display()
+            return Err(IncludeResolveError::FileInclude(Box::new(
+                ResolveProblem::TargetNotRegularFile {
+                    target: canonical_target.display().to_string(),
+                },
             )));
         }
         if let Some(remaining) = req.size_remaining {
@@ -200,9 +207,10 @@ impl SafeFileResolver {
             && let Some(root_source_id) = &self.root_source_id
             && root_source_id == &id
         {
-            return Err(IncludeResolveError::Message(format!(
-                "include target '{}' resolves to the configured root file itself",
-                req.spec
+            return Err(IncludeResolveError::FileInclude(Box::new(
+                ResolveProblem::TargetIsRootFile {
+                    spec: req.spec.to_string(),
+                },
             )));
         }
 
@@ -245,32 +253,36 @@ impl SafeFileResolver {
 
         let from_id_path = Path::new(from_id);
         if !from_id_path.is_absolute() {
-            return Err(IncludeResolveError::Message(format!(
-                "SafeFileResolver expected parent include id to be an absolute canonical path, got '{}'",
-                from_id
+            return Err(IncludeResolveError::FileInclude(Box::new(
+                ResolveProblem::ParentIdNotAbsoluteCanonical {
+                    parent_id: from_id.to_string(),
+                },
             )));
         }
 
         let from_path = fs::canonicalize(from_id_path).map_err(|e| {
-            IncludeResolveError::Message(format!(
-                "failed to resolve parent include source '{}' (from '{}'): {}",
-                from_id, req.from_name, e
-            ))
+            IncludeResolveError::FileInclude(Box::new(ResolveProblem::ParentResolveFailed {
+                parent_id: from_id.to_string(),
+                from_name: req.from_name.to_string(),
+                err: e,
+            }))
         })?;
         self.ensure_inside_root(&from_path, req.spec)?;
 
         let metadata = fs::metadata(&from_path)?;
         if !metadata.is_file() {
-            return Err(IncludeResolveError::Message(format!(
-                "include parent '{}' is not a regular file",
-                from_path.display()
+            return Err(IncludeResolveError::FileInclude(Box::new(
+                ResolveProblem::ParentNotRegularFile {
+                    parent: from_path.display().to_string(),
+                },
             )));
         }
 
         let Some(parent) = from_path.parent() else {
-            return Err(IncludeResolveError::Message(format!(
-                "include parent '{}' does not have a parent directory",
-                from_path.display()
+            return Err(IncludeResolveError::FileInclude(Box::new(
+                ResolveProblem::ParentHasNoDirectory {
+                    parent: from_path.display().to_string(),
+                },
             )));
         };
 
@@ -285,10 +297,11 @@ impl SafeFileResolver {
         if canonical_path.starts_with(&self.allow_root) {
             Ok(())
         } else {
-            Err(IncludeResolveError::Message(format!(
-                "include '{}' resolves outside the configured root '{}'",
-                spec,
-                self.allow_root.display()
+            Err(IncludeResolveError::FileInclude(Box::new(
+                ResolveProblem::ResolvesOutsideRoot {
+                    spec: spec.to_string(),
+                    root: self.allow_root.display().to_string(),
+                },
             )))
         }
     }
@@ -307,10 +320,11 @@ impl SafeFileResolver {
                 Component::ParentDir => {
                     current.pop();
                     if !current.starts_with(&self.allow_root) {
-                        return Err(IncludeResolveError::Message(format!(
-                            "include '{}' resolves outside the configured root '{}'",
-                            spec_display,
-                            self.allow_root.display()
+                        return Err(IncludeResolveError::FileInclude(Box::new(
+                            ResolveProblem::ResolvesOutsideRoot {
+                                spec: spec_display.to_string(),
+                                root: self.allow_root.display().to_string(),
+                            },
                         )));
                     }
                 }
@@ -318,9 +332,10 @@ impl SafeFileResolver {
                     current.push(part);
                     match fs::symlink_metadata(&current) {
                         Ok(meta) if meta.file_type().is_symlink() => {
-                            return Err(IncludeResolveError::Message(format!(
-                                "include '{}' traverses a symlink, which is disabled by policy",
-                                spec_display
+                            return Err(IncludeResolveError::FileInclude(Box::new(
+                                ResolveProblem::TraversesSymlink {
+                                    spec: spec_display.to_string(),
+                                },
                             )));
                         }
                         Ok(_) => {}
@@ -329,9 +344,10 @@ impl SafeFileResolver {
                     }
                 }
                 Component::RootDir | Component::Prefix(_) => {
-                    return Err(IncludeResolveError::Message(format!(
-                        "absolute include paths are not allowed: {}",
-                        spec_display
+                    return Err(IncludeResolveError::FileInclude(Box::new(
+                        ResolveProblem::AbsolutePathNotAllowed {
+                            spec: spec_display.to_string(),
+                        },
                     )));
                 }
             }
@@ -359,19 +375,20 @@ fn split_include_spec(raw_spec: &str) -> Result<(&str, Option<&str>), IncludeRes
         return Ok((raw_spec, None));
     };
     if path.is_empty() {
-        return Err(IncludeResolveError::Message(
-            "include path must not be empty".to_string(),
-        ));
+        return Err(IncludeResolveError::FileInclude(Box::new(
+            ResolveProblem::EmptyPath,
+        )));
     }
     if fragment.is_empty() {
-        return Err(IncludeResolveError::Message(
-            "include fragment must not be empty".to_string(),
-        ));
+        return Err(IncludeResolveError::FileInclude(Box::new(
+            ResolveProblem::EmptyFragment,
+        )));
     }
     if fragment.contains('#') {
-        return Err(IncludeResolveError::Message(format!(
-            "include fragment must not contain '#': {}",
-            raw_spec
+        return Err(IncludeResolveError::FileInclude(Box::new(
+            ResolveProblem::FragmentContainsHash {
+                spec: raw_spec.to_string(),
+            },
         )));
     }
     Ok((path, Some(fragment)))
@@ -411,15 +428,33 @@ fn validate_relative_include_spec(
     raw_spec: &str,
 ) -> Result<(), IncludeResolveError> {
     if raw_spec.is_empty() {
-        return Err(IncludeResolveError::Message(
-            "include path must not be empty".to_string(),
-        ));
+        return Err(IncludeResolveError::FileInclude(Box::new(
+            ResolveProblem::EmptyPath,
+        )));
+    }
+
+    if let Some(filename) = spec_path.file_name().and_then(|n| n.to_str()) {
+        if filename.starts_with('.') {
+            return Err(IncludeResolveError::FileInclude(Box::new(
+                ResolveProblem::HiddenFile {
+                    spec: raw_spec.to_string(),
+                },
+            )));
+        }
+        if !filename.ends_with(".yml") && !filename.ends_with(".yaml") {
+            return Err(IncludeResolveError::FileInclude(Box::new(
+                ResolveProblem::InvalidExtension {
+                    spec: raw_spec.to_string(),
+                },
+            )));
+        }
     }
 
     if spec_path.is_absolute() {
-        return Err(IncludeResolveError::Message(format!(
-            "absolute include paths are not allowed: {}",
-            raw_spec
+        return Err(IncludeResolveError::FileInclude(Box::new(
+            ResolveProblem::AbsolutePathNotAllowed {
+                spec: raw_spec.to_string(),
+            },
         )));
     }
 
@@ -427,9 +462,10 @@ fn validate_relative_include_spec(
         .components()
         .any(|component| matches!(component, Component::RootDir | Component::Prefix(_)))
     {
-        return Err(IncludeResolveError::Message(format!(
-            "absolute include paths are not allowed: {}",
-            raw_spec
+        return Err(IncludeResolveError::FileInclude(Box::new(
+            ResolveProblem::AbsolutePathNotAllowed {
+                spec: raw_spec.to_string(),
+            },
         )));
     }
 

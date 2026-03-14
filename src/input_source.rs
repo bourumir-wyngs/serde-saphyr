@@ -65,6 +65,42 @@ pub struct ResolvedInclude {
     pub source: InputSource,
 }
 
+/// Specific problems encountered during file include resolution.
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum ResolveProblem {
+    /// Failed to canonicalize the include target path.
+    ResolveFailed { spec: String, base_dir: String, err: std::io::Error },
+    /// The include target is not a regular file.
+    TargetNotRegularFile { target: String },
+    /// The include target resolves to the configured root file itself (cyclic include).
+    TargetIsRootFile { spec: String },
+    /// The parent include id was not an absolute canonical path.
+    ParentIdNotAbsoluteCanonical { parent_id: String },
+    /// Failed to resolve the parent include source.
+    ParentResolveFailed { parent_id: String, from_name: String, err: std::io::Error },
+    /// The parent include is not a regular file.
+    ParentNotRegularFile { parent: String },
+    /// The parent include does not have a parent directory.
+    ParentHasNoDirectory { parent: String },
+    /// The include resolves outside the configured root directory.
+    ResolvesOutsideRoot { spec: String, root: String },
+    /// The include traverses a symlink, which is disabled by policy.
+    TraversesSymlink { spec: String },
+    /// Absolute include paths are not allowed.
+    AbsolutePathNotAllowed { spec: String },
+    /// The include path is empty.
+    EmptyPath,
+    /// The include target does not have a valid YAML extension (.yml or .yaml).
+    InvalidExtension { spec: String },
+    /// The include target is a hidden file (starts with a dot).
+    HiddenFile { spec: String },
+    /// The include fragment is empty.
+    EmptyFragment,
+    /// The include fragment contains a '#' character.
+    FragmentContainsHash { spec: String },
+}
+
 /// Error type returned by user-provided include resolvers.
 #[derive(Debug)]
 #[non_exhaustive]
@@ -72,6 +108,7 @@ pub enum IncludeResolveError {
     Io(std::io::Error),
     Message(String),
     SizeLimitExceeded(usize, usize),
+    FileInclude(Box<ResolveProblem>),
 }
 
 impl From<std::io::Error> for IncludeResolveError {

@@ -60,6 +60,54 @@ fn include_error_message(err: serde_saphyr::IncludeResolveError) -> String {
         serde_saphyr::IncludeResolveError::SizeLimitExceeded(size, limit) => {
             format!("include size {size} bytes exceeds remaining size limit {limit} bytes")
         }
+        serde_saphyr::IncludeResolveError::FileInclude(problem) => match &*problem {
+            serde_saphyr::ResolveProblem::ResolveFailed { spec, base_dir, err } => {
+                format!("failed to resolve include '{}' from '{}': {}", spec, base_dir, err)
+            }
+            serde_saphyr::ResolveProblem::TargetNotRegularFile { target } => {
+                format!("include target '{}' is not a regular file", target)
+            }
+            serde_saphyr::ResolveProblem::TargetIsRootFile { spec } => {
+                format!("include target '{}' resolves to the configured root file itself", spec)
+            }
+            serde_saphyr::ResolveProblem::ParentIdNotAbsoluteCanonical { parent_id } => {
+                format!("SafeFileResolver expected parent include id to be an absolute canonical path, got '{}'", parent_id)
+            }
+            serde_saphyr::ResolveProblem::ParentResolveFailed { parent_id, from_name, err } => {
+                format!("failed to resolve parent include source '{}' (from '{}'): {}", parent_id, from_name, err)
+            }
+            serde_saphyr::ResolveProblem::ParentNotRegularFile { parent } => {
+                format!("include parent '{}' is not a regular file", parent)
+            }
+            serde_saphyr::ResolveProblem::ParentHasNoDirectory { parent } => {
+                format!("include parent '{}' does not have a parent directory", parent)
+            }
+            serde_saphyr::ResolveProblem::ResolvesOutsideRoot { spec, root } => {
+                format!("include '{}' resolves outside the configured root '{}'", spec, root)
+            }
+            serde_saphyr::ResolveProblem::TraversesSymlink { spec } => {
+                format!("include '{}' traverses a symlink, which is disabled by policy", spec)
+            }
+            serde_saphyr::ResolveProblem::AbsolutePathNotAllowed { spec } => {
+                format!("absolute include paths are not allowed: {}", spec)
+            }
+            serde_saphyr::ResolveProblem::EmptyPath => {
+                "include path must not be empty".to_string()
+            }
+            serde_saphyr::ResolveProblem::InvalidExtension { spec } => {
+                format!("include target '{}' does not have a valid YAML extension (.yml or .yaml)", spec)
+            }
+            serde_saphyr::ResolveProblem::HiddenFile { spec } => {
+                format!("include target '{}' is a hidden file, which is not allowed", spec)
+            }
+            serde_saphyr::ResolveProblem::EmptyFragment => {
+                "include fragment must not be empty".to_string()
+            }
+            serde_saphyr::ResolveProblem::FragmentContainsHash { spec } => {
+                format!("include fragment must not contain '#': {}", spec)
+            }
+            _ => "unknown resolve problem".to_string(),
+        },
         _ => "unknown error".to_string(),
     }
 }
@@ -81,6 +129,48 @@ fn write_utf16le(path: &Path, text: &str) {
         bytes.extend_from_slice(&unit.to_le_bytes());
     }
     fs::write(path, bytes).unwrap();
+}
+
+#[test]
+fn safe_file_resolver_rejects_invalid_extension() {
+    let temp = TempDir::new().unwrap();
+    write_text(&temp.path().join("value.txt"), "bar_value\n");
+
+    let options = Options::default().with_include_resolver(
+        SafeFileResolver::new(temp.path()).unwrap().into_callback(),
+    );
+
+    let err = from_str_with_options::<ScalarConfig>("foo: !include value.txt\n", options).unwrap_err();
+    let inner_err = match err {
+        serde_saphyr::Error::WithSnippet { error, .. } => *error,
+        e => e,
+    };
+    let msg = include_error_message(match inner_err {
+        serde_saphyr::Error::ResolverError { error, .. } => error,
+        e => panic!("expected ResolverError, got {:?}", e),
+    });
+    assert!(msg.contains("does not have a valid YAML extension"));
+}
+
+#[test]
+fn safe_file_resolver_rejects_hidden_files() {
+    let temp = TempDir::new().unwrap();
+    write_text(&temp.path().join(".hidden.yml"), "bar_value\n");
+
+    let options = Options::default().with_include_resolver(
+        SafeFileResolver::new(temp.path()).unwrap().into_callback(),
+    );
+
+    let err = from_str_with_options::<ScalarConfig>("foo: !include .hidden.yml\n", options).unwrap_err();
+    let inner_err = match err {
+        serde_saphyr::Error::WithSnippet { error, .. } => *error,
+        e => e,
+    };
+    let msg = include_error_message(match inner_err {
+        serde_saphyr::Error::ResolverError { error, .. } => error,
+        e => panic!("expected ResolverError, got {:?}", e),
+    });
+    assert!(msg.contains("is a hidden file, which is not allowed"));
 }
 
 #[test]
