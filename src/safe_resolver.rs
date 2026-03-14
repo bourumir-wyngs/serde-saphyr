@@ -29,7 +29,8 @@ pub enum SafeFileReadMode {
 }
 
 /// Policy for symlink handling in [`SafeFileResolver`]. Default is reject (safest).
-/// Symlinks withing the specified root can be enabled, but not arbitrary symlinks.
+/// Symlinks withing the specified root can be enabled (some setups use this for configurations),
+/// but not arbitrary symlinks.
 #[cfg(feature = "include")]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SymlinkPolicy {
