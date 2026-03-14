@@ -67,6 +67,7 @@ pub struct ResolvedInclude {
 
 /// Error type returned by user-provided include resolvers.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum IncludeResolveError {
     Io(std::io::Error),
     Message(String),

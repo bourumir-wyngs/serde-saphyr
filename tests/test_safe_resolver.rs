@@ -60,6 +60,7 @@ fn include_error_message(err: serde_saphyr::IncludeResolveError) -> String {
         serde_saphyr::IncludeResolveError::SizeLimitExceeded(size, limit) => {
             format!("include size {size} bytes exceeds remaining size limit {limit} bytes")
         }
+        _ => "unknown error".to_string(),
     }
 }
 

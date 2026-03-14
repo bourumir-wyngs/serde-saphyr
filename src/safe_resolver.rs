@@ -478,7 +478,7 @@ fn path_to_string(path: &Path) -> String {
     path.as_os_str().to_string_lossy().into_owned()
 }
 
-#[cfg(all(test, feature = "include_fs"))]
+#[cfg(all(test, feature = "include_fs", not(miri), not(target_os = "wasi")))]
 mod tests {
     use super::*;
     use tempfile::tempdir;
