@@ -54,7 +54,7 @@ pub enum SymlinkPolicy {
 /// - **Symlink Restrictions**: Symlink traversal can be rejected entirely (default) or restricted to the root directory, preventing TOCTOU attacks.
 /// - **File Type Validation**: Included targets must be regular files. Directories and special files are rejected.
 /// - **Extension Allowlist**: Only files ending in `.yml` or `.yaml` are accepted.
-/// - **Hidden File Rejection**: Files starting with a dot (`.`) are explicitly rejected.
+/// - **Hidden File Rejection**: Files and folder starting with a dot (`.`) (regardless if in real or in symlinked form) are explicitly rejected
 /// - **Cycle Detection**: Self-inclusion and recursive inclusion cycles are prevented.
 /// - **Budget Enforcement**: When using `Reader` mode, parser size limits apply natively to prevent DoS via massive files.
 ///
