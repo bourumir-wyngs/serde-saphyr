@@ -38,6 +38,9 @@ getrandom = { version = "0.3", features = ["wasm_js"] }
 [features]
 default = []
 
+# Enables `${VAR}` property interpolation in plain scalar values.
+properties = []
+
 # Enables !include tag processing (also resolver must be set)
 include = []
 

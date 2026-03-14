@@ -10,10 +10,14 @@ pub use anchors::{
     RcWeakAnchor,
 };
 pub use de::{Budget, DuplicateKeyPolicy, Error, Options};
-pub use indentation::RequireIndent;
 pub use de_error::CroppedRegion;
 pub use de_error::TransformReason;
 pub use de_error::{MessageFormatter, RenderOptions, SnippetMode, UserMessageFormatter};
+pub use indentation::RequireIndent;
+pub use input_source::{
+    IncludeRequest, IncludeResolveError, IncludeResolver, InputSource, ResolveProblem,
+    ResolvedInclude,
+};
 pub use localizer::{
     DEFAULT_ENGLISH_LOCALIZER, DefaultEnglishLocalizer, ExternalMessage, ExternalMessageSource,
     Localizer,
@@ -25,14 +29,14 @@ pub use message_formatters::{DefaultMessageFormatter, DeveloperMessageFormatter}
 pub use safe_resolver::{SafeFileReadMode, SafeFileResolver, SymlinkPolicy};
 pub use ser::{Commented, FlowMap, FlowSeq, SpaceAfter};
 pub use spanned::Spanned;
-pub use input_source::{IncludeResolveError, ResolveProblem, IncludeResolver, IncludeRequest, InputSource, ResolvedInclude};
 
 #[cfg(feature = "include")]
-pub(crate) fn resolver_from_options<'a>(options: Options) -> Option<Box<crate::input_source::IncludeResolver<'a>>> {
+pub(crate) fn resolver_from_options<'a>(
+    options: Options,
+) -> Option<Box<crate::input_source::IncludeResolver<'a>>> {
     options.include_resolver.clone().map(|rc_refcell| {
-        Box::new(move |req: crate::input_source::IncludeRequest<'_>| {
-            rc_refcell.borrow_mut()(req)
-        }) as Box<crate::input_source::IncludeResolver<'a>>
+        Box::new(move |req: crate::input_source::IncludeRequest<'_>| rc_refcell.borrow_mut()(req))
+            as Box<crate::input_source::IncludeResolver<'a>>
     })
 }
 
@@ -49,16 +53,20 @@ use garde::Validate;
 #[cfg(feature = "validator")]
 use validator::Validate as ValidatorValidate;
 
+#[cfg(feature = "properties")]
+pub mod properties;
+
 mod anchor_store;
 mod anchors;
 mod base64;
 pub mod budget;
 mod de;
 mod de_error;
-mod include;
-mod indentation;
 #[path = "de/snippet.rs"]
 mod de_snippet;
+mod include;
+mod indentation;
+mod input_source;
 mod live_events;
 #[path = "localizer.rs"]
 pub mod localizer;
@@ -66,11 +74,10 @@ mod long_strings;
 mod message_formatters;
 pub mod options;
 mod parse_scalars;
-pub mod ser;
 #[cfg(feature = "include_fs")]
 mod safe_resolver;
+pub mod ser;
 mod spanned;
-mod input_source;
 
 #[cfg(feature = "include")]
 mod include_stack;
@@ -409,7 +416,6 @@ where
     Ok(value)
 }
 
-
 /// Deserialize a single YAML document with configurable [`Options`].
 ///
 /// This function supports both owned types (like `String`) and borrowed types
@@ -451,7 +457,6 @@ where
 {
     from_str_with_options_impl(input, options)
 }
-
 
 /// Deserialize a single YAML document with configurable [`Options`], and also
 /// return a map from validation paths to source [`Location`]s.
@@ -809,11 +814,8 @@ where
     <T as garde::Validate>::Context: Default,
 {
     let cfg = crate::de::Cfg::from_options(&options);
-    let (snippet_ctx, ring_handle) = ReaderSnippetContext::new(
-        reader,
-        options.with_snippet,
-        options.crop_radius,
-    );
+    let (snippet_ctx, ring_handle) =
+        ReaderSnippetContext::new(reader, options.with_snippet, options.crop_radius);
     let mut src = LiveEvents::from_reader(ring_handle, options, false, EnforcingPolicy::AllContent);
 
     let mut recorder = crate::path_map::PathRecorder::new();
@@ -832,10 +834,8 @@ where
                 // If the only thing in the input was an empty document (synthetic null),
                 // surface this as an EOF error to preserve expected error semantics
                 // for incompatible target types (e.g., bool).
-                return Err(snippet_ctx.attach_snippet(
-                    Error::eof().with_location(src.last_location()),
-                    &src,
-                ));
+                return Err(snippet_ctx
+                    .attach_snippet(Error::eof().with_location(src.last_location()), &src));
             } else {
                 return Err(snippet_ctx.attach_snippet(e, &src));
             }
@@ -992,11 +992,8 @@ where
     }
 
     let cfg = crate::de::Cfg::from_options(&options);
-    let (snippet_ctx, ring_handle) = ReaderSnippetContext::new(
-        reader,
-        options.with_snippet,
-        options.crop_radius,
-    );
+    let (snippet_ctx, ring_handle) =
+        ReaderSnippetContext::new(reader, options.with_snippet, options.crop_radius);
     let src = LiveEvents::from_reader(ring_handle, options, false, EnforcingPolicy::PerDocument);
 
     ReadValidIter::<R, T> {
@@ -1224,11 +1221,8 @@ where
     T: DeserializeOwned + ValidatorValidate,
 {
     let cfg = crate::de::Cfg::from_options(&options);
-    let (snippet_ctx, ring_handle) = ReaderSnippetContext::new(
-        reader,
-        options.with_snippet,
-        options.crop_radius,
-    );
+    let (snippet_ctx, ring_handle) =
+        ReaderSnippetContext::new(reader, options.with_snippet, options.crop_radius);
     let mut src = LiveEvents::from_reader(ring_handle, options, false, EnforcingPolicy::AllContent);
 
     let mut recorder = crate::path_map::PathRecorder::new();
@@ -1247,10 +1241,8 @@ where
                 // If the only thing in the input was an empty document (synthetic null),
                 // surface this as an EOF error to preserve expected error semantics
                 // for incompatible target types (e.g., bool).
-                return Err(snippet_ctx.attach_snippet(
-                    Error::eof().with_location(src.last_location()),
-                    &src,
-                ));
+                return Err(snippet_ctx
+                    .attach_snippet(Error::eof().with_location(src.last_location()), &src));
             } else {
                 return Err(snippet_ctx.attach_snippet(e, &src));
             }
@@ -1404,11 +1396,8 @@ where
     }
 
     let cfg = crate::de::Cfg::from_options(&options);
-    let (snippet_ctx, ring_handle) = ReaderSnippetContext::new(
-        reader,
-        options.with_snippet,
-        options.crop_radius,
-    );
+    let (snippet_ctx, ring_handle) =
+        ReaderSnippetContext::new(reader, options.with_snippet, options.crop_radius);
     let src = LiveEvents::from_reader(ring_handle, options, false, EnforcingPolicy::PerDocument);
 
     ReadValidateIter::<R, T> {
@@ -1430,7 +1419,6 @@ pub(crate) fn maybe_with_snippet(
         return err;
     }
 
-
     err.with_snippet(input, crop_radius)
 }
 
@@ -1447,7 +1435,11 @@ struct ReaderSnippetContext<R> {
 }
 
 impl<R: Read> ReaderSnippetContext<R> {
-    fn new(reader: R, with_snippet: bool, crop_radius: usize) -> (Self, ring_reader::SharedRingReaderHandle<R>) {
+    fn new(
+        reader: R,
+        with_snippet: bool,
+        crop_radius: usize,
+    ) -> (Self, ring_reader::SharedRingReaderHandle<R>) {
         let shared_ring = ring_reader::SharedRingReader::new(reader);
         let ring_handle = ring_reader::SharedRingReaderHandle::new(&shared_ring);
         (
@@ -1530,7 +1522,8 @@ fn with_recorded_source_snippets(
         .text
         .as_deref()
         .expect("recorded source snippet chain must start with text-backed source");
-    let mut err_with_snippet = err.with_snippet_named(source_text, current.name.as_str(), crop_radius);
+    let mut err_with_snippet =
+        err.with_snippet_named(source_text, current.name.as_str(), crop_radius);
 
     for window in chain.windows(2) {
         let child = window[0];
@@ -1583,12 +1576,9 @@ pub(crate) fn maybe_with_snippet_from_events_and_root_fragment(
     }
 
     match root {
-        Some(root) => err.with_snippet_offset_named(
-            root.text,
-            root.start_line,
-            root.source_name,
-            crop_radius,
-        ),
+        Some(root) => {
+            err.with_snippet_offset_named(root.text, root.start_line, root.source_name, crop_radius)
+        }
         None => maybe_with_snippet(err, input, with_snippet, crop_radius),
     }
 }
@@ -1609,7 +1599,6 @@ pub(crate) fn maybe_with_snippet_from_events(
         crop_radius,
     )
 }
-
 
 /// Deserialize multiple YAML documents from a single string into a vector of `T`.
 /// Completely empty documents are ignored and not included into returned vector.
@@ -1809,7 +1798,6 @@ where
     let s = std::str::from_utf8(bytes).map_err(|_| Error::InvalidUtf8Input)?;
     from_str_with_options(s, options)
 }
-
 
 /// Deserialize multiple YAML documents from a UTF-8 byte slice into a vector of `T`.
 ///
@@ -2035,11 +2023,8 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
     options: Options,
 ) -> Result<T, Error> {
     let cfg = crate::de::Cfg::from_options(&options);
-    let (snippet_ctx, ring_handle) = ReaderSnippetContext::new(
-        reader,
-        options.with_snippet,
-        options.crop_radius,
-    );
+    let (snippet_ctx, ring_handle) =
+        ReaderSnippetContext::new(reader, options.with_snippet, options.crop_radius);
 
     let mut src = LiveEvents::from_reader(ring_handle, options, false, EnforcingPolicy::AllContent);
 
@@ -2053,10 +2038,8 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
                 // If the only thing in the input was an empty document (synthetic null),
                 // surface this as an EOF error to preserve expected error semantics
                 // for incompatible target types (e.g., bool).
-                return Err(snippet_ctx.attach_snippet(
-                    Error::eof().with_location(src.last_location()),
-                    &src,
-                ));
+                return Err(snippet_ctx
+                    .attach_snippet(Error::eof().with_location(src.last_location()), &src));
             } else {
                 return Err(snippet_ctx.attach_snippet(e, &src));
             }
@@ -2089,7 +2072,6 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
     }
     Ok(value)
 }
-
 
 /// Create an iterator over YAML documents from any `std::io::Read` using default options.
 ///

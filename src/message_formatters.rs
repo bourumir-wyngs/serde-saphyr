@@ -52,6 +52,12 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
         Error::Message { msg, .. }
         | Error::HookError { msg, .. }
         | Error::SerdeVariantId { msg, .. } => Cow::Borrowed(msg.as_str()),
+        Error::UnresolvedProperty { name, .. } => {
+            Cow::Owned(format!("missing property `{name}`"))
+        }
+        Error::InvalidPropertyName { name, .. } => {
+            Cow::Owned(format!("Invalid name: '{name}'"))
+        }
         Error::Eof { .. } => Cow::Borrowed("unexpected end of input"),
         Error::MultipleDocuments { hint, .. } => {
             Cow::Owned(format!("multiple YAML documents detected; {hint}"))
@@ -738,6 +744,26 @@ mod tests {
         let msg = formatter.format_message(&err);
         assert!(msg.contains("IO error"), "got: {msg}");
         assert!(msg.contains("disk full"), "got: {msg}");
+    }
+
+    #[test]
+    fn default_unresolved_property() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::UnresolvedProperty {
+            name: "MISSING".to_owned(),
+            location: loc(),
+        };
+        assert_eq!(formatter.format_message(&err), "missing property `MISSING`");
+    }
+
+    #[test]
+    fn default_invalid_property_name() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::InvalidPropertyName {
+            name: "${ab-cd}".to_owned(),
+            location: loc(),
+        };
+        assert_eq!(formatter.format_message(&err), "Invalid name: '${ab-cd}'");
     }
 
     #[test]

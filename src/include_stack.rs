@@ -1,6 +1,6 @@
 use crate::buffered_input::{
-    buffered_input_from_reader_with_limit_shared, ReaderInput, ReaderInputBytesRead,
-    ReaderInputError,
+    ReaderInput, ReaderInputBytesRead, ReaderInputError,
+    buffered_input_from_reader_with_limit_shared,
 };
 use crate::input_source::{IncludeResolveError, IncludeResolver, InputSource, ResolvedInclude};
 use saphyr_parser::{Event, Parser, ScanError, Scanner, Span, StrInput, TokenType};
@@ -12,7 +12,8 @@ use std::{
     rc::Rc,
 };
 
-type InnerStack<'input> = saphyr_parser::parser_stack::ParserStack<'input, core::iter::Empty<char>, ReaderInput<'input>>;
+type InnerStack<'input> =
+    saphyr_parser::parser_stack::ParserStack<'input, core::iter::Empty<char>, ReaderInput<'input>>;
 #[derive(Clone, Debug)]
 pub(crate) struct SnippetFrame {
     pub(crate) name: String,
@@ -68,7 +69,10 @@ impl<'input> ParserStack<'input> {
     }
     pub fn set_resolver(
         &mut self,
-        resolver: impl FnMut(crate::input_source::IncludeRequest<'_>) -> Result<ResolvedInclude, IncludeResolveError> + 'input,
+        resolver: impl FnMut(
+            crate::input_source::IncludeRequest<'_>,
+        ) -> Result<ResolvedInclude, IncludeResolveError>
+        + 'input,
     ) {
         self.include_resolver = Some(Box::new(resolver));
     }
@@ -79,7 +83,11 @@ impl<'input> ParserStack<'input> {
     pub fn push_str_parser(&mut self, parser: Parser<'input, StrInput<'input>>, name: String) {
         self.push_str_parser_with_snippet(parser, name, None);
     }
-    pub fn push_stream_parser(&mut self, parser: Parser<'input, ReaderInput<'input>>, name: String) {
+    pub fn push_stream_parser(
+        &mut self,
+        parser: Parser<'input, ReaderInput<'input>>,
+        name: String,
+    ) {
         self.push_stream_parser_with_snippet(parser, name, None);
     }
     pub(crate) fn push_str_parser_with_snippet(
@@ -202,18 +210,33 @@ impl<'input> ParserStack<'input> {
         self.snippet_frames
             .iter()
             .filter_map(|frame| frame.as_ref())
-            .map(|frame| (frame.name.as_str(), frame.text.as_ref(), frame.include_location))
+            .map(|frame| {
+                (
+                    frame.name.as_str(),
+                    frame.text.as_ref(),
+                    frame.include_location,
+                )
+            })
             .collect()
     }
-    pub fn resolve(&mut self, include_str: &str, location: crate::Location) -> Result<(), crate::de_error::Error> {
+    pub fn resolve(
+        &mut self,
+        include_str: &str,
+        location: crate::Location,
+    ) -> Result<(), crate::de_error::Error> {
         let Some(resolver) = &mut self.include_resolver else {
-            return Err(crate::de_error::Error::msg("No include resolver set for parser stack.").with_location(location));
+            return Err(
+                crate::de_error::Error::msg("No include resolver set for parser stack.")
+                    .with_location(location),
+            );
         };
 
         let include_depth = self.inner.stack().len() as u32;
         if include_depth > self.budget.max_inclusion_depth {
             return Err(crate::de_error::Error::Budget {
-                breach: crate::budget::BudgetBreach::InclusionDepth { depth: include_depth },
+                breach: crate::budget::BudgetBreach::InclusionDepth {
+                    depth: include_depth,
+                },
                 location,
             });
         }
@@ -231,7 +254,8 @@ impl<'input> ParserStack<'input> {
             from_id,
             stack: self.inner.stack().into_iter().collect(),
             size_remaining: self
-                .budget.max_reader_input_bytes
+                .budget
+                .max_reader_input_bytes
                 .map(|limit| limit.saturating_sub(self.reader_bytes_read.get())),
             location,
         };
@@ -321,16 +345,17 @@ impl<'input> ParserStack<'input> {
                     self.inner.current_anchor_offset(),
                     &self.budget,
                 )
-                    .map_err(|error| {
-                    crate::de_error::Error::ResolverError {
-                        target: include_str.to_string(),
-                        error: crate::IncludeResolveError::Message(error),
-                        stack: self.inner.stack().into_iter().collect(),
-                        location,
-                    }
+                .map_err(|error| crate::de_error::Error::ResolverError {
+                    target: include_str.to_string(),
+                    error: crate::IncludeResolveError::Message(error),
+                    stack: self.inner.stack().into_iter().collect(),
+                    location,
                 })?;
                 self.push_replay_parser_with_snippet(
-                    saphyr_parser::parser_stack::ReplayParser::new(events.events, events.anchor_offset),
+                    saphyr_parser::parser_stack::ReplayParser::new(
+                        events.events,
+                        events.anchor_offset,
+                    ),
                     name,
                     Some(snippet),
                 );
@@ -610,15 +635,18 @@ mod tests {
         )
         .expect("anchor collection should succeed");
 
-        let has_user_key = collected.events.iter().any(|(event, _)| {
-            matches!(event, Event::Scalar(value, _, _, _) if value.as_ref() == "user")
-        });
-        let has_name_key = collected.events.iter().any(|(event, _)| {
-            matches!(event, Event::Scalar(value, _, _, _) if value.as_ref() == "name")
-        });
+        let has_user_key = collected.events.iter().any(
+            |(event, _)| matches!(event, Event::Scalar(value, _, _, _) if value.as_ref() == "user"),
+        );
+        let has_name_key = collected.events.iter().any(
+            |(event, _)| matches!(event, Event::Scalar(value, _, _, _) if value.as_ref() == "name"),
+        );
 
         assert!(has_user_key, "target mapping key should be preserved");
-        assert!(has_name_key, "alias value should be expanded from prerequisite anchor");
+        assert!(
+            has_name_key,
+            "alias value should be expanded from prerequisite anchor"
+        );
         assert!(
             !collected
                 .events
@@ -638,7 +666,10 @@ mod tests {
         )
         .expect("materialized fragment should parse without shared reader counting");
 
-        assert!(!collected.events.is_empty(), "materialized fragment should still parse");
+        assert!(
+            !collected.events.is_empty(),
+            "materialized fragment should still parse"
+        );
     }
 
     #[test]
@@ -745,7 +776,7 @@ mod tests {
                 name: "test2.yaml".to_string(),
                 text: Rc::from("baz"),
                 include_location: crate::Location::UNKNOWN,
-            })
+            }),
         );
 
         // At depth > 1, active_include_snippet_source returns the top snippet
@@ -803,16 +834,22 @@ mod tests {
         let reader_bytes_read = Rc::new(Cell::new(0));
         let mut stack = ParserStack::new(io_error, reader_bytes_read, &crate::Budget::default());
         // A stream with two documents
-        stack.push_str_parser(Parser::new_from_str("first: 1\n---\nsecond: 2\n"), "multi.yaml".to_string());
+        stack.push_str_parser(
+            Parser::new_from_str("first: 1\n---\nsecond: 2\n"),
+            "multi.yaml".to_string(),
+        );
 
         // Push a dummy child source ID to simulate an include during the first document
-        stack.resolved_sources.insert(999, RecordedSource {
-            source_id: 999,
-            parent_source_id: Some(1),
-            name: "dummy.yaml".to_string(),
-            text: None,
-            include_location: crate::Location::UNKNOWN,
-        });
+        stack.resolved_sources.insert(
+            999,
+            RecordedSource {
+                source_id: 999,
+                parent_source_id: Some(1),
+                name: "dummy.yaml".to_string(),
+                text: None,
+                include_location: crate::Location::UNKNOWN,
+            },
+        );
         // Read until the first document finishes and the second document starts
         let mut doc_starts = 0;
         for item in stack.by_ref() {

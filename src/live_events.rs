@@ -31,7 +31,7 @@ use crate::de::{AliasLimits, Error, Ev, Events, Location, Options};
 use crate::de_error::budget_error;
 #[cfg(feature = "include")]
 use crate::include::create_parser_from_reader_input;
-use crate::include::{create_parser_from_str, BaseParser};
+use crate::include::{BaseParser, create_parser_from_str};
 use crate::location::location_from_span;
 use crate::options::BudgetReportCallback;
 use crate::tags::SfTag;
@@ -42,6 +42,8 @@ use saphyr_parser::StrInput;
 use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::cell::RefCell;
+#[cfg(feature = "properties")]
+use std::collections::HashMap;
 use std::rc::Rc;
 
 #[cfg(feature = "include")]
@@ -83,7 +85,11 @@ impl<'input> SaphyrParser<'input> {
     }
 
     #[cfg(feature = "include")]
-    fn resolve(&mut self, include_str: &str, location: crate::Location) -> Result<(), crate::de_error::Error> {
+    fn resolve(
+        &mut self,
+        include_str: &str,
+        location: crate::Location,
+    ) -> Result<(), crate::de_error::Error> {
         match self {
             SaphyrParser::StringParser(parser) => parser.resolve(include_str, location),
             SaphyrParser::StreamParser(parser) => parser.resolve(include_str, location),
@@ -128,7 +134,6 @@ impl<'input> SaphyrParser<'input> {
             SaphyrParser::StreamParser(parser) => parser.include_stack_snippets(),
         }
     }
-
 }
 
 /// Live event source that wraps `saphyr_parser::Parser` and:
@@ -168,6 +173,10 @@ pub(crate) struct LiveEvents<'a> {
     alias_limits: AliasLimits,
     /// Total number of replayed events across the whole stream (enforced by `alias_limits`).
     total_replayed_events: usize,
+
+    /// Property map for interpolation.
+    #[cfg(feature = "properties")]
+    property_map: Option<Rc<HashMap<String, String>>>,
     /// Per-anchor replay expansion counters, indexed by anchor id (dense ids).
     per_anchor_expansions: Vec<usize>,
     /// In single-document mode, stop producing events when a DocumentEnd is seen.
@@ -232,6 +241,8 @@ impl<'a> LiveEvents<'a> {
         let budget_report_cb = options.budget_report_cb.take();
         let alias_limits = options.alias_limits;
         let require_indent = options.require_indent;
+        #[cfg(feature = "properties")]
+        let property_map = options.property_map.clone();
         #[cfg(feature = "include")]
         let resolver = crate::resolver_from_options(options);
 
@@ -241,7 +252,8 @@ impl<'a> LiveEvents<'a> {
         let default_budget = crate::Budget::default();
         #[cfg(feature = "include")]
         let resolved_budget = budget.as_ref().unwrap_or(&default_budget);
-        let (input, error, reader_bytes_read) = buffered_input_from_reader_with_limit(inputs, max_bytes);
+        let (input, error, reader_bytes_read) =
+            buffered_input_from_reader_with_limit(inputs, max_bytes);
         #[cfg(not(feature = "include"))]
         let _ = &reader_bytes_read;
         #[cfg(feature = "include")]
@@ -272,6 +284,8 @@ impl<'a> LiveEvents<'a> {
 
             alias_limits,
             total_replayed_events: 0,
+            #[cfg(feature = "properties")]
+            property_map,
             per_anchor_expansions: Vec::new(),
             stop_at_doc_end,
             seen_doc_end: false,
@@ -295,16 +309,14 @@ impl<'a> LiveEvents<'a> {
     ///
     /// # Returns
     /// A configured `LiveEvents` ready to stream events.
-    pub(crate) fn from_str(
-        input: &'a str,
-        mut options: Options,
-        stop_at_doc_end: bool,
-    ) -> Self {
+    pub(crate) fn from_str(input: &'a str, mut options: Options, stop_at_doc_end: bool) -> Self {
         let budget = options.budget.take();
         let budget_report = options.budget_report.take();
         let budget_report_cb = options.budget_report_cb.take();
         let alias_limits = options.alias_limits;
         let require_indent = options.require_indent;
+        #[cfg(feature = "properties")]
+        let property_map = options.property_map.clone();
         #[cfg(feature = "include")]
         let resolver = crate::resolver_from_options(options);
 
@@ -346,6 +358,8 @@ impl<'a> LiveEvents<'a> {
 
             alias_limits,
             total_replayed_events: 0,
+            #[cfg(feature = "properties")]
+            property_map: property_map.clone(),
             per_anchor_expansions: Vec::new(),
             stop_at_doc_end,
             seen_doc_end: false,
@@ -452,12 +466,14 @@ impl<'a> LiveEvents<'a> {
                 Err(e) => {
                     let mut err = Error::from_scan_error(e);
                     if let Some(loc) = err.location() {
-                        err = err.with_location(loc.with_source_id(self.parser.current_source_id()));
+                        err =
+                            err.with_location(loc.with_source_id(self.parser.current_source_id()));
                     }
                     return Err(err);
                 }
             };
-            let location = location_from_span(&span).with_source_id(self.parser.current_source_id());
+            let location =
+                location_from_span(&span).with_source_id(self.parser.current_source_id());
 
             // Validate indentation if the parser provided a hint for this span.
             if let Some(indent) = span.indent {
@@ -536,7 +552,10 @@ impl<'a> LiveEvents<'a> {
 
                     #[cfg(feature = "include")]
                     if self.parser.has_resolver()
-                        && !matches!(crate::tags::parse_include_tag(&tag), crate::tags::IncludeTag::NotInclude)
+                        && !matches!(
+                            crate::tags::parse_include_tag(&tag),
+                            crate::tags::IncludeTag::NotInclude
+                        )
                     {
                         return Err(Error::UnsupportedIncludeForm { location });
                     }
@@ -594,7 +613,10 @@ impl<'a> LiveEvents<'a> {
                     let mut anchor_id = anchor_id;
                     #[cfg(feature = "include")]
                     if self.parser.has_resolver()
-                        && !matches!(crate::tags::parse_include_tag(&_tag), crate::tags::IncludeTag::NotInclude)
+                        && !matches!(
+                            crate::tags::parse_include_tag(&_tag),
+                            crate::tags::IncludeTag::NotInclude
+                        )
                     {
                         return Err(Error::UnsupportedIncludeForm { location });
                     }
@@ -724,7 +746,8 @@ impl<'a> LiveEvents<'a> {
                         // after an explicit end marker. If the very next token is a
                         // DocumentStart, signal multi-doc error; otherwise ignore anything else.
                         if let Some(Ok((Event::DocumentStart(_), span2))) = self.parser.next() {
-                            let loc2 = location_from_span(&span2).with_source_id(self.parser.current_source_id());
+                            let loc2 = location_from_span(&span2)
+                                .with_source_id(self.parser.current_source_id());
                             return Err(Error::multiple_documents(
                                 "use from_multiple or from_multiple_with_options",
                             )
@@ -973,6 +996,11 @@ impl<'de> Events<'de> for LiveEvents<'de> {
     fn input_for_borrowing(&self) -> Option<&'de str> {
         self.input
     }
+
+    #[cfg(feature = "properties")]
+    fn property_map(&self) -> Option<&Rc<HashMap<String, String>>> {
+        self.property_map.as_ref()
+    }
 }
 
 impl<'a> LiveEvents<'a> {
@@ -1018,7 +1046,8 @@ impl<'a> LiveEvents<'a> {
                 // Syntax error while skipping; treat as EOF
                 return false;
             };
-            let location = location_from_span(&span).with_source_id(self.parser.current_source_id());
+            let location =
+                location_from_span(&span).with_source_id(self.parser.current_source_id());
             self.last_location = location;
 
             match raw {

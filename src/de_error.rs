@@ -337,6 +337,9 @@ pub enum TransformReason {
     /// If a scalar comes through as `Cow::Owned`, the deserializer cannot safely fabricate a
     /// borrow, because it would not refer to the original input buffer.
     ParserReturnedOwned,
+
+    /// Property interpolation transformed the scalar.
+    VariableInterpolation,
 }
 
 impl fmt::Display for TransformReason {
@@ -353,6 +356,7 @@ impl fmt::Display for TransformReason {
                 write!(f, "input is not available for borrowing")
             }
             TransformReason::ParserReturnedOwned => write!(f, "parser returned an owned string"),
+            TransformReason::VariableInterpolation => write!(f, "variable interpolation"),
         }
     }
 }
@@ -652,6 +656,18 @@ pub enum Error {
     /// (error in extension hook).
     HookError {
         msg: String,
+        location: Location,
+    },
+    /// A `${NAME}` property reference could not be resolved from the configured property map.
+    UnresolvedProperty {
+        /// Property name that was requested.
+        name: String,
+        location: Location,
+    },
+    /// A `${...}` property candidate used an invalid property name.
+    InvalidPropertyName {
+        /// The invalid `${...}` candidate as it appeared in the YAML source.
+        name: String,
         location: Location,
     },
     /// A YAML budget limit was exceeded.
@@ -1164,14 +1180,15 @@ impl Error {
     /// - Deserializer, when deserializing into string if no_schema set to true.
     #[cold]
     #[inline(never)]
-    pub(crate) fn quoting_required(value: &str) -> Self {
+    pub(crate) fn quoting_required(value: &str, interpolated: bool) -> Self {
         // Ensure the value really is like number or boolean (do not reflect back content
         // that may be used for attack)
         let location = Location::UNKNOWN;
-        let value = if parse_yaml12_float::<f64>(value, location, SfTag::None, false).is_ok()
-            || parse_int_signed::<i128>(value, "i128", location, false).is_ok()
-            || parse_yaml11_bool(value).is_ok()
-            || scalar_is_nullish(value, &ScalarStyle::Plain)
+        let value = if !interpolated
+            && (parse_yaml12_float::<f64>(value, location, SfTag::None, false).is_ok()
+                || parse_int_signed::<i128>(value, "i128", location, false).is_ok()
+                || parse_yaml11_bool(value).is_ok()
+                || scalar_is_nullish(value, &ScalarStyle::Plain))
         {
             value.to_string()
         } else {
@@ -1303,6 +1320,8 @@ impl Error {
             | Error::SerdeVariantId { location, .. }
             | Error::ExpectedMappingEndAfterEnumVariantValue { location }
             | Error::HookError { location, .. }
+            | Error::UnresolvedProperty { location, .. }
+            | Error::InvalidPropertyName { location, .. }
             | Error::ContainerEndMismatch { location, .. }
             | Error::UnknownAnchor { location, .. }
             | Error::CyclicInclude { location, .. }
@@ -1396,6 +1415,8 @@ impl Error {
             | Error::SerdeVariantId { location, .. }
             | Error::ExpectedMappingEndAfterEnumVariantValue { location }
             | Error::HookError { location, .. }
+            | Error::UnresolvedProperty { location, .. }
+            | Error::InvalidPropertyName { location, .. }
             | Error::ContainerEndMismatch { location, .. }
             | Error::UnknownAnchor { location, .. }
             | Error::CyclicInclude { location, .. }
@@ -1454,8 +1475,6 @@ impl Error {
             Error::ValidatorErrors { errors } => errors.iter().find_map(|e| e.location()),
         }
     }
-
-
     /// Return a pair of locations associated with this error.
     ///
     /// - For syntax and other errors that carry a single [`Location`], this returns two
@@ -1511,6 +1530,8 @@ impl Error {
             | Error::SerdeVariantId { location, .. }
             | Error::ExpectedMappingEndAfterEnumVariantValue { location }
             | Error::HookError { location, .. }
+            | Error::UnresolvedProperty { location, .. }
+            | Error::InvalidPropertyName { location, .. }
             | Error::ContainerEndMismatch { location, .. }
             | Error::UnknownAnchor { location, .. }
             | Error::CyclicInclude { location, .. }

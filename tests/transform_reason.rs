@@ -99,6 +99,8 @@ mod tests {
             TransformReason::BlockScalarProcessing,
             TransformReason::SingleQuoteEscape,
             TransformReason::InputNotBorrowable,
+            TransformReason::ParserReturnedOwned,
+            TransformReason::VariableInterpolation,
         ];
 
         let messages: Vec<String> = reasons.iter().map(|r| format!("{}", r)).collect();

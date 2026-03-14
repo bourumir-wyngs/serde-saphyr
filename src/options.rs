@@ -1,12 +1,13 @@
 use crate::budget::Budget;
 use crate::indentation::RequireIndent;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "properties")]
+use std::collections::HashMap;
 #[cfg(feature = "include_fs")]
 use std::io;
 #[cfg(feature = "include_fs")]
 use std::path::Path;
 use std::rc::Rc;
-
 
 // Intentionally no `saphyr_parser` imports here: include resolvers are handled in serde-saphyr.
 
@@ -145,13 +146,25 @@ pub struct Options {
     #[cfg(feature = "include")]
     #[serde(skip)]
     pub include_resolver: Option<IncludeResolverCallback>,
+
+    /// A map of properties to substitute in scalar values.
+    /// Used for docker-compose-style interpolation like `${VAR}`.
+    #[cfg(feature = "properties")]
+    #[serde(skip)]
+    pub property_map: Option<Rc<HashMap<String, String>>>,
+
 }
 
 #[cfg(feature = "include")]
-pub type IncludeResolverCallback = Rc<std::cell::RefCell<
-    dyn for<'res> FnMut(crate::input_source::IncludeRequest<'res>) -> Result<crate::ResolvedInclude, crate::IncludeResolveError>
-        + 'static,
->>;
+pub type IncludeResolverCallback = Rc<
+    std::cell::RefCell<
+        dyn for<'res> FnMut(
+                crate::input_source::IncludeRequest<'res>,
+            )
+                -> Result<crate::ResolvedInclude, crate::IncludeResolveError>
+            + 'static,
+    >,
+>;
 
 pub type BudgetReportCallback =
     Rc<std::cell::RefCell<dyn FnMut(crate::budget::BudgetReport) + 'static>>;
@@ -185,7 +198,11 @@ impl Options {
     #[cfg(feature = "include")]
     pub fn with_include_resolver<F>(mut self, cb: F) -> Self
     where
-        F: for<'res> FnMut(crate::input_source::IncludeRequest<'res>) -> Result<crate::ResolvedInclude, crate::IncludeResolveError> + 'static,
+        F: for<'res> FnMut(
+                crate::input_source::IncludeRequest<'res>,
+            )
+                -> Result<crate::ResolvedInclude, crate::IncludeResolveError>
+            + 'static,
     {
         self.include_resolver = Some(Rc::new(std::cell::RefCell::new(cb)));
         self
@@ -261,6 +278,8 @@ impl Default for Options {
 
             #[cfg(feature = "include")]
             include_resolver: None,
+            #[cfg(feature = "properties")]
+            property_map: None,
         }
     }
 }
@@ -292,23 +311,34 @@ impl std::fmt::Debug for Options {
             .field("with_snippet", &self.with_snippet)
             .field("crop_radius", &self.crop_radius)
             .field("require_indent", &self.require_indent)
-            .field(
-                "include_resolver",
-                &{
-                    #[cfg(feature = "include")]
-                    {
-                        if self.include_resolver.is_some() {
-                            "set"
-                        } else {
-                            "none"
-                        }
+            .field("include_resolver", &{
+                #[cfg(feature = "include")]
+                {
+                    if self.include_resolver.is_some() {
+                        "set"
+                    } else {
+                        "none"
                     }
-                    #[cfg(not(feature = "include"))]
-                    {
-                        "disabled"
+                }
+                #[cfg(not(feature = "include"))]
+                {
+                    "disabled"
+                }
+            })
+            .field("property_map", &{
+                #[cfg(feature = "properties")]
+                {
+                    if self.property_map.is_some() {
+                        "set"
+                    } else {
+                        "none"
                     }
-                },
-            )
+                }
+                #[cfg(not(feature = "properties"))]
+                {
+                    "disabled"
+                }
+            })
             .finish()
     }
 }
@@ -343,6 +373,10 @@ mod tests {
 
         #[cfg(feature = "include")]
         assert!(opts.include_resolver.is_none());
+        #[cfg(feature = "properties")]
+        {
+            assert!(opts.property_map.is_none());
+        }
     }
 
     #[test]
@@ -355,6 +389,14 @@ mod tests {
 
         #[cfg(feature = "include")]
         assert!(debug_str.contains("include_resolver: \"none\""));
+        #[cfg(feature = "properties")]
+        {
+            assert!(debug_str.contains("property_map: \"none\""));
+        }
+        #[cfg(not(feature = "properties"))]
+        {
+            assert!(debug_str.contains("property_map: \"disabled\""));
+        }
 
         // Test with callback
         let opts_with_cb = opts.with_budget_report(|_| {});
