@@ -476,6 +476,40 @@ fn safe_file_resolver_symlink_policy_follow_within_root() {
 
 #[cfg(unix)]
 #[test]
+fn safe_file_resolver_no_git() {
+    use std::os::unix::fs::symlink;
+
+    let temp = TempDir::new().unwrap();
+    
+    // Case 1: real path contains .ggit, linked path does not
+    let target1 = temp.path().join("allowed/.ggit/real.yaml");
+    write_text(&target1, "bar_value\n");
+    symlink(&target1, temp.path().join("allowed/link1.yaml")).unwrap();
+
+    // Case 2: linked path contains .ggit
+    let target2 = temp.path().join("allowed/real2.yaml");
+    write_text(&target2, "bar_value\n");
+    let link2_dir = temp.path().join("allowed/.ggit");
+    std::fs::create_dir_all(&link2_dir).unwrap();
+    symlink(&target2, link2_dir.join("link2.yaml")).unwrap();
+
+    let resolver = SafeFileResolver::new(temp.path().join("allowed"))
+        .unwrap().with_symlink_policy(SymlinkPolicy::FollowWithinRoot);
+    
+    // Test Case 1
+    let options1 = Options::default().with_include_resolver(resolver.clone().into_callback());
+    let parsed1 = from_str_with_options::<ScalarConfig>("foo: !include link1.yaml\n", options1);
+    assert!(parsed1.is_err());
+
+    // Test Case 2
+    let options2 = Options::default().with_include_resolver(resolver.into_callback());
+    let parsed2 = from_str_with_options::<ScalarConfig>("foo: !include .ggit/link2.yaml\n", options2);
+    assert!(parsed2.is_err());
+}
+
+
+#[cfg(unix)]
+#[test]
 fn safe_file_resolver_rejects_symlink_escape_even_when_following_symlinks() {
     use std::os::unix::fs::symlink;
 
