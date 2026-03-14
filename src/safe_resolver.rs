@@ -1,5 +1,7 @@
 #[cfg(feature = "include")]
-use crate::input_source::{IncludeRequest, IncludeResolveError, InputSource, ResolvedInclude, ResolveProblem};
+use crate::input_source::{
+    IncludeRequest, IncludeResolveError, InputSource, ResolveProblem, ResolvedInclude,
+};
 #[cfg(feature = "include")]
 use encoding_rs_io::DecodeReaderBytesBuilder;
 #[cfg(feature = "include")]
@@ -111,7 +113,7 @@ impl SafeFileResolver {
             allow_root,
             root_source_id: None,
             read_mode: SafeFileReadMode::Reader,
-            symlink_policy: SymlinkPolicy::FollowWithinRoot,
+            symlink_policy: SymlinkPolicy::Reject,
         })
     }
 
@@ -433,14 +435,20 @@ fn validate_relative_include_spec(
         )));
     }
 
+    if spec_path.components().any(|component| {
+        component
+            .as_os_str()
+            .to_str()
+            .is_some_and(|segment| segment.starts_with('.') && segment != "." && segment != "..")
+    }) {
+        return Err(IncludeResolveError::FileInclude(Box::new(
+            ResolveProblem::HiddenFile {
+                spec: raw_spec.to_string(),
+            },
+        )));
+    }
+
     if let Some(filename) = spec_path.file_name().and_then(|n| n.to_str()) {
-        if filename.starts_with('.') {
-            return Err(IncludeResolveError::FileInclude(Box::new(
-                ResolveProblem::HiddenFile {
-                    spec: raw_spec.to_string(),
-                },
-            )));
-        }
         if !filename.ends_with(".yml") && !filename.ends_with(".yaml") {
             return Err(IncludeResolveError::FileInclude(Box::new(
                 ResolveProblem::InvalidExtension {
