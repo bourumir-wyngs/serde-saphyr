@@ -67,6 +67,7 @@ fn parse_braced_reference(input: &str, start: usize) -> Result<Option<(&str, usi
 /// - `input`: scalar text after YAML parsing, before Serde type conversion.
 /// - `vars`: final caller-supplied property map. Values are treated as final values,
 ///   so this function does not recursively expand placeholders inside map entries.
+///
 /// Returns:
 /// - `Cow::Borrowed` when the scalar is unchanged, or `Cow::Owned` with the expanded value.
 pub (crate) fn interpolate_compose_style<'s>(

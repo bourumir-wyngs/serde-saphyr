@@ -15,7 +15,6 @@
 /// - an unpaired high surrogate
 /// - an unpaired low surrogate
 /// - a reversed surrogate pair
-
 #[cfg(test)]
 mod tests {
     use serde::Deserialize;

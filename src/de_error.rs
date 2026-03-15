@@ -16,7 +16,7 @@ use annotate_snippets::Level;
 use saphyr_parser::{ScalarStyle, ScanError};
 use serde::de::{self};
 use std::borrow::Cow;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::fmt;
 #[cfg(feature = "validator")]
 use validator::{ValidationErrors, ValidationErrorsKind};
@@ -283,6 +283,79 @@ impl ValidationIssue {
 // The guard saves/restores the previous value on drop for correct nesting.
 thread_local! {
     static MISSING_FIELD_FALLBACK: Cell<Option<Location>> = const { Cell::new(None) };
+    static INTERP_REDACTION: RefCell<Option<ScalarRedactionCtx>> = const { RefCell::new(None) };
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ScalarRedactionCtx {
+    pub(crate) raw: String,
+    pub(crate) effective: String,
+}
+
+pub(crate) struct ScalarRedactionGuard {
+    prev: Option<ScalarRedactionCtx>,
+}
+
+impl ScalarRedactionGuard {
+    pub(crate) fn new(ctx: ScalarRedactionCtx) -> Self {
+        let prev = INTERP_REDACTION.with(|cell| cell.replace(Some(ctx)));
+        Self { prev }
+    }
+}
+
+impl Drop for ScalarRedactionGuard {
+    fn drop(&mut self) {
+        INTERP_REDACTION.with(|cell| {
+            let _ = cell.replace(self.prev.take());
+        });
+    }
+}
+
+#[cold]
+#[inline(never)]
+fn with_interp_redaction<T>(f: impl FnOnce(Option<&ScalarRedactionCtx>) -> T) -> T {
+    INTERP_REDACTION.with(|cell| {
+        let borrow = cell.borrow();
+        f(borrow.as_ref())
+    })
+}
+
+#[cold]
+#[inline(never)]
+fn redact_with_ctx(text: String, ctx: &ScalarRedactionCtx, fallback: &str) -> String {
+    if text.contains(&ctx.effective) {
+        text.replace(&ctx.effective, &ctx.raw)
+    } else {
+        fallback.to_owned()
+    }
+}
+
+#[cold]
+#[inline(never)]
+fn redact_custom_message(text: String) -> String {
+    with_interp_redaction(|ctx| match ctx {
+        Some(ctx) => redact_with_ctx(text, ctx, "invalid interpolated scalar value"),
+        None => text,
+    })
+}
+
+#[cold]
+#[inline(never)]
+fn redact_dynamic_value(text: String, fallback: &str) -> String {
+    with_interp_redaction(|ctx| match ctx {
+        Some(ctx) => redact_with_ctx(text, ctx, fallback),
+        None => text,
+    })
+}
+
+#[cold]
+#[inline(never)]
+fn redact_dynamic_identifier(text: &str, fallback: &str) -> String {
+    with_interp_redaction(|ctx| match ctx {
+        Some(ctx) if text == ctx.effective => ctx.raw.clone(),
+        Some(_) => fallback.to_owned(),
+        None => text.to_owned(),
+    })
 }
 
 /// RAII guard for [`MISSING_FIELD_FALLBACK`]. Saves the previous value on creation,
@@ -2308,6 +2381,8 @@ pub(crate) fn collect_garde_issues(report: &garde::Report) -> Vec<ValidationIssu
 impl std::error::Error for Error {}
 
 /// Attach the current [`MISSING_FIELD_FALLBACK`] location to `err`, if available.
+#[cold]
+#[inline(never)]
 fn maybe_attach_fallback_location(mut err: Error) -> Error {
     let loc = MISSING_FIELD_FALLBACK.with(|c| c.get());
     if let Some(loc) = loc
@@ -2319,46 +2394,58 @@ fn maybe_attach_fallback_location(mut err: Error) -> Error {
 }
 
 impl de::Error for Error {
+    #[cold]
+    #[inline(never)]
     fn custom<T: fmt::Display>(msg: T) -> Self {
         // Keep custom errors locationless by default; the deserializer should attach an explicit
         // location when it can. For Serde-generated errors, we override the relevant hooks below
         // and attach a best-effort fallback location.
-        Error::msg(msg.to_string())
+        Error::msg(redact_custom_message(msg.to_string()))
     }
 
+    #[cold]
+    #[inline(never)]
     fn invalid_type(unexp: de::Unexpected, exp: &dyn de::Expected) -> Self {
         // Mirror serde’s default formatting, but add a best-effort location.
         maybe_attach_fallback_location(Error::SerdeInvalidType {
-            unexpected: unexp.to_string(),
+            unexpected: redact_dynamic_value(unexp.to_string(), "an interpolated value"),
             expected: exp.to_string(),
             location: Location::UNKNOWN,
         })
     }
 
+    #[cold]
+    #[inline(never)]
     fn invalid_value(unexp: de::Unexpected, exp: &dyn de::Expected) -> Self {
         maybe_attach_fallback_location(Error::SerdeInvalidValue {
-            unexpected: unexp.to_string(),
+            unexpected: redact_dynamic_value(unexp.to_string(), "an interpolated value"),
             expected: exp.to_string(),
             location: Location::UNKNOWN,
         })
     }
 
+    #[cold]
+    #[inline(never)]
     fn unknown_variant(variant: &str, expected: &'static [&'static str]) -> Self {
         maybe_attach_fallback_location(Error::SerdeUnknownVariant {
-            variant: variant.to_owned(),
+            variant: redact_dynamic_identifier(variant, "an interpolated variant"),
             expected: expected.to_vec(),
             location: Location::UNKNOWN,
         })
     }
 
+    #[cold]
+    #[inline(never)]
     fn unknown_field(field: &str, expected: &'static [&'static str]) -> Self {
         maybe_attach_fallback_location(Error::SerdeUnknownField {
-            field: field.to_owned(),
+            field: redact_dynamic_identifier(field, "an interpolated field"),
             expected: expected.to_vec(),
             location: Location::UNKNOWN,
         })
     }
 
+    #[cold]
+    #[inline(never)]
     fn missing_field(field: &'static str) -> Self {
         maybe_attach_fallback_location(Error::SerdeMissingField {
             field,

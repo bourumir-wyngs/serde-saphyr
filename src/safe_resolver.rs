@@ -461,14 +461,15 @@ fn validate_relative_include_spec(
         )));
     }
 
-    if let Some(filename) = spec_path.file_name().and_then(|n| n.to_str()) {
-        if !filename.ends_with(".yml") && !filename.ends_with(".yaml") {
-            return Err(IncludeResolveError::FileInclude(Box::new(
-                ResolveProblem::InvalidExtension {
-                    spec: raw_spec.to_string(),
-                },
-            )));
-        }
+    if let Some(filename) = spec_path.file_name().and_then(|n| n.to_str())
+        && !filename.ends_with(".yml")
+        && !filename.ends_with(".yaml")
+    {
+        return Err(IncludeResolveError::FileInclude(Box::new(
+            ResolveProblem::InvalidExtension {
+                spec: raw_spec.to_string(),
+            },
+        )));
     }
 
     if spec_path.is_absolute() {

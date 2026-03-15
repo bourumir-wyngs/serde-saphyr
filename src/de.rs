@@ -21,7 +21,9 @@ pub use crate::location::Location;
 
 use crate::anchor_store::{self, AnchorKind};
 use crate::base64::decode_base64_yaml;
-use crate::de_error::{MissingFieldLocationGuard, TransformReason};
+use crate::de_error::{
+    MissingFieldLocationGuard, ScalarRedactionCtx, ScalarRedactionGuard, TransformReason,
+};
 use crate::parse_scalars::{
     leading_zero_decimal, maybe_not_string, parse_int_signed, parse_int_unsigned,
     parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish, scalar_is_nullish_for_option,
@@ -1027,6 +1029,86 @@ struct ScalarView<'de> {
     interpolated: bool,
 }
 
+type EffectiveScalar<'de> = (Cow<'de, str>, SfTag, ScalarStyle, Location);
+
+impl<'de> ScalarView<'de> {
+    fn redaction_ctx(&self) -> Option<ScalarRedactionCtx> {
+        self.interpolated.then(|| ScalarRedactionCtx {
+            raw: self.raw.as_ref().to_owned(),
+            effective: self.effective.as_ref().to_owned(),
+        })
+    }
+}
+
+fn with_scalar_redaction<T>(ctx: Option<ScalarRedactionCtx>, f: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
+    let _guard = ctx.map(ScalarRedactionGuard::new);
+    f()
+}
+
+struct EnumScalarId<'de> {
+    raw: Cow<'de, str>,
+    effective: Cow<'de, str>,
+    interpolated: bool,
+    location: Location,
+}
+
+impl<'de> EnumScalarId<'de> {
+    fn from_view(view: ScalarView<'de>) -> Self {
+        Self {
+            raw: view.raw,
+            effective: view.effective,
+            interpolated: view.interpolated,
+            location: view.location,
+        }
+    }
+
+    fn redaction_ctx(&self) -> Option<ScalarRedactionCtx> {
+        self.interpolated.then(|| ScalarRedactionCtx {
+            raw: self.raw.as_ref().to_owned(),
+            effective: self.effective.as_ref().to_owned(),
+        })
+    }
+}
+
+impl<'de> IntoDeserializer<'de, Error> for EnumScalarId<'de> {
+    type Deserializer = Self;
+
+    fn into_deserializer(self) -> Self::Deserializer {
+        self
+    }
+}
+
+impl<'de> de::Deserializer<'de> for EnumScalarId<'de> {
+    type Error = Error;
+
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        self.deserialize_identifier(visitor)
+    }
+
+    fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        let ctx = self.redaction_ctx();
+        let location = self.location;
+        let effective = self.effective;
+        with_scalar_redaction(ctx, move || match effective {
+            Cow::Borrowed(value) => visitor.visit_borrowed_str(value),
+            Cow::Owned(value) => visitor.visit_string(value),
+        })
+        .map_err(|err| err.with_location(location))
+    }
+
+    serde::forward_to_deserialize_any! {
+        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string bytes byte_buf
+        option unit unit_struct newtype_struct seq tuple tuple_struct map struct enum
+        ignored_any
+    }
+}
+
 impl<'de, 'e> YamlDeserializer<'de, 'e> {
     /// Construct a new streaming deserializer over an `Events` source.
     ///
@@ -1053,6 +1135,37 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
 
     fn quoting_required_for_scalar(&self, view: &ScalarView<'de>) -> Error {
         Error::quoting_required(view.raw.as_ref(), view.interpolated).with_location(view.location)
+    }
+
+    fn interpolation_possible(&self, tag: SfTag, style: ScalarStyle) -> bool {
+        if self.in_key || tag == SfTag::Binary || style != ScalarStyle::Plain {
+            return false;
+        }
+
+        #[cfg(not(feature = "properties"))]
+        {
+            false
+        }
+
+        #[cfg(feature = "properties")]
+        {
+            self.ev.property_map().is_some()
+        }
+    }
+
+    fn peek_scalar_redaction_ctx(&mut self) -> Result<Option<ScalarRedactionCtx>, Error> {
+        let Some((tag, style)) = (match self.ev.peek()? {
+            Some(Ev::Scalar { tag, style, .. }) => Some((*tag, *style)),
+            _ => None,
+        }) else {
+            return Ok(None);
+        };
+
+        if !self.interpolation_possible(tag, style) {
+            return Ok(None);
+        }
+
+        Ok(self.peek_scalar_view()?.and_then(|view| view.redaction_ctx()))
     }
 
     #[cfg(any(feature = "garde", feature = "validator"))]
@@ -1101,6 +1214,14 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
                 location,
                 ..
             }) => self.scalar_view_from_parts(value, tag, style, location),
+            Some(other) => Err(Error::unexpected("string scalar").with_location(other.location())),
+            None => Err(Error::eof().with_location(self.ev.last_location())),
+        }
+    }
+
+    fn take_peeked_scalar_view(&mut self, view: ScalarView<'de>) -> Result<ScalarView<'de>, Error> {
+        match self.ev.next()? {
+            Some(Ev::Scalar { .. }) => Ok(view),
             Some(other) => Err(Error::unexpected("string scalar").with_location(other.location())),
             None => Err(Error::eof().with_location(self.ev.last_location())),
         }
@@ -1157,7 +1278,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
 
     fn peek_effective_scalar(
         &mut self,
-    ) -> Result<Option<(Cow<'de, str>, SfTag, ScalarStyle, Location)>, Error> {
+    ) -> Result<Option<EffectiveScalar<'de>>, Error> {
         let Some(view) = self.peek_scalar_view()? else {
             return Ok(None);
         };
@@ -1186,7 +1307,11 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         style: ScalarStyle,
         location: Location,
     ) -> Result<ScalarView<'de>, Error> {
-        let effective = self.effective_scalar_value(raw.clone(), tag, style, location)?;
+        let effective = if self.interpolation_possible(tag, style) {
+            self.effective_scalar_value(raw.clone(), tag, style, location)?
+        } else {
+            raw.clone()
+        };
         let interpolated = raw.as_ref() != effective.as_ref();
         Ok(ScalarView {
             raw,
@@ -1520,17 +1645,17 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     ///   must be quoted; this check uses scalar style to avoid flagging quoted scalars.
     fn deserialize_char<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Mirror deserialize_string pre-checks to leverage tag/style and maybe_not_string.
-        if let Some(view) = self.peek_scalar_view()? {
-            if view.tag != SfTag::String {
-                // Reject YAML null for char (allow quoted values like "null").
-                if view.tag == SfTag::Null || scalar_is_nullish(&view.effective, &view.style) {
-                    let (_value, _tag, location) = self.take_scalar_event()?;
-                    return Err(Error::InvalidCharNull { location });
-                } else if self.cfg.no_schema && maybe_not_string(&view.effective, &view.style) {
-                    // Require quoting for ambiguous plain scalars in no_schema mode.
-                    let view = self.take_scalar_view()?;
-                    return Err(self.quoting_required_for_scalar(&view));
-                }
+        if let Some(view) = self.peek_scalar_view()?
+            && view.tag != SfTag::String
+        {
+            // Reject YAML null for char (allow quoted values like "null").
+            if view.tag == SfTag::Null || scalar_is_nullish(&view.effective, &view.style) {
+                let (_value, _tag, location) = self.take_scalar_event()?;
+                return Err(Error::InvalidCharNull { location });
+            } else if self.cfg.no_schema && maybe_not_string(&view.effective, &view.style) {
+                // Require quoting for ambiguous plain scalars in no_schema mode.
+                let view = self.take_scalar_view()?;
+                return Err(self.quoting_required_for_scalar(&view));
             }
         }
 
@@ -1556,41 +1681,36 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     /// When the target type requires `&str`, that fallback produces a helpful error suggesting
     /// `String` or `Cow<str>`, with a [`TransformReason`] describing why borrowing was impossible.
     fn deserialize_str<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let location = match self.peek_effective_scalar()? {
-            Some((value, tag, style, location)) => {
+        let view = match self.peek_scalar_view()? {
+            Some(view) => {
                 // Check for null - not valid for string deserialization
-                if tag == SfTag::Null || scalar_is_nullish(&value, &style) {
-                    let loc = location;
+                if view.tag == SfTag::Null || scalar_is_nullish(&view.effective, &view.style) {
+                    let loc = view.location;
                     let _ = self.ev.next()?;
                     return Err(Error::NullIntoString { location: loc });
                 }
-                location
+                view
             }
             None => return Err(Error::eof().with_location(self.ev.last_location())),
         };
 
-        // Consume scalar and rely on the parser's own borrowing promise:
-        // `Cow::Borrowed` indicates the scalar exists verbatim in the backing input.
-        let (cow, _tag, _loc) = self.take_scalar_cow_with_location()?;
-        if let Cow::Borrowed(b) = cow {
-            return visitor.visit_borrowed_str(b);
-        }
-
-        // Fall back to owned string. If the caller required a borrowed string (`&str`),
-        // convert the generic error into our richer message.
-        let cannot_borrow_reason = if self.ev.input_for_borrowing().is_none() {
+        let location = view.location;
+        let redaction_ctx = view.redaction_ctx();
+        let cannot_borrow_reason = if view.interpolated {
+            TransformReason::VariableInterpolation
+        } else if self.ev.input_for_borrowing().is_none() {
             TransformReason::InputNotBorrowable
-        } else if let Ok(Some(Ev::Scalar { value: raw_val, .. })) = self.ev.peek() {
-            if raw_val != cow.as_ref() {
-                TransformReason::VariableInterpolation
-            } else {
-                TransformReason::ParserReturnedOwned
-            }
         } else {
             TransformReason::ParserReturnedOwned
         };
 
-        let res: Result<V::Value, Self::Error> = visitor.visit_string(cow.into_owned());
+        let view = self.take_peeked_scalar_view(view)?;
+        if let Cow::Borrowed(b) = view.effective {
+            return visitor.visit_borrowed_str(b);
+        }
+
+        let res: Result<V::Value, Self::Error> =
+            with_scalar_redaction(redaction_ctx, || visitor.visit_string(view.effective.into_owned()));
         match res {
             Ok(v) => Ok(v),
             Err(err) => {
@@ -1614,7 +1734,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     /// **From/To:** scalar text (or base64-decoded bytes) → `Visitor::visit_string`.
     fn deserialize_string<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Reject YAML null when deserializing into String. Allow quoted forms.
-        let _location = if let Some(view) = self.peek_scalar_view()? {
+        let view = if let Some(view) = self.peek_scalar_view()? {
             // If explicitly tagged as null, or plain null-like, this is not a valid String.
             if (view.tag == SfTag::Null || scalar_is_nullish(&view.effective, &view.style))
                 && view.tag != SfTag::String
@@ -1630,30 +1750,29 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 let view = self.take_scalar_view()?;
                 return Err(self.quoting_required_for_scalar(&view));
             }
-            view.location
+            if view.tag == SfTag::Binary && !self.cfg.ignore_binary_tag_for_string {
+                return visitor.visit_string(self.take_string_scalar()?);
+            }
+            if !view.tag.can_parse_into_string()
+                && view.tag != SfTag::NonSpecific
+                && !(self.cfg.ignore_binary_tag_for_string && view.tag == SfTag::Binary)
+            {
+                return Err(Error::TaggedScalarCannotDeserializeIntoString {
+                    location: view.location,
+                });
+            }
+
+            view
         } else {
             // Let take_string_scalar handle the error if it's not a scalar
             return visitor.visit_string(self.take_string_scalar()?);
         };
 
-        // Prefer `Cow::Borrowed` when the parser can provide it. Keep `!!binary` semantics.
-        if let Some((_value, tag, _style, _location)) = self.peek_effective_scalar()? {
-            if tag == SfTag::Binary && !self.cfg.ignore_binary_tag_for_string {
-                return visitor.visit_string(self.take_string_scalar()?);
-            }
-            if !tag.can_parse_into_string()
-                && tag != SfTag::NonSpecific
-                && !(self.cfg.ignore_binary_tag_for_string && tag == SfTag::Binary)
-            {
-                let location = self.ev.peek()?.unwrap().location();
-                return Err(Error::TaggedScalarCannotDeserializeIntoString { location });
-            }
-        }
-
-        let (cow, _tag, _loc) = self.take_scalar_cow_with_location()?;
-        match cow {
-            Cow::Borrowed(b) => visitor.visit_borrowed_str(b),
-            Cow::Owned(s) => visitor.visit_string(s),
+        let redaction_ctx = view.redaction_ctx();
+        let view = self.take_peeked_scalar_view(view)?;
+        match view.effective {
+            Cow::Borrowed(b) => with_scalar_redaction(redaction_ctx, || visitor.visit_borrowed_str(b)),
+            Cow::Owned(s) => with_scalar_redaction(redaction_ctx, || visitor.visit_string(s)),
         }
     }
 
@@ -1749,11 +1868,11 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             return visitor.visit_none();
         }
 
-        if let Some((value, tag, style, _location)) = self.peek_effective_scalar()? {
-            if tag == SfTag::Null || scalar_is_nullish_for_option(&value, &style) {
-                let _ = self.ev.next()?; // consume the scalar
-                return visitor.visit_none();
-            }
+        if let Some((value, tag, style, _location)) = self.peek_effective_scalar()?
+            && (tag == SfTag::Null || scalar_is_nullish_for_option(&value, &style))
+        {
+            let _ = self.ev.next()?; // consume the scalar
+            return visitor.visit_none();
         }
 
         match self.ev.peek()? {
@@ -1776,11 +1895,11 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     /// **Accepted YAML forms:** end-of-input, container end, or a null-like
     /// scalar in plain style (`""`, `~`, `null`).
     fn deserialize_unit<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        if let Some((value, _tag, style, _location)) = self.peek_effective_scalar()? {
-            if scalar_is_nullish(&value, &style) {
-                let _ = self.ev.next()?; // consume the scalar
-                return visitor.visit_unit();
-            }
+        if let Some((value, _tag, style, _location)) = self.peek_effective_scalar()?
+            && scalar_is_nullish(&value, &style)
+        {
+            let _ = self.ev.next()?; // consume the scalar
+            return visitor.visit_unit();
         }
 
         match self.ev.peek()? {
@@ -2003,15 +2122,18 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                             },
                         );
 
-                        let de =
+                        let mut de =
                             YamlDeserializer::new_with_path_recorder(self.ev, self.cfg, recorder);
-                        let res = seed.deserialize(de).map(Some).map_err(|e| {
-                            attach_alias_locations_if_missing(
-                                e,
-                                reference_location,
-                                defined_location,
-                            )
-                        });
+                        let redaction_ctx = de.peek_scalar_redaction_ctx()?;
+                        let res = with_scalar_redaction(redaction_ctx, || seed.deserialize(de))
+                            .map(Some)
+                            .map_err(|e| {
+                                attach_alias_locations_if_missing(
+                                    e,
+                                    reference_location,
+                                    defined_location,
+                                )
+                            });
 
                         recorder.current = prev;
                         self.idx += 1;
@@ -2019,8 +2141,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     }
                 }
 
-                let de = YamlDeserializer::new(self.ev, self.cfg);
-                seed.deserialize(de).map(Some).map_err(|e| {
+                let mut de = YamlDeserializer::new(self.ev, self.cfg);
+                let redaction_ctx = de.peek_scalar_redaction_ctx()?;
+                with_scalar_redaction(redaction_ctx, || seed.deserialize(de)).map(Some).map_err(|e| {
                     attach_alias_locations_if_missing(e, reference_location, defined_location)
                 })
             }
@@ -2074,27 +2197,27 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     /// (which Serde also requests via `deserialize_map`).
     fn deserialize_map<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Treat null-like scalar as an empty map/struct.
-        if let Some((s, tag, style, _location)) = self.peek_effective_scalar()? {
-            if tag == SfTag::Null || scalar_is_nullish(&s, &style) {
-                let _ = self.ev.next()?; // consume the null-like scalar
-                struct EmptyMap;
-                impl<'de> de::MapAccess<'de> for EmptyMap {
-                    type Error = Error;
-                    fn next_key_seed<K>(&mut self, _seed: K) -> Result<Option<K::Value>, Error>
-                    where
-                        K: de::DeserializeSeed<'de>,
-                    {
-                        Ok(None)
-                    }
-                    fn next_value_seed<Vv>(&mut self, _seed: Vv) -> Result<Vv::Value, Error>
-                    where
-                        Vv: de::DeserializeSeed<'de>,
-                    {
-                        unreachable!("no values in empty map")
-                    }
+        if let Some((s, tag, style, _location)) = self.peek_effective_scalar()?
+            && (tag == SfTag::Null || scalar_is_nullish(&s, &style))
+        {
+            let _ = self.ev.next()?; // consume the null-like scalar
+            struct EmptyMap;
+            impl<'de> de::MapAccess<'de> for EmptyMap {
+                type Error = Error;
+                fn next_key_seed<K>(&mut self, _seed: K) -> Result<Option<K::Value>, Error>
+                where
+                    K: de::DeserializeSeed<'de>,
+                {
+                    Ok(None)
                 }
-                return visitor.visit_map(EmptyMap);
+                fn next_value_seed<Vv>(&mut self, _seed: Vv) -> Result<Vv::Value, Error>
+                where
+                    Vv: de::DeserializeSeed<'de>,
+                {
+                    unreachable!("no values in empty map")
+                }
             }
+            return visitor.visit_map(EmptyMap);
         }
         self.expect_map_start()?;
 
@@ -2559,12 +2682,13 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                                 },
                             );
 
-                            let de = YamlDeserializer::new_with_path_recorder(
+                            let mut de = YamlDeserializer::new_with_path_recorder(
                                 &mut replay,
                                 self.cfg,
                                 recorder,
                             );
-                            let res = seed.deserialize(de).map_err(|e| {
+                            let redaction_ctx = de.peek_scalar_redaction_ctx()?;
+                            let res = with_scalar_redaction(redaction_ctx, || seed.deserialize(de)).map_err(|e| {
                                 attach_alias_locations_if_missing(
                                     e,
                                     reference_location,
@@ -2576,8 +2700,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         }
                     }
 
-                    let de = YamlDeserializer::new(&mut replay, self.cfg);
-                    seed.deserialize(de).map_err(|e| {
+                    let mut de = YamlDeserializer::new(&mut replay, self.cfg);
+                    let redaction_ctx = de.peek_scalar_redaction_ctx()?;
+                    with_scalar_redaction(redaction_ctx, || seed.deserialize(de)).map_err(|e| {
                         attach_alias_locations_if_missing(e, reference_location, defined_location)
                     })
                 } else {
@@ -2606,10 +2731,11 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                                 },
                             );
 
-                            let de = YamlDeserializer::new_with_path_recorder(
+                            let mut de = YamlDeserializer::new_with_path_recorder(
                                 self.ev, self.cfg, recorder,
                             );
-                            let res = seed.deserialize(de).map_err(|e| {
+                            let redaction_ctx = de.peek_scalar_redaction_ctx()?;
+                            let res = with_scalar_redaction(redaction_ctx, || seed.deserialize(de)).map_err(|e| {
                                 attach_alias_locations_if_missing(
                                     e,
                                     reference_location,
@@ -2621,8 +2747,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         }
                     }
 
-                    let de = YamlDeserializer::new(self.ev, self.cfg);
-                    seed.deserialize(de).map_err(|e| {
+                    let mut de = YamlDeserializer::new(self.ev, self.cfg);
+                    let redaction_ctx = de.peek_scalar_redaction_ctx()?;
+                    with_scalar_redaction(redaction_ctx, || seed.deserialize(de)).map_err(|e| {
                         attach_alias_locations_if_missing(e, reference_location, defined_location)
                     })
                 }
@@ -2679,11 +2806,11 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
         _variants: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
-        enum Mode<'a> {
-            Unit(String, Location),
+        enum Mode<'de, 'a> {
+            Unit(EnumScalarId<'de>),
             Map(String, Location),
             /// Tag selects the variant, scalar value is the newtype payload.
-            TaggedNewtype(String, Location, Vec<Ev<'a>>),
+            TaggedNewtype(EnumScalarId<'de>, Vec<Ev<'a>>),
         }
 
         let mut tagged_enum = None;
@@ -2693,7 +2820,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             Some(Ev::Scalar {
                 tag,
                 style,
-                value,
+                value: _,
                 raw_tag,
                 location,
                 ..
@@ -2701,18 +2828,24 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 if let Some(tag_name) = simple_tagged_enum_name(&raw_tag, &tag) {
                     tagged_enum = Some((tag_name, location));
                 }
-                let (eff_val, _, _, _) = self.peek_effective_scalar()?.unwrap();
-                if self.cfg.no_schema && tag != SfTag::String && maybe_not_string(&eff_val, &style)
+                let view = self.peek_scalar_view()?.unwrap();
+                if self.cfg.no_schema
+                    && tag != SfTag::String
+                    && maybe_not_string(&view.effective, &style)
                 {
-                    let is_interpolated = eff_val != value;
-                    let (v, _t, loc) = self.take_scalar_event()?;
-                    return Err(Error::quoting_required(&v, is_interpolated).with_location(loc));
+                    let view = self.take_scalar_view()?;
+                    return Err(self.quoting_required_for_scalar(&view));
                 }
                 // If the tag matches a variant name, use tag as variant selector
                 // and the scalar value as newtype payload.
                 if let Some((ref tag_name, tag_loc)) = tagged_enum {
                     if _variants.contains(&tag_name.as_str()) {
-                        let variant_name = tag_name.clone();
+                        let variant_name = EnumScalarId {
+                            raw: Cow::Owned(tag_name.clone()),
+                            effective: Cow::Owned(tag_name.clone()),
+                            interpolated: false,
+                            location: tag_loc,
+                        };
                         // Consume the scalar and re-emit it without the tag for payload deserialization
                         let ev = self.ev.next()?.unwrap();
                         let replay = match ev {
@@ -2735,14 +2868,14 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                             other => vec![other],
                         };
                         tagged_enum = None; // prevent mismatch check
-                        Mode::TaggedNewtype(variant_name, tag_loc, replay)
+                        Mode::TaggedNewtype(variant_name, replay)
                     } else {
-                        let (value, _tag, loc) = self.take_scalar_event()?;
-                        Mode::Unit(value, loc)
+                        let view = self.take_scalar_view()?;
+                        Mode::Unit(EnumScalarId::from_view(view))
                     }
                 } else {
-                    let (value, _tag, loc) = self.take_scalar_event()?;
-                    Mode::Unit(value, loc)
+                    let view = self.take_scalar_view()?;
+                    Mode::Unit(EnumScalarId::from_view(view))
                 }
             }
             Some(Ev::MapStart { .. }) => {
@@ -2828,8 +2961,12 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     return visitor.visit_enum(TaggedEA {
                         replay,
                         cfg: self.cfg,
-                        variant: tag_name,
-                        variant_location: start_loc,
+                        variant: EnumScalarId {
+                            raw: Cow::Owned(tag_name.clone()),
+                            effective: Cow::Owned(tag_name),
+                            interpolated: false,
+                            location: start_loc,
+                        },
                     });
                 }
                 return Err(Error::ExternallyTaggedEnumExpectedScalarOrMapping { location });
@@ -2859,9 +2996,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
         struct EA<'de, 'e> {
             ev: &'e mut dyn Events<'de>,
             cfg: Cfg,
-            variant: String,
+            variant: EnumScalarId<'de>,
             map_mode: bool,
-            variant_location: Location,
         }
 
         impl<'de, 'e> de::EnumAccess<'de> for EA<'de, 'e> {
@@ -2878,14 +3014,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     cfg,
                     variant,
                     map_mode,
-                    variant_location,
                 } = self;
-                let v = seed.deserialize(variant.into_deserializer()).map_err(
-                    |err: serde::de::value::Error| Error::SerdeVariantId {
-                        msg: err.to_string(),
-                        location: variant_location,
-                    },
-                )?;
+                let v = seed.deserialize(variant.into_deserializer())?;
                 Ok((v, VA { ev, cfg, map_mode }))
             }
         }
@@ -2994,8 +3124,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
         struct TaggedEA<'de> {
             replay: Box<ReplayEvents<'de>>,
             cfg: Cfg,
-            variant: String,
-            variant_location: Location,
+            variant: EnumScalarId<'de>,
         }
 
         impl<'de> de::EnumAccess<'de> for TaggedEA<'de> {
@@ -3006,12 +3135,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             where
                 Vv: de::DeserializeSeed<'de>,
             {
-                let v = seed
-                    .deserialize(self.variant.clone().into_deserializer())
-                    .map_err(|err: serde::de::value::Error| Error::SerdeVariantId {
-                        msg: err.to_string(),
-                        location: self.variant_location,
-                    })?;
+                let v = seed.deserialize(self.variant.into_deserializer())?;
                 Ok((
                     v,
                     TaggedVA {
@@ -3062,21 +3186,24 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
         }
 
         let access = match mode {
-            Mode::Unit(variant, variant_location) => EA {
+            Mode::Unit(variant) => EA {
                 ev: self.ev,
                 cfg: self.cfg,
                 variant,
                 map_mode: false,
-                variant_location,
             },
             Mode::Map(variant, variant_location) => EA {
                 ev: self.ev,
                 cfg: self.cfg,
-                variant,
+                variant: EnumScalarId {
+                    raw: Cow::Owned(variant.clone()),
+                    effective: Cow::Owned(variant),
+                    interpolated: false,
+                    location: variant_location,
+                },
                 map_mode: true,
-                variant_location,
             },
-            Mode::TaggedNewtype(variant, variant_location, replay_buf) => {
+            Mode::TaggedNewtype(variant, replay_buf) => {
                 let replay = Box::new(ReplayEvents::new(
                     replay_buf,
                     #[cfg(feature = "properties")]
@@ -3087,7 +3214,6 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     replay,
                     cfg: self.cfg,
                     variant,
-                    variant_location,
                 });
             }
         };

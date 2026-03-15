@@ -28,9 +28,10 @@ struct NumericConfig {
 }
 
 fn property_options_with_map(map: Option<HashMap<String, String>>) -> Options {
-    let mut options = Options::default();
-    options.property_map = map.map(Rc::new);
-    options
+    Options {
+        property_map: map.map(Rc::new),
+        ..Options::default()
+    }
 }
 
 fn property_options_with_map_and_no_schema(map: Option<HashMap<String, String>>) -> Options {
@@ -193,6 +194,51 @@ enum TaggedEnum {
     Known(u8),
 }
 
+#[derive(Debug, Deserialize)]
+enum ScalarMode {
+    Known,
+}
+
+#[derive(Debug, PartialEq)]
+struct HexByte(u8);
+
+impl<'de> Deserialize<'de> for HexByte {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        u8::from_str_radix(&s, 16)
+            .map(HexByte)
+            .map_err(|_| serde::de::Error::invalid_value(serde::de::Unexpected::Str(&s), &"two hex digits"))
+    }
+}
+
+#[derive(Debug, PartialEq)]
+struct CustomHexByte(u8);
+
+impl<'de> Deserialize<'de> for CustomHexByte {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        u8::from_str_radix(&s, 16)
+            .map(CustomHexByte)
+            .map_err(|_| serde::de::Error::custom(format!("bad value: {s}")))
+    }
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct HexCfg {
+    value: HexByte,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct CustomHexCfg {
+    value: CustomHexByte,
+}
+
 #[test]
 fn quoting_required_error_redacts_interpolated_string_value() {
     let mut properties = HashMap::new();
@@ -243,6 +289,22 @@ fn externally_tagged_enum_keys_are_not_interpolated() {
 }
 
 #[test]
+fn scalar_enum_variant_error_redacts_interpolated_value() {
+    let mut properties = HashMap::new();
+    properties.insert("MODE".to_string(), "secret-variant".to_string());
+
+    let err = from_str_with_options::<ScalarMode>(
+        "${MODE}\n",
+        property_options_with_map(Some(properties)),
+    )
+    .unwrap_err();
+
+    let msg = err.to_string();
+    assert!(!msg.contains("secret-variant"), "secret leaked: {msg}");
+    assert!(msg.contains("${MODE}"), "raw placeholder missing: {msg}");
+}
+
+#[test]
 fn with_snippet_output_redacts_resolved_token_values() {
     let mut properties = HashMap::new();
     properties.insert("TOKEN".to_string(), "super-secret-token".to_string());
@@ -276,6 +338,38 @@ fn unknown_field_error_redacts_interpolated_key() {
     let msg = err.to_string();
     assert!(msg.contains("unknown field `${FIELD}`"), "unexpected: {msg}");
     assert!(!msg.contains("secret-field"), "secret leaked in error: {msg}");
+}
+
+#[test]
+fn serde_invalid_value_does_not_leak_interpolated_value() {
+    let mut properties = HashMap::new();
+    properties.insert("BAD".to_string(), "zz-secret".to_string());
+
+    let err = from_str_with_options::<HexCfg>(
+        "value: ${BAD}\n",
+        property_options_with_map(Some(properties)),
+    )
+    .unwrap_err();
+
+    let msg = err.to_string();
+    assert!(!msg.contains("zz-secret"), "secret leaked: {msg}");
+    assert!(msg.contains("${BAD}"), "raw placeholder missing: {msg}");
+}
+
+#[test]
+fn serde_custom_error_does_not_leak_interpolated_value() {
+    let mut properties = HashMap::new();
+    properties.insert("BAD".to_string(), "zz-secret".to_string());
+
+    let err = from_str_with_options::<CustomHexCfg>(
+        "value: ${BAD}\n",
+        property_options_with_map(Some(properties)),
+    )
+    .unwrap_err();
+
+    let msg = err.to_string();
+    assert!(!msg.contains("zz-secret"), "secret leaked: {msg}");
+    assert!(!msg.contains("bad value: zz-secret"), "custom error leaked secret: {msg}");
 }
 
 #[cfg(feature = "include")]
