@@ -21,12 +21,13 @@ pub use crate::location::Location;
 
 use crate::anchor_store::{self, AnchorKind};
 use crate::base64::decode_base64_yaml;
-use crate::de_error::{
-    MissingFieldLocationGuard, ScalarRedactionCtx, ScalarRedactionGuard, TransformReason,
-};
+use crate::de_error::{MissingFieldLocationGuard, TransformReason};
 use crate::parse_scalars::{
     leading_zero_decimal, maybe_not_string, parse_int_signed, parse_int_unsigned,
     parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish, scalar_is_nullish_for_option,
+};
+use crate::properties_redaction::{
+    ScalarRedactionCtx, ScalarRedactionGuard, with_interp_redaction_scope,
 };
 #[cfg(feature = "properties")]
 use crate::properties::interpolate_compose_style;
@@ -1043,6 +1044,16 @@ impl<'de> ScalarView<'de> {
 fn with_scalar_redaction<T>(ctx: Option<ScalarRedactionCtx>, f: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
     let _guard = ctx.map(ScalarRedactionGuard::new);
     f()
+}
+
+/// Runs one nested deserialize boundary inside its own subtree redaction scope while also
+/// seeding that scope with the immediate scalar context when available.
+///
+/// Called from sequence/map seed boundaries and enum newtype payload accessors so any error
+/// raised after child deserialization can still redact interpolated values seen within that
+/// subtree.
+fn with_subtree_redaction<T>(ctx: Option<ScalarRedactionCtx>, f: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
+    with_interp_redaction_scope(|| with_scalar_redaction(ctx, f))
 }
 
 struct EnumScalarId<'de> {
@@ -2125,7 +2136,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         let mut de =
                             YamlDeserializer::new_with_path_recorder(self.ev, self.cfg, recorder);
                         let redaction_ctx = de.peek_scalar_redaction_ctx()?;
-                        let res = with_scalar_redaction(redaction_ctx, || seed.deserialize(de))
+                        let res = with_subtree_redaction(redaction_ctx, || seed.deserialize(de))
                             .map(Some)
                             .map_err(|e| {
                                 attach_alias_locations_if_missing(
@@ -2143,7 +2154,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
                 let mut de = YamlDeserializer::new(self.ev, self.cfg);
                 let redaction_ctx = de.peek_scalar_redaction_ctx()?;
-                with_scalar_redaction(redaction_ctx, || seed.deserialize(de)).map(Some).map_err(|e| {
+                with_subtree_redaction(redaction_ctx, || seed.deserialize(de)).map(Some).map_err(|e| {
                     attach_alias_locations_if_missing(e, reference_location, defined_location)
                 })
             }
@@ -2688,7 +2699,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                                 recorder,
                             );
                             let redaction_ctx = de.peek_scalar_redaction_ctx()?;
-                            let res = with_scalar_redaction(redaction_ctx, || seed.deserialize(de)).map_err(|e| {
+                            let res = with_subtree_redaction(redaction_ctx, || seed.deserialize(de)).map_err(|e| {
                                 attach_alias_locations_if_missing(
                                     e,
                                     reference_location,
@@ -2702,7 +2713,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
                     let mut de = YamlDeserializer::new(&mut replay, self.cfg);
                     let redaction_ctx = de.peek_scalar_redaction_ctx()?;
-                    with_scalar_redaction(redaction_ctx, || seed.deserialize(de)).map_err(|e| {
+                    with_subtree_redaction(redaction_ctx, || seed.deserialize(de)).map_err(|e| {
                         attach_alias_locations_if_missing(e, reference_location, defined_location)
                     })
                 } else {
@@ -2735,7 +2746,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                                 self.ev, self.cfg, recorder,
                             );
                             let redaction_ctx = de.peek_scalar_redaction_ctx()?;
-                            let res = with_scalar_redaction(redaction_ctx, || seed.deserialize(de)).map_err(|e| {
+                            let res = with_subtree_redaction(redaction_ctx, || seed.deserialize(de)).map_err(|e| {
                                 attach_alias_locations_if_missing(
                                     e,
                                     reference_location,
@@ -3079,8 +3090,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     .unwrap_or_else(|| self.ev.last_location());
                 let reference_location = self.ev.reference_location();
 
-                let value = seed
-                    .deserialize(YamlDeserializer::new(self.ev, self.cfg))
+                let mut de = YamlDeserializer::new(self.ev, self.cfg);
+                let redaction_ctx = de.peek_scalar_redaction_ctx()?;
+                let value = with_subtree_redaction(redaction_ctx, || seed.deserialize(de))
                     .map_err(|e| {
                         attach_alias_locations_if_missing(e, reference_location, defined_location)
                     })?;
@@ -3162,7 +3174,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             where
                 T: de::DeserializeSeed<'de>,
             {
-                seed.deserialize(YamlDeserializer::new(&mut *self.replay, self.cfg))
+                let mut de = YamlDeserializer::new(&mut *self.replay, self.cfg);
+                let redaction_ctx = de.peek_scalar_redaction_ctx()?;
+                with_subtree_redaction(redaction_ctx, || seed.deserialize(de))
             }
 
             fn tuple_variant<Vv>(mut self, len: usize, visitor: Vv) -> Result<Vv::Value, Error>

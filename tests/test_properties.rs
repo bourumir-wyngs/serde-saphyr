@@ -27,6 +27,36 @@ struct NumericConfig {
     nearby: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct RawInner {
+    value: String,
+}
+
+#[derive(Debug)]
+struct CheckedInner;
+
+impl<'de> Deserialize<'de> for CheckedInner {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = RawInner::deserialize(deserializer)?;
+        Err(serde::de::Error::custom(format!("bad value: {}", raw.value)))
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct Outer {
+    inner: CheckedInner,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+enum Wrap {
+    Hex(CustomHexByte),
+}
+
 fn property_options_with_map(map: Option<HashMap<String, String>>) -> Options {
     Options {
         property_map: map.map(Rc::new),
@@ -370,6 +400,74 @@ fn serde_custom_error_does_not_leak_interpolated_value() {
     let msg = err.to_string();
     assert!(!msg.contains("zz-secret"), "secret leaked: {msg}");
     assert!(!msg.contains("bad value: zz-secret"), "custom error leaked secret: {msg}");
+}
+
+#[test]
+fn top_level_custom_error_does_not_leak_interpolated_value() {
+    let mut props = HashMap::new();
+    props.insert("BAD".to_string(), "zz-secret".to_string());
+
+    let err = from_str_with_options::<CustomHexByte>(
+        "${BAD}\n",
+        property_options_with_map(Some(props)),
+    )
+    .unwrap_err();
+
+    let msg = err.to_string();
+    assert!(!msg.contains("zz-secret"), "secret leaked: {msg}");
+    assert!(
+        msg.contains("${BAD}") || msg.contains("invalid interpolated"),
+        "unexpected: {msg}"
+    );
+}
+
+#[test]
+fn nested_container_custom_error_does_not_leak_interpolated_value() {
+    let mut props = HashMap::new();
+    props.insert("BAD".to_string(), "zz-secret".to_string());
+
+    let err = from_str_with_options::<Outer>(
+        "inner:\n  value: ${BAD}\n",
+        property_options_with_map(Some(props)),
+    )
+    .unwrap_err();
+
+    let msg = err.to_string();
+    assert!(!msg.contains("zz-secret"), "secret leaked: {msg}");
+    assert!(
+        msg.contains("${BAD}") || msg.contains("invalid interpolated"),
+        "unexpected: {msg}"
+    );
+}
+
+#[test]
+fn enum_newtype_payload_map_form_does_not_leak_interpolated_value() {
+    let mut props = HashMap::new();
+    props.insert("BAD".to_string(), "zz-secret".to_string());
+
+    let err = from_str_with_options::<Wrap>(
+        "Hex: ${BAD}\n",
+        property_options_with_map(Some(props)),
+    )
+    .unwrap_err();
+
+    let msg = err.to_string();
+    assert!(!msg.contains("zz-secret"), "secret leaked: {msg}");
+}
+
+#[test]
+fn enum_newtype_payload_tagged_form_does_not_leak_interpolated_value() {
+    let mut props = HashMap::new();
+    props.insert("BAD".to_string(), "zz-secret".to_string());
+
+    let err = from_str_with_options::<Wrap>(
+        "!Hex ${BAD}\n",
+        property_options_with_map(Some(props)),
+    )
+    .unwrap_err();
+
+    let msg = err.to_string();
+    assert!(!msg.contains("zz-secret"), "secret leaked: {msg}");
 }
 
 #[cfg(feature = "include")]

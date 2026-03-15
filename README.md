@@ -455,6 +455,65 @@ production:
 
 Merge keys are standard in YAML 1.1. Although YAML 1.2 no longer includes merge keys in its specification, it doesn't explicitly disallow them either, and many parsers implement this feature.
 
+## Properties
+
+Many configuration formats need small environment-specific substitutions such as host names, ports, tokens, or deployment modes. The optional `properties` feature adds docker-compose-style `${NAME}` interpolation for that use case, so the YAML document can stay mostly static while the caller injects the final values through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html).
+
+Interpolation is intentionally narrow in scope:
+
+- it only applies to **plain scalars**,
+- quoted scalars and block scalars stay literal,
+- `$${NAME}` escapes to a literal `${NAME}`,
+- and if no property map is configured, `${NAME}` remains unchanged instead of being treated specially.
+
+That means you can opt in where it is useful without changing the meaning of YAML constructs that are typically expected to remain exact text.
+
+`properties` is gated behind the `properties` feature flag. Once enabled, pass a property map through `Options::property_map`:
+
+```rust
+use serde::Deserialize;
+use serde_saphyr::{from_str_with_options, Options};
+use std::collections::HashMap;
+use std::rc::Rc;
+
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+struct Config {
+    database_url: String,
+    mode: String,
+}
+
+let mut properties = HashMap::new();
+properties.insert(
+    "DATABASE_URL".to_string(),
+    "postgres://db.example/app".to_string(),
+);
+properties.insert("MODE".to_string(), "production".to_string());
+
+let options = Options {
+    property_map: Some(Rc::new(properties)),
+    ..Options::default()
+};
+
+let yaml = r#"
+database_url: ${DATABASE_URL}
+mode: ${MODE}
+"#;
+
+let parsed: Config = from_str_with_options(yaml, options).unwrap();
+
+assert_eq!(
+    parsed,
+    Config {
+        database_url: "postgres://db.example/app".to_string(),
+        mode: "production".to_string(),
+    }
+);
+```
+
+If interpolation is enabled but a referenced property is missing, or the `${...}` name is invalid, deserialization fails with a dedicated error that points to the YAML source location. This is useful both for correctness and for security: configuration mistakes should fail closed instead of silently producing partial or surprising values.
+
+The security aspect matters most when the property values are secrets. Interpolation resolves the final value before Serde finishes deserializing the surrounding type, so downstream custom deserializers, validation code, or other error paths could otherwise end up echoing the resolved secret. `serde-saphyr` tracks interpolated values during deserialization and redacts them back to their original `${NAME}` form in later error messages, reducing the risk of leaking secrets into logs or diagnostics. You should still treat the property map itself as sensitive input and avoid formatting or logging it directly in your application.
+
 ## Includes
 
 The need for include YAML (not part of the official specs) is seen from the popularity of command-line [yaml-include](https://crates.io/crates/yaml-include) crate. That crate is very feature-complete. However, if YAML parser and validator are separate from pre-processor, they usually only report the line number and snippet in the processed document. For large documents with multiple and deep includes, this gets challenging to interpret. YAML indentation and security requirements like path confinement or anchor isolation make "quick adding" include non-trivial.  

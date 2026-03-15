@@ -44,6 +44,7 @@ use crate::budget::EnforcingPolicy;
 use crate::de::{Ev, Events};
 use crate::live_events::LiveEvents;
 use crate::parse_scalars::scalar_is_nullish;
+use crate::properties_redaction::with_interp_redaction_scope;
 pub use crate::serializer_options::SerializerOptions;
 use serde::de::DeserializeOwned;
 use std::io::Read;
@@ -55,6 +56,7 @@ use validator::Validate as ValidatorValidate;
 
 #[cfg(feature = "properties")]
 pub mod properties;
+mod properties_redaction;
 
 mod anchor_store;
 mod anchors;
@@ -350,7 +352,7 @@ where
     // Do not stop at DocumentEnd; we'll probe for trailing content/errors explicitly.
     let mut src = LiveEvents::from_str(input, options, false);
     let value_res = crate::anchor_store::with_document_scope(|| {
-        T::deserialize(crate::de::YamlDeserializer::new(&mut src, cfg))
+        with_interp_redaction_scope(|| T::deserialize(crate::de::YamlDeserializer::new(&mut src, cfg)))
     });
     let value = match value_res {
         Ok(v) => v,
@@ -482,11 +484,13 @@ fn from_str_with_options_and_path_recorder<T: DeserializeOwned>(
     let mut recorder = crate::path_map::PathRecorder::new();
 
     let value_res = crate::anchor_store::with_document_scope(|| {
-        T::deserialize(crate::de::YamlDeserializer::new_with_path_recorder(
-            &mut src,
-            cfg,
-            &mut recorder,
-        ))
+        with_interp_redaction_scope(|| {
+            T::deserialize(crate::de::YamlDeserializer::new_with_path_recorder(
+                &mut src,
+                cfg,
+                &mut recorder,
+            ))
+        })
     });
     let value = match value_res {
         Ok(v) => v,
@@ -568,7 +572,7 @@ where
     let crop_radius = options.crop_radius;
 
     let (v, recorder, mut src) = from_str_with_options_and_path_recorder::<T>(input, options)?;
-    match Validate::validate(&v) {
+    match with_interp_redaction_scope(|| Validate::validate(&v)) {
         Ok(()) => {
             if let Err(e) = src.finish() {
                 return Err(maybe_with_snippet_from_events(
@@ -613,7 +617,7 @@ where
     let crop_radius = options.crop_radius;
 
     let (v, recorder, mut src) = from_str_with_options_and_path_recorder::<T>(input, options)?;
-    match Validate::validate_with(&v, context) {
+    match with_interp_redaction_scope(|| Validate::validate_with(&v, context)) {
         Ok(()) => {
             if let Err(e) = src.finish() {
                 return Err(maybe_with_snippet_from_events(

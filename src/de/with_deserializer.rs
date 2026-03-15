@@ -18,7 +18,9 @@ where
     for<'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<R, Error>,
     W: Fn(Error, &LiveEvents<'de>) -> Error,
 {
-    let value_res = crate::anchor_store::with_document_scope(|| f(YamlDeserializer::new(src, cfg)));
+    let value_res = crate::anchor_store::with_document_scope(|| {
+        crate::properties_redaction::with_interp_redaction_scope(|| f(YamlDeserializer::new(src, cfg)))
+    });
     match value_res {
         Ok(v) => Ok(v),
         Err(e) => {

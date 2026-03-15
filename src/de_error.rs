@@ -7,6 +7,9 @@ use crate::input_source::IncludeResolveError;
 use crate::parse_scalars::{
     parse_int_signed, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish,
 };
+use crate::properties_redaction::{
+    redact_custom_message, redact_dynamic_identifier, redact_dynamic_value,
+};
 #[cfg(feature = "garde")]
 use crate::path_map::path_key_from_garde;
 #[cfg(any(feature = "garde", feature = "validator"))]
@@ -16,7 +19,7 @@ use annotate_snippets::Level;
 use saphyr_parser::{ScalarStyle, ScanError};
 use serde::de::{self};
 use std::borrow::Cow;
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::fmt;
 #[cfg(feature = "validator")]
 use validator::{ValidationErrors, ValidationErrorsKind};
@@ -283,79 +286,6 @@ impl ValidationIssue {
 // The guard saves/restores the previous value on drop for correct nesting.
 thread_local! {
     static MISSING_FIELD_FALLBACK: Cell<Option<Location>> = const { Cell::new(None) };
-    static INTERP_REDACTION: RefCell<Option<ScalarRedactionCtx>> = const { RefCell::new(None) };
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct ScalarRedactionCtx {
-    pub(crate) raw: String,
-    pub(crate) effective: String,
-}
-
-pub(crate) struct ScalarRedactionGuard {
-    prev: Option<ScalarRedactionCtx>,
-}
-
-impl ScalarRedactionGuard {
-    pub(crate) fn new(ctx: ScalarRedactionCtx) -> Self {
-        let prev = INTERP_REDACTION.with(|cell| cell.replace(Some(ctx)));
-        Self { prev }
-    }
-}
-
-impl Drop for ScalarRedactionGuard {
-    fn drop(&mut self) {
-        INTERP_REDACTION.with(|cell| {
-            let _ = cell.replace(self.prev.take());
-        });
-    }
-}
-
-#[cold]
-#[inline(never)]
-fn with_interp_redaction<T>(f: impl FnOnce(Option<&ScalarRedactionCtx>) -> T) -> T {
-    INTERP_REDACTION.with(|cell| {
-        let borrow = cell.borrow();
-        f(borrow.as_ref())
-    })
-}
-
-#[cold]
-#[inline(never)]
-fn redact_with_ctx(text: String, ctx: &ScalarRedactionCtx, fallback: &str) -> String {
-    if text.contains(&ctx.effective) {
-        text.replace(&ctx.effective, &ctx.raw)
-    } else {
-        fallback.to_owned()
-    }
-}
-
-#[cold]
-#[inline(never)]
-fn redact_custom_message(text: String) -> String {
-    with_interp_redaction(|ctx| match ctx {
-        Some(ctx) => redact_with_ctx(text, ctx, "invalid interpolated scalar value"),
-        None => text,
-    })
-}
-
-#[cold]
-#[inline(never)]
-fn redact_dynamic_value(text: String, fallback: &str) -> String {
-    with_interp_redaction(|ctx| match ctx {
-        Some(ctx) => redact_with_ctx(text, ctx, fallback),
-        None => text,
-    })
-}
-
-#[cold]
-#[inline(never)]
-fn redact_dynamic_identifier(text: &str, fallback: &str) -> String {
-    with_interp_redaction(|ctx| match ctx {
-        Some(ctx) if text == ctx.effective => ctx.raw.clone(),
-        Some(_) => fallback.to_owned(),
-        None => text.to_owned(),
-    })
 }
 
 /// RAII guard for [`MISSING_FIELD_FALLBACK`]. Saves the previous value on creation,

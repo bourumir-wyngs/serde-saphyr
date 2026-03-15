@@ -329,8 +329,11 @@ impl BudgetEnforcer {
         match ev {
             Event::Scalar(value, style, anchor_id, tag_opt) => {
                 self.bump_nodes()?;
-                self.report.total_scalar_bytes =
-                    self.report.total_scalar_bytes.saturating_add(value.len());
+                let tag_len = tag_opt.as_ref().map_or(0, |tag| tag.to_string().len());
+                self.report.total_scalar_bytes = self
+                    .report
+                    .total_scalar_bytes
+                    .saturating_add(value.len().saturating_add(tag_len));
                 if self.report.total_scalar_bytes > self.budget.max_total_scalar_bytes {
                     return Err(BudgetBreach::ScalarBytes {
                         total_scalar_bytes: self.report.total_scalar_bytes,
@@ -729,5 +732,22 @@ e: *A
         let budget = Budget::default();
 
         assert_eq!(budget.max_inclusion_depth, 24);
+    }
+
+    #[test]
+    fn scalar_budget_counts_tag_bytes() {
+        let yaml = "root: !!str tagged\n";
+        let budget = Budget {
+            max_total_scalar_bytes: 14,
+            ..Default::default()
+        };
+
+        let report = check_yaml_budget(yaml, budget, EnforcingPolicy::AllContent).unwrap();
+        assert!(matches!(
+            report.breached,
+            Some(BudgetBreach::ScalarBytes {
+                total_scalar_bytes
+            }) if total_scalar_bytes > 14
+        ));
     }
 }
