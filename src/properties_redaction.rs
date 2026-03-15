@@ -1,3 +1,6 @@
+#[cfg(feature = "properties")]
+use std::cell::RefCell;
+
 /// Property interpolation can resolve `${NAME}` placeholders into concrete values before the
 /// target type finishes deserializing. That is normally desirable for successful parsing, but it
 /// becomes a problem when later error paths echo the already-resolved text back to the caller.

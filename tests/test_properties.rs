@@ -3,7 +3,6 @@
 use serde::Deserialize;
 use serde_saphyr::{from_str_with_options, Options};
 use std::collections::HashMap;
-use std::rc::Rc;
 
 fn assert_redacted_message(message: &str, placeholder: &str, secret: &str) {
     assert!(
@@ -58,9 +57,9 @@ enum Wrap {
 }
 
 fn property_options_with_map(map: Option<HashMap<String, String>>) -> Options {
-    Options {
-        property_map: map.map(Rc::new),
-        ..Options::default()
+    match map {
+        Some(map) => Options::default().with_properties(map),
+        None => Options::default(),
     }
 }
 

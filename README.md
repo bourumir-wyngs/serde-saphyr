@@ -65,6 +65,7 @@ The test suite currently includes over 1000 passing tests, including the fully c
 - **Configurable budgets:** Enforce input limits to mitigate resource exhaustion (e.g., deeply nested structures or very large arrays); see [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
 - Precise error reporting with **snippet rendering**.
 - Optional **!include** support with a custom or default resolver (inclusion of either a complete document or the node referenced by a specified anchor).
+- Property support (to prevent leaking any secrets from YAML files)
 - **Serializer supports emitting anchors** (Rc, Arc, Weak) if they are properly wrapped (see below).
 - **Declarative validation with optional [`validator`](https://crates.io/crates/validator) ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/validator_validate.rs))** or **[`garde`](https://crates.io/crates/garde)** ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/garde_validate.rs)).
 - **Optional [`miette`](https://crates.io/crates/miette)** ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/miette.rs)) integration for more advanced error reporting.
@@ -457,7 +458,7 @@ Merge keys are standard in YAML 1.1. Although YAML 1.2 no longer includes merge 
 
 ## Properties
 
-Many configuration formats need small environment-specific substitutions such as host names, ports, tokens, or deployment modes. The optional `properties` feature adds docker-compose-style `${NAME}` interpolation for that use case, so the YAML document can stay mostly static while the caller injects the final values through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html).
+Many configuration formats contain secret values that should not be part of checked-in repository content and should leak into error snippets or other messages. The optional `properties` feature adds docker-compose-style `${NAME}` interpolation for that use case, allowing to provide values through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). The feature can also be used to configure generated values, or values that change between releases or deployments, or ar otherwise more convenient to specify separately from the main yaml document.
 
 Interpolation is intentionally narrow in scope:
 
@@ -468,46 +469,49 @@ Interpolation is intentionally narrow in scope:
 
 That means you can opt in where it is useful without changing the meaning of YAML constructs that are typically expected to remain exact text.
 
-`properties` is gated behind the `properties` feature flag. Once enabled, pass a property map through `Options::property_map`:
+`properties` is gated behind the `properties` feature flag. Once enabled, pass a property map through `Options::with_properties(...)`:
 
 ```rust
-use serde::Deserialize;
-use serde_saphyr::{from_str_with_options, Options};
-use std::collections::HashMap;
-use std::rc::Rc;
-
+#[cfg(feature = "properties")]
 #[derive(Debug, PartialEq, Eq, Deserialize)]
 struct Config {
     database_url: String,
     mode: String,
 }
 
-let mut properties = HashMap::new();
-properties.insert(
-    "DATABASE_URL".to_string(),
-    "postgres://db.example/app".to_string(),
-);
-properties.insert("MODE".to_string(), "production".to_string());
+#[cfg(feature = "properties")]
+fn property_map() -> Result<Config, serde_saphyr::Error> {
+    use serde_saphyr::{options, from_str_with_options};
+    use std::collections::HashMap;
+    let mut properties = HashMap::new();
+    properties.insert(
+        "DATABASE_URL".to_string(),
+        "postgres://db.example/app".to_string(),
+    );
+    properties.insert("MODE".to_string(), "production".to_string());
 
-let options = Options {
-    property_map: Some(Rc::new(properties)),
-    ..Options::default()
-};
+    let options = options! {}.with_properties(properties);
 
-let yaml = r#"
-database_url: ${DATABASE_URL}
-mode: ${MODE}
+    let yaml = r#"
+        database_url: ${DATABASE_URL}
+        mode: ${MODE}
 "#;
 
-let parsed: Config = from_str_with_options(yaml, options).unwrap();
+    let parsed: Config = from_str_with_options(yaml, options)?;
+    Ok(parsed)
+}
 
-assert_eq!(
-    parsed,
-    Config {
-        database_url: "postgres://db.example/app".to_string(),
-        mode: "production".to_string(),
-    }
-);
+#[cfg(feature = "properties")]
+fn property_map_example_works() {
+    let parsed = property_map().unwrap();
+    assert_eq!(
+        parsed,
+        Config {
+            database_url: "postgres://db.example/app".to_string(),
+            mode: "production".to_string(),
+        }
+    );
+}
 ```
 
 If interpolation is enabled but a referenced property is missing, or the `${...}` name is invalid, deserialization fails with a dedicated error that points to the YAML source location. This is useful both for correctness and for security: configuration mistakes should fail closed instead of silently producing partial or surprising values.

@@ -194,6 +194,31 @@ impl Options {
         self
     }
 
+    /// Installs a property map used for `${NAME}` interpolation in plain scalars.
+    ///
+    /// This is the intended public API for the `properties` feature. It consumes the provided
+    /// [`HashMap`] and stores it in the internal shared representation used by nested
+    /// deserializers, so callers do not have to construct `Rc` or `Some(...)` manually.
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "properties")]
+    /// # {
+    /// use std::collections::HashMap;
+    /// use serde_saphyr::Options;
+    ///
+    /// let mut properties = HashMap::new();
+    /// properties.insert("MODE".to_string(), "production".to_string());
+    ///
+    /// let options = Options::default().with_properties(properties);
+    /// # let _ = options;
+    /// # }
+    /// ```
+    #[cfg(feature = "properties")]
+    pub fn with_properties(mut self, properties: HashMap<String, String>) -> Self {
+        self.property_map = Some(Rc::new(properties));
+        self
+    }
+
     /// Sets the include resolver callback to be used during parsing.
     #[cfg(feature = "include")]
     pub fn with_include_resolver<F>(mut self, cb: F) -> Self
@@ -215,8 +240,8 @@ impl Options {
     /// ```rust,no_run
     /// # #[cfg(feature = "include_fs")]
     /// # fn main() -> Result<(), std::io::Error> {
-    /// # use serde_saphyr::{Options, SafeFileResolver};
-    /// let options = Options::default()
+    /// # use serde_saphyr::{options, SafeFileResolver};
+    /// let options = options! {}
     ///     .with_include_resolver(SafeFileResolver::new("./configs")?.into_callback());
     /// # let _ = options;
     /// # Ok(())
@@ -230,7 +255,7 @@ impl Options {
     /// # #[cfg(feature = "include_fs")]
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use serde::Deserialize;
-    /// use serde_saphyr::{from_str_with_options, Options};
+    /// use serde_saphyr::{from_str_with_options, options};
     ///
     /// #[derive(Debug, Deserialize)]
     /// struct User {
@@ -243,7 +268,7 @@ impl Options {
     /// }
     ///
     /// let yaml = "users: !include#users value.yaml\n";
-    /// let options = Options::default().with_filesystem_root("./examples")?;
+    /// let options = options! {}.with_filesystem_root("./examples")?;
     /// let config: Config = from_str_with_options(yaml, options)?;
     /// # let _ = config;
     /// # Ok(())
@@ -402,6 +427,20 @@ mod tests {
         let opts_with_cb = opts.with_budget_report(|_| {});
         let debug_str_cb = format!("{:?}", opts_with_cb);
         assert!(debug_str_cb.contains("budget_report_cb: \"set\""));
+    }
+
+    #[cfg(feature = "properties")]
+    #[test]
+    fn test_with_properties_sets_property_map() {
+        let mut properties = std::collections::HashMap::new();
+        properties.insert("MODE".to_string(), "production".to_string());
+
+        let opts = Options::default().with_properties(properties);
+
+        assert_eq!(
+            opts.property_map.as_deref().unwrap().get("MODE"),
+            Some(&"production".to_string())
+        );
     }
 
     #[test]
