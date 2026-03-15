@@ -5,6 +5,17 @@ use serde_saphyr::{from_str_with_options, Options};
 use std::collections::HashMap;
 use std::rc::Rc;
 
+fn assert_redacted_message(message: &str, placeholder: &str, secret: &str) {
+    assert!(
+        message.contains(placeholder),
+        "placeholder `{placeholder}` missing from: {message}"
+    );
+    assert!(
+        !message.contains(secret),
+        "secret `{secret}` leaked in: {message}"
+    );
+}
+
 #[derive(Debug, Deserialize, PartialEq)]
 struct ScalarConfig {
     value: String,
@@ -19,6 +30,12 @@ struct NumericConfig {
 fn property_options_with_map(map: Option<HashMap<String, String>>) -> Options {
     let mut options = Options::default();
     options.property_map = map.map(Rc::new);
+    options
+}
+
+fn property_options_with_map_and_no_schema(map: Option<HashMap<String, String>>) -> Options {
+    let mut options = property_options_with_map(map);
+    options.no_schema = true;
     options
 }
 
@@ -49,6 +66,34 @@ fn quoted_property_reference_is_left_verbatim() {
         from_str_with_options("value: \"${PROPERTY}\"\n", options).unwrap();
 
     assert_eq!(parsed.value, "${PROPERTY}");
+}
+
+#[test]
+fn block_property_reference_is_left_verbatim() {
+    let mut properties = HashMap::new();
+    properties.insert("TOKEN".to_string(), "resolved-secret".to_string());
+
+    let parsed: ScalarConfig = from_str_with_options(
+        "value: |\n  ${TOKEN}\n",
+        property_options_with_map(Some(properties)),
+    )
+    .unwrap();
+
+    assert_eq!(parsed.value, "${TOKEN}\n");
+}
+
+#[test]
+fn dollar_escape_keeps_placeholder_literal() {
+    let mut properties = HashMap::new();
+    properties.insert("NAME".to_string(), "resolved".to_string());
+
+    let parsed: ScalarConfig = from_str_with_options(
+        "value: $${NAME}\n",
+        property_options_with_map(Some(properties)),
+    )
+    .unwrap();
+
+    assert_eq!(parsed.value, "${NAME}");
 }
 
 #[test]
@@ -125,6 +170,112 @@ fn error_snippet_keeps_property_names_and_hides_resolved_values() {
         !err_str.contains("nearby-secret"),
         "diagnostic leaked resolved nearby property value: {err_str}"
     );
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct InterpolatedString {
+    value: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct InterpolatedChar {
+    value: char,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct OnlyField {
+    known: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+enum TaggedEnum {
+    Known(u8),
+}
+
+#[test]
+fn quoting_required_error_redacts_interpolated_string_value() {
+    let mut properties = HashMap::new();
+    properties.insert("PORT".to_string(), "5432".to_string());
+
+    let err = from_str_with_options::<InterpolatedString>(
+        "value: ${PORT}\n",
+        property_options_with_map_and_no_schema(Some(properties)),
+    )
+    .unwrap_err();
+
+    let msg = err.to_string();
+    assert!(msg.contains("must be quoted"), "unexpected: {msg}");
+    assert_redacted_message(&msg, "${PORT}", "5432");
+}
+
+#[test]
+fn quoting_required_error_redacts_interpolated_char_value() {
+    let mut properties = HashMap::new();
+    properties.insert("FLAG".to_string(), "true".to_string());
+
+    let err = from_str_with_options::<InterpolatedChar>(
+        "value: ${FLAG}\n",
+        property_options_with_map_and_no_schema(Some(properties)),
+    )
+    .unwrap_err();
+
+    let msg = err.to_string();
+    assert!(msg.contains("must be quoted"), "unexpected: {msg}");
+    assert!(!msg.contains("true"), "secret leaked in error: {msg}");
+    assert!(msg.contains("${FLAG}"), "raw placeholder missing: {msg}");
+}
+
+#[test]
+fn externally_tagged_enum_keys_are_not_interpolated() {
+    let mut properties = HashMap::new();
+    properties.insert("MODE".to_string(), "Known".to_string());
+
+    let err = from_str_with_options::<TaggedEnum>(
+        "${MODE}: 1\n",
+        property_options_with_map(Some(properties)),
+    )
+    .unwrap_err();
+
+    let msg = err.to_string();
+    assert!(msg.contains("${MODE}"), "raw enum key missing: {msg}");
+    assert!(!msg.contains("unknown variant `Known`"), "enum key was interpolated: {msg}");
+}
+
+#[test]
+fn with_snippet_output_redacts_resolved_token_values() {
+    let mut properties = HashMap::new();
+    properties.insert("TOKEN".to_string(), "super-secret-token".to_string());
+
+    let err = from_str_with_options::<NumericConfig>(
+        "value: ${TOKEN}\nnearby: ${TOKEN}\n",
+        property_options_with_map(Some(properties)),
+    )
+    .unwrap_err();
+
+    assert!(
+        matches!(err, serde_saphyr::Error::WithSnippet { .. }),
+        "expected WithSnippet wrapper, got: {err:?}"
+    );
+
+    let msg = err.to_string();
+    assert_redacted_message(&msg, "${TOKEN}", "super-secret-token");
+}
+
+#[test]
+fn unknown_field_error_redacts_interpolated_key() {
+    let mut properties = HashMap::new();
+    properties.insert("FIELD".to_string(), "secret-field".to_string());
+
+    let err = from_str_with_options::<OnlyField>(
+        "${FIELD}: value\n",
+        property_options_with_map(Some(properties)),
+    )
+    .unwrap_err();
+
+    let msg = err.to_string();
+    assert!(msg.contains("unknown field `${FIELD}`"), "unexpected: {msg}");
+    assert!(!msg.contains("secret-field"), "secret leaked in error: {msg}");
 }
 
 #[cfg(feature = "include")]

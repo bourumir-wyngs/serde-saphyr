@@ -1017,6 +1017,16 @@ pub struct YamlDeserializer<'de, 'e> {
     garde: Option<&'e mut PathRecorder>,
 }
 
+#[derive(Clone)]
+struct ScalarView<'de> {
+    raw: Cow<'de, str>,
+    effective: Cow<'de, str>,
+    tag: SfTag,
+    style: ScalarStyle,
+    location: Location,
+    interpolated: bool,
+}
+
 impl<'de, 'e> YamlDeserializer<'de, 'e> {
     /// Construct a new streaming deserializer over an `Events` source.
     ///
@@ -1039,6 +1049,10 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
             #[cfg(any(feature = "garde", feature = "validator"))]
             garde: None,
         }
+    }
+
+    fn quoting_required_for_scalar(&self, view: &ScalarView<'de>) -> Error {
+        Error::quoting_required(view.raw.as_ref(), view.interpolated).with_location(view.location)
     }
 
     #[cfg(any(feature = "garde", feature = "validator"))]
@@ -1065,8 +1079,8 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
     /// Called by:
     /// - Numeric/bool/char parsers and `take_string_scalar`.
     fn take_scalar_event(&mut self) -> Result<(String, SfTag, Location), Error> {
-        let (value, tag, location) = self.take_scalar_cow_event()?;
-        Ok((value.into_owned(), tag, location))
+        let view = self.take_scalar_view()?;
+        Ok((view.effective.into_owned(), view.tag, view.location))
     }
 
     /// Consume the next scalar event and return it without allocating a new `String` (if possible).
@@ -1074,6 +1088,11 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
     /// This keeps the scalar text in its existing `Cow` container, which is cheap to clone
     /// and allows primitive parsers (bool/int/float/char) to work directly on `&str`.
     fn take_scalar_cow_event(&mut self) -> Result<(Cow<'de, str>, SfTag, Location), Error> {
+        let view = self.take_scalar_view()?;
+        Ok((view.effective, view.tag, view.location))
+    }
+
+    fn take_scalar_view(&mut self) -> Result<ScalarView<'de>, Error> {
         match self.ev.next()? {
             Some(Ev::Scalar {
                 value,
@@ -1081,10 +1100,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
                 style,
                 location,
                 ..
-            }) => {
-                let value = self.effective_scalar_value(value, tag, style, location)?;
-                Ok((value, tag, location))
-            }
+            }) => self.scalar_view_from_parts(value, tag, style, location),
             Some(other) => Err(Error::unexpected("string scalar").with_location(other.location())),
             None => Err(Error::eof().with_location(self.ev.last_location())),
         }
@@ -1142,6 +1158,13 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
     fn peek_effective_scalar(
         &mut self,
     ) -> Result<Option<(Cow<'de, str>, SfTag, ScalarStyle, Location)>, Error> {
+        let Some(view) = self.peek_scalar_view()? else {
+            return Ok(None);
+        };
+        Ok(Some((view.effective, view.tag, view.style, view.location)))
+    }
+
+    fn peek_scalar_view(&mut self) -> Result<Option<ScalarView<'de>>, Error> {
         let (value, tag, style, location) = match self.ev.peek()? {
             Some(Ev::Scalar {
                 value,
@@ -1153,8 +1176,26 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
             _ => return Ok(None),
         };
 
-        let value = self.effective_scalar_value(value, tag, style, location)?;
-        Ok(Some((value, tag, style, location)))
+        Ok(Some(self.scalar_view_from_parts(value, tag, style, location)?))
+    }
+
+    fn scalar_view_from_parts(
+        &self,
+        raw: Cow<'de, str>,
+        tag: SfTag,
+        style: ScalarStyle,
+        location: Location,
+    ) -> Result<ScalarView<'de>, Error> {
+        let effective = self.effective_scalar_value(raw.clone(), tag, style, location)?;
+        let interpolated = raw.as_ref() != effective.as_ref();
+        Ok(ScalarView {
+            raw,
+            effective,
+            tag,
+            style,
+            location,
+            interpolated,
+        })
     }
 
     fn effective_scalar_value(
@@ -1164,11 +1205,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         style: ScalarStyle,
         location: Location,
     ) -> Result<Cow<'de, str>, Error> {
-        if self.in_key || tag == SfTag::Binary {
-            return Ok(value);
-        }
-
-        if style == ScalarStyle::SingleQuoted || style == ScalarStyle::DoubleQuoted {
+        if self.in_key || tag == SfTag::Binary || style != ScalarStyle::Plain {
             return Ok(value);
         }
 
@@ -1483,19 +1520,16 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     ///   must be quoted; this check uses scalar style to avoid flagging quoted scalars.
     fn deserialize_char<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Mirror deserialize_string pre-checks to leverage tag/style and maybe_not_string.
-        if let Some((value, tag, style, _location)) = self.peek_effective_scalar()? {
-            if tag != SfTag::String {
+        if let Some(view) = self.peek_scalar_view()? {
+            if view.tag != SfTag::String {
                 // Reject YAML null for char (allow quoted values like "null").
-                if tag == SfTag::Null || scalar_is_nullish(&value, &style) {
+                if view.tag == SfTag::Null || scalar_is_nullish(&view.effective, &view.style) {
                     let (_value, _tag, location) = self.take_scalar_event()?;
                     return Err(Error::InvalidCharNull { location });
-                } else if self.cfg.no_schema && maybe_not_string(&value, &style) {
+                } else if self.cfg.no_schema && maybe_not_string(&view.effective, &view.style) {
                     // Require quoting for ambiguous plain scalars in no_schema mode.
-                    let (value, _tag, location) = self.take_scalar_event()?;
-                    let is_interpolated = matches!(self.ev.peek(), Ok(Some(Ev::Scalar { value: raw_val, .. })) if raw_val != value.as_str());
-                    return Err(
-                        Error::quoting_required(&value, is_interpolated).with_location(location)
-                    );
+                    let view = self.take_scalar_view()?;
+                    return Err(self.quoting_required_for_scalar(&view));
                 }
             }
         }
@@ -1580,22 +1614,23 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     /// **From/To:** scalar text (or base64-decoded bytes) → `Visitor::visit_string`.
     fn deserialize_string<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Reject YAML null when deserializing into String. Allow quoted forms.
-        let _location = if let Some((value, tag, style, location)) = self.peek_effective_scalar()? {
+        let _location = if let Some(view) = self.peek_scalar_view()? {
             // If explicitly tagged as null, or plain null-like, this is not a valid String.
-            if (tag == SfTag::Null || scalar_is_nullish(&value, &style)) && tag != SfTag::String {
+            if (view.tag == SfTag::Null || scalar_is_nullish(&view.effective, &view.style))
+                && view.tag != SfTag::String
+            {
                 // Consume the scalar to anchor the error at the correct location.
                 let (_value, _tag, location) = self.take_scalar_event()?;
                 return Err(Error::NullIntoString { location });
-            } else if self.cfg.no_schema && maybe_not_string(&value, &style) && tag != SfTag::String
+            } else if self.cfg.no_schema
+                && maybe_not_string(&view.effective, &view.style)
+                && view.tag != SfTag::String
             {
                 // Consume the scalar to anchor the error at the correct location.
-                let (value, _tag, location) = self.take_scalar_event()?;
-                let is_interpolated = matches!(self.ev.peek(), Ok(Some(Ev::Scalar { value: raw_val, .. })) if raw_val != value.as_str());
-                return Err(
-                    Error::quoting_required(&value, is_interpolated).with_location(location)
-                );
+                let view = self.take_scalar_view()?;
+                return Err(self.quoting_required_for_scalar(&view));
             }
-            location
+            view.location
         } else {
             // Let take_string_scalar handle the error if it's not a scalar
             return visitor.visit_string(self.take_string_scalar()?);
@@ -2712,17 +2747,18 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             }
             Some(Ev::MapStart { .. }) => {
                 self.expect_map_start()?;
-                if let Some((eff_val, tag, style, _location)) = self.peek_effective_scalar()? {
+                let mut key_de = YamlDeserializer::new(&mut *self.ev, self.cfg);
+                key_de.in_key = true;
+                if let Some(view) = key_de.peek_scalar_view()? {
                     if self.cfg.no_schema
-                        && tag != SfTag::String
-                        && maybe_not_string(&eff_val, &style)
+                        && view.tag != SfTag::String
+                        && maybe_not_string(&view.raw, &view.style)
                     {
-                        let is_interpolated = matches!(self.ev.peek(), Ok(Some(Ev::Scalar { value: raw_val, .. })) if raw_val != eff_val.as_ref());
-                        let (v, _, loc) = self.take_scalar_event()?;
-                        return Err(Error::quoting_required(&v, is_interpolated).with_location(loc));
+                        let view = key_de.take_scalar_view()?;
+                        return Err(self.quoting_required_for_scalar(&view));
                     }
-                    let (v, _, loc) = self.take_scalar_event()?;
-                    Mode::Map(v, loc)
+                    let view = key_de.take_scalar_view()?;
+                    Mode::Map(view.raw.into_owned(), view.location)
                 } else {
                     match self.ev.next()? {
                         Some(other) => {

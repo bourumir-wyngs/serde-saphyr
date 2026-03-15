@@ -97,6 +97,19 @@ pub (crate) fn interpolate_compose_style<'s>(
             continue;
         }
 
+        if bytes[next] == b'$' {
+            if !changed {
+                out.push_str(&input_str[..i]);
+                changed = true;
+            } else {
+                out.push_str(&input_str[last..i]);
+            }
+            out.push('$');
+            i += 2;
+            last = i;
+            continue;
+        }
+
         if bytes[next] != b'{' {
             i += 1;
             continue;
@@ -178,5 +191,14 @@ mod tests {
         let error = interpolate_compose_style(Cow::Borrowed("${NAME}"), &vars).unwrap_err();
 
         assert_eq!(error, PropertyError::Unresolved("NAME".to_string()));
+    }
+
+    #[test]
+    fn treats_double_dollar_as_escape() {
+        let vars = HashMap::from([(String::from("NAME"), String::from("world"))]);
+
+        let output = interpolate_compose_style(Cow::Borrowed("$${NAME}"), &vars).unwrap();
+
+        assert_eq!(output.as_ref(), "${NAME}");
     }
 }
