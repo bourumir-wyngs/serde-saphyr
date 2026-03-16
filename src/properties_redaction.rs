@@ -174,13 +174,21 @@ pub(crate) fn redact_with_ctxs(
         .filter(|ctx| !ctx.effective.is_empty())
         .collect();
 
+    if pairs.is_empty() {
+        return fallback.to_owned();
+    }
+
     pairs.sort_by_key(|ctx| std::cmp::Reverse(ctx.effective.len()));
 
     let mut replaced = false;
     for ctx in pairs {
-        if text.contains(&ctx.effective) {
+        let count = text.matches(&ctx.effective).count();
+
+        if count == 1 {
             text = text.replace(&ctx.effective, &ctx.raw);
             replaced = true;
+        } else if count > 1 {
+            return fallback.to_owned();
         }
     }
     if replaced {
