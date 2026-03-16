@@ -5,19 +5,13 @@ use crate::localizer::{ExternalMessage, Localizer};
 use std::borrow::Cow;
 
 #[cfg(any(feature = "garde", feature = "validator"))]
-use crate::localizer::ExternalMessageSource;
+use crate::{
+    Locations,
+    localizer::ExternalMessageSource,
+    path_map::format_path_with_resolved_leaf,
+};
 
-#[cfg(any(feature = "garde", feature = "validator"))]
-use crate::path_map::format_path_with_resolved_leaf;
 
-#[cfg(any(feature = "garde", feature = "validator"))]
-use crate::Locations;
-
-#[cfg(feature = "garde")]
-use crate::de_error::collect_garde_issues;
-
-#[cfg(feature = "validator")]
-use crate::de_error::collect_validator_issues;
 
 /// Default developer-oriented message formatter.
 ///
@@ -290,20 +284,19 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
         }
 
         #[cfg(feature = "garde")]
-        Error::ValidationError { report, locations } => {
+        Error::ValidationError { issues, locations } => {
             let l10n = formatter.localizer();
 
-            let issues = collect_garde_issues(report);
             let mut lines = Vec::with_capacity(issues.len());
             for issue in issues {
                 let entry = issue.display_entry_overridden(l10n, ExternalMessageSource::Garde);
-                let path_key = issue.path;
+                let path_key = &issue.path;
                 let original_leaf = path_key
                     .leaf_string()
                     .unwrap_or_else(|| l10n.root_path_label().into_owned());
 
                 let (locs, resolved_leaf) = locations
-                    .search(&path_key)
+                    .search(path_key)
                     .unwrap_or((Locations::UNKNOWN, original_leaf));
 
                 let loc = if locs.reference_location != Location::UNKNOWN {
@@ -312,7 +305,7 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
                     locs.defined_location
                 };
 
-                let resolved_path = format_path_with_resolved_leaf(&path_key, &resolved_leaf);
+                let resolved_path = format_path_with_resolved_leaf(path_key, &resolved_leaf);
 
                 lines.push(l10n.validation_issue_line(
                     &resolved_path,
@@ -328,20 +321,19 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
             errors.len()
         )),
         #[cfg(feature = "validator")]
-        Error::ValidatorError { errors, locations } => {
+        Error::ValidatorError { issues, locations } => {
             let l10n = formatter.localizer();
 
-            let issues = collect_validator_issues(errors);
             let mut lines = Vec::with_capacity(issues.len());
             for issue in issues {
                 let entry = issue.display_entry_overridden(l10n, ExternalMessageSource::Validator);
-                let path_key = issue.path;
+                let path_key = &issue.path;
                 let original_leaf = path_key
                     .leaf_string()
                     .unwrap_or_else(|| l10n.root_path_label().into_owned());
 
                 let (locs, resolved_leaf) = locations
-                    .search(&path_key)
+                    .search(path_key)
                     .unwrap_or((Locations::UNKNOWN, original_leaf));
 
                 let loc = if locs.reference_location != Location::UNKNOWN {
@@ -350,7 +342,7 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
                     locs.defined_location
                 };
 
-                let resolved_path = format_path_with_resolved_leaf(&path_key, &resolved_leaf);
+                let resolved_path = format_path_with_resolved_leaf(path_key, &resolved_leaf);
 
                 lines.push(l10n.validation_issue_line(
                     &resolved_path,

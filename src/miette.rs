@@ -12,15 +12,12 @@ use crate::Location;
 use crate::de_snippet::sanitize_terminal_snippet_preserve_len;
 use crate::de_error::CroppedRegion;
 #[cfg(any(feature = "garde", feature = "validator"))]
-use crate::location::Locations;
-#[cfg(feature = "garde")]
-use crate::path_map::path_key_from_garde;
-#[cfg(any(feature = "garde", feature = "validator"))]
-use crate::path_map::{PathKey, PathMap, format_path_with_resolved_leaf};
+use crate::{
+    location::Locations,
+    path_map::{PathKey, PathMap, format_path_with_resolved_leaf},
+};
 use crate::{MessageFormatter, RenderOptions};
 
-#[cfg(feature = "validator")]
-use validator::{ValidationErrors, ValidationErrorsKind};
 
 /// Convert a deserialization [`Error`] into a `miette::Report`.
 ///
@@ -103,14 +100,13 @@ fn build_diagnostic(
 ) -> ErrorDiagnostic {
     match err {
         #[cfg(feature = "garde")]
-        Error::ValidationError { report, locations } => {
+        Error::ValidationError { issues, locations } => {
             let mut related = Vec::new();
-            for (path, entry) in report.iter() {
-                let path_key = path_key_from_garde(path);
+            for issue in issues {
                 related.push(build_validation_entry_diagnostic(
                     &src,
-                    &path_key,
-                    &entry.to_string(),
+                    &issue.path,
+                    &issue.display_entry(),
                     locations,
                     regions,
                 ));
@@ -152,13 +148,16 @@ fn build_diagnostic(
         }
 
         #[cfg(feature = "validator")]
-        Error::ValidatorError { errors, locations } => {
-            let entries = collect_validator_entries(errors);
+        Error::ValidatorError { issues, locations } => {
             let mut related = Vec::new();
 
-            for (path, entry) in entries {
+            for issue in issues {
                 related.push(build_validation_entry_diagnostic(
-                    &src, &path, &entry, locations, regions,
+                    &src,
+                    &issue.path,
+                    &issue.display_entry(),
+                    locations,
+                    regions,
                 ));
             }
 
@@ -380,40 +379,6 @@ fn build_alias_labels(
     (primary_src, labels)
 }
 
-#[cfg(feature = "validator")]
-fn collect_validator_entries(errors: &ValidationErrors) -> Vec<(PathKey, String)> {
-    let mut out = Vec::new();
-    let root = PathKey::empty();
-    collect_validator_entries_inner(errors, &root, &mut out);
-    out
-}
-
-#[cfg(feature = "validator")]
-fn collect_validator_entries_inner(
-    errors: &ValidationErrors,
-    path: &PathKey,
-    out: &mut Vec<(PathKey, String)>,
-) {
-    for (field, kind) in errors.errors() {
-        let field_path = path.clone().join(field.as_ref());
-        match kind {
-            ValidationErrorsKind::Field(entries) => {
-                for entry in entries {
-                    out.push((field_path.clone(), entry.to_string()));
-                }
-            }
-            ValidationErrorsKind::Struct(inner) => {
-                collect_validator_entries_inner(inner, &field_path, out);
-            }
-            ValidationErrorsKind::List(list) => {
-                for (idx, inner) in list {
-                    let index_path = field_path.clone().join(*idx);
-                    collect_validator_entries_inner(inner, &index_path, out);
-                }
-            }
-        }
-    }
-}
 
 
 fn get_source_and_span(
@@ -975,7 +940,7 @@ mod tests {
             },
         );
 
-        let err = Error::ValidatorError { errors, locations };
+        let err = Error::ValidatorError { issues: crate::de_error::collect_validator_issues(&errors), locations };
 
         let diag = build_diagnostic(&err, Arc::clone(&src), RenderOptions::default().formatter, &[]);
         assert_eq!(diag.message, "validation failed");
@@ -1055,7 +1020,7 @@ mod tests {
             },
         );
 
-        let err = Error::ValidationError { report, locations };
+        let err = Error::ValidationError { issues: crate::de_error::collect_garde_issues(&report), locations };
 
         let diag = build_diagnostic(&err, Arc::clone(&src), RenderOptions::default().formatter, &[]);
         assert_eq!(diag.message, "validation failed");

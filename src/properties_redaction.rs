@@ -98,13 +98,15 @@ impl ScalarRedactionGuard {
     /// scalar or subtree that may later need error-message redaction.
     pub(crate) fn new(ctx: ScalarRedactionCtx) -> Self {
         INTERP_REDACTION.with(|cell| {
-            if let Some(scope) = cell.borrow_mut().last_mut()
-                && !scope
+            let mut stack = cell.borrow_mut();
+            for scope in stack.iter_mut() {
+                if !scope
                     .pairs
                     .iter()
                     .any(|pair| pair.raw == ctx.raw && pair.effective == ctx.effective)
-            {
-                scope.pairs.push(ctx.clone());
+                {
+                    scope.pairs.push(ctx.clone());
+                }
             }
         });
         Self { ctx: Some(ctx) }
@@ -141,9 +143,9 @@ impl Drop for InterpRedactionScopeGuard {
 #[inline(never)]
 /// Exposes the current subtree's recorded interpolation pairs to the redaction helpers below.
 ///
-/// Called by `redact_custom_message`, `redact_dynamic_value`, and
-/// `redact_dynamic_identifier` while formatting Serde error messages.
-fn with_interp_redaction<T>(f: impl FnOnce(&[ScalarRedactionCtx]) -> T) -> T {
+/// Called by `redact_custom_message`, `redact_dynamic_value`, `redact_dynamic_identifier`,
+/// and validation issue sanitization in `src/de_error.rs`.
+pub(crate) fn with_interp_redaction<T>(f: impl FnOnce(&[ScalarRedactionCtx]) -> T) -> T {
     INTERP_REDACTION.with(|cell| {
         let borrow = cell.borrow();
         let pairs = borrow
@@ -160,11 +162,22 @@ fn with_interp_redaction<T>(f: impl FnOnce(&[ScalarRedactionCtx]) -> T) -> T {
 /// Rewrites any resolved interpolated values found in `text` back to their original raw
 /// `${...}` forms, or falls back to a generic message if no recorded value matches.
 ///
-/// Called by the dynamic/custom Serde error redaction helpers when they need to sanitize an
-/// error string against all pairs collected for the current subtree.
-fn redact_with_ctxs(mut text: String, ctxs: &[ScalarRedactionCtx], fallback: &str) -> String {
+/// Called by the dynamic/custom Serde error redaction helpers and validation issue
+/// sanitization when they need to scrub text against all pairs collected for the current subtree.
+pub(crate) fn redact_with_ctxs(
+    mut text: String,
+    ctxs: &[ScalarRedactionCtx],
+    fallback: &str,
+) -> String {
+    let mut pairs: Vec<&ScalarRedactionCtx> = ctxs
+        .iter()
+        .filter(|ctx| !ctx.effective.is_empty())
+        .collect();
+
+    pairs.sort_by_key(|ctx| std::cmp::Reverse(ctx.effective.len()));
+
     let mut replaced = false;
-    for ctx in ctxs {
+    for ctx in pairs {
         if text.contains(&ctx.effective) {
             text = text.replace(&ctx.effective, &ctx.raw);
             replaced = true;

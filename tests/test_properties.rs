@@ -1,8 +1,10 @@
 #![cfg(feature = "properties")]
 
 use serde::Deserialize;
-use serde_saphyr::{from_str_with_options, Options};
+use serde_saphyr::{from_multiple_with_options, from_reader_with_options, from_str_with_options, Options};
 use std::collections::HashMap;
+#[cfg(feature = "validator")]
+use validator::Validate;
 
 fn assert_redacted_message(message: &str, placeholder: &str, secret: &str) {
     assert!(
@@ -48,6 +50,28 @@ impl<'de> Deserialize<'de> for CheckedInner {
 #[allow(dead_code)]
 struct Outer {
     inner: CheckedInner,
+}
+
+#[derive(Debug)]
+struct CheckedSeq;
+
+impl<'de> Deserialize<'de> for CheckedSeq {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let values = Vec::<String>::deserialize(deserializer)?;
+        Err(serde::de::Error::custom(format!(
+            "bad values: {}",
+            values.join(",")
+        )))
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct SeqOuter {
+    list: CheckedSeq,
 }
 
 #[derive(Debug, Deserialize)]
@@ -437,6 +461,118 @@ fn nested_container_custom_error_does_not_leak_interpolated_value() {
         msg.contains("${BAD}") || msg.contains("invalid interpolated"),
         "unexpected: {msg}"
     );
+}
+
+#[test]
+fn sequence_parent_custom_error_does_not_leak_interpolated_child_value() {
+    let mut props = HashMap::new();
+    props.insert("BAD".to_string(), "zz-secret".to_string());
+
+    let err = from_str_with_options::<SeqOuter>(
+        "list:\n  - ${BAD}\n",
+        property_options_with_map(Some(props)),
+    )
+    .unwrap_err();
+
+    let msg = err.to_string();
+    assert!(!msg.contains("zz-secret"), "secret leaked: {msg}");
+    assert!(
+        msg.contains("${BAD}") || msg.contains("invalid interpolated"),
+        "unexpected: {msg}"
+    );
+}
+
+#[test]
+fn from_reader_top_level_custom_error_does_not_leak_interpolated_value() {
+    let mut props = HashMap::new();
+    props.insert("BAD".to_string(), "zz-secret".to_string());
+
+    let reader = std::io::Cursor::new("${BAD}\n".as_bytes());
+    let err = from_reader_with_options::<_, CustomHexByte>(
+        reader,
+        property_options_with_map(Some(props)),
+    )
+    .unwrap_err();
+
+    let msg = err.to_string();
+    assert!(!msg.contains("zz-secret"), "secret leaked: {msg}");
+}
+
+#[test]
+fn from_multiple_top_level_custom_error_does_not_leak_interpolated_value() {
+    let mut props = HashMap::new();
+    props.insert("BAD".to_string(), "zz-secret".to_string());
+
+    let err = from_multiple_with_options::<CustomHexByte>(
+        "${BAD}\n---\n01\n",
+        property_options_with_map(Some(props)),
+    )
+    .unwrap_err();
+
+    let msg = err.to_string();
+    assert!(!msg.contains("zz-secret"), "secret leaked: {msg}");
+}
+
+#[cfg(feature = "validator")]
+fn reject_with_echo(v: &str) -> Result<(), validator::ValidationError> {
+    let mut err = validator::ValidationError::new("bad_secret");
+    err.message = Some(format!("bad value: {v}").into());
+    Err(err)
+}
+
+#[cfg(feature = "validator")]
+#[derive(Debug, Deserialize, Validate)]
+struct ValidatorSecretCfg {
+    #[validate(custom(function = "reject_with_echo"))]
+    value: String,
+}
+
+#[cfg(feature = "validator")]
+#[test]
+fn validator_custom_message_does_not_leak_interpolated_value() {
+    let mut props = HashMap::new();
+    props.insert("BAD".to_string(), "zz-secret".to_string());
+
+    let err = serde_saphyr::from_str_with_options_validate::<ValidatorSecretCfg>(
+        "value: ${BAD}\n",
+        property_options_with_map(Some(props)),
+    )
+    .unwrap_err();
+
+    let msg = err.to_string();
+    assert!(!msg.contains("zz-secret"), "secret leaked: {msg}");
+}
+
+#[test]
+fn overlapping_resolved_values_redact_longest_first() {
+    let mut props = HashMap::new();
+    props.insert("SHORT".to_string(), "ab".to_string());
+    props.insert("LONG".to_string(), "abc".to_string());
+
+    let err = from_str_with_options::<Outer>(
+        "inner:\n  value: ${LONG}\n",
+        property_options_with_map(Some(props)),
+    )
+    .unwrap_err();
+
+    let msg = err.to_string();
+    assert!(!msg.contains("abc"), "secret leaked: {msg}");
+    assert!(!msg.contains("ab"), "short secret leaked: {msg}");
+}
+
+#[test]
+fn empty_resolved_value_does_not_expand_error_text() {
+    let mut props = HashMap::new();
+    props.insert("EMPTY".to_string(), "".to_string());
+
+    let err = from_str_with_options::<CustomHexByte>(
+        "${EMPTY}\n",
+        property_options_with_map(Some(props)),
+    )
+    .unwrap_err();
+
+    let msg = err.to_string();
+    assert!(msg.len() < 300, "message exploded: {msg}");
 }
 
 #[test]

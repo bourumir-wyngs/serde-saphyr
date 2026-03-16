@@ -77,8 +77,8 @@ impl From<usize> for PathSegment {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
-pub(crate) struct PathKey {
-    segments: Vec<PathSegment>,
+pub struct PathKey {
+    pub(crate) segments: Vec<PathSegment>,
 }
 
 impl PathKey {
@@ -186,7 +186,7 @@ pub(crate) fn path_key_from_garde(path: &garde::error::Path) -> PathKey {
     PathKey { segments: segs }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PathMap {
     pub(crate) map: HashMap<PathKey, Locations>,
 }

@@ -7,13 +7,7 @@ use crate::input_source::IncludeResolveError;
 use crate::parse_scalars::{
     parse_int_signed, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish,
 };
-use crate::properties_redaction::{
-    redact_custom_message, redact_dynamic_identifier, redact_dynamic_value,
-};
-#[cfg(feature = "garde")]
-use crate::path_map::path_key_from_garde;
-#[cfg(any(feature = "garde", feature = "validator"))]
-use crate::path_map::{PathKey, PathMap, format_path_with_resolved_leaf};
+use crate::properties_redaction::{redact_custom_message, redact_dynamic_identifier, redact_dynamic_value};
 use crate::tags::SfTag;
 use annotate_snippets::Level;
 use saphyr_parser::{ScalarStyle, ScanError};
@@ -21,11 +15,20 @@ use serde::de::{self};
 use std::borrow::Cow;
 use std::cell::Cell;
 use std::fmt;
+#[cfg(any(feature = "garde", feature = "validator"))]
+use crate::{
+    localizer::ExternalMessage,
+    path_map::{PathKey, PathMap, format_path_with_resolved_leaf},
+};
+
+#[cfg(feature = "garde")]
+use crate::path_map::path_key_from_garde;
+
+#[cfg(all(feature = "properties", any(feature = "garde", feature = "validator")))]
+use crate::properties_redaction::{redact_with_ctxs, with_interp_redaction};
+
 #[cfg(feature = "validator")]
 use validator::{ValidationErrors, ValidationErrorsKind};
-
-#[cfg(any(feature = "garde", feature = "validator"))]
-use crate::localizer::ExternalMessage;
 
 /// Formats error *messages* (not including locations/snippets).
 ///
@@ -229,11 +232,11 @@ fn line_count_including_trailing_empty_line(text: &str) -> usize {
 
 #[cfg(any(feature = "garde", feature = "validator"))]
 #[derive(Debug, Clone)]
-pub(crate) struct ValidationIssue {
-    pub(crate) path: PathKey,
-    pub(crate) code: String,
-    pub(crate) message: Option<String>,
-    pub(crate) params: Vec<(String, String)>,
+pub struct ValidationIssue {
+    pub path: PathKey,
+    pub code: String,
+    pub message: Option<String>,
+    pub params: Vec<(String, String)>,
 }
 
 #[cfg(any(feature = "garde", feature = "validator"))]
@@ -275,6 +278,33 @@ impl ValidationIssue {
             .unwrap_or(Cow::Borrowed(raw.as_str()));
         overridden.into_owned()
     }
+}
+
+#[cfg(all(feature = "properties", any(feature = "garde", feature = "validator")))]
+pub(crate) fn redact_issue(mut issue: ValidationIssue) -> ValidationIssue {
+    with_interp_redaction(|pairs| {
+        if pairs.is_empty() {
+            return issue;
+        }
+
+        if let Some(msg) = issue.message.take() {
+            issue.message = Some(redact_with_ctxs(msg, pairs, "invalid interpolated value"));
+        }
+
+        for (_, value) in &mut issue.params {
+            *value = redact_with_ctxs(std::mem::take(value), pairs, "<redacted>");
+        }
+
+        issue
+    })
+}
+
+#[cfg(all(
+    not(feature = "properties"),
+    any(feature = "garde", feature = "validator")
+))]
+pub(crate) fn redact_issue(issue: ValidationIssue) -> ValidationIssue {
+    issue
 }
 
 // Fallback location for Serde's static error constructors (`unknown_field`, `missing_field`,
@@ -723,7 +753,7 @@ pub enum Error {
     /// Garde validation failure.
     #[cfg(feature = "garde")]
     ValidationError {
-        report: garde::Report,
+        issues: Vec<ValidationIssue>,
         locations: PathMap,
     },
 
@@ -736,7 +766,7 @@ pub enum Error {
     /// Validator validation failure.
     #[cfg(feature = "validator")]
     ValidatorError {
-        errors: ValidationErrors,
+        issues: Vec<ValidationIssue>,
         locations: PathMap,
     },
 
@@ -805,11 +835,10 @@ impl Error {
         // Validation errors may contain multiple independent issue locations; pre-crop
         // one region per issue so we can later pick the region that covers the issue.
         #[cfg(feature = "garde")]
-        if let Error::ValidationError { report, locations } = &inner {
-            for (path, _entry) in report.iter() {
-                let key = path_key_from_garde(path);
+        if let Error::ValidationError { issues, locations } = &inner {
+            for issue in issues {
                 let (locs, _) = locations
-                    .search(&key)
+                    .search(&issue.path)
                     .unwrap_or((Locations::UNKNOWN, String::new()));
                 push_region_for_location(
                     &mut regions,
@@ -832,8 +861,8 @@ impl Error {
             }
         }
         #[cfg(feature = "validator")]
-        if let Error::ValidatorError { errors, locations } = &inner {
-            for issue in collect_validator_issues(errors) {
+        if let Error::ValidatorError { issues, locations } = &inner {
+            for issue in issues {
                 let (locs, _) = locations
                     .search(&issue.path)
                     .unwrap_or((Locations::UNKNOWN, String::new()));
@@ -1026,11 +1055,10 @@ impl Error {
         let mapping = crate::de_snippet::LineMapping::Offset { start_line };
 
         #[cfg(feature = "garde")]
-        if let Error::ValidationError { report, locations } = &inner {
-            for (path, _entry) in report.iter() {
-                let key = path_key_from_garde(path);
+        if let Error::ValidationError { issues, locations } = &inner {
+            for issue in issues {
                 let (locs, _) = locations
-                    .search(&key)
+                    .search(&issue.path)
                     .unwrap_or((Locations::UNKNOWN, String::new()));
                 push_region_for_location(
                     &mut regions,
@@ -1053,8 +1081,8 @@ impl Error {
             }
         }
         #[cfg(feature = "validator")]
-        if let Error::ValidatorError { errors, locations } = &inner {
-            for issue in collect_validator_issues(errors) {
+        if let Error::ValidatorError { issues, locations } = &inner {
+            for issue in issues {
                 let (locs, _) = locations
                     .search(&issue.path)
                     .unwrap_or((Locations::UNKNOWN, String::new()));
@@ -1440,10 +1468,9 @@ impl Error {
             Error::AliasError { locations, .. } => Locations::primary_location(*locations),
             Error::WithSnippet { error, .. } => error.location(),
             #[cfg(feature = "garde")]
-            Error::ValidationError { report, locations } => {
-                report.iter().next().and_then(|(path, _)| {
-                    let key = path_key_from_garde(path);
-                    let (locs, _) = locations.search(&key)?;
+            Error::ValidationError { issues, locations } => {
+                issues.first().and_then(|issue| {
+                    let (locs, _) = locations.search(&issue.path)?;
                     let loc = if locs.reference_location != Location::UNKNOWN {
                         locs.reference_location
                     } else {
@@ -1459,8 +1486,8 @@ impl Error {
             #[cfg(feature = "garde")]
             Error::ValidationErrors { errors } => errors.iter().find_map(|e| e.location()),
             #[cfg(feature = "validator")]
-            Error::ValidatorError { errors, locations } => {
-                collect_validator_issues(errors).first().and_then(|issue| {
+            Error::ValidatorError { issues, locations } => {
+                issues.first().and_then(|issue| {
                     let (locs, _) = locations.search(&issue.path)?;
                     let loc = if locs.reference_location != Location::UNKNOWN {
                         locs.reference_location
@@ -1549,16 +1576,13 @@ impl Error {
             Error::AliasError { locations, .. } => Some(*locations),
             Error::WithSnippet { error, .. } => error.locations(),
             #[cfg(feature = "garde")]
-            Error::ValidationError { report, locations } => {
-                report.iter().next().and_then(|(path, _)| {
-                    let key = path_key_from_garde(path);
-                    search_locations_with_ancestor_fallback(locations, &key)
-                })
-            }
+            Error::ValidationError { issues, locations } => issues
+                .first()
+                .and_then(|issue| search_locations_with_ancestor_fallback(locations, &issue.path)),
             #[cfg(feature = "garde")]
             Error::ValidationErrors { errors } => errors.first().and_then(Error::locations),
             #[cfg(feature = "validator")]
-            Error::ValidatorError { errors, locations } => collect_validator_issues(errors)
+            Error::ValidatorError { issues, locations } => issues
                 .first()
                 .and_then(|issue| locations.search(&issue.path).map(|(locs, _)| locs)),
             #[cfg(feature = "validator")]
@@ -1746,11 +1770,11 @@ fn fmt_error_rendered(
             // Validation errors have custom snippet formatting (paths, alias context, and
             // messages without location duplication).
             #[cfg(feature = "garde")]
-            if let Error::ValidationError { report, locations } = error.as_ref() {
+            if let Error::ValidationError { issues, locations } = error.as_ref() {
                 return fmt_validation_error_with_snippets_offset(
                     f,
                     options.formatter.localizer(),
-                    report,
+                    issues,
                     locations,
                     regions,
                     *crop_radius,
@@ -1781,11 +1805,11 @@ fn fmt_error_rendered(
             }
 
             #[cfg(feature = "validator")]
-            if let Error::ValidatorError { errors, locations } = error.as_ref() {
+            if let Error::ValidatorError { issues, locations } = error.as_ref() {
                 return fmt_validator_error_with_snippets_offset(
                     f,
                     options.formatter.localizer(),
-                    errors,
+                    issues,
                     locations,
                     regions,
                     *crop_radius,
@@ -1940,41 +1964,33 @@ impl fmt::Display for Error {
 fn fmt_validation_error_with_snippets_offset(
     f: &mut fmt::Formatter<'_>,
     l10n: &dyn Localizer,
-    report: &garde::Report,
+    issues: &[ValidationIssue],
     locations: &PathMap,
     regions: &[CroppedRegion],
     crop_radius: usize,
 ) -> fmt::Result {
     let mut first = true;
-    for (path, entry) in report.iter() {
+    for issue in issues {
         if !first {
             writeln!(f)?;
         }
         first = false;
 
-        let path_key = path_key_from_garde(path);
-        let original_leaf = path_key
+        let original_leaf = issue
+            .path
             .leaf_string()
             .unwrap_or_else(|| l10n.root_path_label().into_owned());
 
         let (locs, resolved_leaf) = locations
-            .search(&path_key)
+            .search(&issue.path)
             .unwrap_or((Locations::UNKNOWN, original_leaf));
 
         let ref_loc = locs.reference_location;
         let def_loc = locs.defined_location;
 
-        let resolved_path = format_path_with_resolved_leaf(&path_key, &resolved_leaf);
-        let entry_raw = entry.to_string();
-        let entry = l10n
-            .override_external_message(ExternalMessage {
-                source: ExternalMessageSource::Garde,
-                original: entry_raw.as_str(),
-                code: None,
-                params: &[],
-            })
-            .unwrap_or(Cow::Borrowed(entry_raw.as_str()));
-        let base_msg = l10n.validation_base_message(entry.as_ref(), &resolved_path);
+        let resolved_path = format_path_with_resolved_leaf(&issue.path, &resolved_leaf);
+        let entry = issue.display_entry_overridden(l10n, ExternalMessageSource::Garde);
+        let base_msg = l10n.validation_base_message(&entry, &resolved_path);
 
         let mut rendered_regions = Vec::new();
 
@@ -2068,15 +2084,14 @@ fn fmt_validation_error_with_snippets_offset(
 fn fmt_validator_error_with_snippets_offset(
     f: &mut fmt::Formatter<'_>,
     l10n: &dyn Localizer,
-    errors: &ValidationErrors,
+    issues: &[ValidationIssue],
     locations: &PathMap,
     regions: &[CroppedRegion],
     crop_radius: usize,
 ) -> fmt::Result {
-    let entries = collect_validator_issues(errors);
     let mut first = true;
 
-    for issue in entries {
+    for issue in issues {
         if !first {
             writeln!(f)?;
         }
@@ -2201,11 +2216,11 @@ fn fmt_error_with_snippets_offset(
     }
 
     #[cfg(feature = "garde")]
-    if let Error::ValidationError { report, locations } = err {
+    if let Error::ValidationError { issues, locations } = err {
         return fmt_validation_error_with_snippets_offset(
             f,
             formatter.localizer(),
-            report,
+            issues,
             locations,
             regions,
             crop_radius,
@@ -2213,11 +2228,11 @@ fn fmt_error_with_snippets_offset(
     }
 
     #[cfg(feature = "validator")]
-    if let Error::ValidatorError { errors, locations } = err {
+    if let Error::ValidatorError { issues, locations } = err {
         return fmt_validator_error_with_snippets_offset(
             f,
             formatter.localizer(),
-            errors,
+            issues,
             locations,
             regions,
             crop_radius,
@@ -2580,7 +2595,7 @@ mod tests {
             },
         );
 
-        let err = Error::ValidatorError { errors, locations };
+        let err = Error::ValidatorError { issues: crate::de_error::collect_validator_issues(&errors), locations };
         assert_eq!(
             err.locations(),
             Some(Locations {
