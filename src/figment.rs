@@ -37,10 +37,10 @@ impl ::figment::providers::Format for Yaml {
     }
 
     fn from_path<T: DeserializeOwned>(path: &Path) -> Result<T, Self::Error> {
-        let bytes = std::fs::read(path).map_err(|cause| crate::Error::IOError { cause })?;
+        let file = std::fs::File::open(path).map_err(|cause| crate::Error::IOError { cause })?;
         // figment does not render out snippet anyway
-        crate::from_slice_with_options(
-            &bytes,
+        crate::from_reader_with_options(
+            file,
             crate::options! {
                 with_snippet: false,
             },
