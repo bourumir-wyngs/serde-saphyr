@@ -236,6 +236,14 @@ enum KeyFingerprint {
     Default,
 }
 
+fn canonical_scalar_key_tag(tag: SfTag) -> SfTag {
+    if tag.can_parse_into_string() || tag == SfTag::NonSpecific {
+        SfTag::String
+    } else {
+        tag
+    }
+}
+
 impl KeyFingerprint {
     /// If this fingerprint represents a string-like scalar, return its value.
     ///
@@ -284,7 +292,7 @@ impl<'a> KeyNode<'a> {
             KeyNode::Scalar { events, .. } => {
                 if let Some(Ev::Scalar { tag, value, .. }) = events.first() {
                     Cow::Owned(KeyFingerprint::Scalar {
-                        tag: *tag,
+                        tag: canonical_scalar_key_tag(*tag),
                         value: value.to_string(),
                     })
                 } else {

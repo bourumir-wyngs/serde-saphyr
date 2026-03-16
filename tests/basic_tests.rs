@@ -174,6 +174,14 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_keys_error_policy_custom_tagged_string_key() {
+        let y = "a: 1\n!foo a: 2\n";
+        let err = from_str::<HashMap<String, i32>>(y).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("duplicate mapping key: a"));
+    }
+
+    #[test]
     fn duplicate_keys_first_wins_policy() {
         let y = "a: 1\na: 2\nb: 3\n";
         let opt = serde_saphyr::options! {
