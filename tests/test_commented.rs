@@ -55,6 +55,12 @@ fn commented_newlines_are_sanitized() {
 }
 
 #[test]
+fn commented_carriage_returns_are_sanitized() {
+    let y = to_string(&Commented(7, "line1\rline2".into())).unwrap();
+    assert_eq!(y, "7 # line1 line2\n");
+}
+
+#[test]
 fn commented_deserialize_ignores_comment_and_keeps_value() {
     // Even if the source contains a YAML comment, deserialization into Commented<T>
     // should yield the inner T and an empty comment string.

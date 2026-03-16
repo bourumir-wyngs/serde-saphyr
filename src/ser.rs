@@ -151,7 +151,6 @@ pub use crate::long_strings::{FoldStr, FoldString, LitStr, LitString};
 // serializer can intercept them in a single pass.
 // ------------------------------------------------------------
 
-
 // Recursive weak payloads: defer locking/borrowing until actual value serialization.
 struct RcRecursivePayload<'a, T>(&'a Rc<RefCell<Option<T>>>);
 struct ArcRecursivePayload<'a, T>(&'a Arc<Mutex<Option<T>>>);
@@ -1982,7 +1981,13 @@ impl<'a, 'b, W: Write> SerializeTupleStruct for TupleSer<'a, 'b, W> {
                         if self.ser.in_flow == 0 {
                             // Stage the comment so scalar/alias serializers append it inline via write_end_of_scalar.
                             if !comment.is_empty() {
-                                let sanitized = comment.replace('\n', " ");
+                                let sanitized: String = comment
+                                    .chars()
+                                    .map(|ch| match ch {
+                                        '\n' | '\r' | '\u{85}' | '\u{2028}' | '\u{2029}' => ' ',
+                                        _ => ch,
+                                    })
+                                    .collect();
                                 self.ser.pending_inline_comment = Some(sanitized);
                             }
                             // Serialize the inner value as-is. Complex values will ignore the comment (it will be cleared).
