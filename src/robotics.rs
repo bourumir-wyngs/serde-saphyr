@@ -470,7 +470,7 @@ impl<'a> Parser<'a> {
         if end > self.b.len() {
             return false;
         }
-        self.s[self.i..end].eq_ignore_ascii_case(kw)
+        self.b[self.i..end].eq_ignore_ascii_case(kw.as_bytes())
     }
 
     /// Attempt to parse a sexagesimal literal: hh:mm[:ss[.frac]]
@@ -737,6 +737,7 @@ mod tests {
                 .unwrap()
                 .is_nan()
         );
+        assert_err(".💥", SfTag::Radians);
     }
 
     #[test]
