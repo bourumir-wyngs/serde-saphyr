@@ -358,7 +358,11 @@ where
     // Do not stop at DocumentEnd; we'll probe for trailing content/errors explicitly.
     let mut src = LiveEvents::from_str(input, options, false);
     let value_res = crate::anchor_store::with_document_scope(|| {
-        with_interp_redaction_scope(|| T::deserialize(crate::de::YamlDeserializer::new(&mut src, cfg)))
+        with_interp_redaction_scope(|| {
+            crate::de::with_root_redaction(crate::de::YamlDeserializer::new(&mut src, cfg), |de| {
+                T::deserialize(de)
+            })
+        })
     });
     let value = match value_res {
         Ok(v) => v,
@@ -493,11 +497,10 @@ where
 
     let value_res = crate::anchor_store::with_document_scope(|| {
         with_interp_redaction_scope(|| {
-            let value = T::deserialize(crate::de::YamlDeserializer::new_with_path_recorder(
-                &mut src,
-                cfg,
-                &mut recorder,
-            ))?;
+            let value = crate::de::with_root_redaction(
+                crate::de::YamlDeserializer::new_with_path_recorder(&mut src, cfg, &mut recorder),
+                |de| T::deserialize(de),
+            )?;
             validate(&value).map_err(|report| Error::ValidationError {
                 issues: collect_garde_issues(&report)
                     .into_iter()
@@ -584,11 +587,10 @@ where
 
     let value_res = crate::anchor_store::with_document_scope(|| {
         with_interp_redaction_scope(|| {
-            let value = T::deserialize(crate::de::YamlDeserializer::new_with_path_recorder(
-                &mut src,
-                cfg,
-                &mut recorder,
-            ))?;
+            let value = crate::de::with_root_redaction(
+                crate::de::YamlDeserializer::new_with_path_recorder(&mut src, cfg, &mut recorder),
+                |de| T::deserialize(de),
+            )?;
             ValidatorValidate::validate(&value).map_err(|errors| Error::ValidatorError {
                 issues: collect_validator_issues(&errors)
                     .into_iter()
@@ -767,11 +769,14 @@ where
                 let mut recorder = crate::path_map::PathRecorder::new();
                 let value_res = crate::anchor_store::with_document_scope(|| {
                     with_interp_redaction_scope(|| {
-                        let value = T::deserialize(crate::de::YamlDeserializer::new_with_path_recorder(
-                            &mut src,
-                            cfg,
-                            &mut recorder,
-                        ))?;
+                        let value = crate::de::with_root_redaction(
+                            crate::de::YamlDeserializer::new_with_path_recorder(
+                                &mut src,
+                                cfg,
+                                &mut recorder,
+                            ),
+                            |de| T::deserialize(de),
+                        )?;
                         Validate::validate(&value).map_err(|report| Error::ValidationError {
                             issues: collect_garde_issues(&report)
                                 .into_iter()
@@ -907,11 +912,10 @@ where
 
     let value_res = crate::anchor_store::with_document_scope(|| {
         with_interp_redaction_scope(|| {
-            let value = T::deserialize(crate::de::YamlDeserializer::new_with_path_recorder(
-                &mut src,
-                cfg,
-                &mut recorder,
-            ))?;
+            let value = crate::de::with_root_redaction(
+                crate::de::YamlDeserializer::new_with_path_recorder(&mut src, cfg, &mut recorder),
+                |de| T::deserialize(de),
+            )?;
             Validate::validate(&value).map_err(|report| Error::ValidationError {
                 issues: collect_garde_issues(&report)
                     .into_iter()
@@ -1165,11 +1169,14 @@ where
                 let mut recorder = crate::path_map::PathRecorder::new();
                 let value_res = crate::anchor_store::with_document_scope(|| {
                     with_interp_redaction_scope(|| {
-                        let value = T::deserialize(crate::de::YamlDeserializer::new_with_path_recorder(
-                            &mut src,
-                            cfg,
-                            &mut recorder,
-                        ))?;
+                        let value = crate::de::with_root_redaction(
+                            crate::de::YamlDeserializer::new_with_path_recorder(
+                                &mut src,
+                                cfg,
+                                &mut recorder,
+                            ),
+                            |de| T::deserialize(de),
+                        )?;
                         ValidatorValidate::validate(&value).map_err(|errors| Error::ValidatorError {
                             issues: collect_validator_issues(&errors)
                                 .into_iter()
@@ -1298,11 +1305,10 @@ where
 
     let value_res = crate::anchor_store::with_document_scope(|| {
         with_interp_redaction_scope(|| {
-            let value = T::deserialize(crate::de::YamlDeserializer::new_with_path_recorder(
-                &mut src,
-                cfg,
-                &mut recorder,
-            ))?;
+            let value = crate::de::with_root_redaction(
+                crate::de::YamlDeserializer::new_with_path_recorder(&mut src, cfg, &mut recorder),
+                |de| T::deserialize(de),
+            )?;
             ValidatorValidate::validate(&value).map_err(|errors| Error::ValidatorError {
                 issues: collect_validator_issues(&errors)
                     .into_iter()
@@ -1767,7 +1773,10 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
             Some(_) => {
                 let value_res = crate::anchor_store::with_document_scope(|| {
                     with_interp_redaction_scope(|| {
-                        T::deserialize(crate::de::YamlDeserializer::new(&mut src, cfg))
+                        crate::de::with_root_redaction(
+                            crate::de::YamlDeserializer::new(&mut src, cfg),
+                            |de| T::deserialize(de),
+                        )
                     })
                 });
                 let value = match value_res {
@@ -2099,7 +2108,11 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
     let mut src = LiveEvents::from_reader(ring_handle, options, false, EnforcingPolicy::AllContent);
 
     let value_res = crate::anchor_store::with_document_scope(|| {
-        with_interp_redaction_scope(|| T::deserialize(crate::de::YamlDeserializer::new(&mut src, cfg)))
+        with_interp_redaction_scope(|| {
+            crate::de::with_root_redaction(crate::de::YamlDeserializer::new(&mut src, cfg), |de| {
+                T::deserialize(de)
+            })
+        })
     });
     let value = match value_res {
         Ok(v) => v,
@@ -2330,10 +2343,10 @@ where
                     Ok(Some(_)) => {
                         let res = crate::anchor_store::with_document_scope(|| {
                             with_interp_redaction_scope(|| {
-                                T::deserialize(crate::de::YamlDeserializer::new(
-                                    &mut self.src,
-                                    self.cfg,
-                                ))
+                                crate::de::with_root_redaction(
+                                    crate::de::YamlDeserializer::new(&mut self.src, self.cfg),
+                                    |de| T::deserialize(de),
+                                )
                             })
                         });
                         if res.is_err() {

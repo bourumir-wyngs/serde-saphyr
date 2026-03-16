@@ -68,6 +68,42 @@ impl<'de> Deserialize<'de> for CheckedSeq {
     }
 }
 
+#[derive(Debug)]
+struct AnyChecked;
+
+impl<'de> Deserialize<'de> for AnyChecked {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct V;
+
+        impl<'de> serde::de::Visitor<'de> for V {
+            type Value = AnyChecked;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("anything")
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Err(E::custom(format!("bad value: {s}")))
+            }
+
+            fn visit_string<E>(self, s: String) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.visit_str(&s)
+            }
+        }
+
+        deserializer.deserialize_any(V)
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 struct SeqOuter {
@@ -595,6 +631,21 @@ fn validator_dynamic_param_key_does_not_leak_interpolated_value() {
 
     let err = serde_saphyr::from_str_with_options_validate::<ValidatorParamKeyCfg>(
         "value: ${BAD}\n",
+        property_options_with_map(Some(props)),
+    )
+    .unwrap_err();
+
+    let msg = err.to_string();
+    assert!(!msg.contains("zz-secret"), "secret leaked: {msg}");
+}
+
+#[test]
+fn top_level_deserialize_any_custom_error_does_not_leak_interpolated_value() {
+    let mut props = HashMap::new();
+    props.insert("BAD".to_string(), "zz-secret".to_string());
+
+    let err = from_str_with_options::<AnyChecked>(
+        "${BAD}\n",
         property_options_with_map(Some(props)),
     )
     .unwrap_err();

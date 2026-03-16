@@ -19,7 +19,9 @@ where
     W: Fn(Error, &LiveEvents<'de>) -> Error,
 {
     let value_res = crate::anchor_store::with_document_scope(|| {
-        crate::properties_redaction::with_interp_redaction_scope(|| f(YamlDeserializer::new(src, cfg)))
+        crate::properties_redaction::with_interp_redaction_scope(|| {
+            super::with_root_redaction(YamlDeserializer::new(src, cfg), f)
+        })
     });
     match value_res {
         Ok(v) => Ok(v),

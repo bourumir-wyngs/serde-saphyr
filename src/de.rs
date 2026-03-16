@@ -1056,6 +1056,23 @@ fn with_subtree_redaction<T>(ctx: Option<ScalarRedactionCtx>, f: impl FnOnce() -
     with_interp_redaction_scope(|| with_scalar_redaction(ctx, f))
 }
 
+#[cfg(feature = "properties")]
+pub(crate) fn with_root_redaction<'de, 'e, T>(
+    mut de: YamlDeserializer<'de, 'e>,
+    f: impl FnOnce(YamlDeserializer<'de, 'e>) -> Result<T, Error>,
+) -> Result<T, Error> {
+    let redaction_ctx = de.peek_scalar_redaction_ctx()?;
+    with_subtree_redaction(redaction_ctx, || f(de))
+}
+
+#[cfg(not(feature = "properties"))]
+pub(crate) fn with_root_redaction<'de, 'e, T>(
+    de: YamlDeserializer<'de, 'e>,
+    f: impl FnOnce(YamlDeserializer<'de, 'e>) -> Result<T, Error>,
+) -> Result<T, Error> {
+    f(de)
+}
+
 struct EnumScalarId<'de> {
     raw: Cow<'de, str>,
     effective: Cow<'de, str>,
