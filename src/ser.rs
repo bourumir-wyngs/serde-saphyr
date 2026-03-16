@@ -1767,6 +1767,8 @@ impl<'a, 'b, W: Write> SerializeSeq for SeqSer<'a, 'b, W> {
                 self.ser.newline()?;
             } else {
                 // Preserve legacy behavior: just emit a newline (empty body).
+                // Clear map-value pending state so it does not leak into following elements.
+                self.ser.pending_space_after_colon = false;
                 self.ser.newline()?;
             }
         } else {
