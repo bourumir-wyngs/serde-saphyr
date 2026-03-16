@@ -79,3 +79,16 @@ fn arc_weak_anchor_non_alias_should_error() {
         "expected error when weak value is not an alias"
     );
 }
+
+#[test]
+fn rc_weak_anchor_null_deserializes_to_dangling() {
+    let weak: RcWeakAnchor<Node> = from_str("null").expect("null should deserialize as dangling");
+    assert!(weak.upgrade().is_none());
+}
+
+#[test]
+fn arc_weak_anchor_null_deserializes_to_dangling() {
+    let weak: ArcWeakAnchor<Node> =
+        from_str("null").expect("null should deserialize as dangling");
+    assert!(weak.upgrade().is_none());
+}
