@@ -37,7 +37,7 @@ target:
 }
 
 #[test]
-fn merge_conflicts_error_by_default() {
+fn merge_conflicts_skip_duplicates_by_default() {
     let yaml = r#"
 base1: &B1 { a: 1, b: 2 }
 base2: &B2 { b: 20 }
@@ -45,13 +45,9 @@ target:
   <<: [*B1, *B2]
 "#;
 
-    match from_str::<MergeDoc<BTreeMap<String, i32>>>(yaml) {
-        Ok(_) => panic!("merge must reject duplicates by default"),
-        Err(err) => assert!(
-            err.to_string().contains("duplicate mapping key"),
-            "unexpected error: {err}"
-        ),
-    }
+    let doc: MergeDoc<BTreeMap<String, i32>> = from_str(yaml).expect("merge must skip duplicates");
+    assert_eq!(doc.target.get("a"), Some(&1));
+    assert_eq!(doc.target.get("b"), Some(&20));
 }
 
 #[test]

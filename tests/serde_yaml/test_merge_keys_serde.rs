@@ -1,7 +1,5 @@
 use serde::Deserialize;
 
-use serde_saphyr::DuplicateKeyPolicy;
-
 /// Configuration to parse into. Does not include "defaults"
 #[derive(Debug, Deserialize, PartialEq)]
 struct Config {
@@ -104,10 +102,7 @@ entries:
         entries: Vec<Entry>,
     }
 
-    let options = serde_saphyr::options! {
-        duplicate_keys: DuplicateKeyPolicy::FirstWins,
-    };
-    let root: Root = serde_saphyr::from_str_with_options(yaml, options).unwrap();
+    let root: Root = serde_saphyr::from_str(yaml).unwrap();
 
     // Check total entries (anchors are explicitly skipped)
     assert_eq!(root.entries.len(), 4);
@@ -149,10 +144,7 @@ fn test_merge_full_ancestor() {
 "#;
 
     // Deserialize YAML directly into a Vec<Entry> using Serde
-    let options = serde_saphyr::options! {
-        duplicate_keys: DuplicateKeyPolicy::FirstWins,
-    };
-    let entries: Vec<Entry> = serde_saphyr::from_str_with_options(yaml, options).unwrap();
+    let entries: Vec<Entry> = serde_saphyr::from_str(yaml).unwrap();
 
     // Check total entries (the first 4 YAML anchors are skipped as they do not match the Entry struct)
     assert_eq!(entries.len(), 8);

@@ -6,7 +6,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 #[cfg(feature = "include")]
 use serde_saphyr::{IncludeResolveError, InputSource, ResolvedInclude};
-use serde_saphyr::{options, DuplicateKeyPolicy};
 #[cfg(feature = "include")]
 use serde_saphyr::Options;
 
@@ -692,10 +691,7 @@ base:
   override: 2
 ";
 
-    let options = options! {
-        // With duplicate keys disabled, merge would not work by design
-        duplicate_keys: DuplicateKeyPolicy::FirstWins
-    }.with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+    let options = serde_saphyr::Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
         if req.spec == "child.yaml" {
             Ok(serde_saphyr::ResolvedInclude {
                 id: req.spec.to_string(),
@@ -714,40 +710,6 @@ base:
     assert_eq!(base.get("a").unwrap(), &1);
     assert_eq!(base.get("b").unwrap(), &2);
     assert_eq!(base.get("override").unwrap(), &2);
-}
-
-#[cfg(feature = "include")]
-#[test]
-fn test_include_with_merge_no_dups() {
-    let yaml = "
-base:
-  <<: !include child.yaml
-  override2: 2
-";
-
-    let options = options! {
-        // With duplicate keys disabled, merge would not work by design
-        duplicate_keys: DuplicateKeyPolicy::Error
-    }.with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
-        if req.spec == "child.yaml" {
-            Ok(serde_saphyr::ResolvedInclude {
-                id: req.spec.to_string(),
-                name: req.spec.to_string(),
-                source: serde_saphyr::InputSource::from_string("a: 1\nb: 2\noverride: 1\n".to_string())
-            })
-        } else {
-            Err(serde_saphyr::IncludeResolveError::Message("Not found".to_string()))
-        }
-    });
-
-    let result: std::collections::BTreeMap<String, std::collections::BTreeMap<String, i32>> =
-        serde_saphyr::from_str_with_options(yaml, options).unwrap();
-
-    let base = result.get("base").unwrap();
-    assert_eq!(base.get("a").unwrap(), &1);
-    assert_eq!(base.get("b").unwrap(), &2);
-    assert_eq!(base.get("override2").unwrap(), &2);
-    assert_eq!(base.get("override").unwrap(), &1);
 }
 
 #[cfg(feature = "include")]
