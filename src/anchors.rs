@@ -929,15 +929,22 @@ where
             where
                 D: serde::de::Deserializer<'de>,
             {
+                // `null` is the serialization form for dangling weak refs.
+                let is_null =
+                    <Option<serde::de::IgnoredAny> as serde::de::Deserialize>::deserialize(
+                        deserializer,
+                    )?
+                    .is_none();
+                if is_null {
+                    return Ok(RcWeakAnchor(RcWeak::new()));
+                }
+
                 // Anchor context is established by de.rs when the special name is used.
                 let id = anchor_store::current_rc_anchor().ok_or_else(|| {
                     D::Error::custom(
                         "weak Rc anchor must refer to an existing strong anchor via alias",
                     )
                 })?;
-                // Consume and ignore the inner node to keep the stream in sync (alias replay injects the full target node).
-                let _ =
-                    <serde::de::IgnoredAny as serde::de::Deserialize>::deserialize(deserializer)?;
                 // Look up the strong reference by id and downgrade.
                 match anchor_store::get_rc::<T>(id).map_err(D::Error::custom)? {
                     Some(rc) => Ok(RcWeakAnchor(Rc::downgrade(&rc))),
@@ -977,14 +984,20 @@ where
             where
                 D: serde::de::Deserializer<'de>,
             {
+                let is_null =
+                    <Option<serde::de::IgnoredAny> as serde::de::Deserialize>::deserialize(
+                        deserializer,
+                    )?
+                    .is_none();
+                if is_null {
+                    return Ok(ArcWeakAnchor(ArcWeak::new()));
+                }
+
                 let id = anchor_store::current_arc_anchor().ok_or_else(|| {
                     D::Error::custom(
                         "weak Arc anchor must refer to an existing strong anchor via alias",
                     )
                 })?;
-                // Consume and ignore the inner node (alias replay injects the target node events).
-                let _ =
-                    <serde::de::IgnoredAny as serde::de::Deserialize>::deserialize(deserializer)?;
                 match anchor_store::get_arc::<T>(id).map_err(D::Error::custom)? {
                     Some(arc) => Ok(ArcWeakAnchor(Arc::downgrade(&arc))),
                     None if anchor_store::arc_anchor_reentrant(id) => Err(D::Error::custom(
