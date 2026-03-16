@@ -11,5 +11,6 @@
 /tests/indentation.rs
 
 /miri-logs
+.idea
 
 /THREAT_MODEL.md

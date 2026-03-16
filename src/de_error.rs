@@ -281,6 +281,22 @@ impl ValidationIssue {
 }
 
 #[cfg(all(feature = "properties", any(feature = "garde", feature = "validator")))]
+fn replace_known_effectives(mut text: String, ctxs: &[crate::properties_redaction::ScalarRedactionCtx]) -> String {
+    let mut pairs: Vec<&crate::properties_redaction::ScalarRedactionCtx> =
+        ctxs.iter().filter(|ctx| !ctx.effective.is_empty()).collect();
+
+    pairs.sort_by_key(|ctx| std::cmp::Reverse(ctx.effective.len()));
+
+    for ctx in pairs {
+        if text.contains(&ctx.effective) {
+            text = text.replace(&ctx.effective, &ctx.raw);
+        }
+    }
+
+    text
+}
+
+#[cfg(all(feature = "properties", any(feature = "garde", feature = "validator")))]
 pub(crate) fn redact_issue(mut issue: ValidationIssue) -> ValidationIssue {
     with_interp_redaction(|pairs| {
         if pairs.is_empty() {
@@ -291,7 +307,10 @@ pub(crate) fn redact_issue(mut issue: ValidationIssue) -> ValidationIssue {
             issue.message = Some(redact_with_ctxs(msg, pairs, "invalid interpolated value"));
         }
 
-        for (_, value) in &mut issue.params {
+        issue.code = replace_known_effectives(std::mem::take(&mut issue.code), pairs);
+
+        for (key, value) in &mut issue.params {
+            *key = replace_known_effectives(std::mem::take(key), pairs);
             *value = redact_with_ctxs(std::mem::take(value), pairs, "<redacted>");
         }
 

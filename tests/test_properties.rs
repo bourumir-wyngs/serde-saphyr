@@ -521,9 +521,37 @@ fn reject_with_echo(v: &str) -> Result<(), validator::ValidationError> {
 }
 
 #[cfg(feature = "validator")]
+fn reject_with_echo_code(v: &str) -> Result<(), validator::ValidationError> {
+    let mut err = validator::ValidationError::new("bad");
+    err.code = std::borrow::Cow::Owned(format!("bad-{v}"));
+    Err(err)
+}
+
+#[cfg(feature = "validator")]
+fn reject_with_echo_param_key(v: &str) -> Result<(), validator::ValidationError> {
+    let mut err = validator::ValidationError::new("bad");
+    err.add_param(std::borrow::Cow::Owned(format!("k-{v}")), &"x");
+    Err(err)
+}
+
+#[cfg(feature = "validator")]
 #[derive(Debug, Deserialize, Validate)]
 struct ValidatorSecretCfg {
     #[validate(custom(function = "reject_with_echo"))]
+    value: String,
+}
+
+#[cfg(feature = "validator")]
+#[derive(Debug, Deserialize, Validate)]
+struct ValidatorCodeCfg {
+    #[validate(custom(function = "reject_with_echo_code"))]
+    value: String,
+}
+
+#[cfg(feature = "validator")]
+#[derive(Debug, Deserialize, Validate)]
+struct ValidatorParamKeyCfg {
+    #[validate(custom(function = "reject_with_echo_param_key"))]
     value: String,
 }
 
@@ -534,6 +562,38 @@ fn validator_custom_message_does_not_leak_interpolated_value() {
     props.insert("BAD".to_string(), "zz-secret".to_string());
 
     let err = serde_saphyr::from_str_with_options_validate::<ValidatorSecretCfg>(
+        "value: ${BAD}\n",
+        property_options_with_map(Some(props)),
+    )
+    .unwrap_err();
+
+    let msg = err.to_string();
+    assert!(!msg.contains("zz-secret"), "secret leaked: {msg}");
+}
+
+#[cfg(feature = "validator")]
+#[test]
+fn validator_dynamic_code_does_not_leak_interpolated_value() {
+    let mut props = HashMap::new();
+    props.insert("BAD".to_string(), "zz-secret".to_string());
+
+    let err = serde_saphyr::from_str_with_options_validate::<ValidatorCodeCfg>(
+        "value: ${BAD}\n",
+        property_options_with_map(Some(props)),
+    )
+    .unwrap_err();
+
+    let msg = err.to_string();
+    assert!(!msg.contains("zz-secret"), "secret leaked: {msg}");
+}
+
+#[cfg(feature = "validator")]
+#[test]
+fn validator_dynamic_param_key_does_not_leak_interpolated_value() {
+    let mut props = HashMap::new();
+    props.insert("BAD".to_string(), "zz-secret".to_string());
+
+    let err = serde_saphyr::from_str_with_options_validate::<ValidatorParamKeyCfg>(
         "value: ${BAD}\n",
         property_options_with_map(Some(props)),
     )
