@@ -1,11 +1,11 @@
 use std::fmt;
 
 use annotate_snippets::{
-    AnnotationKind, Level, Renderer, Snippet as AnnotateSnippet, renderer::DecorStyle,
+    renderer::DecorStyle, AnnotationKind, Level, Renderer, Snippet as AnnotateSnippet,
 };
 
-use crate::Location;
 use crate::localizer::Localizer;
+use crate::Location;
 
 /// Borrowed YAML source information used for snippet rendering.
 ///
@@ -246,6 +246,27 @@ mod tests {
 
         // Error line must keep its left prefix for column mapping.
         assert!(error.starts_with("key: "));
+    }
+
+    #[test]
+    fn crop_source_window_does_not_keep_full_context_lines_when_window_starts_past_eol() {
+        let text = format!(
+            "{}\nkey: {}\n{}\n",
+            "X".repeat(8_000),
+            "A".repeat(20_000),
+            "Y".repeat(8_000)
+        );
+        let loc = Location::new(2, 15_000);
+
+        let (cropped, _start_line) = crop_source_window(&text, &loc, LineMapping::Identity, 64);
+        let mut lines = cropped.lines();
+
+        let before = lines.next().unwrap();
+        let _error = lines.next().unwrap();
+        let after = lines.next().unwrap();
+
+        assert_eq!(before, "…", "unexpected before line: {before:?}");
+        assert_eq!(after, "…", "unexpected after line: {after:?}");
     }
 }
 
@@ -804,18 +825,6 @@ fn crop_line_by_cols(line: &str, left_col_1: usize, right_col_1: usize) -> (Stri
     if line_len_cols == 0 {
         return (
             String::new(),
-            LineCrop {
-                start_byte: 0,
-                prefix_bytes: 0,
-            },
-        );
-    }
-
-    // If the crop window starts at/after EOL for this line, keep it intact.
-    // This avoids turning short context lines into just "…".
-    if left_col_1 >= line_len_cols.saturating_add(1) {
-        return (
-            line.to_owned(),
             LineCrop {
                 start_byte: 0,
                 prefix_bytes: 0,
