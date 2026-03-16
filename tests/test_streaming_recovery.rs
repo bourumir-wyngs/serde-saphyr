@@ -131,3 +131,35 @@ fn streaming_reader_recovers_with_explicit_markers() {
     assert!(results[1].is_ok(), "Second document should succeed");
     assert_eq!(results[1].as_ref().unwrap(), &Point { x: 10, y: 20 });
 }
+
+/// Test that budget limits are enforced while skipping after a deserialization error.
+#[test]
+fn streaming_recovery_respects_budget_limits_while_skipping() {
+    // Doc 1: deserialization error (x is wrong type for Point)
+    // Then a very large sequence in the same document that should exceed max_events
+    // while the recovery path skips to the next document boundary.
+    // Doc 2: valid but should not be reached because budget is exhausted first.
+    let mut yaml = String::from("x: bad\ny: 1\nspill:\n");
+    for _ in 0..500 {
+        yaml.push_str("  - 1\n");
+    }
+    yaml.push_str("---\nx: 10\ny: 20\n");
+
+    let mut reader = Cursor::new(yaml.into_bytes());
+    let options = serde_saphyr::options! {
+        budget: serde_saphyr::budget! {
+            max_events: 64,
+        },
+    };
+
+    let mut iter = serde_saphyr::read_with_options::<_, Point>(&mut reader, options);
+
+    let first = iter.next().expect("expected first result");
+    assert!(first.is_err(), "First document should fail");
+
+    // Recovery skipping should consume budget and stop iteration before doc 2.
+    assert!(
+        iter.next().is_none(),
+        "Iterator should stop after budget exhaustion"
+    );
+}

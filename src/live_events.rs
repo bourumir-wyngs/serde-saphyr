@@ -1033,7 +1033,8 @@ impl<'a> LiveEvents<'a> {
     /// with subsequent documents.
     ///
     /// Returns `true` if a new document was found, `false` if EOF was reached.
-    /// Syntax errors during skipping cause the method to return `false` (EOF-like).
+    /// Syntax errors or budget breaches during skipping cause the method to
+    /// return `false` (EOF-like).
     pub(crate) fn skip_to_next_document(&mut self) -> bool {
         // Clear any peeked event and injection state
         self.look = None;
@@ -1049,6 +1050,13 @@ impl<'a> LiveEvents<'a> {
             let location =
                 location_from_span(&span).with_source_id(self.parser.current_source_id());
             self.last_location = location;
+
+            if let Some(ref mut budget) = self.budget
+                && budget.observe(&raw).is_err()
+            {
+                // Budget exhausted while skipping recovery content.
+                return false;
+            }
 
             match raw {
                 Event::DocumentStart(_) => {
