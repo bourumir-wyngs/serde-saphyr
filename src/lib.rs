@@ -468,7 +468,6 @@ where
 
 /// Deserialize a single YAML document with configurable [`Options`], and also
 /// return a map from validation paths to source [`Location`]s.
-
 #[cfg(feature = "garde")]
 #[allow(deprecated)]
 fn from_str_with_options_and_path_recorder_garde_valid<'de, T, F>(

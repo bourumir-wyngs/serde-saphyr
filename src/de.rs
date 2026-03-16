@@ -1348,7 +1348,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         #[cfg(not(feature = "properties"))]
         {
             let _ = location;
-            return Ok(value);
+            Ok(value)
         }
 
         #[cfg(feature = "properties")]
