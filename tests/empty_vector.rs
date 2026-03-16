@@ -20,6 +20,7 @@ fn serialize_empty_vec() -> anyhow::Result<()> {
     Ok(())
 }
 
+
 #[test]
 fn empty_vec_as_map_value_does_not_leak_state_when_braces_disabled() -> anyhow::Result<()> {
     #[derive(Serialize)]
