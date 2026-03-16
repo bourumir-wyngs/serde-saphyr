@@ -2415,26 +2415,23 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         let mut events = key.take_events();
 
                         let is_duplicate = self.seen.contains(&fingerprint);
-                        if self.flushing_merges {
-                            if is_duplicate {
-                                continue;
+                        match self.cfg.dup_policy {
+                            DuplicateKeyPolicy::Error => {
+                                if is_duplicate {
+                                    let key =
+                                        fingerprint.stringy_scalar_value().map(|s| s.to_owned());
+                                    return Err(Error::DuplicateMappingKey { key, location });
+                                }
                             }
-                        } else {
-                            match self.cfg.dup_policy {
-                                DuplicateKeyPolicy::Error => {
-                                    if is_duplicate {
-                                        let key = fingerprint
-                                            .stringy_scalar_value()
-                                            .map(|s| s.to_owned());
-                                        return Err(Error::DuplicateMappingKey { key, location });
-                                    }
+                            DuplicateKeyPolicy::FirstWins => {
+                                if is_duplicate {
+                                    continue;
                                 }
-                                DuplicateKeyPolicy::FirstWins => {
-                                    if is_duplicate {
-                                        continue;
-                                    }
+                            }
+                            DuplicateKeyPolicy::LastWins => {
+                                if self.flushing_merges && is_duplicate {
+                                    continue;
                                 }
-                                DuplicateKeyPolicy::LastWins => {}
                             }
                         }
 
