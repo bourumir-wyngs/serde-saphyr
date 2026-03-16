@@ -482,10 +482,15 @@ impl<'a> LiveEvents<'a> {
                     .map_err(|err| err.with_location(location))?;
             }
 
-            if let Some(ref mut budget) = self.budget
-                && let Err(breach) = budget.observe(&raw)
-            {
-                return Err(budget_error(breach).with_location(location));
+            if let Some(ref mut budget) = self.budget {
+                let budget_result = if matches!(raw, Event::Alias(_)) {
+                    Ok(())
+                } else {
+                    budget.observe(&raw)
+                };
+                if let Err(breach) = budget_result {
+                    return Err(budget_error(breach).with_location(location));
+                }
             }
 
             match raw {
@@ -665,6 +670,12 @@ impl<'a> LiveEvents<'a> {
                     #[cfg(feature = "include")]
                     {
                         self.pending_include_anchor = 0;
+                    }
+
+                    if let Some(ref mut budget) = self.budget
+                        && let Err(breach) = budget.observe_alias_reference()
+                    {
+                        return Err(budget_error(breach).with_location(location));
                     }
 
                     // Alias replay hardening.

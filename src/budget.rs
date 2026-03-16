@@ -393,13 +393,7 @@ impl BudgetEnforcer {
                 self.leave_sequence()?;
             }
             Event::Alias(_anchor_id) => {
-                self.report.aliases += 1;
-                if self.report.aliases > self.budget.max_aliases {
-                    return Err(BudgetBreach::Aliases {
-                        aliases: self.report.aliases,
-                    });
-                }
-                self.handle_alias();
+                self.observe_alias_event(true)?;
             }
             Event::DocumentStart(_explicit) => {
                 if self.policy == EnforcingPolicy::PerDocument {
@@ -418,6 +412,34 @@ impl BudgetEnforcer {
             Event::StreamStart | Event::StreamEnd => {}
         }
 
+        Ok(())
+    }
+
+    /// Observe an alias token from the parser stream without advancing mapping
+    /// key/value state.
+    ///
+    /// This is used by `LiveEvents`, where alias references are immediately
+    /// expanded into replayed events that already advance mapping state.
+    pub(crate) fn observe_alias_reference(&mut self) -> Result<(), BudgetBreach> {
+        self.report.events += 1;
+        if self.report.events > self.budget.max_events {
+            return Err(BudgetBreach::Events {
+                events: self.report.events,
+            });
+        }
+        self.observe_alias_event(false)
+    }
+
+    fn observe_alias_event(&mut self, advance_mapping_state: bool) -> Result<(), BudgetBreach> {
+        self.report.aliases += 1;
+        if self.report.aliases > self.budget.max_aliases {
+            return Err(BudgetBreach::Aliases {
+                aliases: self.report.aliases,
+            });
+        }
+        if advance_mapping_state {
+            self.handle_alias();
+        }
         Ok(())
     }
 

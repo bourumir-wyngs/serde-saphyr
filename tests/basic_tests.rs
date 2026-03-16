@@ -376,5 +376,34 @@ mod tests {
                 from_str_with_options::<HashMap<String, Vec<Vec<u32>>>>(y, options).unwrap_err();
             assert!(format!("{err}").contains("budget"));
         }
+
+        #[test]
+        fn merge_key_budget_still_counts_after_alias_value_replay() {
+            let y = r#"
+base: &base
+  x: 1
+root:
+  keep: *base
+  <<: *base
+"#;
+
+            let mut options = serde_saphyr::Options::default();
+            #[allow(deprecated)]
+            {
+                if let Some(ref mut budget) = options.budget {
+                    budget.max_merge_keys = 0;
+                }
+            }
+
+            let err = from_str_with_options::<HashMap<String, serde_json::Value>>(y, options)
+                .unwrap_err();
+            assert!(matches!(
+                unwrap_snippet(&err),
+                Error::Budget {
+                    breach: BudgetBreach::MergeKeys { .. },
+                    ..
+                }
+            ));
+        }
     }
 }
