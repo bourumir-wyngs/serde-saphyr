@@ -2,6 +2,7 @@ use serde::Deserialize;
 use serde_saphyr::from_str_with_options;
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct BorrowedStr<'a> {
     s: &'a str,
 }
