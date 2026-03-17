@@ -26,11 +26,11 @@ use crate::parse_scalars::{
     leading_zero_decimal, maybe_not_string, parse_int_signed, parse_int_unsigned,
     parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish, scalar_is_nullish_for_option,
 };
+#[cfg(feature = "properties")]
+use crate::properties::interpolate_compose_style;
 use crate::properties_redaction::{
     ScalarRedactionCtx, ScalarRedactionGuard, with_interp_redaction_scope,
 };
-#[cfg(feature = "properties")]
-use crate::properties::interpolate_compose_style;
 use ahash::{HashSetExt, RandomState};
 use saphyr_parser::ScalarStyle;
 use serde::de::{self, Deserializer as _, IntoDeserializer, Visitor};
@@ -590,8 +590,7 @@ fn pending_entries_from_events<'a>(
     events: Vec<Ev<'a>>,
     location: Location,
     reference_location: Location,
-    #[cfg(feature = "properties")]
-    property_map: Option<Rc<HashMap<String, String>>>,
+    #[cfg(feature = "properties")] property_map: Option<Rc<HashMap<String, String>>>,
 ) -> Result<Vec<PendingEntry<'a>>, Error> {
     let mut replay = ReplayEvents::with_reference(
         events,
@@ -894,8 +893,7 @@ impl<'a> ReplayEvents<'a> {
     /// - Merge expansion and recorded key/value deserialization.
     fn new(
         buf: Vec<Ev<'a>>,
-        #[cfg(feature = "properties")]
-        property_map: Option<Rc<HashMap<String, String>>>,
+        #[cfg(feature = "properties")] property_map: Option<Rc<HashMap<String, String>>>,
     ) -> Self {
         Self {
             buf,
@@ -921,8 +919,7 @@ impl<'a> ReplayEvents<'a> {
     fn with_reference(
         buf: Vec<Ev<'a>>,
         reference: Location,
-        #[cfg(feature = "properties")]
-        property_map: Option<Rc<HashMap<String, String>>>,
+        #[cfg(feature = "properties")] property_map: Option<Rc<HashMap<String, String>>>,
     ) -> Self {
         Self {
             buf,
@@ -1049,7 +1046,10 @@ impl<'de> ScalarView<'de> {
     }
 }
 
-fn with_scalar_redaction<T>(ctx: Option<ScalarRedactionCtx>, f: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
+fn with_scalar_redaction<T>(
+    ctx: Option<ScalarRedactionCtx>,
+    f: impl FnOnce() -> Result<T, Error>,
+) -> Result<T, Error> {
     let _guard = ctx.map(ScalarRedactionGuard::new);
     f()
 }
@@ -1060,7 +1060,10 @@ fn with_scalar_redaction<T>(ctx: Option<ScalarRedactionCtx>, f: impl FnOnce() ->
 /// Called from sequence/map seed boundaries and enum newtype payload accessors so any error
 /// raised after child deserialization can still redact interpolated values seen within that
 /// subtree.
-fn with_subtree_redaction<T>(ctx: Option<ScalarRedactionCtx>, f: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
+fn with_subtree_redaction<T>(
+    ctx: Option<ScalarRedactionCtx>,
+    f: impl FnOnce() -> Result<T, Error>,
+) -> Result<T, Error> {
     with_interp_redaction_scope(|| with_scalar_redaction(ctx, f))
 }
 
@@ -1201,7 +1204,9 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
             return Ok(None);
         }
 
-        Ok(self.peek_scalar_view()?.and_then(|view| view.redaction_ctx()))
+        Ok(self
+            .peek_scalar_view()?
+            .and_then(|view| view.redaction_ctx()))
     }
 
     #[cfg(any(feature = "garde", feature = "validator"))]
@@ -1312,9 +1317,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         }
     }
 
-    fn peek_effective_scalar(
-        &mut self,
-    ) -> Result<Option<EffectiveScalar<'de>>, Error> {
+    fn peek_effective_scalar(&mut self) -> Result<Option<EffectiveScalar<'de>>, Error> {
         let Some(view) = self.peek_scalar_view()? else {
             return Ok(None);
         };
@@ -1333,7 +1336,9 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
             _ => return Ok(None),
         };
 
-        Ok(Some(self.scalar_view_from_parts(value, tag, style, location)?))
+        Ok(Some(
+            self.scalar_view_from_parts(value, tag, style, location)?,
+        ))
     }
 
     fn scalar_view_from_parts(
@@ -1745,8 +1750,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             return visitor.visit_borrowed_str(b);
         }
 
-        let res: Result<V::Value, Self::Error> =
-            with_scalar_redaction(redaction_ctx, || visitor.visit_string(view.effective.into_owned()));
+        let res: Result<V::Value, Self::Error> = with_scalar_redaction(redaction_ctx, || {
+            visitor.visit_string(view.effective.into_owned())
+        });
         match res {
             Ok(v) => Ok(v),
             Err(err) => {
@@ -1807,7 +1813,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
         let redaction_ctx = view.redaction_ctx();
         let view = self.take_peeked_scalar_view(view)?;
         match view.effective {
-            Cow::Borrowed(b) => with_scalar_redaction(redaction_ctx, || visitor.visit_borrowed_str(b)),
+            Cow::Borrowed(b) => {
+                with_scalar_redaction(redaction_ctx, || visitor.visit_borrowed_str(b))
+            }
             Cow::Owned(s) => with_scalar_redaction(redaction_ctx, || visitor.visit_string(s)),
         }
     }
@@ -2179,9 +2187,11 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
                 let mut de = YamlDeserializer::new(self.ev, self.cfg);
                 let redaction_ctx = de.peek_scalar_redaction_ctx()?;
-                with_subtree_redaction(redaction_ctx, || seed.deserialize(de)).map(Some).map_err(|e| {
-                    attach_alias_locations_if_missing(e, reference_location, defined_location)
-                })
+                with_subtree_redaction(redaction_ctx, || seed.deserialize(de))
+                    .map(Some)
+                    .map_err(|e| {
+                        attach_alias_locations_if_missing(e, reference_location, defined_location)
+                    })
             }
         }
 
@@ -2724,13 +2734,15 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                                 recorder,
                             );
                             let redaction_ctx = de.peek_scalar_redaction_ctx()?;
-                            let res = with_subtree_redaction(redaction_ctx, || seed.deserialize(de)).map_err(|e| {
-                                attach_alias_locations_if_missing(
-                                    e,
-                                    reference_location,
-                                    defined_location,
-                                )
-                            });
+                            let res =
+                                with_subtree_redaction(redaction_ctx, || seed.deserialize(de))
+                                    .map_err(|e| {
+                                        attach_alias_locations_if_missing(
+                                            e,
+                                            reference_location,
+                                            defined_location,
+                                        )
+                                    });
                             recorder.current = prev;
                             return res;
                         }
@@ -2771,13 +2783,15 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                                 self.ev, self.cfg, recorder,
                             );
                             let redaction_ctx = de.peek_scalar_redaction_ctx()?;
-                            let res = with_subtree_redaction(redaction_ctx, || seed.deserialize(de)).map_err(|e| {
-                                attach_alias_locations_if_missing(
-                                    e,
-                                    reference_location,
-                                    defined_location,
-                                )
-                            });
+                            let res =
+                                with_subtree_redaction(redaction_ctx, || seed.deserialize(de))
+                                    .map_err(|e| {
+                                        attach_alias_locations_if_missing(
+                                            e,
+                                            reference_location,
+                                            defined_location,
+                                        )
+                                    });
                             recorder.current = prev;
                             return res;
                         }

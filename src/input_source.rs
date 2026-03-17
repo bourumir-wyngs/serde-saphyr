@@ -70,7 +70,11 @@ pub struct ResolvedInclude {
 #[non_exhaustive]
 pub enum ResolveProblem {
     /// Failed to canonicalize the include target path.
-    ResolveFailed { spec: String, base_dir: String, err: std::io::Error },
+    ResolveFailed {
+        spec: String,
+        base_dir: String,
+        err: std::io::Error,
+    },
     /// The include target is not a regular file.
     TargetNotRegularFile { target: String },
     /// The include target resolves to the configured root file itself (cyclic include).
@@ -78,7 +82,11 @@ pub enum ResolveProblem {
     /// The parent include id was not an absolute canonical path.
     ParentIdNotAbsoluteCanonical { parent_id: String },
     /// Failed to resolve the parent include source.
-    ParentResolveFailed { parent_id: String, from_name: String, err: std::io::Error },
+    ParentResolveFailed {
+        parent_id: String,
+        from_name: String,
+        err: std::io::Error,
+    },
     /// The parent include is not a regular file.
     ParentNotRegularFile { parent: String },
     /// The parent include does not have a parent directory.
@@ -196,7 +204,8 @@ pub struct IncludeRequest<'a> {
 /// assert_eq!(config.users[0].name, "Alice");
 /// # }
 /// ```
-pub type IncludeResolver<'a> = dyn FnMut(IncludeRequest<'_>) -> Result<ResolvedInclude, IncludeResolveError> + 'a;
+pub type IncludeResolver<'a> =
+    dyn FnMut(IncludeRequest<'_>) -> Result<ResolvedInclude, IncludeResolveError> + 'a;
 
 impl InputSource {
     #[inline]

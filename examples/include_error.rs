@@ -1,5 +1,7 @@
 use serde::Deserialize;
-use serde_saphyr::{from_str_with_options, IncludeRequest, IncludeResolveError, Options, ResolvedInclude};
+use serde_saphyr::{
+    IncludeRequest, IncludeResolveError, Options, ResolvedInclude, from_str_with_options,
+};
 
 #[derive(Deserialize, Debug)]
 #[allow(dead_code)]
@@ -20,20 +22,25 @@ fn main() {
 string
 "#;
 
-    let options = Options::default().with_include_resolver(|req: IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
-        if req.spec == "included.yaml" {
-            Ok(ResolvedInclude {
-                id: "included.yaml".to_string(),
-                name: "included.yaml".to_string(),
-                source: serde_saphyr::InputSource::from_string(included_yaml.to_string()),
-            })
-        } else {
-            Err(IncludeResolveError::Message(format!("file not found: {}", req.spec)))
-        }
-    });
+    let options = Options::default().with_include_resolver(
+        |req: IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
+            if req.spec == "included.yaml" {
+                Ok(ResolvedInclude {
+                    id: "included.yaml".to_string(),
+                    name: "included.yaml".to_string(),
+                    source: serde_saphyr::InputSource::from_string(included_yaml.to_string()),
+                })
+            } else {
+                Err(IncludeResolveError::Message(format!(
+                    "file not found: {}",
+                    req.spec
+                )))
+            }
+        },
+    );
 
     let result: Result<Config, _> = from_str_with_options(main_yaml, options);
-    
+
     match result {
         Ok(c) => println!("Config: {:?}", c),
         Err(e) => {

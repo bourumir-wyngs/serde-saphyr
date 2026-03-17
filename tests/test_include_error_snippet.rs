@@ -2,9 +2,9 @@
 
 use serde::Deserialize;
 use serde_saphyr::{
-    from_reader_with_options, from_str_with_options, with_deserializer_from_reader_with_options,
-    with_deserializer_from_str_with_options, IncludeRequest, IncludeResolveError, Options,
-    ResolvedInclude,
+    IncludeRequest, IncludeResolveError, Options, ResolvedInclude, from_reader_with_options,
+    from_str_with_options, with_deserializer_from_reader_with_options,
+    with_deserializer_from_str_with_options,
 };
 use std::io::Cursor;
 
@@ -25,22 +25,27 @@ fn test_include_error_snippet() {
 "#;
     let included_yaml = "\nstring\n";
 
-    let options = Options::default().with_include_resolver(|req: IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
-        if req.spec == "included.yaml" {
-            Ok(ResolvedInclude {
-                id: "included.yaml".to_string(),
-                name: "included.yaml".to_string(),
-                source: serde_saphyr::InputSource::from_string(included_yaml.to_string()),
-            })
-        } else {
-            Err(IncludeResolveError::Message(format!("file not found: {}", req.spec)))
-        }
-    });
+    let options = Options::default().with_include_resolver(
+        |req: IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
+            if req.spec == "included.yaml" {
+                Ok(ResolvedInclude {
+                    id: "included.yaml".to_string(),
+                    name: "included.yaml".to_string(),
+                    source: serde_saphyr::InputSource::from_string(included_yaml.to_string()),
+                })
+            } else {
+                Err(IncludeResolveError::Message(format!(
+                    "file not found: {}",
+                    req.spec
+                )))
+            }
+        },
+    );
 
     let result: Result<Config, _> = from_str_with_options(main_yaml, options);
     assert!(result.is_err());
     let err_str = result.unwrap_err().to_string();
-    
+
     assert!(err_str.contains("included from here:"));
     assert!(err_str.contains("b: !include included.yaml"));
     assert!(err_str.contains("string"));
@@ -64,7 +69,10 @@ fn test_include_error_snippet_from_reader_with_options() {
                     source: serde_saphyr::InputSource::from_string(included_yaml.to_string()),
                 })
             } else {
-                Err(IncludeResolveError::Message(format!("file not found: {}", req.spec)))
+                Err(IncludeResolveError::Message(format!(
+                    "file not found: {}",
+                    req.spec
+                )))
             }
         },
     );
@@ -97,7 +105,10 @@ fn test_include_error_snippet_with_deserializer_helpers() {
                         source: serde_saphyr::InputSource::from_string(included_yaml.to_string()),
                     })
                 } else {
-                    Err(IncludeResolveError::Message(format!("file not found: {}", req.spec)))
+                    Err(IncludeResolveError::Message(format!(
+                        "file not found: {}",
+                        req.spec
+                    )))
                 }
             },
         )
@@ -146,7 +157,10 @@ fn reader_root_include_site_snippet_uses_snapshot_start_line() {
                     source: serde_saphyr::InputSource::from_string(included_yaml.to_string()),
                 })
             } else {
-                Err(IncludeResolveError::Message(format!("file not found: {}", req.spec)))
+                Err(IncludeResolveError::Message(format!(
+                    "file not found: {}",
+                    req.spec
+                )))
             }
         },
     );
@@ -155,8 +169,20 @@ fn reader_root_include_site_snippet_uses_snapshot_start_line() {
     assert!(result.is_err());
 
     let err_str = result.unwrap_err().to_string();
-    assert!(err_str.contains("included from here:"), "unexpected diagnostic: {err_str}");
-    assert!(err_str.contains("--> input:50:"), "root include-site snippet should use absolute line 50: {err_str}");
-    assert!(err_str.contains("b: !include included.yaml"), "unexpected diagnostic: {err_str}");
-    assert!(err_str.contains("--> included.yaml:"), "primary snippet should still point at the included source: {err_str}");
+    assert!(
+        err_str.contains("included from here:"),
+        "unexpected diagnostic: {err_str}"
+    );
+    assert!(
+        err_str.contains("--> input:50:"),
+        "root include-site snippet should use absolute line 50: {err_str}"
+    );
+    assert!(
+        err_str.contains("b: !include included.yaml"),
+        "unexpected diagnostic: {err_str}"
+    );
+    assert!(
+        err_str.contains("--> included.yaml:"),
+        "primary snippet should still point at the included source: {err_str}"
+    );
 }

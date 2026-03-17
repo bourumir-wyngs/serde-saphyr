@@ -88,7 +88,6 @@ fn rc_weak_anchor_null_deserializes_to_dangling() {
 
 #[test]
 fn arc_weak_anchor_null_deserializes_to_dangling() {
-    let weak: ArcWeakAnchor<Node> =
-        from_str("null").expect("null should deserialize as dangling");
+    let weak: ArcWeakAnchor<Node> = from_str("null").expect("null should deserialize as dangling");
     assert!(weak.upgrade().is_none());
 }

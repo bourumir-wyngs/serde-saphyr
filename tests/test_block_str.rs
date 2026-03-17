@@ -353,7 +353,7 @@ fn verdanta_case_fold() -> anyhow::Result<()> {
 
     let object = RcAnchor::wrapping(node);
 
-    let opts = serde_saphyr::ser_options!  {
+    let opts = serde_saphyr::ser_options! {
         compact_list_indent: false,
     };
     let yaml = to_string_with_options(&object, opts)?;

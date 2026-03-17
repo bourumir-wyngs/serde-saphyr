@@ -70,7 +70,7 @@ fn parse_braced_reference(input: &str, start: usize) -> Result<Option<(&str, usi
 ///
 /// Returns:
 /// - `Cow::Borrowed` when the scalar is unchanged, or `Cow::Owned` with the expanded value.
-pub (crate) fn interpolate_compose_style<'s>(
+pub(crate) fn interpolate_compose_style<'s>(
     input: Cow<'s, str>,
     vars: &HashMap<String, String>,
 ) -> Result<Cow<'s, str>, PropertyError> {
@@ -116,8 +116,8 @@ pub (crate) fn interpolate_compose_style<'s>(
             continue;
         }
 
-        let Some((name, end)) = parse_braced_reference(input_str, i)
-            .map_err(PropertyError::InvalidName)?
+        let Some((name, end)) =
+            parse_braced_reference(input_str, i).map_err(PropertyError::InvalidName)?
         else {
             i += 1;
             continue;
@@ -150,7 +150,7 @@ pub (crate) fn interpolate_compose_style<'s>(
 
 #[cfg(test)]
 mod tests {
-    use super::{interpolate_compose_style, PropertyError};
+    use super::{PropertyError, interpolate_compose_style};
     use std::borrow::Cow;
     use std::collections::HashMap;
 
@@ -177,7 +177,8 @@ mod tests {
     fn reports_invalid_property_name() {
         let vars = HashMap::from([(String::from("NAME"), String::from("world"))]);
 
-        let error = interpolate_compose_style(Cow::Borrowed("${NAME:-fallback}"), &vars).unwrap_err();
+        let error =
+            interpolate_compose_style(Cow::Borrowed("${NAME:-fallback}"), &vars).unwrap_err();
 
         assert_eq!(
             error,

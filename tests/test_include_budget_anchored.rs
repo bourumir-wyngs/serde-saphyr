@@ -1,7 +1,9 @@
 #![cfg(feature = "include")]
 
 use serde::Deserialize;
-use serde_saphyr::{from_reader_with_options, IncludeResolveError, InputSource, Options, ResolvedInclude};
+use serde_saphyr::{
+    IncludeResolveError, InputSource, Options, ResolvedInclude, from_reader_with_options,
+};
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct Root {
@@ -45,9 +47,16 @@ i2: !include "f.yml#f"
     });
 
     let result: Result<Root, _> = from_reader_with_options(yaml.as_bytes(), options);
-    assert!(result.is_err(), "Expected parsing to fail due to budget exhaustion");
+    assert!(
+        result.is_err(),
+        "Expected parsing to fail due to budget exhaustion"
+    );
     let err_msg = result.unwrap_err().to_string();
-    assert!(err_msg.contains("exceed"), "Error should mention exceeding limit, got: {}", err_msg);
+    assert!(
+        err_msg.contains("exceed"),
+        "Error should mention exceeding limit, got: {}",
+        err_msg
+    );
 }
 
 #[test]
@@ -56,17 +65,18 @@ fn test_anchored_include_succeeds_when_fragment_exactly_fits_remaining_budget() 
     let yaml = format!("pad: {pad}\nincluded: !include \"f.yml#f\"\n");
     let anchored_text = "root: &f |
   exactly_twenty_bytes\n";
-    let resolver = move |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
-        assert_eq!(req.spec, "f.yml#f");
-        Ok(ResolvedInclude {
-            id: req.spec.to_string(),
-            name: req.spec.to_string(),
-            source: InputSource::AnchoredText {
-                text: anchored_text.to_string(),
-                anchor: "f".to_string(),
-            },
-        })
-    };
+    let resolver =
+        move |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
+            assert_eq!(req.spec, "f.yml#f");
+            Ok(ResolvedInclude {
+                id: req.spec.to_string(),
+                name: req.spec.to_string(),
+                source: InputSource::AnchoredText {
+                    text: anchored_text.to_string(),
+                    anchor: "f".to_string(),
+                },
+            })
+        };
     let mut options = Options::default().with_include_resolver(resolver);
     options.budget = Some(serde_saphyr::budget::Budget {
         max_reader_input_bytes: Some(yaml.len() + anchored_text.len()),
@@ -85,17 +95,18 @@ fn test_same_anchored_include_parses_with_different_limits() {
     let yaml = b"included1: !include \"f.yml#f\"\nincluded2: !include \"f.yml#f\"\n";
     let anchored_text = format!("root: &f |\n  {}\n", "a".repeat(80));
     let anchored_text_len = anchored_text.len();
-    let resolver_ok = move |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
-        assert_eq!(req.spec, "f.yml#f");
-        Ok(ResolvedInclude {
-            id: req.spec.to_string(),
-            name: req.spec.to_string(),
-            source: InputSource::AnchoredText {
-                text: anchored_text.clone(),
-                anchor: "f".to_string(),
-            },
-        })
-    };
+    let resolver_ok =
+        move |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
+            assert_eq!(req.spec, "f.yml#f");
+            Ok(ResolvedInclude {
+                id: req.spec.to_string(),
+                name: req.spec.to_string(),
+                source: InputSource::AnchoredText {
+                    text: anchored_text.clone(),
+                    anchor: "f".to_string(),
+                },
+            })
+        };
     let mut options_ok = Options::default().with_include_resolver(resolver_ok);
     options_ok.budget = Some(serde_saphyr::budget::Budget {
         max_reader_input_bytes: Some(yaml.len() + (2 * anchored_text_len)),
@@ -109,17 +120,18 @@ fn test_same_anchored_include_parses_with_different_limits() {
 
     let anchored_text = format!("root: &f |\n  {}\n", "a".repeat(80));
     let anchored_text_len = anchored_text.len();
-    let resolver_err = move |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
-        assert_eq!(req.spec, "f.yml#f");
-        Ok(ResolvedInclude {
-            id: req.spec.to_string(),
-            name: req.spec.to_string(),
-            source: InputSource::AnchoredText {
-                text: anchored_text.clone(),
-                anchor: "f".to_string(),
-            },
-        })
-    };
+    let resolver_err =
+        move |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
+            assert_eq!(req.spec, "f.yml#f");
+            Ok(ResolvedInclude {
+                id: req.spec.to_string(),
+                name: req.spec.to_string(),
+                source: InputSource::AnchoredText {
+                    text: anchored_text.clone(),
+                    anchor: "f".to_string(),
+                },
+            })
+        };
     let mut options_err = Options::default().with_include_resolver(resolver_err);
     options_err.budget = Some(serde_saphyr::budget::Budget {
         max_reader_input_bytes: Some(yaml.len() + (2 * anchored_text_len) - 1),

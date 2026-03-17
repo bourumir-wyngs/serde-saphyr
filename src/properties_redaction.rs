@@ -191,11 +191,7 @@ pub(crate) fn redact_with_ctxs(
             return fallback.to_owned();
         }
     }
-    if replaced {
-        text
-    } else {
-        fallback.to_owned()
-    }
+    if replaced { text } else { fallback.to_owned() }
 }
 
 #[cfg(feature = "properties")]

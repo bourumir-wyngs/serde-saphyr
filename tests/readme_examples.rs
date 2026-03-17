@@ -211,7 +211,7 @@ struct Config {
 
 #[cfg(feature = "properties")]
 fn property_map() -> Result<Config, serde_saphyr::Error> {
-    use serde_saphyr::{options, from_str_with_options};
+    use serde_saphyr::{from_str_with_options, options};
     use std::collections::HashMap;
     let mut properties = HashMap::new();
     properties.insert(

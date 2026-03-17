@@ -443,8 +443,14 @@ fn reader_garde_validation_in_text_include_has_snippet() {
         other => panic!("expected ValidationError, got: {other:?}"),
     }
 
-    let location = err.location().expect("garde validation error should expose a location");
-    assert_eq!(location.source_id(), 2, "expected included source id, got: {location:?}");
+    let location = err
+        .location()
+        .expect("garde validation error should expose a location");
+    assert_eq!(
+        location.source_id(),
+        2,
+        "expected included source id, got: {location:?}"
+    );
 
     let rendered = err.to_string();
     assert!(
@@ -478,8 +484,14 @@ fn from_str_with_options_valid_reports_garde_error_from_included_input() {
         Error::WithSnippet { error, .. } if matches!(**error, Error::ValidationError { .. }) => {}
         other => panic!("expected ValidationError, got: {other:?}"),
     }
-    let location = err.location().expect("garde validation error should expose a location");
-    assert_eq!(location.source_id(), 2, "expected included source id, got: {location:?}");
+    let location = err
+        .location()
+        .expect("garde validation error should expose a location");
+    assert_eq!(
+        location.source_id(),
+        2,
+        "expected included source id, got: {location:?}"
+    );
 
     let rendered = err.to_string();
     assert!(
@@ -493,22 +505,28 @@ fn from_str_with_options_valid_reports_garde_error_from_included_input() {
 fn validation_does_not_replay_include_resolver() {
     let calls = Rc::new(RefCell::new(Vec::new()));
     let calls_for_resolver = Rc::clone(&calls);
-    let options = serde_saphyr::Options::default().with_include_resolver(move |req: serde_saphyr::IncludeRequest| {
-        calls_for_resolver.borrow_mut().push(req.spec.to_string());
-        match req.spec {
-            "child.yaml" => Ok(serde_saphyr::ResolvedInclude {
-                id: req.spec.to_string(),
-                name: req.spec.to_string(),
-                source: serde_saphyr::InputSource::from_string("value: !include grandchild.yaml\n".to_string()),
-            }),
-            "grandchild.yaml" => Ok(serde_saphyr::ResolvedInclude {
-                id: req.spec.to_string(),
-                name: req.spec.to_string(),
-                source: serde_saphyr::InputSource::from_string("\"\"\n".to_string()),
-            }),
-            other => Err(serde_saphyr::IncludeResolveError::Message(format!("unexpected include: {other}"))),
-        }
-    });
+    let options = serde_saphyr::Options::default().with_include_resolver(
+        move |req: serde_saphyr::IncludeRequest| {
+            calls_for_resolver.borrow_mut().push(req.spec.to_string());
+            match req.spec {
+                "child.yaml" => Ok(serde_saphyr::ResolvedInclude {
+                    id: req.spec.to_string(),
+                    name: req.spec.to_string(),
+                    source: serde_saphyr::InputSource::from_string(
+                        "value: !include grandchild.yaml\n".to_string(),
+                    ),
+                }),
+                "grandchild.yaml" => Ok(serde_saphyr::ResolvedInclude {
+                    id: req.spec.to_string(),
+                    name: req.spec.to_string(),
+                    source: serde_saphyr::InputSource::from_string("\"\"\n".to_string()),
+                }),
+                other => Err(serde_saphyr::IncludeResolveError::Message(format!(
+                    "unexpected include: {other}"
+                ))),
+            }
+        },
+    );
 
     let yaml = "a: !include child.yaml\n";
 
@@ -553,10 +571,22 @@ fn validation_include_chain_built_from_recorded_sources() {
         .expect_err("included value must fail garde rule");
     let rendered = err.to_string();
 
-    assert!(rendered.contains("--> (defined):1:1"), "expected deepest included source snippet, got: {rendered}");
-    assert!(rendered.contains("included from here:"), "expected include-chain notes, got: {rendered}");
-    assert!(rendered.contains("--> child.yaml:1:17"), "expected intermediate include-site snippet, got: {rendered}");
-    assert!(rendered.contains("--> <input>:1:13"), "expected root include-site snippet, got: {rendered}");
+    assert!(
+        rendered.contains("--> (defined):1:1"),
+        "expected deepest included source snippet, got: {rendered}"
+    );
+    assert!(
+        rendered.contains("included from here:"),
+        "expected include-chain notes, got: {rendered}"
+    );
+    assert!(
+        rendered.contains("--> child.yaml:1:17"),
+        "expected intermediate include-site snippet, got: {rendered}"
+    );
+    assert!(
+        rendered.contains("--> <input>:1:13"),
+        "expected root include-site snippet, got: {rendered}"
+    );
 }
 
 #[cfg(feature = "include")]
@@ -582,28 +612,61 @@ fn garde_multidoc_validation_in_included_file_renders_included_snippet() {
     let Error::ValidationErrors { errors } = &err else {
         panic!("expected ValidationErrors, got: {err:?}");
     };
-    assert_eq!(errors.len(), 1, "expected one failing document, got: {errors:?}");
+    assert_eq!(
+        errors.len(),
+        1,
+        "expected one failing document, got: {errors:?}"
+    );
 
     let rendered = err.to_string();
-    assert!(rendered.contains("--> (defined):1:1"), "expected included file content as primary snippet, got: {rendered}");
-    assert!(rendered.contains("| \"\""), "expected included content in snippet, got: {rendered}");
-    assert!(rendered.contains("--> <input>:3:13"), "expected second document include-site snippet, got: {rendered}");
+    assert!(
+        rendered.contains("--> (defined):1:1"),
+        "expected included file content as primary snippet, got: {rendered}"
+    );
+    assert!(
+        rendered.contains("| \"\""),
+        "expected included content in snippet, got: {rendered}"
+    );
+    assert!(
+        rendered.contains("--> <input>:3:13"),
+        "expected second document include-site snippet, got: {rendered}"
+    );
 }
 
 #[test]
 fn multidoc_validation_anchor_origin_renders_defined_here() {
-    let yaml = concat!("a: \"ok\"\n", "b: \"ok\"\n", "---\n", "a: &A \"x\"\n", "b: *A\n");
+    let yaml = concat!(
+        "a: \"ok\"\n",
+        "b: \"ok\"\n",
+        "---\n",
+        "a: &A \"x\"\n",
+        "b: *A\n"
+    );
 
-    let err = serde_saphyr::from_multiple_with_options_valid::<AnchorRoot>(yaml, Default::default())
-        .expect_err("anchored value in second document must fail garde rule");
+    let err =
+        serde_saphyr::from_multiple_with_options_valid::<AnchorRoot>(yaml, Default::default())
+            .expect_err("anchored value in second document must fail garde rule");
 
     let Error::ValidationErrors { errors } = &err else {
         panic!("expected ValidationErrors, got: {err:?}");
     };
-    assert_eq!(errors.len(), 1, "expected one failing document, got: {errors:?}");
+    assert_eq!(
+        errors.len(),
+        1,
+        "expected one failing document, got: {errors:?}"
+    );
 
     let rendered = err.to_string();
-    assert!(rendered.contains("the value is used here:5:4"), "expected alias use-site from second document, got: {rendered}");
-    assert!(rendered.contains("This value comes indirectly from the anchor at line 4 column 7:"), "expected anchor origin note, got: {rendered}");
-    assert!(rendered.contains("line 4 column 7"), "expected anchor definition location from second document, got: {rendered}");
+    assert!(
+        rendered.contains("the value is used here:5:4"),
+        "expected alias use-site from second document, got: {rendered}"
+    );
+    assert!(
+        rendered.contains("This value comes indirectly from the anchor at line 4 column 7:"),
+        "expected anchor origin note, got: {rendered}"
+    );
+    assert!(
+        rendered.contains("line 4 column 7"),
+        "expected anchor definition location from second document, got: {rendered}"
+    );
 }

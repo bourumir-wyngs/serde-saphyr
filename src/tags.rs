@@ -57,7 +57,9 @@ pub(crate) fn include_spec_from_tag_and_value(
         IncludeTag::Plain => Ok(Some(value.to_string())),
         IncludeTag::WithFragment(fragment) => {
             if value.contains('#') {
-                return Err("include spec must not contain '#' when using !include#fragment tag form");
+                return Err(
+                    "include spec must not contain '#' when using !include#fragment tag form",
+                );
             }
             Ok(Some(format!("{value}#{fragment}")))
         }

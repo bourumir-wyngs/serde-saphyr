@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde_saphyr::{
-    from_str_with_options, IncludeRequest, IncludeResolveError, InputSource, Options,
-    ResolvedInclude,
+    IncludeRequest, IncludeResolveError, InputSource, Options, ResolvedInclude,
+    from_str_with_options,
 };
 
 #[derive(Debug, Deserialize, PartialEq)]

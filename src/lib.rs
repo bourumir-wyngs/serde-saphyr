@@ -44,10 +44,10 @@ use crate::budget::EnforcingPolicy;
 use crate::de::{Ev, Events};
 #[cfg(feature = "garde")]
 use crate::de_error::collect_garde_issues;
-#[cfg(any(feature = "garde", feature = "validator"))]
-use crate::de_error::redact_issue;
 #[cfg(feature = "validator")]
 use crate::de_error::collect_validator_issues;
+#[cfg(any(feature = "garde", feature = "validator"))]
+use crate::de_error::redact_issue;
 use crate::live_events::LiveEvents;
 use crate::parse_scalars::scalar_is_nullish;
 use crate::properties_redaction::with_interp_redaction_scope;
@@ -677,11 +677,10 @@ where
 {
     let with_snippet = options.with_snippet;
     let crop_radius = options.crop_radius;
-    let (v, mut src) = from_str_with_options_and_path_recorder_garde_valid::<T, _>(
-        input,
-        options,
-        |value| Validate::validate(value),
-    )?;
+    let (v, mut src) =
+        from_str_with_options_and_path_recorder_garde_valid::<T, _>(input, options, |value| {
+            Validate::validate(value)
+        })?;
     if let Err(e) = src.finish() {
         return Err(maybe_with_snippet_from_events(
             e,
@@ -708,11 +707,10 @@ where
 {
     let with_snippet = options.with_snippet;
     let crop_radius = options.crop_radius;
-    let (v, mut src) = from_str_with_options_and_path_recorder_garde_valid::<T, _>(
-        input,
-        options,
-        |value| Validate::validate_with(value, context),
-    )?;
+    let (v, mut src) =
+        from_str_with_options_and_path_recorder_garde_valid::<T, _>(input, options, |value| {
+            Validate::validate_with(value, context)
+        })?;
     if let Err(e) = src.finish() {
         return Err(maybe_with_snippet_from_events(
             e,
@@ -1036,12 +1034,14 @@ where
                                         &mut recorder,
                                     ),
                                 )?;
-                                Validate::validate(&value).map_err(|report| Error::ValidationError {
-                                    issues: collect_garde_issues(&report)
-                                        .into_iter()
-                                        .map(redact_issue)
-                                        .collect(),
-                                    locations: recorder.map.clone(),
+                                Validate::validate(&value).map_err(|report| {
+                                    Error::ValidationError {
+                                        issues: collect_garde_issues(&report)
+                                            .into_iter()
+                                            .map(redact_issue)
+                                            .collect(),
+                                        locations: recorder.map.clone(),
+                                    }
                                 })?;
                                 Ok(value)
                             })
@@ -1113,7 +1113,8 @@ where
 {
     let with_snippet = options.with_snippet;
     let crop_radius = options.crop_radius;
-    let (v, mut src) = from_str_with_options_and_path_recorder_validator_valid::<T>(input, options)?;
+    let (v, mut src) =
+        from_str_with_options_and_path_recorder_validator_valid::<T>(input, options)?;
     if let Err(e) = src.finish() {
         return Err(maybe_with_snippet_from_events(
             e,
@@ -1177,12 +1178,14 @@ where
                             ),
                             |de| T::deserialize(de),
                         )?;
-                        ValidatorValidate::validate(&value).map_err(|errors| Error::ValidatorError {
-                            issues: collect_validator_issues(&errors)
-                                .into_iter()
-                                .map(redact_issue)
-                                .collect(),
-                            locations: recorder.map.clone(),
+                        ValidatorValidate::validate(&value).map_err(|errors| {
+                            Error::ValidatorError {
+                                issues: collect_validator_issues(&errors)
+                                    .into_iter()
+                                    .map(redact_issue)
+                                    .collect(),
+                                locations: recorder.map.clone(),
+                            }
                         })?;
                         Ok(value)
                     })
@@ -1426,14 +1429,15 @@ where
                                         &mut recorder,
                                     ),
                                 )?;
-                                ValidatorValidate::validate(&value)
-                                    .map_err(|errors| Error::ValidatorError {
+                                ValidatorValidate::validate(&value).map_err(|errors| {
+                                    Error::ValidatorError {
                                         issues: collect_validator_issues(&errors)
                                             .into_iter()
                                             .map(redact_issue)
                                             .collect(),
                                         locations: recorder.map.clone(),
-                                    })?;
+                                    }
+                                })?;
                                 Ok(value)
                             })
                         });

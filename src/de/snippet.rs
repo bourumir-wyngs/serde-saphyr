@@ -1,11 +1,11 @@
 use std::fmt;
 
 use annotate_snippets::{
-    renderer::DecorStyle, AnnotationKind, Level, Renderer, Snippet as AnnotateSnippet,
+    AnnotationKind, Level, Renderer, Snippet as AnnotateSnippet, renderer::DecorStyle,
 };
 
-use crate::localizer::Localizer;
 use crate::Location;
+use crate::localizer::Localizer;
 
 /// Borrowed YAML source information used for snippet rendering.
 ///

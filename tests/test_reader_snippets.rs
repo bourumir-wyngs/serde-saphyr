@@ -219,7 +219,10 @@ fn reader_root_snippet_uses_snapshot_start_line() {
     assert!(result.is_err());
 
     let err_str = result.unwrap_err().to_string();
-    assert!(err_str.contains("line 50"), "unexpected diagnostic: {err_str}");
+    assert!(
+        err_str.contains("line 50"),
+        "unexpected diagnostic: {err_str}"
+    );
     assert!(
         !err_str.contains("--> <input>:1:"),
         "snapshot-backed root snippet should not reset to line 1: {err_str}"

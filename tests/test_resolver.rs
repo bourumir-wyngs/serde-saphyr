@@ -1,13 +1,13 @@
 #[cfg(feature = "include")]
 use serde::Deserialize;
 #[cfg(feature = "include")]
-use std::cell::RefCell;
-#[cfg(feature = "include")]
-use std::rc::Rc;
+use serde_saphyr::Options;
 #[cfg(feature = "include")]
 use serde_saphyr::{IncludeResolveError, InputSource, ResolvedInclude};
 #[cfg(feature = "include")]
-use serde_saphyr::Options;
+use std::cell::RefCell;
+#[cfg(feature = "include")]
+use std::rc::Rc;
 
 #[cfg(feature = "include")]
 #[derive(Debug, Deserialize, PartialEq)]
@@ -39,25 +39,24 @@ struct QuotaConfig {
 fn test_reader_resolver() {
     let yaml = "foo: !include bar.yaml\n";
     let cursor = std::io::Cursor::new(yaml.as_bytes());
-    
-    let options = Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
-        let s = req.spec;
-        if s == "bar.yaml" {
-            Ok(ResolvedInclude {
-                id: s.to_string(),
-                name: s.to_string(),
-                source: InputSource::Text("bar_value\n".to_string())
-            })
-        } else {
-            Err(IncludeResolveError::Message("File not found".to_string()))
-        }
-    });
 
-    let config: Config = serde_saphyr::from_reader_with_options(
-        cursor,
-        options,
-    ).unwrap();
-    
+    let options = Options::default().with_include_resolver(
+        |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
+            let s = req.spec;
+            if s == "bar.yaml" {
+                Ok(ResolvedInclude {
+                    id: s.to_string(),
+                    name: s.to_string(),
+                    source: InputSource::Text("bar_value\n".to_string()),
+                })
+            } else {
+                Err(IncludeResolveError::Message("File not found".to_string()))
+            }
+        },
+    );
+
+    let config: Config = serde_saphyr::from_reader_with_options(cursor, options).unwrap();
+
     assert_eq!(config.foo, "bar_value");
 }
 
@@ -65,25 +64,24 @@ fn test_reader_resolver() {
 #[test]
 fn test_str_resolver() {
     let yaml = "foo: !include bar.yaml\n";
-    
-    let options = Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
-        let s = req.spec;
-        if s == "bar.yaml" {
-            Ok(ResolvedInclude {
-                id: s.to_string(),
-                name: s.to_string(),
-                source: InputSource::Text("bar_value\n".to_string())
-            })
-        } else {
-            Err(IncludeResolveError::Message("File not found".to_string()))
-        }
-    });
 
-    let config: Config = serde_saphyr::from_str_with_options(
-        yaml,
-        options,
-    ).unwrap();
-    
+    let options = Options::default().with_include_resolver(
+        |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
+            let s = req.spec;
+            if s == "bar.yaml" {
+                Ok(ResolvedInclude {
+                    id: s.to_string(),
+                    name: s.to_string(),
+                    source: InputSource::Text("bar_value\n".to_string()),
+                })
+            } else {
+                Err(IncludeResolveError::Message("File not found".to_string()))
+            }
+        },
+    );
+
+    let config: Config = serde_saphyr::from_str_with_options(yaml, options).unwrap();
+
     assert_eq!(config.foo, "bar_value");
 }
 
@@ -91,25 +89,24 @@ fn test_str_resolver() {
 #[test]
 fn test_slice_resolver() {
     let yaml = b"foo: !include bar.yaml\n";
-    
-    let options = Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
-        let s = req.spec;
-        if s == "bar.yaml" {
-            Ok(ResolvedInclude {
-                id: s.to_string(),
-                name: s.to_string(),
-                source: InputSource::Text("bar_value\n".to_string())
-            })
-        } else {
-            Err(IncludeResolveError::Message("File not found".to_string()))
-        }
-    });
 
-    let config: Config = serde_saphyr::from_slice_with_options(
-        yaml,
-        options,
-    ).unwrap();
-    
+    let options = Options::default().with_include_resolver(
+        |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
+            let s = req.spec;
+            if s == "bar.yaml" {
+                Ok(ResolvedInclude {
+                    id: s.to_string(),
+                    name: s.to_string(),
+                    source: InputSource::Text("bar_value\n".to_string()),
+                })
+            } else {
+                Err(IncludeResolveError::Message("File not found".to_string()))
+            }
+        },
+    );
+
+    let config: Config = serde_saphyr::from_slice_with_options(yaml, options).unwrap();
+
     assert_eq!(config.foo, "bar_value");
 }
 
@@ -119,20 +116,22 @@ fn test_nested_reader_budget() {
     let yaml = "foo: !include bar.yaml\n";
     let cursor = std::io::Cursor::new(yaml.as_bytes());
 
-    let mut options = Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
-        let s = req.spec;
-        if s == "bar.yaml" {
-            Ok(ResolvedInclude {
-                id: s.to_string(),
-                name: s.to_string(),
-                // A reader that exceeds the budget: 15 bytes long
-                source: InputSource::from_reader(std::io::Cursor::new(b"long_bar_value\n"))
-            })
-        } else {
-            Err(IncludeResolveError::Message("File not found".to_string()))
-        }
-    });
-    
+    let mut options = Options::default().with_include_resolver(
+        |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
+            let s = req.spec;
+            if s == "bar.yaml" {
+                Ok(ResolvedInclude {
+                    id: s.to_string(),
+                    name: s.to_string(),
+                    // A reader that exceeds the budget: 15 bytes long
+                    source: InputSource::from_reader(std::io::Cursor::new(b"long_bar_value\n")),
+                })
+            } else {
+                Err(IncludeResolveError::Message("File not found".to_string()))
+            }
+        },
+    );
+
     // Set a very small reader limit
     if let Some(ref mut b) = options.budget {
         b.max_reader_input_bytes = Some(5);
@@ -143,17 +142,18 @@ fn test_nested_reader_budget() {
         });
     }
 
-    let config_res: Result<Config, serde_saphyr::Error> = serde_saphyr::from_reader_with_options(
-        cursor,
-        options,
-    );
+    let config_res: Result<Config, serde_saphyr::Error> =
+        serde_saphyr::from_reader_with_options(cursor, options);
 
     // It should fail due to ExceededReaderInputLimit
     assert!(config_res.is_err());
     let err_msg = config_res.unwrap_err().to_string();
-    assert!(err_msg.contains("size limit"), "Expected budget error, got: {}", err_msg);
+    assert!(
+        err_msg.contains("size limit"),
+        "Expected budget error, got: {}",
+        err_msg
+    );
 }
-
 
 #[cfg(feature = "include")]
 #[test]
@@ -171,7 +171,8 @@ root: !include self.yaml
         })
     };
     let options = serde_saphyr::Options::default().with_include_resolver(resolver);
-    let result: Result<serde::de::IgnoredAny, _> = serde_saphyr::from_str_with_options(input, options);
+    let result: Result<serde::de::IgnoredAny, _> =
+        serde_saphyr::from_str_with_options(input, options);
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
     assert!(err_msg.contains("cyclic include detected"), "{}", err_msg);
@@ -207,7 +208,8 @@ root: !include aliases/first.yaml
         })
     };
     let options = serde_saphyr::Options::default().with_include_resolver(resolver);
-    let result: Result<serde::de::IgnoredAny, _> = serde_saphyr::from_str_with_options(input, options);
+    let result: Result<serde::de::IgnoredAny, _> =
+        serde_saphyr::from_str_with_options(input, options);
 
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
@@ -233,7 +235,8 @@ list:
     };
     let options = serde_saphyr::Options::default().with_include_resolver(resolver);
     // Should not fail with cyclic include error
-    let result: Result<serde::de::IgnoredAny, _> = serde_saphyr::from_str_with_options(input, options);
+    let result: Result<serde::de::IgnoredAny, _> =
+        serde_saphyr::from_str_with_options(input, options);
     assert!(result.is_ok(), "Expected Ok, got {:?}", result.unwrap_err());
 }
 
@@ -261,7 +264,11 @@ fn resolver_request_uses_canonical_from_id_and_display_from_name() {
             let source = match req.spec {
                 "child.yaml" => "bar: !include grand.yaml\n",
                 "grand.yaml" => "deep_value\n",
-                _ => return Err(IncludeResolveError::Message("unexpected include".to_string())),
+                _ => {
+                    return Err(IncludeResolveError::Message(
+                        "unexpected include".to_string(),
+                    ));
+                }
             };
 
             let (id, name) = match req.spec {
@@ -286,13 +293,22 @@ fn resolver_request_uses_canonical_from_id_and_display_from_name() {
 
     assert_eq!(entries[0].0, "child.yaml");
     assert_eq!(entries[0].2, None);
-    assert_eq!(entries[0].3.last().map(String::as_str), Some(entries[0].1.as_str()));
+    assert_eq!(
+        entries[0].3.last().map(String::as_str),
+        Some(entries[0].1.as_str())
+    );
     assert_eq!(entries[0].1, "<input>");
 
     assert_eq!(entries[1].0, "grand.yaml");
     assert_eq!(entries[1].1, "child.yaml");
-    assert_eq!(entries[1].2.as_deref(), Some("/workspace/includes/child.yaml"));
-    assert_eq!(entries[1].3, vec![entries[0].1.clone(), "child.yaml".to_string()]);
+    assert_eq!(
+        entries[1].2.as_deref(),
+        Some("/workspace/includes/child.yaml")
+    );
+    assert_eq!(
+        entries[1].3,
+        vec![entries[0].1.clone(), "child.yaml".to_string()]
+    );
 }
 
 #[cfg(feature = "include")]
@@ -322,8 +338,13 @@ fn test_include_sequence_form_without_resolver_is_not_treated_as_include() {
     let input = "
 foo: !include [file_b.yml]
 ";
-    let result: Result<serde::de::IgnoredAny, _> = serde_saphyr::from_str_with_options(input, Options::default());
-    assert!(result.is_ok(), "Expected Ok without resolver, got: {:?}", result);
+    let result: Result<serde::de::IgnoredAny, _> =
+        serde_saphyr::from_str_with_options(input, Options::default());
+    assert!(
+        result.is_ok(),
+        "Expected Ok without resolver, got: {:?}",
+        result
+    );
 }
 
 #[cfg(feature = "include")]
@@ -332,8 +353,13 @@ fn test_include_mapping_form_without_resolver_is_not_treated_as_include() {
     let input = "
 foo: !include { path: file_b.yml, extension: txt }
 ";
-    let result: Result<serde::de::IgnoredAny, _> = serde_saphyr::from_str_with_options(input, Options::default());
-    assert!(result.is_ok(), "Expected Ok without resolver, got: {:?}", result);
+    let result: Result<serde::de::IgnoredAny, _> =
+        serde_saphyr::from_str_with_options(input, Options::default());
+    assert!(
+        result.is_ok(),
+        "Expected Ok without resolver, got: {:?}",
+        result
+    );
 }
 
 #[cfg(feature = "include")]
@@ -369,7 +395,9 @@ fn test_include_fragment_tag_and_fragment_in_spec_is_rejected() {
 
     let options = Options::default().with_include_resolver(
         |_req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
-            Err(IncludeResolveError::Message("resolver should not be called".to_string()))
+            Err(IncludeResolveError::Message(
+                "resolver should not be called".to_string(),
+            ))
         },
     );
 
@@ -386,8 +414,8 @@ fn test_include_fragment_tag_and_fragment_in_spec_is_rejected() {
 #[cfg(feature = "include")]
 #[test]
 fn test_input_source_convenience_methods() {
+    use serde_saphyr::{IncludeResolveError, InputSource};
     use std::io::Read;
-    use serde_saphyr::{InputSource, IncludeResolveError};
 
     let text_source = InputSource::from_string("hello".to_string());
     match text_source {
@@ -419,7 +447,7 @@ fn test_input_source_convenience_methods() {
 fn test_successful_reader_resolver() {
     let yaml = "foo: !include bar.yaml\n";
     let cursor = std::io::Cursor::new(yaml.as_bytes());
-    
+
     let options = serde_saphyr::Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
         if req.spec == "bar.yaml" {
             Ok(serde_saphyr::ResolvedInclude {
@@ -461,7 +489,10 @@ fn test_reader_include_syntax_error() {
     let rendered = err.to_string();
 
     assert!(rendered.contains("bad.yaml"), "{rendered}");
-    assert!(rendered.contains("while parsing") || rendered.contains("did not find expected"), "{rendered}");
+    assert!(
+        rendered.contains("while parsing") || rendered.contains("did not find expected"),
+        "{rendered}"
+    );
 }
 
 #[cfg(feature = "include")]
@@ -489,7 +520,10 @@ fn test_reader_include_type_error() {
     let rendered = err.to_string();
 
     assert!(rendered.contains("bad.yaml"), "{rendered}");
-    assert!(rendered.contains("invalid type") || rendered.contains("expected"), "{rendered}");
+    assert!(
+        rendered.contains("invalid type") || rendered.contains("expected"),
+        "{rendered}"
+    );
 }
 
 #[cfg(feature = "include")]
@@ -509,9 +543,9 @@ fn test_anchors_in_same_included_content() {
         }
     });
 
-    let config: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>> = 
+    let config: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>> =
         serde_saphyr::from_str_with_options(yaml, options).unwrap();
-    
+
     let foo = config.get("foo").unwrap();
     assert_eq!(foo.get("a").unwrap(), "value");
     assert_eq!(foo.get("b").unwrap(), "value");
@@ -545,10 +579,13 @@ file2: !include ref.yaml
         }
     });
 
-    let result: Result<std::collections::BTreeMap<String, String>, _> = 
+    let result: Result<std::collections::BTreeMap<String, String>, _> =
         serde_saphyr::from_str_with_options(yaml, options);
-        
-    assert!(result.is_err(), "Expected an error because anchors are isolated per inclusion");
+
+    assert!(
+        result.is_err(),
+        "Expected an error because anchors are isolated per inclusion"
+    );
 }
 
 #[cfg(feature = "include")]
@@ -573,10 +610,13 @@ child_ref: !include ref.yaml
         }
     });
 
-    let result: Result<std::collections::BTreeMap<String, String>, _> = 
+    let result: Result<std::collections::BTreeMap<String, String>, _> =
         serde_saphyr::from_str_with_options(yaml, options);
-        
-    assert!(result.is_err(), "Expected an error because anchors are isolated per inclusion");
+
+    assert!(
+        result.is_err(),
+        "Expected an error because anchors are isolated per inclusion"
+    );
 }
 
 #[cfg(feature = "include")]
@@ -624,7 +664,9 @@ fn test_include_fragment_replays_prerequisite_anchor_definitions() {
     assert_eq!(
         parsed,
         Root {
-            cfg: Selected { user: expected_user }
+            cfg: Selected {
+                user: expected_user
+            }
         }
     );
 }
@@ -648,9 +690,9 @@ my_mapping: !include some_mapping.yaml
         }
     });
 
-    let result: std::collections::BTreeMap<String, std::collections::BTreeMap<String, i32>> = 
+    let result: std::collections::BTreeMap<String, std::collections::BTreeMap<String, i32>> =
         serde_saphyr::from_str_with_options(yaml, options).unwrap();
-        
+
     let mapping = result.get("my_mapping").unwrap();
     assert_eq!(mapping.get("c").unwrap(), &3);
     assert_eq!(mapping.get("d").unwrap(), &4);
@@ -675,9 +717,9 @@ my_list: !include some_list.yaml
         }
     });
 
-    let result: std::collections::BTreeMap<String, Vec<i32>> = 
+    let result: std::collections::BTreeMap<String, Vec<i32>> =
         serde_saphyr::from_str_with_options(yaml, options).unwrap();
-        
+
     let list = result.get("my_list").unwrap();
     assert_eq!(list, &vec![1, 2, 3]);
 }
@@ -703,9 +745,9 @@ base:
         }
     });
 
-    let result: std::collections::BTreeMap<String, std::collections::BTreeMap<String, i32>> = 
+    let result: std::collections::BTreeMap<String, std::collections::BTreeMap<String, i32>> =
         serde_saphyr::from_str_with_options(yaml, options).unwrap();
-        
+
     let base = result.get("base").unwrap();
     assert_eq!(base.get("a").unwrap(), &1);
     assert_eq!(base.get("b").unwrap(), &2);
@@ -733,13 +775,15 @@ base:
         }
     });
 
-    let result: std::collections::BTreeMap<String, std::collections::BTreeMap<String, std::collections::BTreeMap<String, i32>>> = 
-        serde_saphyr::from_str_with_options(yaml, options).unwrap();
-        
+    let result: std::collections::BTreeMap<
+        String,
+        std::collections::BTreeMap<String, std::collections::BTreeMap<String, i32>>,
+    > = serde_saphyr::from_str_with_options(yaml, options).unwrap();
+
     let base = result.get("base").unwrap();
     let inc = base.get("inc").unwrap();
     let ref_ = base.get("ref").unwrap();
-    
+
     assert_eq!(inc.get("a").unwrap(), &1);
     assert_eq!(ref_.get("a").unwrap(), &1);
 }
@@ -765,9 +809,11 @@ base:
         }
     });
 
-    let result: std::collections::BTreeMap<String, std::collections::BTreeMap<String, Option<String>>> = 
-        serde_saphyr::from_str_with_options(yaml, options).unwrap();
-        
+    let result: std::collections::BTreeMap<
+        String,
+        std::collections::BTreeMap<String, Option<String>>,
+    > = serde_saphyr::from_str_with_options(yaml, options).unwrap();
+
     println!("result: {:#?}", result);
     let base = result.get("base").unwrap();
     let inc = base.get("inc").unwrap();
@@ -803,6 +849,9 @@ fn test_include_request_reports_remaining_reader_quota() {
     let remaining = seen.borrow();
     assert_eq!(remaining.len(), 1);
     let remaining = remaining[0].expect("remaining quota should be reported");
-    assert!(remaining < 64, "remaining quota should shrink after root bytes are read");
+    assert!(
+        remaining < 64,
+        "remaining quota should shrink after root bytes are read"
+    );
     assert!(remaining >= "value: ok\n".len());
 }

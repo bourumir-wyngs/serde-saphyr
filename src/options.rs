@@ -152,7 +152,6 @@ pub struct Options {
     #[cfg(feature = "properties")]
     #[serde(skip)]
     pub property_map: Option<Rc<HashMap<String, String>>>,
-
 }
 
 #[cfg(feature = "include")]

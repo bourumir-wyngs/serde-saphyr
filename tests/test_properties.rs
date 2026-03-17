@@ -1,7 +1,9 @@
 #![cfg(feature = "properties")]
 
 use serde::Deserialize;
-use serde_saphyr::{from_multiple_with_options, from_reader_with_options, from_str_with_options, Options};
+use serde_saphyr::{
+    Options, from_multiple_with_options, from_reader_with_options, from_str_with_options,
+};
 use std::collections::HashMap;
 #[cfg(feature = "validator")]
 use validator::Validate;
@@ -42,7 +44,10 @@ impl<'de> Deserialize<'de> for CheckedInner {
         D: serde::Deserializer<'de>,
     {
         let raw = RawInner::deserialize(deserializer)?;
-        Err(serde::de::Error::custom(format!("bad value: {}", raw.value)))
+        Err(serde::de::Error::custom(format!(
+            "bad value: {}",
+            raw.value
+        )))
     }
 }
 
@@ -152,8 +157,7 @@ fn replaces_plain_property_reference_when_defined() {
 fn quoted_property_reference_is_left_verbatim() {
     let options = property_options_with_map(Some(HashMap::new()));
 
-    let parsed: ScalarConfig =
-        from_str_with_options("value: \"${PROPERTY}\"\n", options).unwrap();
+    let parsed: ScalarConfig = from_str_with_options("value: \"${PROPERTY}\"\n", options).unwrap();
 
     assert_eq!(parsed.value, "${PROPERTY}");
 }
@@ -212,8 +216,14 @@ fn missing_property_is_an_error_when_properties_are_enabled() {
     }
 
     let err_str = err.to_string();
-    assert!(err_str.contains("missing property `MISSING`"), "unexpected: {err_str}");
-    assert!(err_str.contains("value: ${MISSING}"), "unexpected: {err_str}");
+    assert!(
+        err_str.contains("missing property `MISSING`"),
+        "unexpected: {err_str}"
+    );
+    assert!(
+        err_str.contains("value: ${MISSING}"),
+        "unexpected: {err_str}"
+    );
 }
 
 #[test]
@@ -233,7 +243,10 @@ fn invalid_property_name_is_an_error_when_properties_are_enabled() {
     }
 
     let err_str = err.to_string();
-    assert!(err_str.contains("Invalid name: '${ab-cd}'"), "unexpected: {err_str}");
+    assert!(
+        err_str.contains("Invalid name: '${ab-cd}'"),
+        "unexpected: {err_str}"
+    );
     assert!(err_str.contains("value: ${ab-cd}"), "unexpected: {err_str}");
 }
 
@@ -251,7 +264,10 @@ fn error_snippet_keeps_property_names_and_hides_resolved_values() {
 
     let err_str = err.to_string();
     assert!(err_str.contains("value: ${BAD}"), "unexpected: {err_str}");
-    assert!(err_str.contains("nearby: ${NEARBY}"), "unexpected: {err_str}");
+    assert!(
+        err_str.contains("nearby: ${NEARBY}"),
+        "unexpected: {err_str}"
+    );
     assert!(
         !err_str.contains("not-a-number"),
         "diagnostic leaked resolved failing property value: {err_str}"
@@ -297,9 +313,9 @@ impl<'de> Deserialize<'de> for HexByte {
         D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        u8::from_str_radix(&s, 16)
-            .map(HexByte)
-            .map_err(|_| serde::de::Error::invalid_value(serde::de::Unexpected::Str(&s), &"two hex digits"))
+        u8::from_str_radix(&s, 16).map(HexByte).map_err(|_| {
+            serde::de::Error::invalid_value(serde::de::Unexpected::Str(&s), &"two hex digits")
+        })
     }
 }
 
@@ -374,7 +390,10 @@ fn externally_tagged_enum_keys_are_not_interpolated() {
 
     let msg = err.to_string();
     assert!(msg.contains("${MODE}"), "raw enum key missing: {msg}");
-    assert!(!msg.contains("unknown variant `Known`"), "enum key was interpolated: {msg}");
+    assert!(
+        !msg.contains("unknown variant `Known`"),
+        "enum key was interpolated: {msg}"
+    );
 }
 
 #[test]
@@ -425,8 +444,14 @@ fn unknown_field_error_redacts_interpolated_key() {
     .unwrap_err();
 
     let msg = err.to_string();
-    assert!(msg.contains("unknown field `${FIELD}`"), "unexpected: {msg}");
-    assert!(!msg.contains("secret-field"), "secret leaked in error: {msg}");
+    assert!(
+        msg.contains("unknown field `${FIELD}`"),
+        "unexpected: {msg}"
+    );
+    assert!(
+        !msg.contains("secret-field"),
+        "secret leaked in error: {msg}"
+    );
 }
 
 #[test]
@@ -458,7 +483,10 @@ fn serde_custom_error_does_not_leak_interpolated_value() {
 
     let msg = err.to_string();
     assert!(!msg.contains("zz-secret"), "secret leaked: {msg}");
-    assert!(!msg.contains("bad value: zz-secret"), "custom error leaked secret: {msg}");
+    assert!(
+        !msg.contains("bad value: zz-secret"),
+        "custom error leaked secret: {msg}"
+    );
 }
 
 #[test]
@@ -466,11 +494,9 @@ fn top_level_custom_error_does_not_leak_interpolated_value() {
     let mut props = HashMap::new();
     props.insert("BAD".to_string(), "zz-secret".to_string());
 
-    let err = from_str_with_options::<CustomHexByte>(
-        "${BAD}\n",
-        property_options_with_map(Some(props)),
-    )
-    .unwrap_err();
+    let err =
+        from_str_with_options::<CustomHexByte>("${BAD}\n", property_options_with_map(Some(props)))
+            .unwrap_err();
 
     let msg = err.to_string();
     assert!(!msg.contains("zz-secret"), "secret leaked: {msg}");
@@ -644,11 +670,9 @@ fn top_level_deserialize_any_custom_error_does_not_leak_interpolated_value() {
     let mut props = HashMap::new();
     props.insert("BAD".to_string(), "zz-secret".to_string());
 
-    let err = from_str_with_options::<AnyChecked>(
-        "${BAD}\n",
-        property_options_with_map(Some(props)),
-    )
-    .unwrap_err();
+    let err =
+        from_str_with_options::<AnyChecked>("${BAD}\n", property_options_with_map(Some(props)))
+            .unwrap_err();
 
     let msg = err.to_string();
     assert!(!msg.contains("zz-secret"), "secret leaked: {msg}");
@@ -691,11 +715,9 @@ fn enum_newtype_payload_map_form_does_not_leak_interpolated_value() {
     let mut props = HashMap::new();
     props.insert("BAD".to_string(), "zz-secret".to_string());
 
-    let err = from_str_with_options::<Wrap>(
-        "Hex: ${BAD}\n",
-        property_options_with_map(Some(props)),
-    )
-    .unwrap_err();
+    let err =
+        from_str_with_options::<Wrap>("Hex: ${BAD}\n", property_options_with_map(Some(props)))
+            .unwrap_err();
 
     let msg = err.to_string();
     assert!(!msg.contains("zz-secret"), "secret leaked: {msg}");
@@ -706,11 +728,9 @@ fn enum_newtype_payload_tagged_form_does_not_leak_interpolated_value() {
     let mut props = HashMap::new();
     props.insert("BAD".to_string(), "zz-secret".to_string());
 
-    let err = from_str_with_options::<Wrap>(
-        "!Hex ${BAD}\n",
-        property_options_with_map(Some(props)),
-    )
-    .unwrap_err();
+    let err =
+        from_str_with_options::<Wrap>("!Hex ${BAD}\n", property_options_with_map(Some(props)))
+            .unwrap_err();
 
     let msg = err.to_string();
     assert!(!msg.contains("zz-secret"), "secret leaked: {msg}");
@@ -718,10 +738,10 @@ fn enum_newtype_payload_tagged_form_does_not_leak_interpolated_value() {
 
 #[cfg(feature = "include")]
 mod include_tests {
-    use super::{property_options_with_map, ScalarConfig};
+    use super::{ScalarConfig, property_options_with_map};
     use serde::Deserialize;
     use serde_saphyr::{
-        from_str_with_options, IncludeRequest, IncludeResolveError, InputSource, ResolvedInclude,
+        IncludeRequest, IncludeResolveError, InputSource, ResolvedInclude, from_str_with_options,
     };
     use std::collections::HashMap;
 
@@ -752,7 +772,8 @@ mod include_tests {
             },
         );
 
-        let parsed: RootConfig = from_str_with_options("cfg: !include child.yaml\n", options).unwrap();
+        let parsed: RootConfig =
+            from_str_with_options("cfg: !include child.yaml\n", options).unwrap();
 
         assert_eq!(
             parsed,

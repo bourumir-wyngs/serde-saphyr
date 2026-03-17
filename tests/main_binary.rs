@@ -143,5 +143,8 @@ fn include_flag_parses_successfully() {
 fn missing_include_path_prints_error_and_exits_one() {
     let (_stdout, stderr, code) = run_binary(&["--include"]);
     assert_eq!(code, 1);
-    assert!(stderr.contains("Missing path for --include"), "stderr: {stderr}");
+    assert!(
+        stderr.contains("Missing path for --include"),
+        "stderr: {stderr}"
+    );
 }

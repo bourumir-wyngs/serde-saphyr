@@ -17,7 +17,7 @@ fn test_multi_doc_include() {
             source: serde_saphyr::InputSource::from_string("doc1\n---\ndoc2\n".to_string()),
         })
     });
-    
+
     let err = serde_saphyr::from_str_with_options::<Root>(yaml, options)
         .expect_err("multi-document include must fail for single-document API");
 

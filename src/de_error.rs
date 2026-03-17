@@ -1,25 +1,27 @@
 use crate::Location;
 use crate::budget::BudgetBreach;
 use crate::de_snippet::fmt_snippet_window_offset_or_fallback;
+use crate::input_source::IncludeResolveError;
 use crate::localizer::{DEFAULT_ENGLISH_LOCALIZER, ExternalMessageSource, Localizer};
 use crate::location::Locations;
-use crate::input_source::IncludeResolveError;
 use crate::parse_scalars::{
     parse_int_signed, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish,
 };
-use crate::properties_redaction::{redact_custom_message, redact_dynamic_identifier, redact_dynamic_value};
+use crate::properties_redaction::{
+    redact_custom_message, redact_dynamic_identifier, redact_dynamic_value,
+};
 use crate::tags::SfTag;
+#[cfg(any(feature = "garde", feature = "validator"))]
+use crate::{
+    localizer::ExternalMessage,
+    path_map::{PathKey, PathMap, format_path_with_resolved_leaf},
+};
 use annotate_snippets::Level;
 use saphyr_parser::{ScalarStyle, ScanError};
 use serde::de::{self};
 use std::borrow::Cow;
 use std::cell::Cell;
 use std::fmt;
-#[cfg(any(feature = "garde", feature = "validator"))]
-use crate::{
-    localizer::ExternalMessage,
-    path_map::{PathKey, PathMap, format_path_with_resolved_leaf},
-};
 
 #[cfg(feature = "garde")]
 use crate::path_map::path_key_from_garde;
@@ -281,9 +283,14 @@ impl ValidationIssue {
 }
 
 #[cfg(all(feature = "properties", any(feature = "garde", feature = "validator")))]
-fn replace_known_effectives(mut text: String, ctxs: &[crate::properties_redaction::ScalarRedactionCtx]) -> String {
-    let mut pairs: Vec<&crate::properties_redaction::ScalarRedactionCtx> =
-        ctxs.iter().filter(|ctx| !ctx.effective.is_empty()).collect();
+fn replace_known_effectives(
+    mut text: String,
+    ctxs: &[crate::properties_redaction::ScalarRedactionCtx],
+) -> String {
+    let mut pairs: Vec<&crate::properties_redaction::ScalarRedactionCtx> = ctxs
+        .iter()
+        .filter(|ctx| !ctx.effective.is_empty())
+        .collect();
 
     pairs.sort_by_key(|ctx| std::cmp::Reverse(ctx.effective.len()));
 
@@ -980,7 +987,10 @@ impl Error {
             location: *location,
         };
 
-        if let Error::WithSnippet { ref mut regions, .. } = self {
+        if let Error::WithSnippet {
+            ref mut regions, ..
+        } = self
+        {
             regions.push(region);
         }
         self
@@ -1020,7 +1030,10 @@ impl Error {
             location: *location,
         };
 
-        if let Error::WithSnippet { ref mut regions, .. } = self {
+        if let Error::WithSnippet {
+            ref mut regions, ..
+        } = self
+        {
             regions.push(region);
         }
         self
@@ -1487,39 +1500,35 @@ impl Error {
             Error::AliasError { locations, .. } => Locations::primary_location(*locations),
             Error::WithSnippet { error, .. } => error.location(),
             #[cfg(feature = "garde")]
-            Error::ValidationError { issues, locations } => {
-                issues.first().and_then(|issue| {
-                    let (locs, _) = locations.search(&issue.path)?;
-                    let loc = if locs.reference_location != Location::UNKNOWN {
-                        locs.reference_location
-                    } else {
-                        locs.defined_location
-                    };
-                    if loc != Location::UNKNOWN {
-                        Some(loc)
-                    } else {
-                        None
-                    }
-                })
-            }
+            Error::ValidationError { issues, locations } => issues.first().and_then(|issue| {
+                let (locs, _) = locations.search(&issue.path)?;
+                let loc = if locs.reference_location != Location::UNKNOWN {
+                    locs.reference_location
+                } else {
+                    locs.defined_location
+                };
+                if loc != Location::UNKNOWN {
+                    Some(loc)
+                } else {
+                    None
+                }
+            }),
             #[cfg(feature = "garde")]
             Error::ValidationErrors { errors } => errors.iter().find_map(|e| e.location()),
             #[cfg(feature = "validator")]
-            Error::ValidatorError { issues, locations } => {
-                issues.first().and_then(|issue| {
-                    let (locs, _) = locations.search(&issue.path)?;
-                    let loc = if locs.reference_location != Location::UNKNOWN {
-                        locs.reference_location
-                    } else {
-                        locs.defined_location
-                    };
-                    if loc != Location::UNKNOWN {
-                        Some(loc)
-                    } else {
-                        None
-                    }
-                })
-            }
+            Error::ValidatorError { issues, locations } => issues.first().and_then(|issue| {
+                let (locs, _) = locations.search(&issue.path)?;
+                let loc = if locs.reference_location != Location::UNKNOWN {
+                    locs.reference_location
+                } else {
+                    locs.defined_location
+                };
+                if loc != Location::UNKNOWN {
+                    Some(loc)
+                } else {
+                    None
+                }
+            }),
             #[cfg(feature = "validator")]
             Error::ValidatorErrors { errors } => errors.iter().find_map(|e| e.location()),
         }
@@ -1705,10 +1714,7 @@ fn pick_cropped_region<'a>(
         if let Some(region) = regions.iter().find(|r| r.covers_exact_source(location)) {
             return Some(region);
         }
-        if let Some(region) = regions
-            .iter()
-            .find(|r| r.location.source_id() == source_id)
-        {
+        if let Some(region) = regions.iter().find(|r| r.location.source_id() == source_id) {
             return Some(region);
         }
         if let Some(region) = regions
@@ -2614,7 +2620,10 @@ mod tests {
             },
         );
 
-        let err = Error::ValidatorError { issues: crate::de_error::collect_validator_issues(&errors), locations };
+        let err = Error::ValidatorError {
+            issues: crate::de_error::collect_validator_issues(&errors),
+            locations,
+        };
         assert_eq!(
             err.locations(),
             Some(Locations {

@@ -2,8 +2,8 @@
 
 use serde::Deserialize;
 use serde_saphyr::{
-    from_str_with_options, IncludeRequest, InputSource, Location, Options, SafeFileReadMode,
-    SafeFileResolver, SymlinkPolicy,
+    IncludeRequest, InputSource, Location, Options, SafeFileReadMode, SafeFileResolver,
+    SymlinkPolicy, from_str_with_options,
 };
 use std::fs;
 use std::path::Path;
@@ -451,7 +451,9 @@ fn safe_file_resolver_default_symlink_policy_is_reject() {
     symlink(&target, temp.path().join("allowed/link.yaml")).unwrap();
 
     let resolver = SafeFileResolver::new(temp.path().join("allowed")).unwrap();
-    let err = resolver.resolve(request("link.yaml", "", None)).unwrap_err();
+    let err = resolver
+        .resolve(request("link.yaml", "", None))
+        .unwrap_err();
     let msg = include_error_message(err);
     assert!(msg.contains("traverses a symlink"), "{}", msg);
 }
@@ -467,7 +469,8 @@ fn safe_file_resolver_symlink_policy_follow_within_root() {
     symlink(&target, temp.path().join("allowed/link.yaml")).unwrap();
 
     let resolver = SafeFileResolver::new(temp.path().join("allowed"))
-        .unwrap().with_symlink_policy(SymlinkPolicy::FollowWithinRoot);
+        .unwrap()
+        .with_symlink_policy(SymlinkPolicy::FollowWithinRoot);
     let options = Options::default().with_include_resolver(resolver.into_callback());
 
     let parsed: ScalarConfig = from_str_with_options("foo: !include link.yaml\n", options).unwrap();
@@ -480,7 +483,7 @@ fn safe_file_resolver_no_git() {
     use std::os::unix::fs::symlink;
 
     let temp = TempDir::new().unwrap();
-    
+
     // Case 1: real path contains .ggit, linked path does not
     let target1 = temp.path().join("allowed/.ggit/real.yaml");
     write_text(&target1, "bar_value\n");
@@ -494,8 +497,9 @@ fn safe_file_resolver_no_git() {
     symlink(&target2, link2_dir.join("link2.yaml")).unwrap();
 
     let resolver = SafeFileResolver::new(temp.path().join("allowed"))
-        .unwrap().with_symlink_policy(SymlinkPolicy::FollowWithinRoot);
-    
+        .unwrap()
+        .with_symlink_policy(SymlinkPolicy::FollowWithinRoot);
+
     // Test Case 1
     let options1 = Options::default().with_include_resolver(resolver.clone().into_callback());
     let parsed1 = from_str_with_options::<ScalarConfig>("foo: !include link1.yaml\n", options1);
@@ -503,10 +507,10 @@ fn safe_file_resolver_no_git() {
 
     // Test Case 2
     let options2 = Options::default().with_include_resolver(resolver.into_callback());
-    let parsed2 = from_str_with_options::<ScalarConfig>("foo: !include .ggit/link2.yaml\n", options2);
+    let parsed2 =
+        from_str_with_options::<ScalarConfig>("foo: !include .ggit/link2.yaml\n", options2);
     assert!(parsed2.is_err());
 }
-
 
 #[cfg(unix)]
 #[test]
@@ -521,7 +525,8 @@ fn safe_file_resolver_rejects_symlink_escape_even_when_following_symlinks() {
     symlink(&outside, allow_root.join("link.yaml")).unwrap();
 
     let resolver = SafeFileResolver::new(&allow_root)
-        .unwrap().with_symlink_policy(SymlinkPolicy::FollowWithinRoot);
+        .unwrap()
+        .with_symlink_policy(SymlinkPolicy::FollowWithinRoot);
     let err = resolver
         .resolve(request("link.yaml", "", None))
         .unwrap_err();

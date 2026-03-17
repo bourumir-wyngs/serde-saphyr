@@ -29,11 +29,7 @@ pub(crate) fn create_parser_from_reader_input<'input>(
     budget: &crate::Budget,
     resolver: Option<Box<IncludeResolver<'input>>>,
 ) -> ParserStack<'input> {
-    let mut stack = ParserStack::new(
-        io_error,
-        reader_bytes_read,
-        budget,
-    );
+    let mut stack = ParserStack::new(io_error, reader_bytes_read, budget);
     if let Some(r) = resolver {
         stack.set_resolver(r);
     }
@@ -52,11 +48,7 @@ pub(crate) fn create_parser_from_str<'a>(
     budget: &crate::Budget,
     resolver: Option<Box<IncludeResolver<'a>>>,
 ) -> ParserStack<'a> {
-    let mut stack = ParserStack::new(
-        io_error,
-        reader_bytes_read,
-        budget,
-    );
+    let mut stack = ParserStack::new(io_error, reader_bytes_read, budget);
     if let Some(r) = resolver {
         stack.set_resolver(r);
     }
@@ -74,9 +66,7 @@ pub(crate) fn create_parser_from_str<'a>(
 
 #[cfg(not(feature = "include"))]
 #[inline]
-pub(crate) fn create_parser_from_str<'a>(
-    input: &'a str,
-) -> BaseParser<'a, StrInput<'a>> {
+pub(crate) fn create_parser_from_str<'a>(input: &'a str) -> BaseParser<'a, StrInput<'a>> {
     Parser::new_from_str(input)
 }
 
@@ -96,7 +86,10 @@ mod tests {
             None,
         );
 
-        let root = stack.resolved_sources.get(&1).expect("root source recorded");
+        let root = stack
+            .resolved_sources
+            .get(&1)
+            .expect("root source recorded");
         let text = root.text.as_ref().expect("root text recorded");
         assert_eq!(text.as_ref(), input);
         let stack_frame = stack

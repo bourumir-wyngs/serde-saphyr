@@ -1,5 +1,5 @@
 use serde::Serialize;
-use serde_saphyr::{to_string_with_options, SerializerOptions};
+use serde_saphyr::{SerializerOptions, to_string_with_options};
 
 #[test]
 fn compact_list_indent_default() {
@@ -34,7 +34,7 @@ fn compact_list_indent_default() {
         }],
     };
 
-    let opts = serde_saphyr::ser_options!  {
+    let opts = serde_saphyr::ser_options! {
         compact_list_indent: false,
     };
     let yaml = to_string_with_options(&spec, opts).unwrap();

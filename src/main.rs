@@ -89,7 +89,9 @@ fn main() {
     });
 
     if let Some(path) = include_path {
-        options = options.with_filesystem_root(&path).expect("failed to create filesystem include resolver");
+        options = options
+            .with_filesystem_root(&path)
+            .expect("failed to create filesystem include resolver");
     }
 
     let r: Result<IgnoredAny, Error> = from_str_with_options(&content, options);

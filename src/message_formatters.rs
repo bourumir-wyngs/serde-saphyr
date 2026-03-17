@@ -6,12 +6,8 @@ use std::borrow::Cow;
 
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::{
-    Locations,
-    localizer::ExternalMessageSource,
-    path_map::format_path_with_resolved_leaf,
+    Locations, localizer::ExternalMessageSource, path_map::format_path_with_resolved_leaf,
 };
-
-
 
 /// Default developer-oriented message formatter.
 ///
@@ -46,12 +42,8 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
         Error::Message { msg, .. }
         | Error::HookError { msg, .. }
         | Error::SerdeVariantId { msg, .. } => Cow::Borrowed(msg.as_str()),
-        Error::UnresolvedProperty { name, .. } => {
-            Cow::Owned(format!("missing property `{name}`"))
-        }
-        Error::InvalidPropertyName { name, .. } => {
-            Cow::Owned(format!("Invalid name: '{name}'"))
-        }
+        Error::UnresolvedProperty { name, .. } => Cow::Owned(format!("missing property `{name}`")),
+        Error::InvalidPropertyName { name, .. } => Cow::Owned(format!("Invalid name: '{name}'")),
         Error::Eof { .. } => Cow::Borrowed("unexpected end of input"),
         Error::MultipleDocuments { hint, .. } => {
             Cow::Owned(format!("multiple YAML documents detected; {hint}"))
@@ -193,7 +185,12 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
         Error::UnsupportedIncludeForm { .. } => {
             Cow::Borrowed("!include currently only supports the scalar form: !include <path>")
         }
-        Error::ResolverError { target, error, stack, .. } => {
+        Error::ResolverError {
+            target,
+            error,
+            stack,
+            ..
+        } => {
             let mut full_msg = format!("failed to resolve include {target:?}");
             if !stack.is_empty() {
                 full_msg.push_str("\nwhile processing include from ");
@@ -206,53 +203,92 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
                 crate::input_source::IncludeResolveError::SizeLimitExceeded(size, limit) => {
                     format!("include size {size} bytes exceeds remaining size limit {limit} bytes")
                 }
-                crate::input_source::IncludeResolveError::FileInclude(problem) => match &**problem {
-                    crate::input_source::ResolveProblem::ResolveFailed { spec, base_dir, err } => {
-                        format!("failed to resolve include '{}' from '{}': {}", spec, base_dir, err)
+                crate::input_source::IncludeResolveError::FileInclude(problem) => {
+                    match &**problem {
+                        crate::input_source::ResolveProblem::ResolveFailed {
+                            spec,
+                            base_dir,
+                            err,
+                        } => {
+                            format!(
+                                "failed to resolve include '{}' from '{}': {}",
+                                spec, base_dir, err
+                            )
+                        }
+                        crate::input_source::ResolveProblem::TargetNotRegularFile { target } => {
+                            format!("include target '{}' is not a regular file", target)
+                        }
+                        crate::input_source::ResolveProblem::TargetIsRootFile { spec } => {
+                            format!(
+                                "include target '{}' resolves to the configured root file itself",
+                                spec
+                            )
+                        }
+                        crate::input_source::ResolveProblem::ParentIdNotAbsoluteCanonical {
+                            parent_id,
+                        } => {
+                            format!(
+                                "SafeFileResolver expected parent include id to be an absolute canonical path, got '{}'",
+                                parent_id
+                            )
+                        }
+                        crate::input_source::ResolveProblem::ParentResolveFailed {
+                            parent_id,
+                            from_name,
+                            err,
+                        } => {
+                            format!(
+                                "failed to resolve parent include source '{}' (from '{}'): {}",
+                                parent_id, from_name, err
+                            )
+                        }
+                        crate::input_source::ResolveProblem::ParentNotRegularFile { parent } => {
+                            format!("include parent '{}' is not a regular file", parent)
+                        }
+                        crate::input_source::ResolveProblem::ParentHasNoDirectory { parent } => {
+                            format!(
+                                "include parent '{}' does not have a parent directory",
+                                parent
+                            )
+                        }
+                        crate::input_source::ResolveProblem::ResolvesOutsideRoot { spec, root } => {
+                            format!(
+                                "include '{}' resolves outside the configured root '{}'",
+                                spec, root
+                            )
+                        }
+                        crate::input_source::ResolveProblem::TraversesSymlink { spec } => {
+                            format!(
+                                "include '{}' traverses a symlink, which is disabled by policy",
+                                spec
+                            )
+                        }
+                        crate::input_source::ResolveProblem::AbsolutePathNotAllowed { spec } => {
+                            format!("absolute include paths are not allowed: {}", spec)
+                        }
+                        crate::input_source::ResolveProblem::EmptyPath => {
+                            "include path must not be empty".to_string()
+                        }
+                        crate::input_source::ResolveProblem::InvalidExtension { spec } => {
+                            format!(
+                                "include target '{}' does not have a valid YAML extension (.yml or .yaml)",
+                                spec
+                            )
+                        }
+                        crate::input_source::ResolveProblem::HiddenFile { spec } => {
+                            format!(
+                                "include target '{}' is a hidden file, which is not allowed",
+                                spec
+                            )
+                        }
+                        crate::input_source::ResolveProblem::EmptyFragment => {
+                            "include fragment must not be empty".to_string()
+                        }
+                        crate::input_source::ResolveProblem::FragmentContainsHash { spec } => {
+                            format!("include fragment must not contain '#': {}", spec)
+                        }
                     }
-                    crate::input_source::ResolveProblem::TargetNotRegularFile { target } => {
-                        format!("include target '{}' is not a regular file", target)
-                    }
-                    crate::input_source::ResolveProblem::TargetIsRootFile { spec } => {
-                        format!("include target '{}' resolves to the configured root file itself", spec)
-                    }
-                    crate::input_source::ResolveProblem::ParentIdNotAbsoluteCanonical { parent_id } => {
-                        format!("SafeFileResolver expected parent include id to be an absolute canonical path, got '{}'", parent_id)
-                    }
-                    crate::input_source::ResolveProblem::ParentResolveFailed { parent_id, from_name, err } => {
-                        format!("failed to resolve parent include source '{}' (from '{}'): {}", parent_id, from_name, err)
-                    }
-                    crate::input_source::ResolveProblem::ParentNotRegularFile { parent } => {
-                        format!("include parent '{}' is not a regular file", parent)
-                    }
-                    crate::input_source::ResolveProblem::ParentHasNoDirectory { parent } => {
-                        format!("include parent '{}' does not have a parent directory", parent)
-                    }
-                    crate::input_source::ResolveProblem::ResolvesOutsideRoot { spec, root } => {
-                        format!("include '{}' resolves outside the configured root '{}'", spec, root)
-                    }
-                    crate::input_source::ResolveProblem::TraversesSymlink { spec } => {
-                        format!("include '{}' traverses a symlink, which is disabled by policy", spec)
-                    }
-                    crate::input_source::ResolveProblem::AbsolutePathNotAllowed { spec } => {
-                        format!("absolute include paths are not allowed: {}", spec)
-                    }
-                    crate::input_source::ResolveProblem::EmptyPath => {
-                        "include path must not be empty".to_string()
-                    }
-                    crate::input_source::ResolveProblem::InvalidExtension { spec } => {
-                        format!("include target '{}' does not have a valid YAML extension (.yml or .yaml)", spec)
-                    }
-                    crate::input_source::ResolveProblem::HiddenFile { spec } => {
-                        format!("include target '{}' is a hidden file, which is not allowed", spec)
-                    }
-                    crate::input_source::ResolveProblem::EmptyFragment => {
-                        "include fragment must not be empty".to_string()
-                    }
-                    crate::input_source::ResolveProblem::FragmentContainsHash { spec } => {
-                        format!("include fragment must not contain '#': {}", spec)
-                    }
-                },
+                }
             };
             full_msg.push_str(&msg);
             Cow::Owned(full_msg)

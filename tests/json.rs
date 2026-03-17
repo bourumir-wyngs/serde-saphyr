@@ -50,8 +50,8 @@ fn valid_json_u2028_u2029_escapes() {
 
 #[test]
 fn valid_json_numeric_values() {
-    let value = serde_saphyr::from_str::<serde_json::Value>("{\"a\":-1,\"b\":0.25,\"c\":1e2}")
-        .unwrap();
+    let value =
+        serde_saphyr::from_str::<serde_json::Value>("{\"a\":-1,\"b\":0.25,\"c\":1e2}").unwrap();
     assert_eq!(value["a"], -1);
     assert_eq!(value["b"], 0.25);
     assert_eq!(value["c"], 100.0);
@@ -59,8 +59,8 @@ fn valid_json_numeric_values() {
 
 #[test]
 fn valid_json_boolean_and_null_values() {
-    let value = serde_saphyr::from_str::<serde_json::Value>("{\"a\":true,\"b\":false,\"c\":null}")
-        .unwrap();
+    let value =
+        serde_saphyr::from_str::<serde_json::Value>("{\"a\":true,\"b\":false,\"c\":null}").unwrap();
     assert_eq!(value["a"], true);
     assert_eq!(value["b"], false);
     assert_eq!(value["c"], serde_json::Value::Null);

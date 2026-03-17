@@ -1,7 +1,9 @@
 #[cfg(feature = "include")]
 use serde::Deserialize;
 #[cfg(feature = "include")]
-use serde_saphyr::{IncludeResolveError, InputSource, ResolvedInclude, Options, from_str_with_options};
+use serde_saphyr::{
+    IncludeResolveError, InputSource, Options, ResolvedInclude, from_str_with_options,
+};
 
 #[cfg(feature = "include")]
 #[derive(Debug, Deserialize, PartialEq)]
@@ -70,11 +72,8 @@ fn test_error_chain() {
 
     let options = nested_include_options("]\n");
 
-    let res = from_str_with_options::<Config>(
-        yaml,
-        options,
-    );
-    
+    let res = from_str_with_options::<Config>(yaml, options);
+
     let err = res.unwrap_err();
     let err_msg = err.to_string();
     assert!(err_msg.contains("bar.yaml"));
@@ -127,16 +126,15 @@ fn test_included_validation_error_renders_included_snippet() {
 #[test]
 fn test_resolve_error_chain() {
     let yaml = "foo: !include missing.yaml\n";
-    
-    let options = Options::default().with_include_resolver(|_req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
-        Err(IncludeResolveError::Message("File not found".to_string()))
-    });
 
-    let res = from_str_with_options::<Config>(
-        yaml,
-        options,
+    let options = Options::default().with_include_resolver(
+        |_req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
+            Err(IncludeResolveError::Message("File not found".to_string()))
+        },
     );
-    
+
+    let res = from_str_with_options::<Config>(yaml, options);
+
     let err = res.unwrap_err();
     let err_msg = err.to_string();
     assert!(err_msg.contains("missing.yaml"));

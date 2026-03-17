@@ -30,7 +30,10 @@ where
                 // If the only thing in the input was an empty document (synthetic null),
                 // surface this as an EOF error to preserve expected error semantics
                 // for incompatible target types (e.g., bool).
-                Err(wrap_err(Error::eof().with_location(src.last_location()), src))
+                Err(wrap_err(
+                    Error::eof().with_location(src.last_location()),
+                    src,
+                ))
             } else {
                 Err(wrap_err(e, src))
             }

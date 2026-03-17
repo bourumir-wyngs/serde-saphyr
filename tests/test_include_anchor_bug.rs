@@ -1,7 +1,10 @@
 #[cfg(feature = "include")]
 use serde::Deserialize;
 #[cfg(feature = "include")]
-use serde_saphyr::{from_str_with_options, IncludeRequest, IncludeResolveError, InputSource, Options, ResolvedInclude};
+use serde_saphyr::{
+    IncludeRequest, IncludeResolveError, InputSource, Options, ResolvedInclude,
+    from_str_with_options,
+};
 
 #[cfg(feature = "include")]
 #[derive(Debug, Deserialize, PartialEq)]
@@ -25,7 +28,7 @@ struct User {
 #[test]
 fn test_alias_resolution_for_anchor_defined_outside_selected_fragment() {
     let yaml = "cfg: !include value.yaml#selected\n";
-    
+
     let options = Options::default().with_include_resolver(|req: IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
         let s = req.spec;
         if s == "value.yaml#selected" {
@@ -42,10 +45,7 @@ fn test_alias_resolution_for_anchor_defined_outside_selected_fragment() {
         }
     });
 
-    let config: Config = from_str_with_options(
-        yaml,
-        options,
-    ).unwrap();
-    
+    let config: Config = from_str_with_options(yaml, options).unwrap();
+
     assert_eq!(config.cfg.user.name, "Alice");
 }
