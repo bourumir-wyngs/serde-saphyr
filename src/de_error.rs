@@ -1,8 +1,7 @@
-use crate::Location;
 use crate::budget::BudgetBreach;
 use crate::de_snippet::fmt_snippet_window_offset_or_fallback;
 use crate::input_source::IncludeResolveError;
-use crate::localizer::{DEFAULT_ENGLISH_LOCALIZER, ExternalMessageSource, Localizer};
+use crate::localizer::{ExternalMessageSource, Localizer, DEFAULT_ENGLISH_LOCALIZER};
 use crate::location::Locations;
 use crate::parse_scalars::{
     parse_int_signed, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish,
@@ -11,10 +10,13 @@ use crate::properties_redaction::{
     redact_custom_message, redact_dynamic_identifier, redact_dynamic_value,
 };
 use crate::tags::SfTag;
+use crate::Location;
+#[cfg(feature = "garde")]
+use crate::path_map::path_key_from_garde;
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::{
     localizer::ExternalMessage,
-    path_map::{PathKey, PathMap, format_path_with_resolved_leaf},
+    path_map::{format_path_with_resolved_leaf, PathKey, PathMap},
 };
 use annotate_snippets::Level;
 use saphyr_parser::{ScalarStyle, ScanError};
@@ -22,9 +24,6 @@ use serde::de::{self};
 use std::borrow::Cow;
 use std::cell::Cell;
 use std::fmt;
-
-#[cfg(feature = "garde")]
-use crate::path_map::path_key_from_garde;
 
 #[cfg(all(feature = "properties", any(feature = "garde", feature = "validator")))]
 use crate::properties_redaction::{redact_with_ctxs, with_interp_redaction};
@@ -230,6 +229,18 @@ fn line_count_including_trailing_empty_line(text: &str) -> usize {
         lines = lines.saturating_add(1);
     }
     lines
+}
+
+fn sanitize_snippet_source_name(name: &str) -> Cow<'_, str> {
+    if !name.chars().any(char::is_control) {
+        return Cow::Borrowed(name);
+    }
+
+    let sanitized: String = name
+        .chars()
+        .map(|ch| if ch.is_control() { ' ' } else { ch })
+        .collect();
+    Cow::Owned(sanitized)
 }
 
 #[cfg(any(feature = "garde", feature = "validator"))]
@@ -818,6 +829,8 @@ impl Error {
         source_name: &str,
         crop_radius: usize,
     ) -> Self {
+        let source_name = sanitize_snippet_source_name(source_name);
+
         // Avoid nesting snippet wrappers: keep the innermost error and rebuild the
         // wrapper with freshly cropped source window.
         let inner = match self {
@@ -869,7 +882,7 @@ impl Error {
                 push_region_for_location(
                     &mut regions,
                     text,
-                    source_name,
+                    source_name.as_ref(),
                     &locs.reference_location,
                     mapping,
                     crop_radius,
@@ -878,7 +891,7 @@ impl Error {
                     push_region_for_location(
                         &mut regions,
                         text,
-                        source_name,
+                        source_name.as_ref(),
                         &locs.defined_location,
                         mapping,
                         crop_radius,
@@ -895,7 +908,7 @@ impl Error {
                 push_region_for_location(
                     &mut regions,
                     text,
-                    source_name,
+                    source_name.as_ref(),
                     &locs.reference_location,
                     mapping,
                     crop_radius,
@@ -904,7 +917,7 @@ impl Error {
                     push_region_for_location(
                         &mut regions,
                         text,
-                        source_name,
+                        source_name.as_ref(),
                         &locs.defined_location,
                         mapping,
                         crop_radius,
@@ -920,7 +933,7 @@ impl Error {
                 push_region_for_location(
                     &mut regions,
                     text,
-                    source_name,
+                    source_name.as_ref(),
                     &locs.reference_location,
                     mapping,
                     crop_radius,
@@ -929,7 +942,7 @@ impl Error {
                     push_region_for_location(
                         &mut regions,
                         text,
-                        source_name,
+                        source_name.as_ref(),
                         &locs.defined_location,
                         mapping,
                         crop_radius,
@@ -939,7 +952,7 @@ impl Error {
                 push_region_for_location(
                     &mut regions,
                     text,
-                    source_name,
+                    source_name.as_ref(),
                     &loc,
                     mapping,
                     crop_radius,
@@ -964,6 +977,8 @@ impl Error {
         location: &Location,
         crop_radius: usize,
     ) -> Self {
+        let source_name = sanitize_snippet_source_name(source_name);
+
         if crop_radius == 0 || *location == Location::UNKNOWN {
             return self;
         }
@@ -981,7 +996,7 @@ impl Error {
 
         let region = CroppedRegion {
             text: cropped,
-            source_name: source_name.to_string(),
+            source_name: source_name.into_owned(),
             start_line,
             end_line,
             location: *location,
@@ -1007,6 +1022,8 @@ impl Error {
         location: &Location,
         crop_radius: usize,
     ) -> Self {
+        let source_name = sanitize_snippet_source_name(source_name);
+
         if crop_radius == 0 || *location == Location::UNKNOWN {
             return self;
         }
@@ -1024,7 +1041,7 @@ impl Error {
 
         let region = CroppedRegion {
             text: cropped,
-            source_name: source_name.to_string(),
+            source_name: source_name.into_owned(),
             start_line,
             end_line,
             location: *location,
@@ -1048,6 +1065,8 @@ impl Error {
         source_name: &str,
         crop_radius: usize,
     ) -> Self {
+        let source_name = sanitize_snippet_source_name(source_name);
+
         let inner = match self {
             Error::WithSnippet { error, .. } => *error,
             other => other,
@@ -1095,7 +1114,7 @@ impl Error {
                 push_region_for_location(
                     &mut regions,
                     text,
-                    source_name,
+                    source_name.as_ref(),
                     &locs.reference_location,
                     mapping,
                     crop_radius,
@@ -1104,7 +1123,7 @@ impl Error {
                     push_region_for_location(
                         &mut regions,
                         text,
-                        source_name,
+                        source_name.as_ref(),
                         &locs.defined_location,
                         mapping,
                         crop_radius,
@@ -1121,7 +1140,7 @@ impl Error {
                 push_region_for_location(
                     &mut regions,
                     text,
-                    source_name,
+                    source_name.as_ref(),
                     &locs.reference_location,
                     mapping,
                     crop_radius,
@@ -1130,7 +1149,7 @@ impl Error {
                     push_region_for_location(
                         &mut regions,
                         text,
-                        source_name,
+                        source_name.as_ref(),
                         &locs.defined_location,
                         mapping,
                         crop_radius,
@@ -1144,7 +1163,7 @@ impl Error {
                 push_region_for_location(
                     &mut regions,
                     text,
-                    source_name,
+                    source_name.as_ref(),
                     &locs.reference_location,
                     mapping,
                     crop_radius,
@@ -1153,7 +1172,7 @@ impl Error {
                     push_region_for_location(
                         &mut regions,
                         text,
-                        source_name,
+                        source_name.as_ref(),
                         &locs.defined_location,
                         mapping,
                         crop_radius,
@@ -1163,7 +1182,7 @@ impl Error {
                 push_region_for_location(
                     &mut regions,
                     text,
-                    source_name,
+                    source_name.as_ref(),
                     &loc,
                     mapping,
                     crop_radius,
@@ -2467,6 +2486,28 @@ pub(crate) fn budget_error(breach: BudgetBreach) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sanitize_snippet_source_name_replaces_control_chars() {
+        let sanitized = sanitize_snippet_source_name("evil.yaml\nINJECTED:\u{001b}[31m");
+        assert_eq!(sanitized, "evil.yaml INJECTED: [31m");
+    }
+
+    #[test]
+    fn with_snippet_named_sanitizes_source_name() {
+        let err = Error::Message {
+            msg: "oops".to_owned(),
+            location: Location::new(1, 1),
+        }
+        .with_snippet_named("x: y\n", "evil.yaml\nINJECTED", 2);
+
+        let Error::WithSnippet { regions, .. } = err else {
+            panic!("expected Error::WithSnippet");
+        };
+
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].source_name, "evil.yaml INJECTED");
+    }
 
     #[test]
     fn locations_for_basic_error_duplicates_location() {
