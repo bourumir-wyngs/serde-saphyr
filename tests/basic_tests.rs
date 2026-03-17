@@ -85,6 +85,26 @@ mod tests {
     }
 
     #[test]
+    fn multiple_documents_preserves_tagged_string_nullish_scalar() {
+        let yaml = "--- !!str null
+---
+plain
+";
+        let values: Vec<String> = from_multiple(yaml).unwrap();
+        assert_eq!(values, vec!["null", "plain"]);
+    }
+
+    #[test]
+    fn multiple_documents_still_skips_explicit_null() {
+        let yaml = "--- null
+---
+plain
+";
+        let values: Vec<String> = from_multiple(yaml).unwrap();
+        assert_eq!(values, vec!["plain"]);
+    }
+
+    #[test]
     fn budget_violation_is_reported() {
         use std::collections::HashMap;
 

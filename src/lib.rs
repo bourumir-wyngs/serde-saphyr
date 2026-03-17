@@ -758,8 +758,13 @@ where
         match src.peek()? {
             // Skip documents that are explicit null-like scalars ("", "~", or "null").
             Some(Ev::Scalar {
-                value: s, style, ..
-            }) if scalar_is_nullish(s, style) => {
+                value: s,
+                style,
+                tag,
+                ..
+            }) if *tag == crate::tags::SfTag::Null
+                || (*tag != crate::tags::SfTag::String && scalar_is_nullish(s, style)) =>
+            {
                 let _ = src.next()?; // consume the null scalar document
                 continue;
             }
@@ -1161,8 +1166,13 @@ where
         match src.peek()? {
             // Skip documents that are explicit null-like scalars ("", "~", or "null").
             Some(Ev::Scalar {
-                value: s, style, ..
-            }) if scalar_is_nullish(s, style) => {
+                value: s,
+                style,
+                tag,
+                ..
+            }) if *tag == crate::tags::SfTag::Null
+                || (*tag != crate::tags::SfTag::String && scalar_is_nullish(s, style)) =>
+            {
                 let _ = src.next()?; // consume the null scalar document
                 continue;
             }
@@ -1768,8 +1778,13 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
         match src.peek()? {
             // Skip documents that are explicit null-like scalars ("", "~", or "null").
             Some(Ev::Scalar {
-                value: s, style, ..
-            }) if scalar_is_nullish(s, style) => {
+                value: s,
+                style,
+                tag,
+                ..
+            }) if *tag == crate::tags::SfTag::Null
+                || (*tag != crate::tags::SfTag::String && scalar_is_nullish(s, style)) =>
+            {
                 let _ = src.next()?; // consume the null scalar document
                 // Do not push anything for this document; move to the next one.
                 continue;
