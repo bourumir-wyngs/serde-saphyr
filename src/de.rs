@@ -1725,11 +1725,41 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
         let view = match self.peek_scalar_view()? {
             Some(view) => {
                 // Check for null - not valid for string deserialization
-                if view.tag == SfTag::Null || scalar_is_nullish(&view.effective, &view.style) {
+                if (view.tag == SfTag::Null || scalar_is_nullish(&view.effective, &view.style))
+                    && view.tag != SfTag::String
+                {
                     let loc = view.location;
                     let _ = self.ev.next()?;
                     return Err(Error::NullIntoString { location: loc });
+                } else if self.cfg.no_schema
+                    && maybe_not_string(&view.effective, &view.style)
+                    && view.tag != SfTag::String
+                {
+                    let view = self.take_scalar_view()?;
+                    return Err(self.quoting_required_for_scalar(&view));
                 }
+
+                if view.tag == SfTag::Binary && !self.cfg.ignore_binary_tag_for_string {
+                    let res: Result<V::Value, Self::Error> =
+                        visitor.visit_string(self.take_string_scalar()?);
+                    return match res {
+                        Ok(v) => Ok(v),
+                        Err(err) if err.to_string().contains("expected a borrowed string") => Err(
+                            Error::cannot_borrow_transformed(TransformReason::ParserReturnedOwned)
+                                .with_location(view.location),
+                        ),
+                        Err(err) => Err(err),
+                    };
+                }
+                if !view.tag.can_parse_into_string()
+                    && view.tag != SfTag::NonSpecific
+                    && !(self.cfg.ignore_binary_tag_for_string && view.tag == SfTag::Binary)
+                {
+                    return Err(Error::TaggedScalarCannotDeserializeIntoString {
+                        location: view.location,
+                    });
+                }
+
                 view
             }
             None => return Err(Error::eof().with_location(self.ev.last_location())),
