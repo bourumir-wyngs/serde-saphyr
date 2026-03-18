@@ -22,9 +22,9 @@ See [release history](https://github.com/bourumir-wyngs/serde-saphyr/releases) o
 ### Why this approach?
 
 - **Light on resources:** Having almost no intermediate data structures should result in more efficient parsing, especially if anchors are used only lightly.
-- **Also simpler:** No code to support intermediate Values of all kinds.
+- **Also, simpler:** No code to support intermediate Values of all kinds.
 - **Type-driven parsing:** YAML that doesn’t match the expected Rust types is rejected early.
-- **Safer by construction:** No dynamic “any” objects; common YAML-based code-execution [exploits](https://www.arp242.net/yaml-config.html) do not apply.
+- **Safer by construction:** serde-saphyr avoids the typical YAML remote code execution vulnerability class because it does not support or implement tag-driven object instantiation. Instead, it deserializes into fixed Rust types via Serde, removing the object-instantiation mechanism that such [exploits](https://www.arp242.net/yaml-config.html) depend on. 
 
 ### Project relationship
 
