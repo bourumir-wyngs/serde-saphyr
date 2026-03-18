@@ -219,6 +219,60 @@ impl Options {
     }
 
     /// Sets the include resolver callback to be used during parsing.
+    ///
+    /// This method is for advances use cases. If you just want to include files from the
+    /// filesystem, use [`Options::with_filesystem_root`] instead that will use [`crate::SafeFileResolver`]
+    ///
+    /// The callback is invoked each time the parser encounters a `!include` tag. It receives an
+    /// [`crate::input_source::IncludeRequest`] describing the requested include target, the source
+    /// that triggered it, the include stack, and the source location. The callback must then
+    /// return either a [`crate::ResolvedInclude`] or a [`crate::IncludeResolveError`].
+    ///
+    /// This is useful for virtual filesystems, embedded configuration bundles, network-backed
+    /// resolvers, or custom caching layers.
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "include")]
+    /// # {
+    /// use serde::Deserialize;
+    /// use serde_saphyr::{
+    ///     from_str_with_options, options, IncludeRequest, IncludeResolveError, InputSource,
+    ///     ResolvedInclude,
+    /// };
+    ///
+    /// #[derive(Debug, Deserialize, PartialEq)]
+    /// struct Config {
+    ///     users: Vec<User>,
+    /// }
+    ///
+    /// #[derive(Debug, Deserialize, PartialEq)]
+    /// struct User {
+    ///     name: String,
+    /// }
+    ///
+    /// let root_yaml = "users: !include virtual://users.yaml\n";
+    /// let users_yaml = "- name: Alice\n- name: Bob\n";
+    ///
+    /// let options = options! {}.with_include_resolver(|req: IncludeRequest<'_>| {
+    ///     assert_eq!(req.spec, "virtual://users.yaml");
+    ///     assert_eq!(req.from_name, "<input>");
+    ///
+    ///     if req.spec == "virtual://users.yaml" {
+    ///         Ok(ResolvedInclude {
+    ///             id: req.spec.to_owned(),
+    ///             name: "virtual users".to_owned(),
+    ///             source: InputSource::from_string(users_yaml.to_owned()),
+    ///         })
+    ///     } else {
+    ///         Err(IncludeResolveError::Message(format!("unknown include: {}", req.spec)))
+    ///     }
+    /// });
+    ///
+    /// let config: Config = from_str_with_options(root_yaml, options).unwrap();
+    /// assert_eq!(config.users.len(), 2);
+    /// assert_eq!(config.users[0].name, "Alice");
+    /// # }
+    /// ```
     #[cfg(feature = "include")]
     pub fn with_include_resolver<F>(mut self, cb: F) -> Self
     where
