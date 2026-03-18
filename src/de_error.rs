@@ -1,22 +1,22 @@
+use crate::Location;
 use crate::budget::BudgetBreach;
 use crate::de_snippet::fmt_snippet_window_offset_or_fallback;
 use crate::input_source::IncludeResolveError;
-use crate::localizer::{ExternalMessageSource, Localizer, DEFAULT_ENGLISH_LOCALIZER};
+use crate::localizer::{DEFAULT_ENGLISH_LOCALIZER, ExternalMessageSource, Localizer};
 use crate::location::Locations;
 use crate::parse_scalars::{
     parse_int_signed, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish,
 };
+#[cfg(feature = "garde")]
+use crate::path_map::path_key_from_garde;
 use crate::properties_redaction::{
     redact_custom_message, redact_dynamic_identifier, redact_dynamic_value,
 };
 use crate::tags::SfTag;
-use crate::Location;
-#[cfg(feature = "garde")]
-use crate::path_map::path_key_from_garde;
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::{
     localizer::ExternalMessage,
-    path_map::{format_path_with_resolved_leaf, PathKey, PathMap},
+    path_map::{PathKey, PathMap, format_path_with_resolved_leaf},
 };
 use annotate_snippets::Level;
 use saphyr_parser::{ScalarStyle, ScanError};
