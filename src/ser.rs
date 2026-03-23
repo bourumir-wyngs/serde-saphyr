@@ -1758,9 +1758,8 @@ impl<'a, 'b, W: Write> SerializeSeq for SeqSer<'a, 'b, W> {
                 if self.ser.pending_space_after_colon {
                     self.ser.out.write_str(" ")?;
                     self.ser.pending_space_after_colon = false;
-                }
-                // If at line start, indent appropriately.
-                if self.ser.at_line_start {
+                } else if self.ser.at_line_start {
+                    // If at line start, indent appropriately.
                     self.ser.write_indent(self.depth)?;
                 }
                 self.ser.out.write_str("[]")?;
@@ -2100,6 +2099,7 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
             // A new key in a block map should clear any pending inline hints from previous siblings.
             self.ser.after_dash_depth = None;
             self.ser.pending_inline_map = false;
+            self.ser.last_value_was_block = false;
 
             match scalar_key_to_string(key, self.ser.yaml_12) {
                 Ok(text) => {
