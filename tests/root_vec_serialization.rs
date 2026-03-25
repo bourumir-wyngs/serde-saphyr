@@ -23,7 +23,7 @@ mod tests {
             top_level_list: vec![],
             after: 1,
         };
-        let serialized = crate::to_string(&root).unwrap();
+        let serialized = serde_saphyr::to_string(&root).unwrap();
         println!("{serialized}");
         // nested:
         //   nested_list: []   <- correct
@@ -31,7 +31,7 @@ mod tests {
         // []                  <- BUG: should be `top_level_list: []`
         // after: 1
 
-        let deserialized: Root = crate::from_str(&serialized).unwrap();
+        let deserialized: Root = serde_saphyr::from_str(&serialized).unwrap();
         assert_eq!(root, deserialized);
     }
 }
