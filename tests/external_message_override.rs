@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 #[cfg(any(feature = "garde", feature = "validator"))]
 use serde::Deserialize;
 use serde_saphyr::localizer::{ExternalMessage, ExternalMessageSource, Localizer};

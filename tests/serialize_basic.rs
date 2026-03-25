@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};

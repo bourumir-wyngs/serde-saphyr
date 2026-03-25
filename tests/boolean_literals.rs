@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 #[test]
 fn yaml11_truthy_boolean_literals() {
     let cases = ["true", "True", "TRUE", "yes", "Yes", "Y", "on", "ON"];

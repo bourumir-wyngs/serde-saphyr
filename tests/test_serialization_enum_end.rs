@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 #[test]
 fn saphyr_serialization_enum() {
     use serde::{Deserialize, Serialize};

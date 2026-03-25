@@ -8,12 +8,15 @@
 /// Example:
 ///
 /// ```rust
+/// # #[cfg(feature = "deserialize")]
+/// # {
 /// use serde_saphyr::options::DuplicateKeyPolicy;
 ///
 /// let options = serde_saphyr::options! {
 ///     duplicate_keys: DuplicateKeyPolicy::LastWins,
 ///     strict_booleans: true,
 /// };
+/// # }
 /// ```
 #[macro_export]
 macro_rules! options {
@@ -70,10 +73,13 @@ macro_rules! __serde_saphyr_options_apply {
 /// Example:
 ///
 /// ```rust
+/// # #[cfg(feature = "serialize")]
+/// # {
 /// let opts = serde_saphyr::ser_options! {
 ///     indent_step: 4,
 ///     quote_all: true,
 /// };
+/// # }
 /// ```
 #[macro_export]
 macro_rules! ser_options {
@@ -92,11 +98,14 @@ macro_rules! ser_options {
 /// Example:
 ///
 /// ```rust
+/// # #[cfg(feature = "deserialize")]
+/// # {
 /// let options = serde_saphyr::options! {
 ///     budget: serde_saphyr::budget! {
 ///         max_nodes: 30,
 ///     },
 /// };
+/// # }
 /// ```
 #[macro_export]
 macro_rules! budget {
@@ -125,12 +134,15 @@ macro_rules! budget {
 /// Example:
 ///
 /// ```rust
+/// # #[cfg(feature = "deserialize")]
+/// # {
 /// use serde_saphyr::{SnippetMode, UserMessageFormatter};
 ///
 /// let user = UserMessageFormatter;
 /// let opts = serde_saphyr::render_options! {
 ///     formatter: &user,
 /// };
+/// # }
 /// ```
 #[macro_export]
 macro_rules! render_options {

@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 // `trybuild` runs by spawning a host `cargo` process to compile UI test crates.
 // This is not supported on WASI runtimes, so we disable these tests on WASI.
 // Miri cannot run tests that require spawning processes, so we disable these tests under Miri.

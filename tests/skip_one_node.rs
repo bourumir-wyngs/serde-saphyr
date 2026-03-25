@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 #[cfg(test)]
 mod tests {
     use serde_json::Value;

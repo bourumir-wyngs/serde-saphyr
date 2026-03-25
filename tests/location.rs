@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde::Deserialize;
 use serde_saphyr::Error;
 use serde_saphyr::from_str;

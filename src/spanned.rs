@@ -9,6 +9,8 @@
 //! Spanned allows to tell where the invalid value comes from.
 //!
 //! ```rust
+//! # #[cfg(feature = "deserialize")]
+//! # {
 //! use serde::Deserialize;
 //!
 //! #[derive(Debug, Deserialize)]
@@ -20,6 +22,7 @@
 //! assert_eq!(cfg.timeout.value, 5);
 //! assert_eq!(cfg.timeout.referenced.line(), 1);
 //! assert_eq!(cfg.timeout.referenced.column(), 10);
+//! # }
 //! ```
 
 use serde::de::{self, Deserializer, IntoDeserializer};
@@ -34,6 +37,8 @@ use crate::Location;
 /// # Example
 ///
 /// ```rust
+/// # #[cfg(feature = "deserialize")]
+/// # {
 /// use serde::Deserialize;
 ///
 /// #[derive(Debug, Deserialize)]
@@ -45,6 +50,7 @@ use crate::Location;
 /// assert_eq!(cfg.timeout.value, 5);
 /// assert_eq!(cfg.timeout.referenced.line(), 1);
 /// assert_eq!(cfg.timeout.referenced.column(), 10);
+/// # }
 /// ```
 ///
 /// # Location semantics for YAML aliases and merges
@@ -76,6 +82,8 @@ use crate::Location;
 /// Instead of putting `Spanned<T>` inside each variant, wrap the whole enum:
 ///
 /// ```rust
+/// # #[cfg(feature = "deserialize")]
+/// # {
 /// use serde::Deserialize;
 /// use serde_saphyr::Spanned;
 ///
@@ -90,6 +98,7 @@ use crate::Location;
 /// let yaml = "message: hello";
 /// let result: Spanned<Payload> = serde_saphyr::from_str(yaml).unwrap();
 /// assert_eq!(result.referenced.line(), 1);
+/// # }
 /// ```
 ///
 /// ## Alternative: Use externally tagged enums (serde default)
@@ -97,6 +106,8 @@ use crate::Location;
 /// Externally tagged enums (the default) work with `Spanned<T>` inside variants:
 ///
 /// ```rust
+/// # #[cfg(feature = "deserialize")]
+/// # {
 /// use serde::Deserialize;
 /// use serde_saphyr::Spanned;
 ///
@@ -115,6 +126,7 @@ use crate::Location;
 ///     }
 ///     _ => panic!("Expected StringVariant"),
 /// }
+/// # }
 /// ```
 ///
 /// ## Alternative: Use adjacently tagged enums
@@ -122,6 +134,8 @@ use crate::Location;
 /// Adjacently tagged enums also work with `Spanned<T>` inside variants:
 ///
 /// ```rust
+/// # #[cfg(feature = "deserialize")]
+/// # {
 /// use serde::Deserialize;
 /// use serde_saphyr::Spanned;
 ///
@@ -141,6 +155,7 @@ use crate::Location;
 ///     }
 ///     _ => panic!("Expected StringVariant"),
 /// }
+/// # }
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Spanned<T> {

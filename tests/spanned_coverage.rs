@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 //! Tests to increase code coverage for `spanned.rs`.
 //!
 //! The fallback `visit_*` methods in `ReprOrPlainVisitor` are exercised when

@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde_json::{Value, json};
 
 #[test]

@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use std::fmt::Debug;

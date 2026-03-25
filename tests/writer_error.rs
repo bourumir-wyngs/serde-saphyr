@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde::Serialize;
 use std::io;
 use std::io::Write;

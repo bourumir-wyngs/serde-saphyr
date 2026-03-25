@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde_saphyr::UserMessageFormatter;
 use serde_saphyr::from_slice;
 use serde_saphyr::{Error, from_str};

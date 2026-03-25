@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 #[test]
 fn test_double_quoted_strings_process_escape_sequences() {
     // Double-quoted YAML scalars process backslash escapes.

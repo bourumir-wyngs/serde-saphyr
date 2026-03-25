@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 //! Tests targeting the lowest-coverage source files:
 //! ser_error, zmij_format (via serialization), localizer, and with_deserializer APIs.
 

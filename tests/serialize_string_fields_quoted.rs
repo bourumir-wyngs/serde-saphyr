@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 

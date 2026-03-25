@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde_saphyr::budget::{Budget, BudgetBreach, EnforcingPolicy, check_yaml_budget};
 
 fn billion_laughs_yaml(levels: usize, fan_out: usize) -> String {

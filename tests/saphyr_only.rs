@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 use saphyr_parser::Parser;
 
 // test --package serde-saphyr --test parser_misplaced_sequence_close -- --nocapture

@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 //! Additional serializer tests to increase coverage of `src/ser.rs`.
 
 use std::cell::RefCell;

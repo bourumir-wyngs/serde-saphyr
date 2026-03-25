@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 pub mod select_enum_with_tags;
 
 #[cfg(test)]

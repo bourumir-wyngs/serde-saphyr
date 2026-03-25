@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 #[test]
 fn test_enum_deserialization_yaml_to_json_value() {
     let inputs: Vec<(&str, &str, &str)> = vec![

@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 //! Tests that custom deserializer errors include YAML location information.
 
 use serde::{Deserialize, de::Error};

@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 #![cfg(feature = "include")]
 
 #[derive(Debug, serde::Deserialize)]

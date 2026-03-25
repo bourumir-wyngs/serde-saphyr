@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde::Deserialize;
 
 fn unwrap_snippet(err: &serde_saphyr::Error) -> &serde_saphyr::Error {

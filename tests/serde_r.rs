@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde::de::Deserialize;
 use serde::de::value::BorrowedStrDeserializer;
 use std::borrow::Cow;

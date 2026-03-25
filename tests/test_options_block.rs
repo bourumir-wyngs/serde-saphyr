@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde::Deserialize;
 use serde_saphyr::{
     FoldStr, FoldString, LitStr, LitString, to_fmt_writer_with_options, to_string_with_options,

@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 pub mod serde_yaml;
 
 #[cfg(feature = "garde")]

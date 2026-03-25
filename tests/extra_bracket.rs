@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde_saphyr::Error;
 
 // saphyr-parser 0.0.6 does not emit closing event.

@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 //! Tests for deserialization borrowing behavior across `&str`, `Cow<str>`, and `String`.
 //!
 //! This file consolidates borrowing verification, deserializer behavior checks, and

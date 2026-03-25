@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 #[test]
 fn json_null() {
     let original: Option<String> = None;

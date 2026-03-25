@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 /// Targeted tests to increase coverage of src/de.rs.
 use serde::Deserialize;
 

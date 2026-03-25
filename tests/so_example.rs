@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde::{Deserialize, Serialize};
 use serde_saphyr::RcAnchor;
 use std::rc::Rc;

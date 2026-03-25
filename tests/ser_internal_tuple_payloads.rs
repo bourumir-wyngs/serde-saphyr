@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 use indoc::indoc;
 use serde::Serialize;
 

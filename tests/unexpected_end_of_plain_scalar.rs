@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 #[test]
 fn test_unexpected_end_of_plain_scalar() -> anyhow::Result<()> {
     let yaml = r#"

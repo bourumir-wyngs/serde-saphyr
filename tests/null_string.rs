@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 #[test]
 fn string_from_plain_null_errors() {
     // Plain null keyword should not deserialize into String

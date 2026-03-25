@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 /// Targeted tests to increase coverage of src/de/spanned_deser.rs.
 ///
 /// Covers:

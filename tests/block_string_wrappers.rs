@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde_saphyr::{FoldStr, FoldString, LitStr, LitString};
 
 #[test]

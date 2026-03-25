@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 #[test]
 fn changing_step_size_results_in_valid_yaml() {
     let value = serde_json::json!({

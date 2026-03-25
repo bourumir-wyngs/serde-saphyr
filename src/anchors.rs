@@ -158,16 +158,18 @@ pub struct ArcWeakAnchor<T>(pub ArcWeak<T>);
 /// This type provides the value for the references and must be placed where the original value is defined.
 /// Fields that reference this value (possibly recursively) must be wrapped in [`RcRecursion`].
 /// ```rust
+/// # #[cfg(feature = "deserialize")]
+/// # {
 /// use std::cell::Ref;
-/// use serde::{Deserialize, Serialize};
+/// use serde::Deserialize;
 /// use serde_saphyr::{RcRecursion, RcRecursive};
-/// #[derive(Deserialize, Serialize)]
+/// #[derive(Deserialize)]
 /// struct King {
 ///     name: String,
 ///     coronator: RcRecursion<King>, // who crowned this king
 /// }
 ///
-/// #[derive(Deserialize, Serialize)]
+/// #[derive(Deserialize)]
 /// struct Kingdom {
 ///     king: RcRecursive<King>,
 /// }
@@ -184,6 +186,7 @@ pub struct ArcWeakAnchor<T>(pub ArcWeak<T>);
 ///         .upgrade().expect("coronator always exists");
 ///     let coronator_name = &coronator.borrow().name;
 ///     assert_eq!(coronator_name, "Aurelian I");
+/// # }
 /// ```
 #[repr(transparent)]
 #[derive(Clone)]
@@ -193,16 +196,18 @@ pub struct RcRecursive<T>(pub Rc<RefCell<Option<T>>>);
 /// This type provides the value for the references and must be placed where the original value is defined.
 /// Fields that reference this value (possibly recursively) must be wrapped in [`ArcRecursion`].
 /// ```rust
-/// use serde::{Deserialize, Serialize};
+/// # #[cfg(feature = "deserialize")]
+/// # {
+/// use serde::Deserialize;
 /// use serde_saphyr::{ArcRecursion, ArcRecursive};
 ///
-/// #[derive(Deserialize, Serialize)]
+/// #[derive(Deserialize)]
 /// struct King {
 ///     name: String,
 ///     coronator: ArcRecursion<King>, // who crowned this king
 /// }
 ///
-/// #[derive(Deserialize, Serialize)]
+/// #[derive(Deserialize)]
 /// struct Kingdom {
 ///     king: ArcRecursive<King>,
 /// }
@@ -227,6 +232,7 @@ pub struct RcRecursive<T>(pub Rc<RefCell<Option<T>>>);
 ///         .as_ref()
 ///         .expect("coronator should be initialized");
 ///     assert_eq!(coronator_ref.name, "Aurelian I");
+/// # }
 /// ```
 #[repr(transparent)]
 #[derive(Clone)]

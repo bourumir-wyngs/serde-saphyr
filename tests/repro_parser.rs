@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 #[test]
 fn test_parser_direct_borrowing() {
     use saphyr_parser::{Event, Parser};

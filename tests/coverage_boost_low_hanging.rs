@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 //! Tests targeting low-coverage areas identified by cargo llvm-cov.
 
 use serde::{Deserialize, Serialize};

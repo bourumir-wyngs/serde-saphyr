@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde_saphyr::FlowSeq;
 
 // Repro for bug report and extended coverage:

@@ -151,6 +151,8 @@ impl Span {
 /// # Example
 ///
 /// ```
+/// # #[cfg(feature = "deserialize")]
+/// # {
 /// use serde::Deserialize;
 ///
 /// #[derive(Deserialize, Debug)]
@@ -174,6 +176,7 @@ impl Span {
 ///         }
 ///     }
 /// }
+/// # }
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
 pub struct Location {

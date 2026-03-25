@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 // Converts a YAML snippet into a unit test that parses and re-serializes the structure.
 
 use serde_json::Value;

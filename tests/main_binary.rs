@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 //! Integration tests for the `serde-saphyr` binary (src/main.rs).
 //!
 //! These tests invoke the compiled binary via `cargo run` / `Command` and check

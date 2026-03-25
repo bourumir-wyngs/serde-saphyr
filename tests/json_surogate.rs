@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 /// Verifies that a JSON string containing a UTF-16 surrogate pair is accepted
 /// and decoded the same way as the equivalent YAML `\U` escape.
 ///

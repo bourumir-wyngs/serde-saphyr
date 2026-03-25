@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 #[cfg(test)]
 #[cfg(feature = "robotics")]
 mod tests {

@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 //! Tests for streaming reader error recovery.
 //!
 //! These tests verify that after a deserialization error in one document,

@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 #[test]
 fn serialize_small_float_scientific_notation() {
     let value = 0.000004_f64;

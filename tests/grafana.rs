@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 // Collection of Grafana-derived integration tests.
 //
 // Note: Cargo only auto-discovers integration test crates at `tests/*.rs`.

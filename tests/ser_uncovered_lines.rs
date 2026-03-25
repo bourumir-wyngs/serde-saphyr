@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 //! Tests targeting previously uncovered lines in src/ser.rs.
 
 use serde::Serialize;

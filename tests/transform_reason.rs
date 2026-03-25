@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 //! Tests for `TransformReason` enum and `CannotBorrowTransformedString` error.
 //!
 //! These tests verify the error infrastructure for zero-copy deserialization support,

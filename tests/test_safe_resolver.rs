@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 #![cfg(all(feature = "include_fs", not(miri), not(target_os = "wasi")))]
 
 use serde::Deserialize;

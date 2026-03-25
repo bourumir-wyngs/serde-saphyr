@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 //! Tests for SpaceAfter wrapper.
 
 use serde::{Deserialize, Serialize};

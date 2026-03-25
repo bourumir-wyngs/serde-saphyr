@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 //! Integration tests for terminal escape sequence filtering in error snippets.
 //!
 //! These tests verify that control characters (ASCII C0, DEL, UTF-8 C1) are properly

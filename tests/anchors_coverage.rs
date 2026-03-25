@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 //! Tests targeting coverage gaps in `src/anchors.rs`.
 //! Covers: From conversions, Deref/AsRef/Borrow/Into, PartialEq/Eq,
 //! Debug, Default, wrapping constructors, weak helpers, and Deserialize

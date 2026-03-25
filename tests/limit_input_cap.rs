@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde::Deserialize;
 use serde_saphyr::budget::BudgetBreach;
 use serde_saphyr::{

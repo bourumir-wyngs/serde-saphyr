@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 //! Tests for `Spanned<T>` with enums, including workarounds for untagged enums.
 
 use serde::Deserialize;

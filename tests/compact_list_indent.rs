@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde::Serialize;
 use serde_saphyr::{SerializerOptions, to_string_with_options};
 

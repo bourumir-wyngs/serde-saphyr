@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 //! Integration tests for snippet rendering with reader-based parsing.
 //!
 //! These tests verify that when parsing YAML from a `std::io::Read` source,

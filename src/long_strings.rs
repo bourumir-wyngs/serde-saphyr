@@ -28,19 +28,25 @@ pub(crate) const NAME_FOLD_STR: &str = "__yaml_fold_str";
 ///
 /// Top-level literal block string:
 /// ```rust
+/// # #[cfg(feature = "serialize")]
+/// # {
 /// let long = "line 1\nline 2\n".repeat(20);
 /// let out = serde_saphyr::to_string(&serde_saphyr::LitStr(&long)).unwrap();
 /// assert!(out.starts_with("|\n  "));
+/// # }
 /// ```
 ///
 /// As a mapping value:
 /// ```rust
+/// # #[cfg(feature = "serialize")]
+/// # {
 /// use serde::Serialize;
 /// #[derive(Serialize)]
 /// struct S { note: serde_saphyr::LitStr<'static> }
 /// let s = S { note: serde_saphyr::LitStr("a\nb") };
 /// let out = serde_saphyr::to_string(&s).unwrap();
 /// assert_eq!(out, "note: |-\n  a\n  b\n");
+/// # }
 /// ```
 #[derive(Clone, Copy)]
 pub struct LitStr<'a>(pub &'a str);
@@ -54,8 +60,11 @@ pub struct LitStr<'a>(pub &'a str);
 ///
 /// Example
 /// ```rust
+/// # #[cfg(feature = "serialize")]
+/// # {
 /// let out = serde_saphyr::to_string(&serde_saphyr::LitString("line 1\nline 2".to_string())).unwrap();
 /// assert_eq!(out, "|-\n  line 1\n  line 2\n");
+/// # }
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LitString(pub String);
@@ -82,18 +91,24 @@ pub struct LitString(pub String);
 ///
 /// Top-level folded block string:
 /// ```rust
+/// # #[cfg(feature = "serialize")]
+/// # {
 /// let out = serde_saphyr::to_string(&serde_saphyr::FoldStr("line 1\nline 2")).unwrap();
 /// assert_eq!(out, ">\n  line 1\n  line 2\n");
+/// # }
 /// ```
 ///
 /// As a mapping value:
 /// ```rust
+/// # #[cfg(feature = "serialize")]
+/// # {
 /// use serde::Serialize;
 /// #[derive(Serialize)]
 /// struct S { note: serde_saphyr::FoldStr<'static> }
 /// let s = S { note: serde_saphyr::FoldStr("a\nb") };
 /// let out = serde_saphyr::to_string(&s).unwrap();
 /// assert_eq!(out, "note: >\n  a\n  b\n");
+/// # }
 /// ```
 #[derive(Clone, Copy)]
 pub struct FoldStr<'a>(pub &'a str);
@@ -106,8 +121,11 @@ pub struct FoldStr<'a>(pub &'a str);
 ///
 /// Example
 /// ```rust
+/// # #[cfg(feature = "serialize")]
+/// # {
 /// let out = serde_saphyr::to_string(&serde_saphyr::FoldString("line 1\nline 2".to_string())).unwrap();
 /// assert_eq!(out, ">\n  line 1\n  line 2\n");
+/// # }
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FoldString(pub String);

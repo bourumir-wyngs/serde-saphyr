@@ -1,3 +1,4 @@
+#![cfg(all(feature = "serialize", feature = "deserialize"))]
 use std::rc::Rc;
 use std::sync::Arc;
 
