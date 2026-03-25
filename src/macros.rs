@@ -18,6 +18,7 @@
 /// };
 /// # }
 /// ```
+#[cfg(feature = "deserialize")]
 #[macro_export]
 macro_rules! options {
     ( $( $tt:tt )* ) => {{
@@ -25,6 +26,14 @@ macro_rules! options {
         $crate::__serde_saphyr_options_apply!(opt, $( $tt )*);
         opt
     }};
+}
+
+#[cfg(not(feature = "deserialize"))]
+#[macro_export]
+macro_rules! options {
+    ( $( $tt:tt )* ) => {
+        compile_error!("serde-saphyr `options!` requires feature `deserialize`");
+    };
 }
 
 /// Implementation detail for [`options!`].
@@ -81,6 +90,7 @@ macro_rules! __serde_saphyr_options_apply {
 /// };
 /// # }
 /// ```
+#[cfg(feature = "serialize")]
 #[macro_export]
 macro_rules! ser_options {
     ( $( $tt:tt )* ) => {{
@@ -88,6 +98,14 @@ macro_rules! ser_options {
         $crate::__serde_saphyr_serializer_options_apply!(opt, $( $tt )*);
         opt
     }};
+}
+
+#[cfg(not(feature = "serialize"))]
+#[macro_export]
+macro_rules! ser_options {
+    ( $( $tt:tt )* ) => {
+        compile_error!("serde-saphyr `ser_options!` requires feature `serialize`");
+    };
 }
 
 /// Construct `Some([`crate::Budget`])` from `Default` and a list of field assignments.
@@ -107,6 +125,7 @@ macro_rules! ser_options {
 /// };
 /// # }
 /// ```
+#[cfg(feature = "deserialize")]
 #[macro_export]
 macro_rules! budget {
     ( $( $field:ident : $value:expr ),* $(,)? ) => {{
@@ -119,6 +138,14 @@ macro_rules! budget {
         )*
         Some(b)
     }};
+}
+
+#[cfg(not(feature = "deserialize"))]
+#[macro_export]
+macro_rules! budget {
+    ( $( $field:ident : $value:expr ),* $(,)? ) => {
+        compile_error!("serde-saphyr `budget!` requires feature `deserialize`");
+    };
 }
 
 /// Construct [`crate::RenderOptions`] from defaults and a list of field assignments.
