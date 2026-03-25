@@ -4,6 +4,7 @@ use crate::de::{Error, Location};
 use crate::tags::SfTag;
 #[cfg(feature = "deserialize")]
 use saphyr_parser::ScalarStyle;
+#[cfg(feature = "deserialize")]
 use std::str::FromStr;
 
 /// Parse a YAML 1.1 boolean from a &str (handles the "Norway problem").
@@ -33,6 +34,7 @@ pub(crate) fn parse_yaml11_bool(s: &str) -> Result<bool, String> {
     }
 }
 
+#[cfg(feature = "deserialize")]
 fn parse_digits_u128(digits: &str, radix: u32) -> Option<u128> {
     let mut val: u128 = 0;
     let mut saw = false;
@@ -72,6 +74,7 @@ fn parse_digits_u128(digits: &str, radix: u32) -> Option<u128> {
     if saw { Some(val) } else { None }
 }
 
+#[cfg(feature = "deserialize")]
 fn parse_decimal_unsigned_u128(digits: &str) -> Option<u128> {
     let mut val: u128 = 0;
     let mut saw = false;
@@ -90,6 +93,7 @@ fn parse_decimal_unsigned_u128(digits: &str) -> Option<u128> {
     if saw { Some(val) } else { None }
 }
 
+#[cfg(feature = "deserialize")]
 fn parse_decimal_signed_i128(digits: &str, neg: bool) -> Option<i128> {
     if neg {
         // Accumulate as negative to allow i128::MIN
@@ -192,6 +196,7 @@ where
     T::try_from(mag).map_err(|_| invalid())
 }
 
+#[cfg(feature = "deserialize")]
 fn radix_and_digits(legacy_octal: bool, rest: &str) -> (u32, &str) {
     let (radix, digits) =
         if let Some(r) = rest.strip_prefix("0x").or_else(|| rest.strip_prefix("0X")) {
@@ -338,7 +343,7 @@ pub(crate) fn leading_zero_decimal(t: &str) -> bool {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "deserialize"))]
 mod tests {
     use super::*;
 

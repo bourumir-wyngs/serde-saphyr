@@ -120,6 +120,7 @@ impl Span {
 
     /// Returns the raw offset value as stored (either `u32` or `u64` depending on the
     /// `huge_documents` feature).
+    #[cfg(feature = "deserialize")]
     #[inline]
     pub(crate) fn raw_offset(&self) -> SpanIndex {
         self.offset
@@ -127,12 +128,14 @@ impl Span {
 
     /// Returns the raw length value as stored (either `u32` or `u64` depending on the
     /// `huge_documents` feature).
+    #[cfg(feature = "deserialize")]
     #[inline]
     pub(crate) fn raw_len(&self) -> SpanIndex {
         self.len
     }
 
     /// Returns the raw byte_info tuple as stored.
+    #[cfg(feature = "deserialize")]
     #[inline]
     pub(crate) fn raw_byte_info(&self) -> (SpanIndex, SpanIndex) {
         self.byte_info
@@ -230,6 +233,7 @@ impl Location {
     /// Arguments:
     /// - `line`: 1-indexed line.
     /// - `column`: 1-indexed column.
+    #[cfg(feature = "deserialize")]
     pub(crate) const fn new(line: usize, column: usize) -> Self {
         // 4 Gb is larger than any YAML document I can imagine, and also this is
         // error reporting only.
@@ -241,11 +245,13 @@ impl Location {
         }
     }
 
+    #[cfg(feature = "deserialize")]
     pub(crate) const fn with_span(mut self, span: Span) -> Self {
         self.span = span;
         self
     }
 
+    #[cfg(feature = "deserialize")]
     pub(crate) const fn with_source_id(mut self, source_id: u32) -> Self {
         self.source_id = source_id;
         self
@@ -312,6 +318,7 @@ impl Locations {
     };
 
     #[inline]
+    #[cfg(feature = "deserialize")]
     pub(crate) fn same(location: &Location) -> Option<Locations> {
         if location == &Location::UNKNOWN {
             None
