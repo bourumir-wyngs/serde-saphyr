@@ -85,6 +85,15 @@ The test suite currently includes over 1000 passing tests, including the fully c
 Parse YAML into a Rust structure with proper error handling. The crate name on crates.io is
 `serde-saphyr`, and the import path is `serde_saphyr`.
 
+By default, the crate enables both `serialize` and `deserialize`. If you only need one side,
+you can disable default features and opt into just the API surface you use:
+
+```toml
+serde-saphyr = { version = "0.0.22", default-features = false, features = ["deserialize"] }
+# or
+serde-saphyr = { version = "0.0.22", default-features = false, features = ["serialize"] }
+```
+
 ```rust
 use serde::Deserialize;
 

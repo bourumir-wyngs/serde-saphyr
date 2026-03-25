@@ -15,13 +15,60 @@
 //! - `from_str*` rejects multiple docs.
 //! - `from_multiple*` collects non-empty docs; empty docs are skipped.
 
+#[cfg(feature = "deserialize")]
+pub(crate) mod base64;
+#[cfg(feature = "deserialize")]
+pub mod budget;
+#[cfg(feature = "deserialize")]
+pub(crate) mod buffered_input;
+#[cfg(feature = "deserialize")]
+pub(crate) mod error;
+#[cfg(feature = "figment")]
+pub mod figment;
+#[cfg(feature = "deserialize")]
+pub(crate) mod include;
+#[cfg(all(feature = "deserialize", feature = "include"))]
+pub(crate) mod include_stack;
+#[cfg(feature = "deserialize")]
+pub(crate) mod indentation;
+#[cfg(feature = "deserialize")]
+pub(crate) mod input_source;
+#[cfg(any(feature = "garde", feature = "validator"))]
+pub(crate) mod lib_validate;
+#[cfg(feature = "deserialize")]
+pub(crate) mod live_events;
+#[cfg(feature = "deserialize")]
+pub mod localizer;
+#[cfg(feature = "miette")]
+pub mod miette;
+#[cfg(feature = "deserialize")]
+pub(crate) mod message_formatters;
+#[cfg(feature = "deserialize")]
+pub mod options;
+#[cfg(any(feature = "garde", feature = "validator"))]
+pub mod path_map;
+#[cfg(feature = "properties")]
+pub mod properties;
+#[cfg(feature = "deserialize")]
+pub(crate) mod properties_redaction;
+#[cfg(feature = "robotics")]
+pub mod robotics;
+#[cfg(feature = "deserialize")]
+pub(crate) mod ring_reader;
+#[cfg(all(feature = "deserialize", feature = "include_fs"))]
+pub(crate) mod safe_resolver;
+#[cfg(feature = "deserialize")]
+pub(crate) mod snippet;
+#[cfg(feature = "deserialize")]
+pub(crate) mod tags;
+
 pub use crate::budget::Budget;
-pub use crate::de_error::Error;
+pub use self::error::Error;
 pub use crate::location::Location;
 
 use crate::anchor_store::{self, AnchorKind};
-use crate::base64::decode_base64_yaml;
-use crate::de_error::{MissingFieldLocationGuard, TransformReason};
+use self::base64::decode_base64_yaml;
+use self::error::{MissingFieldLocationGuard, TransformReason};
 use crate::parse_scalars::{
     leading_zero_decimal, maybe_not_string, parse_int_signed, parse_int_unsigned,
     parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish, scalar_is_nullish_for_option,
@@ -102,7 +149,7 @@ pub use crate::options::{AliasLimits, DuplicateKeyPolicy, Options};
 use crate::tags::SfTag;
 
 #[cfg(any(feature = "garde", feature = "validator"))]
-use crate::path_map::PathRecorder;
+use self::path_map::PathRecorder;
 
 /// Small immutable runtime configuration that `YamlDeserializer` needs.
 #[derive(Copy, Clone)]

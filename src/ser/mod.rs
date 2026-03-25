@@ -30,6 +30,12 @@
 //!     println!("{}", to_string(&cfg).unwrap());
 //! }
 
+pub mod error;
+pub mod options;
+pub(crate) mod quoting;
+mod wrapping;
+mod zmij_format;
+
 use serde::de::{Deserialize, Deserializer};
 use serde::ser::Error as _;
 use serde::ser::{
@@ -43,11 +49,11 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use crate::long_strings::{NAME_FOLD_STR, NAME_LIT_STR};
-use crate::serializer_options::{FOLDED_WRAP_CHARS, MIN_FOLD_CHARS, SerializerOptions};
 use crate::{
     ArcAnchor, ArcRecursion, ArcRecursive, ArcWeakAnchor, RcAnchor, RcRecursion, RcRecursive,
-    RcWeakAnchor, zmij_format,
+    RcWeakAnchor,
 };
+use self::options::{FOLDED_WRAP_CHARS, MIN_FOLD_CHARS, SerializerOptions};
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use nohash_hasher::BuildNoHashHasher;
 
@@ -55,8 +61,8 @@ use nohash_hasher::BuildNoHashHasher;
 // Public API
 // ------------------------------------------------------------
 
-pub use crate::ser_error::Error;
-use crate::ser_quoting::{is_plain_safe, is_plain_value_safe};
+pub use self::error::Error;
+use self::quoting::{is_plain_safe, is_plain_value_safe};
 
 /// Result alias.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -654,7 +660,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Write a folded block string body, wrapping to `folded_wrap_col` characters.
     /// Delegates to the standalone function in `wrapping` module.
     fn write_folded_block(&mut self, s: &str, indent: usize) -> Result<()> {
-        crate::wrapping::write_folded_block(
+        self::wrapping::write_folded_block(
             self.out,
             s,
             indent,
@@ -969,7 +975,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         //
         // Also skip block scalars when quote_all is enabled - use quoted strings instead.
         if self.pending_str_style.is_none() && self.in_flow == 0 && !self.quote_all {
-            use crate::ser_quoting::is_plain_value_safe;
+            use self::quoting::is_plain_value_safe;
 
             if v.contains('\n') {
                 if self.prefer_block_scalars {
@@ -1039,7 +1045,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             // Check if we need an explicit indentation indicator.
             // Required when the first non-empty line has leading whitespace.
             let content_trimmed = v.trim_end_matches('\n');
-            let first_line_spaces = crate::wrapping::first_line_leading_spaces(content_trimmed);
+            let first_line_spaces = self::wrapping::first_line_leading_spaces(content_trimmed);
             let needs_indicator = first_line_spaces > 0;
 
             // If N > 9, YAML parsers reject it. Fall back to quoting.

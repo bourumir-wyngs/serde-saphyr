@@ -12,18 +12,18 @@ keywords = ["yaml", "serde", "config", "ros", "wasm"]
 exclude = ["Cargo.lock"]
 
 [dependencies]
-saphyr-parser = { package = "saphyr-parser-bw", version = "0.0.610"}
+saphyr-parser = { package = "saphyr-parser-bw", version = "0.0.610", optional = true }
 # saphyr-parser = { package="saphyr-parser-bw", git = "https://github.com/bourumir-wyngs/saphyr", branch = "dev/saphyr-parser" }
 serde = { version = "1", features = ["derive"] }
-smallvec = {  version = ">= 1.0.0, < 1.16.0" }
+smallvec = {  version = ">= 1.0.0, < 1.16.0", optional = true }
 num-traits = { version = ">=0.2.0, <=0.2.19" }
 base64 = { version = ">=0.21.0, <=0.22.1" }
-zmij = "1.0"
-regex = { version = ">= 1.0, < 1.13"} # range tested
-nohash-hasher = "0.2"
-encoding_rs_io = "0.1"
-ahash = "0.8"
-annotate-snippets = "0.12"
+zmij = { version = "1.0", optional = true }
+regex = { version = ">= 1.0, < 1.13", optional = true } # range tested
+nohash-hasher = { version = "0.2", optional = true }
+encoding_rs_io = { version = "0.1", optional = true }
+ahash = { version = "0.8", optional = true }
+annotate-snippets = { version = "0.12", optional = true }
 figment = { version = "0.10", optional = true }
 garde = { version = ">= 0.19.0, < 0.23", optional = true, features = ["derive"] }
 miette = { version = "7", optional = true, features = ["fancy"] }
@@ -36,32 +36,38 @@ validator = { version = ">= 0.11, < 0.21", optional = true, features = ["derive"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 
 [features]
-default = []
+default = ["serialize", "deserialize"]
+
+# Enables YAML serialization APIs.
+serialize = ["dep:zmij", "dep:regex", "dep:nohash-hasher"]
+
+# Enables YAML deserialization APIs.
+deserialize = ["dep:annotate-snippets", "dep:saphyr-parser", "dep:smallvec", "dep:encoding_rs_io", "dep:ahash"]
 
 # Enables `${VAR}` property interpolation in plain scalar values.
-properties = []
+properties = ["deserialize"]
 
 # Enables !include tag processing (also resolver must be set)
-include = []
+include = ["deserialize"]
 
 # Enables the filesystem-backed `SafeFileResolver` for `!include` processing.
 include_fs = ["include"]
 
 # Enables integration with the `garde` validation crate.
-garde = ["dep:garde"]
+garde = ["dep:garde", "deserialize"]
 
 # Enables integration with the `validator` validation crate.
-validator = ["dep:validator"]
+validator = ["dep:validator", "deserialize"]
 
 # Enables structured diagnostics via the `miette` crate.
-miette = ["dep:miette"]
+miette = ["dep:miette", "deserialize"]
 
 # Enables integration with the `figment` configuration crate.
-figment = ["dep:figment"]
+figment = ["dep:figment", "deserialize"]
 
 # Adds YAML conventions common in robotics: conversion functions (deg, rad) and simple mathematical expressions such
 # as deg(180), rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). angle_conversions must be set to true in the Options.
-robotics = []
+robotics = ["deserialize"]
 
 # Enables byte-span reporting for YAML documents > 4 GiB by using `u64` instead of `u32`.
 # Parsing and normal error reporting work without this feature, but byte offsets are not reported. Public API
@@ -89,7 +95,7 @@ status = "actively developed"
 
 [[bin]]
 name = "serde-saphyr"
-required-features = ["include", "include_fs"]
+required-features = ["serialize", "deserialize", "include", "include_fs"]
 
 [[example]]
 name = "garde_validate"
@@ -101,7 +107,7 @@ required-features = ["garde"]
 
 [[example]]
 name = "miette"
-required-features = ["miette", "garde", "validator"]
+required-features = ["deserialize", "miette", "garde", "validator"]
 
 [[example]]
 name = "validator_validate"
@@ -121,7 +127,7 @@ required-features = ["include_fs"]
 
 [[example]]
 name = "figment_yaml"
-required-features = ["figment"]
+required-features = ["deserialize", "figment"]
 
 [lints.rust]
 unsafe_code = "forbid"

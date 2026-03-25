@@ -1,5 +1,6 @@
 //! Source location utilities.
 
+#[cfg(feature = "deserialize")]
 use saphyr_parser::Span as ParserSpan;
 use serde::Deserialize;
 
@@ -258,6 +259,7 @@ impl Location {
 ///
 /// The resulting [`Location::span`] carries character offsets/lengths (not bytes),
 /// matching what the parser reports.
+#[cfg(feature = "deserialize")]
 pub(crate) fn location_from_span(span: &ParserSpan) -> Location {
     let start = &span.start;
     let end = &span.end;
@@ -333,7 +335,7 @@ impl Locations {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "deserialize"))]
 mod tests {
     use super::*;
     use saphyr_parser::{Event, Parser};

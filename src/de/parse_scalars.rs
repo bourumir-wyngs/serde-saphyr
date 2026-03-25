@@ -1,5 +1,8 @@
+#[cfg(feature = "deserialize")]
 use crate::de::{Error, Location};
+#[cfg(feature = "deserialize")]
 use crate::tags::SfTag;
+#[cfg(feature = "deserialize")]
 use saphyr_parser::ScalarStyle;
 use std::str::FromStr;
 
@@ -124,6 +127,7 @@ fn parse_decimal_signed_i128(digits: &str, neg: bool) -> Option<i128> {
     }
 }
 
+#[cfg(feature = "deserialize")]
 pub(crate) fn parse_int_signed<T>(
     s: &str,
     ty: &'static str,
@@ -160,6 +164,7 @@ where
     T::try_from(val_i128).map_err(|_| invalid())
 }
 
+#[cfg(feature = "deserialize")]
 pub(crate) fn parse_int_unsigned<T>(
     s: &str,
     ty: &'static str,
@@ -208,7 +213,7 @@ fn radix_and_digits(legacy_octal: bool, rest: &str) -> (u32, &str) {
     (radix, digits)
 }
 
-#[cfg(feature = "robotics")]
+#[cfg(all(feature = "deserialize", feature = "robotics"))]
 pub(crate) fn parse_yaml12_float<T>(
     s: &str,
     location: Location,
@@ -235,7 +240,7 @@ where
     }
 }
 
-#[cfg(not(feature = "robotics"))]
+#[cfg(all(feature = "deserialize", not(feature = "robotics")))]
 pub(crate) fn parse_yaml12_float<T>(
     s: &str,
     location: Location,
@@ -259,6 +264,7 @@ where
     }
 }
 
+#[cfg(feature = "deserialize")]
 /// If we are not using Rust struct as schema, check if we should not be quoting the value.
 pub(crate) fn maybe_not_string(s: &str, style: &ScalarStyle) -> bool {
     let location = Location::UNKNOWN;
@@ -280,6 +286,7 @@ pub(crate) fn maybe_not_string(s: &str, style: &ScalarStyle) -> bool {
 ///
 /// Used by:
 /// - Unit handling and some edge cases where absence is tolerated.
+#[cfg(feature = "deserialize")]
 #[inline]
 pub(crate) fn scalar_is_nullish(value: &str, style: &ScalarStyle) -> bool {
     if !matches!(style, ScalarStyle::Plain) {
@@ -299,6 +306,7 @@ pub(crate) fn scalar_is_nullish(value: &str, style: &ScalarStyle) -> bool {
 ///
 /// Used by:
 /// - `deserialize_option` only (does not affect other types).
+#[cfg(feature = "deserialize")]
 #[inline]
 pub(crate) fn scalar_is_nullish_for_option(value: &str, style: &ScalarStyle) -> bool {
     // For Option: treat empty unquoted scalar as null, and plain "~"/"null" as null.
@@ -306,6 +314,7 @@ pub(crate) fn scalar_is_nullish_for_option(value: &str, style: &ScalarStyle) -> 
     (matches!(style, ScalarStyle::Plain) && (value == "~" || value.eq_ignore_ascii_case("null"))) // plain_nullish
 }
 
+#[cfg(feature = "deserialize")]
 /// Returns `true` if the string represents a decimal number with a redundant leading zero,
 /// such as `0127`, `+0127`, or `-0127`.
 /// Explicit radices (`0x`, `0o`, `0b`) are excluded.

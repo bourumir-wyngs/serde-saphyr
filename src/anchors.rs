@@ -36,13 +36,16 @@
 use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::fmt;
+#[cfg(feature = "deserialize")]
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::rc::{Rc, Weak as RcWeak};
 use std::sync::{Arc, Mutex, Weak as ArcWeak};
 
+#[cfg(feature = "deserialize")]
 use serde::de::{Error as _, Visitor};
 
+#[cfg(feature = "deserialize")]
 use crate::anchor_store;
 
 /// A wrapper around [`Rc<T>`] that opt-ins a field for **anchor emission** (e.g. serialization by reference).
@@ -654,6 +657,7 @@ impl<T: Default> Default for ArcRecursive<T> {
 // -------------------------------
 // Deserialize impls
 // -------------------------------
+#[cfg(feature = "deserialize")]
 impl<'de, T> serde::de::Deserialize<'de> for RcAnchor<T>
 where
     T: serde::de::Deserialize<'de> + 'static,
@@ -711,6 +715,7 @@ where
     }
 }
 
+#[cfg(feature = "deserialize")]
 impl<'de, T> serde::de::Deserialize<'de> for ArcAnchor<T>
 where
     T: serde::de::Deserialize<'de> + Send + Sync + 'static,
@@ -769,6 +774,7 @@ where
     }
 }
 
+#[cfg(feature = "deserialize")]
 impl<'de, T> serde::de::Deserialize<'de> for RcRecursive<T>
 where
     T: serde::de::Deserialize<'de> + 'static,
@@ -835,6 +841,7 @@ where
     }
 }
 
+#[cfg(feature = "deserialize")]
 impl<'de, T> serde::de::Deserialize<'de> for ArcRecursive<T>
 where
     T: serde::de::Deserialize<'de> + Send + Sync + 'static,
@@ -906,6 +913,7 @@ where
 // -------------------------------
 // Deserialize impls for WEAK anchors (RcWeakAnchor / ArcWeakAnchor)
 // -------------------------------
+#[cfg(feature = "deserialize")]
 impl<'de, T> serde::de::Deserialize<'de> for RcWeakAnchor<T>
 where
     T: serde::de::Deserialize<'de> + 'static,
@@ -961,6 +969,7 @@ where
     }
 }
 
+#[cfg(feature = "deserialize")]
 impl<'de, T> serde::de::Deserialize<'de> for ArcWeakAnchor<T>
 where
     T: serde::de::Deserialize<'de> + Send + Sync + 'static,
@@ -1014,6 +1023,7 @@ where
     }
 }
 
+#[cfg(feature = "deserialize")]
 impl<'de, T> serde::de::Deserialize<'de> for RcRecursion<T>
 where
     T: serde::de::Deserialize<'de> + 'static,
@@ -1059,6 +1069,7 @@ where
     }
 }
 
+#[cfg(feature = "deserialize")]
 impl<'de, T> serde::de::Deserialize<'de> for ArcRecursion<T>
 where
     T: serde::de::Deserialize<'de> + Send + Sync + 'static,

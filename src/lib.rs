@@ -9,28 +9,43 @@ pub use anchors::{
     ArcAnchor, ArcRecursion, ArcRecursive, ArcWeakAnchor, RcAnchor, RcRecursion, RcRecursive,
     RcWeakAnchor,
 };
-pub use de::{Budget, DuplicateKeyPolicy, Error, Options};
-pub use de_error::CroppedRegion;
-pub use de_error::TransformReason;
-pub use de_error::{MessageFormatter, RenderOptions, SnippetMode, UserMessageFormatter};
-pub use indentation::RequireIndent;
-pub use input_source::{
-    IncludeRequest, IncludeResolveError, IncludeResolver, InputSource, ResolveProblem,
-    ResolvedInclude,
-};
-pub use localizer::{
-    DEFAULT_ENGLISH_LOCALIZER, DefaultEnglishLocalizer, ExternalMessage, ExternalMessageSource,
-    Localizer,
+#[cfg(feature = "deserialize")]
+pub use self::{
+    de::{budget, localizer, options, Budget, DuplicateKeyPolicy, Error, Options},
+    de_error::{
+        CroppedRegion, MessageFormatter, RenderOptions, SnippetMode, TransformReason,
+        UserMessageFormatter,
+    },
+    indentation::RequireIndent,
+    input_source::{
+        IncludeRequest, IncludeResolveError, IncludeResolver, InputSource, ResolveProblem,
+        ResolvedInclude,
+    },
+    localizer::{
+        DEFAULT_ENGLISH_LOCALIZER, DefaultEnglishLocalizer, ExternalMessage,
+        ExternalMessageSource, Localizer,
+    },
+    message_formatters::{DefaultMessageFormatter, DeveloperMessageFormatter},
 };
 pub use location::{Location, Locations, Span};
 pub use long_strings::{FoldStr, FoldString, LitStr, LitString};
-pub use message_formatters::{DefaultMessageFormatter, DeveloperMessageFormatter};
-#[cfg(feature = "include_fs")]
-pub use safe_resolver::{SafeFileReadMode, SafeFileResolver, SymlinkPolicy};
-pub use ser::{Commented, FlowMap, FlowSeq, SpaceAfter};
+#[cfg(feature = "figment")]
+pub use de::figment;
+#[cfg(feature = "miette")]
+pub use de::miette;
+#[cfg(any(feature = "garde", feature = "validator"))]
+pub use de::path_map;
+#[cfg(feature = "properties")]
+pub use de::properties;
+#[cfg(feature = "robotics")]
+pub use de::robotics;
+#[cfg(all(feature = "deserialize", feature = "include_fs"))]
+pub use de::safe_resolver::{SafeFileReadMode, SafeFileResolver, SymlinkPolicy};
+#[cfg(feature = "serialize")]
+pub use self::{ser::{Commented, FlowMap, FlowSeq, SpaceAfter, error as ser_error, options::SerializerOptions}};
 pub use spanned::Spanned;
 
-#[cfg(feature = "include")]
+#[cfg(all(feature = "deserialize", feature = "include"))]
 pub(crate) fn resolver_from_options<'a>(
     options: Options,
 ) -> Option<Box<crate::input_source::IncludeResolver<'a>>> {
@@ -40,57 +55,54 @@ pub(crate) fn resolver_from_options<'a>(
     })
 }
 
+#[cfg(feature = "deserialize")]
 use crate::budget::EnforcingPolicy;
+#[cfg(feature = "deserialize")]
 use crate::de::{Ev, Events};
+#[cfg(feature = "deserialize")]
 use crate::live_events::LiveEvents;
+#[cfg(feature = "deserialize")]
 use crate::parse_scalars::scalar_is_nullish;
+#[cfg(feature = "deserialize")]
 use crate::properties_redaction::with_interp_redaction_scope;
-pub use crate::serializer_options::SerializerOptions;
+#[cfg(feature = "deserialize")]
 use serde::de::DeserializeOwned;
+#[cfg(feature = "deserialize")]
 use std::io::Read;
 
-#[cfg(feature = "properties")]
-pub mod properties;
-mod properties_redaction;
-
+#[cfg(feature = "deserialize")]
+#[path = "de/anchor_store.rs"]
 mod anchor_store;
 mod anchors;
-mod base64;
-pub mod budget;
+#[cfg(feature = "deserialize")]
+#[path = "de/mod.rs"]
 mod de;
-mod de_error;
-#[path = "de/snippet.rs"]
-mod de_snippet;
-mod include;
-mod indentation;
-mod input_source;
-mod live_events;
-#[path = "localizer.rs"]
-pub mod localizer;
 mod long_strings;
-mod message_formatters;
-pub mod options;
+#[path = "de/parse_scalars.rs"]
 mod parse_scalars;
-#[cfg(feature = "include_fs")]
-mod safe_resolver;
+#[cfg(feature = "serialize")]
+#[path = "ser/mod.rs"]
 pub mod ser;
 mod spanned;
+
+#[cfg(feature = "deserialize")]
+pub(crate) use de::{
+    buffered_input, error as de_error, include, indentation, input_source, live_events,
+    message_formatters, properties_redaction, ring_reader, snippet as de_snippet, tags,
+};
+#[cfg(all(feature = "deserialize", feature = "include"))]
+pub(crate) use de::include_stack;
 #[cfg(any(feature = "garde", feature = "validator"))]
-mod lib_validate;
+use de::lib_validate;
 
-#[cfg(feature = "include")]
-mod include_stack;
-
-#[cfg(any(feature = "garde", feature = "validator"))]
-pub mod path_map;
-
-pub mod ser_error;
-
+#[cfg(feature = "deserialize")]
 pub use de::YamlDeserializer as Deserializer;
 #[cfg(any(feature = "garde", feature = "validator"))]
 pub use lib_validate::*;
+#[cfg(feature = "serialize")]
 pub use ser::YamlSerializer as Serializer;
 
+#[cfg(feature = "deserialize")]
 pub use de::{
     with_deserializer_from_reader, with_deserializer_from_reader_with_options,
     with_deserializer_from_slice, with_deserializer_from_slice_with_options,
@@ -98,24 +110,8 @@ pub use de::{
 };
 
 mod macros;
-mod serializer_options;
-mod tags;
-
-pub(crate) mod ser_quoting;
-
-mod buffered_input;
+#[path = "de/location.rs"]
 mod location;
-#[cfg(feature = "robotics")]
-pub mod robotics;
-
-#[cfg(feature = "miette")]
-pub mod miette;
-
-#[cfg(feature = "figment")]
-pub mod figment;
-pub(crate) mod ring_reader;
-mod wrapping;
-mod zmij_format;
 // ---------------- Serialization (public API) ----------------
 
 /// Serialize a value to a YAML `String`.
@@ -133,6 +129,7 @@ mod zmij_format;
 /// let s = serde_saphyr::to_string(&Foo { a: 1, b: true }).unwrap();
 /// assert!(s.contains("a: 1"));
 /// ```
+#[cfg(feature = "serialize")]
 pub fn to_string<T: serde::Serialize>(value: &T) -> std::result::Result<String, crate::ser::Error> {
     let mut out = String::new();
     to_fmt_writer(&mut out, value)?;
@@ -157,6 +154,7 @@ pub fn to_string<T: serde::Serialize>(value: &T) -> std::result::Result<String, 
 /// let s = serde_saphyr::to_string_with_options(&Foo { a: 1, b: true }, options).unwrap();
 /// assert!(s.contains("a: 1"));
 /// ```
+#[cfg(feature = "serialize")]
 pub fn to_string_with_options<T: serde::Serialize>(
     value: &T,
     options: SerializerOptions,
@@ -172,6 +170,7 @@ pub fn to_string_with_options<T: serde::Serialize>(
     since = "0.0.7",
     note = "Use `to_fmt_writer` for `fmt::Write` (String, fmt::Formatter) or `to_io_writer` for files/sockets."
 )]
+#[cfg(feature = "serialize")]
 pub fn to_writer<W: std::fmt::Write, T: serde::Serialize>(
     output: &mut W,
     value: &T,
@@ -181,6 +180,7 @@ pub fn to_writer<W: std::fmt::Write, T: serde::Serialize>(
 }
 
 /// Serialize a value as YAML into any [`fmt::Write`] target.
+#[cfg(feature = "serialize")]
 pub fn to_fmt_writer<W: std::fmt::Write, T: serde::Serialize>(
     output: &mut W,
     value: &T,
@@ -189,6 +189,7 @@ pub fn to_fmt_writer<W: std::fmt::Write, T: serde::Serialize>(
 }
 
 /// Serialize a value as YAML into any [`io::Write`] target.
+#[cfg(feature = "serialize")]
 pub fn to_io_writer<W: std::io::Write, T: serde::Serialize>(
     output: &mut W,
     value: &T,
@@ -198,6 +199,7 @@ pub fn to_io_writer<W: std::io::Write, T: serde::Serialize>(
 
 /// Serialize a value as YAML into any [`fmt::Write`] target, with options.
 /// Options are consumed because anchor generator may be taken from them.
+#[cfg(feature = "serialize")]
 pub fn to_fmt_writer_with_options<W: std::fmt::Write, T: serde::Serialize>(
     output: &mut W,
     value: &T,
@@ -210,6 +212,7 @@ pub fn to_fmt_writer_with_options<W: std::fmt::Write, T: serde::Serialize>(
 
 /// Serialize a value as YAML into any [`io::Write`] target, with options.
 /// Options are consumed because anchor generator may be taken from them.
+#[cfg(feature = "serialize")]
 pub fn to_io_writer_with_options<W: std::io::Write, T: serde::Serialize>(
     output: &mut W,
     value: &T,
@@ -255,6 +258,7 @@ pub fn to_io_writer_with_options<W: std::io::Write, T: serde::Serialize>(
     since = "0.0.7",
     note = "Use `to_fmt_writer_with_options` for fmt::Write or `to_io_writer_with_options` for io::Write."
 )]
+#[cfg(feature = "serialize")]
 pub fn to_writer_with_options<W: std::fmt::Write, T: serde::Serialize>(
     output: &mut W,
     value: &T,
@@ -325,6 +329,7 @@ pub fn to_writer_with_options<W: std::fmt::Write, T: serde::Serialize>(
 /// assert_eq!(data.name, "hello");
 /// assert_eq!(data.value, 42);
 /// ```
+#[cfg(feature = "deserialize")]
 pub fn from_str<'de, T>(input: &'de str) -> Result<T, Error>
 where
     T: serde::de::Deserialize<'de>,
@@ -333,6 +338,7 @@ where
 }
 
 #[allow(deprecated)]
+#[cfg(feature = "deserialize")]
 fn from_str_with_options_impl<'de, T>(input: &'de str, options: Options) -> Result<T, Error>
 where
     T: serde::de::Deserialize<'de>,
@@ -456,6 +462,7 @@ where
 /// assert_eq!(cfg.retries, 5);
 /// ```
 #[allow(deprecated)]
+#[cfg(feature = "deserialize")]
 pub fn from_str_with_options<'de, T>(input: &'de str, options: Options) -> Result<T, Error>
 where
     T: serde::de::Deserialize<'de>,
@@ -464,6 +471,7 @@ where
 }
 
 
+#[cfg(feature = "deserialize")]
 pub(crate) fn maybe_with_snippet(
     err: Error,
     input: &str,
@@ -477,18 +485,21 @@ pub(crate) fn maybe_with_snippet(
     err.with_snippet(input, crop_radius)
 }
 
+#[cfg(feature = "deserialize")]
 pub(crate) struct RootFragment<'a> {
     pub text: &'a str,
     pub start_line: usize,
     pub source_name: &'a str,
 }
 
+#[cfg(feature = "deserialize")]
 struct ReaderSnippetContext<R> {
     shared_ring: ring_reader::SharedRingReader<R>,
     with_snippet: bool,
     crop_radius: usize,
 }
 
+#[cfg(feature = "deserialize")]
 impl<R: Read> ReaderSnippetContext<R> {
     fn new(
         reader: R,
@@ -534,7 +545,7 @@ impl<R: Read> ReaderSnippetContext<R> {
     }
 }
 
-#[cfg(feature = "include")]
+#[cfg(all(feature = "deserialize", feature = "include"))]
 fn with_root_additional_snippet(
     err: Error,
     root: Option<&RootFragment<'_>>,
@@ -554,7 +565,7 @@ fn with_root_additional_snippet(
     }
 }
 
-#[cfg(feature = "include")]
+#[cfg(all(feature = "deserialize", feature = "include"))]
 fn recorded_source_snippet_chain<'a>(
     events: &'a crate::live_events::LiveEvents<'_>,
     location: &crate::Location,
@@ -564,7 +575,7 @@ fn recorded_source_snippet_chain<'a>(
     Some(chain)
 }
 
-#[cfg(feature = "include")]
+#[cfg(all(feature = "deserialize", feature = "include"))]
 fn with_recorded_source_snippets(
     err: Error,
     root: Option<&RootFragment<'_>>,
@@ -611,6 +622,7 @@ fn with_recorded_source_snippets(
     err_with_snippet
 }
 
+#[cfg(feature = "deserialize")]
 pub(crate) fn maybe_with_snippet_from_events_and_root_fragment(
     err: Error,
     root: Option<&RootFragment<'_>>,
@@ -638,6 +650,7 @@ pub(crate) fn maybe_with_snippet_from_events_and_root_fragment(
     }
 }
 
+#[cfg(feature = "deserialize")]
 pub(crate) fn maybe_with_snippet_from_events(
     err: Error,
     input: &str,
@@ -684,6 +697,7 @@ pub(crate) fn maybe_with_snippet_from_events(
 /// assert_eq!(cfgs.len(), 2);
 /// assert_eq!(cfgs[0].name, "First");
 /// ```
+#[cfg(feature = "deserialize")]
 pub fn from_multiple<T: DeserializeOwned>(input: &str) -> Result<Vec<T>, Error> {
     from_multiple_with_options(input, Options::default())
 }
@@ -724,6 +738,7 @@ pub fn from_multiple<T: DeserializeOwned>(input: &str) -> Result<Vec<T>, Error> 
 /// assert!(!cfgs[1].enabled);
 /// ```
 #[allow(deprecated)]
+#[cfg(feature = "deserialize")]
 pub fn from_multiple_with_options<T: DeserializeOwned>(
     input: &str,
     options: Options,
@@ -822,6 +837,7 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
 /// assert!(cfg.enabled);
 /// ```
 ///
+#[cfg(feature = "deserialize")]
 pub fn from_slice<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, Error> {
     from_slice_with_options(bytes, Options::default())
 }
@@ -856,6 +872,7 @@ pub fn from_slice<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, Error> {
 /// let cfg: Config = serde_saphyr::from_slice_with_options(bytes, options).unwrap();
 /// assert_eq!(cfg.retries, 5);
 /// ```
+#[cfg(feature = "deserialize")]
 pub fn from_slice_with_options<'de, T>(bytes: &'de [u8], options: Options) -> Result<T, Error>
 where
     T: serde::Deserialize<'de>,
@@ -892,6 +909,7 @@ where
 /// assert_eq!(cfgs.len(), 2);
 /// assert_eq!(cfgs[0].name, "First");
 /// ```
+#[cfg(feature = "deserialize")]
 pub fn from_slice_multiple<T: DeserializeOwned>(bytes: &[u8]) -> Result<Vec<T>, Error> {
     from_slice_multiple_with_options(bytes, Options::default())
 }
@@ -932,6 +950,7 @@ pub fn from_slice_multiple<T: DeserializeOwned>(bytes: &[u8]) -> Result<Vec<T>, 
 /// assert_eq!(cfgs.len(), 2);
 /// assert!(!cfgs[1].enabled);
 /// ```
+#[cfg(feature = "deserialize")]
 pub fn from_slice_multiple_with_options<T: DeserializeOwned>(
     bytes: &[u8],
     options: Options,
@@ -958,6 +977,7 @@ pub fn from_slice_multiple_with_options<T: DeserializeOwned>(
 /// let out = serde_saphyr::to_string_multiple(&docs).unwrap();
 /// assert_eq!(out, "x: 1\n---\nx: 2\n");
 /// ```
+#[cfg(feature = "serialize")]
 pub fn to_string_multiple<T: serde::Serialize>(
     values: &[T],
 ) -> std::result::Result<String, crate::ser::Error> {
@@ -986,6 +1006,7 @@ pub fn to_string_multiple<T: serde::Serialize>(
 /// let out = serde_saphyr::to_string_multiple_with_options(&docs, options).unwrap();
 /// assert_eq!(out, "coords:\n- 0\n- 1\n---\ncoords:\n- 3\n- 2\n");
 /// ```
+#[cfg(feature = "serialize")]
 pub fn to_string_multiple_with_options<T: serde::Serialize>(
     values: &[T],
     options: SerializerOptions,
@@ -1033,6 +1054,7 @@ pub fn to_string_multiple_with_options<T: serde::Serialize>(
 /// let reader = std::io::Cursor::new(big.as_bytes().to_owned());
 /// let _value: Value = serde_saphyr::from_reader(reader).unwrap();
 /// ```
+#[cfg(feature = "deserialize")]
 pub fn from_reader<'a, R: std::io::Read + 'a, T: DeserializeOwned>(reader: R) -> Result<T, Error> {
     from_reader_with_options(reader, Options::default())
 }
@@ -1083,6 +1105,7 @@ pub fn from_reader<'a, R: std::io::Read + 'a, T: DeserializeOwned>(reader: R) ->
 ///   `read`/`read_with_options` iterator APIs.
 /// - If `Options::budget` is set and a limit is exceeded, an error is returned early.
 #[allow(deprecated)]
+#[cfg(feature = "deserialize")]
 pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
     reader: R,
     options: Options,
@@ -1211,6 +1234,7 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
 /// Hence, while streaming is good for safely parsing large files with multiple documents without
 /// loading it into RAM in advance, it does not emit each document exactly
 /// after `---`  is encountered.
+#[cfg(feature = "deserialize")]
 pub fn read<'a, R, T>(reader: &'a mut R) -> Box<dyn Iterator<Item = Result<T, Error>> + 'a>
 where
     R: Read + 'a,
@@ -1293,6 +1317,7 @@ where
 ///   the parser state may be unrecoverable.
 /// - Empty/null-like documents are skipped and produce no items.
 #[allow(deprecated)]
+#[cfg(feature = "deserialize")]
 pub fn read_with_options<'a, R, T>(
     reader: &'a mut R, // iterator must not outlive this borrow
     options: Options,
