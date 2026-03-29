@@ -1,9 +1,11 @@
 #![forbid(unsafe_code)]
-// Options structs expose their fields for now, but callers are expected to migrate to the
-// `options!` / `ser_options!` macros. The fields are deprecated to guide downstream
-// users, while this crate still legitimately reads them internally.
 #![allow(deprecated)]
-//! Serialization public API is defined at crate root
+
+#[cfg(not(any(feature = "serialize", feature = "deserialize")))]
+compile_error!(
+    "Invalid feature configuration: enable at least one of \
+     \"serialize\" or \"deserialize\"."
+);
 
 pub use anchors::{
     ArcAnchor, ArcRecursion, ArcRecursive, ArcWeakAnchor, RcAnchor, RcRecursion, RcRecursive,

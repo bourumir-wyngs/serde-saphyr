@@ -53,7 +53,7 @@ jobs:
       - name: Run no default features
         run: |
           export PATH=$PATH:/home/github-runner/.cargo/bin
-          cargo test --locked --offline --no-default-features
+          cargo test --locked --offline --no-default-features --features serialize,deserialize
 
       - name: Run large huge_documents
         run: |

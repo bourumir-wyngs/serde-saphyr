@@ -82,18 +82,6 @@ The test suite currently includes over 1000 passing tests, including the fully c
 
 ## Usage
 
-Parse YAML into a Rust structure with proper error handling. The crate name on crates.io is
-`serde-saphyr`, and the import path is `serde_saphyr`.
-
-By default, the crate enables both `serialize` and `deserialize`. If you only need one side,
-you can disable default features and opt into just the API surface you use:
-
-```toml
-serde-saphyr = { version = "0.0.22", default-features = false, features = ["deserialize"] }
-# or
-serde-saphyr = { version = "0.0.22", default-features = false, features = ["serialize"] }
-```
-
 ```rust
 use serde::Deserialize;
 
@@ -124,6 +112,20 @@ let yaml_input = r#"
     }
 }
 ```
+### Using serializer or deserializer specifically
+
+To speed up compilation, starting from version `0.0.23` you can link only the deserializer or only the serializer (along with their respective dependencies). For easier initial integration, both `serialize` and `deserialize` features are enabled by default.
+
+If you only need one side, you can disable default features and enable only the API surface you use:
+
+```toml
+serde-saphyr = { version = "0.0.23", default-features = false, features = ["deserialize"] }
+```
+or
+```toml
+serde-saphyr = { version = "0.0.23", default-features = false, features = ["serialize"] }
+```
+Disabling both will produce a "Invalid feature configuration" error (such configuration makes no sense).
 
 ### Snippets
 To make debugging easier, **serde-saphyr** renders snippets of the YAML that caused an error (similar to how many compilers report errors). These snippets include the line where the error occurred along with some surrounding context. Any terminal control sequences that might be present in the YAML are stripped out. If not desired, snippets can be removed for a specific error using [`without_snippet`](https://docs.rs/serde-saphyr/latest/serde_saphyr/enum.Error.html#method.without_snippet), or disabled entirely via the `Options` configuration.
