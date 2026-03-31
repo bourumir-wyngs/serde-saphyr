@@ -52,7 +52,7 @@ use crate::{
     ArcAnchor, ArcRecursion, ArcRecursive, ArcWeakAnchor, Commented, FlowMap, FlowSeq,
     RcAnchor, RcRecursion, RcRecursive, RcWeakAnchor, SpaceAfter,
 };
-use self::options::{FOLDED_WRAP_CHARS, MIN_FOLD_CHARS, SerializerOptions};
+use self::options::{CommentPosition, FOLDED_WRAP_CHARS, MIN_FOLD_CHARS, SerializerOptions};
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use nohash_hasher::BuildNoHashHasher;
 
@@ -329,6 +329,8 @@ pub struct YamlSerializer<'a, W: Write> {
     pending_str_from_auto: bool,
     /// Pending inline comment to be appended after the next scalar (block style only).
     pending_inline_comment: Option<String>,
+    /// Placement mode for [`crate::Commented`] wrappers in block style.
+    comment_position: CommentPosition,
     /// If true, emit YAML tags for simple enums that serialize to a single scalar.
     tagged_enums: bool,
     /// If true, empty maps are emitted as {} and lists as []
@@ -386,6 +388,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
             pending_str_style: None,
             pending_str_from_auto: false,
             pending_inline_comment: None,
+            comment_position: CommentPosition::Inline,
             tagged_enums: false,
             empty_as_braces: true,
             compact_list_indent: false,
@@ -422,6 +425,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         s.compact_list_indent = options.compact_list_indent;
         s.prefer_block_scalars = options.prefer_block_scalars;
         s.quote_all = options.quote_all;
+        s.comment_position = options.comment_position;
         s.yaml_12 = options.yaml_12;
         s
     }
@@ -466,6 +470,45 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
             self.newline()?;
         }
         Ok(())
+    }
+
+    #[inline]
+    fn sanitize_comment_text(comment: &str) -> String {
+        comment
+            .chars()
+            .map(|ch| match ch {
+                '\n' | '\r' | '\u{85}' | '\u{2028}' | '\u{2029}' => ' ',
+                _ => ch,
+            })
+            .collect()
+    }
+
+    fn write_above_comment(&mut self, comment: &str) -> Result<Option<usize>> {
+        if self.in_flow > 0 || comment.is_empty() {
+            return Ok(None);
+        }
+
+        let target_depth = if self.pending_space_after_colon {
+            let base = self.current_map_depth.unwrap_or(self.depth);
+            self.pending_space_after_colon = false;
+            if !self.at_line_start {
+                self.newline()?;
+            }
+            base + 1
+        } else if !self.at_line_start {
+            let base = self.after_dash_depth.unwrap_or(self.depth);
+            self.pending_inline_map = false;
+            self.newline()?;
+            base + 1
+        } else {
+            self.depth
+        };
+
+        self.write_indent(target_depth)?;
+        self.out.write_str("# ")?;
+        self.out.write_str(comment)?;
+        self.newline()?;
+        Ok(Some(target_depth))
     }
 
     /// Allocate (or get existing) anchor id for a pointer identity.
@@ -1879,25 +1922,29 @@ impl<'a, 'b, W: Write> SerializeTupleStruct for TupleSer<'a, 'b, W> {
                     }
                     1 => {
                         let comment = self.comment_text.take().unwrap_or_default();
-                        if self.ser.in_flow == 0 {
-                            // Stage the comment so scalar/alias serializers append it inline via write_end_of_scalar.
-                            if !comment.is_empty() {
-                                let sanitized: String = comment
-                                    .chars()
-                                    .map(|ch| match ch {
-                                        '\n' | '\r' | '\u{85}' | '\u{2028}' | '\u{2029}' => ' ',
-                                        _ => ch,
-                                    })
-                                    .collect();
-                                self.ser.pending_inline_comment = Some(sanitized);
+                        let sanitized = YamlSerializer::<W>::sanitize_comment_text(&comment);
+                        match self.ser.comment_position {
+                            CommentPosition::Inline => {
+                                if self.ser.in_flow == 0 && !sanitized.is_empty() {
+                                    // Stage the comment so scalar/alias serializers append it inline via write_end_of_scalar.
+                                    self.ser.pending_inline_comment = Some(sanitized);
+                                }
+                                // Serialize the inner value as-is. Complex values will ignore the comment (it will be cleared).
+                                value.serialize(&mut *self.ser)?;
+                                // Ensure no leftover staged comment leaks to subsequent tokens.
+                                self.ser.pending_inline_comment = None;
                             }
-                            // Serialize the inner value as-is. Complex values will ignore the comment (it will be cleared).
-                            value.serialize(&mut *self.ser)?;
-                            // Ensure no leftover staged comment leaks to subsequent tokens.
-                            self.ser.pending_inline_comment = None;
-                        } else {
-                            // Inside a flow context: serialize value and suppress comments.
-                            value.serialize(&mut *self.ser)?;
+                            CommentPosition::Above => {
+                                let saved_depth = self.ser.depth;
+                                let target_depth = self.ser.write_above_comment(&sanitized)?;
+                                if let Some(depth) = target_depth {
+                                    self.ser.depth = depth;
+                                }
+                                let result = value.serialize(&mut *self.ser);
+                                self.ser.depth = saved_depth;
+                                result?;
+                                self.ser.pending_inline_comment = None;
+                            }
                         }
                     }
                     _ => return Err(Error::unexpected("unexpected field in __yaml_commented")),

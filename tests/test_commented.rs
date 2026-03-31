@@ -2,7 +2,10 @@
 use serde::Serialize;
 use std::collections::HashMap;
 
-use serde_saphyr::{Commented, FlowMap, FlowSeq, RcAnchor, to_string};
+use serde_saphyr::{
+    CommentPosition, Commented, FlowMap, FlowSeq, RcAnchor, ser_options, to_string,
+    to_string_with_options,
+};
 
 #[test]
 fn commented_scalar_block_style() {
@@ -50,6 +53,53 @@ fn commented_complex_values() {
 }
 
 #[test]
+fn commented_scalar_block_style_above() {
+    let y = to_string_with_options(
+        &Commented(42, "answer".to_string()),
+        ser_options! { comment_position: CommentPosition::Above },
+    )
+    .unwrap();
+    assert_eq!(y, "# answer\n42\n");
+}
+
+#[test]
+fn commented_scalar_as_map_value_above() {
+    #[derive(Serialize)]
+    struct Wrap {
+        k: Commented<i32>,
+    }
+
+    let y = to_string_with_options(
+        &Wrap {
+            k: Commented(5, "hi".into()),
+        },
+        ser_options! { comment_position: CommentPosition::Above },
+    )
+    .unwrap();
+    assert_eq!(y, "k:\n  # hi\n  5\n");
+}
+
+#[test]
+fn commented_scalar_as_seq_item_above() {
+    let y = to_string_with_options(
+        &vec![Commented(5, "hi".into())],
+        ser_options! { comment_position: CommentPosition::Above },
+    )
+    .unwrap();
+    assert_eq!(y, "- \n  # hi\n  5\n");
+}
+
+#[test]
+fn commented_complex_value_above() {
+    let y = to_string_with_options(
+        &Commented(vec![1, 2], "items".into()),
+        ser_options! { comment_position: CommentPosition::Above },
+    )
+    .unwrap();
+    assert_eq!(y, "# items\n- 1\n- 2\n");
+}
+
+#[test]
 fn commented_newlines_are_sanitized() {
     let y = to_string(&Commented(7, "line1\nline2".into())).unwrap();
     assert_eq!(y, "7 # line1 line2\n");
@@ -59,6 +109,27 @@ fn commented_newlines_are_sanitized() {
 fn commented_carriage_returns_are_sanitized() {
     let y = to_string(&Commented(7, "line1\rline2".into())).unwrap();
     assert_eq!(y, "7 # line1 line2\n");
+}
+
+#[test]
+fn commented_above_sanitizes_newlines() {
+    let y = to_string_with_options(
+        &Commented(7, "line1\nline2".into()),
+        ser_options! { comment_position: CommentPosition::Above },
+    )
+    .unwrap();
+    assert_eq!(y, "# line1 line2\n7\n");
+}
+
+#[test]
+fn commented_scalar_suppressed_in_flow_seq_above() {
+    let seq = FlowSeq(vec![Commented(1, "a".to_string()), Commented(2, "".into())]);
+    let y = to_string_with_options(
+        &seq,
+        ser_options! { comment_position: CommentPosition::Above },
+    )
+    .unwrap();
+    assert_eq!(y, "[1, 2]\n");
 }
 
 #[test]

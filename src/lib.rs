@@ -46,7 +46,7 @@ pub use de::robotics;
 #[cfg(all(feature = "deserialize", feature = "include_fs"))]
 pub use de::safe_resolver::{SafeFileReadMode, SafeFileResolver, SymlinkPolicy};
 #[cfg(feature = "serialize")]
-pub use self::{ser::{error as ser_error, options::SerializerOptions}};
+pub use self::{ser::{error as ser_error, options::{CommentPosition, SerializerOptions}}};
 pub use spanned::Spanned;
 
 #[cfg(all(feature = "deserialize", feature = "include"))]

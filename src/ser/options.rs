@@ -21,6 +21,15 @@
 
 use crate::ser_error::Error;
 
+/// Placement style for comments emitted by [`crate::Commented`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CommentPosition {
+    /// Emit the comment inline on the right side from the item it describes (default)
+    Inline,
+    /// Emit the comment above the item it describes
+    Above,
+}
+
 /// Serializer options for YAML emission.
 ///
 /// This struct controls various aspects of YAML serialization, such as indentation,
@@ -120,6 +129,14 @@ pub struct SerializerOptions {
     /// Off by default.
     pub quote_all: bool,
 
+    /// Controls where [`crate::Commented`] comments are emitted in block style.
+    ///
+    /// [`CommentPosition::Inline`] preserves the existing `value # comment` behavior for
+    /// scalars and aliases. [`CommentPosition::Above`] emits the comment on its own line
+    /// immediately before the wrapped value. Comments remain suppressed in flow-style
+    /// collections in both modes.
+    pub comment_position: CommentPosition,
+
     /// When enabled, emit `%YAML 1.2` at the beginning of the document and
     /// use YAML 1.2 rules for certain compatibility heuristics.
     ///
@@ -165,6 +182,7 @@ impl Default for SerializerOptions {
             empty_as_braces: true,
             prefer_block_scalars: true,
             quote_all: false,
+            comment_position: CommentPosition::Inline,
             yaml_12: false,
         }
     }
