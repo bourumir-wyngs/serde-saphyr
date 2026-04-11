@@ -222,3 +222,26 @@ impl InputSource {
         Self::Reader(Box::new(r))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::InputSource;
+
+    #[test]
+    fn debug_formats_each_input_source_variant() {
+        let text = InputSource::from_string("hello".to_owned());
+        assert_eq!(format!("{text:?}"), "Text(\"hello\")");
+
+        let anchored = InputSource::AnchoredText {
+            text: "body: true\n".to_owned(),
+            anchor: "defaults".to_owned(),
+        };
+        assert_eq!(
+            format!("{anchored:?}"),
+            "AnchoredText { anchor: \"defaults\", text: \"body: true\\n\" }"
+        );
+
+        let reader = InputSource::from_reader(std::io::Cursor::new(b"stream".to_vec()));
+        assert_eq!(format!("{reader:?}"), "Reader(..)");
+    }
+}

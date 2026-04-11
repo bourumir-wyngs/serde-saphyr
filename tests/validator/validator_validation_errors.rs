@@ -304,3 +304,52 @@ fn validator_multidoc_validation_in_included_file_renders_included_snippet() {
         "expected second document include-site snippet, got: {rendered}"
     );
 }
+
+#[test]
+fn from_multiple_validate_uses_default_options() {
+    let values = serde_saphyr::from_multiple_validate::<Root>("a: ok\n---\na: still-ok\n").unwrap();
+
+    assert_eq!(values.len(), 2);
+    assert_eq!(values[0].a, "ok");
+    assert_eq!(values[1].a, "still-ok");
+}
+
+#[test]
+fn from_slice_validate_runs_validator_validation() {
+    let err = serde_saphyr::from_slice_validate::<Root>(b"a: \"\"\n")
+        .expect_err("empty string must fail validator validation");
+
+    assert!(
+        err.to_string().contains("validation error"),
+        "expected validator error output, got: {err}"
+    );
+}
+
+#[test]
+fn from_slice_with_options_validate_rejects_invalid_utf8() {
+    let err = serde_saphyr::from_slice_with_options_validate::<Root>(&[0xff], Default::default())
+        .expect_err("invalid UTF-8 must be rejected");
+
+    assert!(matches!(err, Error::InvalidUtf8Input));
+}
+
+#[test]
+fn from_reader_validate_accepts_valid_document() {
+    let value = serde_saphyr::from_reader_validate::<_, Root>(std::io::Cursor::new(b"a: ok\n"))
+        .expect("valid document should deserialize");
+
+    assert_eq!(value.a, "ok");
+}
+
+#[test]
+fn read_validate_uses_default_options() {
+    let mut reader = std::io::Cursor::new("~\n---\na: ok\n".as_bytes());
+    let mut it = serde_saphyr::read_validate::<_, Root>(&mut reader);
+
+    let value = it
+        .next()
+        .expect("iterator must yield the non-null document")
+        .expect("document should be valid");
+    assert_eq!(value.a, "ok");
+    assert!(it.next().is_none(), "iterator must stop at end of input");
+}

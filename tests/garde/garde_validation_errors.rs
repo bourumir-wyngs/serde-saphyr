@@ -670,3 +670,96 @@ fn multidoc_validation_anchor_origin_renders_defined_here() {
         "expected anchor definition location from second document, got: {rendered}"
     );
 }
+
+#[test]
+fn from_str_with_options_context_valid_uses_custom_context() {
+    #[derive(Default)]
+    struct ValidationContext {
+        min_len: usize,
+    }
+
+    fn min_len_from_context(value: &String, context: &ValidationContext) -> garde::Result {
+        if value.len() >= context.min_len {
+            Ok(())
+        } else {
+            Err(garde::Error::new(format!(
+                "length is lower than {}",
+                context.min_len
+            )))
+        }
+    }
+
+    #[derive(Debug, Deserialize, Validate)]
+    #[garde(context(ValidationContext))]
+    struct ContextRoot {
+        #[garde(custom(min_len_from_context))]
+        a: String,
+    }
+
+    let context = ValidationContext { min_len: 3 };
+    let err = serde_saphyr::from_str_with_options_context_valid::<ContextRoot>(
+        "a: hi\n",
+        Default::default(),
+        &context,
+    )
+    .expect_err("context validation must fail");
+
+    let rendered = err.to_string();
+    assert!(
+        rendered.contains("length is lower than 3"),
+        "expected context-aware garde message, got: {rendered}"
+    );
+    assert!(
+        rendered.contains("for `a`"),
+        "expected failing path in output, got: {rendered}"
+    );
+}
+
+#[test]
+fn from_multiple_valid_uses_default_options() {
+    let values = serde_saphyr::from_multiple_valid::<Root>("a: ok\n---\na: still-ok\n").unwrap();
+
+    assert_eq!(values.len(), 2);
+    assert_eq!(values[0].a, "ok");
+    assert_eq!(values[1].a, "still-ok");
+}
+
+#[test]
+fn from_slice_valid_runs_garde_validation() {
+    let err = serde_saphyr::from_slice_valid::<Root>(b"a: \"\"\n")
+        .expect_err("empty string must fail garde validation");
+
+    assert!(
+        err.to_string().contains("validation error"),
+        "expected garde validation output, got: {err}"
+    );
+}
+
+#[test]
+fn from_slice_with_options_valid_rejects_invalid_utf8() {
+    let err = serde_saphyr::from_slice_with_options_valid::<Root>(&[0xff], Default::default())
+        .expect_err("invalid UTF-8 must be rejected");
+
+    assert!(matches!(err, Error::InvalidUtf8Input));
+}
+
+#[test]
+fn from_reader_valid_accepts_valid_document() {
+    let value = serde_saphyr::from_reader_valid::<_, Root>(std::io::Cursor::new(b"a: ok\n"))
+        .expect("valid document should deserialize");
+
+    assert_eq!(value.a, "ok");
+}
+
+#[test]
+fn read_valid_uses_default_options() {
+    let mut reader = std::io::Cursor::new("~\n---\na: ok\n".as_bytes());
+    let mut it = serde_saphyr::read_valid::<_, Root>(&mut reader);
+
+    let value = it
+        .next()
+        .expect("iterator must yield the non-null document")
+        .expect("document should be valid");
+    assert_eq!(value.a, "ok");
+    assert!(it.next().is_none(), "iterator must stop at end of input");
+}
