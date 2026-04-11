@@ -48,6 +48,7 @@ use std::borrow::Cow;
 /// Where an “external” message comes from.
 ///
 /// External messages are those primarily produced by dependencies (parser / validators).
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExternalMessageSource {
     /// Text produced by `saphyr-parser` (e.g. scanning errors).

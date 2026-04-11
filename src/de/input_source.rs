@@ -4,6 +4,7 @@ use std::io::Read;
 ///
 /// This is primarily used by the include resolver: it can return either fully-owned
 /// in-memory text, or a fully-owned streaming reader.
+#[non_exhaustive]
 pub enum InputSource {
     /// Owned text.
     Text(String),

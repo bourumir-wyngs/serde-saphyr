@@ -13,6 +13,7 @@ use std::path::{Component, Path, PathBuf};
 
 /// How [`SafeFileResolver`] should hand included files to the parser.
 #[cfg(feature = "include")]
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SafeFileReadMode {
     /// Stream the file through a reader.
@@ -32,6 +33,7 @@ pub enum SafeFileReadMode {
 /// Symlinks withing the specified root can be enabled (some setups use this for configurations),
 /// but not arbitrary symlinks.
 #[cfg(feature = "include")]
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SymlinkPolicy {
     /// Follow symlinks, but only if the final canonical target remains inside the configured root.

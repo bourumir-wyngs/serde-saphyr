@@ -22,6 +22,7 @@
 use crate::ser_error::Error;
 
 /// Placement style for comments emitted by [`crate::Commented`].
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CommentPosition {
     /// Emit the comment inline on the right side from the item it describes (default)

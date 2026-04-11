@@ -113,6 +113,7 @@ pub trait MessageFormatter {
 pub struct UserMessageFormatter;
 
 /// Controls whether snippet output is included when available.
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SnippetMode {
     /// Render snippets when the error is wrapped in `Error::WithSnippet`.

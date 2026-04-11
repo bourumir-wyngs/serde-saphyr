@@ -279,6 +279,7 @@ fn safe_file_resolver_supports_path_fragment_syntax() {
             "- id: 1\n  name: Alice\n  roles: [admin]\n- id: 2\n  name: Bob\n  roles: [viewer]"
         ),
         InputSource::Reader(_) => panic!("fragment include should be materialized as text"),
+        _ => panic!("unexpected future InputSource variant"),
     }
 
     let options = Options::default()

@@ -92,6 +92,7 @@
 /// config:
 ///    debug: true    # 3-space indent — odd, rejected
 /// ```
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum RequireIndent {
     /// No indentation checking is performed.
