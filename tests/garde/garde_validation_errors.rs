@@ -678,7 +678,7 @@ fn from_str_with_options_context_valid_uses_custom_context() {
         min_len: usize,
     }
 
-    fn min_len_from_context(value: &String, context: &ValidationContext) -> garde::Result {
+    fn min_len_from_context(value: &str, context: &ValidationContext) -> garde::Result {
         if value.len() >= context.min_len {
             Ok(())
         } else {
