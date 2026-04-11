@@ -24,6 +24,20 @@ pub enum DuplicateKeyPolicy {
 }
 
 /// Limits applied to alias replay to harden against alias bombs.
+///
+/// Prefer constructing this via the [`alias_limits!`](crate::alias_limits!) macro instead of a
+/// struct literal. This keeps call sites stable if new fields are added in the future.
+///
+/// ```rust
+/// # #[cfg(feature = "deserialize")]
+/// # {
+/// let limits = serde_saphyr::alias_limits! {
+///     max_replay_stack_depth: 32,
+/// };
+///
+/// assert_eq!(limits.max_replay_stack_depth, 32);
+/// # }
+/// ```
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct AliasLimits {
     /// Maximum total number of **replayed** events injected from aliases across the entire parse.
@@ -502,6 +516,24 @@ mod tests {
         assert_eq!(limits.max_total_replayed_events, 1_000_000);
         assert_eq!(limits.max_replay_stack_depth, 64);
         assert_eq!(limits.max_alias_expansions_per_anchor, usize::MAX);
+    }
+
+    #[test]
+    fn test_alias_limits_macro() {
+        let limits = crate::alias_limits! {
+            max_total_replayed_events: 42,
+            max_replay_stack_depth: 7,
+        };
+        assert_eq!(limits.max_total_replayed_events, 42);
+        assert_eq!(limits.max_replay_stack_depth, 7);
+        assert_eq!(limits.max_alias_expansions_per_anchor, usize::MAX);
+
+        let opts = crate::options! {
+            alias_limits: crate::alias_limits! {
+                max_alias_expansions_per_anchor: 9,
+            },
+        };
+        assert_eq!(opts.alias_limits.max_alias_expansions_per_anchor, 9);
     }
 
     #[cfg(feature = "include_fs")]

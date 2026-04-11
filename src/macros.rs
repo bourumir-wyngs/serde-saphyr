@@ -148,6 +148,47 @@ macro_rules! budget {
     };
 }
 
+/// Construct [`crate::options::AliasLimits`] from `Default` and a list of field assignments.
+///
+/// This macro returns `AliasLimits` directly so it can be embedded inside
+/// [`crate::options!`] as the value for `Options::alias_limits`.
+///
+/// Example:
+///
+/// ```rust
+/// # #[cfg(feature = "deserialize")]
+/// # {
+/// let options = serde_saphyr::options! {
+///     alias_limits: serde_saphyr::alias_limits! {
+///         max_replay_stack_depth: 16,
+///     },
+/// };
+/// # let _ = options;
+/// # }
+/// ```
+#[cfg(feature = "deserialize")]
+#[macro_export]
+macro_rules! alias_limits {
+    ( $( $field:ident : $value:expr ),* $(,)? ) => {{
+        let mut limits = $crate::options::AliasLimits::default();
+        $(
+            #[allow(deprecated)]
+            {
+                limits.$field = $value;
+            }
+        )*
+        limits
+    }};
+}
+
+#[cfg(not(feature = "deserialize"))]
+#[macro_export]
+macro_rules! alias_limits {
+    ( $( $field:ident : $value:expr ),* $(,)? ) => {
+        compile_error!("serde-saphyr `alias_limits!` requires feature `deserialize`");
+    };
+}
+
 /// Construct [`crate::RenderOptions`] from defaults and a list of field assignments.
 ///
 /// This macro exists to keep call sites ergonomic while allowing `RenderOptions` to evolve
