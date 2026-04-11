@@ -133,10 +133,8 @@ mod tests {
 
     #[test]
     fn wrappers_remain_deserializable_without_serialize() {
-        let value: WrappersDoc = crate::from_str(
-            "seq: [1, 2]\nmap: {a: 1}\nafter: hello\ncommented: true\n",
-        )
-        .unwrap();
+        let value: WrappersDoc =
+            crate::from_str("seq: [1, 2]\nmap: {a: 1}\nafter: hello\ncommented: true\n").unwrap();
 
         assert_eq!(value.seq, FlowSeq(vec![1, 2]));
         assert_eq!(value.after, SpaceAfter("hello".to_string()));

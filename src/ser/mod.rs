@@ -47,12 +47,12 @@ use std::fmt::{self, Write};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use self::options::{CommentPosition, FOLDED_WRAP_CHARS, MIN_FOLD_CHARS, SerializerOptions};
 use crate::long_strings::{NAME_FOLD_STR, NAME_LIT_STR};
 use crate::{
-    ArcAnchor, ArcRecursion, ArcRecursive, ArcWeakAnchor, Commented, FlowMap, FlowSeq,
-    RcAnchor, RcRecursion, RcRecursive, RcWeakAnchor, SpaceAfter,
+    ArcAnchor, ArcRecursion, ArcRecursive, ArcWeakAnchor, Commented, FlowMap, FlowSeq, RcAnchor,
+    RcRecursion, RcRecursive, RcWeakAnchor, SpaceAfter,
 };
-use self::options::{CommentPosition, FOLDED_WRAP_CHARS, MIN_FOLD_CHARS, SerializerOptions};
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use nohash_hasher::BuildNoHashHasher;
 

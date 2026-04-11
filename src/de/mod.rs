@@ -39,10 +39,10 @@ pub(crate) mod lib_validate;
 pub(crate) mod live_events;
 #[cfg(feature = "deserialize")]
 pub mod localizer;
-#[cfg(feature = "miette")]
-pub mod miette;
 #[cfg(feature = "deserialize")]
 pub(crate) mod message_formatters;
+#[cfg(feature = "miette")]
+pub mod miette;
 #[cfg(feature = "deserialize")]
 pub mod options;
 #[cfg(any(feature = "garde", feature = "validator"))]
@@ -51,10 +51,10 @@ pub mod path_map;
 pub mod properties;
 #[cfg(feature = "deserialize")]
 pub(crate) mod properties_redaction;
-#[cfg(feature = "robotics")]
-pub mod robotics;
 #[cfg(feature = "deserialize")]
 pub(crate) mod ring_reader;
+#[cfg(feature = "robotics")]
+pub mod robotics;
 #[cfg(all(feature = "deserialize", feature = "include_fs"))]
 pub(crate) mod safe_resolver;
 #[cfg(feature = "deserialize")]
@@ -62,13 +62,13 @@ pub(crate) mod snippet;
 #[cfg(feature = "deserialize")]
 pub(crate) mod tags;
 
-pub use crate::budget::Budget;
 pub use self::error::Error;
+pub use crate::budget::Budget;
 pub use crate::location::Location;
 
-use crate::anchor_store::{self, AnchorKind};
 use self::base64::decode_base64_yaml;
 use self::error::{MissingFieldLocationGuard, TransformReason};
+use crate::anchor_store::{self, AnchorKind};
 use crate::parse_scalars::{
     leading_zero_decimal, maybe_not_string, parse_int_signed, parse_int_unsigned,
     parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish, scalar_is_nullish_for_option,

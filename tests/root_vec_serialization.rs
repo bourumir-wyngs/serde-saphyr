@@ -20,7 +20,9 @@ mod tests {
     #[test]
     fn test_root_vec_serialization() {
         let root = Root {
-            nested: Nested { nested_list: vec![] },
+            nested: Nested {
+                nested_list: vec![],
+            },
             top_level_list: vec![],
             after: 1,
         };

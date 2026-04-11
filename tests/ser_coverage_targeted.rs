@@ -4,8 +4,8 @@
 use serde::Serialize;
 use serde_saphyr::{
     ArcAnchor, ArcRecursion, ArcRecursive, ArcWeakAnchor, Commented, FlowMap, FlowSeq, FoldStr,
-    FoldString, LitStr, LitString, RcAnchor, RcRecursion, RcRecursive, RcWeakAnchor,
-    SpaceAfter, to_string, to_string_with_options,
+    FoldString, LitStr, LitString, RcAnchor, RcRecursion, RcRecursive, RcWeakAnchor, SpaceAfter,
+    to_string, to_string_with_options,
 };
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};

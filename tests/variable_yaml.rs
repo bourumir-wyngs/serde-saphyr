@@ -43,15 +43,21 @@ apps:
     namespaces.insert("production".to_string(), None);
 
     let mut helm_repos = HashMap::new();
-    helm_repos.insert("stable".to_string(), "https://kubernetes-charts.storage.googleapis.ch".to_string());
+    helm_repos.insert(
+        "stable".to_string(),
+        "https://kubernetes-charts.storage.googleapis.ch".to_string(),
+    );
 
     let mut apps = HashMap::new();
-    apps.insert("datahog".to_string(), App {
-        enabled: true,
-        namespace: "production".to_string(),
-        chart: "stable/datahog".to_string(),
-        version: "1.38.7".to_string(),
-    });
+    apps.insert(
+        "datahog".to_string(),
+        App {
+            enabled: true,
+            namespace: "production".to_string(),
+            chart: "stable/datahog".to_string(),
+            version: "1.38.7".to_string(),
+        },
+    );
 
     let expected = Config {
         namespaces,

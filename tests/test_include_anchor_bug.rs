@@ -3,8 +3,7 @@
 use serde::Deserialize;
 #[cfg(feature = "include")]
 use serde_saphyr::{
-    IncludeRequest, IncludeResolveError, InputSource, ResolvedInclude,
-    from_str_with_options,
+    IncludeRequest, IncludeResolveError, InputSource, ResolvedInclude, from_str_with_options,
 };
 
 #[cfg(feature = "include")]

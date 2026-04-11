@@ -337,11 +337,9 @@ fn with_snippet_only_contains_lines_near_error() {
 #[test]
 fn with_snippet_enabled_for_from_slice_with_options() {
     let yaml = "*missing";
-    let err = serde_saphyr::from_slice_with_options::<String>(
-        yaml.as_bytes(),
-        serde_saphyr::options! {},
-    )
-    .expect_err("unknown anchor should error");
+    let err =
+        serde_saphyr::from_slice_with_options::<String>(yaml.as_bytes(), serde_saphyr::options! {})
+            .expect_err("unknown anchor should error");
     let rendered = err.to_string();
 
     assert!(

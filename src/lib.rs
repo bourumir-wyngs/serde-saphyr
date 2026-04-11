@@ -7,15 +7,14 @@ compile_error!(
      \"serialize\" or \"deserialize\"."
 );
 
-pub use anchors::{
-    ArcAnchor, ArcRecursion, ArcRecursive, ArcWeakAnchor, RcAnchor, RcRecursion, RcRecursive,
-    RcWeakAnchor,
+#[cfg(feature = "serialize")]
+pub use self::ser::{
+    error as ser_error,
+    options::{CommentPosition, SerializerOptions},
 };
-#[cfg(any(feature = "serialize", feature = "deserialize"))]
-pub use wrappers::{Commented, FlowMap, FlowSeq, SpaceAfter};
 #[cfg(feature = "deserialize")]
 pub use self::{
-    de::{budget, localizer, options, Budget, DuplicateKeyPolicy, Error, Options},
+    de::{Budget, DuplicateKeyPolicy, Error, Options, budget, localizer, options},
     de_error::{
         CroppedRegion, MessageFormatter, RenderOptions, SnippetMode, TransformReason,
         UserMessageFormatter,
@@ -26,13 +25,15 @@ pub use self::{
         ResolvedInclude,
     },
     localizer::{
-        DEFAULT_ENGLISH_LOCALIZER, DefaultEnglishLocalizer, ExternalMessage,
-        ExternalMessageSource, Localizer,
+        DEFAULT_ENGLISH_LOCALIZER, DefaultEnglishLocalizer, ExternalMessage, ExternalMessageSource,
+        Localizer,
     },
     message_formatters::{DefaultMessageFormatter, DeveloperMessageFormatter},
 };
-pub use location::{Location, Locations, Span};
-pub use long_strings::{FoldStr, FoldString, LitStr, LitString};
+pub use anchors::{
+    ArcAnchor, ArcRecursion, ArcRecursive, ArcWeakAnchor, RcAnchor, RcRecursion, RcRecursive,
+    RcWeakAnchor,
+};
 #[cfg(feature = "figment")]
 pub use de::figment;
 #[cfg(feature = "miette")]
@@ -45,9 +46,11 @@ pub use de::properties;
 pub use de::robotics;
 #[cfg(all(feature = "deserialize", feature = "include_fs"))]
 pub use de::safe_resolver::{SafeFileReadMode, SafeFileResolver, SymlinkPolicy};
-#[cfg(feature = "serialize")]
-pub use self::{ser::{error as ser_error, options::{CommentPosition, SerializerOptions}}};
+pub use location::{Location, Locations, Span};
+pub use long_strings::{FoldStr, FoldString, LitStr, LitString};
 pub use spanned::Spanned;
+#[cfg(any(feature = "serialize", feature = "deserialize"))]
+pub use wrappers::{Commented, FlowMap, FlowSeq, SpaceAfter};
 
 #[cfg(all(feature = "deserialize", feature = "include"))]
 pub(crate) fn resolver_from_options<'a>(
@@ -82,24 +85,24 @@ mod anchors;
 #[path = "de/mod.rs"]
 mod de;
 mod long_strings;
-#[cfg(any(feature = "serialize", feature = "deserialize"))]
-mod wrappers;
 #[path = "de/parse_scalars.rs"]
 mod parse_scalars;
 #[cfg(feature = "serialize")]
 #[path = "ser/mod.rs"]
 pub mod ser;
 mod spanned;
+#[cfg(any(feature = "serialize", feature = "deserialize"))]
+mod wrappers;
 
+#[cfg(all(feature = "deserialize", feature = "include"))]
+pub(crate) use de::include_stack;
+#[cfg(any(feature = "garde", feature = "validator"))]
+use de::lib_validate;
 #[cfg(feature = "deserialize")]
 pub(crate) use de::{
     buffered_input, error as de_error, include, indentation, input_source, live_events,
     message_formatters, properties_redaction, ring_reader, snippet as de_snippet, tags,
 };
-#[cfg(all(feature = "deserialize", feature = "include"))]
-pub(crate) use de::include_stack;
-#[cfg(any(feature = "garde", feature = "validator"))]
-use de::lib_validate;
 
 #[cfg(feature = "deserialize")]
 pub use de::YamlDeserializer as Deserializer;
@@ -115,9 +118,9 @@ pub use de::{
     with_deserializer_from_str, with_deserializer_from_str_with_options,
 };
 
-mod macros;
 #[path = "de/location.rs"]
 mod location;
+mod macros;
 // ---------------- Serialization (public API) ----------------
 
 /// Serialize a value to a YAML `String`.
@@ -475,7 +478,6 @@ where
 {
     from_str_with_options_impl(input, options)
 }
-
 
 #[cfg(feature = "deserialize")]
 pub(crate) fn maybe_with_snippet(
