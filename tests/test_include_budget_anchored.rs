@@ -2,9 +2,7 @@
 #![cfg(feature = "include")]
 
 use serde::Deserialize;
-use serde_saphyr::{
-    IncludeResolveError, InputSource, Options, ResolvedInclude, from_reader_with_options,
-};
+use serde_saphyr::{IncludeResolveError, InputSource, ResolvedInclude, from_reader_with_options};
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct Root {
@@ -31,7 +29,12 @@ i2: !include "f.yml#f"
     // Total needed > 220 with two includes
     // Limit: 150
     // First include should pass, second include should fail.
-    let mut options = Options::default().with_include_resolver(move |req| {
+    let options = serde_saphyr::options! {
+        budget: serde_saphyr::budget! {
+            max_reader_input_bytes: Some(150),
+        },
+    }
+    .with_include_resolver(move |req| {
         assert_eq!(req.spec, "f.yml#f");
         Ok(ResolvedInclude {
             id: req.spec.to_string(),
@@ -41,10 +44,6 @@ i2: !include "f.yml#f"
                 anchor: "f".to_string(),
             },
         })
-    });
-    options.budget = Some(serde_saphyr::budget::Budget {
-        max_reader_input_bytes: Some(150),
-        ..Default::default()
     });
 
     let result: Result<Root, _> = from_reader_with_options(yaml.as_bytes(), options);
@@ -78,11 +77,12 @@ fn test_anchored_include_succeeds_when_fragment_exactly_fits_remaining_budget() 
                 },
             })
         };
-    let mut options = Options::default().with_include_resolver(resolver);
-    options.budget = Some(serde_saphyr::budget::Budget {
-        max_reader_input_bytes: Some(yaml.len() + anchored_text.len()),
-        ..Default::default()
-    });
+    let options = serde_saphyr::options! {
+        budget: serde_saphyr::budget! {
+            max_reader_input_bytes: Some(yaml.len() + anchored_text.len()),
+        },
+    }
+    .with_include_resolver(resolver);
 
     let parsed: ExactFitRoot = from_reader_with_options(yaml.as_bytes(), options)
         .expect("anchored include should succeed when it exactly fits the remaining reader budget");
@@ -108,11 +108,12 @@ fn test_same_anchored_include_parses_with_different_limits() {
                 },
             })
         };
-    let mut options_ok = Options::default().with_include_resolver(resolver_ok);
-    options_ok.budget = Some(serde_saphyr::budget::Budget {
-        max_reader_input_bytes: Some(yaml.len() + (2 * anchored_text_len)),
-        ..Default::default()
-    });
+    let options_ok = serde_saphyr::options! {
+        budget: serde_saphyr::budget! {
+            max_reader_input_bytes: Some(yaml.len() + (2 * anchored_text_len)),
+        },
+    }
+    .with_include_resolver(resolver_ok);
 
     let parsed: Root = from_reader_with_options(std::io::Cursor::new(yaml), options_ok)
         .expect("same anchored input should parse when the combined budget is sufficient");
@@ -133,11 +134,12 @@ fn test_same_anchored_include_parses_with_different_limits() {
                 },
             })
         };
-    let mut options_err = Options::default().with_include_resolver(resolver_err);
-    options_err.budget = Some(serde_saphyr::budget::Budget {
-        max_reader_input_bytes: Some(yaml.len() + (2 * anchored_text_len) - 1),
-        ..Default::default()
-    });
+    let options_err = serde_saphyr::options! {
+        budget: serde_saphyr::budget! {
+            max_reader_input_bytes: Some(yaml.len() + (2 * anchored_text_len) - 1),
+        },
+    }
+    .with_include_resolver(resolver_err);
 
     let err = from_reader_with_options::<_, Root>(std::io::Cursor::new(yaml), options_err)
         .expect_err("same anchored input should fail when the combined budget is too small");

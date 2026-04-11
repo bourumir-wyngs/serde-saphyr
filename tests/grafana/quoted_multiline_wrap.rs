@@ -1,12 +1,9 @@
-use serde_saphyr::SerializerOptions;
-
 /// Test that long multiline strings are emitted as literal block scalars when enabled
 #[test]
 fn test_quoted_multiline_wrap_with_block_scalars_enabled() {
-    let options = SerializerOptions {
+    let options = serde_saphyr::ser_options! {
         indent_step: 2,
         prefer_block_scalars: true,
-        ..Default::default()
     };
 
     let httpd_segment = r#" Deny access to the entirety of your server's filesystem. You must
@@ -57,11 +54,9 @@ fn test_quoted_multiline_wrap_with_block_scalars_enabled() {
 /// Test that line folding preserves leading spaces using backslash escape
 #[test]
 fn test_quoted_wrap_preserves_leading_spaces() {
-    let options = SerializerOptions {
+    let options = serde_saphyr::ser_options! {
         indent_step: 2,
-
         prefer_block_scalars: false,
-        ..Default::default()
     };
 
     // Content with 4-space indents after newlines

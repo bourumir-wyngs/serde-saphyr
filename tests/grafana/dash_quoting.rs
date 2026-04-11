@@ -559,7 +559,7 @@ fn test_kubernetes_args_with_commas() {
 
 #[test]
 fn test_prefer_block_scalars_single_line_unchanged() {
-    use serde_saphyr::{SerializerOptions, to_fmt_writer_with_options};
+    use serde_saphyr::to_fmt_writer_with_options;
 
     #[derive(Serialize)]
     struct Config {
@@ -570,9 +570,8 @@ fn test_prefer_block_scalars_single_line_unchanged() {
         data: "single line value".to_string(),
     };
 
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         prefer_block_scalars: true,
-        ..Default::default()
     };
     let mut buf = String::new();
     to_fmt_writer_with_options(&mut buf, &c, opts).unwrap();
@@ -592,7 +591,7 @@ fn test_prefer_block_scalars_single_line_unchanged() {
 
 #[test]
 fn test_non_empty_map_unchanged_with_braces_option() {
-    use serde_saphyr::{SerializerOptions, to_fmt_writer_with_options};
+    use serde_saphyr::to_fmt_writer_with_options;
 
     #[derive(Serialize)]
     struct Volume {
@@ -603,9 +602,8 @@ fn test_non_empty_map_unchanged_with_braces_option() {
     map.insert("key".to_string(), "value".to_string());
     let v = Volume { data: map };
 
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         empty_as_braces: true,
-        ..Default::default()
     };
     let mut buf = String::new();
     to_fmt_writer_with_options(&mut buf, &v, opts).unwrap();

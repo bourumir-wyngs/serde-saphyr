@@ -10,7 +10,7 @@ struct Root {
 #[test]
 fn test_multi_doc_include() {
     let yaml = "foo: !include multi.yaml\n";
-    let options = serde_saphyr::Options::default();
+    let options = serde_saphyr::options! {};
     let options = options.with_include_resolver(|req| {
         Ok(serde_saphyr::ResolvedInclude {
             id: req.spec.to_string(),

@@ -1,13 +1,12 @@
-use serde_saphyr::{SerializerOptions, to_fmt_writer_with_options};
+use serde_saphyr::to_fmt_writer_with_options;
 
 /// Test that block_scalar_chomp: Strip forces `|-` and strips trailing newlines
 #[test]
 fn block_scalar_chomp_strip() {
     let input = "line1\nline2\n"; // Has trailing newline
 
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         prefer_block_scalars: true,
-        ..Default::default()
     };
 
     let mut buf = String::new();
@@ -23,9 +22,8 @@ fn block_scalar_chomp_strip() {
 fn block_scalar_chomp_clip() {
     let input = "line1\nline2"; // No trailing newline
 
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         prefer_block_scalars: true,
-        ..Default::default()
     };
 
     let mut buf = String::new();
@@ -41,9 +39,8 @@ fn block_scalar_chomp_clip() {
 fn block_scalar_chomp_keep() {
     let input = "line1\nline2\n"; // Has one trailing newline
 
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         prefer_block_scalars: true,
-        ..Default::default()
     };
 
     let mut buf = String::new();
@@ -59,9 +56,8 @@ fn block_scalar_chomp_keep() {
 fn block_scalar_chomp_auto() {
     // No trailing newline -> strip
     let input1 = "line1\nline2";
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         prefer_block_scalars: true,
-        ..Default::default()
     };
     let mut buf1 = String::new();
     to_fmt_writer_with_options(&mut buf1, &input1, opts).unwrap();
@@ -108,9 +104,8 @@ fn nested_block_scalar_strip_for_go_compat() {
     data.insert("queries.yaml".to_string(), inner_yaml.to_string());
     let cm = ConfigMap { data };
 
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         prefer_block_scalars: true,
-        ..Default::default()
     };
 
     let mut buf = String::new();

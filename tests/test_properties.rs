@@ -124,15 +124,16 @@ enum Wrap {
 
 fn property_options_with_map(map: Option<HashMap<String, String>>) -> Options {
     match map {
-        Some(map) => Options::default().with_properties(map),
-        None => Options::default(),
+        Some(map) => serde_saphyr::options! {}.with_properties(map),
+        None => serde_saphyr::options! {},
     }
 }
 
 fn property_options_with_map_and_no_schema(map: Option<HashMap<String, String>>) -> Options {
-    let mut options = property_options_with_map(map);
-    options.no_schema = true;
-    options
+    match map {
+        Some(map) => serde_saphyr::options! { no_schema: true }.with_properties(map),
+        None => serde_saphyr::options! { no_schema: true },
+    }
 }
 
 #[test]

@@ -3,12 +3,11 @@ use serde_saphyr::SerializerOptions;
 /// Test that line_width=80 means 80 chars, not something smaller
 #[test]
 fn test_line_width_is_80_not_60() {
-    let options = SerializerOptions {
+    let options = serde_saphyr::ser_options! {
         indent_step: 2,
         prefer_block_scalars: true,
         empty_as_braces: true,
         folded_wrap_chars: 80,
-        ..Default::default()
     };
 
     // 70 character string - MUST fit on one line with key
@@ -54,12 +53,11 @@ fn test_exact_multiline_mangled_output() {
 }
 
 fn get_rtk_options() -> SerializerOptions {
-    SerializerOptions {
+    serde_saphyr::ser_options! {
         indent_step: 2,
         prefer_block_scalars: true,
         empty_as_braces: true,
         folded_wrap_chars: 80,
-        ..Default::default()
     }
 }
 

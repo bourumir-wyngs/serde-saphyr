@@ -594,7 +594,7 @@ mod with_deserializer_tests {
 
     #[test]
     fn from_str_with_options() {
-        let opts = serde_saphyr::Options::default();
+        let opts = serde_saphyr::options! {};
         let result: Simple =
             serde_saphyr::with_deserializer_from_str_with_options("x: 5", opts, |de| {
                 Simple::deserialize(de)
@@ -605,7 +605,7 @@ mod with_deserializer_tests {
 
     #[test]
     fn from_slice_with_options() {
-        let opts = serde_saphyr::Options::default();
+        let opts = serde_saphyr::options! {};
         let result: Simple =
             serde_saphyr::with_deserializer_from_slice_with_options(b"x: 8", opts, |de| {
                 Simple::deserialize(de)
@@ -616,7 +616,7 @@ mod with_deserializer_tests {
 
     #[test]
     fn from_reader_with_options() {
-        let opts = serde_saphyr::Options::default();
+        let opts = serde_saphyr::options! {};
         let cursor = std::io::Cursor::new(b"x: 11");
         let result: Simple =
             serde_saphyr::with_deserializer_from_reader_with_options(cursor, opts, |de| {

@@ -1,6 +1,6 @@
 use serde_json::Value;
 use serde_saphyr::budget::Budget;
-use serde_saphyr::{Error, Options};
+use serde_saphyr::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str;
@@ -18,9 +18,8 @@ use std::str;
 pub fn exceeds_yaml_budget(input: &str, budget: &Budget) -> Result<bool, Error> {
     let report: Result<Value, Error> = serde_saphyr::from_str_with_options(
         input,
-        Options {
+        serde_saphyr::options! {
             budget: Some(budget.clone()),
-            ..serde_saphyr::Options::default()
         },
     );
     Ok(report.is_err())

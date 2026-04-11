@@ -1,6 +1,6 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde::Serialize;
-use serde_saphyr::{SerializerOptions, to_string_with_options};
+use serde_saphyr::to_string_with_options;
 
 #[test]
 fn compact_list_indent_default() {
@@ -79,9 +79,8 @@ fn compact_list_indent_enabled() {
         }],
     };
 
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         compact_list_indent: true,
-        ..Default::default()
     };
     let yaml = to_string_with_options(&spec, opts).unwrap();
     let lines: Vec<&str> = yaml.lines().collect();

@@ -11,7 +11,7 @@ fn lit_wrappers_respect_min_fold_chars_option() {
     to_fmt_writer_with_options(
         &mut s,
         &LitStr("short"),
-        serde_saphyr::SerializerOptions::default(),
+        serde_saphyr::ser_options! {},
     )
     .unwrap();
     assert_eq!(s, "|-\n  short\n");

@@ -1,7 +1,6 @@
 use serde::Deserialize;
 use serde_saphyr::{
-    IncludeRequest, IncludeResolveError, InputSource, Options, ResolvedInclude,
-    from_str_with_options,
+    IncludeRequest, IncludeResolveError, InputSource, ResolvedInclude, from_str_with_options,
 };
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -73,7 +72,7 @@ max_connections: 1000
         }
     };
 
-    let options = Options::default().with_include_resolver(resolver);
+    let options = serde_saphyr::options! {}.with_include_resolver(resolver);
 
     let config: Environments =
         from_str_with_options(main_yaml, options).expect("Failed to parse YAML");

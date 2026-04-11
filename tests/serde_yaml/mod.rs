@@ -43,6 +43,6 @@ pub fn adapt_to_miri() -> Options {
             },
         }
     } else {
-        Options::default()
+        serde_saphyr::options! {}
     }
 }

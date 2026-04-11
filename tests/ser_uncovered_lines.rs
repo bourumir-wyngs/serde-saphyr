@@ -2,7 +2,7 @@
 //! Tests targeting previously uncovered lines in src/ser.rs.
 
 use serde::Serialize;
-use serde_saphyr::{RcAnchor, RcWeakAnchor, SerializerOptions, to_string};
+use serde_saphyr::{RcAnchor, RcWeakAnchor, to_string};
 use std::rc::Rc;
 
 // ~725: Control characters in double-quoted strings trigger \x{:02X} escape.
@@ -192,7 +192,7 @@ fn inline_value_start_map_as_value() {
     inner.insert("x".into(), 1);
     let mut outer: HashMap<String, HashMap<String, i32>> = HashMap::new();
     outer.insert("key".into(), inner);
-    let opts = SerializerOptions::default();
+    let opts = serde_saphyr::ser_options! {};
     let yaml = serde_saphyr::to_string_with_options(&outer, opts).unwrap();
     assert!(yaml.contains("key:"), "Missing outer key: {}", yaml);
     assert!(yaml.contains("x: 1"), "Missing inner entry: {}", yaml);
@@ -254,9 +254,8 @@ fn c1_control_char_uses_hex_escape() {
 // a single-quote character correctly falls through to double-quoting.
 #[test]
 fn quote_all_with_single_quote_uses_double_quotes() {
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         quote_all: true,
-        ..Default::default()
     };
     let yaml = serde_saphyr::to_string_with_options(&"it's", opts).unwrap();
     // Should be double-quoted because single-quote triggers needs_double_quotes

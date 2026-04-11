@@ -3,7 +3,7 @@
 
 use serde::Deserialize;
 use serde_saphyr::{
-    IncludeRequest, IncludeResolveError, Options, ResolvedInclude, from_reader_with_options,
+    IncludeRequest, IncludeResolveError, ResolvedInclude, from_reader_with_options,
     from_str_with_options, with_deserializer_from_reader_with_options,
     with_deserializer_from_str_with_options,
 };
@@ -26,7 +26,7 @@ fn test_include_error_snippet() {
 "#;
     let included_yaml = "\nstring\n";
 
-    let options = Options::default().with_include_resolver(
+    let options = serde_saphyr::options! {}.with_include_resolver(
         |req: IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
             if req.spec == "included.yaml" {
                 Ok(ResolvedInclude {
@@ -61,7 +61,7 @@ fn test_include_error_snippet_from_reader_with_options() {
 "#;
     let included_yaml = "\nstring\n";
 
-    let options = Options::default().with_include_resolver(
+    let options = serde_saphyr::options! {}.with_include_resolver(
         |req: IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
             if req.spec == "included.yaml" {
                 Ok(ResolvedInclude {
@@ -97,7 +97,7 @@ fn test_include_error_snippet_with_deserializer_helpers() {
     let included_yaml = "\nstring\n";
 
     let make_options = || {
-        Options::default().with_include_resolver(
+        serde_saphyr::options! {}.with_include_resolver(
             |req: IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
                 if req.spec == "included.yaml" {
                     Ok(ResolvedInclude {
@@ -149,7 +149,7 @@ fn reader_root_include_site_snippet_uses_snapshot_start_line() {
     main_yaml.push_str("b: !include included.yaml\n");
 
     let included_yaml = "\nstring\n";
-    let options = Options::default().with_include_resolver(
+    let options = serde_saphyr::options! {}.with_include_resolver(
         |req: IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
             if req.spec == "included.yaml" {
                 Ok(ResolvedInclude {

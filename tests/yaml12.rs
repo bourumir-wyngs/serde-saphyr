@@ -74,7 +74,7 @@ fn yaml12_disables_auto_quoting_of_yaml11_boolean_spellings_in_values() {
     serde_saphyr::to_fmt_writer_with_options(
         &mut out_default,
         &HashMap::from([("k", "yes")]),
-        serde_saphyr::SerializerOptions::default(),
+        serde_saphyr::ser_options! {},
     )
     .unwrap();
     assert!(

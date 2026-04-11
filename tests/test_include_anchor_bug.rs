@@ -3,7 +3,7 @@
 use serde::Deserialize;
 #[cfg(feature = "include")]
 use serde_saphyr::{
-    IncludeRequest, IncludeResolveError, InputSource, Options, ResolvedInclude,
+    IncludeRequest, IncludeResolveError, InputSource, ResolvedInclude,
     from_str_with_options,
 };
 
@@ -30,7 +30,7 @@ struct User {
 fn test_alias_resolution_for_anchor_defined_outside_selected_fragment() {
     let yaml = "cfg: !include value.yaml#selected\n";
 
-    let options = Options::default().with_include_resolver(|req: IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
+    let options = serde_saphyr::options! {}.with_include_resolver(|req: IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
         let s = req.spec;
         if s == "value.yaml#selected" {
             Ok(ResolvedInclude {

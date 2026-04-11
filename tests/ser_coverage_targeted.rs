@@ -5,7 +5,7 @@ use serde::Serialize;
 use serde_saphyr::{
     ArcAnchor, ArcRecursion, ArcRecursive, ArcWeakAnchor, Commented, FlowMap, FlowSeq, FoldStr,
     FoldString, LitStr, LitString, RcAnchor, RcRecursion, RcRecursive, RcWeakAnchor,
-    SerializerOptions, SpaceAfter, to_string, to_string_with_options,
+    SpaceAfter, to_string, to_string_with_options,
 };
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -38,9 +38,8 @@ fn with_indent_constructor_produces_correct_indentation() {
 
 #[test]
 fn quote_all_mode_single_quotes_plain_strings() {
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         quote_all: true,
-        ..Default::default()
     };
     let yaml = to_string_with_options(&"hello", opts).unwrap();
     assert!(yaml.contains("'hello'"), "expected single-quoted: {yaml}");
@@ -48,9 +47,8 @@ fn quote_all_mode_single_quotes_plain_strings() {
 
 #[test]
 fn quote_all_mode_double_quotes_special_strings() {
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         quote_all: true,
-        ..Default::default()
     };
     // String with backslash requires double quotes
     let yaml = to_string_with_options(&"back\\slash", opts).unwrap();
@@ -59,9 +57,8 @@ fn quote_all_mode_double_quotes_special_strings() {
 
 #[test]
 fn quote_all_mode_map_values_quoted() {
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         quote_all: true,
-        ..Default::default()
     };
     let mut m = BTreeMap::new();
     m.insert("key", "value");
@@ -378,9 +375,8 @@ fn fold_str_no_trailing_newline() {
 
 #[test]
 fn prefer_block_scalars_auto_fold_no_trailing_newline() {
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         prefer_block_scalars: true,
-        ..Default::default()
     };
     let yaml = to_string_with_options(&"short", opts).unwrap();
     // short strings may still be plain; just ensure no panic
@@ -389,9 +385,8 @@ fn prefer_block_scalars_auto_fold_no_trailing_newline() {
 
 #[test]
 fn prefer_block_scalars_auto_fold_with_trailing_newlines() {
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         prefer_block_scalars: true,
-        ..Default::default()
     };
     // multiline string with multiple trailing newlines -> auto folded with keep
     let yaml = to_string_with_options(&"line one\nline two\n\n", opts).unwrap();
@@ -445,9 +440,8 @@ fn char_value_serialized() {
 
 #[test]
 fn empty_seq_with_empty_as_braces() {
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         empty_as_braces: true,
-        ..Default::default()
     };
     let v: Vec<i32> = vec![];
     let yaml = to_string_with_options(&v, opts).unwrap();
@@ -456,9 +450,8 @@ fn empty_seq_with_empty_as_braces() {
 
 #[test]
 fn empty_map_with_empty_as_braces() {
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         empty_as_braces: true,
-        ..Default::default()
     };
     let m: BTreeMap<String, i32> = BTreeMap::new();
     let yaml = to_string_with_options(&m, opts).unwrap();
@@ -469,9 +462,8 @@ fn empty_map_with_empty_as_braces() {
 
 #[test]
 fn quote_all_single_quote_in_string_escaped() {
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         quote_all: true,
-        ..Default::default()
     };
     let yaml = to_string_with_options(&"it's", opts).unwrap();
     // "it's" contains a single quote; in quote_all mode it may use double quotes
@@ -615,9 +607,8 @@ fn tagged_enums_option_serializes_with_tag() {
     enum MyEnum {
         Variant(i32),
     }
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         tagged_enums: true,
-        ..Default::default()
     };
     let yaml = to_string_with_options(&MyEnum::Variant(5), opts).unwrap();
     assert!(!yaml.is_empty(), "yaml: {yaml}");
@@ -627,9 +618,8 @@ fn tagged_enums_option_serializes_with_tag() {
 
 #[test]
 fn yaml_12_option_bool_key() {
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         yaml_12: true,
-        ..Default::default()
     };
     let mut m = BTreeMap::new();
     m.insert(true, "yes");
@@ -870,9 +860,8 @@ fn write_quoted_null_escape() {
 fn write_quoted_named_escapes_in_value() {
     // Values with control chars go through write_quoted which uses named escapes
     // Use quote_all to force quoting of a value containing control chars
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         quote_all: true,
-        ..Default::default()
     };
     // BEL \x07 -> \a, BS \x08 -> \b, VT \x0b -> \v, FF \x0c -> \f, ESC \x1b -> \e
     for (ch, expected) in [
@@ -1038,9 +1027,8 @@ fn fold_str_with_leading_spaces_uses_indent_indicator() {
 
 #[test]
 fn prefer_block_scalars_with_leading_spaces() {
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         prefer_block_scalars: true,
-        ..Default::default()
     };
     let yaml = to_string_with_options(&"  leading spaces\n", opts).unwrap();
     assert!(
@@ -1194,9 +1182,8 @@ fn nested_block_map_as_map_value_then_another_key() {
 
 #[test]
 fn empty_block_seq_as_map_value_with_empty_as_braces() {
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         empty_as_braces: true,
-        ..Default::default()
     };
     #[derive(Serialize)]
     struct S {
@@ -1210,9 +1197,8 @@ fn empty_block_seq_as_map_value_with_empty_as_braces() {
 
 #[test]
 fn empty_block_map_as_map_value_with_empty_as_braces() {
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         empty_as_braces: true,
-        ..Default::default()
     };
     #[derive(Serialize)]
     struct S {
@@ -1311,9 +1297,8 @@ fn newtype_variant_tagged_enums() {
     enum Wrapper {
         Int(i32),
     }
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         tagged_enums: true,
-        ..Default::default()
     };
     let yaml = to_string_with_options(&Wrapper::Int(7), opts).unwrap();
     assert!(yaml.contains("7"), "yaml: {yaml}");
@@ -1386,9 +1371,8 @@ fn fold_str_two_trailing_newlines() {
 
 #[test]
 fn prefer_block_scalars_one_trailing_newline() {
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         prefer_block_scalars: true,
-        ..Default::default()
     };
     let yaml = to_string_with_options(&"line one\nline two\n", opts).unwrap();
     assert!(
@@ -1401,9 +1385,8 @@ fn prefer_block_scalars_one_trailing_newline() {
 
 #[test]
 fn prefer_block_scalars_no_trailing_newline() {
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         prefer_block_scalars: true,
-        ..Default::default()
     };
     let yaml = to_string_with_options(&"line one\nline two", opts).unwrap();
     assert!(
@@ -1417,9 +1400,8 @@ fn prefer_block_scalars_no_trailing_newline() {
 #[test]
 fn quote_all_string_with_single_quote_uses_double_quotes_or_doubles() {
     // "it's" has a single quote; quote_all should handle it
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         quote_all: true,
-        ..Default::default()
     };
     // A string with ONLY a single quote and no backslash/control chars
     // needs_double_quotes returns true for single quote, so it uses double quotes
@@ -1430,9 +1412,8 @@ fn quote_all_string_with_single_quote_uses_double_quotes_or_doubles() {
 #[test]
 fn quote_all_plain_string_uses_single_quotes() {
     // A plain string with no special chars uses single-quoted style
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         quote_all: true,
-        ..Default::default()
     };
     let yaml = to_string_with_options(&"hello world", opts).unwrap();
     // Should be single-quoted since no special chars
@@ -1445,9 +1426,8 @@ fn quote_all_plain_string_uses_single_quotes() {
 fn custom_anchor_generator_out_of_sync_fallback() {
     use std::rc::Rc;
     // Use a generator that returns empty names to trigger the fallback path
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         anchor_generator: Some(|_id| String::new()),
-        ..Default::default()
     };
     let shared = Rc::new(42i32);
     let a = RcAnchor(shared.clone());
@@ -1576,9 +1556,8 @@ fn commented_newline_in_comment_sanitized() {
 
 #[test]
 fn yaml_12_option_emits_directive() {
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         yaml_12: true,
-        ..Default::default()
     };
     let yaml = to_string_with_options(&42i32, opts).unwrap();
     assert!(
@@ -1655,9 +1634,8 @@ fn serializer_new_constructor() {
 #[test]
 fn custom_anchor_generator_used() {
     use std::rc::Rc;
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         anchor_generator: Some(|id| format!("myanchor{id}")),
-        ..Default::default()
     };
     let shared = Rc::new(42i32);
     let a = RcAnchor(shared.clone());

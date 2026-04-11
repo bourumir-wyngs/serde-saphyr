@@ -3,8 +3,8 @@
 
 use serde::Deserialize;
 use serde_saphyr::{
-    IncludeRequest, InputSource, Location, Options, SafeFileReadMode, SafeFileResolver,
-    SymlinkPolicy, from_str_with_options,
+    IncludeRequest, InputSource, Location, SafeFileReadMode, SafeFileResolver, SymlinkPolicy,
+    from_str_with_options,
 };
 use std::fs;
 use std::path::Path;
@@ -170,7 +170,7 @@ fn safe_file_resolver_rejects_invalid_extension() {
     let temp = TempDir::new().unwrap();
     write_text(&temp.path().join("value.txt"), "bar_value\n");
 
-    let options = Options::default()
+    let options = serde_saphyr::options! {}
         .with_include_resolver(SafeFileResolver::new(temp.path()).unwrap().into_callback());
 
     let err =
@@ -191,7 +191,7 @@ fn safe_file_resolver_rejects_hidden_files() {
     let temp = TempDir::new().unwrap();
     write_text(&temp.path().join(".hidden.yml"), "bar_value\n");
 
-    let options = Options::default()
+    let options = serde_saphyr::options! {}
         .with_include_resolver(SafeFileResolver::new(temp.path()).unwrap().into_callback());
 
     let err =
@@ -212,7 +212,7 @@ fn safe_file_resolver_rejects_files_inside_hidden_directories() {
     let temp = TempDir::new().unwrap();
     write_text(&temp.path().join(".hidden/value.yaml"), "bar_value\n");
 
-    let options = Options::default()
+    let options = serde_saphyr::options! {}
         .with_include_resolver(SafeFileResolver::new(temp.path()).unwrap().into_callback());
 
     let err = from_str_with_options::<ScalarConfig>("foo: !include .hidden/value.yaml\n", options)
@@ -233,7 +233,7 @@ fn safe_file_resolver_top_level_relative() {
     let temp = TempDir::new().unwrap();
     write_text(&temp.path().join("value.yaml"), "bar_value\n");
 
-    let options = Options::default()
+    let options = serde_saphyr::options! {}
         .with_include_resolver(SafeFileResolver::new(temp.path()).unwrap().into_callback());
 
     let parsed: ScalarConfig =
@@ -246,7 +246,7 @@ fn options_with_filesystem_root_uses_safe_file_resolver() {
     let temp = TempDir::new().unwrap();
     write_text(&temp.path().join("value.yaml"), "bar_value\n");
 
-    let options = Options::default()
+    let options = serde_saphyr::options! {}
         .with_filesystem_root(temp.path())
         .unwrap();
 
@@ -282,7 +282,7 @@ fn safe_file_resolver_supports_path_fragment_syntax() {
         _ => panic!("unexpected future InputSource variant"),
     }
 
-    let options = Options::default()
+    let options = serde_saphyr::options! {}
         .with_filesystem_root(temp.path())
         .unwrap();
 
@@ -301,7 +301,7 @@ fn safe_file_resolver_preserves_fragment_anchor_for_aliases() {
         "users: &users\n  - id: 1\n    name: Alice\n    roles: [admin]\n  - id: 2\n    name: Bob\n    roles: [viewer]\n",
     );
 
-    let options = Options::default()
+    let options = serde_saphyr::options! {}
         .with_filesystem_root(temp.path())
         .unwrap();
 
@@ -322,7 +322,7 @@ fn safe_file_resolver_nested_relative_from_parent_id() {
     );
     write_text(&temp.path().join("shared/value.yaml"), "nested_value\n");
 
-    let options = Options::default()
+    let options = serde_saphyr::options! {}
         .with_include_resolver(SafeFileResolver::new(temp.path()).unwrap().into_callback());
 
     let parsed: NestedConfig =
@@ -345,7 +345,7 @@ fn safe_file_resolver_uses_root_file_parent_for_top_level_relative_includes() {
         .unwrap()
         .with_root_file(&root_file)
         .unwrap();
-    let options = Options::default().with_include_resolver(resolver.into_callback());
+    let options = serde_saphyr::options! {}.with_include_resolver(resolver.into_callback());
 
     let parsed: ScalarConfig =
         from_str_with_options("foo: !include ../common/value.yaml\n", options).unwrap();
@@ -386,7 +386,7 @@ fn safe_file_resolver_reports_missing_fragment() {
     let temp = TempDir::new().unwrap();
     write_text(&temp.path().join("value.yaml"), "users: &users []\n");
 
-    let options = Options::default()
+    let options = serde_saphyr::options! {}
         .with_filesystem_root(temp.path())
         .unwrap();
     let err = from_str_with_options::<ScalarConfig>("foo: !include value.yaml#section\n", options)
@@ -420,7 +420,7 @@ fn safe_file_resolver_text_mode_decodes_bom() {
     let resolver = SafeFileResolver::new(temp.path())
         .unwrap()
         .with_read_mode(SafeFileReadMode::Text);
-    let options = Options::default().with_include_resolver(resolver.into_callback());
+    let options = serde_saphyr::options! {}.with_include_resolver(resolver.into_callback());
 
     let parsed: ScalarConfig =
         from_str_with_options("foo: !include value.yaml\n", options).unwrap();
@@ -435,7 +435,7 @@ fn safe_file_resolver_streaming_mode_still_works() {
     let resolver = SafeFileResolver::new(temp.path())
         .unwrap()
         .with_read_mode(SafeFileReadMode::Reader);
-    let options = Options::default().with_include_resolver(resolver.into_callback());
+    let options = serde_saphyr::options! {}.with_include_resolver(resolver.into_callback());
 
     let parsed: ScalarConfig =
         from_str_with_options("foo: !include value.yaml\n", options).unwrap();
@@ -473,7 +473,7 @@ fn safe_file_resolver_symlink_policy_follow_within_root() {
     let resolver = SafeFileResolver::new(temp.path().join("allowed"))
         .unwrap()
         .with_symlink_policy(SymlinkPolicy::FollowWithinRoot);
-    let options = Options::default().with_include_resolver(resolver.into_callback());
+    let options = serde_saphyr::options! {}.with_include_resolver(resolver.into_callback());
 
     let parsed: ScalarConfig = from_str_with_options("foo: !include link.yaml\n", options).unwrap();
     assert_eq!(parsed.foo, "bar_value");
@@ -503,12 +503,13 @@ fn safe_file_resolver_no_git() {
         .with_symlink_policy(SymlinkPolicy::FollowWithinRoot);
 
     // Test Case 1
-    let options1 = Options::default().with_include_resolver(resolver.clone().into_callback());
+    let options1 =
+        serde_saphyr::options! {}.with_include_resolver(resolver.clone().into_callback());
     let parsed1 = from_str_with_options::<ScalarConfig>("foo: !include link1.yaml\n", options1);
     assert!(parsed1.is_err());
 
     // Test Case 2
-    let options2 = Options::default().with_include_resolver(resolver.into_callback());
+    let options2 = serde_saphyr::options! {}.with_include_resolver(resolver.into_callback());
     let parsed2 =
         from_str_with_options::<ScalarConfig>("foo: !include .ggit/link2.yaml\n", options2);
     assert!(parsed2.is_err());

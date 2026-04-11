@@ -421,7 +421,7 @@ fn read_with_options_valid_validates_each_document_in_iterator() {
 fn reader_garde_validation_in_text_include_has_snippet() {
     let yaml = "a: !include child.yaml\n";
     let reader = std::io::Cursor::new(yaml.as_bytes());
-    let options = serde_saphyr::Options::default().with_include_resolver(
+    let options = serde_saphyr::options! {}.with_include_resolver(
         |req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
             if req.spec == "child.yaml" {
                 Ok(serde_saphyr::ResolvedInclude {
@@ -463,7 +463,7 @@ fn reader_garde_validation_in_text_include_has_snippet() {
 #[test]
 fn from_str_with_options_valid_reports_garde_error_from_included_input() {
     let yaml = "a: !include child.yaml\n";
-    let options = serde_saphyr::Options::default().with_include_resolver(
+    let options = serde_saphyr::options! {}.with_include_resolver(
         |req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
             if req.spec == "child.yaml" {
                 Ok(serde_saphyr::ResolvedInclude {
@@ -505,7 +505,7 @@ fn from_str_with_options_valid_reports_garde_error_from_included_input() {
 fn validation_does_not_replay_include_resolver() {
     let calls = Rc::new(RefCell::new(Vec::new()));
     let calls_for_resolver = Rc::clone(&calls);
-    let options = serde_saphyr::Options::default().with_include_resolver(
+    let options = serde_saphyr::options! {}.with_include_resolver(
         move |req: serde_saphyr::IncludeRequest| {
             calls_for_resolver.borrow_mut().push(req.spec.to_string());
             match req.spec {
@@ -549,7 +549,7 @@ fn validation_does_not_replay_include_resolver() {
 #[test]
 fn validation_include_chain_built_from_recorded_sources() {
     let yaml = "a: !include child.yaml\n";
-    let options = serde_saphyr::Options::default().with_include_resolver(
+    let options = serde_saphyr::options! {}.with_include_resolver(
         |req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
             match req.spec {
                 "child.yaml" => Ok(serde_saphyr::ResolvedInclude {
@@ -593,7 +593,7 @@ fn validation_include_chain_built_from_recorded_sources() {
 #[test]
 fn garde_multidoc_validation_in_included_file_renders_included_snippet() {
     let yaml = "a: \"ok\"\n---\na: !include child.yaml\n";
-    let options = serde_saphyr::Options::default().with_include_resolver(
+    let options = serde_saphyr::options! {}.with_include_resolver(
         |req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
             match req.spec {
                 "child.yaml" => Ok(serde_saphyr::ResolvedInclude {

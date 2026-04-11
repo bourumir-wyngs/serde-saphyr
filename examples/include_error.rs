@@ -1,6 +1,6 @@
 use serde::Deserialize;
 use serde_saphyr::{
-    IncludeRequest, IncludeResolveError, Options, ResolvedInclude, from_str_with_options,
+    IncludeRequest, IncludeResolveError, ResolvedInclude, from_str_with_options,
 };
 
 #[derive(Deserialize, Debug)]
@@ -22,7 +22,7 @@ fn main() {
 string
 "#;
 
-    let options = Options::default().with_include_resolver(
+    let options = serde_saphyr::options! {}.with_include_resolver(
         |req: IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
             if req.spec == "included.yaml" {
                 Ok(ResolvedInclude {

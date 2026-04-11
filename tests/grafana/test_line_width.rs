@@ -1,7 +1,7 @@
 //! Tests for automatic line wrapping of long strings (matches Go's yaml.v3 SetWidth behavior)
 
 use serde::{Deserialize, Serialize};
-use serde_saphyr::{SerializerOptions, to_fmt_writer_with_options, to_string};
+use serde_saphyr::{to_fmt_writer_with_options, to_string};
 
 #[test]
 fn line_width_none_does_not_wrap() {
@@ -40,9 +40,7 @@ fn line_width_short_strings_not_wrapped() {
         name: "short".to_string(),
     };
 
-    let opts = SerializerOptions {
-        ..Default::default()
-    };
+    let opts = serde_saphyr::ser_options! {};
 
     let mut out = String::new();
     to_fmt_writer_with_options(&mut out, &doc, opts).unwrap();
@@ -76,9 +74,7 @@ fn line_width_with_nested_structure() {
         },
     };
 
-    let opts = SerializerOptions {
-        ..Default::default()
-    };
+    let opts = serde_saphyr::ser_options! {};
 
     let mut out = String::new();
     to_fmt_writer_with_options(&mut out, &doc, opts).unwrap();
@@ -109,9 +105,7 @@ fn line_width_custom_value() {
     };
 
     // With line_width=40, this should wrap
-    let opts = SerializerOptions {
-        ..Default::default()
-    };
+    let opts = serde_saphyr::ser_options! {};
 
     let mut out = String::new();
     to_fmt_writer_with_options(&mut out, &doc, opts).unwrap();
@@ -140,9 +134,8 @@ fn line_width_preserves_multiline_strings() {
         text: "line1\nline2\nline3".to_string(),
     };
 
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         prefer_block_scalars: true,
-        ..Default::default()
     };
 
     let mut out = String::new();
@@ -171,9 +164,7 @@ fn line_width_flow_style_not_wrapped() {
         items: FlowSeq(vec![long_text.to_string()]),
     };
 
-    let opts = SerializerOptions {
-        ..Default::default()
-    };
+    let opts = serde_saphyr::ser_options! {};
 
     let mut out = String::new();
     to_fmt_writer_with_options(&mut out, &doc, opts).unwrap();
@@ -202,9 +193,7 @@ fn line_width_roundtrip() {
         description: original_text.to_string(),
     };
 
-    let opts = SerializerOptions {
-        ..Default::default()
-    };
+    let opts = serde_saphyr::ser_options! {};
 
     let mut yaml = String::new();
     to_fmt_writer_with_options(&mut yaml, &doc, opts).unwrap();

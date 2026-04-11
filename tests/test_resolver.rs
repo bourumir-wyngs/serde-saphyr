@@ -2,8 +2,6 @@
 #[cfg(feature = "include")]
 use serde::Deserialize;
 #[cfg(feature = "include")]
-use serde_saphyr::Options;
-#[cfg(feature = "include")]
 use serde_saphyr::{IncludeResolveError, InputSource, ResolvedInclude};
 #[cfg(feature = "include")]
 use std::cell::RefCell;
@@ -41,7 +39,7 @@ fn test_reader_resolver() {
     let yaml = "foo: !include bar.yaml\n";
     let cursor = std::io::Cursor::new(yaml.as_bytes());
 
-    let options = Options::default().with_include_resolver(
+    let options = serde_saphyr::options! {}.with_include_resolver(
         |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
             let s = req.spec;
             if s == "bar.yaml" {
@@ -66,7 +64,7 @@ fn test_reader_resolver() {
 fn test_str_resolver() {
     let yaml = "foo: !include bar.yaml\n";
 
-    let options = Options::default().with_include_resolver(
+    let options = serde_saphyr::options! {}.with_include_resolver(
         |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
             let s = req.spec;
             if s == "bar.yaml" {
@@ -91,7 +89,7 @@ fn test_str_resolver() {
 fn test_slice_resolver() {
     let yaml = b"foo: !include bar.yaml\n";
 
-    let options = Options::default().with_include_resolver(
+    let options = serde_saphyr::options! {}.with_include_resolver(
         |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
             let s = req.spec;
             if s == "bar.yaml" {
@@ -117,7 +115,12 @@ fn test_nested_reader_budget() {
     let yaml = "foo: !include bar.yaml\n";
     let cursor = std::io::Cursor::new(yaml.as_bytes());
 
-    let mut options = Options::default().with_include_resolver(
+    let options = serde_saphyr::options! {
+        budget: serde_saphyr::budget! {
+            max_reader_input_bytes: Some(5),
+        },
+    }
+    .with_include_resolver(
         |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
             let s = req.spec;
             if s == "bar.yaml" {
@@ -132,16 +135,6 @@ fn test_nested_reader_budget() {
             }
         },
     );
-
-    // Set a very small reader limit
-    if let Some(ref mut b) = options.budget {
-        b.max_reader_input_bytes = Some(5);
-    } else {
-        options.budget = Some(serde_saphyr::budget::Budget {
-            max_reader_input_bytes: Some(5),
-            ..Default::default()
-        });
-    }
 
     let config_res: Result<Config, serde_saphyr::Error> =
         serde_saphyr::from_reader_with_options(cursor, options);
@@ -171,7 +164,7 @@ root: !include self.yaml
             source: InputSource::from_string("root2: !include self.yaml".to_string()),
         })
     };
-    let options = serde_saphyr::Options::default().with_include_resolver(resolver);
+    let options = serde_saphyr::options! {}.with_include_resolver(resolver);
     let result: Result<serde::de::IgnoredAny, _> =
         serde_saphyr::from_str_with_options(input, options);
     assert!(result.is_err());
@@ -208,7 +201,7 @@ root: !include aliases/first.yaml
             source: InputSource::from_string(source.to_string()),
         })
     };
-    let options = serde_saphyr::Options::default().with_include_resolver(resolver);
+    let options = serde_saphyr::options! {}.with_include_resolver(resolver);
     let result: Result<serde::de::IgnoredAny, _> =
         serde_saphyr::from_str_with_options(input, options);
 
@@ -234,7 +227,7 @@ list:
             source: InputSource::from_string("value".to_string()),
         })
     };
-    let options = serde_saphyr::Options::default().with_include_resolver(resolver);
+    let options = serde_saphyr::options! {}.with_include_resolver(resolver);
     // Should not fail with cyclic include error
     let result: Result<serde::de::IgnoredAny, _> =
         serde_saphyr::from_str_with_options(input, options);
@@ -253,7 +246,7 @@ fn resolver_request_uses_canonical_from_id_and_display_from_name() {
     let seen: Rc<RefCell<Vec<SeenEntry>>> = Rc::new(RefCell::new(Vec::new()));
     let seen_in_resolver = Rc::clone(&seen);
 
-    let options = serde_saphyr::Options::default().with_include_resolver(
+    let options = serde_saphyr::options! {}.with_include_resolver(
         move |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
             seen_in_resolver.borrow_mut().push((
                 req.spec.to_string(),
@@ -322,7 +315,7 @@ foo: !include { \"path\": \"file_b.yml\", \"extension\": \"txt\" }
     let resolver = |_req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
         Err(serde_saphyr::IncludeResolveError::Message("Not reached".to_string()))
     };
-    let options = serde_saphyr::Options::default().with_include_resolver(resolver);
+    let options = serde_saphyr::options! {}.with_include_resolver(resolver);
     let result: Result<Config, _> = serde_saphyr::from_str_with_options(input, options);
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
@@ -340,7 +333,7 @@ fn test_include_sequence_form_without_resolver_is_not_treated_as_include() {
 foo: !include [file_b.yml]
 ";
     let result: Result<serde::de::IgnoredAny, _> =
-        serde_saphyr::from_str_with_options(input, Options::default());
+        serde_saphyr::from_str_with_options(input, serde_saphyr::options! {});
     assert!(
         result.is_ok(),
         "Expected Ok without resolver, got: {:?}",
@@ -355,7 +348,7 @@ fn test_include_mapping_form_without_resolver_is_not_treated_as_include() {
 foo: !include { path: file_b.yml, extension: txt }
 ";
     let result: Result<serde::de::IgnoredAny, _> =
-        serde_saphyr::from_str_with_options(input, Options::default());
+        serde_saphyr::from_str_with_options(input, serde_saphyr::options! {});
     assert!(
         result.is_ok(),
         "Expected Ok without resolver, got: {:?}",
@@ -368,7 +361,7 @@ foo: !include { path: file_b.yml, extension: txt }
 fn test_include_fragment_tag_merges_into_spec() {
     let yaml = "foo: !include#user_fragment bar.yaml\n";
 
-    let options = Options::default().with_include_resolver(
+    let options = serde_saphyr::options! {}.with_include_resolver(
         |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
             if req.spec == "bar.yaml#user_fragment" {
                 Ok(ResolvedInclude {
@@ -394,7 +387,7 @@ fn test_include_fragment_tag_merges_into_spec() {
 fn test_include_fragment_tag_and_fragment_in_spec_is_rejected() {
     let yaml = "foo: !include#user_fragment bar.yaml#from_spec\n";
 
-    let options = Options::default().with_include_resolver(
+    let options = serde_saphyr::options! {}.with_include_resolver(
         |_req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
             Err(IncludeResolveError::Message(
                 "resolver should not be called".to_string(),
@@ -449,7 +442,7 @@ fn test_successful_reader_resolver() {
     let yaml = "foo: !include bar.yaml\n";
     let cursor = std::io::Cursor::new(yaml.as_bytes());
 
-    let options = serde_saphyr::Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+    let options = serde_saphyr::options! {}.with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
         if req.spec == "bar.yaml" {
             Ok(serde_saphyr::ResolvedInclude {
                 id: req.spec.to_string(),
@@ -471,7 +464,7 @@ fn test_reader_include_syntax_error() {
     let yaml = "foo: !include bad.yaml\n";
     let cursor = std::io::Cursor::new(yaml.as_bytes());
 
-    let options = serde_saphyr::Options::default().with_include_resolver(
+    let options = serde_saphyr::options! {}.with_include_resolver(
         |req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
             if req.spec == "bad.yaml" {
                 Ok(serde_saphyr::ResolvedInclude {
@@ -502,7 +495,7 @@ fn test_reader_include_type_error() {
     let yaml = "foo: !include bad.yaml\n";
     let cursor = std::io::Cursor::new(yaml.as_bytes());
 
-    let options = serde_saphyr::Options::default().with_include_resolver(
+    let options = serde_saphyr::options! {}.with_include_resolver(
         |req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
             if req.spec == "bad.yaml" {
                 Ok(serde_saphyr::ResolvedInclude {
@@ -532,7 +525,7 @@ fn test_reader_include_type_error() {
 fn test_anchors_in_same_included_content() {
     let yaml = "foo: !include bar.yaml\n";
 
-    let options = serde_saphyr::Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+    let options = serde_saphyr::options! {}.with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
         if req.spec == "bar.yaml" {
             Ok(serde_saphyr::ResolvedInclude {
                 id: req.spec.to_string(),
@@ -562,7 +555,7 @@ file1: !include def.yaml
 file2: !include ref.yaml
 ";
 
-    let options = serde_saphyr::Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+    let options = serde_saphyr::options! {}.with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
         if req.spec == "def.yaml" {
             Ok(serde_saphyr::ResolvedInclude {
                 id: req.spec.to_string(),
@@ -599,7 +592,7 @@ parent_def: &parent_anchor parent_value
 child_ref: !include ref.yaml
 ";
 
-    let options = serde_saphyr::Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+    let options = serde_saphyr::options! {}.with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
         if req.spec == "ref.yaml" {
             Ok(serde_saphyr::ResolvedInclude {
                 id: req.spec.to_string(),
@@ -635,7 +628,7 @@ fn test_include_fragment_replays_prerequisite_anchor_definitions() {
 
     let yaml = "cfg: !include value.yaml#selected\n";
 
-    let options = serde_saphyr::Options::default().with_include_resolver(
+    let options = serde_saphyr::options! {}.with_include_resolver(
         |req: serde_saphyr::IncludeRequest|
          -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
             if req.spec == "value.yaml#selected" {
@@ -679,7 +672,7 @@ fn test_include_entire_mapping() {
 my_mapping: !include some_mapping.yaml
 ";
 
-    let options = serde_saphyr::Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+    let options = serde_saphyr::options! {}.with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
         if req.spec == "some_mapping.yaml" {
             Ok(serde_saphyr::ResolvedInclude {
                 id: req.spec.to_string(),
@@ -706,7 +699,7 @@ fn test_include_list() {
 my_list: !include some_list.yaml
 ";
 
-    let options = serde_saphyr::Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+    let options = serde_saphyr::options! {}.with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
         if req.spec == "some_list.yaml" {
             Ok(serde_saphyr::ResolvedInclude {
                 id: req.spec.to_string(),
@@ -734,7 +727,7 @@ base:
   override: 2
 ";
 
-    let options = serde_saphyr::Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+    let options = serde_saphyr::options! {}.with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
         if req.spec == "child.yaml" {
             Ok(serde_saphyr::ResolvedInclude {
                 id: req.spec.to_string(),
@@ -764,7 +757,7 @@ base:
   ref: *A
 ";
 
-    let options = serde_saphyr::Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+    let options = serde_saphyr::options! {}.with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
         if req.spec == "child.yaml" {
             Ok(serde_saphyr::ResolvedInclude {
                 id: req.spec.to_string(),
@@ -798,7 +791,7 @@ base:
   next: value
 ";
 
-    let options = serde_saphyr::Options::default().with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
+    let options = serde_saphyr::options! {}.with_include_resolver(|req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
         if req.spec == "empty.yaml" {
             Ok(serde_saphyr::ResolvedInclude {
                 id: req.spec.to_string(),

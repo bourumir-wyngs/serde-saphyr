@@ -2,8 +2,7 @@
 use serde::{Deserialize, Serialize};
 
 use serde_saphyr::{
-    FoldStr, FoldString, LitStr, LitString, RcAnchor, SerializerOptions, to_string,
-    to_string_with_options,
+    FoldStr, FoldString, LitStr, LitString, RcAnchor, to_string, to_string_with_options,
 };
 
 #[test]
@@ -373,9 +372,8 @@ fn verdanta_case_fold() -> anyhow::Result<()> {
         "Deeply nested description body must be indented deeper than its header"
     );
 
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         compact_list_indent: true,
-        ..Default::default()
     };
     let compact_yaml = to_string_with_options(&object, opts)?;
     assert!(
@@ -416,9 +414,8 @@ fn litstr_sequence_under_map_key() {
     let out = to_string_with_options(&d, opts).unwrap();
     assert_eq!(out, "items:\n  - |-\n    a\n  - |-\n    b\n  - |-\n    c\n");
 
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         compact_list_indent: true,
-        ..Default::default()
     };
     let compact_out = to_string_with_options(&d, opts).unwrap();
     assert_eq!(compact_out, "items:\n- |-\n  a\n- |-\n  b\n- |-\n  c\n");

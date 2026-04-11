@@ -4,9 +4,7 @@ mod tests {
     use serde::Deserialize;
     use serde_saphyr::budget::BudgetBreach;
     use serde_saphyr::{DuplicateKeyPolicy, Error, from_reader};
-    use serde_saphyr::{
-        Options, from_multiple, from_multiple_with_options, from_str, from_str_with_options,
-    };
+    use serde_saphyr::{from_multiple, from_multiple_with_options, from_str, from_str_with_options};
     use std::collections::HashMap;
 
     fn unwrap_snippet(err: &Error) -> &Error {
@@ -109,13 +107,11 @@ plain
     fn budget_violation_is_reported() {
         use std::collections::HashMap;
 
-        let mut options = Options::default();
-        #[allow(deprecated)]
-        {
-            if let Some(ref mut budget) = options.budget {
-                budget.max_nodes = 1; // force a tiny budget to trigger the error
-            }
-        }
+        let options = serde_saphyr::options! {
+            budget: serde_saphyr::budget! {
+                max_nodes: 1,
+            },
+        };
 
         let yaml = "a: 1\n";
         let err = from_str_with_options::<HashMap<String, String>>(yaml, options).unwrap_err();
@@ -132,13 +128,11 @@ plain
     fn multiple_documents_budget_violation() {
         use std::collections::HashMap;
 
-        let mut options = Options::default();
-        #[allow(deprecated)]
-        {
-            if let Some(ref mut budget) = options.budget {
-                budget.max_nodes = 1; // ensure the budget error triggers
-            }
-        }
+        let options = serde_saphyr::options! {
+            budget: serde_saphyr::budget! {
+                max_nodes: 1,
+            },
+        };
 
         let yaml = "a: 1\n---\nb: 2\n";
         let err = from_multiple_with_options::<HashMap<String, String>>(yaml, options).unwrap_err();
@@ -308,11 +302,11 @@ plain
         fn alias_per_anchor_expansion_limit() {
             // Anchor &A once, then reference it three times; cap expansions at 2.
             let y = "defs: &A { k: v }\nx: *A\ny: *A\nz: *A\n";
-            let mut opt = serde_saphyr::Options::default();
-            #[allow(deprecated)]
-            {
-                opt.alias_limits.max_alias_expansions_per_anchor = 2;
-            }
+            let opt = serde_saphyr::options! {
+                alias_limits: serde_saphyr::alias_limits! {
+                    max_alias_expansions_per_anchor: 2,
+                },
+            };
             let err = from_str_with_options::<HashMap<String, HashMap<String, String>>>(y, opt)
                 .unwrap_err();
             let msg = format!("{err}");
@@ -337,11 +331,11 @@ plain
         #[test]
         fn alias_total_replayed_events_limit() {
             let y = "defs: &A [1, 2, 3, 4]\nlist: [*A, *A]\n";
-            let mut opt = serde_saphyr::Options::default();
-            #[allow(deprecated)]
-            {
-                opt.alias_limits.max_total_replayed_events = 10;
-            }
+            let opt = serde_saphyr::options! {
+                alias_limits: serde_saphyr::alias_limits! {
+                    max_total_replayed_events: 10,
+                },
+            };
             let err = from_str_with_options::<Data>(y, opt).unwrap_err();
             let msg = format!("{err}");
             assert!(
@@ -359,11 +353,11 @@ plain
         #[test]
         fn alias_replay_stack_depth_limit() {
             let y = "defs: &A [1]\nout: *A\n";
-            let mut opt = serde_saphyr::Options::default();
-            #[allow(deprecated)]
-            {
-                opt.alias_limits.max_replay_stack_depth = 0; // any alias use should exceed this
-            }
+            let opt = serde_saphyr::options! {
+                alias_limits: serde_saphyr::alias_limits! {
+                    max_replay_stack_depth: 0,
+                },
+            };
             let err = from_str_with_options::<HashMap<String, Vec<u32>>>(y, opt).unwrap_err();
             let msg = format!("{err}");
             assert!(
@@ -376,13 +370,11 @@ plain
         // (which matches HashMap<_, _>), then alias it multiple times to exceed the budget.
         #[test]
         fn alias_replay_counts_toward_budget() {
-            let mut options = serde_saphyr::Options::default();
-            #[allow(deprecated)]
-            {
-                if let Some(ref mut b) = options.budget {
-                    b.max_nodes = 10;
-                }
-            }
+            let options = serde_saphyr::options! {
+                budget: serde_saphyr::budget! {
+                    max_nodes: 10,
+                },
+            };
 
             // Root is a mapping with key "seq". First element defines &A, the rest alias it.
             let y = "\
@@ -408,13 +400,11 @@ root:
   <<: *base
 "#;
 
-            let mut options = serde_saphyr::Options::default();
-            #[allow(deprecated)]
-            {
-                if let Some(ref mut budget) = options.budget {
-                    budget.max_merge_keys = 0;
-                }
-            }
+            let options = serde_saphyr::options! {
+                budget: serde_saphyr::budget! {
+                    max_merge_keys: 0,
+                },
+            };
 
             let err = from_str_with_options::<HashMap<String, serde_json::Value>>(y, options)
                 .unwrap_err();

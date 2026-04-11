@@ -2,7 +2,7 @@
 //! Tests targeting low-coverage areas identified by cargo llvm-cov.
 
 use serde::{Deserialize, Serialize};
-use serde_saphyr::{FoldString, LitString, SerializerOptions};
+use serde_saphyr::{FoldString, LitString};
 
 // ── lib.rs: deprecated to_writer / to_writer_with_options ──────────────
 
@@ -18,7 +18,8 @@ fn deprecated_to_writer() {
 #[allow(deprecated)]
 fn deprecated_to_writer_with_options() {
     let mut buf = String::new();
-    serde_saphyr::to_writer_with_options(&mut buf, &"hello", SerializerOptions::default()).unwrap();
+    serde_saphyr::to_writer_with_options(&mut buf, &"hello", serde_saphyr::ser_options! {})
+        .unwrap();
     assert!(buf.contains("hello"));
 }
 
@@ -35,8 +36,12 @@ fn to_io_writer_basic() {
 #[test]
 fn to_io_writer_with_options_basic() {
     let mut buf = Vec::new();
-    serde_saphyr::to_io_writer_with_options(&mut buf, &vec![1, 2, 3], SerializerOptions::default())
-        .unwrap();
+    serde_saphyr::to_io_writer_with_options(
+        &mut buf,
+        &vec![1, 2, 3],
+        serde_saphyr::ser_options! {},
+    )
+    .unwrap();
     let s = String::from_utf8(buf).unwrap();
     assert!(s.contains("- 1"));
 }
@@ -451,9 +456,8 @@ fn serialize_with_custom_indent() {
     struct Doc {
         items: Vec<i32>,
     }
-    let opts = SerializerOptions {
+    let opts = serde_saphyr::ser_options! {
         indent_step: 4,
-        ..Default::default()
     };
     let s = serde_saphyr::to_string_with_options(&Doc { items: vec![1, 2] }, opts).unwrap();
     assert!(s.contains("items:"));
@@ -577,8 +581,7 @@ fn deserialize_enum_variants() {
 
 #[test]
 fn from_str_with_options() {
-    use serde_saphyr::Options;
-    let opts = Options::default();
+    let opts = serde_saphyr::options! {};
     let v: i32 = serde_saphyr::from_str_with_options("42", opts).unwrap();
     assert_eq!(v, 42);
 }

@@ -42,11 +42,20 @@ pub enum DuplicateKeyPolicy {
 pub struct AliasLimits {
     /// Maximum total number of **replayed** events injected from aliases across the entire parse.
     /// When exceeded, deserialization errors (alias replay limit exceeded).
+    #[deprecated(
+        note = "Direct construction of `AliasLimits` will be disabled from 1.0.0, use macro `alias_limits!`"
+    )]
     pub max_total_replayed_events: usize,
     /// Maximum depth of the alias replay stack (nested alias → injected buffer → alias, etc.).
+    #[deprecated(
+        note = "Direct construction of `AliasLimits` will be disabled from 1.0.0, use macro `alias_limits!`"
+    )]
     pub max_replay_stack_depth: usize,
     /// Maximum number of times a **single anchor id** may be expanded via alias.
     /// Use `usize::MAX` for "unlimited".
+    #[deprecated(
+        note = "Direct construction of `AliasLimits` will be disabled from 1.0.0, use macro `alias_limits!`"
+    )]
     pub max_alias_expansions_per_anchor: usize,
 }
 
@@ -99,35 +108,62 @@ impl Default for AliasLimits {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Options {
     /// Optional YAML budget to enforce before parsing (counts raw parser events).
+    #[deprecated(
+        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
+    )]
     pub budget: Option<Budget>,
     /// Optional callback invoked with the final budget report after parsing.
     /// It is invoked both when parsing is successful and when budget was breached.
     #[serde(skip)]
+    #[deprecated(
+        note = "Direct construction of `Options` will be disabled from 1.0.0, use `Options::with_budget_report`"
+    )]
     pub budget_report: Option<fn(&crate::budget::BudgetReport)>,
 
     /// Invoked both when parsing is successful and when budget was breached.
     #[serde(skip)]
+    #[deprecated(
+        note = "Direct construction of `Options` will be disabled from 1.0.0, use `Options::with_budget_report`"
+    )]
     pub budget_report_cb: Option<BudgetReportCallback>,
 
     /// Policy for duplicate keys.
+    #[deprecated(
+        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
+    )]
     pub duplicate_keys: DuplicateKeyPolicy,
     /// Limits for alias replay to harden against alias bombs.
+    #[deprecated(
+        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
+    )]
     pub alias_limits: AliasLimits,
     /// Enable legacy octal parsing where values starting with `00` are treated as base-8.
     /// They are deprecated in YAML 1.2. Default: false.
+    #[deprecated(
+        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
+    )]
     pub legacy_octal_numbers: bool,
     /// If true, interpret only the exact literals `true` and `false` as booleans.
     /// YAML 1.1 forms like `yes`/`no`/`on`/`off` will be rejected and not inferred.
     /// Default: false (accept YAML 1.1 boolean forms).
+    #[deprecated(
+        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
+    )]
     pub strict_booleans: bool,
     /// When a field marked with the `!!binary` tag is deserialized into a `String`,
     /// `serde-saphyr` normally expects the value to be base64-encoded UTF-8.
     /// If you want to treat the value as a plain string and ignore the `!!binary` tag,
     /// set this to `true` (the default is `false`).
+    #[deprecated(
+        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
+    )]
     pub ignore_binary_tag_for_string: bool,
     /// Activates YAML conventions common in robotics community. These extensions support
     /// conversion functions (deg, rad) and simple mathematical expressions such as deg(180),
     /// rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). [robotics] feature must also be enabled.
+    #[deprecated(
+        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
+    )]
     pub angle_conversions: bool,
     /// If true, values that can be parsed as booleans or numbers are rejected as
     /// unquoted strings. This flag is intended for teams that want to enforce
@@ -135,11 +171,17 @@ pub struct Options {
     /// requiring such strings to be explicitly quoted.
     /// The default is false (a number or boolean will be stored in the string
     /// field exactly as provided, without quoting).
+    #[deprecated(
+        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
+    )]
     pub no_schema: bool,
 
     /// If true (default), public APIs that have access to the original YAML input
     /// will wrap returned errors with a snippet wrapper, enabling rustc-like snippet
     /// rendering when a location is available.
+    #[deprecated(
+        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
+    )]
     pub with_snippet: bool,
 
     /// Horizontal crop radius (in character columns) when rendering snippet diagnostics.
@@ -148,9 +190,15 @@ pub struct Options {
     /// column window around the reported error column, so they stay vertically aligned.
     ///
     /// If set to `0`, snippet wrapping is disabled (the original, unwrapped error is returned).
+    #[deprecated(
+        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
+    )]
     pub crop_radius: usize,
 
     /// Indentation requirement for the parsed document.
+    #[deprecated(
+        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
+    )]
     pub require_indent: RequireIndent,
 
     /// Optional include resolver callback.
@@ -159,12 +207,18 @@ pub struct Options {
     ///-like constructs.
     #[cfg(feature = "include")]
     #[serde(skip)]
+    #[deprecated(
+        note = "Direct construction of `Options` will be disabled from 1.0.0, use `Options::with_include_resolver`"
+    )]
     pub include_resolver: Option<IncludeResolverCallback>,
 
     /// A map of properties to substitute in scalar values.
     /// Used for docker-compose-style interpolation like `${VAR}`.
     #[cfg(feature = "properties")]
     #[serde(skip)]
+    #[deprecated(
+        note = "Direct construction of `Options` will be disabled from 1.0.0, use `Options::with_properties`"
+    )]
     pub property_map: Option<Rc<HashMap<String, String>>>,
 }
 

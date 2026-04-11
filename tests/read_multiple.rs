@@ -33,7 +33,7 @@ fn read_with_options_iterator_works_the_same() {
     let yaml = "---\nid: 10\n---\nnull\n---\nid: 20\n";
     let mut reader = std::io::Cursor::new(yaml.as_bytes());
 
-    let opts = serde_saphyr::Options::default();
+    let opts = serde_saphyr::options! {};
     let iter = serde_saphyr::read_with_options::<_, Simple>(&mut reader, opts);
 
     let values: Vec<Simple> = iter

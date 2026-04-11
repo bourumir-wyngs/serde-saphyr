@@ -1,11 +1,8 @@
-use serde_saphyr::SerializerOptions;
 use std::collections::HashMap;
 
 #[test]
 fn test_quote_ambiguous_keys() {
-    let options = SerializerOptions {
-        ..Default::default()
-    };
+    let options = serde_saphyr::ser_options! {};
 
     let mut map = HashMap::new();
     map.insert("y", 0);

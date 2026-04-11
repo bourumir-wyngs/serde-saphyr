@@ -20,7 +20,7 @@ struct Config {
 
 #[cfg(feature = "include")]
 fn nested_include_options(bar_source: &'static str) -> Options {
-    Options::default().with_include_resolver(
+    serde_saphyr::options! {}.with_include_resolver(
         move |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
             let s = req.spec;
             if s == "foo.yaml" {
@@ -44,7 +44,7 @@ fn nested_include_options(bar_source: &'static str) -> Options {
 
 #[cfg(feature = "include")]
 fn nested_scalar_include_options(bar_source: &'static str) -> Options {
-    Options::default().with_include_resolver(
+    serde_saphyr::options! {}.with_include_resolver(
         move |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
             let s = req.spec;
             if s == "foo.yaml" {
@@ -128,7 +128,7 @@ fn test_included_validation_error_renders_included_snippet() {
 fn test_resolve_error_chain() {
     let yaml = "foo: !include missing.yaml\n";
 
-    let options = Options::default().with_include_resolver(
+    let options = serde_saphyr::options! {}.with_include_resolver(
         |_req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
             Err(IncludeResolveError::Message("File not found".to_string()))
         },

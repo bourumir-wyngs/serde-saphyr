@@ -6,10 +6,9 @@ pub fn from_str<T: DeserializeOwned>(s: &str) -> Result<T, serde_saphyr::Error> 
         duplicate_keys: serde_saphyr::DuplicateKeyPolicy::LastWins,
         strict_booleans: true,
         ignore_binary_tag_for_string: true,
-        budget: Some(serde_saphyr::Budget {
+        budget: serde_saphyr::budget! {
             max_total_scalar_bytes: 65536,
-            ..serde_saphyr::Budget::default()
-        }),
+        },
     };
     serde_saphyr::from_str_with_options(s, options)
 }
