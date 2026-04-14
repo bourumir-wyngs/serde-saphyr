@@ -66,6 +66,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn from_path_reads_yaml_file() {
         let file = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(file.path(), "answer: 7\n").unwrap();
