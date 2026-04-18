@@ -1,6 +1,4 @@
 use crate::parse_scalars::parse_yaml11_bool;
-use regex::Regex;
-use std::sync::OnceLock;
 
 fn is_numeric_looking(s: &str) -> bool {
     // Match a broad set of YAML numeric tokens (integer / float) even if they would overflow
@@ -12,36 +10,23 @@ fn is_numeric_looking(s: &str) -> bool {
     // - Supports `0x`/`0o`/`0b` prefixes.
     // - Supports decimal scientific notation with or without a dot (e.g. `1e9`, `1.0e9`, `.5`).
     //
-    // Compiled once to avoid regex compile cost on hot path.
-    static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| {
-        Regex::new(
-            r"(?x)
-            ^[+-]?(?:
-                # Explicit radices
-                0x[0-9A-Fa-f_]+ |
-                0o[0-7_]+       |
-                0b[01_]+        |
-
-                # Decimal floats / integers
-                (?:
-                    # Float with dot: 1. , 1.0 , .5
-                    (?:[0-9][0-9_]*\.[0-9_]*|\.[0-9][0-9_]*)
-                    (?:[eE][+-]?[0-9][0-9_]*)?
-                |
-                    # Scientific without dot: 1e9
-                    [0-9][0-9_]*[eE][+-]?[0-9][0-9_]*
-                |
-                    # Plain integer: 123
-                    [0-9][0-9_]*
-                )
-            )$
-            ",
-        )
-        .expect("valid numeric-looking regex")
-    });
-
-    re.is_match(s)
+    if s.is_empty() {
+        return false;
+    }
+    let cleaned = s.replace('_', "");
+    if let Some(stripped) = cleaned.strip_prefix("0x").or_else(|| cleaned.strip_prefix("0X")) {
+        // Hex
+        !stripped.is_empty() && stripped.chars().all(|c| c.is_ascii_hexdigit())
+    } else if let Some(stripped) = cleaned.strip_prefix("0o").or_else(|| cleaned.strip_prefix("0O")) {
+        // Octal
+        !stripped.is_empty() && stripped.chars().all(|c| matches!(c, '0'..='7'))
+    } else if let Some(stripped) = cleaned.strip_prefix("0b").or_else(|| cleaned.strip_prefix("0B")) {
+        // Binary
+        !stripped.is_empty() && stripped.chars().all(|c| matches!(c, '0' | '1'))
+    } else {
+        // Decimal
+        cleaned.parse::<f64>().is_ok()
+    }
 }
 
 /// Returns true if `s` is a special YAML token or looks like a number/boolean,
