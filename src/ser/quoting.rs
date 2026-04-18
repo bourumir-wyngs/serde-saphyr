@@ -14,22 +14,18 @@ fn is_numeric_looking(s: &str) -> bool {
         return false;
     }
     let cleaned = s.replace('_', "");
-    if let Some(stripped) = cleaned
-        .strip_prefix("0x")
-        .or_else(|| cleaned.strip_prefix("0X"))
-    {
+    let rest = if cleaned.starts_with('+') || cleaned.starts_with('-') {
+        &cleaned[1..]
+    } else {
+        &cleaned
+    };
+    if let Some(stripped) = rest.strip_prefix("0x").or_else(|| rest.strip_prefix("0X")) {
         // Hex
         !stripped.is_empty() && stripped.chars().all(|c| c.is_ascii_hexdigit())
-    } else if let Some(stripped) = cleaned
-        .strip_prefix("0o")
-        .or_else(|| cleaned.strip_prefix("0O"))
-    {
+    } else if let Some(stripped) = rest.strip_prefix("0o").or_else(|| rest.strip_prefix("0O")) {
         // Octal
         !stripped.is_empty() && stripped.chars().all(|c| matches!(c, '0'..='7'))
-    } else if let Some(stripped) = cleaned
-        .strip_prefix("0b")
-        .or_else(|| cleaned.strip_prefix("0B"))
-    {
+    } else if let Some(stripped) = rest.strip_prefix("0b").or_else(|| rest.strip_prefix("0B")) {
         // Binary
         !stripped.is_empty() && stripped.chars().all(|c| matches!(c, '0' | '1'))
     } else {
