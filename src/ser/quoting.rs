@@ -1,37 +1,130 @@
 use crate::parse_scalars::parse_yaml11_bool;
 
+
+#[inline]
+// Match a broad set of YAML numeric tokens (integer / float) even if they would overflow
+// when parsed into Rust numeric types.
 fn is_numeric_looking(s: &str) -> bool {
-    // Match a broad set of YAML numeric tokens (integer / float) even if they would overflow
-    // when parsed into Rust numeric types.
-    //
-    // Notes:
-    // - Underscores are allowed between digits.
-    // - Supports optional sign.
-    // - Supports `0x`/`0o`/`0b` prefixes.
-    // - Supports decimal scientific notation with or without a dot (e.g. `1e9`, `1.0e9`, `.5`).
-    //
-    if s.is_empty() {
+    let bytes = s.as_bytes();
+    let len = bytes.len();
+
+    if len == 0 {
         return false;
     }
-    let cleaned = s.replace('_', "");
-    let rest = if cleaned.starts_with('+') || cleaned.starts_with('-') {
-        &cleaned[1..]
-    } else {
-        &cleaned
-    };
-    if let Some(stripped) = rest.strip_prefix("0x").or_else(|| rest.strip_prefix("0X")) {
-        // Hex
-        !stripped.is_empty() && stripped.chars().all(|c| c.is_ascii_hexdigit())
-    } else if let Some(stripped) = rest.strip_prefix("0o").or_else(|| rest.strip_prefix("0O")) {
-        // Octal
-        !stripped.is_empty() && stripped.chars().all(|c| matches!(c, '0'..='7'))
-    } else if let Some(stripped) = rest.strip_prefix("0b").or_else(|| rest.strip_prefix("0B")) {
-        // Binary
-        !stripped.is_empty() && stripped.chars().all(|c| matches!(c, '0' | '1'))
-    } else {
-        // Decimal
-        cleaned.parse::<f64>().is_ok()
+
+    #[inline]
+    fn consume_digits(bytes: &[u8], mut p: usize) -> usize {
+        while p < bytes.len() && bytes[p].is_ascii_digit() {
+            p += 1;
+        }
+        p
     }
+
+    #[inline]
+    fn consume_exponent(bytes: &[u8], mut p: usize) -> Option<usize> {
+        if p >= bytes.len() || (bytes[p] != b'e' && bytes[p] != b'E') {
+            return None;
+        }
+
+        p += 1;
+
+        if p < bytes.len() && (bytes[p] == b'+' || bytes[p] == b'-') {
+            p += 1;
+        }
+
+        let start = p;
+        p = consume_digits(bytes, p);
+
+        (p > start).then_some(p)
+    }
+
+    // YAML 1.2 core: lowercase-only 0o / 0x, no sign on radix-prefixed integers.
+    if len >= 3 && bytes[0] == b'0' {
+        match bytes[1] {
+            b'o' => {
+                let mut p = 2;
+                if p == len {
+                    return false;
+                }
+
+                while p < len {
+                    if !(b'0'..=b'7').contains(&bytes[p]) {
+                        return false;
+                    }
+                    p += 1;
+                }
+
+                return true;
+            }
+            b'x' => {
+                let mut p = 2;
+                if p == len {
+                    return false;
+                }
+
+                while p < len {
+                    if !bytes[p].is_ascii_hexdigit() {
+                        return false;
+                    }
+                    p += 1;
+                }
+
+                return true;
+            }
+            _ => {}
+        }
+    }
+
+    let mut p = 0;
+    if bytes[0] == b'+' || bytes[0] == b'-' {
+        p = 1;
+        if p == len {
+            return false;
+        }
+    }
+
+    // Dot-leading float: .5, +.5, -.5
+    if bytes[p] == b'.' {
+        p += 1;
+        let start = p;
+        p = consume_digits(bytes, p);
+
+        if p == start {
+            return false;
+        }
+
+        return match consume_exponent(bytes, p) {
+            Some(end) => end == len,
+            None => p == len,
+        };
+    }
+
+    // Decimal integer / float / scientific notation.
+    if !bytes[p].is_ascii_digit() {
+        return false;
+    }
+
+    p = consume_digits(bytes, p);
+
+    if p == len {
+        return true;
+    }
+
+    if bytes[p] == b'.' {
+        p += 1;
+        p = consume_digits(bytes, p);
+
+        return match consume_exponent(bytes, p) {
+            Some(end) => end == len,
+            None => p == len,
+        };
+    }
+
+    if bytes[p] == b'e' || bytes[p] == b'E' {
+        return matches!(consume_exponent(bytes, p), Some(end) if end == len);
+    }
+
+    false
 }
 
 /// Returns true if `s` is a special YAML token or looks like a number/boolean,
@@ -207,4 +300,54 @@ fn contains_any_or_is_control(string: &str, values: &[char]) -> bool {
     string
         .chars()
         .any(|x| values.iter().any(|v| &x == v || x.is_control()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_numeric_looking;
+
+    #[test]
+    fn numeric_looking_yaml12_core() {
+        for s in [
+            "0",
+            "-19",
+            "+12",
+            "01",
+            "0o7",
+            "0x3A",
+            ".5",
+            "+.5",
+            "-.5",
+            "0.",
+            "-0.0",
+            "12e03",
+            "-2E+05",
+            "12.34e-5",
+        ] {
+            assert!(is_numeric_looking(s), "{s:?} should match");
+        }
+
+        for s in [
+            "",
+            "+",
+            "-",
+            ".",
+            "_1",
+            "1_0",
+            "1e_2",
+            "_.5",
+            "._5",
+            "0X3A",
+            "+0x3A",
+            "0b101",
+            "0o",
+            "0x",
+            "12e",
+            ".e5",
+            ".inf", // handled by the separate special-float helper
+            ".nan", // handled by the separate special-float helper
+        ] {
+            assert!(!is_numeric_looking(s), "{s:?} should not match");
+        }
+    }
 }
