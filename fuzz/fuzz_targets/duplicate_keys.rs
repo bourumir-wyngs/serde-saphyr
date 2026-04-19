@@ -1,4 +1,8 @@
 #![no_main]
+#![allow(
+    dead_code,
+    reason = "fuzz target helper structs are only used as deserialization shapes"
+)]
 
 use libfuzzer_sys::fuzz_target;
 use serde::Deserialize;
@@ -14,7 +18,7 @@ struct DuplicateDoc {
 #[derive(Deserialize, Debug)]
 struct Outer {
     inner: Option<Inner>,
-    arr: Option<Vec<Nested>>, 
+    arr: Option<Vec<Nested>>,
 }
 
 #[derive(Deserialize, Debug)]

@@ -1,4 +1,8 @@
 #![no_main]
+#![allow(
+    dead_code,
+    reason = "fuzz target helper structs are only used as deserialization shapes"
+)]
 
 use std::collections::BTreeMap;
 
