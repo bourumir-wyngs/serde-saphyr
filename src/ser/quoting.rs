@@ -133,9 +133,7 @@ fn is_numeric_looking(s: &str) -> bool {
     };
     p = end;
 
-    if !saw_digit {
-        return false;
-    }
+    debug_assert!(saw_digit, "decimal branch always starts on a digit");
 
     if p == len {
         return true;
@@ -339,7 +337,7 @@ fn contains_any_or_is_control(string: &str, values: &[char]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::is_numeric_looking;
+    use super::{is_numeric_looking, is_plain_safe};
 
     #[test]
     fn numeric_looking_scalar_forms() {
@@ -381,5 +379,29 @@ mod tests {
         ] {
             assert!(!is_numeric_looking(s), "{s:?} should not match");
         }
+    }
+
+    #[test]
+    fn numeric_looking_dot_leading_exponents_and_invalid_fractional_underscores() {
+        for s in [".5e+1", "-.5E-2"] {
+            assert!(is_numeric_looking(s), "{s:?} should match");
+        }
+
+        assert!(
+            !is_numeric_looking("1._0"),
+            "underscores must stay between digits in the fractional part"
+        );
+    }
+
+    #[test]
+    fn plain_keys_reject_indicator_followed_by_whitespace() {
+        assert!(!is_plain_safe("- value"));
+        assert!(!is_plain_safe("?\tvalue"));
+    }
+
+    #[test]
+    fn plain_keys_allow_indicator_without_following_whitespace() {
+        assert!(is_plain_safe("-value"));
+        assert!(is_plain_safe("?query"));
     }
 }
