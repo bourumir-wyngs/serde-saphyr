@@ -1,6 +1,5 @@
 use crate::parse_scalars::parse_yaml11_bool;
 
-
 #[inline]
 // Match a broad set of YAML numeric tokens (integer / float) even if they would overflow
 // when parsed into Rust numeric types.
@@ -13,11 +12,39 @@ fn is_numeric_looking(s: &str) -> bool {
     }
 
     #[inline]
-    fn consume_digits(bytes: &[u8], mut p: usize) -> usize {
-        while p < bytes.len() && bytes[p].is_ascii_digit() {
-            p += 1;
+    fn consume_digit_run<F>(bytes: &[u8], mut p: usize, is_digit: F) -> Result<(usize, bool), ()>
+    where
+        F: Fn(u8) -> bool,
+    {
+        let start = p;
+        let mut saw_digit = false;
+
+        while p < bytes.len() {
+            if is_digit(bytes[p]) {
+                saw_digit = true;
+                p += 1;
+                continue;
+            }
+
+            if bytes[p] == b'_' {
+                let prev_is_digit = p > start && is_digit(bytes[p - 1]);
+                let next_is_digit = match bytes.get(p + 1) {
+                    Some(&next) => is_digit(next),
+                    None => false,
+                };
+
+                if !prev_is_digit || !next_is_digit {
+                    return Err(());
+                }
+
+                p += 1;
+                continue;
+            }
+
+            break;
         }
-        p
+
+        Ok((p, saw_digit))
     }
 
     #[inline]
@@ -32,47 +59,8 @@ fn is_numeric_looking(s: &str) -> bool {
             p += 1;
         }
 
-        let start = p;
-        p = consume_digits(bytes, p);
-
-        (p > start).then_some(p)
-    }
-
-    // YAML 1.2 core: lowercase-only 0o / 0x, no sign on radix-prefixed integers.
-    if len >= 3 && bytes[0] == b'0' {
-        match bytes[1] {
-            b'o' => {
-                let mut p = 2;
-                if p == len {
-                    return false;
-                }
-
-                while p < len {
-                    if !(b'0'..=b'7').contains(&bytes[p]) {
-                        return false;
-                    }
-                    p += 1;
-                }
-
-                return true;
-            }
-            b'x' => {
-                let mut p = 2;
-                if p == len {
-                    return false;
-                }
-
-                while p < len {
-                    if !bytes[p].is_ascii_hexdigit() {
-                        return false;
-                    }
-                    p += 1;
-                }
-
-                return true;
-            }
-            _ => {}
-        }
+        let (p, saw_digit) = consume_digit_run(bytes, p, |b| b.is_ascii_digit()).ok()?;
+        saw_digit.then_some(p)
     }
 
     let mut p = 0;
@@ -83,13 +71,48 @@ fn is_numeric_looking(s: &str) -> bool {
         }
     }
 
+    // Match the integer spellings accepted by the deserializer, including signed and
+    // uppercase radix prefixes, so string round-tripping stays stable.
+    if len.saturating_sub(p) >= 3 && bytes[p] == b'0' {
+        match bytes[p + 1] {
+            b'b' | b'B' => {
+                let (end, saw_digit) =
+                    match consume_digit_run(bytes, p + 2, |b| matches!(b, b'0' | b'1')) {
+                        Ok(run) => run,
+                        Err(()) => return false,
+                    };
+                return saw_digit && end == len;
+            }
+            b'o' | b'O' => {
+                let (end, saw_digit) =
+                    match consume_digit_run(bytes, p + 2, |b| (b'0'..=b'7').contains(&b)) {
+                        Ok(run) => run,
+                        Err(()) => return false,
+                    };
+                return saw_digit && end == len;
+            }
+            b'x' | b'X' => {
+                let (end, saw_digit) =
+                    match consume_digit_run(bytes, p + 2, |b| b.is_ascii_hexdigit()) {
+                        Ok(run) => run,
+                        Err(()) => return false,
+                    };
+                return saw_digit && end == len;
+            }
+            _ => {}
+        }
+    }
+
     // Dot-leading float: .5, +.5, -.5
     if bytes[p] == b'.' {
         p += 1;
-        let start = p;
-        p = consume_digits(bytes, p);
+        let (end, saw_digit) = match consume_digit_run(bytes, p, |b| b.is_ascii_digit()) {
+            Ok(run) => run,
+            Err(()) => return false,
+        };
+        p = end;
 
-        if p == start {
+        if !saw_digit {
             return false;
         }
 
@@ -104,7 +127,15 @@ fn is_numeric_looking(s: &str) -> bool {
         return false;
     }
 
-    p = consume_digits(bytes, p);
+    let (end, saw_digit) = match consume_digit_run(bytes, p, |b| b.is_ascii_digit()) {
+        Ok(run) => run,
+        Err(()) => return false,
+    };
+    p = end;
+
+    if !saw_digit {
+        return false;
+    }
 
     if p == len {
         return true;
@@ -112,7 +143,11 @@ fn is_numeric_looking(s: &str) -> bool {
 
     if bytes[p] == b'.' {
         p += 1;
-        p = consume_digits(bytes, p);
+        let (end, _) = match consume_digit_run(bytes, p, |b| b.is_ascii_digit()) {
+            Ok(run) => run,
+            Err(()) => return false,
+        };
+        p = end;
 
         return match consume_exponent(bytes, p) {
             Some(end) => end == len,
@@ -307,20 +342,31 @@ mod tests {
     use super::is_numeric_looking;
 
     #[test]
-    fn numeric_looking_yaml12_core() {
+    fn numeric_looking_scalar_forms() {
         for s in [
             "0",
             "-19",
             "+12",
             "01",
+            "1_0",
+            "1000_1000_1000",
+            "0b10",
+            "+0b10",
+            "-0B10",
+            "0b1010_1010",
             "0o7",
+            "+0O7",
+            "0o7_1",
             "0x3A",
+            "+0X3A",
+            "0x3_A",
             ".5",
             "+.5",
             "-.5",
             "0.",
             "-0.0",
             "12e03",
+            "12e0_3",
             "-2E+05",
             "12.34e-5",
         ] {
@@ -328,22 +374,8 @@ mod tests {
         }
 
         for s in [
-            "",
-            "+",
-            "-",
-            ".",
-            "_1",
-            "1_0",
-            "1e_2",
-            "_.5",
-            "._5",
-            "0X3A",
-            "+0x3A",
-            "0b101",
-            "0o",
-            "0x",
-            "12e",
-            ".e5",
+            "", "+", "-", ".", "_1000", "1000_", "1__0", "1e_2", "_.5", "._5", "0b", "0b10_",
+            "0o_7", "0x3A_", "0o", "0x", "0x+1", "-0x-1", "12e", ".e5",
             ".inf", // handled by the separate special-float helper
             ".nan", // handled by the separate special-float helper
         ] {
