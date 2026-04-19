@@ -1,37 +1,163 @@
 use crate::parse_scalars::parse_yaml11_bool;
 
+#[inline]
+// Match a broad set of YAML numeric tokens (integer / float) even if they would overflow
+// when parsed into Rust numeric types.
 fn is_numeric_looking(s: &str) -> bool {
-    // Match a broad set of YAML numeric tokens (integer / float) even if they would overflow
-    // when parsed into Rust numeric types.
-    //
-    // Notes:
-    // - Underscores are allowed between digits.
-    // - Supports optional sign.
-    // - Supports `0x`/`0o`/`0b` prefixes.
-    // - Supports decimal scientific notation with or without a dot (e.g. `1e9`, `1.0e9`, `.5`).
-    //
-    if s.is_empty() {
+    let bytes = s.as_bytes();
+    let len = bytes.len();
+
+    if len == 0 {
         return false;
     }
-    let cleaned = s.replace('_', "");
-    let rest = if cleaned.starts_with('+') || cleaned.starts_with('-') {
-        &cleaned[1..]
-    } else {
-        &cleaned
-    };
-    if let Some(stripped) = rest.strip_prefix("0x").or_else(|| rest.strip_prefix("0X")) {
-        // Hex
-        !stripped.is_empty() && stripped.chars().all(|c| c.is_ascii_hexdigit())
-    } else if let Some(stripped) = rest.strip_prefix("0o").or_else(|| rest.strip_prefix("0O")) {
-        // Octal
-        !stripped.is_empty() && stripped.chars().all(|c| matches!(c, '0'..='7'))
-    } else if let Some(stripped) = rest.strip_prefix("0b").or_else(|| rest.strip_prefix("0B")) {
-        // Binary
-        !stripped.is_empty() && stripped.chars().all(|c| matches!(c, '0' | '1'))
-    } else {
-        // Decimal
-        cleaned.parse::<f64>().is_ok()
+
+    #[inline]
+    fn consume_digit_run<F>(bytes: &[u8], mut p: usize, is_digit: F) -> Result<(usize, bool), ()>
+    where
+        F: Fn(u8) -> bool,
+    {
+        let start = p;
+        let mut saw_digit = false;
+
+        while p < bytes.len() {
+            if is_digit(bytes[p]) {
+                saw_digit = true;
+                p += 1;
+                continue;
+            }
+
+            if bytes[p] == b'_' {
+                let prev_is_digit = p > start && is_digit(bytes[p - 1]);
+                let next_is_digit = match bytes.get(p + 1) {
+                    Some(&next) => is_digit(next),
+                    None => false,
+                };
+
+                if !prev_is_digit || !next_is_digit {
+                    return Err(());
+                }
+
+                p += 1;
+                continue;
+            }
+
+            break;
+        }
+
+        Ok((p, saw_digit))
     }
+
+    #[inline]
+    fn consume_exponent(bytes: &[u8], mut p: usize) -> Option<usize> {
+        if p >= bytes.len() || (bytes[p] != b'e' && bytes[p] != b'E') {
+            return None;
+        }
+
+        p += 1;
+
+        if p < bytes.len() && (bytes[p] == b'+' || bytes[p] == b'-') {
+            p += 1;
+        }
+
+        let (p, saw_digit) = consume_digit_run(bytes, p, |b| b.is_ascii_digit()).ok()?;
+        saw_digit.then_some(p)
+    }
+
+    let mut p = 0;
+    if bytes[0] == b'+' || bytes[0] == b'-' {
+        p = 1;
+        if p == len {
+            return false;
+        }
+    }
+
+    // Match the integer spellings accepted by the deserializer, including signed and
+    // uppercase radix prefixes, so string round-tripping stays stable.
+    if len.saturating_sub(p) >= 3 && bytes[p] == b'0' {
+        match bytes[p + 1] {
+            b'b' | b'B' => {
+                let (end, saw_digit) =
+                    match consume_digit_run(bytes, p + 2, |b| matches!(b, b'0' | b'1')) {
+                        Ok(run) => run,
+                        Err(()) => return false,
+                    };
+                return saw_digit && end == len;
+            }
+            b'o' | b'O' => {
+                let (end, saw_digit) =
+                    match consume_digit_run(bytes, p + 2, |b| (b'0'..=b'7').contains(&b)) {
+                        Ok(run) => run,
+                        Err(()) => return false,
+                    };
+                return saw_digit && end == len;
+            }
+            b'x' | b'X' => {
+                let (end, saw_digit) =
+                    match consume_digit_run(bytes, p + 2, |b| b.is_ascii_hexdigit()) {
+                        Ok(run) => run,
+                        Err(()) => return false,
+                    };
+                return saw_digit && end == len;
+            }
+            _ => {}
+        }
+    }
+
+    // Dot-leading float: .5, +.5, -.5
+    if bytes[p] == b'.' {
+        p += 1;
+        let (end, saw_digit) = match consume_digit_run(bytes, p, |b| b.is_ascii_digit()) {
+            Ok(run) => run,
+            Err(()) => return false,
+        };
+        p = end;
+
+        if !saw_digit {
+            return false;
+        }
+
+        return match consume_exponent(bytes, p) {
+            Some(end) => end == len,
+            None => p == len,
+        };
+    }
+
+    // Decimal integer / float / scientific notation.
+    if !bytes[p].is_ascii_digit() {
+        return false;
+    }
+
+    let (end, saw_digit) = match consume_digit_run(bytes, p, |b| b.is_ascii_digit()) {
+        Ok(run) => run,
+        Err(()) => return false,
+    };
+    p = end;
+
+    debug_assert!(saw_digit, "decimal branch always starts on a digit");
+
+    if p == len {
+        return true;
+    }
+
+    if bytes[p] == b'.' {
+        p += 1;
+        let (end, _) = match consume_digit_run(bytes, p, |b| b.is_ascii_digit()) {
+            Ok(run) => run,
+            Err(()) => return false,
+        };
+        p = end;
+
+        return match consume_exponent(bytes, p) {
+            Some(end) => end == len,
+            None => p == len,
+        };
+    }
+
+    if bytes[p] == b'e' || bytes[p] == b'E' {
+        return matches!(consume_exponent(bytes, p), Some(end) if end == len);
+    }
+
+    false
 }
 
 /// Returns true if `s` is a special YAML token or looks like a number/boolean,
@@ -207,4 +333,75 @@ fn contains_any_or_is_control(string: &str, values: &[char]) -> bool {
     string
         .chars()
         .any(|x| values.iter().any(|v| &x == v || x.is_control()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_numeric_looking, is_plain_safe};
+
+    #[test]
+    fn numeric_looking_scalar_forms() {
+        for s in [
+            "0",
+            "-19",
+            "+12",
+            "01",
+            "1_0",
+            "1000_1000_1000",
+            "0b10",
+            "+0b10",
+            "-0B10",
+            "0b1010_1010",
+            "0o7",
+            "+0O7",
+            "0o7_1",
+            "0x3A",
+            "+0X3A",
+            "0x3_A",
+            ".5",
+            "+.5",
+            "-.5",
+            "0.",
+            "-0.0",
+            "12e03",
+            "12e0_3",
+            "-2E+05",
+            "12.34e-5",
+        ] {
+            assert!(is_numeric_looking(s), "{s:?} should match");
+        }
+
+        for s in [
+            "", "+", "-", ".", "_1000", "1000_", "1__0", "1e_2", "_.5", "._5", "0b", "0b10_",
+            "0o_7", "0x3A_", "0o", "0x", "0x+1", "-0x-1", "12e", ".e5",
+            ".inf", // handled by the separate special-float helper
+            ".nan", // handled by the separate special-float helper
+        ] {
+            assert!(!is_numeric_looking(s), "{s:?} should not match");
+        }
+    }
+
+    #[test]
+    fn numeric_looking_dot_leading_exponents_and_invalid_fractional_underscores() {
+        for s in [".5e+1", "-.5E-2"] {
+            assert!(is_numeric_looking(s), "{s:?} should match");
+        }
+
+        assert!(
+            !is_numeric_looking("1._0"),
+            "underscores must stay between digits in the fractional part"
+        );
+    }
+
+    #[test]
+    fn plain_keys_reject_indicator_followed_by_whitespace() {
+        assert!(!is_plain_safe("- value"));
+        assert!(!is_plain_safe("?\tvalue"));
+    }
+
+    #[test]
+    fn plain_keys_allow_indicator_without_following_whitespace() {
+        assert!(is_plain_safe("-value"));
+        assert!(is_plain_safe("?query"));
+    }
 }
