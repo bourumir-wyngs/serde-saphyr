@@ -12,6 +12,39 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  clippy:
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup component add clippy
+          rustc -V
+          cargo -V
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Prefetch deps
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin
+          cargo fetch --locked
+          cargo fetch --locked --manifest-path fuzz/Cargo.toml
+
+      - name: Run clippy (crate)
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin
+          cargo clippy --locked --offline --all-targets --all-features -- -D warnings
+
+      - name: Run clippy (fuzz)
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin
+          cargo clippy --locked --offline --manifest-path fuzz/Cargo.toml --all-targets --all-features -- -D warnings
+
   build:
     runs-on: [self-hosted, linux, x64]
     steps:
@@ -161,4 +194,3 @@ jobs:
           slug: bourumir-wyngs/serde-saphyr
           files: lcov.info
           fail_ci_if_error: true
-
