@@ -244,7 +244,7 @@ impl Options {
     /// completes, both on success and when the budget is breached.
     ///
     /// ```rust
-    /// use serde_saphyr::Options;
+    /// use serde_saphyr::options;
     /// use serde_saphyr::budget::BudgetReport;
     ///
     /// let options = options! {}.with_budget_report(|report: BudgetReport| {
