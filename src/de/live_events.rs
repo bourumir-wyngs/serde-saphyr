@@ -402,26 +402,25 @@ impl<'a> LiveEvents<'a> {
         // the last replayed node. That means the top of the stack may contain frames
         // with `idx == buf.len()`. Before we consider pulling from the real parser,
         // we must pop any such exhausted frames.
-        loop {
-            let Some(frame) = self.inject.last_mut() else {
-                break;
-            };
-            let anchor_id = frame.anchor_id;
-            let idx = &mut frame.idx;
+        while let Some((anchor_id, idx)) =
+            self.inject.last().map(|frame| (frame.anchor_id, frame.idx))
+        {
             let buf = self
                 .anchors
                 .get(anchor_id)
                 .and_then(|o| o.as_ref())
                 .ok_or_else(|| Error::unknown_anchor().with_location(self.last_location))?;
 
-            if *idx >= buf.len() {
+            if idx >= buf.len() {
                 // Exhausted: pop and continue (there may be another injected frame beneath).
                 self.inject.pop();
                 continue;
             }
 
-            let ev = buf[*idx].clone();
-            *idx += 1;
+            let ev = buf[idx].clone();
+            if let Some(frame) = self.inject.last_mut() {
+                frame.idx += 1;
+            }
             // Do not pop the injection frame yet. `Spanned<T>` (and other consumers)
             // may query `reference_location()` while deserializing this just-yielded
             // node. We will pop the frame at the top of the next `next_impl()` call
