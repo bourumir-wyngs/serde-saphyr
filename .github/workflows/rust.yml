@@ -19,7 +19,6 @@ jobs:
 
       - name: Install Rust toolchain
         run: |
-          export PATH=$PATH:/home/github-runner_2/.cargo/bin
           rustup toolchain install stable --profile minimal
           rustup default stable
           rustup component add clippy
@@ -31,18 +30,15 @@ jobs:
 
       - name: Prefetch deps
         run: |
-          export PATH=$PATH:/home/github-runner_2/.cargo/bin
           cargo fetch --locked
           cargo fetch --locked --manifest-path fuzz/Cargo.toml
 
       - name: Run clippy (crate)
         run: |
-          export PATH=$PATH:/home/github-runner_2/.cargo/bin
           cargo clippy --locked --offline --all-targets --all-features -- -D warnings
 
       - name: Run clippy (fuzz)
         run: |
-          export PATH=$PATH:/home/github-runner_2/.cargo/bin
           cargo clippy --locked --offline --manifest-path fuzz/Cargo.toml --all-targets --all-features -- -D warnings
 
   build:
@@ -52,8 +48,7 @@ jobs:
 
       # Pick toolchain BEFORE rust-cache (cache key includes rustc version).
       - name: Install Rust toolchain
-        run: |
-          export PATH=$PATH:/home/github-runner_2/.cargo/bin          
+        run: |       
           rustup toolchain install stable --profile minimal
           rustup default stable
           rustc -V
@@ -64,33 +59,27 @@ jobs:
 
       # Prefetch once (for BOTH feature sets), then run offline to avoid a second network touch.
       - name: Prefetch deps (both feature sets)
-        run: |
-          export PATH=$PATH:/home/github-runner_2/.cargo/bin          
+        run: |         
           cargo fetch --locked
 
       - name: Run tests (default)
-        run: |
-          export PATH=$PATH:/home/github-runner_2/.cargo/bin          
+        run: |        
           cargo test --locked --offline
 
       - name: Run tests with miette feature only
-        run: |
-          export PATH=$PATH:/home/github-runner_2/.cargo/bin          
+        run: |       
           cargo test --locked --offline --features miette
 
       - name: Run tests with robotics feature set
         run: |
-          export PATH=$PATH:/home/github-runner_2/.cargo/bin
           cargo test --locked --offline --features garde,validator,miette,figment,robotics
 
       - name: Run no default features
         run: |
-          export PATH=$PATH:/home/github-runner_2/.cargo/bin
           cargo test --locked --offline --no-default-features --features serialize,deserialize
 
       - name: Run large huge_documents
         run: |
-          export PATH=$PATH:/home/github-runner_2/.cargo/bin
           cargo test --locked --offline --features huge_documents
           
 
@@ -101,7 +90,6 @@ jobs:
 
       - name: Install Rust toolchain and wasm32-unknown-unknown target
         run: |
-          export PATH=$PATH:/home/github-runner_2/.cargo/bin
           rustup toolchain install stable --profile minimal
           rustup default stable
           rustup target add wasm32-unknown-unknown
@@ -113,7 +101,6 @@ jobs:
 
       - name: Check build for wasm32-unknown-unknown
         run: |
-          export PATH=$PATH:/home/github-runner_2/.cargo/bin
           cargo check --target wasm32-unknown-unknown --locked
 
   build_wasm32-wasip1:
@@ -123,7 +110,6 @@ jobs:
 
       - name: Install Rust toolchain and wasm32-wasip1 target
         run: |
-          export PATH=$PATH:/home/github-runner_2/.cargo/bin
           rustup toolchain install stable --profile minimal
           rustup default stable
           rustup target add wasm32-wasip1
@@ -132,7 +118,6 @@ jobs:
 
       - name: Install wasmtime
         run: |
-          export PATH=$PATH:/home/github-runner_2/.cargo/bin
           cargo install wasmtime-cli --locked || true
 
       - name: Rust cache
@@ -140,7 +125,6 @@ jobs:
 
       - name: Run tests for wasm32-wasip1
         run: |
-          export PATH=$PATH:/home/github-runner_2/.cargo/bin
           cargo test --target wasm32-wasip1 --locked
 
   build_os_compat:
@@ -172,19 +156,16 @@ jobs:
 
       - name: Install Rust toolchain
         run: |
-          export PATH=$PATH:/home/github-runner_2/.cargo/bin
           rustup toolchain install stable --profile minimal
           rustup default stable
           rustup component add llvm-tools-preview
 
       - name: Install cargo-llvm-cov
         run: |
-          export PATH=$PATH:/home/github-runner_2/.cargo/bin
           cargo install cargo-llvm-cov --locked
 
       - name: Generate code coverage
         run: |
-          export PATH=$PATH:/home/github-runner_2/.cargo/bin
           cargo llvm-cov --all-features --lcov --output-path lcov.info
 
       - name: Upload to Codecov
