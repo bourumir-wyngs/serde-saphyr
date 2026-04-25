@@ -600,6 +600,102 @@ fn capture_node<'a>(ev: &mut dyn Events<'a>) -> Result<KeyNode<'a>, Error> {
     }
 }
 
+
+/// Return the simple YAML tag name for a node that can act as an enum variant selector.
+fn simple_tagged_node_name(event: &Ev<'_>) -> Option<(String, Location)> {
+    match event {
+        Ev::Scalar {
+            tag,
+            raw_tag,
+            location,
+            ..
+        }
+        | Ev::SeqStart {
+            tag,
+            raw_tag,
+            location,
+            ..
+        } => simple_tagged_enum_name(raw_tag, tag).map(|name| (name, *location)),
+        _ => None,
+    }
+}
+
+/// Remove the YAML tag from the payload node after it has been promoted to a map key.
+fn strip_root_tag_for_externally_tagged_payload<'a>(events: &mut [Ev<'a>]) {
+    match events.first_mut() {
+        Some(Ev::Scalar { tag, raw_tag, .. }) => {
+            *tag = SfTag::None;
+            *raw_tag = None;
+        }
+        Some(Ev::SeqStart { tag, raw_tag, .. }) => {
+            *tag = SfTag::None;
+            *raw_tag = None;
+        }
+        _ => {}
+    }
+}
+
+/// Encode a YAML tag-selected enum variant as the Serde externally-tagged map form.
+///
+/// Arguments:
+/// - `variant`: enum variant name extracted from the YAML tag, for example `Expression`.
+/// - `tag_location`: source location of the tagged YAML node.
+/// - `payload_events`: captured events for the YAML node after the root tag was stripped.
+///
+/// Returns:
+/// - A synthetic one-entry mapping equivalent to `{ Variant: payload }`.
+fn externally_tagged_payload_as_map_events<'a>(
+    variant: String,
+    tag_location: Location,
+    mut payload_events: Vec<Ev<'a>>,
+) -> Vec<Ev<'a>> {
+    let end_location = payload_events
+        .last()
+        .map(Ev::location)
+        .unwrap_or(tag_location);
+
+    let mut events = Vec::with_capacity(payload_events.len() + 3);
+    events.push(Ev::MapStart {
+        anchor: 0,
+        location: tag_location,
+    });
+    events.push(Ev::Scalar {
+        value: Cow::Owned(variant),
+        tag: SfTag::String,
+        raw_tag: None,
+        style: ScalarStyle::Plain,
+        anchor: 0,
+        location: tag_location,
+    });
+    events.append(&mut payload_events);
+    events.push(Ev::MapEnd {
+        location: end_location,
+    });
+    events
+}
+
+/// Capture `!Variant payload` as a synthetic `{ Variant: payload }` event buffer.
+fn capture_simple_tagged_node_as_map_events<'a>(
+    ev: &mut dyn Events<'a>,
+) -> Result<Option<Vec<Ev<'a>>>, Error> {
+    let Some((variant, tag_location)) = ev
+        .peek()?
+        .and_then(|event| simple_tagged_node_name(event))
+    else {
+        return Ok(None);
+    };
+
+    let mut payload_node = capture_node(ev)?;
+    let mut payload_events = payload_node.take_events();
+    strip_root_tag_for_externally_tagged_payload(&mut payload_events);
+
+    Ok(Some(externally_tagged_payload_as_map_events(
+        variant,
+        tag_location,
+        payload_events,
+    )))
+}
+
 /// True if `node` is the YAML merge key (`<<`) as an untagged plain scalar.
 ///
 /// Used by:
@@ -1495,6 +1591,21 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     /// Flow: We inspect the next event; scalars are parsed with the heuristic above; containers
     /// delegate to `deserialize_seq`/`deserialize_map`.
     fn deserialize_any<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
+        // Serde's internal buffering for `untagged` or `flatten` uses internal private visitors.
+        // We only want to convert tagged nodes into map events for these buffers to preserve enum variants.
+        // General untyped visitors (like `serde_json::Value`) expect the tag to be discarded.
+        let is_serde_internal_buffer = std::any::type_name::<V>().contains("::private::de::");
+        if is_serde_internal_buffer {
+            if let Some(events) = capture_simple_tagged_node_as_map_events(self.ev)? {
+                let mut replay = ReplayEvents::new(
+                    events,
+                    #[cfg(feature = "properties")]
+                    self.ev.property_map().cloned(),
+                );
+                return YamlDeserializer::new(&mut replay, self.cfg).deserialize_map(visitor);
+            }
+        }
+
         if let Some((value, tag, style, location)) = self.peek_effective_scalar()? {
             // Tagged nulls map to unit/null regardless of style
             if tag == SfTag::Null {
