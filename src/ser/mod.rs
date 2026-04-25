@@ -2943,3 +2943,68 @@ fn non_scalar_key() -> Result<ser::Impossible<(), Error>> {
 fn non_scalar_key_e() -> Result<()> {
     Err(Error::unexpected("non-scalar key"))
 }
+
+#[cfg(test)]
+mod tests_internal {
+    use super::*;
+    use std::fmt::Write;
+
+    #[test]
+    fn test_push_float_string_coverage() {
+        let mut s = String::new();
+        
+        // 1.0 -> no decimal, no exp -> line 48-50
+        zmij_format::push_float_string(&mut s, 1.0f64).unwrap();
+        assert!(s.contains(".0"));
+        
+        // 1e-10 -> exponent without plus sign -> line 35-36? wait, no, "1e-10" has minus sign. 
+        // We need exponent missing decimal, and exponent missing sign (+).
+        s.clear();
+        zmij_format::push_float_string(&mut s, 1e20f64).unwrap();
+        // and f32 variations
+        s.clear();
+        zmij_format::push_float_string(&mut s, 1e30f32).unwrap();
+        
+        s.clear();
+        zmij_format::push_float_string(&mut s, std::f32::NAN).unwrap();
+        s.clear();
+        zmij_format::push_float_string(&mut s, std::f32::INFINITY).unwrap();
+        s.clear();
+        zmij_format::push_float_string(&mut s, std::f32::NEG_INFINITY).unwrap();
+    }
+    
+    #[test]
+    fn test_write_float_string_coverage() {
+        let mut s = String::new();
+        zmij_format::write_float_string(&mut s, 1e20f64).unwrap();
+        zmij_format::write_float_string(&mut s, 1e30f32).unwrap();
+    }
+}
+
+    #[test]
+    fn test_captures_coverage() {
+        use serde::Serializer;
+        let mut u = UsizeCapture::default();
+        let _ = (&mut u).serialize_unit_struct("A");
+        let _ = (&mut u).serialize_unit_variant("A", 0, "V");
+        let _ = (&mut u).serialize_newtype_struct("A", &1);
+        let _ = (&mut u).serialize_newtype_variant("A", 0, "V", &1);
+        let _ = (&mut u).collect_str("A");
+        let _ = (&mut u).is_human_readable();
+
+        let mut b = BoolCapture::default();
+        let _ = (&mut b).serialize_unit_struct("A");
+        let _ = (&mut b).serialize_unit_variant("A", 0, "V");
+        let _ = (&mut b).serialize_newtype_struct("A", &1);
+        let _ = (&mut b).serialize_newtype_variant("A", 0, "V", &1);
+        let _ = (&mut b).collect_str("A");
+        let _ = (&mut b).is_human_readable();
+
+        let mut st = StrCapture::default();
+        let _ = (&mut st).serialize_unit_struct("A");
+        let _ = (&mut st).serialize_unit_variant("A", 0, "V");
+        let _ = (&mut st).serialize_newtype_struct("A", &1);
+        let _ = (&mut st).serialize_newtype_variant("A", 0, "V", &1);
+        let _ = (&mut st).collect_str("A");
+        let _ = (&mut st).is_human_readable();
+    }
