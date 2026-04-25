@@ -17,45 +17,45 @@ jobs:
 
       - name: Install Rust nightly
         run: |
-          export PATH=$PATH:/home/github-runner/.cargo/bin                  
+          export PATH=$PATH:/home/github-runner_2/.cargo/bin                  
           curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain nightly
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Install cargo-fuzz and cargo-audit
         run: |
-          export PATH=$PATH:/home/github-runner/.cargo/bin          
+          export PATH=$PATH:/home/github-runner_2/.cargo/bin          
           cargo install cargo-fuzz
           cargo install cargo-audit
 
       - name: Run standard tests, taking advantage we now have nightly Rust, normally we test with stable
         run: |
-          export PATH=$PATH:/home/github-runner/.cargo/bin          
+          export PATH=$PATH:/home/github-runner_2/.cargo/bin          
           cargo test --verbose
 
       - name: Run cargo audit, this also makes sense to run periodically
         run: |
-          export PATH=$PATH:/home/github-runner/.cargo/bin          
+          export PATH=$PATH:/home/github-runner_2/.cargo/bin          
           cargo audit
         
       # Run all fuzz targets sequentially to keep CI simple and deterministic
       - name: Run fuzz target 'aliases_merges'
         run: |
-          export PATH=$PATH:/home/github-runner/.cargo/bin          
+          export PATH=$PATH:/home/github-runner_2/.cargo/bin          
           cargo fuzz run aliases_merges -- -max_total_time=300 -rss_limit_mb=1024 -close_fd_mask=3
 
       - name: Run fuzz target 'flow_collections'
         run: |
-          export PATH=$PATH:/home/github-runner/.cargo/bin          
+          export PATH=$PATH:/home/github-runner_2/.cargo/bin          
           cargo fuzz run flow_collections -- -max_total_time=300 -rss_limit_mb=1024 -close_fd_mask=3
 
       - name: Run fuzz target 'large_scalars'
         run: |
-          export PATH=$PATH:/home/github-runner/.cargo/bin          
+          export PATH=$PATH:/home/github-runner_2/.cargo/bin          
           cargo fuzz run large_scalars -- -max_total_time=300 -rss_limit_mb=1024 -close_fd_mask=3
 
       - name: Run fuzz target 'duplicate_keys'
         run: |
-          export PATH=$PATH:/home/github-runner/.cargo/bin          
+          export PATH=$PATH:/home/github-runner_2/.cargo/bin          
           cargo fuzz run duplicate_keys -- -max_total_time=300 -rss_limit_mb=1024 -close_fd_mask=3
 
       - name: Upload fuzz crash artifacts
