@@ -600,7 +600,6 @@ fn capture_node<'a>(ev: &mut dyn Events<'a>) -> Result<KeyNode<'a>, Error> {
     }
 }
 
-
 /// Return the simple YAML tag name for a node that can act as an enum variant selector.
 fn simple_tagged_node_name(event: &Ev<'_>) -> Option<(String, Location)> {
     match event {
@@ -678,9 +677,7 @@ fn externally_tagged_payload_as_map_events<'a>(
 fn capture_simple_tagged_node_as_map_events<'a>(
     ev: &mut dyn Events<'a>,
 ) -> Result<Option<Vec<Ev<'a>>>, Error> {
-    let Some((variant, tag_location)) = ev
-        .peek()?
-        .and_then(|event| simple_tagged_node_name(event))
+    let Some((variant, tag_location)) = ev.peek()?.and_then(|event| simple_tagged_node_name(event))
     else {
         return Ok(None);
     };
@@ -1595,15 +1592,15 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
         // We only want to convert tagged nodes into map events for these buffers to preserve enum variants.
         // General untyped visitors (like `serde_json::Value`) expect the tag to be discarded.
         let is_serde_internal_buffer = std::any::type_name::<V>().contains("::private::de::");
-        if is_serde_internal_buffer {
-            if let Some(events) = capture_simple_tagged_node_as_map_events(self.ev)? {
-                let mut replay = ReplayEvents::new(
-                    events,
-                    #[cfg(feature = "properties")]
-                    self.ev.property_map().cloned(),
-                );
-                return YamlDeserializer::new(&mut replay, self.cfg).deserialize_map(visitor);
-            }
+        if is_serde_internal_buffer
+            && let Some(events) = capture_simple_tagged_node_as_map_events(self.ev)?
+        {
+            let mut replay = ReplayEvents::new(
+                events,
+                #[cfg(feature = "properties")]
+                self.ev.property_map().cloned(),
+            );
+            return YamlDeserializer::new(&mut replay, self.cfg).deserialize_map(visitor);
         }
 
         if let Some((value, tag, style, location)) = self.peek_effective_scalar()? {
