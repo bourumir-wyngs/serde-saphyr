@@ -44,7 +44,7 @@ jobs:
           fi
 
           if [ "${GITHUB_REF}" != "refs/tags/${package_version}" ]; then
-            echo "Ref ${GITHUB_REF} does not match Cargo.toml version ${package_version}" >&2
+            echo "Ref ${GITHUB_REF} does not match Cargo.toml version ${package_version}. Run workflow manually from tag!" >&2
             echo "Run this workflow from tag ${package_version}." >&2
             exit 1
           fi
