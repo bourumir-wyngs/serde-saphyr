@@ -27,7 +27,9 @@ struct Doc {
     array: Option<FlowSeq>,
 }
 fuzz_target!(|data: &[u8]| {
-    if data.len() > 16 * 1024 { return; }
+    if data.len() > 16 * 1024 {
+        return;
+    }
 
     let s = String::from_utf8_lossy(data);
 

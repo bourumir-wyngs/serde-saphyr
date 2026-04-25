@@ -29,7 +29,9 @@ enum TestEnum {
 struct TupleStruct(u32, u32);
 
 #[derive(Serialize)]
-struct NormalStruct { x: u32 }
+struct NormalStruct {
+    x: u32,
+}
 
 fn test_capture<T: Serialize>(val: T) {
     let _ = to_string(&AnchorPayload(&val, "x"));

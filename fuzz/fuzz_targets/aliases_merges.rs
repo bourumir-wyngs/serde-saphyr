@@ -44,15 +44,15 @@ struct MergedMap {
 // It constructs a couple of YAML documents influenced by the input and runs
 // both Value-preserving and normal deserialization paths.
 fuzz_target!(|data: &[u8]| {
-    if data.len() > 16 * 1024 { return; }
+    if data.len() > 16 * 1024 {
+        return;
+    }
 
     // Basic bytes to string; replace invalid UTF-8 with replacement so we can embed it safely.
     let s = String::from_utf8_lossy(data);
 
     // 1) Anchors and aliases only.
-    let yaml_alias = format!(
-        "a: &A {s}\nb: *A\nseq: &S [1, 2, 3]\nseq_alias: *S\n"
-    );
+    let yaml_alias = format!("a: &A {s}\nb: *A\nseq: &S [1, 2, 3]\nseq_alias: *S\n");
 
     // 2) Merge keys: build two maps that get merged into target.
     let yaml_merge = format!(

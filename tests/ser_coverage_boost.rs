@@ -611,8 +611,8 @@ fn commented_empty_string_no_comment_marker() {
 
 #[test]
 fn collect_str_via_display() {
-    use std::fmt;
     use serde::ser::Serializer;
+    use std::fmt;
 
     struct DisplayOnly;
 

@@ -3670,8 +3670,11 @@ mod tests {
             other => panic!("expected alias error, got {other:?}"),
         }
 
-        let preserved =
-            attach_alias_locations_if_missing(Error::unexpected("value").with_location(existing), Location::UNKNOWN, Location::UNKNOWN);
+        let preserved = attach_alias_locations_if_missing(
+            Error::unexpected("value").with_location(existing),
+            Location::UNKNOWN,
+            Location::UNKNOWN,
+        );
         assert!(!matches!(&preserved, Error::AliasError { .. }));
         assert_eq!(preserved.location(), Some(existing));
 
@@ -3755,7 +3758,10 @@ mod tests {
             tag: SfTag::Binary,
         };
         assert_eq!(binary.stringy_scalar_value(), None);
-        assert_eq!(KeyFingerprint::Sequence(vec![]).stringy_scalar_value(), None);
+        assert_eq!(
+            KeyFingerprint::Sequence(vec![]).stringy_scalar_value(),
+            None
+        );
     }
 
     #[test]
@@ -3777,8 +3783,24 @@ mod tests {
         assert_eq!(skip_one_node_len(&events, 2), Some(7));
         assert_eq!(one_entry_map_spans(&events), Some((1, 2, 2, 9)));
 
-        assert_eq!(skip_one_node_len(&[Ev::SeqEnd { location: loc(11, 1) }], 0), None);
-        assert_eq!(skip_one_node_len(&[Ev::Taken { location: loc(12, 1) }], 0), None);
+        assert_eq!(
+            skip_one_node_len(
+                &[Ev::SeqEnd {
+                    location: loc(11, 1)
+                }],
+                0
+            ),
+            None
+        );
+        assert_eq!(
+            skip_one_node_len(
+                &[Ev::Taken {
+                    location: loc(12, 1)
+                }],
+                0
+            ),
+            None
+        );
 
         let malformed = vec![
             seq_start(SfTag::None, None, loc(13, 1)),
@@ -3881,7 +3903,8 @@ mod tests {
             other => panic!("expected seq start, got {other:?}"),
         }
 
-        let wrapped = externally_tagged_payload_as_map_events("Empty".to_owned(), seq_loc, Vec::new());
+        let wrapped =
+            externally_tagged_payload_as_map_events("Empty".to_owned(), seq_loc, Vec::new());
         assert!(matches!(
             &wrapped[..],
             [
@@ -3902,7 +3925,9 @@ mod tests {
         let captured = capture_simple_tagged_node_as_map_events(&mut replay)
             .unwrap()
             .expect("tagged node should be converted");
-        assert!(matches!(captured.first(), Some(Ev::MapStart { location, .. }) if *location == scalar_loc));
+        assert!(
+            matches!(captured.first(), Some(Ev::MapStart { location, .. }) if *location == scalar_loc)
+        );
         assert!(matches!(
             captured.get(1),
             Some(Ev::Scalar { value, tag: SfTag::String, raw_tag: None, .. }) if value.as_ref() == "Variant"
@@ -3973,7 +3998,13 @@ mod tests {
         let reference = loc(22, 9);
 
         let null_entries = pending_from_events(
-            vec![scalar("null", SfTag::None, None, ScalarStyle::Plain, loc(22, 1))],
+            vec![scalar(
+                "null",
+                SfTag::None,
+                None,
+                ScalarStyle::Plain,
+                loc(22, 1),
+            )],
             loc(22, 1),
             reference,
         )
@@ -3981,7 +4012,13 @@ mod tests {
         assert!(null_entries.is_empty());
 
         let err = unwrap_err(pending_from_events(
-            vec![scalar("42", SfTag::None, None, ScalarStyle::Plain, loc(23, 1))],
+            vec![scalar(
+                "42",
+                SfTag::None,
+                None,
+                ScalarStyle::Plain,
+                loc(23, 1),
+            )],
             loc(23, 1),
             reference,
         ));
@@ -4095,7 +4132,10 @@ mod tests {
         );
 
         let mut empty = replay_events(Vec::new());
-        let err = unwrap_err(pending_entries_from_live_events(&mut empty, merge_reference));
+        let err = unwrap_err(pending_entries_from_live_events(
+            &mut empty,
+            merge_reference,
+        ));
         assert!(matches!(err, Error::Eof { location } if location == Location::UNKNOWN));
     }
 

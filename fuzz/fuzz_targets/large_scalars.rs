@@ -14,7 +14,9 @@ fuzz_target!(|data: &[u8]| {
     // Repeat the fuzz input to build a long line.
     let mut plain = String::new();
     while plain.len() < cap {
-        if plain.len() + data.len() > cap { break; }
+        if plain.len() + data.len() > cap {
+            break;
+        }
         plain.push_str(&String::from_utf8_lossy(data));
     }
 
