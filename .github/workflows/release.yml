@@ -1,0 +1,110 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Verify release
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc -V
+          cargo -V
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check tag matches Cargo.toml version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          package_version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+
+          if [ -z "${package_version}" ]; then
+            echo "Could not read package version from Cargo.toml" >&2
+            exit 1
+          fi
+
+          if [ "${GITHUB_REF}" != "refs/tags/${package_version}" ]; then
+            echo "Ref ${GITHUB_REF} does not match Cargo.toml version ${package_version}" >&2
+            echo "Run this workflow from tag ${package_version}." >&2
+            exit 1
+          fi
+
+      - name: Prefetch deps
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin
+          cargo fetch --locked
+
+      - name: Run tests (default)
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin
+          cargo test --locked --offline
+
+      - name: Run tests with miette feature only
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin
+          cargo test --locked --offline --features miette
+
+      - name: Run tests with robotics feature set
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin
+          cargo test --locked --offline --features garde,validator,miette,figment,robotics
+
+      - name: Run tests with explicit core features
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin
+          cargo test --locked --offline --no-default-features --features serialize,deserialize
+
+      - name: Run tests with huge_documents
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin
+          cargo test --locked --offline --features huge_documents
+
+      - name: Verify crate packaging
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin
+          cargo publish --locked --dry-run
+
+  publish:
+    name: Publish to crates.io
+    runs-on: [self-hosted, linux, x64]
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc -V
+          cargo -V
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Publish crate
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          export PATH=$PATH:/home/github-runner/.cargo/bin
+          cargo publish --locked
