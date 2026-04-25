@@ -611,10 +611,28 @@ fn commented_empty_string_no_comment_marker() {
 
 #[test]
 fn collect_str_via_display() {
-    use std::net::Ipv4Addr;
-    let addr = Ipv4Addr::new(127, 0, 0, 1);
-    let yaml = to_string(&addr).unwrap();
-    assert!(yaml.contains("127.0.0.1"), "got: {yaml}");
+    use std::fmt;
+    use serde::ser::Serializer;
+
+    struct DisplayOnly;
+
+    impl fmt::Display for DisplayOnly {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str("display-only-value")
+        }
+    }
+
+    impl Serialize for DisplayOnly {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            serializer.collect_str(self)
+        }
+    }
+
+    let yaml = to_string(&DisplayOnly).unwrap();
+    assert!(yaml.contains("display-only-value"), "got: {yaml}");
 }
 
 // ── Complex (non-scalar) map keys in block style ──
