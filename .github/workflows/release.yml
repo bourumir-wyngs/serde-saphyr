@@ -16,13 +16,12 @@ env:
 jobs:
   test:
     name: Verify release
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         run: |
-          export PATH=$PATH:/home/github-runner/.cargo/bin
           rustup toolchain install stable --profile minimal
           rustup default stable
           rustup component add clippy rustfmt
@@ -52,58 +51,47 @@ jobs:
 
       - name: Prefetch deps
         run: |
-          export PATH=$PATH:/home/github-runner/.cargo/bin
           cargo fetch --locked
           cargo fetch --locked --manifest-path fuzz/Cargo.toml
 
       - name: Check formatting (crate)
         run: |
-          export PATH=$PATH:/home/github-runner/.cargo/bin
           cargo fmt --all -- --check
 
       - name: Check formatting (fuzz)
         run: |
-          export PATH=$PATH:/home/github-runner/.cargo/bin
           cargo fmt --manifest-path fuzz/Cargo.toml --all -- --check
 
       - name: Run clippy (crate)
         run: |
-          export PATH=$PATH:/home/github-runner/.cargo/bin
           cargo clippy --locked --offline --all-targets --all-features -- -D warnings
 
       - name: Run clippy (fuzz)
         run: |
-          export PATH=$PATH:/home/github-runner/.cargo/bin
           cargo clippy --locked --offline --manifest-path fuzz/Cargo.toml --all-targets --all-features -- -D warnings
 
       - name: Run tests (default)
         run: |
-          export PATH=$PATH:/home/github-runner/.cargo/bin
           cargo test --locked --offline
 
       - name: Run tests with miette feature only
         run: |
-          export PATH=$PATH:/home/github-runner/.cargo/bin
           cargo test --locked --offline --features miette
 
       - name: Run tests with robotics feature set
         run: |
-          export PATH=$PATH:/home/github-runner/.cargo/bin
           cargo test --locked --offline --features garde,validator,miette,figment,robotics
 
       - name: Run tests with explicit core features
         run: |
-          export PATH=$PATH:/home/github-runner/.cargo/bin
           cargo test --locked --offline --no-default-features --features serialize,deserialize
 
       - name: Run tests with huge_documents
         run: |
-          export PATH=$PATH:/home/github-runner/.cargo/bin
           cargo test --locked --offline --features huge_documents
 
       - name: Verify crate packaging
         run: |
-          export PATH=$PATH:/home/github-runner/.cargo/bin
           cargo publish --locked --dry-run
 
   publish:
@@ -115,7 +103,6 @@ jobs:
 
       - name: Install Rust toolchain
         run: |
-          export PATH=$PATH:/home/github-runner/.cargo/bin
           rustup toolchain install stable --profile minimal
           rustup default stable
           rustc -V
@@ -128,5 +115,4 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          export PATH=$PATH:/home/github-runner/.cargo/bin
           cargo publish --locked
