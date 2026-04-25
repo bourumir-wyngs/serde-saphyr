@@ -119,11 +119,11 @@ To speed up compilation, starting from version `0.0.23` you can link only the de
 If you only need one side, you can disable default features and enable only the API surface you use:
 
 ```toml
-serde-saphyr = { version = "0.0.23", default-features = false, features = ["deserialize"] }
+serde-saphyr = { version = "0.0.25", default-features = false, features = ["deserialize"] }
 ```
 or
 ```toml
-serde-saphyr = { version = "0.0.23", default-features = false, features = ["serialize"] }
+serde-saphyr = { version = "0.0.25", default-features = false, features = ["serialize"] }
 ```
 Disabling both will produce a "Invalid feature configuration" error (such configuration makes no sense).
 
