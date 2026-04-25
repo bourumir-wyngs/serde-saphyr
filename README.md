@@ -38,14 +38,14 @@ In our [benchmarking project](https://github.com/bourumir-wyngs/serde-saphyr-ben
 |                                                   Crate | Version             | Merge Keys | Nested Enums | Duplicate key rejection |                                           Validation                                           | Error snippet | Borrowed deserialization | Notes                                                                    |
 | ------------------------------------------------------: |:--------------------| :--------- | :----------- | :---------------------- | :---------------------------------------------------------------------------------------------: | :-----------: | :----------------------: |:-------------------------------------------------------------------------|
 |   [serde-saphyr](https://crates.io/crates/serde-saphyr) | 0.0.17              | ✅         | ✅           | ✅ Configurable         | ✅[`garde`](https://crates.io/crates/garde) / [`validator`](https://crates.io/crates/validator) |      ✅      |           ✅            | No`unsafe`, no [unsafe-libyaml](https://crates.io/crates/unsafe-libyaml) |
-| [serde-yaml-bw](https://crates.io/crates/serde-yaml_bw) | 2.4.1               | ✅         | ✅           | ✅ Configurable         |                                               ❌                                               |      ❌      |           ❌            | Slow due Saphyr doing budget check first upfront of libyaml              |
+| [serde-yaml-bw](https://crates.io/crates/serde-yaml_bw) | 2.4.1               | ✅         | ✅           | ✅ Configurable         |                                               ❌                                               |      ❌      |           ❌            | Slow due to Saphyr performing a budget check upfront of libyaml              |
 | [serde-yaml-ng](https://crates.io/crates/serde-yaml-ng) | 0.10.0              | ⚠️       | ❌           | ❌                      |                                               ❌                                               |      ❌      |           ✅            |                                                                          |
 |       [serde-yaml](https://crates.io/crates/serde-yaml) | 0.9.34 + deprecated | ⚠️       | ❌           | ❌                      |                                               ❌                                               |      ❌      |           ✅            | Original, deprecated, repo archived                                      |
 |   [serde-norway](https://crates.io/crates/serde-norway) | 0.9.42              | ⚠️       | ❌           | ❌                      |                                               ❌                                               |      ❌      |           ✅            |                                                                          |
 |         [serde-yml](https://crates.io/crates/serde-yml) | 0.0.12              | ⚠️       | ❌           | ❌                      |                                               ❌                                               |      ❌      |           ✅            | Repo archived                                                            |
 |   [yaml-spanned](https://crates.io/crates/yaml-spanned) | 0.0.3               | ⚠️       | ❌           | ✅                      |                                               ❌                                               |      ❌      |           ❌            | Uses [libyaml-safer](https://crates.io/crates/libyaml-safer)             |
 
-⚠️ - partial support. Serde-yaml forks do not support merge keys natively but instead provide [apply_merge](https://docs.rs/serde_yaml/0.9.34+deprecated/serde_yaml/enum.Value.html#method.apply_merge) function that must be called manually. Crates marked ✅ offer native and transparent support.
+⚠️ - partial support. Serde-yaml forks do not support merge keys natively, but instead provide an [apply_merge](https://docs.rs/serde_yaml/0.9.34+deprecated/serde_yaml/enum.Value.html#method.apply_merge) function that must be called manually. Crates marked ✅ offer native and transparent support.
 
 Benchmarking was done with [Criterion](https://crates.io/crates/criterion), giving the following results (lower is better):
 
@@ -66,19 +66,19 @@ The test suite currently includes over 1000 passing tests, including the fully c
 - **Configurable budgets:** Enforce input limits to mitigate resource exhaustion (e.g., deeply nested structures or very large arrays); see [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
 - Precise error reporting with **snippet rendering**.
 - Optional **!include** support with a custom or default resolver (inclusion of either a complete document or the node referenced by a specified anchor).
-- Property support (to prevent leaking any secrets from YAML files)
+- **Property support** (to prevent leaking any secrets from YAML files via error messages or files themselves)
 - **Serializer supports emitting anchors** (Rc, Arc, Weak) if they are properly wrapped (see below).
 - **Declarative validation with optional [`validator`](https://crates.io/crates/validator) ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/validator_validate.rs))** or **[`garde`](https://crates.io/crates/garde)** ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/garde_validate.rs)).
 - **Optional [`miette`](https://crates.io/crates/miette)** ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/miette.rs)) integration for more advanced error reporting.
 - **serde_json::Value** is supported when parsing without target structure defined.
 - **[Serializer](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Serializer.html)** and **[Deserializer](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Deserializer.html)** are public (due to how it's implemented, Deserializer is available in the closure only).
 - Serialized floats are official YAML floats.
-- Correct handling for JSON-style Unicode surrogate pairs
+- Correct handling for JSON-style Unicode surrogate pairs.
 - **robotic extensions** to support YAML dialect common in robotics (see below).
 
 ## WebAssembly
 
-`serde-saphyr` is compatible with WebAssembly. CI flow includes builds for both `wasm32-unknown-unknown` (browser / JS) and `wasm32-wasip1`  (WASI runtimes) with full test suite running and passing. We also wrote [yva](https://github.com/bourumir-wyngs/yva) in [dioxus](https://dioxuslabs.com/) to deploy serde-saphyr on the web.
+`serde-saphyr` is compatible with WebAssembly. The CI flow includes builds for both `wasm32-unknown-unknown` (browser / JS) and `wasm32-wasip1` (WASI runtimes) with the full test suite running and passing. We also wrote [yva](https://github.com/bourumir-wyngs/yva) in [dioxus](https://dioxuslabs.com/) to deploy `serde-saphyr` on the web.
 
 ## Usage
 
@@ -223,7 +223,7 @@ If you prefer to validate without validation crates and want to ensure that loca
 
 ### Duplicate keys
 
-Duplicate key handling is configurable. By default it’s an error; “first wins”  and “last wins” strategies are available via [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). Duplicate key policy applies not just to strings but also to other types (if used as keys when deserializing into map).
+Duplicate key handling is configurable. By default it’s an error; “first wins” and “last wins” strategies are available via [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). The duplicate key policy applies not just to strings but also to other types (if used as keys when deserializing into a map).
 
 ## Multiple documents
 
@@ -360,15 +360,15 @@ You can require the number of indentation columns to be consistent throughout th
 ## Booleans
 
 By default, if the target field is boolean, serde-saphyr will attempt to interpret standard YAML 1.1 values as boolean (not just `false` but also `no`, etc.).
-If you do not want this (or you are parsing into a JSON Value where it is wrongly inferred), enclose the value in quotes or set `strict_booleans` to true in [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html).
+If you do not want this (or if you are parsing into a JSON Value where it might be incorrectly inferred), enclose the value in quotes or set `strict_booleans` to true in [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html).
 
 ## Deserializing into abstract JSON Value
 
-If you must work with abstract types, you can also deserialize YAML into [`serde_json::Value`](https://docs.rs/serde_json/latest/serde_json/value/index.html). Serde will drive the process through [`deserialize_any`](src/de.rs) because `Value` does not fix a Rust primitive type ahead of time. You lose strict type control by Rust `struct` data types. Also, unlike YAML, JSON does not allow composite keys, keys must be strings. Field order will be preserved.
+If you must work with abstract types, you can also deserialize YAML into [`serde_json::Value`](https://docs.rs/serde_json/latest/serde_json/value/index.html). Serde will drive the process through [`deserialize_any`](src/de.rs) because `Value` does not fix a Rust primitive type ahead of time. You lose the strict type control provided by Rust `struct` data types. Also, unlike YAML, JSON does not allow composite keys; keys must be strings. Field order will be preserved.
 
 ## Binary scalars
 
-`!!binary`-tagged YAML values are base64-decoded when deserializing into `Vec<u8>` or `String` (reporting an error if it is not valid UTF-8).
+`!!binary`-tagged YAML values are base64-decoded when deserializing into `Vec<u8>` or `String` (reporting an error if they are not valid UTF-8).
 
 ```rust
 use serde::Deserialize;
@@ -470,7 +470,7 @@ Merge keys are standard in YAML 1.1. Although YAML 1.2 no longer includes merge 
 
 ## Properties
 
-Many configuration formats contain secret values that should not be part of checked-in repository content and should leak into error snippets or other messages. The optional `properties` feature adds docker-compose-style `${NAME}` interpolation for that use case, allowing to provide values through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). The feature can also be used to configure generated values, or values that change between releases or deployments, or ar otherwise more convenient to specify separately from the main yaml document.
+Many configuration formats contain secret values that should not be part of checked-in repository content and should not leak into error snippets or other messages. The optional `properties` feature adds docker-compose-style `${NAME}` interpolation for that use case, allowing you to provide values through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). The feature can also be used to configure generated values, or values that change between releases or deployments, or are otherwise more convenient to specify separately from the main yaml document.
 
 Interpolation is intentionally narrow in scope:
 
@@ -532,7 +532,7 @@ The security aspect matters most when the property values are secrets. Interpola
 
 ## Includes
 
-The need for include YAML (not part of the official specs) is seen from the popularity of command-line [yaml-include](https://crates.io/crates/yaml-include) crate. That crate is very feature-complete. However, if YAML parser and validator are separate from pre-processor, they usually only report the line number and snippet in the processed document. For large documents with multiple and deep includes, this gets challenging to interpret. YAML indentation and security requirements like path confinement or anchor isolation make "quick adding" include non-trivial.  
+The need for including YAML (not part of the official specs) can be seen from the popularity of the command-line [yaml-include](https://crates.io/crates/yaml-include) crate. That crate is very feature-complete. However, if the YAML parser and validator are separate from the pre-processor, they usually only report the line number and snippet in the processed document. For large documents with multiple and deep includes, this becomes challenging to interpret. YAML indentation and security requirements like path confinement or anchor isolation make "quick adding" of includes non-trivial.  
 
 `serde-saphyr` allows resolving `!include` tags via a custom resolver configured in [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). When using a single `!include` directly as a value, it works naturally for replacing a scalar, sequence, or an entire mapping:
 
@@ -583,9 +583,9 @@ Instead of including the whole document, you can also include only the value of 
 
 `SafeFileResolver` has a built-in capability for anchor extraction. For flexibility, custom [`IncludeResolver`](https://docs.rs/serde-saphyr/latest/serde_saphyr/type.IncludeResolver.html) implementations must do this on their own, splitting anchor from the reference and then returning [`InputSource::AnchoredText`](https://docs.rs/serde-saphyr/latest/serde_saphyr/enum.InputSource.html#variant.AnchoredText).
 
-Other than stated, the anchor scope is restricted to the document where it is defined. Overriding a parent anchor value somewhere deep inside included content would be challenging to debug and could even become a security issue. 
+Unless otherwise stated, the anchor scope is restricted to the document where it is defined. Overriding a parent anchor value somewhere deep inside included content would be challenging to debug and could even become a security issue. 
 
-Whole-document includes only support sources that contain a single YAML document. Fragment includes also require the included source to contain a single YAML document; multi-document sources are rejected instead of scanning across document boundaries. Recursive inclusion is not permitted (and the file, not the fragment, is the include identity.)
+Whole-document includes only support sources that contain a single YAML document. Fragment includes also require the included source to contain a single YAML document; multi-document sources are rejected instead of scanning across document boundaries. Recursive inclusion is not permitted (and the file, not the fragment, is the include's identity).
 
 ### Tuple enum variants
 It is possible to deserialize tuple enum variants:
@@ -612,13 +612,13 @@ Schema-based parsing can be disabled by setting `no_schema` to true in [`Options
 
 Legacy octal notation such as `0052` can be enabled via `Options`, but it is disabled by default.
 
-The concept that “Rust code is the schema” naturally extends to implemented support for [`validator`](https://crates.io/crates/validator) and [`garde`](https://crates.io/crates/garde), as these crates allow annotations to be added directly to Rust types, providing even stricter control over permissible values
+The concept that “Rust code is the schema” naturally extends to implemented support for [`validator`](https://crates.io/crates/validator) and [`garde`](https://crates.io/crates/garde), as these crates allow annotations to be added directly to Rust types, providing even stricter control over permissible values.
 
 ## Pathological inputs & budgets
 
 Fuzzing shows that certain adversarial inputs can make YAML parsers consume excessive time or memory, enabling denial-of-service scenarios. To counter this, `serde-saphyr` offers a fast, configurable pre-check via a [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html), available through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). Defaults are conservative; tighten them when you know your input shape, or disable the budget if you only parse YAML you generate yourself.
-During [reader](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.from_reader_with_options.html)-based deserialization, serde-saphyr does not buffer the entire payload; it parses incrementally, counting bytes and enforcing configured budgets. This design blocks denial-of-service attempts via excessively large inputs. When [streaming](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.read_with_options.html) from the reader through the iterator, other budget limits apply on a per-document basis, since such a reader may be expected to stream indefinitely. The total size of input is not limited in this case.
-To find the typical budget requirements for your file, use our [web demo](https://verdanta.tech/yva/) or run the `main()` executable of this library, providing a YAML file path as the program parameter. You can also fetch the budget programmatically by registering a closure with [`Options::with_budget_report`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html#method.with_budget_report).
+During [reader](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.from_reader_with_options.html)-based deserialization, serde-saphyr does not buffer the entire payload; it parses incrementally, counting bytes and enforcing configured budgets. This design blocks denial-of-service attempts via excessively large inputs. When [streaming](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.read_with_options.html) from the reader through the iterator, other budget limits apply on a per-document basis, since such a reader may be expected to stream indefinitely. The total size of the input is not limited in this case.
+To find the typical budget requirements for your file, use our [web demo](https://verdanta.tech/yva/) or run the `main()` executable of this library, providing a YAML file path as a program parameter. You can also fetch the budget programmatically by registering a closure with [`Options::with_budget_report`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html#method.with_budget_report).
 
 ## Serialization
 
@@ -707,7 +707,7 @@ Serde-saphyr supports recursive structures, but Rust requires being very explici
 - It is possible to request that all strings be **quoted** — using single quotes when no escape sequences are present, and double quotes otherwise. This is very explicit and unambiguous, but such YAML may be less readable for humans. Line wrapping is disabled in this mode.
 - YAML 1.1 booleans (`y`, `yes`, `on`, etc.) are normally quoted as both keys and values. If this is undesired (y is a coordinate), set `yaml_12` to true.
 
-These settings are changeable in [SerializerOptions](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.SerializerOptions.html).
+These settings can be changed in [SerializerOptions](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.SerializerOptions.html).
 
 ### Borrowed string deserialization
 
@@ -811,16 +811,16 @@ let options = Options {
 let v: RoboFloats = from_str_with_options(yaml, options).expect("parse robotics YAML");
 ```
 
-Safety hardening with this feature enabled include (maximal expression depth, maximal number of digits, strict underscore placement and fraction parsing limits to precision-relevant digit).
+Safety hardening measures with this feature enabled include limits on maximal expression depth, maximal number of digits, strict underscore placement, and fraction parsing limits to the precision-relevant digit.
 
 ### Unsupported features
 
-- Common Serde renames made to follow naming conventions (case changes, snake_case, kebab-case, r# stripping) are supported in snippets, as long as they do not introduce ambiguity. Arbitrary renames, flattening, aliases and other complex manipulations possible with serde are not. Parsing and validation will still work, but error messages for arbitrarily renamed fields only tell Rust path.
+- Common Serde renames made to follow naming conventions (case changes, snake_case, kebab-case, r# stripping) are supported in snippets, as long as they do not introduce ambiguity. Arbitrary renames, flattening, aliases and other complex manipulations possible with serde are not. Parsing and validation will still work, but error messages for arbitrarily renamed fields will only show the Rust path.
 - [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html)  cannot be used within variants of untagged or internally tagged enums due to a fundamental limitation in Serde. Instead, wrap the entire enum in Spanned<T>, or use externally tagged enums (the default).
 
 ## Executable
 
-serde-saphyr comes with a simple executable (CLI) that can be used to check the budget of a given YAML file and also used as YAML validator printing YAML error line, column numbers and excerpt.
+serde-saphyr comes with a simple executable (CLI) that can be used to check the budget of a given YAML file, and can also be used as a YAML validator, printing the YAML error line, column numbers, and excerpt.
 
 To run it (no Rust knowledge required):
 
