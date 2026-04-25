@@ -38,9 +38,17 @@ pub(crate) fn parse_yaml11_bool(s: &str) -> Result<bool, String> {
 fn parse_digits_u128(digits: &str, radix: u32) -> Option<u128> {
     let mut val: u128 = 0;
     let mut saw = false;
-    for b in digits.as_bytes() {
-        match *b {
-            b'_' => continue,
+    let bytes = digits.as_bytes();
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'_' => {
+                let prev_ok = i > 0 && bytes[i - 1] != b'_';
+                let next_ok = i + 1 < bytes.len() && bytes[i + 1] != b'_';
+                if !prev_ok || !next_ok {
+                    return None;
+                }
+                continue;
+            }
             b'0'..=b'9' => {
                 let d = (b - b'0') as u32;
                 if d >= radix {
@@ -78,9 +86,17 @@ fn parse_digits_u128(digits: &str, radix: u32) -> Option<u128> {
 fn parse_decimal_unsigned_u128(digits: &str) -> Option<u128> {
     let mut val: u128 = 0;
     let mut saw = false;
-    for b in digits.as_bytes() {
-        match *b {
-            b'_' => continue,
+    let bytes = digits.as_bytes();
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'_' => {
+                let prev_ok = i > 0 && bytes[i - 1] != b'_';
+                let next_ok = i + 1 < bytes.len() && bytes[i + 1] != b'_';
+                if !prev_ok || !next_ok {
+                    return None;
+                }
+                continue;
+            }
             b'0'..=b'9' => {
                 let d = (b - b'0') as u128;
                 val = val.checked_mul(10)?;
@@ -99,9 +115,17 @@ fn parse_decimal_signed_i128(digits: &str, neg: bool) -> Option<i128> {
         // Accumulate as negative to allow i128::MIN
         let mut val: i128 = 0;
         let mut saw = false;
-        for b in digits.as_bytes() {
-            match *b {
-                b'_' => continue,
+        let bytes = digits.as_bytes();
+        for (i, &b) in bytes.iter().enumerate() {
+            match b {
+                b'_' => {
+                    let prev_ok = i > 0 && bytes[i - 1] != b'_';
+                    let next_ok = i + 1 < bytes.len() && bytes[i + 1] != b'_';
+                    if !prev_ok || !next_ok {
+                        return None;
+                    }
+                    continue;
+                }
                 b'0'..=b'9' => {
                     let d = (b - b'0') as i128;
                     val = val.checked_mul(10)?;
@@ -115,9 +139,17 @@ fn parse_decimal_signed_i128(digits: &str, neg: bool) -> Option<i128> {
     } else {
         let mut val: i128 = 0;
         let mut saw = false;
-        for b in digits.as_bytes() {
-            match *b {
-                b'_' => continue,
+        let bytes = digits.as_bytes();
+        for (i, &b) in bytes.iter().enumerate() {
+            match b {
+                b'_' => {
+                    let prev_ok = i > 0 && bytes[i - 1] != b'_';
+                    let next_ok = i + 1 < bytes.len() && bytes[i + 1] != b'_';
+                    if !prev_ok || !next_ok {
+                        return None;
+                    }
+                    continue;
+                }
                 b'0'..=b'9' => {
                     let d = (b - b'0') as i128;
                     val = val.checked_mul(10)?;
@@ -383,6 +415,19 @@ mod tests {
 
         let value: i32 = parse_int_signed("0b1010_1010", "i32", loc, false).unwrap();
         assert_eq!(value, 0b1010_1010);
+    }
+
+    #[test]
+    fn parse_int_signed_rejects_invalid_underscores() {
+        let loc = sample_location();
+        // Leading underscore
+        assert!(parse_int_signed::<i32>("_1", "i32", loc, false).is_err());
+        // Trailing underscore
+        assert!(parse_int_signed::<i32>("1000_", "i32", loc, false).is_err());
+        // Double underscore
+        assert!(parse_int_signed::<i32>("1__0", "i32", loc, false).is_err());
+        // Valid underscores
+        assert!(parse_int_signed::<i32>("1000_1000", "i32", loc, false).is_ok());
     }
 
     #[test]
