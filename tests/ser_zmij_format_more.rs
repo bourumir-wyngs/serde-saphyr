@@ -7,9 +7,9 @@ struct MapWithFloatKeys;
 impl Serialize for MapWithFloatKeys {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut map = serializer.serialize_map(Some(4))?;
-        map.serialize_entry(&std::f32::NAN, &1)?;
-        map.serialize_entry(&std::f32::INFINITY, &2)?;
-        map.serialize_entry(&std::f32::NEG_INFINITY, &3)?;
+        map.serialize_entry(&f32::NAN, &1)?;
+        map.serialize_entry(&f32::INFINITY, &2)?;
+        map.serialize_entry(&f32::NEG_INFINITY, &3)?;
         map.serialize_entry(&1e20f32, &4)?;
         map.end()
     }

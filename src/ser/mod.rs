@@ -2947,7 +2947,6 @@ fn non_scalar_key_e() -> Result<()> {
 #[cfg(test)]
 mod tests_internal {
     use super::*;
-    use std::fmt::Write;
 
     #[test]
     fn test_push_float_string_coverage() {
@@ -2966,11 +2965,11 @@ mod tests_internal {
         zmij_format::push_float_string(&mut s, 1e30f32).unwrap();
         
         s.clear();
-        zmij_format::push_float_string(&mut s, std::f32::NAN).unwrap();
+        zmij_format::push_float_string(&mut s, f32::NAN).unwrap();
         s.clear();
-        zmij_format::push_float_string(&mut s, std::f32::INFINITY).unwrap();
+        zmij_format::push_float_string(&mut s, f32::INFINITY).unwrap();
         s.clear();
-        zmij_format::push_float_string(&mut s, std::f32::NEG_INFINITY).unwrap();
+        zmij_format::push_float_string(&mut s, f32::NEG_INFINITY).unwrap();
     }
     
     #[test]

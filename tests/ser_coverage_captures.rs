@@ -1,4 +1,4 @@
-use serde::{Serialize, Serializer};
+use serde::Serialize;
 use serde_saphyr::to_string;
 use std::collections::BTreeMap;
 
@@ -19,10 +19,10 @@ struct UnitStruct;
 
 #[derive(Serialize)]
 enum TestEnum {
-    UnitVariant,
-    NewtypeVariant(u32),
-    TupleVariant(u32, u32),
-    StructVariant { x: u32 },
+    Unit,
+    Newtype(u32),
+    Tuple(u32, u32),
+    Struct { x: u32 },
 }
 
 #[derive(Serialize)]
@@ -59,10 +59,10 @@ fn test_all_captures_for_coverage() {
     test_capture(Some(42u32));
     test_capture(());
     test_capture(UnitStruct);
-    test_capture(TestEnum::UnitVariant);
-    test_capture(TestEnum::NewtypeVariant(42));
-    test_capture(TestEnum::TupleVariant(1, 2));
-    test_capture(TestEnum::StructVariant { x: 42 });
+    test_capture(TestEnum::Unit);
+    test_capture(TestEnum::Newtype(42));
+    test_capture(TestEnum::Tuple(1, 2));
+    test_capture(TestEnum::Struct { x: 42 });
     test_capture(vec![1, 2, 3]);
     test_capture((1, 2));
     test_capture(TupleStruct(1, 2));
