@@ -1,30 +1,17 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
-//! Integration tests for the `serde-saphyr` binary (src/main.rs).
-//!
-//! These tests invoke the compiled binary via `cargo run` / `Command` and check
-//! exit codes and output for various CLI scenarios.
-//!
-//! These tests are disabled under Miri because they spawn external processes,
-//! which Miri does not support.
-//!
-//! These tests are also disabled for WASI because they invoke the compiled binary
-//! via `Command`, which is typically not supported in WASI environments.
+//! Integration tests for the `serde-saphyr` CLI entrypoint.
 #![cfg(all(not(miri), not(target_os = "wasi")))]
 #![cfg(all(feature = "include", feature = "include_fs"))]
 
 use std::io::Write;
-use std::process::Command;
 
-/// Helper: run the binary with the given args and return (stdout, stderr, exit_code).
+/// Helper: run the CLI entrypoint in-process and return (stdout, stderr, exit_code).
 fn run_binary(args: &[&str]) -> (String, String, i32) {
-    let bin = env!("CARGO_BIN_EXE_serde-saphyr");
-    let output = Command::new(bin)
-        .args(args)
-        .output()
-        .expect("failed to execute binary");
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let code = output.status.code().unwrap_or(-1);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = serde_saphyr::cli::run(args.iter().copied(), &mut stdout, &mut stderr);
+    let stdout = String::from_utf8(stdout).expect("stdout is not valid UTF-8");
+    let stderr = String::from_utf8(stderr).expect("stderr is not valid UTF-8");
     (stdout, stderr, code)
 }
 

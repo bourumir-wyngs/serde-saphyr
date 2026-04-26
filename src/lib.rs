@@ -81,6 +81,14 @@ use std::io::Read;
 #[path = "de/anchor_store.rs"]
 mod anchor_store;
 mod anchors;
+#[cfg(all(
+    feature = "serialize",
+    feature = "deserialize",
+    feature = "include",
+    feature = "include_fs"
+))]
+#[doc(hidden)]
+pub mod cli;
 #[cfg(feature = "deserialize")]
 #[path = "de/mod.rs"]
 mod de;
