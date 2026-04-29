@@ -16,3 +16,18 @@ fn from_slice_with_options_supports_borrowed_str() {
 
     assert_eq!(cfg.name, "hello");
 }
+
+#[test]
+fn from_slice_supports_borrowed_str() {
+    #[derive(Debug, Deserialize, PartialEq, Eq)]
+    struct Cfg<'a> {
+        name: &'a str,
+    }
+
+    let yaml = "name: hello\n";
+    let bytes = yaml.as_bytes();
+
+    let cfg: Cfg<'_> = serde_saphyr::from_slice(bytes).expect("deserialize borrowed config");
+
+    assert_eq!(cfg.name, "hello");
+}

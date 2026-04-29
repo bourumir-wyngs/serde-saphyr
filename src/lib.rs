@@ -831,6 +831,10 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
 /// This is equivalent to [`from_str`], but accepts `&[u8]` and validates it is
 /// valid UTF-8 before parsing.
 ///
+/// This function supports both owned types (like `String`) and borrowed types
+/// (like `&str`). For borrowed types, the deserialized value's lifetime is tied
+/// to the input byte slice's lifetime.
+///
 /// Example: read a small `Config` structure from bytes.
 ///
 /// ```rust
@@ -854,7 +858,10 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
 /// ```
 ///
 #[cfg(feature = "deserialize")]
-pub fn from_slice<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, Error> {
+pub fn from_slice<'de, T>(bytes: &'de [u8]) -> Result<T, Error>
+where
+    T: serde::Deserialize<'de>,
+{
     from_slice_with_options(bytes, Options::default())
 }
 

@@ -241,8 +241,8 @@ pub fn buffered_input_from_reader_with_limit_shared<'a, R: Read + 'a>(
 
 #[cfg(test)]
 mod tests {
-    use crate::buffered_input::buffered_input_from_reader_with_limit;
     use crate::buffered_input::ReaderInput;
+    use crate::buffered_input::buffered_input_from_reader_with_limit;
     use saphyr_parser::{Event, Parser};
     use std::io::{Cursor, Read};
 
