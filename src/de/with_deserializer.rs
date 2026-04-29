@@ -147,7 +147,9 @@ where
 /// Create a streaming [`crate::Deserializer`] for any [`std::io::Read`] and run a closure against it.
 ///
 /// This is the reader-based counterpart to [`with_deserializer_from_str`]. It consumes a
-/// byte-oriented reader, decodes it to UTF-8, and streams events into the deserializer.
+/// byte-oriented reader and streams events into the deserializer. The reader accepts BOM-marked
+/// UTF-8, UTF-16LE, and UTF-16BE. If no recognized BOM is present, the input bytes are
+/// treated as UTF-8.
 pub fn with_deserializer_from_reader<R, Out, F>(reader: R, f: F) -> Result<Out, Error>
 where
     for<'de, 'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<Out, Error>,

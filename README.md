@@ -728,6 +728,13 @@ let data: Data = serde_saphyr::from_str(yaml).unwrap();
 assert_eq!(data.name, "hello");
 ```
 
+### UTF-16
+
+Reader-based entry points (`from_reader`, `from_reader_with_options`,
+`read`, and `read_with_options`) accept BOM-marked UTF-8, UTF-16LE, and
+UTF-16BE. If no recognized BOM is present, reader input is treated as UTF-8. String- and slice-based entry 
+points take UTF-8 only.
+
 **Limitations:**
 - Borrowing works for any scalar whose parsed value exists **verbatim** in the input. This includes plain scalars and simple quoted strings without escape sequences (e.g., `"hello world"` can be borrowed, but `"hello\nworld"` cannot because `\n` is transformed to a newline).
 - If a scalar requires transformation (escape processing, line folding, block scalar normalization, or `''` escape in single-quoted strings), deserialization into `&str` fails with a helpful error suggesting `String` or `Cow<str>`.

@@ -1041,8 +1041,10 @@ pub fn to_string_multiple_with_options<T: serde::Serialize>(
 
 /// Deserialize a single YAML document from any `std::io::Read`.
 ///
+/// Reader-based entry points accept BOM-marked UTF-8, UTF-16LE, and UTF-16BE. If no
+/// recognized BOM is present, the input bytes are treated as UTF-8.
 ///
-/// This method parsers as it reads, without loading the entire input into memory first. Hence,
+/// This method parses as it reads, without loading the entire input into memory first. Hence,
 /// budget limits protect against large (potentially malicious) input.
 ///
 /// Example
@@ -1078,9 +1080,12 @@ pub fn from_reader<'a, R: std::io::Read + 'a, T: DeserializeOwned>(reader: R) ->
 /// Deserialize a single YAML document from any `std::io::Read` with configurable `Options`.
 ///
 /// This is the reader-based counterpart to [`from_str_with_options`]. It consumes a
-/// byte-oriented reader, decodes it to UTF-8, and streams events into the deserializer.
+/// byte-oriented reader and streams events into the deserializer. BOM-marked
+/// UTF-8, UTF-16LE, and UTF-16BE inputs are transcoded to UTF-8 internally
+/// before parsing. If no recognized BOM is present, the input bytes are
+/// treated as UTF-8.
 ///
-/// This method parsers as it reads, without loading the entire input into memory first. Hence,
+/// This method parses as it reads, without loading the entire input into memory first. Hence,
 /// budget limits protect against large (potentially malicious) input.
 ///
 /// Notes on limits and large inputs
@@ -1272,6 +1277,9 @@ where
 /// the entire input into memory. Instead, it streams the reader, deserializing one document
 /// at a time into values of type `T`, yielding them through the returned iterator. Documents
 /// that are completely empty or null-like (e.g., `""`, `~`, or `null`) are skipped.
+/// Like [`from_reader_with_options`], BOM-marked UTF-8, UTF-16LE, and UTF-16BE
+/// inputs are transcoded to UTF-8 internally before parsing. If no recognized
+/// BOM is present, the input bytes are treated as UTF-8.
 ///
 /// Generic parameters
 /// - `R`: the concrete reader type that implements [`std::io::Read`]. You rarely need to spell
