@@ -46,8 +46,9 @@ pub use de::properties;
 pub use de::robotics;
 #[cfg(all(feature = "deserialize", feature = "include_fs"))]
 pub use de::safe_resolver::{SafeFileReadMode, SafeFileResolver, SymlinkPolicy};
-pub use location::{Location, Locations, Span};
+pub use location::{Location, Locations};
 pub use long_strings::{FoldStr, FoldString, LitStr, LitString};
+pub use span::Span;
 pub use spanned::Spanned;
 #[cfg(any(feature = "serialize", feature = "deserialize"))]
 pub use wrappers::{Commented, FlowMap, FlowSeq, SpaceAfter};
@@ -98,6 +99,8 @@ mod parse_scalars;
 #[cfg(feature = "serialize")]
 #[path = "ser/mod.rs"]
 pub mod ser;
+#[path = "de/span.rs"]
+mod span;
 mod spanned;
 #[cfg(any(feature = "serialize", feature = "deserialize"))]
 mod wrappers;

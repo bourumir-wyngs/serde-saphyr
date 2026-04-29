@@ -1645,14 +1645,9 @@ impl Error {
     #[cold]
     #[inline(never)]
     pub(crate) fn from_scan_error(err: ScanError) -> Self {
-        use crate::location::SpanIndex;
         let mark = err.marker();
-        let location =
-            Location::new(mark.line(), mark.col() + 1).with_span(crate::location::Span {
-                offset: mark.index() as SpanIndex,
-                len: 1,
-                byte_info: (0, 0),
-            });
+        let location = Location::new(mark.line(), mark.col() + 1)
+            .with_span(crate::Span::new(mark.index() as u64, 1));
 
         // `saphyr_parser` reports missing aliases/anchors as a `ScanError` with a textual
         // message (e.g. "unknown anchor"). To keep our formatter overrides working for the

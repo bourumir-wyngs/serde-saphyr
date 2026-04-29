@@ -558,11 +558,7 @@ mod tests {
         let location = Location {
             line: 2,
             column: 7,
-            span: crate::Span {
-                byte_info: (0, 0),
-                offset: 0,
-                len: 5,
-            },
+            span: crate::Span::new(0, 5),
             source_id: 2,
         };
 
@@ -605,11 +601,7 @@ mod tests {
         let location = Location {
             line: 2,
             column: 7,
-            span: crate::Span {
-                byte_info: (0, 0),
-                offset: 0,
-                len: 5,
-            },
+            span: crate::Span::new(0, 5),
             source_id: 0,
         };
 
@@ -641,11 +633,7 @@ mod tests {
         let location = Location {
             line: 2,
             column: 11,
-            span: crate::Span {
-                byte_info: (0, 0),
-                offset: 0,
-                len: 10,
-            },
+            span: crate::Span::new(0, 10),
             source_id: 1,
         };
 
@@ -689,11 +677,7 @@ mod tests {
         let location = Location {
             line: 1,
             column: 3,
-            span: crate::Span {
-                byte_info: (0, 0),
-                offset: 0,
-                len: 0,
-            },
+            span: crate::Span::new(0, 0),
             source_id: 1,
         };
 
@@ -727,11 +711,7 @@ mod tests {
                 location: Location {
                     line: 2,
                     column: 6,
-                    span: crate::Span {
-                        byte_info: (0, 0),
-                        offset: 0,
-                        len: 5,
-                    },
+                    span: crate::Span::new(0, 5),
                     source_id: 2,
                 },
             }),
@@ -792,12 +772,7 @@ mod tests {
             location: Location {
                 line: 1,
                 column: 4,
-                span: crate::Span {
-                    byte_info: (0, 0),
-                    offset: "a: definitely\n".find("definitely").unwrap()
-                        as crate::location::SpanIndex,
-                    len: 3,
-                },
+                span: crate::Span::new("a: definitely\n".find("definitely").unwrap() as u64, 3),
                 source_id: 0,
             },
         };
@@ -834,11 +809,7 @@ mod tests {
                 line: 1,
                 // Column is 1-indexed and character-based; set consistently with the span
                 column: (char_off as u32) + 1,
-                span: crate::Span {
-                    byte_info: (0, 0),
-                    offset: char_off as crate::location::SpanIndex,
-                    len: ascii_slice.len() as crate::location::SpanIndex,
-                },
+                span: crate::Span::new(char_off as u64, ascii_slice.len() as u64),
                 source_id: 0,
             },
         };
@@ -872,11 +843,7 @@ mod tests {
             location: Location {
                 line: 1,
                 column: (start_char as u32) + 1,
-                span: crate::Span {
-                    byte_info: (0, 0),
-                    offset: start_char as crate::location::SpanIndex,
-                    len: value_chars.chars().count() as crate::location::SpanIndex,
-                },
+                span: crate::Span::new(start_char as u64, value_chars.chars().count() as u64),
                 source_id: 0,
             },
         };
@@ -907,11 +874,7 @@ mod tests {
             location: Location {
                 line: 1,
                 column: (start_char as u32) + 1,
-                span: crate::Span {
-                    byte_info: (0, 0),
-                    offset: start_char as crate::location::SpanIndex,
-                    len: 0,
-                },
+                span: crate::Span::new(start_char as u64, 0),
                 source_id: 0,
             },
         };
@@ -942,11 +905,7 @@ mod tests {
             location: Location {
                 line: 1,
                 column: (start_char as u32) + 1,
-                span: crate::Span {
-                    byte_info: (0, 0),
-                    offset: start_char as crate::location::SpanIndex,
-                    len: 1000,
-                },
+                span: crate::Span::new(start_char as u64, 1000),
                 source_id: 0,
             },
         };
@@ -978,11 +937,7 @@ mod tests {
             location: Location {
                 line: 3,
                 column: 1,
-                span: crate::Span {
-                    byte_info: (0, 0),
-                    offset: start_char as crate::location::SpanIndex,
-                    len: target.chars().count() as crate::location::SpanIndex,
-                },
+                span: crate::Span::new(start_char as u64, target.chars().count() as u64),
                 source_id: 0,
             },
         };
@@ -1028,21 +983,13 @@ mod tests {
         let referenced_loc = Location {
             line: 3,
             column: 15,
-            span: crate::Span {
-                byte_info: (0, 0),
-                offset: use_offset as crate::location::SpanIndex,
-                len: 2,
-            },
+            span: crate::Span::new(use_offset as u64, 2),
             source_id: 0,
         };
         let defined_loc = Location {
             line: 2,
             column: 18,
-            span: crate::Span {
-                byte_info: (0, 0),
-                offset: def_offset as crate::location::SpanIndex,
-                len: 3,
-            },
+            span: crate::Span::new(def_offset as u64, 3),
             source_id: 0,
         };
 
@@ -1116,21 +1063,13 @@ mod tests {
         let referenced_loc = Location {
             line: 3,
             column: 15,
-            span: crate::Span {
-                byte_info: (0, 0),
-                offset: use_offset as crate::location::SpanIndex,
-                len: 2,
-            },
+            span: crate::Span::new(use_offset as u64, 2),
             source_id: 0,
         };
         let defined_loc = Location {
             line: 2,
             column: 18,
-            span: crate::Span {
-                byte_info: (0, 0),
-                offset: def_offset as crate::location::SpanIndex,
-                len: 3,
-            },
+            span: crate::Span::new(def_offset as u64, 3),
             source_id: 0,
         };
 
@@ -1192,21 +1131,13 @@ mod tests {
         let referenced_loc = Location {
             line: 2,
             column: 8,
-            span: crate::Span {
-                byte_info: (0, 0),
-                offset: use_offset as crate::location::SpanIndex,
-                len: 2,
-            },
+            span: crate::Span::new(use_offset as u64, 2),
             source_id: 0,
         };
         let defined_loc = Location {
             line: 1,
             column: 13,
-            span: crate::Span {
-                byte_info: (0, 0),
-                offset: def_offset as crate::location::SpanIndex,
-                len: 5,
-            },
+            span: crate::Span::new(def_offset as u64, 5),
             source_id: 0,
         };
 
@@ -1255,11 +1186,7 @@ mod tests {
         let loc = Location {
             line: 1,
             column: 8,
-            span: crate::Span {
-                byte_info: (0, 0),
-                offset: offset as crate::location::SpanIndex,
-                len: 5,
-            },
+            span: crate::Span::new(offset as u64, 5),
             source_id: 0,
         };
 

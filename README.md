@@ -128,7 +128,7 @@ serde-saphyr = { version = "0.0.25", default-features = false, features = ["seri
 ```
 Disabling both will produce a "Invalid feature configuration" error (such configuration makes no sense).
 
-The optional `huge_documents` feature switches internal byte offsets from `u32` to `u64` so spans can cover YAML inputs larger than 4 GiB. That also makes `serde_saphyr::Location` and `serde_saphyr::Error` larger. Downstream crates that enable `clippy::result_large_err` may therefore get warnings on signatures like `Result<T, serde_saphyr::Error>` and may prefer `Box<serde_saphyr::Error>` in their own public APIs.
+The optional `huge_documents` feature switches span storage from `u32` indices to a packed 48-bit internal representation so spans can cover YAML inputs far beyond 4 GiB without widening every coordinate to a full `u64`. Public getters still return `u64`, and values beyond the packed range saturate instead of wrapping.
 
 ### Snippets
 To make debugging easier, **serde-saphyr** renders snippets of the YAML that caused an error (similar to how many compilers report errors). These snippets include the line where the error occurred along with some surrounding context. Any terminal control sequences that might be present in the YAML are stripped out. If not desired, snippets can be removed for a specific error using [`without_snippet`](https://docs.rs/serde-saphyr/latest/serde_saphyr/enum.Error.html#method.without_snippet), or disabled entirely via the `Options` configuration.

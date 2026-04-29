@@ -68,11 +68,9 @@ figment = ["dep:figment", "deserialize"]
 # as deg(180), rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). angle_conversions must be set to true in the Options.
 robotics = ["deserialize"]
 
-# Enables byte-span reporting for YAML documents > 4 GiB by using `u64` instead of `u32`.
-# Parsing and normal error reporting work without this feature, but byte offsets are not reported. Public API
-# does not change. Because `Location` becomes larger, downstream crates that enable
-# `clippy::result_large_err` may see warnings on `Result<_, serde_saphyr::Error>` and may prefer
-# `Box<serde_saphyr::Error>` in their own public APIs.
+# Enables byte-span reporting for YAML documents > 4 GiB using packed 48-bit internal indices
+# instead of the default `u32` representation. Public getters still return `u64`, and values
+# beyond the packed range saturate instead of wrapping.
 huge_documents = []
 
 [dev-dependencies]
