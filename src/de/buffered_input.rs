@@ -241,8 +241,8 @@ pub fn buffered_input_from_reader_with_limit_shared<'a, R: Read + 'a>(
 
 #[cfg(test)]
 mod tests {
-    use crate::buffered_input::ReaderInput;
     use crate::buffered_input::buffered_input_from_reader_with_limit;
+    use crate::buffered_input::ReaderInput;
     use saphyr_parser::{Event, Parser};
     use std::io::{Cursor, Read};
 
@@ -276,36 +276,12 @@ mod tests {
         events
     }
 
-    #[test]
-    fn buffered_input_handles_utf16le_bom() {
-        // YAML: "---\n[1, 2]\n"
-        // Encode as UTF-16LE with BOM (FF FE)
-        let code_units: [u16; 9] = [
-            0xFEFF, // BOM (when written as u16 then to LE bytes becomes FF FE at start)
-            '-' as u16,
-            '-' as u16,
-            '-' as u16,
-            '\n' as u16,
-            '[' as u16,
-            '1' as u16,
-            ',' as u16,
-            ' ' as u16,
-        ];
-        let mut bytes = Vec::new();
-        for &cu in &code_units {
-            bytes.extend_from_slice(&cu.to_le_bytes());
-        }
-        // Continue the rest of the string: "2]\n"
-        for ch in ['2', ']', '\n'] {
-            bytes.extend_from_slice(&(ch as u16).to_le_bytes());
-        }
-
+    fn collect_scalars_from_reader_bytes(bytes: Vec<u8>) -> Vec<String> {
         let cursor = Cursor::new(bytes);
         let input = buffered_input_from_reader(cursor);
         let parser = Parser::new(input);
         let events = gather_core_events(parser);
 
-        // Expect a sequence with two scalar elements "1" and "2"
         assert!(
             events
                 .iter()
@@ -319,50 +295,54 @@ mod tests {
             events
         );
 
-        let scalars: Vec<String> = events
+        events
             .iter()
             .filter_map(|e| match e {
                 Event::Scalar(v, _, _, _) => Some(v.to_string()),
                 _ => None,
             })
-            .collect();
-        assert!(
-            scalars.contains(&"1".to_string()) && scalars.contains(&"2".to_string()),
-            "expected scalar elements '1' and '2', got {:?}",
-            scalars
-        );
+            .collect()
+    }
+
+    fn encode_utf16(text: &str, big_endian: bool) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        let bom = if big_endian {
+            0xFEFFu16.to_be_bytes()
+        } else {
+            0xFEFFu16.to_le_bytes()
+        };
+        bytes.extend_from_slice(&bom);
+        for unit in text.encode_utf16() {
+            let encoded = if big_endian {
+                unit.to_be_bytes()
+            } else {
+                unit.to_le_bytes()
+            };
+            bytes.extend_from_slice(&encoded);
+        }
+        bytes
     }
 
     #[test]
-    fn buffered_input_handles_utf8_basic() {
+    fn buffered_input_supports_utf8_and_utf16_reader_inputs() {
         let yaml = "---\n[foo, bar]\n";
-        let cursor = Cursor::new(yaml.as_bytes());
-        let input = buffered_input_from_reader(cursor);
-        let parser = Parser::new(input);
-        let events = gather_core_events(parser);
-        assert!(
-            events
-                .iter()
-                .any(|e| matches!(e, Event::SequenceStart(_, _))),
-            "no SequenceStart in events: {:?}",
-            events
-        );
-        assert!(
-            events.iter().any(|e| matches!(e, Event::SequenceEnd)),
-            "no SequenceEnd in events: {:?}",
-            events
-        );
-        let scalars: Vec<String> = events
-            .iter()
-            .filter_map(|e| match e {
-                Event::Scalar(v, _, _, _) => Some(v.to_string()),
-                _ => None,
-            })
-            .collect();
-        assert!(
-            scalars.contains(&"foo".to_string()) && scalars.contains(&"bar".to_string()),
-            "expected scalar elements 'foo' and 'bar', got {:?}",
-            scalars
-        );
+        let cases = [
+            ("utf-16le with bom", encode_utf16(yaml, false)),
+            ("utf-16be with bom", encode_utf16(yaml, true)),
+            ("utf-8 without bom", yaml.as_bytes().to_vec()),
+            (
+                "utf-8 with bom",
+                [b"\xEF\xBB\xBF".as_slice(), yaml.as_bytes()].concat(),
+            ),
+        ];
+
+        for (label, bytes) in cases {
+            let scalars = collect_scalars_from_reader_bytes(bytes);
+            assert!(
+                scalars.contains(&"foo".to_string()) && scalars.contains(&"bar".to_string()),
+                "{label}: expected scalar elements 'foo' and 'bar', got {:?}",
+                scalars
+            );
+        }
     }
 }
