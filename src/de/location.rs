@@ -12,13 +12,19 @@ use serde::Deserialize;
 /// When the `huge_documents` feature is enabled, this becomes `u64`, allowing documents larger
 /// than 4 GiB even on 32-bit platforms, at the cost of increased memory usage
 /// (4 × `u64` = 32 bytes).
+///
+/// This also increases the size of [`Location`](crate::Location) and therefore
+/// [`crate::Error`]. Downstream crates that enable `clippy::result_large_err`
+/// may prefer `Box<serde_saphyr::Error>` in their own public APIs when this
+/// feature is active.
 #[cfg(not(feature = "huge_documents"))]
 pub(crate) type SpanIndex = u32;
 
 /// Type alias for span offset and length fields.
 ///
 /// With `huge_documents` enabled, this is `u64`, allowing documents larger than 4 GiB.
-/// This increases [`Span`] size from 16 to 32 bytes.
+/// This increases [`Span`] size from 16 to 32 bytes, which also increases the
+/// size of [`Location`](crate::Location) and [`crate::Error`].
 #[cfg(feature = "huge_documents")]
 pub(crate) type SpanIndex = u64;
 

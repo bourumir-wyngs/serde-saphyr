@@ -70,7 +70,9 @@ robotics = ["deserialize"]
 
 # Enables byte-span reporting for YAML documents > 4 GiB by using `u64` instead of `u32`.
 # Parsing and normal error reporting work without this feature, but byte offsets are not reported. Public API
-# does not change.
+# does not change. Because `Location` becomes larger, downstream crates that enable
+# `clippy::result_large_err` may see warnings on `Result<_, serde_saphyr::Error>` and may prefer
+# `Box<serde_saphyr::Error>` in their own public APIs.
 huge_documents = []
 
 [dev-dependencies]
