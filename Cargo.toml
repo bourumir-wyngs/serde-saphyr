@@ -200,9 +200,6 @@ required-features = ["serialize", "deserialize"]
 [lints.rust]
 unsafe_code = "forbid"
 
-[lints.clippy]
-result_large_err = "allow"
-
 # `serde-saphyr` is moving away from struct literals. During the migration period, semver checks temporarily allow
 # adding fields to these structures, and the badge does not treat new fields as a breaking change
 # (which is correct when using the macros).

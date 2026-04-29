@@ -79,7 +79,7 @@ impl Location {
     /// Numeric id of the source.
     #[inline]
     pub fn source_id(&self) -> u32 {
-        self.source_id.into()
+        self.source_id
     }
 }
 
