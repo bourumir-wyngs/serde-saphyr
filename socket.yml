@@ -1,0 +1,8 @@
+version: 2
+
+projectIgnorePaths:
+  # Exclude the standalone cargo-fuzz subcrate from Socket repo scans.
+  # It is only used for fuzzing workflows and local fuzzing, not as part of
+  # the published library dependency surface.
+  - "/fuzz"
+  - "/fuzz/**"
