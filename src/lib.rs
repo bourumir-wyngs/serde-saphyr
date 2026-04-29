@@ -828,6 +828,10 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
 
 /// Deserialize a single YAML document from a UTF-8 byte slice.
 ///
+/// UTF-8 only (due borrowing). For UTF-16 input, use [`from_reader`] instead:
+/// `let reader = std::io::Cursor::new(bytes);`
+/// `let cfg: Config = serde_saphyr::from_reader(reader)?;`
+///
 /// This is equivalent to [`from_str`], but accepts `&[u8]` and validates it is
 /// valid UTF-8 before parsing.
 ///
