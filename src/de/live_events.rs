@@ -240,6 +240,7 @@ impl<'a> LiveEvents<'a> {
         let budget_report = options.budget_report.take();
         let budget_report_cb = options.budget_report_cb.take();
         let alias_limits = options.alias_limits;
+        let no_merge_keys = options.no_merge_keys;
         let require_indent = options.require_indent;
         #[cfg(feature = "properties")]
         let property_map = options.property_map.clone();
@@ -275,7 +276,7 @@ impl<'a> LiveEvents<'a> {
             inject: Vec::with_capacity(2),
             anchors: Vec::with_capacity(8),
             rec_stack: Vec::with_capacity(2),
-            budget: budget.map(|budget| BudgetEnforcer::new(budget, policy)),
+            budget: budget.map(|budget| BudgetEnforcer::new(budget, policy, no_merge_keys)),
 
             budget_report,
             budget_report_cb,
@@ -314,6 +315,7 @@ impl<'a> LiveEvents<'a> {
         let budget_report = options.budget_report.take();
         let budget_report_cb = options.budget_report_cb.take();
         let alias_limits = options.alias_limits;
+        let no_merge_keys = options.no_merge_keys;
         let require_indent = options.require_indent;
         #[cfg(feature = "properties")]
         let property_map = options.property_map.clone();
@@ -349,7 +351,9 @@ impl<'a> LiveEvents<'a> {
             inject: Vec::with_capacity(2),
             anchors: Vec::with_capacity(8),
             rec_stack: Vec::with_capacity(2),
-            budget: budget.map(|budget| BudgetEnforcer::new(budget, EnforcingPolicy::AllContent)),
+            budget: budget.map(|budget| {
+                BudgetEnforcer::new(budget, EnforcingPolicy::AllContent, no_merge_keys)
+            }),
 
             budget_report,
             budget_report_cb,

@@ -132,6 +132,17 @@ pub struct Options {
         note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
     )]
     pub duplicate_keys: DuplicateKeyPolicy,
+    /// If true, disable YAML merge keys (`<<`).
+    ///
+    /// When true, `<<` is treated as an ordinary mapping key and is not counted
+    /// against [`Budget::max_merge_keys`].
+    ///
+    /// Default: false.
+    #[serde(default)]
+    #[deprecated(
+        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
+    )]
+    pub no_merge_keys: bool,
     /// Limits for alias replay to harden against alias bombs.
     #[deprecated(
         note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
@@ -412,6 +423,7 @@ impl Default for Options {
             budget_report: None,
             budget_report_cb: None,
             duplicate_keys: DuplicateKeyPolicy::Error,
+            no_merge_keys: false,
             alias_limits: AliasLimits::default(),
             legacy_octal_numbers: false,
             strict_booleans: false,
@@ -445,6 +457,7 @@ impl std::fmt::Debug for Options {
                 },
             )
             .field("duplicate_keys", &self.duplicate_keys)
+            .field("no_merge_keys", &self.no_merge_keys)
             .field("alias_limits", &self.alias_limits)
             .field("legacy_octal_numbers", &self.legacy_octal_numbers)
             .field("strict_booleans", &self.strict_booleans)
@@ -507,6 +520,7 @@ mod tests {
         assert!(opts.budget_report.is_none());
         assert!(opts.budget_report_cb.is_none());
         assert!(matches!(opts.duplicate_keys, DuplicateKeyPolicy::Error));
+        assert!(!opts.no_merge_keys);
         assert_eq!(opts.alias_limits.max_total_replayed_events, 1_000_000);
         assert!(!opts.legacy_octal_numbers);
         assert!(!opts.strict_booleans);

@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
+use serde_json::json;
 use serde_saphyr::options::DuplicateKeyPolicy;
 use serde_saphyr::{from_str, from_str_with_options};
 
@@ -111,6 +112,49 @@ other: 2
     let map: BTreeMap<String, i32> = from_str(yaml).expect("quoted key must deserialize");
     assert_eq!(map.get("<<"), Some(&1));
     assert_eq!(map.get("other"), Some(&2));
+}
+
+#[test]
+fn merge_key_is_literal_when_expansion_disabled() {
+    let yaml = r#"
+base: &B { a: 1, b: 2 }
+target:
+  <<: *B
+  own: 3
+"#;
+
+    let options = serde_saphyr::options! {
+        no_merge_keys: true,
+    };
+
+    let doc: MergeDoc<BTreeMap<String, serde_json::Value>> =
+        from_str_with_options(yaml, options).expect("disabled merge key must be literal");
+    assert_eq!(doc.target.get("a"), None);
+    assert_eq!(doc.target.get("b"), None);
+    assert_eq!(doc.target.get("own"), Some(&json!(3)));
+    assert_eq!(doc.target.get("<<"), Some(&json!({ "a": 1, "b": 2 })));
+}
+
+#[test]
+fn disabled_merge_keys_do_not_count_against_merge_key_budget() {
+    let yaml = r#"
+base: &B { a: 1 }
+target:
+  <<: *B
+  own: 2
+"#;
+
+    let options = serde_saphyr::options! {
+        no_merge_keys: true,
+        budget: serde_saphyr::budget! {
+            max_merge_keys: 0,
+        },
+    };
+
+    let doc: MergeDoc<BTreeMap<String, serde_json::Value>> =
+        from_str_with_options(yaml, options).expect("literal << must not consume merge budget");
+    assert_eq!(doc.target.get("<<"), Some(&json!({ "a": 1 })));
+    assert_eq!(doc.target.get("own"), Some(&json!(2)));
 }
 
 #[test]
