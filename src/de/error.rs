@@ -2530,6 +2530,23 @@ mod tests {
     }
 
     #[test]
+    fn merge_key_not_allowed_location_helpers() {
+        let l = Location::new(4, 2);
+        let err = Error::MergeKeyNotAllowed { location: l };
+        assert_eq!(err.location(), Some(l));
+        assert_eq!(
+            err.locations(),
+            Some(Locations {
+                reference_location: l,
+                defined_location: l,
+            })
+        );
+
+        let updated = err.with_location(Location::new(5, 9));
+        assert_eq!(updated.location(), Some(Location::new(5, 9)));
+    }
+
+    #[test]
     fn locations_for_io_error_is_unknown() {
         let err = Error::IOError {
             cause: std::io::Error::other("x"),

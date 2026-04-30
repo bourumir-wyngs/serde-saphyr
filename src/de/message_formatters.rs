@@ -610,6 +610,16 @@ mod tests {
     }
 
     #[test]
+    fn default_merge_key_not_allowed() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::MergeKeyNotAllowed { location: loc() };
+        assert_eq!(
+            formatter.format_message(&err),
+            "YAML merge keys are not allowed by configured policy"
+        );
+    }
+
+    #[test]
     fn default_unexpected_sequence_end() {
         let formatter = DefaultMessageFormatter;
         let err = Error::UnexpectedSequenceEnd { location: loc() };
@@ -1006,6 +1016,13 @@ mod tests {
         let formatter = UserMessageFormatter;
         let err = Error::UnknownAnchor { location: loc() };
         assert_eq!(formatter.format_message(&err), "reference to unknown value");
+    }
+
+    #[test]
+    fn user_merge_key_not_allowed() {
+        let formatter = UserMessageFormatter;
+        let err = Error::MergeKeyNotAllowed { location: loc() };
+        assert_eq!(formatter.format_message(&err), "merge key not allowed here");
     }
 
     #[test]

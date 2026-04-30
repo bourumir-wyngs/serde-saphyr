@@ -4241,4 +4241,45 @@ mod tests {
             ("base".to_owned(), "1".to_owned(), merge_value_location)
         );
     }
+
+    #[test]
+    fn collect_entries_from_map_treats_merge_key_as_ordinary_under_policy() {
+        let reference = loc(36, 9);
+        let mut replay = replay_events(vec![
+            map_start(loc(36, 1)),
+            scalar("<<", SfTag::None, None, ScalarStyle::Plain, loc(36, 2)),
+            scalar("1", SfTag::None, None, ScalarStyle::Plain, loc(36, 3)),
+            map_end(loc(36, 4)),
+        ]);
+
+        let entries =
+            collect_entries_from_map(&mut replay, reference, MergeKeyPolicy::AsOrdinary).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            pending_pair(&entries[0]),
+            ("<<".to_owned(), "1".to_owned(), reference)
+        );
+    }
+
+    #[test]
+    fn collect_entries_from_map_rejects_merge_key_under_error_policy() {
+        let mut replay = replay_events(vec![
+            map_start(loc(37, 1)),
+            scalar("<<", SfTag::None, None, ScalarStyle::Plain, loc(37, 2)),
+            scalar("1", SfTag::None, None, ScalarStyle::Plain, loc(37, 3)),
+            map_end(loc(37, 4)),
+        ]);
+
+        let err = unwrap_err(collect_entries_from_map(
+            &mut replay,
+            loc(37, 9),
+            MergeKeyPolicy::Error,
+        ));
+
+        assert!(matches!(
+            err,
+            Error::MergeKeyNotAllowed { location } if location == loc(37, 2)
+        ));
+    }
 }
