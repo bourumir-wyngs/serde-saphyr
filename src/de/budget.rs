@@ -633,6 +633,9 @@ impl BudgetEnforcer {
 /// Note:
 /// - This is **streaming** and does not allocate a DOM.
 /// - Depth counts nested `SequenceStart` and `MappingStart`.
+/// - Standalone budget checks do not receive [`Options`](crate::Options);
+///   merge keys are counted as if merge expansion is enabled, preserving
+///   historical behavior.
 pub fn check_yaml_budget(
     input: &str,
     budget: Budget,

@@ -25,21 +25,18 @@ pub enum DuplicateKeyPolicy {
 
 /// Merge key handling policy for YAML mappings.
 #[non_exhaustive]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MergeKeyPolicy {
     /// Expand YAML merge keys (`<<`) into the surrounding mapping, as per YAML 1.1 specs.
+    #[default]
     Merge,
-    /// Treat YAML merge keys (`<<`) as ordinary mapping keys (allow but not do merge).
+
+    /// Treat YAML merge keys (`<<`) as ordinary mapping keys.
     AsOrdinary,
+
     /// Error out on encountering a YAML merge key (`<<`), reporting the location.
     Error,
-}
-
-impl Default for MergeKeyPolicy {
-    fn default() -> Self {
-        Self::Merge
-    }
 }
 
 /// Limits applied to alias replay to harden against alias bombs.

@@ -183,6 +183,40 @@ target:
 }
 
 #[test]
+fn merge_key_policy_error_allows_quoted_literal_key() {
+    let yaml = r#"
+target:
+  "<<": 1
+"#;
+
+    let options = serde_saphyr::options! {
+        merge_keys: MergeKeyPolicy::Error,
+    };
+
+    let doc: MergeDoc<BTreeMap<String, serde_json::Value>> =
+        from_str_with_options(yaml, options).expect("quoted << is an ordinary key");
+
+    assert_eq!(doc.target.get("<<"), Some(&json!(1)));
+}
+
+#[test]
+fn merge_key_policy_error_allows_explicit_string_tag_literal_key() {
+    let yaml = r#"
+target:
+  !!str <<: 1
+"#;
+
+    let options = serde_saphyr::options! {
+        merge_keys: MergeKeyPolicy::Error,
+    };
+
+    let doc: MergeDoc<BTreeMap<String, serde_json::Value>> =
+        from_str_with_options(yaml, options).expect("tagged << is an ordinary key");
+
+    assert_eq!(doc.target.get("<<"), Some(&json!(1)));
+}
+
+#[test]
 fn merge_explicit_fields_override_with_first_wins() {
     let yaml = r#"
 base: &B { shared: 1, untouched: 3 }
