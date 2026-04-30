@@ -3,6 +3,7 @@
 //! This inspects the parser's event stream and enforces simple budgets to
 //! avoid pathological inputs
 
+use crate::options::MergeKeyPolicy;
 use ahash::HashSetExt;
 use saphyr_parser::{Event, Parser, ScalarStyle, ScanError};
 use serde::{Deserialize, Serialize};
@@ -329,7 +330,7 @@ pub(crate) struct BudgetEnforcer {
     defined_anchors: FastHashSet<usize>,
     containers: SmallVec<[ContainerState; 64]>,
     policy: EnforcingPolicy,
-    no_merge_keys: bool,
+    merge_keys: MergeKeyPolicy,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -345,7 +346,7 @@ enum ContainerState {
 
 impl BudgetEnforcer {
     /// Create a new enforcer for the provided `budget`.
-    pub(crate) fn new(budget: Budget, policy: EnforcingPolicy, no_merge_keys: bool) -> Self {
+    pub(crate) fn new(budget: Budget, policy: EnforcingPolicy, merge_keys: MergeKeyPolicy) -> Self {
         Self {
             budget,
             report: BudgetReport::default(),
@@ -353,7 +354,7 @@ impl BudgetEnforcer {
             defined_anchors: FastHashSet::with_capacity(256),
             containers: SmallVec::new(),
             policy,
-            no_merge_keys,
+            merge_keys,
         }
     }
 
@@ -515,7 +516,7 @@ impl BudgetEnforcer {
     ) -> Result<(), BudgetBreach> {
         if let Some(ContainerState::Mapping { expecting_key, .. }) = self.containers.last_mut() {
             if *expecting_key {
-                if !self.no_merge_keys
+                if matches!(self.merge_keys, MergeKeyPolicy::Merge)
                     && !has_tag
                     && matches!(style, ScalarStyle::Plain)
                     && value == "<<"
@@ -638,7 +639,7 @@ pub fn check_yaml_budget(
     policy: EnforcingPolicy,
 ) -> Result<BudgetReport, ScanError> {
     let parser = Parser::new_from_str(input);
-    let mut enforcer = BudgetEnforcer::new(budget, policy, false);
+    let mut enforcer = BudgetEnforcer::new(budget, policy, MergeKeyPolicy::Merge);
 
     for item in parser {
         let (ev, _span) = item?;
@@ -758,13 +759,17 @@ e: *A
     }
 
     #[test]
-    fn merge_key_limit_is_ignored_when_expansion_disabled() {
+    fn merge_key_limit_is_ignored_when_policy_is_as_ordinary() {
         let y = "base: &B\n  k: 1\nroot:\n  <<: *B\n";
         let budget = Budget {
             max_merge_keys: 0,
             ..Default::default()
         };
-        let mut enforcer = BudgetEnforcer::new(budget, EnforcingPolicy::AllContent, true);
+        let mut enforcer = BudgetEnforcer::new(
+            budget,
+            EnforcingPolicy::AllContent,
+            MergeKeyPolicy::AsOrdinary,
+        );
 
         for item in Parser::new_from_str(y) {
             let (event, _span) = item.unwrap();

@@ -479,6 +479,11 @@ pub enum Error {
         location: Location,
     },
 
+    /// YAML merge keys (`<<`) are disabled by policy.
+    MergeKeyNotAllowed {
+        location: Location,
+    },
+
     /// `!!binary` scalar could not be decoded as base64.
     InvalidBinaryBase64 {
         location: Location,
@@ -1365,6 +1370,7 @@ impl Error {
             | Error::MultipleDocuments { location, .. }
             | Error::Unexpected { location, .. }
             | Error::MergeValueNotMapOrSeqOfMaps { location }
+            | Error::MergeKeyNotAllowed { location }
             | Error::InvalidBinaryBase64 { location }
             | Error::BinaryNotUtf8 { location }
             | Error::TaggedScalarCannotDeserializeIntoString { location }
@@ -1460,6 +1466,7 @@ impl Error {
             | Error::MultipleDocuments { location, .. }
             | Error::Unexpected { location, .. }
             | Error::MergeValueNotMapOrSeqOfMaps { location }
+            | Error::MergeKeyNotAllowed { location }
             | Error::InvalidBinaryBase64 { location }
             | Error::BinaryNotUtf8 { location }
             | Error::TaggedScalarCannotDeserializeIntoString { location }
@@ -1570,6 +1577,7 @@ impl Error {
             | Error::MultipleDocuments { location, .. }
             | Error::Unexpected { location, .. }
             | Error::MergeValueNotMapOrSeqOfMaps { location }
+            | Error::MergeKeyNotAllowed { location }
             | Error::InvalidBinaryBase64 { location }
             | Error::BinaryNotUtf8 { location }
             | Error::TaggedScalarCannotDeserializeIntoString { location }

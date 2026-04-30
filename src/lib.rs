@@ -14,7 +14,7 @@ pub use self::ser::{
 };
 #[cfg(feature = "deserialize")]
 pub use self::{
-    de::{Budget, DuplicateKeyPolicy, Error, Options, budget, localizer, options},
+    de::{Budget, DuplicateKeyPolicy, Error, MergeKeyPolicy, Options, budget, localizer, options},
     de_error::{
         CroppedRegion, MessageFormatter, RenderOptions, SnippetMode, TransformReason,
         UserMessageFormatter,

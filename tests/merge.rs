@@ -5,7 +5,7 @@ use serde::Deserialize;
 use serde::de::IgnoredAny;
 
 use serde_json::json;
-use serde_saphyr::options::DuplicateKeyPolicy;
+use serde_saphyr::options::{DuplicateKeyPolicy, MergeKeyPolicy};
 use serde_saphyr::{from_str, from_str_with_options};
 
 #[derive(Deserialize)]
@@ -115,7 +115,7 @@ other: 2
 }
 
 #[test]
-fn merge_key_is_literal_when_expansion_disabled() {
+fn merge_key_is_literal_with_as_ordinary_policy() {
     let yaml = r#"
 base: &B { a: 1, b: 2 }
 target:
@@ -124,11 +124,11 @@ target:
 "#;
 
     let options = serde_saphyr::options! {
-        no_merge_keys: true,
+        merge_keys: MergeKeyPolicy::AsOrdinary,
     };
 
     let doc: MergeDoc<BTreeMap<String, serde_json::Value>> =
-        from_str_with_options(yaml, options).expect("disabled merge key must be literal");
+        from_str_with_options(yaml, options).expect("ordinary merge key must be literal");
     assert_eq!(doc.target.get("a"), None);
     assert_eq!(doc.target.get("b"), None);
     assert_eq!(doc.target.get("own"), Some(&json!(3)));
@@ -136,7 +136,7 @@ target:
 }
 
 #[test]
-fn disabled_merge_keys_do_not_count_against_merge_key_budget() {
+fn ordinary_merge_keys_do_not_count_against_merge_key_budget() {
     let yaml = r#"
 base: &B { a: 1 }
 target:
@@ -145,7 +145,7 @@ target:
 "#;
 
     let options = serde_saphyr::options! {
-        no_merge_keys: true,
+        merge_keys: MergeKeyPolicy::AsOrdinary,
         budget: serde_saphyr::budget! {
             max_merge_keys: 0,
         },
@@ -155,6 +155,31 @@ target:
         from_str_with_options(yaml, options).expect("literal << must not consume merge budget");
     assert_eq!(doc.target.get("<<"), Some(&json!({ "a": 1 })));
     assert_eq!(doc.target.get("own"), Some(&json!(2)));
+}
+
+#[test]
+fn merge_key_policy_error_rejects_merge_keys() {
+    let yaml = r#"
+base: &B { a: 1 }
+target:
+  <<: *B
+  own: 2
+"#;
+
+    let options = serde_saphyr::options! {
+        merge_keys: MergeKeyPolicy::Error,
+    };
+
+    let err =
+        match from_str_with_options::<MergeDoc<BTreeMap<String, serde_json::Value>>>(yaml, options)
+        {
+            Ok(_) => panic!("merge key must be rejected"),
+            Err(err) => err,
+        };
+    assert!(matches!(
+        err.without_snippet(),
+        serde_saphyr::Error::MergeKeyNotAllowed { .. }
+    ));
 }
 
 #[test]

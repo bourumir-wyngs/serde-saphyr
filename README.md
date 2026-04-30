@@ -471,6 +471,11 @@ production:
 
 Merge keys are standard in YAML 1.1. Although YAML 1.2 no longer includes merge keys in its specification, it doesn't explicitly disallow them either, and many parsers implement this feature.
 
+Merge-key handling is configurable with the `merge_keys` option. The default
+`MergeKeyPolicy::Merge` expands `<<` entries. Use `MergeKeyPolicy::AsOrdinary`
+to accept `<<` as a regular mapping key, or `MergeKeyPolicy::Error` to reject
+merge keys.
+
 ## Properties
 
 Many configuration formats contain secret values that should not be part of checked-in repository content and should not leak into error snippets or other messages. The optional `properties` feature adds docker-compose-style `${NAME}` interpolation for that use case, allowing you to provide values through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). The feature can also be used to configure generated values, or values that change between releases or deployments, or are otherwise more convenient to specify separately from the main yaml document.

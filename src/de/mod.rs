@@ -145,7 +145,7 @@ mod spanned_deser;
 
 // Re-export moved Options and related enums from the options module to preserve
 // the public path serde_saphyr::sf_serde::*.
-pub use crate::options::{AliasLimits, DuplicateKeyPolicy, Options};
+pub use crate::options::{AliasLimits, DuplicateKeyPolicy, MergeKeyPolicy, Options};
 use crate::tags::SfTag;
 
 #[cfg(any(feature = "garde", feature = "validator"))]
@@ -156,8 +156,8 @@ use self::path_map::PathRecorder;
 pub(crate) struct Cfg {
     /// Policy to apply for duplicate mapping keys.
     pub(crate) dup_policy: DuplicateKeyPolicy,
-    /// If true, treat YAML merge keys (`<<`) as ordinary mapping keys.
-    pub(crate) no_merge_keys: bool,
+    /// Policy for YAML merge keys (`<<`).
+    pub(crate) merge_keys: MergeKeyPolicy,
     /// If true, accept legacy octal numbers that start with `00`.
     pub(crate) legacy_octal_numbers: bool,
     /// If true, only accept exact literals `true`/`false` as booleans.
@@ -176,7 +176,7 @@ impl Cfg {
     pub(crate) fn from_options(options: &Options) -> Self {
         Self {
             dup_policy: options.duplicate_keys,
-            no_merge_keys: options.no_merge_keys,
+            merge_keys: options.merge_keys,
             legacy_octal_numbers: options.legacy_octal_numbers,
             strict_booleans: options.strict_booleans,
             angle_conversions: options.angle_conversions,
@@ -733,7 +733,7 @@ fn pending_entries_from_events<'a>(
     events: Vec<Ev<'a>>,
     location: Location,
     reference_location: Location,
-    no_merge_keys: bool,
+    merge_keys: MergeKeyPolicy,
     #[cfg(feature = "properties")] property_map: Option<Rc<HashMap<String, String>>>,
 ) -> Result<Vec<PendingEntry<'a>>, Error> {
     let mut replay = ReplayEvents::with_reference(
@@ -750,7 +750,7 @@ fn pending_entries_from_events<'a>(
             location: *location,
         }),
         Some(Ev::MapStart { .. }) => {
-            collect_entries_from_map(&mut replay, reference_location, no_merge_keys)
+            collect_entries_from_map(&mut replay, reference_location, merge_keys)
         }
         Some(Ev::SeqStart { .. }) => {
             let mut batches = Vec::new();
@@ -772,7 +772,7 @@ fn pending_entries_from_events<'a>(
                             element.take_events(),
                             element.location(),
                             element_ref_loc,
-                            no_merge_keys,
+                            merge_keys,
                             #[cfg(feature = "properties")]
                             property_map.clone(),
                         )?); // recursive
@@ -811,7 +811,7 @@ fn pending_entries_from_events<'a>(
 fn pending_entries_from_live_events<'a>(
     ev: &mut dyn Events<'a>,
     merge_reference_location: Location,
-    no_merge_keys: bool,
+    merge_keys: MergeKeyPolicy,
 ) -> Result<Vec<PendingEntry<'a>>, Error> {
     #[cfg(feature = "properties")]
     let property_map = ev.property_map().map(Rc::clone);
@@ -829,7 +829,7 @@ fn pending_entries_from_live_events<'a>(
                 node.take_events(),
                 node.location(),
                 merge_reference_location,
-                no_merge_keys,
+                merge_keys,
                 #[cfg(feature = "properties")]
                 property_map,
             )
@@ -851,7 +851,7 @@ fn pending_entries_from_live_events<'a>(
                             element.take_events(),
                             element.location(),
                             element_ref_loc,
-                            no_merge_keys,
+                            merge_keys,
                             #[cfg(feature = "properties")]
                             property_map.clone(),
                         )?);
@@ -885,7 +885,7 @@ fn pending_entries_from_live_events<'a>(
 fn collect_entries_from_map<'a>(
     ev: &mut dyn Events<'a>,
     reference_location: Location,
-    no_merge_keys: bool,
+    merge_keys: MergeKeyPolicy,
 ) -> Result<Vec<PendingEntry<'a>>, Error> {
     let Some(Ev::MapStart { .. }) = ev.next()? else {
         return Err(Error::MergeValueNotMapOrSeqOfMaps {
@@ -904,25 +904,35 @@ fn collect_entries_from_map<'a>(
             }
             Some(_) => {
                 let key = capture_node(ev)?;
-                if !no_merge_keys && is_merge_key(&key) {
-                    // Preserve where the merge value is referenced (use-site). For alias merges
-                    // inside merged mappings, node locations point at the anchored mapping, but
-                    // we want `referenced` to point at the alias token.
-                    let _ = ev.peek()?;
-                    let merge_ref_loc = ev.reference_location();
-                    merges.push(pending_entries_from_live_events(
-                        ev,
-                        merge_ref_loc,
-                        no_merge_keys,
-                    )?);
-                } else {
-                    let value = capture_node(ev)?;
-                    fields.push(PendingEntry {
-                        key,
-                        value,
-                        reference_location,
-                    });
+                if is_merge_key(&key) {
+                    match merge_keys {
+                        MergeKeyPolicy::Merge => {
+                            // Preserve where the merge value is referenced (use-site). For alias
+                            // merges inside merged mappings, node locations point at the anchored
+                            // mapping, but we want `referenced` to point at the alias token.
+                            let _ = ev.peek()?;
+                            let merge_ref_loc = ev.reference_location();
+                            merges.push(pending_entries_from_live_events(
+                                ev,
+                                merge_ref_loc,
+                                merge_keys,
+                            )?);
+                            continue;
+                        }
+                        MergeKeyPolicy::AsOrdinary => {}
+                        MergeKeyPolicy::Error => {
+                            return Err(Error::MergeKeyNotAllowed {
+                                location: key.location(),
+                            });
+                        }
+                    }
                 }
+                let value = capture_node(ev)?;
+                fields.push(PendingEntry {
+                    key,
+                    value,
+                    reference_location,
+                });
             }
             None => {
                 return Err(Error::eof().with_location(ev.last_location()));
@@ -2756,22 +2766,32 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         }
                         Some(_) => {
                             let mut key_node = capture_node(self.ev)?;
-                            if !self.cfg.no_merge_keys && is_merge_key(&key_node) {
-                                // Preserve where the merge value is *referenced* (use-site).
-                                // For alias merges (`<<: *m`), `key_node`/`value_node` locations
-                                // will point at the anchored mapping, but we want `referenced`
-                                // to point at the alias token.
-                                let _ = self.ev.peek()?;
-                                let merge_ref_loc = self.ev.reference_location();
-                                let entries = pending_entries_from_live_events(
-                                    self.ev,
-                                    merge_ref_loc,
-                                    self.cfg.no_merge_keys,
-                                )?;
-                                if !entries.is_empty() {
-                                    self.merge_stack.push(entries);
+                            if is_merge_key(&key_node) {
+                                match self.cfg.merge_keys {
+                                    MergeKeyPolicy::Merge => {
+                                        // Preserve where the merge value is *referenced* (use-site).
+                                        // For alias merges (`<<: *m`), `key_node`/`value_node`
+                                        // locations will point at the anchored mapping, but we want
+                                        // `referenced` to point at the alias token.
+                                        let _ = self.ev.peek()?;
+                                        let merge_ref_loc = self.ev.reference_location();
+                                        let entries = pending_entries_from_live_events(
+                                            self.ev,
+                                            merge_ref_loc,
+                                            self.cfg.merge_keys,
+                                        )?;
+                                        if !entries.is_empty() {
+                                            self.merge_stack.push(entries);
+                                        }
+                                        continue;
+                                    }
+                                    MergeKeyPolicy::AsOrdinary => {}
+                                    MergeKeyPolicy::Error => {
+                                        return Err(Error::MergeKeyNotAllowed {
+                                            location: key_node.location(),
+                                        });
+                                    }
                                 }
-                                continue;
                             }
 
                             let fingerprint = key_node.fingerprint();
@@ -3573,7 +3593,7 @@ mod tests {
         location: Location,
         reference_location: Location,
     ) -> Result<Vec<PendingEntry<'static>>, Error> {
-        pending_entries_from_events(events, location, reference_location, false)
+        pending_entries_from_events(events, location, reference_location, MergeKeyPolicy::Merge)
     }
 
     #[cfg(feature = "properties")]
@@ -3582,7 +3602,13 @@ mod tests {
         location: Location,
         reference_location: Location,
     ) -> Result<Vec<PendingEntry<'static>>, Error> {
-        pending_entries_from_events(events, location, reference_location, false, None)
+        pending_entries_from_events(
+            events,
+            location,
+            reference_location,
+            MergeKeyPolicy::Merge,
+            None,
+        )
     }
 
     fn scalar_text(events: &[Ev<'_>]) -> Option<String> {
@@ -3624,7 +3650,7 @@ mod tests {
     fn cfg_and_replay_events_follow_options_and_reference_overrides() {
         let options = Options {
             duplicate_keys: DuplicateKeyPolicy::LastWins,
-            no_merge_keys: true,
+            merge_keys: MergeKeyPolicy::AsOrdinary,
             legacy_octal_numbers: true,
             strict_booleans: true,
             angle_conversions: true,
@@ -3635,7 +3661,7 @@ mod tests {
 
         let cfg = Cfg::from_options(&options);
         assert!(matches!(cfg.dup_policy, DuplicateKeyPolicy::LastWins));
-        assert!(cfg.no_merge_keys);
+        assert!(matches!(cfg.merge_keys, MergeKeyPolicy::AsOrdinary));
         assert!(cfg.legacy_octal_numbers);
         assert!(cfg.strict_booleans);
         assert!(cfg.angle_conversions);
@@ -4107,9 +4133,13 @@ mod tests {
             loc(29, 1),
         )]);
         assert!(
-            pending_entries_from_live_events(&mut null_replay, merge_reference, false)
-                .unwrap()
-                .is_empty()
+            pending_entries_from_live_events(
+                &mut null_replay,
+                merge_reference,
+                MergeKeyPolicy::Merge
+            )
+            .unwrap()
+            .is_empty()
         );
 
         let mut scalar_replay = replay_events(vec![scalar(
@@ -4122,7 +4152,7 @@ mod tests {
         let err = unwrap_err(pending_entries_from_live_events(
             &mut scalar_replay,
             merge_reference,
-            false,
+            MergeKeyPolicy::Merge,
         ));
         assert!(matches!(
             err,
@@ -4141,8 +4171,12 @@ mod tests {
             map_end(loc(32, 5)),
             seq_end(loc(33, 1)),
         ]);
-        let entries =
-            pending_entries_from_live_events(&mut seq_replay, merge_reference, false).unwrap();
+        let entries = pending_entries_from_live_events(
+            &mut seq_replay,
+            merge_reference,
+            MergeKeyPolicy::Merge,
+        )
+        .unwrap();
         assert_eq!(entries.len(), 2);
         assert_eq!(
             pending_pair(&entries[0]),
@@ -4157,7 +4191,7 @@ mod tests {
         let err = unwrap_err(pending_entries_from_live_events(
             &mut empty,
             merge_reference,
-            false,
+            MergeKeyPolicy::Merge,
         ));
         assert!(matches!(err, Error::Eof { location } if location == Location::UNKNOWN));
     }
@@ -4171,7 +4205,11 @@ mod tests {
             ScalarStyle::Plain,
             loc(34, 1),
         )]);
-        let err = unwrap_err(collect_entries_from_map(&mut not_a_map, loc(34, 9), false));
+        let err = unwrap_err(collect_entries_from_map(
+            &mut not_a_map,
+            loc(34, 9),
+            MergeKeyPolicy::Merge,
+        ));
         assert!(matches!(
             err,
             Error::MergeValueNotMapOrSeqOfMaps { location } if location == loc(34, 1)
@@ -4191,7 +4229,8 @@ mod tests {
             map_end(loc(35, 10)),
         ]);
 
-        let entries = collect_entries_from_map(&mut replay, outer_reference, false).unwrap();
+        let entries =
+            collect_entries_from_map(&mut replay, outer_reference, MergeKeyPolicy::Merge).unwrap();
         assert_eq!(entries.len(), 2);
         assert_eq!(
             pending_pair(&entries[0]),
