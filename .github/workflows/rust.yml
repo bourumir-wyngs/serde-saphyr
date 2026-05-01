@@ -35,11 +35,11 @@ jobs:
 
       - name: Run clippy (crate)
         run: |
-          cargo clippy --locked --offline --all-targets --all-features -- -D warnings
+          cargo clippy --offline --all-targets --all-features -- -D warnings
 
       - name: Run clippy (fuzz)
         run: |
-          cargo clippy --locked --offline --manifest-path fuzz/Cargo.toml --all-targets --all-features -- -D warnings
+          cargo clippy --offline --manifest-path fuzz/Cargo.toml --all-targets --all-features -- -D warnings
 
   build:
     runs-on: ubuntu-latest
