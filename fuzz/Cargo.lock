@@ -121,7 +121,6 @@ dependencies = [
 [[package]]
 name = "granit-parser"
 version = "0.0.1"
-source = "git+https://github.com/bourumir-wyngs/granit-parser#8af096dd8460360c6542fba59db374da4a8c5117"
 dependencies = [
  "arraydeque",
  "smallvec",
