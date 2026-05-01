@@ -3,6 +3,7 @@
 //! This inspects the parser's event stream and enforces simple budgets to
 //! avoid pathological inputs
 
+use crate::options::MergeKeyPolicy;
 use ahash::HashSetExt;
 use saphyr_parser::{Event, Parser, ScalarStyle, ScanError};
 use serde::{Deserialize, Serialize};
@@ -120,7 +121,8 @@ pub struct Budget {
         note = "Direct construction of `Budget` will be disabled from 1.0.0, use macro `budget!`"
     )]
     pub max_total_scalar_bytes: usize,
-    /// Maximum number of merge keys (`<<`) allowed across the stream.
+    /// Maximum number of merge keys (`<<`) allowed across the stream when merge-key
+    /// expansion is enabled.
     ///
     /// Default: 10,000
     #[deprecated(
@@ -290,7 +292,7 @@ pub struct BudgetReport {
     /// Sum of bytes across all scalar values (`Scalar.value.len()`), saturating on overflow.
     pub total_scalar_bytes: usize,
 
-    /// Total number of merge keys (`<<`) encountered.
+    /// Total number of merge keys (`<<`) encountered while merge-key expansion was enabled.
     pub merge_keys: usize,
 }
 
@@ -328,6 +330,7 @@ pub(crate) struct BudgetEnforcer {
     defined_anchors: FastHashSet<usize>,
     containers: SmallVec<[ContainerState; 64]>,
     policy: EnforcingPolicy,
+    merge_keys: MergeKeyPolicy,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -343,7 +346,7 @@ enum ContainerState {
 
 impl BudgetEnforcer {
     /// Create a new enforcer for the provided `budget`.
-    pub fn new(budget: Budget, policy: EnforcingPolicy) -> Self {
+    pub(crate) fn new(budget: Budget, policy: EnforcingPolicy, merge_keys: MergeKeyPolicy) -> Self {
         Self {
             budget,
             report: BudgetReport::default(),
@@ -351,6 +354,7 @@ impl BudgetEnforcer {
             defined_anchors: FastHashSet::with_capacity(256),
             containers: SmallVec::new(),
             policy,
+            merge_keys,
         }
     }
 
@@ -512,7 +516,11 @@ impl BudgetEnforcer {
     ) -> Result<(), BudgetBreach> {
         if let Some(ContainerState::Mapping { expecting_key, .. }) = self.containers.last_mut() {
             if *expecting_key {
-                if !has_tag && matches!(style, ScalarStyle::Plain) && value == "<<" {
+                if matches!(self.merge_keys, MergeKeyPolicy::Merge)
+                    && !has_tag
+                    && matches!(style, ScalarStyle::Plain)
+                    && value == "<<"
+                {
                     self.report.merge_keys += 1;
                     if self.report.merge_keys > self.budget.max_merge_keys {
                         return Err(BudgetBreach::MergeKeys {
@@ -625,13 +633,16 @@ impl BudgetEnforcer {
 /// Note:
 /// - This is **streaming** and does not allocate a DOM.
 /// - Depth counts nested `SequenceStart` and `MappingStart`.
+/// - Standalone budget checks do not receive [`Options`](crate::Options);
+///   merge keys are counted as if merge expansion is enabled, preserving
+///   historical behavior.
 pub fn check_yaml_budget(
     input: &str,
     budget: Budget,
     policy: EnforcingPolicy,
 ) -> Result<BudgetReport, ScanError> {
     let parser = Parser::new_from_str(input);
-    let mut enforcer = BudgetEnforcer::new(budget, policy);
+    let mut enforcer = BudgetEnforcer::new(budget, policy, MergeKeyPolicy::Merge);
 
     for item in parser {
         let (ev, _span) = item?;
@@ -748,6 +759,29 @@ e: *A
             Some(BudgetBreach::MergeKeys { merge_keys }) if merge_keys == 3
         ));
         assert_eq!(rep.merge_keys, 3);
+    }
+
+    #[test]
+    fn merge_key_limit_is_ignored_when_policy_is_as_ordinary() {
+        let y = "base: &B\n  k: 1\nroot:\n  <<: *B\n";
+        let budget = Budget {
+            max_merge_keys: 0,
+            ..Default::default()
+        };
+        let mut enforcer = BudgetEnforcer::new(
+            budget,
+            EnforcingPolicy::AllContent,
+            MergeKeyPolicy::AsOrdinary,
+        );
+
+        for item in Parser::new_from_str(y) {
+            let (event, _span) = item.unwrap();
+            enforcer.observe(&event).unwrap();
+        }
+
+        let report = enforcer.finalize();
+        assert!(report.breached.is_none());
+        assert_eq!(report.merge_keys, 0);
     }
 
     #[test]
