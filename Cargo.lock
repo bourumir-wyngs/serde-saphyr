@@ -366,6 +366,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
+name = "granit-parser"
+version = "0.0.1"
+source = "git+https://github.com/bourumir-wyngs/granit-parser#e7577c811c6ba7d940a817adef44004973b79615"
+dependencies = [
+ "arraydeque",
+ "smallvec",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -771,16 +780,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a50f4cf475b65d88e057964e0e9bb1f0aa9bbb2036dc65c64596b42932536984"
 
 [[package]]
-name = "saphyr-parser-bw"
-version = "0.0.612"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73e91b93c627b8ad4e5974e4d55520d48586bc550d7b57a5df65911c030034a3"
-dependencies = [
- "arraydeque",
- "smallvec",
-]
-
-[[package]]
 name = "serde"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -803,12 +802,12 @@ dependencies = [
  "figment",
  "garde",
  "getrandom",
+ "granit-parser",
  "indoc",
  "miette",
  "nohash-hasher",
  "num-traits",
  "regex",
- "saphyr-parser-bw",
  "serde",
  "serde-transcode",
  "serde_bytes",
