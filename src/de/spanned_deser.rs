@@ -13,18 +13,6 @@ fn unreachable_deserialize_any(what: &str) -> Error {
     Error::msg(format!("{what}::deserialize_any should not be reachable"))
 }
 
-#[cfg(not(feature = "huge_documents"))]
-#[inline]
-fn span_index_to_u64(v: crate::location::SpanIndex) -> u64 {
-    v as u64
-}
-
-#[cfg(feature = "huge_documents")]
-#[inline]
-fn span_index_to_u64(v: crate::location::SpanIndex) -> u64 {
-    v
-}
-
 /// Dispatch for the internal `__yaml_spanned` newtype.
 ///
 /// This captures the current *use-site* (`referenced`) and *definition-site*
@@ -284,8 +272,8 @@ impl<'de> de::Deserializer<'de> for SpanDeser {
     }
 }
 
-/// Deserializer for the `(SpanIndex, SpanIndex)` byte_info tuple.
-struct ByteInfoTupleDeser((crate::location::SpanIndex, crate::location::SpanIndex));
+/// Deserializer for the `(byte_offset, byte_len)` tuple.
+struct ByteInfoTupleDeser((u64, u64));
 
 impl<'de> de::Deserializer<'de> for ByteInfoTupleDeser {
     type Error = Error;
@@ -315,7 +303,7 @@ impl<'de> de::Deserializer<'de> for ByteInfoTupleDeser {
 }
 
 struct ByteInfoSeqAccess {
-    byte_info: (crate::location::SpanIndex, crate::location::SpanIndex),
+    byte_info: (u64, u64),
     index: u8,
 }
 
@@ -329,13 +317,13 @@ impl<'de> de::SeqAccess<'de> for ByteInfoSeqAccess {
         match self.index {
             0 => {
                 self.index += 1;
-                let v = span_index_to_u64(self.byte_info.0);
-                seed.deserialize(v.into_deserializer()).map(Some)
+                seed.deserialize(self.byte_info.0.into_deserializer())
+                    .map(Some)
             }
             1 => {
                 self.index += 1;
-                let v = span_index_to_u64(self.byte_info.1);
-                seed.deserialize(v.into_deserializer()).map(Some)
+                seed.deserialize(self.byte_info.1.into_deserializer())
+                    .map(Some)
             }
             _ => Ok(None),
         }
@@ -369,15 +357,9 @@ impl<'de> de::MapAccess<'de> for SpanMapAccess {
         Vv: de::DeserializeSeed<'de>,
     {
         match self.state {
-            1 => {
-                let v = span_index_to_u64(self.span.raw_offset());
-                seed.deserialize(v.into_deserializer())
-            }
-            2 => {
-                let v = span_index_to_u64(self.span.raw_len());
-                seed.deserialize(v.into_deserializer())
-            }
-            3 => seed.deserialize(ByteInfoTupleDeser(self.span.raw_byte_info())),
+            1 => seed.deserialize(self.span.offset().into_deserializer()),
+            2 => seed.deserialize(self.span.len().into_deserializer()),
+            3 => seed.deserialize(ByteInfoTupleDeser(self.span.byte_info_or_zero())),
             _ => Err(Error::msg("invalid Span internal state")),
         }
     }

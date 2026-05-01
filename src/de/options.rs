@@ -23,6 +23,22 @@ pub enum DuplicateKeyPolicy {
     LastWins,
 }
 
+/// Merge key handling policy for YAML mappings.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MergeKeyPolicy {
+    /// Expand YAML merge keys (`<<`) into the surrounding mapping, as per YAML 1.1 specs.
+    #[default]
+    Merge,
+
+    /// Treat YAML merge keys (`<<`) as ordinary mapping keys.
+    AsOrdinary,
+
+    /// Error out on encountering a YAML merge key (`<<`), reporting the location.
+    Error,
+}
+
 /// Limits applied to alias replay to harden against alias bombs.
 ///
 /// Prefer constructing this via the [`alias_limits!`](crate::alias_limits!) macro instead of a
@@ -132,6 +148,18 @@ pub struct Options {
         note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
     )]
     pub duplicate_keys: DuplicateKeyPolicy,
+    /// Policy for YAML merge keys (`<<`).
+    ///
+    /// [`MergeKeyPolicy::Merge`] expands merge keys and counts them against
+    /// [`Budget::max_merge_keys`]. [`MergeKeyPolicy::AsOrdinary`] accepts `<<`
+    /// as a regular key. [`MergeKeyPolicy::Error`] rejects merge keys.
+    ///
+    /// Default: [`MergeKeyPolicy::Merge`].
+    #[serde(default)]
+    #[deprecated(
+        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
+    )]
+    pub merge_keys: MergeKeyPolicy,
     /// Limits for alias replay to harden against alias bombs.
     #[deprecated(
         note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
@@ -412,6 +440,7 @@ impl Default for Options {
             budget_report: None,
             budget_report_cb: None,
             duplicate_keys: DuplicateKeyPolicy::Error,
+            merge_keys: MergeKeyPolicy::Merge,
             alias_limits: AliasLimits::default(),
             legacy_octal_numbers: false,
             strict_booleans: false,
@@ -445,6 +474,7 @@ impl std::fmt::Debug for Options {
                 },
             )
             .field("duplicate_keys", &self.duplicate_keys)
+            .field("merge_keys", &self.merge_keys)
             .field("alias_limits", &self.alias_limits)
             .field("legacy_octal_numbers", &self.legacy_octal_numbers)
             .field("strict_booleans", &self.strict_booleans)
@@ -507,6 +537,7 @@ mod tests {
         assert!(opts.budget_report.is_none());
         assert!(opts.budget_report_cb.is_none());
         assert!(matches!(opts.duplicate_keys, DuplicateKeyPolicy::Error));
+        assert!(matches!(opts.merge_keys, MergeKeyPolicy::Merge));
         assert_eq!(opts.alias_limits.max_total_replayed_events, 1_000_000);
         assert!(!opts.legacy_octal_numbers);
         assert!(!opts.strict_booleans);

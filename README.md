@@ -37,7 +37,7 @@ In our [benchmarking project](https://github.com/bourumir-wyngs/serde-saphyr-ben
 
 |                                                   Crate | Version             | Merge Keys | Nested Enums | Duplicate key rejection |                                           Validation                                           | Error snippet | Borrowed deserialization | Notes                                                                    |
 | ------------------------------------------------------: |:--------------------| :--------- | :----------- | :---------------------- | :---------------------------------------------------------------------------------------------: | :-----------: | :----------------------: |:-------------------------------------------------------------------------|
-|   [serde-saphyr](https://crates.io/crates/serde-saphyr) | 0.0.17              | ✅         | ✅           | ✅ Configurable         | ✅[`garde`](https://crates.io/crates/garde) / [`validator`](https://crates.io/crates/validator) |      ✅      |           ✅            | No`unsafe`, no [unsafe-libyaml](https://crates.io/crates/unsafe-libyaml) |
+|   [serde-saphyr](https://crates.io/crates/serde-saphyr) | latest              | ✅      Configurable   | ✅           | ✅ Configurable         | ✅[`garde`](https://crates.io/crates/garde) / [`validator`](https://crates.io/crates/validator) |      ✅      |           ✅            | No`unsafe`, no [unsafe-libyaml](https://crates.io/crates/unsafe-libyaml) |
 | [serde-yaml-bw](https://crates.io/crates/serde-yaml_bw) | 2.4.1               | ✅         | ✅           | ✅ Configurable         |                                               ❌                                               |      ❌      |           ❌            | Slow due to Saphyr performing a budget check upfront of libyaml              |
 | [serde-yaml-ng](https://crates.io/crates/serde-yaml-ng) | 0.10.0              | ⚠️       | ❌           | ❌                      |                                               ❌                                               |      ❌      |           ✅            |                                                                          |
 |       [serde-yaml](https://crates.io/crates/serde-yaml) | 0.9.34 + deprecated | ⚠️       | ❌           | ❌                      |                                               ❌                                               |      ❌      |           ✅            | Original, deprecated, repo archived                                      |
@@ -126,6 +126,8 @@ or
 serde-saphyr = { version = "0.0.25", default-features = false, features = ["serialize"] }
 ```
 Disabling both will produce a "Invalid feature configuration" error (such configuration makes no sense).
+
+The optional `huge_documents` feature switches span storage from `u32` indices to a packed 48-bit internal representation so spans can cover YAML inputs far beyond 4 GiB without widening every coordinate to a full `u64`. Public getters still return `u64`, and values beyond the packed range saturate instead of wrapping.
 
 ### Snippets
 To make debugging easier, **serde-saphyr** renders snippets of the YAML that caused an error (similar to how many compilers report errors). These snippets include the line where the error occurred along with some surrounding context. Any terminal control sequences that might be present in the YAML are stripped out. If not desired, snippets can be removed for a specific error using [`without_snippet`](https://docs.rs/serde-saphyr/latest/serde_saphyr/enum.Error.html#method.without_snippet), or disabled entirely via the `Options` configuration.
@@ -337,7 +339,7 @@ fn main() {
 ## Options
 Serde-saphyr provides control over serialization and deserialization behavior. We generally welcome feature requests, but we also recognize that not every user wants every feature enabled by default.
 
-To support different use cases, most behavior can be enabled, disabled, or tuned via [Options](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html) (deserializers) and [SerializerOptions](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.SerializerOptions.html) (serializers). Adding fields to the public API is a breaking change. To allow new options without breaking compatibility, Serde-saphyr uses a macro-driven approach based on the [`options!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.options.html), [`budget!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.budget.html), and [`ser_options!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.ser_options.html) macros.
+To support different use cases, most behavior can be enabled, disabled, or tuned via [Options](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html) (deserializers) and [SerializerOptions](https://docs.rs/serde-saphyr/latest/serde_saphyr/ser/options/struct.SerializerOptions.html) (serializers). Adding fields to the public API is a breaking change. To allow new options without breaking compatibility, Serde-saphyr uses a macro-driven approach based on the [`options!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.options.html), [`budget!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.budget.html), and [`ser_options!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.ser_options.html) macros.
 
 ```rust
 fn main() {
@@ -364,7 +366,7 @@ If you do not want this (or if you are parsing into a JSON Value where it might 
 
 ## Deserializing into abstract JSON Value
 
-If you must work with abstract types, you can also deserialize YAML into [`serde_json::Value`](https://docs.rs/serde_json/latest/serde_json/value/index.html). Serde will drive the process through [`deserialize_any`](src/de.rs) because `Value` does not fix a Rust primitive type ahead of time. You lose the strict type control provided by Rust `struct` data types. Also, unlike YAML, JSON does not allow composite keys; keys must be strings. Field order will be preserved.
+If you must work with abstract types, you can also deserialize YAML into [`serde_json::Value`](https://docs.rs/serde_json/latest/serde_json/value/index.html). Serde will drive the process through [`deserialize_any`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Deserializer.html#method.deserialize_any) because `Value` does not fix a Rust primitive type ahead of time. You lose the strict type control provided by Rust `struct` data types. Also, unlike YAML, JSON does not allow composite keys; keys must be strings. Field order will be preserved.
 
 ## Binary scalars
 
@@ -467,6 +469,11 @@ production:
 ```
 
 Merge keys are standard in YAML 1.1. Although YAML 1.2 no longer includes merge keys in its specification, it doesn't explicitly disallow them either, and many parsers implement this feature.
+
+Merge-key handling is configurable with the `merge_keys` option. The default
+`MergeKeyPolicy::Merge` expands `<<` entries. Use `MergeKeyPolicy::AsOrdinary`
+to accept `<<` as a regular mapping key, or `MergeKeyPolicy::Error` to reject
+merge keys.
 
 ## Properties
 
@@ -726,6 +733,13 @@ let yaml = "name: hello\nvalue: 42\n";
 let data: Data = serde_saphyr::from_str(yaml).unwrap();
 assert_eq!(data.name, "hello");
 ```
+
+### UTF-16
+
+Reader-based entry points (`from_reader`, `from_reader_with_options`,
+`read`, and `read_with_options`) accept BOM-marked UTF-8, UTF-16LE, and
+UTF-16BE. If no recognized BOM is present, reader input is treated as UTF-8. String- and slice-based entry 
+points take UTF-8 only.
 
 **Limitations:**
 - Borrowing works for any scalar whose parsed value exists **verbatim** in the input. This includes plain scalars and simple quoted strings without escape sequences (e.g., `"hello world"` can be borrowed, but `"hello\nworld"` cannot because `\n` is transformed to a newline).

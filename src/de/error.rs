@@ -479,6 +479,11 @@ pub enum Error {
         location: Location,
     },
 
+    /// YAML merge keys (`<<`) are disabled by policy.
+    MergeKeyNotAllowed {
+        location: Location,
+    },
+
     /// `!!binary` scalar could not be decoded as base64.
     InvalidBinaryBase64 {
         location: Location,
@@ -1365,6 +1370,7 @@ impl Error {
             | Error::MultipleDocuments { location, .. }
             | Error::Unexpected { location, .. }
             | Error::MergeValueNotMapOrSeqOfMaps { location }
+            | Error::MergeKeyNotAllowed { location }
             | Error::InvalidBinaryBase64 { location }
             | Error::BinaryNotUtf8 { location }
             | Error::TaggedScalarCannotDeserializeIntoString { location }
@@ -1460,6 +1466,7 @@ impl Error {
             | Error::MultipleDocuments { location, .. }
             | Error::Unexpected { location, .. }
             | Error::MergeValueNotMapOrSeqOfMaps { location }
+            | Error::MergeKeyNotAllowed { location }
             | Error::InvalidBinaryBase64 { location }
             | Error::BinaryNotUtf8 { location }
             | Error::TaggedScalarCannotDeserializeIntoString { location }
@@ -1570,6 +1577,7 @@ impl Error {
             | Error::MultipleDocuments { location, .. }
             | Error::Unexpected { location, .. }
             | Error::MergeValueNotMapOrSeqOfMaps { location }
+            | Error::MergeKeyNotAllowed { location }
             | Error::InvalidBinaryBase64 { location }
             | Error::BinaryNotUtf8 { location }
             | Error::TaggedScalarCannotDeserializeIntoString { location }
@@ -1645,14 +1653,9 @@ impl Error {
     #[cold]
     #[inline(never)]
     pub(crate) fn from_scan_error(err: ScanError) -> Self {
-        use crate::location::SpanIndex;
         let mark = err.marker();
-        let location =
-            Location::new(mark.line(), mark.col() + 1).with_span(crate::location::Span {
-                offset: mark.index() as SpanIndex,
-                len: 1,
-                byte_info: (0, 0),
-            });
+        let location = Location::new(mark.line(), mark.col() + 1)
+            .with_span(crate::Span::new(mark.index() as u64, 1));
 
         // `saphyr_parser` reports missing aliases/anchors as a `ScanError` with a textual
         // message (e.g. "unknown anchor"). To keep our formatter overrides working for the
@@ -2524,6 +2527,23 @@ mod tests {
                 defined_location: l,
             })
         );
+    }
+
+    #[test]
+    fn merge_key_not_allowed_location_helpers() {
+        let l = Location::new(4, 2);
+        let err = Error::MergeKeyNotAllowed { location: l };
+        assert_eq!(err.location(), Some(l));
+        assert_eq!(
+            err.locations(),
+            Some(Locations {
+                reference_location: l,
+                defined_location: l,
+            })
+        );
+
+        let updated = err.with_location(Location::new(5, 9));
+        assert_eq!(updated.location(), Some(Location::new(5, 9)));
     }
 
     #[test]

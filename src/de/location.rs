@@ -1,146 +1,9 @@
 //! Source location utilities.
 
+pub use crate::span::Span;
 #[cfg(feature = "deserialize")]
 use saphyr_parser::Span as ParserSpan;
 use serde::Deserialize;
-
-/// Type alias for span offset and length fields.
-///
-/// By default, this is `u32`, which limits offsets/lengths to 4 GiB but keeps [`Span`] compact
-/// (4 × `u32` = 16 bytes).
-///
-/// When the `huge_documents` feature is enabled, this becomes `u64`, allowing documents larger
-/// than 4 GiB even on 32-bit platforms, at the cost of increased memory usage
-/// (4 × `u64` = 32 bytes).
-#[cfg(not(feature = "huge_documents"))]
-pub(crate) type SpanIndex = u32;
-
-/// Type alias for span offset and length fields.
-///
-/// With `huge_documents` enabled, this is `u64`, allowing documents larger than 4 GiB.
-/// This increases [`Span`] size from 16 to 32 bytes.
-#[cfg(feature = "huge_documents")]
-pub(crate) type SpanIndex = u64;
-
-/// A span within the source YAML document.
-///
-/// This structure provides location information in two forms:
-/// 1. **Character-based**: `offset` and `len` count Unicode scalar values. This matches
-///    `saphyr-parser`'s native reporting and is always present.
-/// 2. **Byte-based**: `byte_info` contains `(byte_offset, byte_len)` counting raw bytes (UTF-8 code units).
-///    These are only populated when parsing from string inputs (`&str`, `String`).
-///    Byte base indices are internally limited to 32 bits by default (4 Gb documents). If you work
-///    with larger YAML documents, enable the `huge_documents` feature or do not use byte
-///    offsets (parsing and normal error reporting will still work).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize, Default)]
-pub struct Span {
-    /// Character offset within the source YAML document.
-    pub(crate) offset: SpanIndex,
-    /// Character length within the source YAML document.
-    pub(crate) len: SpanIndex,
-    /// Byte offset and length within the source YAML document (offset, len).
-    /// Only available when parsing from string sources. `(0, 0)` means unavailable.
-    pub(crate) byte_info: (SpanIndex, SpanIndex),
-}
-
-impl Span {
-    /// Sentinel span meaning "unknown".
-    pub const UNKNOWN: Self = Self {
-        offset: 0,
-        len: 0,
-        byte_info: (0, 0),
-    };
-
-    /// Returns the character offset within the source YAML document.
-    #[inline]
-    pub fn offset(&self) -> u64 {
-        #[cfg(not(feature = "huge_documents"))]
-        {
-            self.offset as u64
-        }
-        #[cfg(feature = "huge_documents")]
-        {
-            self.offset
-        }
-    }
-
-    /// Returns the character length within the source YAML document.
-    #[inline]
-    pub fn len(&self) -> u64 {
-        #[cfg(not(feature = "huge_documents"))]
-        {
-            self.len as u64
-        }
-        #[cfg(feature = "huge_documents")]
-        {
-            self.len
-        }
-    }
-
-    /// Returns the byte offset within the source YAML document.
-    /// Returns `None` if byte info is unavailable.
-    #[inline]
-    pub fn byte_offset(&self) -> Option<u64> {
-        if self.byte_info == (0, 0) {
-            None
-        } else {
-            #[cfg(not(feature = "huge_documents"))]
-            {
-                Some(self.byte_info.0 as u64)
-            }
-            #[cfg(feature = "huge_documents")]
-            {
-                Some(self.byte_info.0)
-            }
-        }
-    }
-
-    /// Returns the byte length within the source YAML document.
-    /// Returns `None` if byte info is unavailable.
-    #[inline]
-    pub fn byte_len(&self) -> Option<u64> {
-        if self.byte_info == (0, 0) {
-            None
-        } else {
-            #[cfg(not(feature = "huge_documents"))]
-            {
-                Some(self.byte_info.1 as u64)
-            }
-            #[cfg(feature = "huge_documents")]
-            {
-                Some(self.byte_info.1)
-            }
-        }
-    }
-
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-
-    /// Returns the raw offset value as stored (either `u32` or `u64` depending on the
-    /// `huge_documents` feature).
-    #[cfg(feature = "deserialize")]
-    #[inline]
-    pub(crate) fn raw_offset(&self) -> SpanIndex {
-        self.offset
-    }
-
-    /// Returns the raw length value as stored (either `u32` or `u64` depending on the
-    /// `huge_documents` feature).
-    #[cfg(feature = "deserialize")]
-    #[inline]
-    pub(crate) fn raw_len(&self) -> SpanIndex {
-        self.len
-    }
-
-    /// Returns the raw byte_info tuple as stored.
-    #[cfg(feature = "deserialize")]
-    #[inline]
-    pub(crate) fn raw_byte_info(&self) -> (SpanIndex, SpanIndex) {
-        self.byte_info
-    }
-}
 
 /// Row/column location within the source YAML document (1-indexed, character-based).
 ///
@@ -273,34 +136,26 @@ pub(crate) fn location_from_span(span: &ParserSpan) -> Location {
     let start = &span.start;
     let end = &span.end;
 
-    let byte_info =
-        if let (Some(start_byte), Some(end_byte)) = (start.byte_offset(), end.byte_offset()) {
-            #[cfg(not(feature = "huge_documents"))]
-            {
-                let len = end_byte.saturating_sub(start_byte);
-                // If byte offsets exceed 4 GiB on non-huge builds, mark byte info as unavailable.
-                if start_byte > (u32::MAX as usize) || len > (u32::MAX as usize) {
-                    (0, 0)
-                } else {
-                    (start_byte as SpanIndex, len as SpanIndex)
-                }
-            }
-            #[cfg(feature = "huge_documents")]
-            {
-                (
-                    start_byte as SpanIndex,
-                    (end_byte - start_byte) as SpanIndex,
-                )
-            }
-        } else {
-            (0, 0)
-        };
+    let mut out = Span::new(start.index() as u64, span.len() as u64);
 
-    Location::new(start.line(), start.col() + 1).with_span(Span {
-        offset: start.index() as SpanIndex,
-        len: span.len() as SpanIndex,
-        byte_info,
-    })
+    if let (Some(start_byte), Some(end_byte)) = (start.byte_offset(), end.byte_offset()) {
+        let byte_len = end_byte.saturating_sub(start_byte);
+
+        #[cfg(not(feature = "huge_documents"))]
+        {
+            // If byte offsets exceed 4 GiB on non-huge builds, mark byte info as unavailable.
+            if start_byte <= (u32::MAX as usize) && byte_len <= (u32::MAX as usize) {
+                out = out.with_byte_info(start_byte as u64, byte_len as u64);
+            }
+        }
+
+        #[cfg(feature = "huge_documents")]
+        {
+            out = out.with_byte_info(start_byte as u64, byte_len as u64);
+        }
+    }
+
+    Location::new(start.line(), start.col() + 1).with_span(out)
 }
 
 /// Pair of locations for values that may come indirectly from YAML anchors.
@@ -408,11 +263,7 @@ mod tests {
 
     #[test]
     fn test_span_methods() {
-        let span = Span {
-            offset: 10,
-            len: 5,
-            byte_info: (20, 5),
-        };
+        let span = Span::new(10, 5).with_byte_info(20, 5);
 
         assert_eq!(span.offset(), 10);
         assert_eq!(span.len(), 5);
@@ -420,11 +271,7 @@ mod tests {
         assert_eq!(span.byte_offset(), Some(20));
         assert_eq!(span.byte_len(), Some(5));
 
-        let empty_span = Span {
-            offset: 10,
-            len: 0,
-            byte_info: (20, 0),
-        };
+        let empty_span = Span::new(10, 0).with_byte_info(20, 0);
         assert!(empty_span.is_empty());
     }
 
@@ -435,26 +282,12 @@ mod tests {
         assert_eq!(loc.column(), 10);
         assert!(loc.span().is_empty()); // initialized to Span::UNKNOWN which is usually 0,0,0
 
-        let span = Span {
-            offset: 100,
-            len: 20,
-            byte_info: (100, 20),
-        };
+        let span = Span::new(100, 20).with_byte_info(100, 20);
         let loc_with_span = loc.with_span(span);
-
-        // Span implements Copy? Not sure, let's check.
-        // impl Span defines methods. Does it derive Copy?
-        // struct Span definition:
-        // #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-        // Yes line 34 (based on file structure, probably around there).
-        // Let's assume it is copy.
 
         assert_eq!(loc_with_span.line(), 5);
         assert_eq!(loc_with_span.column(), 10);
-
-        // We need to check if span is equal. Span doesn't implement PartialEq in the snippet I saw?
-        // Wait, structure showed: struct Span (24-43).
-        // Let's check if Span derives PartialEq.
+        assert_eq!(loc_with_span.span(), span);
     }
 
     #[test]

@@ -68,9 +68,9 @@ figment = ["dep:figment", "deserialize"]
 # as deg(180), rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). angle_conversions must be set to true in the Options.
 robotics = ["deserialize"]
 
-# Enables byte-span reporting for YAML documents > 4 GiB by using `u64` instead of `u32`.
-# Parsing and normal error reporting work without this feature, but byte offsets are not reported. Public API
-# does not change.
+# Enables byte-span reporting for YAML documents > 4 GiB using packed 48-bit internal indices
+# instead of the default `u32` representation. Public getters still return `u64`, and values
+# beyond the packed range saturate instead of wrapping.
 huge_documents = []
 
 [dev-dependencies]
@@ -199,9 +199,6 @@ required-features = ["serialize", "deserialize"]
 
 [lints.rust]
 unsafe_code = "forbid"
-
-[lints.clippy]
-result_large_err = "allow"
 
 # `serde-saphyr` is moving away from struct literals. During the migration period, semver checks temporarily allow
 # adding fields to these structures, and the badge does not treat new fields as a breaking change

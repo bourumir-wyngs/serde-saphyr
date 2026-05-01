@@ -118,7 +118,8 @@ jobs:
 
       - name: Install wasmtime
         run: |
-          cargo install wasmtime-cli --locked || true
+          cargo install wasmtime-cli --locked
+          wasmtime --version
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2

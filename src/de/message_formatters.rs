@@ -54,6 +54,9 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
         Error::MergeValueNotMapOrSeqOfMaps { .. } => {
             Cow::Borrowed("YAML merge value must be mapping or sequence of mappings")
         }
+        Error::MergeKeyNotAllowed { .. } => {
+            Cow::Borrowed("YAML merge keys are not allowed by configured policy")
+        }
         Error::InvalidBinaryBase64 { .. } => Cow::Borrowed("invalid !!binary base64"),
         Error::InvalidUtf8Input => Cow::Borrowed("input is not valid UTF-8"),
         Error::BinaryNotUtf8 { .. } => Cow::Borrowed(
@@ -487,6 +490,7 @@ fn user_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) -> 
             "YAML document too large or too complex: depth={depth} > {max_depth}"
         )),
         Error::UnknownAnchor { .. } => Cow::Borrowed("reference to unknown value"),
+        Error::MergeKeyNotAllowed { .. } => Cow::Borrowed("merge key not allowed here"),
         Error::CyclicInclude { .. } => Cow::Borrowed("cyclic include detected"),
         Error::UnsupportedIncludeForm { .. } => {
             Cow::Borrowed("!include currently only supports the scalar form: !include <path>")
@@ -603,6 +607,16 @@ mod tests {
         let formatter = DefaultMessageFormatter;
         let err = Error::InvalidBinaryBase64 { location: loc() };
         assert_eq!(formatter.format_message(&err), "invalid !!binary base64");
+    }
+
+    #[test]
+    fn default_merge_key_not_allowed() {
+        let formatter = DefaultMessageFormatter;
+        let err = Error::MergeKeyNotAllowed { location: loc() };
+        assert_eq!(
+            formatter.format_message(&err),
+            "YAML merge keys are not allowed by configured policy"
+        );
     }
 
     #[test]
@@ -1002,6 +1016,13 @@ mod tests {
         let formatter = UserMessageFormatter;
         let err = Error::UnknownAnchor { location: loc() };
         assert_eq!(formatter.format_message(&err), "reference to unknown value");
+    }
+
+    #[test]
+    fn user_merge_key_not_allowed() {
+        let formatter = UserMessageFormatter;
+        let err = Error::MergeKeyNotAllowed { location: loc() };
+        assert_eq!(formatter.format_message(&err), "merge key not allowed here");
     }
 
     #[test]

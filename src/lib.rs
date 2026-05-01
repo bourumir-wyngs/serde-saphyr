@@ -14,7 +14,7 @@ pub use self::ser::{
 };
 #[cfg(feature = "deserialize")]
 pub use self::{
-    de::{Budget, DuplicateKeyPolicy, Error, Options, budget, localizer, options},
+    de::{Budget, DuplicateKeyPolicy, Error, MergeKeyPolicy, Options, budget, localizer, options},
     de_error::{
         CroppedRegion, MessageFormatter, RenderOptions, SnippetMode, TransformReason,
         UserMessageFormatter,
@@ -46,8 +46,9 @@ pub use de::properties;
 pub use de::robotics;
 #[cfg(all(feature = "deserialize", feature = "include_fs"))]
 pub use de::safe_resolver::{SafeFileReadMode, SafeFileResolver, SymlinkPolicy};
-pub use location::{Location, Locations, Span};
+pub use location::{Location, Locations};
 pub use long_strings::{FoldStr, FoldString, LitStr, LitString};
+pub use span::Span;
 pub use spanned::Spanned;
 #[cfg(any(feature = "serialize", feature = "deserialize"))]
 pub use wrappers::{Commented, FlowMap, FlowSeq, SpaceAfter};
@@ -98,6 +99,8 @@ mod parse_scalars;
 #[cfg(feature = "serialize")]
 #[path = "ser/mod.rs"]
 pub mod ser;
+#[path = "de/span.rs"]
+mod span;
 mod spanned;
 #[cfg(any(feature = "serialize", feature = "deserialize"))]
 mod wrappers;
@@ -828,8 +831,16 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
 
 /// Deserialize a single YAML document from a UTF-8 byte slice.
 ///
+/// UTF-8 only (due borrowing). For UTF-16 input, use [`from_reader`] instead:
+/// `let reader = std::io::Cursor::new(bytes);`
+/// `let cfg: Config = serde_saphyr::from_reader(reader)?;`
+///
 /// This is equivalent to [`from_str`], but accepts `&[u8]` and validates it is
 /// valid UTF-8 before parsing.
+///
+/// This function supports both owned types (like `String`) and borrowed types
+/// (like `&str`). For borrowed types, the deserialized value's lifetime is tied
+/// to the input byte slice's lifetime.
 ///
 /// Example: read a small `Config` structure from bytes.
 ///
@@ -854,7 +865,10 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
 /// ```
 ///
 #[cfg(feature = "deserialize")]
-pub fn from_slice<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, Error> {
+pub fn from_slice<'de, T>(bytes: &'de [u8]) -> Result<T, Error>
+where
+    T: serde::Deserialize<'de>,
+{
     from_slice_with_options(bytes, Options::default())
 }
 
@@ -1041,8 +1055,10 @@ pub fn to_string_multiple_with_options<T: serde::Serialize>(
 
 /// Deserialize a single YAML document from any `std::io::Read`.
 ///
+/// Reader-based entry points accept BOM-marked UTF-8, UTF-16LE, and UTF-16BE. If no
+/// recognized BOM is present, the input bytes are treated as UTF-8.
 ///
-/// This method parsers as it reads, without loading the entire input into memory first. Hence,
+/// This method parses as it reads, without loading the entire input into memory first. Hence,
 /// budget limits protect against large (potentially malicious) input.
 ///
 /// Example
@@ -1078,9 +1094,12 @@ pub fn from_reader<'a, R: std::io::Read + 'a, T: DeserializeOwned>(reader: R) ->
 /// Deserialize a single YAML document from any `std::io::Read` with configurable `Options`.
 ///
 /// This is the reader-based counterpart to [`from_str_with_options`]. It consumes a
-/// byte-oriented reader, decodes it to UTF-8, and streams events into the deserializer.
+/// byte-oriented reader and streams events into the deserializer. BOM-marked
+/// UTF-8, UTF-16LE, and UTF-16BE inputs are transcoded to UTF-8 internally
+/// before parsing. If no recognized BOM is present, the input bytes are
+/// treated as UTF-8.
 ///
-/// This method parsers as it reads, without loading the entire input into memory first. Hence,
+/// This method parses as it reads, without loading the entire input into memory first. Hence,
 /// budget limits protect against large (potentially malicious) input.
 ///
 /// Notes on limits and large inputs
@@ -1272,6 +1291,9 @@ where
 /// the entire input into memory. Instead, it streams the reader, deserializing one document
 /// at a time into values of type `T`, yielding them through the returned iterator. Documents
 /// that are completely empty or null-like (e.g., `""`, `~`, or `null`) are skipped.
+/// Like [`from_reader_with_options`], BOM-marked UTF-8, UTF-16LE, and UTF-16BE
+/// inputs are transcoded to UTF-8 internally before parsing. If no recognized
+/// BOM is present, the input bytes are treated as UTF-8.
 ///
 /// Generic parameters
 /// - `R`: the concrete reader type that implements [`std::io::Read`]. You rarely need to spell
