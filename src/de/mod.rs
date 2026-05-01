@@ -706,15 +706,86 @@ fn is_merge_key(node: &KeyNode) -> bool {
     if events.len() != 1 {
         return false;
     }
+    events.first().is_some_and(is_merge_key_event)
+}
+
+#[inline]
+fn is_merge_key_event(event: &Ev<'_>) -> bool {
     matches!(
-        events.first(),
-        Some(Ev::Scalar {
+        event,
+        Ev::Scalar {
             value,
             tag,
             style: ScalarStyle::Plain,
             ..
-        }) if tag == &SfTag::None && value.as_ref() == "<<"
+        } if tag == &SfTag::None && value.as_ref() == "<<"
     )
+}
+
+fn validate_no_merge_keys_in_node_events(events: &[Ev<'_>]) -> Result<(), Error> {
+    fn eof_location(events: &[Ev<'_>]) -> Location {
+        events.last().map(Ev::location).unwrap_or(Location::UNKNOWN)
+    }
+
+    fn visit_node(events: &[Ev<'_>], mut index: usize) -> Result<usize, Error> {
+        match events.get(index) {
+            Some(Ev::Scalar { .. }) => Ok(index + 1),
+            Some(Ev::SeqStart { .. }) => {
+                index += 1;
+                loop {
+                    match events.get(index) {
+                        Some(Ev::SeqEnd { .. }) => return Ok(index + 1),
+                        Some(Ev::MapEnd { location }) => {
+                            return Err(Error::UnexpectedContainerEndWhileSkippingNode {
+                                location: *location,
+                            });
+                        }
+                        Some(_) => index = visit_node(events, index)?,
+                        None => return Err(Error::eof().with_location(eof_location(events))),
+                    }
+                }
+            }
+            Some(Ev::MapStart { .. }) => {
+                index += 1;
+                loop {
+                    match events.get(index) {
+                        Some(Ev::MapEnd { .. }) => return Ok(index + 1),
+                        Some(Ev::SeqEnd { location }) => {
+                            return Err(Error::UnexpectedContainerEndWhileSkippingNode {
+                                location: *location,
+                            });
+                        }
+                        Some(event) => {
+                            if is_merge_key_event(event) {
+                                return Err(Error::MergeKeyNotAllowed {
+                                    location: event.location(),
+                                });
+                            }
+                            index = visit_node(events, index)?;
+                            index = visit_node(events, index)?;
+                        }
+                        None => return Err(Error::eof().with_location(eof_location(events))),
+                    }
+                }
+            }
+            Some(Ev::SeqEnd { location }) | Some(Ev::MapEnd { location }) => {
+                Err(Error::UnexpectedContainerEndWhileSkippingNode {
+                    location: *location,
+                })
+            }
+            Some(Ev::Taken { location }) => {
+                Err(Error::unexpected("consumed event").with_location(*location))
+            }
+            None => Err(Error::eof().with_location(eof_location(events))),
+        }
+    }
+
+    let next = visit_node(events, 0)?;
+    if next == events.len() {
+        Ok(())
+    } else {
+        Err(Error::unexpected("single YAML node").with_location(events[next].location()))
+    }
 }
 
 /// Expand a merge value node into a queue of `PendingEntry`s in correct order.
@@ -2525,6 +2596,11 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             /// Used by:
             /// - `DuplicateKeyPolicy::FirstWins` to discard a later value.
             fn skip_one_node(&mut self) -> Result<(), Error> {
+                if self.cfg.merge_keys == MergeKeyPolicy::Error {
+                    let node = capture_node(self.ev)?;
+                    return validate_no_merge_keys_in_node_events(node.events());
+                }
+
                 let mut depth; // assigned later
                 match self.ev.next()? {
                     Some(Ev::Scalar { .. }) => return Ok(()),
@@ -2547,6 +2623,13 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         }
                         None => return Err(Error::eof().with_location(self.ev.last_location())),
                     }
+                }
+                Ok(())
+            }
+
+            fn validate_skipped_node(&self, node: &KeyNode<'_>) -> Result<(), Error> {
+                if self.cfg.merge_keys == MergeKeyPolicy::Error {
+                    validate_no_merge_keys_in_node_events(node.events())?;
                 }
                 Ok(())
             }
@@ -2637,6 +2720,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         let is_duplicate = self.seen.contains(&fingerprint);
                         if self.flushing_merges {
                             if is_duplicate {
+                                self.validate_skipped_node(&value)?;
                                 continue;
                             }
                         } else {
@@ -2651,6 +2735,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                                 }
                                 DuplicateKeyPolicy::FirstWins => {
                                     if is_duplicate {
+                                        self.validate_skipped_node(&value)?;
                                         continue;
                                     }
                                 }
