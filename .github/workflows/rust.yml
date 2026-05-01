@@ -30,8 +30,8 @@ jobs:
 
       - name: Prefetch deps
         run: |
-          cargo fetch --locked
-          cargo fetch --locked --manifest-path fuzz/Cargo.toml
+          cargo fetch 
+          cargo fetch --manifest-path fuzz/Cargo.toml
 
       - name: Run clippy (crate)
         run: |
