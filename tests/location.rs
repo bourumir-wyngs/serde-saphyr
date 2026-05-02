@@ -374,3 +374,13 @@ fn render_with_custom_message_formatter_affects_output() {
         "expected snippet output to still be present.\nrendered: {custom}"
     );
 }
+
+#[test]
+fn locations_primary_location_is_none_when_both_locations_are_unknown() {
+    let locations = serde_saphyr::Locations {
+        reference_location: serde_saphyr::Location::UNKNOWN,
+        defined_location: serde_saphyr::Location::UNKNOWN,
+    };
+
+    assert_eq!(locations.primary_location(), None);
+}

@@ -46,6 +46,24 @@ fn to_io_writer_with_options_basic() {
     assert!(s.contains("- 1"));
 }
 
+#[test]
+fn to_io_writer_propagates_serializer_error_when_writer_succeeds() {
+    struct Fails;
+
+    impl Serialize for Fails {
+        fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            Err(serde::ser::Error::custom("intentional serializer failure"))
+        }
+    }
+
+    let mut buf = Vec::new();
+    let err = serde_saphyr::to_io_writer(&mut buf, &Fails).unwrap_err();
+    assert!(err.to_string().contains("intentional serializer failure"));
+}
+
 // ── lib.rs: to_fmt_writer ──────────────────────────────────────────────
 
 #[test]

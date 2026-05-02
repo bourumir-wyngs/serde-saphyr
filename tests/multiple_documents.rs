@@ -121,6 +121,33 @@ fn multiple_documents_preserve_quoted_null_like_scalars() {
 }
 
 #[test]
+fn multiple_documents_strips_bom_and_skips_plain_null_like_documents() {
+    let y = "\u{FEFF}~\n---\nname: Bom\n---\nnull\n---\nname: Done\n";
+    let docs: Vec<Person> = serde_saphyr::from_multiple(y).expect("parse documents with BOM");
+    assert_eq!(
+        docs,
+        vec![
+            Person {
+                name: "Bom".to_owned(),
+            },
+            Person {
+                name: "Done".to_owned(),
+            },
+        ]
+    );
+}
+
+#[test]
+fn from_slice_multiple_with_options_rejects_invalid_utf8() {
+    let err = serde_saphyr::from_slice_multiple_with_options::<Person>(
+        &[0xFF],
+        serde_saphyr::options! {},
+    )
+    .expect_err("invalid UTF-8 input should fail");
+    assert!(matches!(err, serde_saphyr::Error::InvalidUtf8Input));
+}
+
+#[test]
 fn multiple_documents_enum_variants() {
     let y = "person:\n  name: Alice\n  age: 30\n---\npet:\n  kind: cat\n---\nperson:\n  name: Bob\n  age: 25\n";
     let docs: Vec<Document> = serde_saphyr::from_multiple(y).expect("parse enum documents");

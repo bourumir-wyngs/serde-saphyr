@@ -4,6 +4,7 @@
 #![cfg(all(feature = "include", feature = "include_fs"))]
 
 use std::io::Write;
+use std::process::Command;
 
 /// Helper: run the CLI entrypoint in-process and return (stdout, stderr, exit_code).
 fn run_binary(args: &[&str]) -> (String, String, i32) {
@@ -19,6 +20,18 @@ fn run_binary(args: &[&str]) -> (String, String, i32) {
 fn help_flag_prints_usage_and_exits_zero() {
     let (stdout, _stderr, code) = run_binary(&["--help"]);
     assert_eq!(code, 0);
+    assert!(stdout.contains("Usage:"), "stdout: {stdout}");
+}
+
+#[test]
+fn actual_binary_help_exits_zero() {
+    let output = Command::new(env!("CARGO_BIN_EXE_serde-saphyr"))
+        .arg("--help")
+        .output()
+        .expect("run serde-saphyr binary");
+
+    assert!(output.status.success(), "status: {}", output.status);
+    let stdout = String::from_utf8(output.stdout).expect("stdout is not valid UTF-8");
     assert!(stdout.contains("Usage:"), "stdout: {stdout}");
 }
 

@@ -75,3 +75,23 @@ fn test_serde_saphyr_json_value() -> anyhow::Result<()> {
     assert_eq!(value["name"], "H4sIAA==");
     Ok(())
 }
+
+#[test]
+fn binary_tag_rejects_padding_inside_quad() {
+    #[derive(Deserialize)]
+    struct SupportsBinary {
+        #[allow(dead_code)]
+        name: Vec<u8>,
+    }
+
+    let err = match serde_saphyr::from_str::<SupportsBinary>("name: !!binary AA=A\n") {
+        Ok(_) => panic!("padding is only valid at the end of a base64 quantum"),
+        Err(err) => err,
+    };
+
+    let message = err.to_string();
+    assert!(
+        message.contains("base64") || message.contains("binary"),
+        "expected base64 error, got: {message}"
+    );
+}

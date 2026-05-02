@@ -423,6 +423,16 @@ mod localizer_tests {
     }
 
     #[test]
+    fn validation_issue_line_known_location() {
+        let err = serde_saphyr::from_str::<u8>("not-a-number").unwrap_err();
+        let loc = err.location().expect("parse error should have a location");
+        let s =
+            DEFAULT_ENGLISH_LOCALIZER.validation_issue_line("root.value", "bad value", Some(loc));
+        assert!(s.contains("validation error at root.value: bad value"));
+        assert!(s.contains("line"), "expected location suffix, got: {s}");
+    }
+
+    #[test]
     fn join_validation_issues() {
         let lines = vec!["a".into(), "b".into()];
         assert_eq!(
@@ -625,6 +635,72 @@ mod with_deserializer_tests {
             .unwrap();
         assert_eq!(result, Simple { x: 11 });
     }
+
+    #[test]
+    fn from_reader_empty_eof_without_snippet() {
+        let opts = serde_saphyr::options! {
+            with_snippet: false,
+        };
+        let cursor = std::io::Cursor::new(Vec::<u8>::new());
+        let err = serde_saphyr::with_deserializer_from_reader_with_options(cursor, opts, |de| {
+            bool::deserialize(de)
+        })
+        .unwrap_err();
+        let s = err.to_string();
+        assert!(
+            s.contains("end") || s.contains("EOF") || s.contains("eof"),
+            "expected EOF error, got: {s}"
+        );
+    }
+
+    #[test]
+    fn from_reader_multiple_documents_error() {
+        let cursor = std::io::Cursor::new(b"x: 1\n---\nx: 2\n");
+        let err = serde_saphyr::with_deserializer_from_reader(cursor, |de| Simple::deserialize(de))
+            .unwrap_err();
+        let s = err.to_string();
+        assert!(
+            s.contains("multiple") || s.contains("document"),
+            "expected multiple documents error, got: {s}"
+        );
+    }
+
+    #[test]
+    fn from_str_trailing_garbage_after_document_end_is_ignored() {
+        let result: Simple = serde_saphyr::with_deserializer_from_str(
+            "x: 12\n...\n@ ignored after document end\n",
+            |de| Simple::deserialize(de),
+        )
+        .unwrap();
+        assert_eq!(result, Simple { x: 12 });
+    }
+
+    #[test]
+    fn from_str_trailing_garbage_without_document_end_errors() {
+        let err =
+            serde_saphyr::with_deserializer_from_str("x: 1\n@\n", |de| Simple::deserialize(de))
+                .unwrap_err();
+        assert!(!err.to_string().is_empty());
+    }
+}
+
+#[cfg(all(feature = "include", feature = "properties"))]
+#[test]
+fn options_debug_reports_set_include_resolver_and_properties() {
+    let mut properties = std::collections::HashMap::new();
+    properties.insert("MODE".to_owned(), "test".to_owned());
+
+    let options = serde_saphyr::Options::default()
+        .with_properties(properties)
+        .with_include_resolver(|_req| {
+            Err(serde_saphyr::IncludeResolveError::Message(
+                "not used by this test".to_owned(),
+            ))
+        });
+
+    let debug = format!("{options:?}");
+    assert!(debug.contains("include_resolver: \"set\""), "{debug}");
+    assert!(debug.contains("property_map: \"set\""), "{debug}");
 }
 
 use serde_saphyr::{
