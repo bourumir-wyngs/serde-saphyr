@@ -32,6 +32,13 @@
 //! [`.borrow()`](RcRecursive::borrow) or [`.lock()`](ArcRecursive::lock) to access the underlying data.
 //!
 //! For a complete working example of recursive anchors, see `examples/recursive_yaml.rs`.
+//!
+//! ## Limitation: `#[serde(flatten)]` buffering and strong-anchor identity
+//!
+//! Serde may buffer flattened content through internal content deserializers that do not
+//! preserve format-local anchor metadata. In those paths, `RcAnchor` / `ArcAnchor` value
+//! deserialization still succeeds, but full strong-pointer identity may be lost for nested
+//! anchors inside flattened payloads.
 
 use std::borrow::Borrow;
 use std::cell::RefCell;
@@ -688,7 +695,7 @@ where
             where
                 D: serde::de::Deserializer<'de>,
             {
-                let anchor_id = anchor_store::current_rc_anchor();
+                let anchor_id = anchor_store::claim_rc_anchor();
                 let existing = match anchor_id {
                     Some(id) => {
                         Some((id, anchor_store::get_rc::<T>(id).map_err(D::Error::custom)?))
@@ -746,7 +753,7 @@ where
             where
                 D: serde::de::Deserializer<'de>,
             {
-                let anchor_id = anchor_store::current_arc_anchor();
+                let anchor_id = anchor_store::claim_arc_anchor();
                 let existing = match anchor_id {
                     Some(id) => Some((
                         id,
@@ -805,7 +812,7 @@ where
             where
                 D: serde::de::Deserializer<'de>,
             {
-                let anchor_id = anchor_store::current_rc_recursive_anchor();
+                let anchor_id = anchor_store::claim_rc_recursive_anchor();
                 let existing = match anchor_id {
                     Some(id) => Some((
                         id,
@@ -872,7 +879,7 @@ where
             where
                 D: serde::de::Deserializer<'de>,
             {
-                let anchor_id = anchor_store::current_arc_recursive_anchor();
+                let anchor_id = anchor_store::claim_arc_recursive_anchor();
                 let existing = match anchor_id {
                     Some(id) => Some((
                         id,

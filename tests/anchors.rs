@@ -207,4 +207,203 @@ seq:
 
         Ok(())
     }
+
+    #[test]
+    fn rc_anchor_flatten_repro_issue_106_does_not_reuse_outer_anchor_as_inner() {
+        #[derive(Deserialize, Debug)]
+        struct Inner {
+            foo: i32,
+            bar: i32,
+        }
+
+        type InnerRc = RcAnchor<Inner>;
+
+        #[derive(Deserialize, Debug)]
+        struct Outer {
+            name: String,
+            #[serde(flatten)]
+            action: OuterAction,
+        }
+
+        #[derive(Deserialize, Debug)]
+        enum OuterAction {
+            #[serde(rename = "link")]
+            Link { inner: InnerRc },
+        }
+
+        type OuterRc = RcAnchor<Outer>;
+
+        #[derive(Deserialize, Debug)]
+        struct Nested {
+            name: String,
+            xyz: OuterRc,
+        }
+
+        #[derive(Deserialize, Debug)]
+        struct File {
+            inners: Vec<InnerRc>,
+            outers: Vec<OuterRc>,
+            nested: Vec<Nested>,
+        }
+
+        let yaml = indoc! {r#"
+            inners:
+            - &one
+              foo: 17
+              bar: 18
+
+            outers:
+            - &two
+              name: one
+              link: { inner: *one }
+
+            nested:
+            - name: wtf
+              xyz: *two
+        "#};
+
+        let file: File = from_str(yaml).expect("issue #106 repro should deserialize");
+
+        assert!(
+            Rc::ptr_eq(&file.outers[0].0, &file.nested[0].xyz.0),
+            "outer alias *two should preserve RcAnchor<Outer> identity"
+        );
+        assert_eq!(file.outers[0].name, "one");
+        assert_eq!(file.nested[0].name, "wtf");
+        assert_eq!(file.inners[0].foo, 17);
+        assert_eq!(file.inners[0].bar, 18);
+
+        let outer_inner = match &file.outers[0].action {
+            OuterAction::Link { inner } => inner,
+        };
+
+        assert_eq!(outer_inner.foo, 17);
+        assert_eq!(outer_inner.bar, 18);
+    }
+
+    #[test]
+    fn rc_anchor_flatten_nested_empty_deserializes_without_outer_context_leak() {
+        #[derive(Deserialize, Debug)]
+        struct Inner {
+            foo: i32,
+            bar: i32,
+        }
+
+        type InnerRc = RcAnchor<Inner>;
+
+        #[derive(Deserialize, Debug)]
+        struct Outer {
+            #[serde(flatten)]
+            action: OuterAction,
+        }
+
+        #[derive(Deserialize, Debug)]
+        enum OuterAction {
+            #[serde(rename = "link")]
+            Link { inner: InnerRc },
+        }
+
+        type OuterRc = RcAnchor<Outer>;
+
+        #[derive(Deserialize, Debug)]
+        struct File {
+            inners: Vec<InnerRc>,
+            outers: Vec<OuterRc>,
+            nested: Vec<()>,
+        }
+
+        let yaml = indoc! {r#"
+            inners:
+            - &one
+              foo: 17
+              bar: 18
+
+            outers:
+            - &two
+              link: { inner: *one }
+
+            nested: []
+        "#};
+
+        let file: File = from_str(yaml).expect("nested: [] variant should deserialize");
+
+        assert!(file.nested.is_empty());
+        assert_eq!(file.inners[0].foo, 17);
+        assert_eq!(file.inners[0].bar, 18);
+
+        let outer_inner = match &file.outers[0].action {
+            OuterAction::Link { inner } => inner,
+        };
+
+        assert_eq!(outer_inner.foo, 17);
+        assert_eq!(outer_inner.bar, 18);
+    }
+
+    #[test]
+    // We cannot fix this due to a limitation in Serde's `#[serde(flatten)]`.
+    // Serde buffers flattened fields into a typeless `Content` enum using a private `FlatMapDeserializer`.
+    // During this buffering phase, format-specific deserialization context—such as the currently active
+    // anchor IDs in `serde-saphyr`—is discarded. When `RcAnchor` is later deserialized from the buffered 
+    // `Content`, it fails to see the original anchor context and creates a new allocation instead of 
+    // preserving pointer identity.
+    #[ignore = "requires preserving YAML alias metadata through serde flatten buffering"]
+    fn rc_anchor_flatten_nested_empty_should_preserve_inner_identity() {
+        #[derive(Deserialize, Debug)]
+        struct Inner {
+            foo: i32,
+            bar: i32,
+        }
+
+        type InnerRc = RcAnchor<Inner>;
+
+        #[derive(Deserialize, Debug)]
+        struct Outer {
+            #[serde(flatten)]
+            action: OuterAction,
+        }
+
+        #[derive(Deserialize, Debug)]
+        enum OuterAction {
+            #[serde(rename = "link")]
+            Link { inner: InnerRc },
+        }
+
+        type OuterRc = RcAnchor<Outer>;
+
+        #[derive(Deserialize, Debug)]
+        struct File {
+            inners: Vec<InnerRc>,
+            outers: Vec<OuterRc>,
+            nested: Vec<()>,
+        }
+
+        let yaml = indoc! {r#"
+            inners:
+            - &one
+              foo: 17
+              bar: 18
+
+            outers:
+            - &two
+              link: { inner: *one }
+
+            nested: []
+        "#};
+
+        let file: File = from_str(yaml).expect("nested: [] variant should deserialize");
+        assert!(file.nested.is_empty());
+        assert_eq!(file.inners[0].foo, 17);
+        assert_eq!(file.inners[0].bar, 18);
+
+        let outer_inner = match &file.outers[0].action {
+            OuterAction::Link { inner } => inner,
+        };
+        assert_eq!(outer_inner.foo, 17);
+        assert_eq!(outer_inner.bar, 18);
+
+        assert!(
+            Rc::ptr_eq(&file.inners[0].0, &outer_inner.0),
+            "inner alias *one inside flattened enum should preserve RcAnchor<Inner> identity"
+        );
+    }
 }
