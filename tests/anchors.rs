@@ -385,9 +385,15 @@ seq:
         "#};
 
         let file: File = from_str(yaml).expect("nested: [] variant should deserialize");
+        assert!(file.nested.is_empty());
+        assert_eq!(file.inners[0].foo, 17);
+        assert_eq!(file.inners[0].bar, 18);
+
         let outer_inner = match &file.outers[0].action {
             OuterAction::Link { inner } => inner,
         };
+        assert_eq!(outer_inner.foo, 17);
+        assert_eq!(outer_inner.bar, 18);
 
         assert!(
             Rc::ptr_eq(&file.inners[0].0, &outer_inner.0),
