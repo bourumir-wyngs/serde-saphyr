@@ -22,9 +22,16 @@ struct AnchorStore {
 
 #[derive(Default)]
 struct AnchorState {
-    stack: Vec<(AnchorKind, usize)>,
+    stack: Vec<AnchorFrame>,
     store: AnchorStore,
     in_progress: HashMap<(AnchorKind, usize), usize>,
+}
+
+#[derive(Clone, Copy)]
+struct AnchorFrame {
+    kind: AnchorKind,
+    id: usize,
+    claimed: bool,
 }
 
 thread_local! {
@@ -51,7 +58,11 @@ pub(crate) fn with_anchor_context<R>(
     if let Some(id) = anchor {
         STATE.with(|state| {
             let mut s = state.borrow_mut();
-            s.stack.push((kind, id));
+            s.stack.push(AnchorFrame {
+                kind,
+                id,
+                claimed: false,
+            });
             *s.in_progress.entry((kind, id)).or_insert(0) += 1;
         });
         let guard = Guard { kind, id };
@@ -72,7 +83,16 @@ impl Drop for Guard {
     fn drop(&mut self) {
         STATE.with(|state| {
             let mut s = state.borrow_mut();
-            s.stack.pop();
+            let popped = s.stack.pop();
+            debug_assert!(
+                matches!(
+                    popped,
+                    Some(AnchorFrame { kind, id, .. })
+                        if kind == self.kind && id == self.id
+                ),
+                "anchor context stack corrupted"
+            );
+
             if let Some(count) = s.in_progress.get_mut(&(self.kind, self.id)) {
                 if *count > 1 {
                     *count -= 1;
@@ -84,14 +104,41 @@ impl Drop for Guard {
     }
 }
 
+/// Return the innermost active anchor id for `kind`, but only if that frame has not
+/// already been claimed by the wrapper whose YAML node introduced it.
+///
+/// This is intentionally stricter than searching the whole stack. Searching outward
+/// lets nested `RcAnchor` / `ArcAnchor` values accidentally inherit an enclosing
+/// anchor, which is what caused issue #106.
 fn current_anchor_id(kind: AnchorKind) -> Option<usize> {
     STATE.with(|state| {
-        state
-            .borrow()
-            .stack
-            .iter()
-            .rev()
-            .find_map(|(k, id)| if *k == kind { Some(*id) } else { None })
+        let s = state.borrow();
+        let frame = s.stack.last()?;
+
+        if frame.kind == kind && !frame.claimed {
+            Some(frame.id)
+        } else {
+            None
+        }
+    })
+}
+
+/// Claim the innermost active anchor id for `kind`.
+///
+/// Strong anchor wrappers call this so the frame belongs to exactly one wrapper.
+/// Nested deserialization performed while the wrapper's value is being read can no
+/// longer reuse the enclosing anchor id by accident.
+fn claim_anchor_id(kind: AnchorKind) -> Option<usize> {
+    STATE.with(|state| {
+        let mut s = state.borrow_mut();
+        let frame = s.stack.last_mut()?;
+
+        if frame.kind == kind && !frame.claimed {
+            frame.claimed = true;
+            Some(frame.id)
+        } else {
+            None
+        }
     })
 }
 
@@ -109,6 +156,22 @@ pub(crate) fn current_rc_recursive_anchor() -> Option<usize> {
 
 pub(crate) fn current_arc_recursive_anchor() -> Option<usize> {
     current_anchor_id(AnchorKind::ArcRecursive)
+}
+
+pub(crate) fn claim_rc_anchor() -> Option<usize> {
+    claim_anchor_id(AnchorKind::Rc)
+}
+
+pub(crate) fn claim_arc_anchor() -> Option<usize> {
+    claim_anchor_id(AnchorKind::Arc)
+}
+
+pub(crate) fn claim_rc_recursive_anchor() -> Option<usize> {
+    claim_anchor_id(AnchorKind::RcRecursive)
+}
+
+pub(crate) fn claim_arc_recursive_anchor() -> Option<usize> {
+    claim_anchor_id(AnchorKind::ArcRecursive)
 }
 
 fn anchor_reentrant(kind: AnchorKind, id: usize) -> bool {
