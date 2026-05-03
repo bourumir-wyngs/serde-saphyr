@@ -566,6 +566,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(not(panic = "unwind"), ignore = "Test requires panic unwinding")]
     fn document_scope_resets_after_panic() {
         let _state = isolated_state();
 
