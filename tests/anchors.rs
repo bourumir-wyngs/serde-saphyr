@@ -340,6 +340,12 @@ seq:
     }
 
     #[test]
+    // We cannot fix this due to a limitation in Serde's `#[serde(flatten)]`.
+    // Serde buffers flattened fields into a typeless `Content` enum using a private `FlatMapDeserializer`.
+    // During this buffering phase, format-specific deserialization context—such as the currently active
+    // anchor IDs in `serde-saphyr`—is discarded. When `RcAnchor` is later deserialized from the buffered 
+    // `Content`, it fails to see the original anchor context and creates a new allocation instead of 
+    // preserving pointer identity.
     #[ignore = "requires preserving YAML alias metadata through serde flatten buffering"]
     fn rc_anchor_flatten_nested_empty_should_preserve_inner_identity() {
         #[derive(Deserialize, Debug)]
