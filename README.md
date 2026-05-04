@@ -831,6 +831,8 @@ Safety hardening measures with this feature enabled include limits on maximal ex
 
 - Common Serde renames made to follow naming conventions (case changes, snake_case, kebab-case, r# stripping) are supported in snippets, as long as they do not introduce ambiguity. Arbitrary renames, flattening, aliases and other complex manipulations possible with serde are not. Parsing and validation will still work, but error messages for arbitrarily renamed fields will only show the Rust path.
 - [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html)  cannot be used within variants of untagged or internally tagged enums due to a fundamental limitation in Serde. Instead, wrap the entire enum in Spanned<T>, or use externally tagged enums (the default).
+- Anchors are not fully compatible with `#[serde(flatten)]` directive (this is Serde limitation we can't work around). Deserialization succeeds, but full strong-pointer identity may be lost for nested
+  anchors inside flattened payloads.
 
 ## Executable
 
