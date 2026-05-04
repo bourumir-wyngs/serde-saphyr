@@ -386,9 +386,9 @@ checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
 name = "granit-parser"
-version = "0.0.1"
+version = "0.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e354bf0eb3279a16e8f92fc1ba6ddd4420953fc064140b010844d21874b58113"
+checksum = "b7e736dfe3881c53a7dce0685eb18202d0d9fe6911782f9870946eb9ee89d778"
 dependencies = [
  "arraydeque",
  "smallvec",
