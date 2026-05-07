@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   semver:
-    name: cargo-semver-checks (vs 0.0.18)
+    name: cargo-semver-checks (vs 0.0.26)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -27,4 +27,4 @@ jobs:
       - name: Check public API compatibility
         uses: obi1kenobi/cargo-semver-checks-action@v2
         with:
-          baseline-rev: 0.0.18
+          baseline-rev: 0.0.26

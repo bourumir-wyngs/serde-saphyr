@@ -474,7 +474,7 @@ mod localizer_tests {
     #[test]
     fn override_external_message_default_none() {
         let msg = ExternalMessage {
-            source: ExternalMessageSource::SaphyrParser,
+            source: ExternalMessageSource::Parser,
             original: "scan error",
             code: None,
             params: &[],

@@ -1,6 +1,6 @@
 //! Tag map. We only care about tags as much as we support them
 
-use saphyr_parser::Tag;
+use granit_parser::Tag;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::LazyLock;

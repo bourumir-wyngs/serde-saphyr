@@ -1,10 +1,10 @@
-use saphyr_parser::Parser;
+use granit_parser::Parser;
 
 #[cfg(feature = "include")]
 use std::rc::Rc;
 
 #[cfg(not(feature = "include"))]
-use saphyr_parser::StrInput;
+use granit_parser::StrInput;
 
 #[cfg(feature = "include")]
 use crate::include_stack::ParserStack;

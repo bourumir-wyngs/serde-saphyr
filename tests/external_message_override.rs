@@ -10,7 +10,7 @@ struct OverrideAllExternal;
 impl Localizer for OverrideAllExternal {
     fn override_external_message<'a>(&self, msg: ExternalMessage<'a>) -> Option<Cow<'a, str>> {
         match msg.source {
-            ExternalMessageSource::SaphyrParser => Some(Cow::Borrowed("OVERRIDDEN_PARSER")),
+            ExternalMessageSource::Parser => Some(Cow::Borrowed("OVERRIDDEN_PARSER")),
             ExternalMessageSource::Garde => Some(Cow::Borrowed("OVERRIDDEN_GARDE")),
             ExternalMessageSource::Validator => Some(Cow::Borrowed("OVERRIDDEN_VALIDATOR")),
             _ => None,
@@ -93,7 +93,7 @@ fn garde_issue_text_can_be_overridden() {
 #[test]
 fn external_message_variant_is_public() {
     let err = Error::ExternalMessage {
-        source: ExternalMessageSource::SaphyrParser,
+        source: ExternalMessageSource::Parser,
         msg: "x".to_owned(),
         code: None,
         params: Vec::new(),

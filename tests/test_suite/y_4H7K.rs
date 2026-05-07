@@ -1,7 +1,7 @@
 // 4H7K: Flow sequence with invalid extra closing bracket — marked fail: true
 // Expect parsing to return an error (no panic).
 
-// saphyr-parser 0.0.6 does not emit closing event.
+// granit-parser 0.0.6 does not emit closing event.
 #[test]
 fn yaml_4h7k_extra_closing_bracket_should_fail() {
     let y = "---\n[ a, b, c ] ]\n";

@@ -88,7 +88,7 @@ const fn span_index_to_u64(value: SpanIndex) -> u64 {
 ///
 /// This structure provides location information in two forms:
 /// 1. **Character-based**: `offset` and `len` count Unicode scalar values. This matches
-///    `saphyr-parser`'s native reporting and is always present.
+///    `granit-parser`'s native reporting and is always present.
 /// 2. **Byte-based**: `byte_info` contains `(byte_offset, byte_len)` counting raw bytes (UTF-8 code units).
 ///    These are only populated when parsing from string inputs (`&str`, `String`).
 ///

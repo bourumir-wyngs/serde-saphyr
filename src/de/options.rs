@@ -9,7 +9,7 @@ use std::io;
 use std::path::Path;
 use std::rc::Rc;
 
-// Intentionally no `saphyr_parser` imports here: include resolvers are handled in serde-saphyr.
+// Intentionally no `granit_parser` imports here: include resolvers are handled in serde-saphyr.
 
 /// Duplicate key handling policy for mappings.
 #[non_exhaustive]

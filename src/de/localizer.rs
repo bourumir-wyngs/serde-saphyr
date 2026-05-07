@@ -7,7 +7,7 @@
 //! - You can override only the pieces you care about, while inheriting all other defaults.
 //!
 //! This crate may also show *external* message text coming from dependencies (for example
-//! `saphyr-parser` scan errors, or validator messages). Where such texts are used, the
+//! `granit-parser` scan errors, or validator messages). Where such texts are used, the
 //! rendering pipeline should provide a best-effort opportunity to override them via
 //! [`Localizer::override_external_message`].
 //!
@@ -51,8 +51,8 @@ use std::borrow::Cow;
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExternalMessageSource {
-    /// Text produced by `saphyr-parser` (e.g. scanning errors).
-    SaphyrParser,
+    /// Text produced by the immediate YAML parser (e.g. scanning errors).
+    Parser,
     /// Text produced by `garde` validation rules.
     Garde,
     /// Text produced by `validator` validation rules.

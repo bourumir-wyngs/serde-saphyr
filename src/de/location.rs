@@ -2,7 +2,7 @@
 
 pub use crate::span::Span;
 #[cfg(feature = "deserialize")]
-use saphyr_parser::Span as ParserSpan;
+use granit_parser::Span as ParserSpan;
 use serde::Deserialize;
 
 /// Row/column location within the source YAML document (1-indexed, character-based).
@@ -124,7 +124,7 @@ impl Location {
     }
 }
 
-/// Convert a `saphyr_parser::Span` to a 1-indexed [`Location`].
+/// Convert a `granit_parser::Span` to a 1-indexed [`Location`].
 ///
 /// Called by:
 /// - The live events adapter for each raw parser event.
@@ -203,7 +203,7 @@ impl Locations {
 #[cfg(all(test, feature = "deserialize"))]
 mod tests {
     use super::*;
-    use saphyr_parser::{Event, Parser};
+    use granit_parser::{Event, Parser};
 
     #[test]
     fn test_location_from_span() {
@@ -249,7 +249,7 @@ mod tests {
         let loc = location_from_span(&parser_span);
 
         // "  bar" -> "bar" starts at line 1, col 3
-        // Wait, does saphyr parser count columns 0-indexed or 1-indexed?
+        // Wait, does granit-parser count columns 0-indexed or 1-indexed?
         // location_from_span does `start.col() + 1`. So if parser is 0-indexed, loc is 1-indexed.
         // col 0: ' ', col 1: ' ', col 2: 'b'.
         // So start.col() should be 2. location.column() should be 3.

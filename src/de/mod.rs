@@ -1,4 +1,4 @@
-//! Streaming Serde deserializer over saphyr-parser events (no Node AST).
+//! Streaming Serde deserializer over granit-parser events (no Node AST).
 //!
 //! Supported:
 //! - Scalars: string, bool (YAML 1.1 forms), integers, floats (incl. YAML 1.2 .nan / ±.inf), char.
@@ -79,7 +79,7 @@ use crate::properties_redaction::{
     ScalarRedactionCtx, ScalarRedactionGuard, with_interp_redaction_scope,
 };
 use ahash::{HashSetExt, RandomState};
-use saphyr_parser::ScalarStyle;
+use granit_parser::ScalarStyle;
 use serde::de::{self, Deserializer as _, IntoDeserializer, Visitor};
 use std::borrow::Cow;
 #[cfg(feature = "properties")]

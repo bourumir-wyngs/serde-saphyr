@@ -1,7 +1,7 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde_saphyr::Error;
 
-// saphyr-parser 0.0.6 does not emit closing event.
+// granit-parser 0.0.6 does not emit closing event.
 #[test]
 fn extra_bracket_should_err() {
     let y = "---\n[ a, b, c ] ]\n";

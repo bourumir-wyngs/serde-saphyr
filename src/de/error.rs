@@ -19,7 +19,7 @@ use crate::{
     path_map::{PathKey, PathMap, format_path_with_resolved_leaf},
 };
 use annotate_snippets::Level;
-use saphyr_parser::{ScalarStyle, ScanError};
+use granit_parser::{ScalarStyle, ScanError};
 use serde::de::{self};
 use std::borrow::Cow;
 use std::cell::Cell;
@@ -404,7 +404,7 @@ pub enum TransformReason {
 
     /// The parser returned an owned string for this scalar.
     ///
-    /// In newer `saphyr-parser` versions, zero-copy is represented directly as `Cow::Borrowed`.
+    /// In newer `granit-parser` versions, zero-copy is represented directly as `Cow::Borrowed`.
     /// If a scalar comes through as `Cow::Owned`, the deserializer cannot safely fabricate a
     /// borrow, because it would not refer to the original input buffer.
     ParserReturnedOwned,
@@ -1646,7 +1646,7 @@ impl Error {
         }
     }
 
-    /// Map a `saphyr_parser::ScanError` into our error type with location.
+    /// Map a `granit_parser::ScanError` into our error type with location.
     ///
     /// Called by:
     /// - The live events adapter when the underlying parser fails.
@@ -1657,7 +1657,7 @@ impl Error {
         let location = Location::new(mark.line(), mark.col() + 1)
             .with_span(crate::Span::new(mark.index() as u64, 1));
 
-        // `saphyr_parser` reports missing aliases/anchors as a `ScanError` with a textual
+        // `granit_parser` reports missing aliases/anchors as a `ScanError` with a textual
         // message (e.g. "unknown anchor"). To keep our formatter overrides working for the
         // common real-world case (`*missing`), detect this and convert to our structured
         // `Error::UnknownAnchor`.
@@ -1670,7 +1670,7 @@ impl Error {
         }
 
         Error::ExternalMessage {
-            source: ExternalMessageSource::SaphyrParser,
+            source: ExternalMessageSource::Parser,
             msg: info.to_owned(),
             code: None,
             params: Vec::new(),

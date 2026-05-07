@@ -1,11 +1,11 @@
-//! Streaming YAML budget checker using saphyr-parser.
+//! Streaming YAML budget checker using granit-parser.
 //!
 //! This inspects the parser's event stream and enforces simple budgets to
 //! avoid pathological inputs
 
 use crate::options::MergeKeyPolicy;
 use ahash::HashSetExt;
-use saphyr_parser::{Event, Parser, ScalarStyle, ScanError};
+use granit_parser::{Event, Parser, ScalarStyle, ScanError};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use std::collections::HashSet;

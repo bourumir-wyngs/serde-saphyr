@@ -1,9 +1,9 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
-use saphyr_parser::Parser;
+use serde_saphyr::granit_parser::Parser;
 
-// test --package serde-saphyr --test parser_misplaced_sequence_close -- --nocapture
+// test --package serde-saphyr --test granit_only -- --nocapture
 #[test]
-fn saphyr_parser_does_not_emit_misplaced_sequence_closing_event() {
+fn granit_parser_does_not_emit_misplaced_sequence_closing_event() {
     let yaml = "---\n[ a, b, c ] ]\n";
 
     let parser = Parser::new_from_str(yaml);

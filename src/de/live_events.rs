@@ -1,7 +1,7 @@
 //! Live events: a streaming view over the YAML input.
 //!
 //! This module implements LiveEvents, an Events source that pulls items directly
-//! from the underlying saphyr_parser::Parser as it scans the input string.
+//! from the underlying granit_parser::Parser as it scans the input string.
 //! Unlike ReplayEvents, which iterates over a pre-recorded buffer, live events
 //! are produced on demand and reflect the current position of the parser.
 //!
@@ -35,10 +35,10 @@ use crate::include::{BaseParser, create_parser_from_str};
 use crate::location::location_from_span;
 use crate::options::BudgetReportCallback;
 use crate::tags::SfTag;
-use saphyr_parser::{Event, ScalarStyle, ScanError, Span};
+use granit_parser::{Event, ScalarStyle, ScanError, Span};
 
 #[cfg(not(feature = "include"))]
-use saphyr_parser::StrInput;
+use granit_parser::StrInput;
 use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -50,7 +50,7 @@ use std::rc::Rc;
 type StreamParser<'a> = BaseParser<'a>;
 
 #[cfg(not(feature = "include"))]
-type StreamParser<'a> = saphyr_parser::Parser<'a, ReaderInput<'a>>;
+type StreamParser<'a> = granit_parser::Parser<'a, ReaderInput<'a>>;
 
 /// This is enough to hold a single scalar that is common  case in YAML anchors.
 const SMALLVECT_INLINE: usize = 8;
@@ -67,7 +67,7 @@ struct RecFrame<'a> {
 }
 
 /// Handle input polymorphism
-pub(crate) enum SaphyrParser<'a> {
+pub(crate) enum GranitParser<'a> {
     #[cfg(feature = "include")]
     StringParser(BaseParser<'a>),
 
@@ -76,11 +76,11 @@ pub(crate) enum SaphyrParser<'a> {
     StreamParser(StreamParser<'a>),
 }
 
-impl<'input> SaphyrParser<'input> {
+impl<'input> GranitParser<'input> {
     fn next(&mut self) -> Option<Result<(Event<'input>, Span), ScanError>> {
         match self {
-            SaphyrParser::StringParser(parser) => parser.next(),
-            SaphyrParser::StreamParser(parser) => parser.next(),
+            GranitParser::StringParser(parser) => parser.next(),
+            GranitParser::StreamParser(parser) => parser.next(),
         }
     }
 
@@ -91,24 +91,24 @@ impl<'input> SaphyrParser<'input> {
         location: crate::Location,
     ) -> Result<(), crate::de_error::Error> {
         match self {
-            SaphyrParser::StringParser(parser) => parser.resolve(include_str, location),
-            SaphyrParser::StreamParser(parser) => parser.resolve(include_str, location),
+            GranitParser::StringParser(parser) => parser.resolve(include_str, location),
+            GranitParser::StreamParser(parser) => parser.resolve(include_str, location),
         }
     }
 
     #[cfg(feature = "include")]
     fn has_resolver(&self) -> bool {
         match self {
-            SaphyrParser::StringParser(parser) => parser.has_resolver(),
-            SaphyrParser::StreamParser(parser) => parser.has_resolver(),
+            GranitParser::StringParser(parser) => parser.has_resolver(),
+            GranitParser::StreamParser(parser) => parser.has_resolver(),
         }
     }
 
     #[cfg(feature = "include")]
     fn recorded_source_chain(&self, source_id: u32) -> Vec<&crate::include_stack::RecordedSource> {
         match self {
-            SaphyrParser::StringParser(parser) => parser.recorded_source_chain(source_id),
-            SaphyrParser::StreamParser(parser) => parser.recorded_source_chain(source_id),
+            GranitParser::StringParser(parser) => parser.recorded_source_chain(source_id),
+            GranitParser::StreamParser(parser) => parser.recorded_source_chain(source_id),
         }
     }
 
@@ -116,8 +116,8 @@ impl<'input> SaphyrParser<'input> {
         #[cfg(feature = "include")]
         {
             match self {
-                SaphyrParser::StringParser(parser) => parser.current_source_id(),
-                SaphyrParser::StreamParser(parser) => parser.current_source_id(),
+                GranitParser::StringParser(parser) => parser.current_source_id(),
+                GranitParser::StreamParser(parser) => parser.current_source_id(),
             }
         }
         #[cfg(not(feature = "include"))]
@@ -130,19 +130,19 @@ impl<'input> SaphyrParser<'input> {
     #[allow(dead_code)]
     fn include_stack_snippets(&self) -> Vec<(&str, &str, crate::Location)> {
         match self {
-            SaphyrParser::StringParser(parser) => parser.include_stack_snippets(),
-            SaphyrParser::StreamParser(parser) => parser.include_stack_snippets(),
+            GranitParser::StringParser(parser) => parser.include_stack_snippets(),
+            GranitParser::StreamParser(parser) => parser.include_stack_snippets(),
         }
     }
 }
 
-/// Live event source that wraps `saphyr_parser::Parser` and:
+/// Live event source that wraps `granit_parser::Parser` and:
 /// - Skips stream/document markers
 /// - Records anchored subtrees (containers and scalars)
 /// - Resolves aliases by injecting recorded buffers (replaying)
 pub(crate) struct LiveEvents<'a> {
     /// Underlying streaming parser that produces raw events from the input.
-    parser: SaphyrParser<'a>,
+    parser: GranitParser<'a>,
     /// Original input string (for zero-copy borrowing). `None` for reader-based input.
     input: Option<&'a str>,
 
@@ -199,7 +199,7 @@ pub(crate) struct LiveEvents<'a> {
 struct InjectFrame {
     /// Anchor id being replayed.
     ///
-    /// This is the numeric anchor id produced by `saphyr_parser` (dense, increasing).
+    /// This is the numeric anchor id produced by `granit_parser` (dense, increasing).
     /// It indexes into [`LiveEvents::anchors`], which stores the recorded event buffer
     /// for each anchored node.
     anchor_id: usize,
@@ -266,11 +266,11 @@ impl<'a> LiveEvents<'a> {
             resolver,
         );
         #[cfg(not(feature = "include"))]
-        let parser = saphyr_parser::Parser::new(input);
+        let parser = granit_parser::Parser::new(input);
         Self {
             produced_any_in_doc: false,
             synthesized_null_emitted: false,
-            parser: SaphyrParser::StreamParser(parser),
+            parser: GranitParser::StreamParser(parser),
             input: None, // Reader-based input cannot support zero-copy borrowing
             look: None,
             inject: Vec::with_capacity(2),
@@ -345,7 +345,7 @@ impl<'a> LiveEvents<'a> {
         Self {
             produced_any_in_doc: false,
             synthesized_null_emitted: false,
-            parser: SaphyrParser::StringParser(parser),
+            parser: GranitParser::StringParser(parser),
             input: Some(input),
             look: None,
             inject: Vec::with_capacity(2),

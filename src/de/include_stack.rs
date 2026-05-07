@@ -3,7 +3,7 @@ use crate::buffered_input::{
     buffered_input_from_reader_with_limit_shared,
 };
 use crate::input_source::{IncludeResolveError, IncludeResolver, InputSource, ResolvedInclude};
-use saphyr_parser::{Event, Parser, ScanError, Scanner, Span, StrInput, TokenType};
+use granit_parser::{Event, Parser, ScanError, Scanner, Span, StrInput, TokenType};
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
@@ -13,7 +13,7 @@ use std::{
 };
 
 type InnerStack<'input> =
-    saphyr_parser::parser_stack::ParserStack<'input, core::iter::Empty<char>, ReaderInput<'input>>;
+    granit_parser::parser_stack::ParserStack<'input, core::iter::Empty<char>, ReaderInput<'input>>;
 #[derive(Clone, Debug)]
 pub(crate) struct SnippetFrame {
     pub(crate) name: String,
@@ -32,7 +32,7 @@ pub(crate) struct RecordedSource {
 }
 /// A parser stack that supports serde-saphyr includes.
 ///
-/// This delegates all anchor handling to `saphyr_parser::parser_stack::ParserStack` (which has
+/// This delegates all anchor handling to `granit_parser::parser_stack::ParserStack` (which has
 /// access to the parser's internal anchor-offset APIs), while allowing our include resolver to
 /// return either owned text or an owned reader.
 pub struct ParserStack<'input> {
@@ -146,7 +146,7 @@ impl<'input> ParserStack<'input> {
     }
     fn push_replay_parser_with_snippet(
         &mut self,
-        parser: saphyr_parser::parser_stack::ReplayParser<'input>,
+        parser: granit_parser::parser_stack::ReplayParser<'input>,
         name: String,
         snippet: Option<SnippetFrame>,
     ) {
@@ -352,7 +352,7 @@ impl<'input> ParserStack<'input> {
                     location,
                 })?;
                 self.push_replay_parser_with_snippet(
-                    saphyr_parser::parser_stack::ReplayParser::new(
+                    granit_parser::parser_stack::ReplayParser::new(
                         events.events,
                         events.anchor_offset,
                     ),

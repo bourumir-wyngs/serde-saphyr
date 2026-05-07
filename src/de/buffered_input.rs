@@ -2,12 +2,12 @@
 //!
 //! This module provides a small adapter to turn any `std::io::Read` into a
 //! streaming iterator of UTF-8 `char`s without loading the entire input into
-//! memory. It is used to feed `saphyr_parser` incrementally, while allowing the
+//! memory. It is used to feed `granit_parser` incrementally, while allowing the
 //! upstream `encoding_rs_io` to auto-detect and decode common Unicode encodings
 //! (BOM-aware), then buffering via `BufReader`.
 
 use encoding_rs_io::DecodeReaderBytesBuilder;
-use saphyr_parser::{BorrowedInput, BufferedInput, Input};
+use granit_parser::{BorrowedInput, BufferedInput, Input};
 use std::cell::{Cell, RefCell};
 use std::io::{self, BufReader, Error, Read};
 use std::rc::Rc;
@@ -94,7 +94,7 @@ pub struct ChunkedChars<R: Read> {
     /// `BufReader<DecodeReaderBytes<...>>`). It is read incrementally.
     reader: R,
     /// Remember IO error, if any, here to report it later. This must be shared,
-    /// as otherwise we cannot later reach with Saphyr parser API
+    /// as otherwise we cannot later reach it with the granit-parser API
     pub(crate) err: Rc<RefCell<Option<Error>>>,
 }
 
@@ -243,7 +243,7 @@ pub fn buffered_input_from_reader_with_limit_shared<'a, R: Read + 'a>(
 mod tests {
     use crate::buffered_input::ReaderInput;
     use crate::buffered_input::buffered_input_from_reader_with_limit;
-    use saphyr_parser::{Event, Parser};
+    use granit_parser::{Event, Parser};
     use std::io::{Cursor, Read};
 
     pub fn buffered_input_from_reader<'a, R: Read + 'a>(reader: R) -> ReaderInput<'a> {

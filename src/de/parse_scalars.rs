@@ -3,7 +3,7 @@ use crate::de::{Error, Location};
 #[cfg(feature = "deserialize")]
 use crate::tags::SfTag;
 #[cfg(feature = "deserialize")]
-use saphyr_parser::ScalarStyle;
+use granit_parser::ScalarStyle;
 #[cfg(feature = "deserialize")]
 use std::str::FromStr;
 
