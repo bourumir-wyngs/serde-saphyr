@@ -102,7 +102,7 @@ pub trait Localizer {
 
     /// Label used when a path has no leaf.
     ///
-    /// Default <root>
+    /// Default `<root>`
     fn root_path_label(&self) -> Cow<'static, str> {
         Cow::Borrowed("<root>")
     }

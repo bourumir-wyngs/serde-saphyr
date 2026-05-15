@@ -201,7 +201,7 @@ pub fn to_writer<W: std::fmt::Write, T: serde::Serialize>(
     value.serialize(&mut ser)
 }
 
-/// Serialize a value as YAML into any [`fmt::Write`] target.
+/// Serialize a value as YAML into any [`std::fmt::Write`] target.
 #[cfg(feature = "serialize")]
 pub fn to_fmt_writer<W: std::fmt::Write, T: serde::Serialize>(
     output: &mut W,
@@ -210,7 +210,7 @@ pub fn to_fmt_writer<W: std::fmt::Write, T: serde::Serialize>(
     to_fmt_writer_with_options(output, value, SerializerOptions::default())
 }
 
-/// Serialize a value as YAML into any [`io::Write`] target.
+/// Serialize a value as YAML into any [`std::io::Write`] target.
 #[cfg(feature = "serialize")]
 pub fn to_io_writer<W: std::io::Write, T: serde::Serialize>(
     output: &mut W,
@@ -219,7 +219,7 @@ pub fn to_io_writer<W: std::io::Write, T: serde::Serialize>(
     to_io_writer_with_options(output, value, SerializerOptions::default())
 }
 
-/// Serialize a value as YAML into any [`fmt::Write`] target, with options.
+/// Serialize a value as YAML into any [`std::fmt::Write`] target, with options.
 /// Options are consumed because anchor generator may be taken from them.
 #[cfg(feature = "serialize")]
 pub fn to_fmt_writer_with_options<W: std::fmt::Write, T: serde::Serialize>(
@@ -232,7 +232,7 @@ pub fn to_fmt_writer_with_options<W: std::fmt::Write, T: serde::Serialize>(
     value.serialize(&mut ser)
 }
 
-/// Serialize a value as YAML into any [`io::Write`] target, with options.
+/// Serialize a value as YAML into any [`std::io::Write`] target, with options.
 /// Options are consumed because anchor generator may be taken from them.
 #[cfg(feature = "serialize")]
 pub fn to_io_writer_with_options<W: std::io::Write, T: serde::Serialize>(

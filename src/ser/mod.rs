@@ -5,6 +5,7 @@
 //!
 //! Usage example:
 //!
+//! ```
 //! use serde::Serialize;
 //! use std::rc::Rc;
 //! use serde_saphyr::{to_string, RcAnchor, LitStr, FlowSeq};
@@ -29,6 +30,7 @@
 //!     };
 //!     println!("{}", to_string(&cfg).unwrap());
 //! }
+//! ```
 
 pub mod error;
 pub mod options;
@@ -271,7 +273,7 @@ type AnchorId = u32;
 /// This type implements `serde::Serializer` and writes YAML to a `fmt::Write`.
 /// It manages indentation, flow/block styles, and YAML anchors/aliases.
 ///
-/// This type is also re-exported from the crate root as [`serde_saphyr::Serializer`].
+/// This type is also re-exported from the crate root as [`serde_saphyr::Serializer`](crate::Serializer).
 ///
 /// ## Example
 ///

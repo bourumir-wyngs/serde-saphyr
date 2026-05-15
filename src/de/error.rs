@@ -773,7 +773,7 @@ pub enum Error {
         location: Location,
     },
 
-    /// Indentation does not meet the configured [`RequireIndent`] requirement.
+    /// Indentation does not meet the configured [`RequireIndent`](crate::RequireIndent) requirement.
     IndentationError {
         /// The indentation requirement that was violated.
         required: crate::indentation::RequireIndent,
