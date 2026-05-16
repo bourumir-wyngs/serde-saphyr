@@ -914,7 +914,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     fn serialize_str(self, v: &str) -> Result<()> {
         #[inline]
         fn block_indent_indicator_digit(indent_n: usize) -> Result<char> {
-            // YAML 1.2 §8.1.1.1: the block-scalar indentation indicator is `[1-9]`.
+            // YAML 1.2 8.1.1.1: the block-scalar indentation indicator is `[1-9]`.
             // `char::from_digit` would accept 0, so we gate on the range explicitly.
             match indent_n {
                 1..=9 => Ok(char::from_digit(indent_n as u32, 10).expect("checked 1..=9")),
