@@ -331,22 +331,42 @@ pub(crate) fn is_plain_value_safe(s: &str, yaml_12: bool, in_flow: bool) -> bool
 
 /// Returns true when `s` can be emitted literally inside a block scalar without
 /// relying on double-quoted escape sequences.
+///
+/// This is character-level safety only: it says whether the codepoints can be
+/// represented inside `|`/`>` blocks.
+///
+/// - `\r` is a YAML 1.2 line break (parsers normalize it to `\n`) and must be
+///   escaped to preserve the exact Rust string on round-trip.
+/// - BOM (U+FEFF) is excluded from the `nb-char` production and must be escaped.
+/// - NEL, LS, and PS are non-break characters in YAML 1.2, but many tools and
+///   editors mishandle them; we reject them in block scalars as a conservative
+///   interoperability/readability policy. The double-quoted path preserves them
+///   exactly via `\N`/`\L`/`\P` escapes.
 #[inline]
 pub(crate) fn is_block_scalar_content_safe(s: &str) -> bool {
-    s.chars().all(|ch| {
-        if matches!(ch, '\n' | '\t') {
-            return true;
-        }
-
-        if matches!(ch, '\r' | '\u{0085}' | '\u{2028}' | '\u{2029}') {
-            return false;
-        }
-
-        matches!(
-            ch as u32,
+    s.chars().all(|ch| match ch {
+        '\n' | '\t' => true,
+        '\r' | '\u{0085}' | '\u{2028}' | '\u{2029}' | '\u{FEFF}' => false,
+        c => matches!(
+            c as u32,
             0x20..=0x7E | 0xA0..=0xD7FF | 0xE000..=0xFFFD | 0x10000..=0x10FFFF
-        )
+        ),
     })
+}
+
+/// Readability policy for auto-selected block scalars.
+///
+/// Distinct from [`is_block_scalar_content_safe`]: that asks "can this be a
+/// block scalar at all?", whereas this asks "should we pick block style for
+/// this content automatically?".
+///
+/// Intentionally permissive. Trailing spaces/tabs are preserved by YAML block
+/// scalars and are a tooling/presentation concern, not a scalar safety concern.
+/// A future option can opt into a stricter policy for users who prefer quoted
+/// output when line-end whitespace is present.
+#[inline]
+pub(crate) fn is_auto_block_scalar_readable(s: &str) -> bool {
+    !s.is_empty()
 }
 
 fn contains_any_or_is_control(string: &str, values: &[char]) -> bool {

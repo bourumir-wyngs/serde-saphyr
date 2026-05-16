@@ -63,7 +63,9 @@ use nohash_hasher::BuildNoHashHasher;
 // ------------------------------------------------------------
 
 pub use self::error::Error;
-use self::quoting::{is_block_scalar_content_safe, is_plain_safe, is_plain_value_safe};
+use self::quoting::{
+    is_auto_block_scalar_readable, is_block_scalar_content_safe, is_plain_safe, is_plain_value_safe,
+};
 
 /// Result alias.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -460,15 +462,28 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         Ok(())
     }
 
+    /// Append a pending inline comment, if any.
+    ///
+    /// Used both by normal scalar emission (`value # comment\n`) and by
+    /// block-scalar headers (`| # comment\n`). Comments are suppressed in flow
+    /// style, matching the existing serializer policy.
+    #[inline]
+    fn write_pending_inline_comment(&mut self) -> Result<()> {
+        if self.in_flow == 0
+            && let Some(c) = self.pending_inline_comment.take()
+        {
+            self.out.write_str(" # ")?;
+            self.out.write_str(&c)?;
+        }
+        Ok(())
+    }
+
     /// Called at the end of emitting a scalar in block style: appends a pending inline
     /// comment (if any) and then emits a newline. In flow style, comments are suppressed.
     #[inline]
     fn write_end_of_scalar(&mut self) -> Result<()> {
         if self.in_flow == 0 {
-            if let Some(c) = self.pending_inline_comment.take() {
-                self.out.write_str(" # ")?;
-                self.out.write_str(&c)?;
-            }
+            self.write_pending_inline_comment()?;
             self.newline()?;
         }
         Ok(())
@@ -899,41 +914,34 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     fn serialize_str(self, v: &str) -> Result<()> {
         #[inline]
         fn block_indent_indicator_digit(indent_n: usize) -> Result<char> {
-            char::from_digit(indent_n as u32, 10).ok_or_else(|| {
-                Error::custom("indentation indicator must be a single digit (1..=9)")
-            })
+            // YAML 1.2 8.1.1.1: the block-scalar indentation indicator is `[1-9]`.
+            // `char::from_digit` would accept 0, so we gate on the range explicitly.
+            match indent_n {
+                1..=9 => Ok(char::from_digit(indent_n as u32, 10).expect("checked 1..=9")),
+                _ => Err(Error::custom(
+                    "indentation indicator must be a single digit (1..=9)",
+                )),
+            }
         }
 
         // If no explicit style pending, auto-select block style.
         //
         // Controlled by `prefer_block_scalars`:
-        //  - multiline + long (by folded_wrap_col) → literal (|)
-        //  - otherwise, multiline → literal (|) only when newlines are the only reason plain
-        //    style is unsafe
+        //  - multiline → literal (|) whenever the content is representable in a block scalar
+        //    and is readable enough to auto-select (see `is_auto_block_scalar_readable`).
+        //    Block scalars happily contain ':', '#', YAML-like text, etc. — those are unsafe
+        //    in plain style but fine as block content.
         //  - single-line + long (by folded_wrap_col) → folded (>)
         //
         // Also skip block scalars when quote_all is enabled - use quoted strings instead.
         if self.pending_str_style.is_none() && self.in_flow == 0 && !self.quote_all {
-            use self::quoting::is_plain_value_safe;
-
             if v.contains('\n') {
-                if self.prefer_block_scalars {
-                    // If it's already multiline and long, emit literal block style for readability.
-                    let char_len = v.chars().count();
-                    if char_len > self.folded_wrap_col {
-                        self.pending_str_style = Some(StrStyle::Literal);
-                        self.pending_str_from_auto = true;
-                    } else {
-                        // If removing newlines makes it plain-safe, then the only problem was
-                        // newlines → allow literal block style. Otherwise, don't auto-select block
-                        // style so that quoting logic handles it (e.g., values ending with ':').
-                        let trimmed = v.trim_end_matches('\n');
-                        let normalized = trimmed.replace('\n', " ");
-                        if is_plain_value_safe(&normalized, self.yaml_12, false) {
-                            self.pending_str_style = Some(StrStyle::Literal);
-                            self.pending_str_from_auto = true;
-                        }
-                    }
+                if self.prefer_block_scalars
+                    && is_block_scalar_content_safe(v)
+                    && is_auto_block_scalar_readable(v)
+                {
+                    self.pending_str_style = Some(StrStyle::Literal);
+                    self.pending_str_from_auto = true;
                 }
             } else if self.prefer_block_scalars {
                 // Single-line string. If it needs quoting as a value, don't auto-fold.
@@ -986,12 +994,23 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             if self.at_line_start {
                 self.write_indent(base)?;
             }
+
+            // Anchors/tags are node properties and must be emitted before scalar content.
+            // For a block scalar this produces e.g. `text: &a1 |` — without this, a pending
+            // anchor would leak onto the next scalar.
+            self.write_scalar_prefix_if_anchor()?;
+
             // Compute the indentation indicator N for block scalars.
-            // N = indent_step * body_base = number of spaces the parser will strip.
-            // We must emit an explicit indicator when the first non-empty content line
-            // has leading whitespace, so the parser knows how much to strip.
+            //
+            // Per YAML 1.2 8.1.1.1, the indicator is the *additional* indentation steps
+            // beyond the parent node's indentation level — NOT the absolute column count.
+            // Since our body is exactly one serializer depth (i.e. `indent_step` spaces)
+            // deeper than its parent, the indicator is simply `indent_step`.
+            //
+            // We only emit it when the first non-empty content line has leading whitespace,
+            // which would otherwise prevent automatic indentation detection by the parser.
             let body_base = base + 1;
-            let indent_n = self.indent_step * body_base;
+            let indent_n = self.indent_step;
 
             // Check if we need an explicit indentation indicator.
             // Required when the first non-empty line has leading whitespace.
@@ -999,16 +1018,23 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             let first_line_spaces = self::wrapping::first_line_leading_spaces(content_trimmed);
             let needs_indicator = first_line_spaces > 0;
 
-            // If N > 9, YAML parsers reject it. Fall back to quoting.
-            if needs_indicator && indent_n > 9 {
-                // Reset state and fall through to quoted string handling
-                self.pending_str_style = None;
-                self.pending_str_from_auto = false;
-                self.write_scalar_prefix_if_anchor()?;
-                self.write_plain_or_quoted_value(v)?;
-                self.write_end_of_scalar()?;
-                return Ok(());
-            }
+            // Resolve the indicator digit up front. If the helper rejects `indent_n`
+            // (i.e. outside the YAML 1.2 `[1-9]` grammar), fall back to quoting.
+            // Anchor prefix is already written above, so don't call it again here.
+            let indicator_digit = if needs_indicator {
+                match block_indent_indicator_digit(indent_n) {
+                    Ok(d) => Some(d),
+                    Err(_) => {
+                        self.pending_str_style = None;
+                        self.pending_str_from_auto = false;
+                        self.write_plain_or_quoted_value(v)?;
+                        self.write_end_of_scalar()?;
+                        return Ok(());
+                    }
+                }
+            } else {
+                None
+            };
 
             match style {
                 StrStyle::Literal => {
@@ -1021,9 +1047,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
 
                     // Write block scalar header: | or |N with optional chomp indicator
                     self.out.write_char('|')?;
-                    if needs_indicator {
-                        // Write the indentation indicator digit
-                        let digit = block_indent_indicator_digit(indent_n)?;
+                    if let Some(digit) = indicator_digit {
                         self.out.write_char(digit)?;
                     }
                     match trailing_nl {
@@ -1031,6 +1055,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                         1 => {} // clip is the default, no indicator needed
                         _ => self.out.write_char('+')?,
                     }
+                    self.write_pending_inline_comment()?;
                     self.newline()?;
 
                     // Emit body lines. For non-empty content, write each line exactly once.
@@ -1074,9 +1099,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 StrStyle::Folded => {
                     // Write block scalar header: > or >N with optional chomp indicator
                     self.out.write_char('>')?;
-                    if needs_indicator {
-                        // Write the indentation indicator digit
-                        let digit = block_indent_indicator_digit(indent_n)?;
+                    if let Some(digit) = indicator_digit {
                         self.out.write_char(digit)?;
                     }
                     if self.pending_str_from_auto {
@@ -1092,6 +1115,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                     }
                     // Note: Explicit FoldStr/FoldString wrappers historically used plain '>'
                     // regardless of trailing newline; keep that behavior for compatibility.
+                    self.write_pending_inline_comment()?;
                     self.newline()?;
                     self.write_folded_block(v, body_base)?;
                 }

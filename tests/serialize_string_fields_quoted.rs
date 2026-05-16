@@ -38,9 +38,12 @@ fn strings_that_look_special_are_quoted() -> Result<()> {
         out.contains("ending_colon: \"hi:\""),
         "ending colon must be quoted: {out}"
     );
+    // Multiline strings auto-select literal block style when the content is representable
+    // (the trailing `:` is fine as block content). The round-trip below verifies that
+    // the value is still preserved exactly.
     assert!(
-        out.contains("trim_ending_colon: \"hey:\\n\""),
-        "ending colon must be quoted: {out}"
+        out.contains("trim_ending_colon: |\n  hey:\n"),
+        "multiline ending colon should round-trip via literal block: {out}"
     );
 
     let r = serde_saphyr::from_str(&out)?;
