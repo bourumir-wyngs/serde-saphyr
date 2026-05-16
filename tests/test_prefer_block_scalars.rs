@@ -290,6 +290,70 @@ fn anchored_auto_literal_block_emits_anchor_before_block_scalar() {
 }
 
 #[test]
+fn commented_auto_folded_block_keeps_inline_comment_on_header() {
+    use std::collections::BTreeMap;
+
+    use serde_saphyr::Commented;
+
+    #[derive(Serialize)]
+    struct Wrap {
+        text: Commented<String>,
+    }
+
+    // Single-line string longer than the default 80-char fold width auto-selects
+    // the folded `>` block style.
+    let input_text = "word ".repeat(20) + "end";
+
+    let value = Wrap {
+        text: Commented(input_text.clone(), "long folded comment".to_string()),
+    };
+
+    let yaml = serde_saphyr::to_string(&value).unwrap();
+
+    assert!(
+        yaml.contains("text: >-") || yaml.contains("text: >"),
+        "expected folded block scalar header: {yaml}"
+    );
+    assert!(
+        yaml.contains("# long folded comment\n"),
+        "inline comment should appear on the folded block header: {yaml}"
+    );
+
+    let back: BTreeMap<String, String> = serde_saphyr::from_str(&yaml).unwrap();
+    assert_eq!(back["text"], input_text);
+}
+
+#[test]
+fn block_scalar_with_invalid_indent_step_falls_back_to_quoted() {
+    // `indent_step` outside 1..=9 cannot be represented as a YAML block-scalar
+    // indentation indicator. When the content needs an explicit indicator
+    // (its first non-empty line has leading whitespace), the serializer must
+    // fall back to the quoted form rather than emit an invalid header.
+    use std::collections::BTreeMap;
+
+    let opts = serde_saphyr::ser_options! {
+        indent_step: 10,
+    };
+
+    let mut input = BTreeMap::new();
+    input.insert("text".to_string(), " leading\nsecond\n".to_string());
+
+    let yaml = serde_saphyr::to_string_with_options(&input, opts).unwrap();
+
+    assert!(
+        !yaml.contains("text: |") && !yaml.contains("text: >"),
+        "must not emit a block scalar with an invalid indicator: {yaml}"
+    );
+    assert!(
+        yaml.contains("text: \""),
+        "must fall back to double-quoted style: {yaml}"
+    );
+
+    let back: BTreeMap<String, String> = serde_saphyr::from_str(&yaml).unwrap();
+    assert_eq!(back, input);
+}
+
+#[test]
 fn commented_auto_literal_block_keeps_inline_comment_on_header() {
     use std::collections::BTreeMap;
 

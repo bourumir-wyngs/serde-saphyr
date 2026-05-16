@@ -1019,15 +1019,23 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             let first_line_spaces = self::wrapping::first_line_leading_spaces(content_trimmed);
             let needs_indicator = first_line_spaces > 0;
 
-            // The indicator must be in 1..=9. Fall back to quoting otherwise.
+            // Resolve the indicator digit up front. If the helper rejects `indent_n`
+            // (i.e. outside the YAML 1.2 `[1-9]` grammar), fall back to quoting.
             // Anchor prefix is already written above, so don't call it again here.
-            if needs_indicator && !(1..=9).contains(&indent_n) {
-                self.pending_str_style = None;
-                self.pending_str_from_auto = false;
-                self.write_plain_or_quoted_value(v)?;
-                self.write_end_of_scalar()?;
-                return Ok(());
-            }
+            let indicator_digit = if needs_indicator {
+                match block_indent_indicator_digit(indent_n) {
+                    Ok(d) => Some(d),
+                    Err(_) => {
+                        self.pending_str_style = None;
+                        self.pending_str_from_auto = false;
+                        self.write_plain_or_quoted_value(v)?;
+                        self.write_end_of_scalar()?;
+                        return Ok(());
+                    }
+                }
+            } else {
+                None
+            };
 
             match style {
                 StrStyle::Literal => {
@@ -1040,9 +1048,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
 
                     // Write block scalar header: | or |N with optional chomp indicator
                     self.out.write_char('|')?;
-                    if needs_indicator {
-                        // Write the indentation indicator digit
-                        let digit = block_indent_indicator_digit(indent_n)?;
+                    if let Some(digit) = indicator_digit {
                         self.out.write_char(digit)?;
                     }
                     match trailing_nl {
@@ -1094,9 +1100,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 StrStyle::Folded => {
                     // Write block scalar header: > or >N with optional chomp indicator
                     self.out.write_char('>')?;
-                    if needs_indicator {
-                        // Write the indentation indicator digit
-                        let digit = block_indent_indicator_digit(indent_n)?;
+                    if let Some(digit) = indicator_digit {
                         self.out.write_char(digit)?;
                     }
                     if self.pending_str_from_auto {
