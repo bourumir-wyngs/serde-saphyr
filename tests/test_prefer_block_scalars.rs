@@ -241,6 +241,55 @@ fn nested_literal_block_with_leading_space_round_trips() {
 }
 
 #[test]
+fn anchored_auto_literal_block_emits_anchor_before_block_scalar() {
+    use std::collections::BTreeMap;
+    use std::rc::Rc;
+
+    use serde_saphyr::RcAnchor;
+
+    #[derive(Clone, Serialize, Deserialize)]
+    struct Holder {
+        text: RcAnchor<String>,
+        next: String,
+    }
+
+    let shared = Rc::new("def foo():\n    print(42)\n".to_string());
+    let value = vec![
+        Holder {
+            text: RcAnchor::from(shared.clone()),
+            next: "after first".to_string(),
+        },
+        Holder {
+            text: RcAnchor::from(shared),
+            next: "after second".to_string(),
+        },
+    ];
+
+    let yaml = serde_saphyr::to_string(&value).unwrap();
+
+    assert!(
+        yaml.contains("text: &a1 |\n") || yaml.contains("text: &a1 |-\n"),
+        "anchor must be attached to the block scalar itself:\n{yaml}"
+    );
+    assert!(
+        yaml.contains("text: *a1"),
+        "second occurrence should be an alias:\n{yaml}"
+    );
+    assert!(
+        !yaml.contains("next: &a1"),
+        "pending anchor leaked to the next scalar:\n{yaml}"
+    );
+
+    // Re-parse with a generic structure to confirm both shapes round-trip.
+    let parsed: Vec<BTreeMap<String, String>> = serde_saphyr::from_str(&yaml).unwrap();
+    assert_eq!(parsed.len(), 2);
+    assert_eq!(parsed[0]["text"], "def foo():\n    print(42)\n");
+    assert_eq!(parsed[1]["text"], "def foo():\n    print(42)\n");
+    assert_eq!(parsed[0]["next"], "after first");
+    assert_eq!(parsed[1]["next"], "after second");
+}
+
+#[test]
 fn deeply_nested_literal_block_with_leading_space_round_trips() {
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     struct A {

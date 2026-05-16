@@ -333,9 +333,15 @@ pub(crate) fn is_plain_value_safe(s: &str, yaml_12: bool, in_flow: bool) -> bool
 /// relying on double-quoted escape sequences.
 ///
 /// This is character-level safety only: it says whether the codepoints can be
-/// represented inside `|`/`>` blocks. YAML parsers normalize line breaks, so
-/// `\r`/NEL/LS/PS would corrupt the round-trip. BOM is excluded from `nb-char`
-/// in the YAML 1.2 grammar.
+/// represented inside `|`/`>` blocks.
+///
+/// - `\r` is a YAML 1.2 line break (parsers normalize it to `\n`) and must be
+///   escaped to preserve the exact Rust string on round-trip.
+/// - BOM (U+FEFF) is excluded from the `nb-char` production and must be escaped.
+/// - NEL, LS, and PS are non-break characters in YAML 1.2, but many tools and
+///   editors mishandle them; we reject them in block scalars as a conservative
+///   interoperability/readability policy. The double-quoted path preserves them
+///   exactly via `\N`/`\L`/`\P` escapes.
 #[inline]
 pub(crate) fn is_block_scalar_content_safe(s: &str) -> bool {
     s.chars().all(|ch| match ch {

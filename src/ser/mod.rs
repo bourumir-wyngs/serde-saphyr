@@ -902,9 +902,14 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     fn serialize_str(self, v: &str) -> Result<()> {
         #[inline]
         fn block_indent_indicator_digit(indent_n: usize) -> Result<char> {
-            char::from_digit(indent_n as u32, 10).ok_or_else(|| {
-                Error::custom("indentation indicator must be a single digit (1..=9)")
-            })
+            // YAML 1.2 §8.1.1.1: the block-scalar indentation indicator is `[1-9]`.
+            // `char::from_digit` would accept 0, so we gate on the range explicitly.
+            match indent_n {
+                1..=9 => Ok(char::from_digit(indent_n as u32, 10).expect("checked 1..=9")),
+                _ => Err(Error::custom(
+                    "indentation indicator must be a single digit (1..=9)",
+                )),
+            }
         }
 
         // If no explicit style pending, auto-select block style.
@@ -977,6 +982,12 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             if self.at_line_start {
                 self.write_indent(base)?;
             }
+
+            // Anchors/tags are node properties and must be emitted before scalar content.
+            // For a block scalar this produces e.g. `text: &a1 |` — without this, a pending
+            // anchor would leak onto the next scalar.
+            self.write_scalar_prefix_if_anchor()?;
+
             // Compute the indentation indicator N for block scalars.
             //
             // Per YAML 1.2 8.1.1.1, the indicator is the *additional* indentation steps
@@ -995,12 +1006,11 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             let first_line_spaces = self::wrapping::first_line_leading_spaces(content_trimmed);
             let needs_indicator = first_line_spaces > 0;
 
-            // If N > 9, YAML parsers reject it. Fall back to quoting.
-            if needs_indicator && indent_n > 9 {
-                // Reset state and fall through to quoted string handling
+            // The indicator must be in 1..=9. Fall back to quoting otherwise.
+            // Anchor prefix is already written above, so don't call it again here.
+            if needs_indicator && !(1..=9).contains(&indent_n) {
                 self.pending_str_style = None;
                 self.pending_str_from_auto = false;
-                self.write_scalar_prefix_if_anchor()?;
                 self.write_plain_or_quoted_value(v)?;
                 self.write_end_of_scalar()?;
                 return Ok(());
