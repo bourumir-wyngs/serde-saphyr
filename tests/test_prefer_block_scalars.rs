@@ -1,4 +1,5 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
+use serde::{Deserialize, Serialize};
 use serde_saphyr::{self};
 
 // Dedicated tests for prefer_block_scalars behavior
@@ -69,4 +70,39 @@ fn prefer_block_scalars_folded_for_long_single_line() {
     // Round-trip must preserve the original string
     let back: String = serde_saphyr::from_str(&out).unwrap();
     assert_eq!(back, long);
+}
+
+#[test]
+fn prefer_block_scalars_does_not_emit_literal_non_printable_chars() {
+    #[derive(Debug, Deserialize, PartialEq, Serialize)]
+    struct Foo {
+        x: String,
+    }
+
+    let value = Foo {
+        x: "\n\0(01234567890123456789012345678901234567890123456789012345678901234567890123456789)"
+            .to_string(),
+    };
+
+    let out = serde_saphyr::to_string(&value).unwrap();
+
+    assert!(
+        !out.as_bytes().contains(&0),
+        "serializer emitted a literal NUL byte: {out:?}"
+    );
+    assert!(
+        out.contains("\\0"),
+        "expected NUL to be escaped in quoted output: {out:?}"
+    );
+    assert!(
+        !out.contains(": |"),
+        "unsafe string should not use any block scalar style: {out:?}"
+    );
+    assert!(
+        out.contains("x: \""),
+        "unsafe string should be double-quoted: {out:?}"
+    );
+
+    let back: Foo = serde_saphyr::from_str(&out).unwrap();
+    assert_eq!(back, value);
 }

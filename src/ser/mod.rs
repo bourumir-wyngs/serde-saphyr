@@ -63,7 +63,7 @@ use nohash_hasher::BuildNoHashHasher;
 // ------------------------------------------------------------
 
 pub use self::error::Error;
-use self::quoting::{is_plain_safe, is_plain_value_safe};
+use self::quoting::{is_block_scalar_content_safe, is_plain_safe, is_plain_value_safe};
 
 /// Result alias.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -948,6 +948,18 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             }
         }
         if let Some(style) = self.pending_str_style.take() {
+            if !is_block_scalar_content_safe(v) {
+                self.pending_str_from_auto = false;
+                self.write_space_if_pending()?;
+                self.write_scalar_prefix_if_anchor()?;
+                if self.at_line_start {
+                    self.write_indent(self.depth)?;
+                }
+                self.write_quoted(v)?;
+                self.write_end_of_scalar()?;
+                return Ok(());
+            }
+
             // Emit block string. If we are a mapping value, YAML requires a space after ':'.
             // Insert it now if pending.
             //

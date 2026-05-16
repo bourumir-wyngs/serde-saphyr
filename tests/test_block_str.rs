@@ -156,6 +156,32 @@ fn litstr_inner_blank_line_and_trailing_newline() {
 }
 
 #[test]
+fn litstr_with_non_printable_char_falls_back_to_quoted() {
+    let value = "a\n\0b";
+    let out = to_string(&LitStr(value)).unwrap();
+
+    assert!(
+        !out.as_bytes().contains(&0),
+        "serializer emitted a literal NUL byte: {out:?}"
+    );
+    assert!(
+        out.contains("\\0"),
+        "expected NUL to be escaped in quoted output: {out:?}"
+    );
+    assert!(
+        !out.starts_with('|'),
+        "unsafe literal wrapper output should fall back to quoting: {out:?}"
+    );
+    assert!(
+        out.starts_with('"'),
+        "fallback should produce double-quoted output: {out:?}"
+    );
+
+    let back: String = serde_saphyr::from_str(&out).unwrap();
+    assert_eq!(back, value);
+}
+
+#[test]
 fn litstr_in_block_sequence_item() {
     let v = vec![LitStr("alpha\nbeta")];
     let out = to_string(&v).unwrap();

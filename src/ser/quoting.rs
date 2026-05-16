@@ -329,6 +329,26 @@ pub(crate) fn is_plain_value_safe(s: &str, yaml_12: bool, in_flow: bool) -> bool
     }
 }
 
+/// Returns true when `s` can be emitted literally inside a block scalar without
+/// relying on double-quoted escape sequences.
+#[inline]
+pub(crate) fn is_block_scalar_content_safe(s: &str) -> bool {
+    s.chars().all(|ch| {
+        if matches!(ch, '\n' | '\t') {
+            return true;
+        }
+
+        if matches!(ch, '\r' | '\u{0085}' | '\u{2028}' | '\u{2029}') {
+            return false;
+        }
+
+        matches!(
+            ch as u32,
+            0x20..=0x7E | 0xA0..=0xD7FF | 0xE000..=0xFFFD | 0x10000..=0x10FFFF
+        )
+    })
+}
+
 fn contains_any_or_is_control(string: &str, values: &[char]) -> bool {
     string
         .chars()
