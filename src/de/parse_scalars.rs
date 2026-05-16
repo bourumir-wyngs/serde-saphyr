@@ -311,13 +311,23 @@ where
 
 #[cfg(feature = "deserialize")]
 /// If we are not using Rust struct as schema, check if we should not be quoting the value.
-pub(crate) fn maybe_not_string(s: &str, style: &ScalarStyle) -> bool {
+pub(crate) fn maybe_not_string(s: &str, style: &ScalarStyle, strict_booleans: bool) -> bool {
     let location = Location::UNKNOWN;
     style == &ScalarStyle::Plain
         && (parse_yaml12_float::<f64>(s, location, SfTag::None, false).is_ok()
             || parse_int_signed::<i128>(s, "i128", location, false).is_ok()
-            || parse_yaml11_bool(s).is_ok()
+            || maybe_bool(s, strict_booleans)
             || scalar_is_nullish(s, &ScalarStyle::Plain))
+}
+
+/// Check if a scalar looks like a YAML boolean, respecting `strict_booleans`.
+#[inline]
+fn maybe_bool(s: &str, strict: bool) -> bool {
+    if strict {
+        s.trim().eq_ignore_ascii_case("true") || s.trim().eq_ignore_ascii_case("false")
+    } else {
+        parse_yaml11_bool(s).is_ok()
+    }
 }
 
 /// True if a scalar is a YAML "null-like" value in non-`Option` contexts.
