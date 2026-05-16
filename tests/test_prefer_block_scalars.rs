@@ -106,3 +106,164 @@ fn prefer_block_scalars_does_not_emit_literal_non_printable_chars() {
     let back: Foo = serde_saphyr::from_str(&out).unwrap();
     assert_eq!(back, value);
 }
+
+#[test]
+fn auto_literal_block_allows_colon_in_multiline_content() {
+    use std::collections::BTreeMap;
+
+    let mut input = BTreeMap::new();
+    input.insert(
+        "python".to_string(),
+        "def foo():\n    print(42)\n".to_string(),
+    );
+
+    let yaml = serde_saphyr::to_string(&input).unwrap();
+
+    assert!(
+        yaml.contains("python: |"),
+        "expected literal block scalar, got:\n{yaml}"
+    );
+    assert!(
+        yaml.contains("def foo():"),
+        "colon must appear literally inside block content, got:\n{yaml}"
+    );
+
+    let back: BTreeMap<String, String> = serde_saphyr::from_str(&yaml).unwrap();
+    assert_eq!(back, input);
+}
+
+#[test]
+fn auto_literal_block_allows_yaml_like_content_without_injection() {
+    use std::collections::BTreeMap;
+
+    let text = "---\nadmin: true\n# this is content\n&anchor\n!tag\nkey: value\n";
+
+    let mut input = BTreeMap::new();
+    input.insert("payload".to_string(), text.to_string());
+
+    let yaml = serde_saphyr::to_string(&input).unwrap();
+
+    assert!(
+        yaml.contains("payload: |"),
+        "expected literal block scalar, got:\n{yaml}"
+    );
+
+    let back: BTreeMap<String, String> = serde_saphyr::from_str(&yaml).unwrap();
+    assert_eq!(back, input);
+}
+
+#[test]
+fn block_scalar_auto_rejects_carriage_return() {
+    use std::collections::BTreeMap;
+
+    let mut input = BTreeMap::new();
+    input.insert("text".to_string(), "a\rb\n".to_string());
+
+    let yaml = serde_saphyr::to_string(&input).unwrap();
+
+    assert!(
+        !yaml.contains("text: |"),
+        "CR must not be emitted literally in block scalar:\n{yaml}"
+    );
+    assert!(
+        yaml.contains("\\r"),
+        "CR should be preserved by quoting/escaping:\n{yaml}"
+    );
+
+    let back: BTreeMap<String, String> = serde_saphyr::from_str(&yaml).unwrap();
+    assert_eq!(back, input);
+}
+
+#[test]
+fn block_scalar_auto_rejects_bom() {
+    use std::collections::BTreeMap;
+
+    let mut input = BTreeMap::new();
+    input.insert("text".to_string(), "before\u{FEFF}after\nmore\n".to_string());
+
+    let yaml = serde_saphyr::to_string(&input).unwrap();
+
+    assert!(
+        !yaml.contains("text: |"),
+        "BOM must not be emitted literally in block scalar:\n{yaml}"
+    );
+    assert!(
+        !yaml.as_bytes().windows(3).any(|w| w == [0xEF, 0xBB, 0xBF]),
+        "BOM should not appear as raw UTF-8 in output:\n{yaml}"
+    );
+
+    let back: BTreeMap<String, String> = serde_saphyr::from_str(&yaml).unwrap();
+    assert_eq!(back, input);
+}
+
+#[test]
+fn block_scalar_auto_rejects_trailing_whitespace_before_newline() {
+    // Trailing whitespace before a newline survives a strict round-trip via the
+    // double-quoted path, but is routinely stripped by editors and tooling when
+    // emitted as a literal block. Auto-selection must therefore prefer quoting.
+    use std::collections::BTreeMap;
+
+    let mut input = BTreeMap::new();
+    input.insert("text".to_string(), "alpha \nbeta\n".to_string());
+
+    let yaml = serde_saphyr::to_string(&input).unwrap();
+
+    assert!(
+        !yaml.contains("text: |"),
+        "trailing whitespace before newline must not auto-select literal block:\n{yaml}"
+    );
+
+    let back: BTreeMap<String, String> = serde_saphyr::from_str(&yaml).unwrap();
+    assert_eq!(back, input);
+}
+
+#[test]
+fn nested_literal_block_with_leading_space_round_trips() {
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct Outer {
+        inner: Inner,
+    }
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct Inner {
+        text: String,
+    }
+
+    let input = Outer {
+        inner: Inner {
+            text: " leading space\nnext line\n".to_string(),
+        },
+    };
+
+    let yaml = serde_saphyr::to_string(&input).unwrap();
+    let back: Outer = serde_saphyr::from_str(&yaml).expect("round-trip parse failed");
+    assert_eq!(back, input);
+}
+
+#[test]
+fn deeply_nested_literal_block_with_leading_space_round_trips() {
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct A {
+        b: B,
+    }
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct B {
+        c: C,
+    }
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct C {
+        text: String,
+    }
+
+    let input = A {
+        b: B {
+            c: C {
+                text: " leading\nsecond\n".to_string(),
+            },
+        },
+    };
+
+    let yaml = serde_saphyr::to_string(&input).unwrap();
+    let back: A = serde_saphyr::from_str(&yaml).expect("deeply nested round-trip parse failed");
+    assert_eq!(back, input);
+}

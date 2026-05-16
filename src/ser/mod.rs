@@ -63,7 +63,10 @@ use nohash_hasher::BuildNoHashHasher;
 // ------------------------------------------------------------
 
 pub use self::error::Error;
-use self::quoting::{is_block_scalar_content_safe, is_plain_safe, is_plain_value_safe};
+use self::quoting::{
+    is_auto_block_scalar_readable, is_block_scalar_content_safe, is_plain_safe,
+    is_plain_value_safe,
+};
 
 /// Result alias.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -907,33 +910,21 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         // If no explicit style pending, auto-select block style.
         //
         // Controlled by `prefer_block_scalars`:
-        //  - multiline + long (by folded_wrap_col) → literal (|)
-        //  - otherwise, multiline → literal (|) only when newlines are the only reason plain
-        //    style is unsafe
+        //  - multiline → literal (|) whenever the content is representable in a block scalar
+        //    and is readable enough to auto-select (see `is_auto_block_scalar_readable`).
+        //    Block scalars happily contain ':', '#', YAML-like text, etc. — those are unsafe
+        //    in plain style but fine as block content.
         //  - single-line + long (by folded_wrap_col) → folded (>)
         //
         // Also skip block scalars when quote_all is enabled - use quoted strings instead.
         if self.pending_str_style.is_none() && self.in_flow == 0 && !self.quote_all {
-            use self::quoting::is_plain_value_safe;
-
             if v.contains('\n') {
-                if self.prefer_block_scalars {
-                    // If it's already multiline and long, emit literal block style for readability.
-                    let char_len = v.chars().count();
-                    if char_len > self.folded_wrap_col {
-                        self.pending_str_style = Some(StrStyle::Literal);
-                        self.pending_str_from_auto = true;
-                    } else {
-                        // If removing newlines makes it plain-safe, then the only problem was
-                        // newlines → allow literal block style. Otherwise, don't auto-select block
-                        // style so that quoting logic handles it (e.g., values ending with ':').
-                        let trimmed = v.trim_end_matches('\n');
-                        let normalized = trimmed.replace('\n', " ");
-                        if is_plain_value_safe(&normalized, self.yaml_12, false) {
-                            self.pending_str_style = Some(StrStyle::Literal);
-                            self.pending_str_from_auto = true;
-                        }
-                    }
+                if self.prefer_block_scalars
+                    && is_block_scalar_content_safe(v)
+                    && is_auto_block_scalar_readable(v)
+                {
+                    self.pending_str_style = Some(StrStyle::Literal);
+                    self.pending_str_from_auto = true;
                 }
             } else if self.prefer_block_scalars {
                 // Single-line string. If it needs quoting as a value, don't auto-fold.
@@ -987,11 +978,16 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 self.write_indent(base)?;
             }
             // Compute the indentation indicator N for block scalars.
-            // N = indent_step * body_base = number of spaces the parser will strip.
-            // We must emit an explicit indicator when the first non-empty content line
-            // has leading whitespace, so the parser knows how much to strip.
+            //
+            // Per YAML 1.2 8.1.1.1, the indicator is the *additional* indentation steps
+            // beyond the parent node's indentation level — NOT the absolute column count.
+            // Since our body is exactly one serializer depth (i.e. `indent_step` spaces)
+            // deeper than its parent, the indicator is simply `indent_step`.
+            //
+            // We only emit it when the first non-empty content line has leading whitespace,
+            // which would otherwise prevent automatic indentation detection by the parser.
             let body_base = base + 1;
-            let indent_n = self.indent_step * body_base;
+            let indent_n = self.indent_step;
 
             // Check if we need an explicit indentation indicator.
             // Required when the first non-empty line has leading whitespace.

@@ -331,22 +331,49 @@ pub(crate) fn is_plain_value_safe(s: &str, yaml_12: bool, in_flow: bool) -> bool
 
 /// Returns true when `s` can be emitted literally inside a block scalar without
 /// relying on double-quoted escape sequences.
+///
+/// This is character-level safety only: it says whether the codepoints can be
+/// represented inside `|`/`>` blocks. YAML parsers normalize line breaks, so
+/// `\r`/NEL/LS/PS would corrupt the round-trip. BOM is excluded from `nb-char`
+/// in the YAML 1.2 grammar.
 #[inline]
 pub(crate) fn is_block_scalar_content_safe(s: &str) -> bool {
-    s.chars().all(|ch| {
-        if matches!(ch, '\n' | '\t') {
-            return true;
-        }
-
-        if matches!(ch, '\r' | '\u{0085}' | '\u{2028}' | '\u{2029}') {
-            return false;
-        }
-
-        matches!(
-            ch as u32,
+    s.chars().all(|ch| match ch {
+        '\n' | '\t' => true,
+        '\r' | '\u{0085}' | '\u{2028}' | '\u{2029}' | '\u{FEFF}' => false,
+        c => matches!(
+            c as u32,
             0x20..=0x7E | 0xA0..=0xD7FF | 0xE000..=0xFFFD | 0x10000..=0x10FFFF
-        )
+        ),
     })
+}
+
+/// Readability policy for auto-selected block scalars.
+///
+/// Distinct from [`is_block_scalar_content_safe`]: that asks "can this be a
+/// block scalar at all?", whereas this asks "should we pick block style for
+/// this content automatically?". Explicit `LitStr`/`LitString` wrappers bypass
+/// this gate — the user opted in.
+///
+/// Currently rejects:
+/// - empty strings (nothing to put in a block body);
+/// - lines with trailing space/tab before a newline (editors, formatters, and
+///   copy-paste routinely strip these, so the double-quoted path is safer).
+#[inline]
+pub(crate) fn is_auto_block_scalar_readable(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+    let bytes = s.as_bytes();
+    for i in 1..bytes.len() {
+        if bytes[i] == b'\n' {
+            let prev = bytes[i - 1];
+            if prev == b' ' || prev == b'\t' {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 fn contains_any_or_is_control(string: &str, values: &[char]) -> bool {
