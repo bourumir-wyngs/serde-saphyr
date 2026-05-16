@@ -197,10 +197,10 @@ fn block_scalar_auto_rejects_bom() {
 }
 
 #[test]
-fn block_scalar_auto_rejects_trailing_whitespace_before_newline() {
-    // Trailing whitespace before a newline survives a strict round-trip via the
-    // double-quoted path, but is routinely stripped by editors and tooling when
-    // emitted as a literal block. Auto-selection must therefore prefer quoting.
+fn auto_literal_block_allows_trailing_whitespace_before_newline() {
+    // YAML block scalars preserve trailing spaces/tabs on content lines, so
+    // there is no safety reason to quote them. Editor/tooling whitespace
+    // stripping is a presentation concern, not a serializer concern.
     use std::collections::BTreeMap;
 
     let mut input = BTreeMap::new();
@@ -209,8 +209,8 @@ fn block_scalar_auto_rejects_trailing_whitespace_before_newline() {
     let yaml = serde_saphyr::to_string(&input).unwrap();
 
     assert!(
-        !yaml.contains("text: |"),
-        "trailing whitespace before newline must not auto-select literal block:\n{yaml}"
+        yaml.contains("text: |"),
+        "trailing whitespace is not a reason to avoid literal block style:\n{yaml}"
     );
 
     let back: BTreeMap<String, String> = serde_saphyr::from_str(&yaml).unwrap();
@@ -287,6 +287,34 @@ fn anchored_auto_literal_block_emits_anchor_before_block_scalar() {
     assert_eq!(parsed[1]["text"], "def foo():\n    print(42)\n");
     assert_eq!(parsed[0]["next"], "after first");
     assert_eq!(parsed[1]["next"], "after second");
+}
+
+#[test]
+fn commented_auto_literal_block_keeps_inline_comment_on_header() {
+    use std::collections::BTreeMap;
+
+    use serde_saphyr::Commented;
+
+    #[derive(Serialize)]
+    struct Wrap {
+        text: Commented<String>,
+    }
+
+    let input_text = "def foo():\n    print(42)\n".to_string();
+
+    let value = Wrap {
+        text: Commented(input_text.clone(), "python body".to_string()),
+    };
+
+    let yaml = serde_saphyr::to_string(&value).unwrap();
+
+    assert!(
+        yaml.contains("text: | # python body\n"),
+        "inline comment should be attached to the block scalar header:\n{yaml}"
+    );
+
+    let back: BTreeMap<String, String> = serde_saphyr::from_str(&yaml).unwrap();
+    assert_eq!(back["text"], input_text);
 }
 
 #[test]

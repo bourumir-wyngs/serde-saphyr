@@ -358,28 +358,15 @@ pub(crate) fn is_block_scalar_content_safe(s: &str) -> bool {
 ///
 /// Distinct from [`is_block_scalar_content_safe`]: that asks "can this be a
 /// block scalar at all?", whereas this asks "should we pick block style for
-/// this content automatically?". Explicit `LitStr`/`LitString` wrappers bypass
-/// this gate — the user opted in.
+/// this content automatically?".
 ///
-/// Currently rejects:
-/// - empty strings (nothing to put in a block body);
-/// - lines with trailing space/tab before a newline (editors, formatters, and
-///   copy-paste routinely strip these, so the double-quoted path is safer).
+/// Intentionally permissive. Trailing spaces/tabs are preserved by YAML block
+/// scalars and are a tooling/presentation concern, not a scalar safety concern.
+/// A future option can opt into a stricter policy for users who prefer quoted
+/// output when line-end whitespace is present.
 #[inline]
 pub(crate) fn is_auto_block_scalar_readable(s: &str) -> bool {
-    if s.is_empty() {
-        return false;
-    }
-    let bytes = s.as_bytes();
-    for i in 1..bytes.len() {
-        if bytes[i] == b'\n' {
-            let prev = bytes[i - 1];
-            if prev == b' ' || prev == b'\t' {
-                return false;
-            }
-        }
-    }
-    true
+    !s.is_empty()
 }
 
 fn contains_any_or_is_control(string: &str, values: &[char]) -> bool {

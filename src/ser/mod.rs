@@ -463,15 +463,28 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         Ok(())
     }
 
+    /// Append a pending inline comment, if any.
+    ///
+    /// Used both by normal scalar emission (`value # comment\n`) and by
+    /// block-scalar headers (`| # comment\n`). Comments are suppressed in flow
+    /// style, matching the existing serializer policy.
+    #[inline]
+    fn write_pending_inline_comment(&mut self) -> Result<()> {
+        if self.in_flow == 0
+            && let Some(c) = self.pending_inline_comment.take()
+        {
+            self.out.write_str(" # ")?;
+            self.out.write_str(&c)?;
+        }
+        Ok(())
+    }
+
     /// Called at the end of emitting a scalar in block style: appends a pending inline
     /// comment (if any) and then emits a newline. In flow style, comments are suppressed.
     #[inline]
     fn write_end_of_scalar(&mut self) -> Result<()> {
         if self.in_flow == 0 {
-            if let Some(c) = self.pending_inline_comment.take() {
-                self.out.write_str(" # ")?;
-                self.out.write_str(&c)?;
-            }
+            self.write_pending_inline_comment()?;
             self.newline()?;
         }
         Ok(())
@@ -1037,6 +1050,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                         1 => {} // clip is the default, no indicator needed
                         _ => self.out.write_char('+')?,
                     }
+                    self.write_pending_inline_comment()?;
                     self.newline()?;
 
                     // Emit body lines. For non-empty content, write each line exactly once.
@@ -1098,6 +1112,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                     }
                     // Note: Explicit FoldStr/FoldString wrappers historically used plain '>'
                     // regardless of trailing newline; keep that behavior for compatibility.
+                    self.write_pending_inline_comment()?;
                     self.newline()?;
                     self.write_folded_block(v, body_base)?;
                 }
