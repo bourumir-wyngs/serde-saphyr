@@ -158,7 +158,7 @@ pub(crate) struct Cfg {
     pub(crate) dup_policy: DuplicateKeyPolicy,
     /// Policy for YAML merge keys (`<<`).
     pub(crate) merge_keys: MergeKeyPolicy,
-    /// If true, accept legacy octal numbers that start with `00`.
+    /// If true, accept legacy octal numbers that start with `0`.
     pub(crate) legacy_octal_numbers: bool,
     /// If true, only accept exact literals `true`/`false` as booleans.
     pub(crate) strict_booleans: bool,

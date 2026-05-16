@@ -165,7 +165,7 @@ pub struct Options {
         note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
     )]
     pub alias_limits: AliasLimits,
-    /// Enable legacy octal parsing where values starting with `00` are treated as base-8.
+    /// Enable legacy octal parsing where values starting with `0` are treated as base-8.
     /// They are deprecated in YAML 1.2. Default: false.
     #[deprecated(
         note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
