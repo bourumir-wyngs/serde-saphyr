@@ -66,5 +66,13 @@ fn strict_booleans_with_no_schema_should_not_require_quoting_y_key() {
 "#;
     let got: StrictBoolKey = serde_saphyr::from_str_with_options(yaml, opts)
         .expect("strict_booleans + no_schema should accept bare YAML 1.1 boolean literals as keys");
-    assert_eq!(got, StrictBoolKey { y: 1, yes: 2, on: 3, enabled: 4 });
+    assert_eq!(
+        got,
+        StrictBoolKey {
+            y: 1,
+            yes: 2,
+            on: 3,
+            enabled: 4
+        }
+    );
 }

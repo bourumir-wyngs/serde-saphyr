@@ -179,7 +179,10 @@ fn block_scalar_auto_rejects_bom() {
     use std::collections::BTreeMap;
 
     let mut input = BTreeMap::new();
-    input.insert("text".to_string(), "before\u{FEFF}after\nmore\n".to_string());
+    input.insert(
+        "text".to_string(),
+        "before\u{FEFF}after\nmore\n".to_string(),
+    );
 
     let yaml = serde_saphyr::to_string(&input).unwrap();
 

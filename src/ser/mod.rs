@@ -64,8 +64,7 @@ use nohash_hasher::BuildNoHashHasher;
 
 pub use self::error::Error;
 use self::quoting::{
-    is_auto_block_scalar_readable, is_block_scalar_content_safe, is_plain_safe,
-    is_plain_value_safe,
+    is_auto_block_scalar_readable, is_block_scalar_content_safe, is_plain_safe, is_plain_value_safe,
 };
 
 /// Result alias.
