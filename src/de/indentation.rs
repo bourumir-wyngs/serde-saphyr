@@ -1,6 +1,6 @@
 /// Requirements for indentation validation during YAML deserialization.
 ///
-/// When set via [`options!`](crate::options), the deserializer validates every
+/// When set via [`options!`](crate::options!), the deserializer validates every
 /// parser-reported indentation level against the chosen policy.
 ///
 /// # Variants

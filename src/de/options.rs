@@ -188,7 +188,7 @@ pub struct Options {
     pub ignore_binary_tag_for_string: bool,
     /// Activates YAML conventions common in robotics community. These extensions support
     /// conversion functions (deg, rad) and simple mathematical expressions such as deg(180),
-    /// rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). [robotics] feature must also be enabled.
+    /// rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). `robotics` feature must also be enabled.
     #[deprecated(
         note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
     )]

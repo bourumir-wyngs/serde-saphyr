@@ -106,7 +106,7 @@ pub struct RcAnchor<T>(pub Rc<T>);
 #[derive(Clone)]
 pub struct ArcAnchor<T>(pub Arc<T>);
 
-/// A wrapper around [`Weak<T>`] (from [`std::rc`]) that opt-ins for **anchor emission**.
+/// A wrapper around [`std::rc::Weak<T>`] that opt-ins for **anchor emission**.
 ///
 /// When serialized, if the weak reference is **dangling** (i.e., the value was dropped),
 /// it emits `null` to indicate that the target no longer exists.
@@ -135,9 +135,9 @@ pub struct ArcAnchor<T>(pub Arc<T>);
 #[derive(Clone)]
 pub struct RcWeakAnchor<T>(pub RcWeak<T>);
 
-/// A wrapper around [`Weak<T>`] (from [`std::sync`]) that opt-ins for **anchor emission**.
+/// A wrapper around [`std::sync::Weak<T>`] that opt-ins for **anchor emission**.
 ///
-/// This variant is thread-safe and uses [`Arc`] / [`Weak`] instead of [`Rc`].
+/// This variant is thread-safe and uses [`Arc`] / [`Weak`](std::sync::Weak) instead of [`Rc`].
 /// If the weak reference is **dangling**, it serializes as `null`.
 ///
 /// > **Deserialization note:** `null` → dangling weak. Non-`null` is rejected unless a registry is used.
