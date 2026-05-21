@@ -111,9 +111,13 @@ where
     });
 
     if let Some(path) = include_path {
-        options = options
-            .with_filesystem_root(&path)
-            .expect("failed to create filesystem include resolver");
+        options = match options.with_filesystem_root(&path) {
+            Ok(options) => options,
+            Err(err) => {
+                let _ = writeln!(stderr, "Failed to configure include root {path}: {err}");
+                return 2;
+            }
+        };
     }
 
     let result: Result<IgnoredAny, Error> = from_str_with_options(&content, options);

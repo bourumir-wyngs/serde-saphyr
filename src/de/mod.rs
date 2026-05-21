@@ -1097,6 +1097,11 @@ pub(crate) trait Events<'de> {
     }
 }
 
+#[cold]
+fn eof_with_loc(events: &dyn Events<'_>) -> Error {
+    Error::eof().with_location(events.last_location())
+}
+
 /// Event source that replays a pre-recorded buffer.
 struct ReplayEvents<'a> {
     buf: Vec<Ev<'a>>,
@@ -1492,7 +1497,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
                 ..
             }) => self.scalar_view_from_parts(value, tag, style, location),
             Some(other) => Err(Error::unexpected("string scalar").with_location(other.location())),
-            None => Err(Error::eof().with_location(self.ev.last_location())),
+            None => Err(eof_with_loc(self.ev)),
         }
     }
 
@@ -1500,7 +1505,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         match self.ev.next()? {
             Some(Ev::Scalar { .. }) => Ok(view),
             Some(other) => Err(Error::unexpected("string scalar").with_location(other.location())),
-            None => Err(Error::eof().with_location(self.ev.last_location())),
+            None => Err(eof_with_loc(self.ev)),
         }
     }
 
@@ -1540,7 +1545,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         match self.ev.next()? {
             Some(Ev::SeqStart { .. }) => Ok(()),
             Some(other) => Err(Error::unexpected("sequence start").with_location(other.location())),
-            None => Err(Error::eof().with_location(self.ev.last_location())),
+            None => Err(eof_with_loc(self.ev)),
         }
     }
 
@@ -1549,7 +1554,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         match self.ev.next()? {
             Some(Ev::MapStart { .. }) => Ok(()),
             Some(other) => Err(Error::unexpected("mapping start").with_location(other.location())),
-            None => Err(Error::eof().with_location(self.ev.last_location())),
+            None => Err(eof_with_loc(self.ev)),
         }
     }
 
@@ -2013,7 +2018,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
                 view
             }
-            None => return Err(Error::eof().with_location(self.ev.last_location())),
+            None => return Err(eof_with_loc(self.ev)),
         };
 
         let location = view.location;
@@ -2141,7 +2146,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                             )?;
                             out.push(b);
                         }
-                        None => return Err(Error::eof().with_location(self.ev.last_location())),
+                        None => return Err(eof_with_loc(self.ev)),
                     }
                 }
                 visitor.visit_byte_buf(out)
@@ -2152,7 +2157,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 Error::unexpected("scalar (!!binary) or sequence of 0..=255")
                     .with_location(other.location()),
             ),
-            None => Err(Error::eof().with_location(self.ev.last_location())),
+            None => Err(eof_with_loc(self.ev)),
         }
     }
 
@@ -2179,7 +2184,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         Error::unexpected("empty mapping start").with_location(other.location())
                     );
                 }
-                None => return Err(Error::eof().with_location(self.ev.last_location())),
+                None => return Err(eof_with_loc(self.ev)),
             }
             match self.ev.next()? {
                 Some(Ev::MapEnd { .. }) => {}
@@ -2188,7 +2193,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         Error::unexpected("empty mapping end").with_location(other.location())
                     );
                 }
-                None => return Err(Error::eof().with_location(self.ev.last_location())),
+                None => return Err(eof_with_loc(self.ev)),
             }
             return visitor.visit_none();
         }
@@ -2264,7 +2269,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     Some(other) => Err(Error::ExpectedEmptyMappingForUnitStruct {
                         location: other.location(),
                     }),
-                    None => Err(Error::eof().with_location(self.ev.last_location())),
+                    None => Err(eof_with_loc(self.ev)),
                 }
             }
             // Otherwise, delegate to unit handling (null, ~, empty scalar, EOF, etc.)
@@ -2419,7 +2424,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     match peeked {
                         Some(Ev::SeqEnd { .. }) => (true, Location::UNKNOWN),
                         Some(ev) => (false, ev.location()),
-                        None => return Err(Error::eof().with_location(self.ev.last_location())),
+                        None => return Err(eof_with_loc(self.ev)),
                     }
                 };
 
@@ -2611,7 +2616,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     Some(Ev::Taken { location }) => {
                         return Err(Error::unexpected("consumed event").with_location(location));
                     }
-                    None => return Err(Error::eof().with_location(self.ev.last_location())),
+                    None => return Err(eof_with_loc(self.ev)),
                 }
                 while depth != 0 {
                     match self.ev.next()? {
@@ -2621,7 +2626,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         Some(Ev::Taken { location }) => {
                             return Err(Error::unexpected("consumed event").with_location(location));
                         }
-                        None => return Err(Error::eof().with_location(self.ev.last_location())),
+                        None => return Err(eof_with_loc(self.ev)),
                     }
                 }
                 Ok(())
@@ -2983,7 +2988,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                                 return Ok(Some(key_value));
                             }
                         }
-                        None => return Err(Error::eof().with_location(self.ev.last_location())),
+                        None => return Err(eof_with_loc(self.ev)),
                     }
                 }
             }
@@ -3186,7 +3191,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 if let Some(tag_name) = simple_tagged_enum_name(&raw_tag, &tag) {
                     tagged_enum = Some((tag_name, location));
                 }
-                let view = self.peek_scalar_view()?.unwrap();
+                let Some(view) = self.peek_scalar_view()? else {
+                    return Err(eof_with_loc(self.ev));
+                };
                 if self.cfg.no_schema
                     && tag != SfTag::String
                     && maybe_not_string(&view.effective, &style)
@@ -3205,7 +3212,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                             location: tag_loc,
                         };
                         // Consume the scalar and re-emit it without the tag for payload deserialization
-                        let ev = self.ev.next()?.unwrap();
+                        let Some(ev) = self.ev.next()? else {
+                            return Err(eof_with_loc(self.ev));
+                        };
                         let replay = match ev {
                             Ev::Scalar {
                                 value,
@@ -3257,7 +3266,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                                 location: other.location(),
                             });
                         }
-                        None => return Err(Error::eof().with_location(self.ev.last_location())),
+                        None => return Err(eof_with_loc(self.ev)),
                     }
                 }
             }
@@ -3271,7 +3280,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     && _variants.contains(&tag_name.as_str())
                 {
                     // Consume the SeqStart, collect all events until SeqEnd, replay as untagged sequence
-                    let seq_start = self.ev.next()?.unwrap();
+                    let Some(seq_start) = self.ev.next()? else {
+                        return Err(eof_with_loc(self.ev));
+                    };
                     let start_loc = seq_start.location();
                     let mut replay_events: Vec<Ev<'de>> = Vec::new();
                     // Re-emit SeqStart without tag
@@ -3308,7 +3319,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                             Some(ev) => {
                                 replay_events.push(ev);
                             }
-                            None => return Err(Error::eof().with_location(self.ev.last_location())),
+                            None => return Err(eof_with_loc(self.ev)),
                         }
                     }
                     let replay = Box::new(ReplayEvents::new(
@@ -3338,7 +3349,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             Some(Ev::Taken { location }) => {
                 return Err(Error::unexpected("consumed event").with_location(location));
             }
-            None => return Err(Error::eof().with_location(self.ev.last_location())),
+            None => return Err(eof_with_loc(self.ev)),
         };
 
         if let Some((tag_name, location)) = tagged_enum
@@ -3392,7 +3403,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     Some(other) => Err(Error::ExpectedMappingEndAfterEnumVariantValue {
                         location: other.location(),
                     }),
-                    None => Err(Error::eof().with_location(self.ev.last_location())),
+                    None => Err(eof_with_loc(self.ev)),
                 }
             }
         }
@@ -3417,7 +3428,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         Some(other) => Err(Error::UnexpectedValueForUnitEnumVariant {
                             location: other.location(),
                         }),
-                        None => Err(Error::eof().with_location(self.ev.last_location())),
+                        None => Err(eof_with_loc(self.ev)),
                     }
                 } else {
                     Ok(())

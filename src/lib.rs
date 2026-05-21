@@ -604,11 +604,12 @@ fn with_recorded_source_snippets(
     chain: &[&crate::include_stack::RecordedSource],
     crop_radius: usize,
 ) -> Error {
-    let current = chain[0];
-    let source_text = current
-        .text
-        .as_deref()
-        .expect("recorded source snippet chain must start with text-backed source");
+    let Some(current) = chain.first() else {
+        return with_root_or_input_snippet(err, root, input, crop_radius);
+    };
+    let Some(source_text) = current.text.as_deref() else {
+        return with_root_or_input_snippet(err, root, input, crop_radius);
+    };
     let mut err_with_snippet =
         err.with_snippet_named(source_text, current.name.as_str(), crop_radius);
 
@@ -641,6 +642,21 @@ fn with_recorded_source_snippets(
         }
     }
     err_with_snippet
+}
+
+#[cfg(all(feature = "deserialize", feature = "include"))]
+fn with_root_or_input_snippet(
+    err: Error,
+    root: Option<&RootFragment<'_>>,
+    input: &str,
+    crop_radius: usize,
+) -> Error {
+    match root {
+        Some(root) => {
+            err.with_snippet_offset_named(root.text, root.start_line, root.source_name, crop_radius)
+        }
+        None => maybe_with_snippet(err, input, true, crop_radius),
+    }
 }
 
 #[cfg(feature = "deserialize")]

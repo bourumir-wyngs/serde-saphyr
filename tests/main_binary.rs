@@ -141,6 +141,25 @@ fn include_flag_parses_successfully() {
 }
 
 #[test]
+fn invalid_include_root_prints_error_and_exits_two() {
+    let tmp_dir = tempfile::tempdir().expect("create temp dir");
+    let root_path = tmp_dir.path().join("root.yaml");
+    let missing_include_root = tmp_dir.path().join("missing");
+
+    std::fs::write(&root_path, "a: 1\n").unwrap();
+
+    let root_path_str = root_path.to_str().unwrap();
+    let include_root_str = missing_include_root.to_str().unwrap();
+
+    let (_stdout, stderr, code) = run_binary(&["--include", include_root_str, root_path_str]);
+    assert_eq!(code, 2);
+    assert!(
+        stderr.contains("Failed to configure include root"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
 fn missing_include_path_prints_error_and_exits_one() {
     let (_stdout, stderr, code) = run_binary(&["--include"]);
     assert_eq!(code, 1);

@@ -86,9 +86,8 @@ pub(crate) fn interpolate_compose_style<'s>(
     let mut i = 0usize;
 
     while i < bytes.len() {
-        let ch = input_str[i..].chars().next().expect("valid UTF-8 boundary");
-        if ch != '$' {
-            i += ch.len_utf8();
+        if bytes[i] != b'$' {
+            i += 1;
             continue;
         }
 
@@ -171,6 +170,15 @@ mod tests {
         let output = interpolate_compose_style(Cow::Borrowed("hello ${NAME}"), &vars).unwrap();
 
         assert_eq!(output.as_ref(), "hello world");
+    }
+
+    #[test]
+    fn replaces_reference_after_non_ascii_text() {
+        let vars = HashMap::from([(String::from("NAME"), String::from("world"))]);
+
+        let output = interpolate_compose_style(Cow::Borrowed("h\u{e9} ${NAME}"), &vars).unwrap();
+
+        assert_eq!(output.as_ref(), "h\u{e9} world");
     }
 
     #[test]

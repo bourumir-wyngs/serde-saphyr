@@ -299,8 +299,7 @@ impl SafeFileResolver {
         canonical_path: &Path,
         spec: &str,
     ) -> Result<(), IncludeResolveError> {
-        if canonical_path.starts_with(&self.allow_root) {
-            let relative = canonical_path.strip_prefix(&self.allow_root).unwrap();
+        if let Ok(relative) = canonical_path.strip_prefix(&self.allow_root) {
             if relative.components().any(|component| {
                 component.as_os_str().to_str().is_some_and(|segment| {
                     segment.starts_with('.') && segment != "." && segment != ".."
