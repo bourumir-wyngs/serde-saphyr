@@ -1,4 +1,4 @@
-name: 0.0.18 API compatibility
+name: 0.0.26 API compatibility
 
 on:
   push:

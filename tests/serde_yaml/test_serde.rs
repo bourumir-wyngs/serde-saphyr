@@ -298,14 +298,14 @@ fn test_strings_needing_quote() {
         integer: "1".to_owned(),
         void: "null".to_owned(),
         xnan: "NaN".to_owned(),
-        leading_zeros: "007".to_owned(),
+        leading_zeros: "07".to_owned(),
         ok: "OK".to_owned(), // does not need quote
     };
     let yaml = r#"boolean: "true"
 integer: "1"
 void: "null"
 xnan: "NaN"
-leading_zeros: "007"
+leading_zeros: "07"
 ok: OK
 "#;
     test_serde(&thing, yaml);

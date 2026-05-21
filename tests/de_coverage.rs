@@ -738,8 +738,8 @@ fn merge_key_invalid_scalar_error() {
 #[test]
 fn deserialize_any_legacy_octal() {
     let opts = serde_saphyr::options! { legacy_octal_numbers: true };
-    let v: serde_json::Value = serde_saphyr::from_str_with_options("00777\n", opts).unwrap();
-    // 00777 legacy octal = 511 decimal
+    let v: serde_json::Value = serde_saphyr::from_str_with_options("0777\n", opts).unwrap();
+    // 0777 legacy octal = 511 decimal
     assert_eq!(
         v,
         serde_json::Value::Number(serde_json::Number::from(511u64))

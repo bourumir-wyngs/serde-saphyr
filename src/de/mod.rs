@@ -158,7 +158,7 @@ pub(crate) struct Cfg {
     pub(crate) dup_policy: DuplicateKeyPolicy,
     /// Policy for YAML merge keys (`<<`).
     pub(crate) merge_keys: MergeKeyPolicy,
-    /// If true, accept legacy octal numbers that start with `00`.
+    /// If true, accept legacy octal numbers that start with `0`.
     pub(crate) legacy_octal_numbers: bool,
     /// If true, only accept exact literals `true`/`false` as booleans.
     pub(crate) strict_booleans: bool,
@@ -1949,7 +1949,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             if view.tag == SfTag::Null || scalar_is_nullish(&view.effective, &view.style) {
                 let (_value, _tag, location) = self.take_scalar_event()?;
                 return Err(Error::InvalidCharNull { location });
-            } else if self.cfg.no_schema && maybe_not_string(&view.effective, &view.style) {
+            } else if self.cfg.no_schema
+                && maybe_not_string(&view.effective, &view.style, self.cfg.strict_booleans)
+            {
                 // Require quoting for ambiguous plain scalars in no_schema mode.
                 let view = self.take_scalar_view()?;
                 return Err(self.quoting_required_for_scalar(&view));
@@ -1988,7 +1990,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     let _ = self.ev.next()?;
                     return Err(Error::NullIntoString { location: loc });
                 } else if self.cfg.no_schema
-                    && maybe_not_string(&view.effective, &view.style)
+                    && maybe_not_string(&view.effective, &view.style, self.cfg.strict_booleans)
                     && view.tag != SfTag::String
                 {
                     let view = self.take_scalar_view()?;
@@ -2071,7 +2073,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 let (_value, _tag, location) = self.take_scalar_event()?;
                 return Err(Error::NullIntoString { location });
             } else if self.cfg.no_schema
-                && maybe_not_string(&view.effective, &view.style)
+                && maybe_not_string(&view.effective, &view.style, self.cfg.strict_booleans)
                 && view.tag != SfTag::String
             {
                 // Consume the scalar to anchor the error at the correct location.
@@ -3196,7 +3198,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 };
                 if self.cfg.no_schema
                     && tag != SfTag::String
-                    && maybe_not_string(&view.effective, &style)
+                    && maybe_not_string(&view.effective, &style, self.cfg.strict_booleans)
                 {
                     let view = self.take_scalar_view()?;
                     return Err(self.quoting_required_for_scalar(&view));
@@ -3252,7 +3254,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 if let Some(view) = key_de.peek_scalar_view()? {
                     if self.cfg.no_schema
                         && view.tag != SfTag::String
-                        && maybe_not_string(&view.raw, &view.style)
+                        && maybe_not_string(&view.raw, &view.style, self.cfg.strict_booleans)
                     {
                         let view = key_de.take_scalar_view()?;
                         return Err(self.quoting_required_for_scalar(&view));

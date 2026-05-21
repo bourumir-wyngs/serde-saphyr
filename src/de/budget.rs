@@ -258,7 +258,7 @@ pub enum BudgetBreach {
     /// opening event (depth underflow). Indicates malformed or truncated input.
     SequenceUnbalanced,
 
-    /// The total number of input bytes exceeded [`Budget::max_input_bytes`].
+    /// The total number of input bytes exceeded [`Budget::max_reader_input_bytes`].
     InputBytes {
         /// Total number of bytes consumed from the input when the breach occurred.
         input_bytes: usize,

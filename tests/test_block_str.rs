@@ -156,6 +156,32 @@ fn litstr_inner_blank_line_and_trailing_newline() {
 }
 
 #[test]
+fn litstr_with_non_printable_char_falls_back_to_quoted() {
+    let value = "a\n\0b";
+    let out = to_string(&LitStr(value)).unwrap();
+
+    assert!(
+        !out.as_bytes().contains(&0),
+        "serializer emitted a literal NUL byte: {out:?}"
+    );
+    assert!(
+        out.contains("\\0"),
+        "expected NUL to be escaped in quoted output: {out:?}"
+    );
+    assert!(
+        !out.starts_with('|'),
+        "unsafe literal wrapper output should fall back to quoting: {out:?}"
+    );
+    assert!(
+        out.starts_with('"'),
+        "fallback should produce double-quoted output: {out:?}"
+    );
+
+    let back: String = serde_saphyr::from_str(&out).unwrap();
+    assert_eq!(back, value);
+}
+
+#[test]
 fn litstr_in_block_sequence_item() {
     let v = vec![LitStr("alpha\nbeta")];
     let out = to_string(&v).unwrap();
@@ -359,17 +385,20 @@ fn verdanta_case_fold() -> anyhow::Result<()> {
     let yaml = to_string_with_options(&object, opts)?;
 
     // Block scalar bodies must be indented deeper than the `description: >` header.
+    // The anchor attached to each `RcAnchor<Option<FoldString>>` is correctly placed on
+    // the block scalar node itself (`description: &aN >`) rather than leaking to a
+    // sibling key.
     assert!(
-        yaml.contains("description: >\n  00This is"),
-        "Top-level description body must be indented"
+        yaml.contains("description: &a2 >\n  00This is"),
+        "Top-level description anchor must sit on its block scalar and body must be indented:\n{yaml}"
     );
     assert!(
-        yaml.contains("    description: >\n      01This is"),
-        "Nested description body must be indented deeper than its header"
+        yaml.contains("    description: &a4 >\n      01This is"),
+        "Nested description body must be indented deeper than its header:\n{yaml}"
     );
     assert!(
-        yaml.contains("        description: >\n          02This is"),
-        "Deeply nested description body must be indented deeper than its header"
+        yaml.contains("        description: &a6 >\n          02This is"),
+        "Deeply nested description body must be indented deeper than its header:\n{yaml}"
     );
 
     let opts = serde_saphyr::ser_options! {
@@ -377,16 +406,16 @@ fn verdanta_case_fold() -> anyhow::Result<()> {
     };
     let compact_yaml = to_string_with_options(&object, opts)?;
     assert!(
-        compact_yaml.contains("description: >\n  00This is"),
-        "Top-level description body must be indented"
+        compact_yaml.contains("description: &a2 >\n  00This is"),
+        "Top-level description body must be indented:\n{compact_yaml}"
     );
     assert!(
-        compact_yaml.contains("  description: >\n    01This is"),
-        "Nested description body must be indented deeper than its header"
+        compact_yaml.contains("  description: &a4 >\n    01This is"),
+        "Nested description body must be indented deeper than its header:\n{compact_yaml}"
     );
     assert!(
-        compact_yaml.contains("    description: >\n      02This is"),
-        "Deeply nested description body must be indented deeper than its header"
+        compact_yaml.contains("    description: &a6 >\n      02This is"),
+        "Deeply nested description body must be indented deeper than its header:\n{compact_yaml}"
     );
     let parsed: RcAnchor<Node2> = serde_saphyr::from_str(&compact_yaml)?;
     assert_eq!(parsed.name, object.name);

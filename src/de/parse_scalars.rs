@@ -186,6 +186,10 @@ where
 
     let (radix, digits) = radix_and_digits(legacy_octal, rest);
     if radix == 10 {
+        // Yaml 1.2 forbids decimal integer literals starting with zero.
+        if digits.starts_with("0") && digits != "0" {
+            return Err(invalid());
+        }
         let val_i128 = parse_decimal_signed_i128(digits, neg).ok_or_else(invalid)?;
         return T::try_from(val_i128).map_err(|_| invalid());
     }
@@ -220,6 +224,10 @@ where
     let (radix, digits) = radix_and_digits(legacy_octal, rest);
 
     if radix == 10 {
+        // Yaml 1.2 forbids decimal integer literals starting with zero.
+        if digits.starts_with("0") && digits != "0" {
+            return Err(invalid());
+        }
         let val_u128 = parse_decimal_unsigned_u128(digits).ok_or_else(invalid)?;
         return T::try_from(val_u128).map_err(|_| invalid());
     }
@@ -237,12 +245,12 @@ fn radix_and_digits(legacy_octal: bool, rest: &str) -> (u32, &str) {
             (8u32, r)
         } else if let Some(r) = rest.strip_prefix("0b").or_else(|| rest.strip_prefix("0B")) {
             (2u32, r)
-        } else if legacy_octal && rest.starts_with("00") {
-            if rest == "00" {
-                // 00 is 0 and not empty string
+        } else if legacy_octal && rest.starts_with("0") {
+            if rest == "0" {
+                // 0 is 0 and not empty string
                 (8u32, "0")
             } else {
-                (8u32, &rest[2..])
+                (8u32, &rest[1..])
             }
         } else {
             (10u32, rest)
@@ -303,13 +311,23 @@ where
 
 #[cfg(feature = "deserialize")]
 /// If we are not using Rust struct as schema, check if we should not be quoting the value.
-pub(crate) fn maybe_not_string(s: &str, style: &ScalarStyle) -> bool {
+pub(crate) fn maybe_not_string(s: &str, style: &ScalarStyle, strict_booleans: bool) -> bool {
     let location = Location::UNKNOWN;
     style == &ScalarStyle::Plain
         && (parse_yaml12_float::<f64>(s, location, SfTag::None, false).is_ok()
             || parse_int_signed::<i128>(s, "i128", location, false).is_ok()
-            || parse_yaml11_bool(s).is_ok()
+            || maybe_bool(s, strict_booleans)
             || scalar_is_nullish(s, &ScalarStyle::Plain))
+}
+
+/// Check if a scalar looks like a YAML boolean, respecting `strict_booleans`.
+#[inline]
+fn maybe_bool(s: &str, strict: bool) -> bool {
+    if strict {
+        s.trim().eq_ignore_ascii_case("true") || s.trim().eq_ignore_ascii_case("false")
+    } else {
+        parse_yaml11_bool(s).is_ok()
+    }
 }
 
 /// True if a scalar is a YAML "null-like" value in non-`Option` contexts.

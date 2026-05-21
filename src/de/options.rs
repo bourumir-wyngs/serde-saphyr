@@ -165,7 +165,7 @@ pub struct Options {
         note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
     )]
     pub alias_limits: AliasLimits,
-    /// Enable legacy octal parsing where values starting with `00` are treated as base-8.
+    /// Enable legacy octal parsing where values starting with `0` are treated as base-8.
     /// They are deprecated in YAML 1.2. Default: false.
     #[deprecated(
         note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
@@ -188,7 +188,7 @@ pub struct Options {
     pub ignore_binary_tag_for_string: bool,
     /// Activates YAML conventions common in robotics community. These extensions support
     /// conversion functions (deg, rad) and simple mathematical expressions such as deg(180),
-    /// rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). [robotics] feature must also be enabled.
+    /// rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). `robotics` feature must also be enabled.
     #[deprecated(
         note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
     )]

@@ -89,7 +89,6 @@ pub struct SpaceAfter<T>(pub T);
 /// ignored for complex inner values. Value with `Commented` wrapper will be
 /// deserialized correctly as well, but deserializing comments is currently not
 /// supported.
-/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Commented<T>(pub T, pub String);
 
