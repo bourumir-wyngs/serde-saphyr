@@ -86,7 +86,7 @@ pub struct YamlDeserializer<'de, 'e> {
     key_empty_map_node: bool,
     /// Comments that the parent mapping associated with this value.
     pub(super) pending_comments: Vec<String>,
-    /// Same-line comments after the parent mapping's key/value separator.
+    /// Same-line comments after the parent container separator (`key:` or `-`).
     pub(super) pending_value_separator_comments: Vec<String>,
     /// Comments that appeared above the value node itself.
     pub(super) pending_value_comments: Vec<String>,
@@ -1273,6 +1273,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 // The peek borrow is now released, so it's safe to query other cursor state.
                 let reference_location = self.ev.reference_location();
                 let _missing_field_guard = MissingFieldLocationGuard::new(reference_location);
+                let value_separator_comments = self
+                    .ev
+                    .take_separator_comments_before_sequence_item_value()?;
 
                 #[cfg(any(feature = "garde", feature = "validator"))]
                 {
@@ -1292,6 +1295,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
                         let mut de =
                             YamlDeserializer::new_with_path_recorder(self.ev, self.cfg, recorder);
+                        de.pending_value_separator_comments = value_separator_comments.clone();
                         let redaction_ctx = de.peek_scalar_redaction_ctx()?;
                         let res = with_subtree_redaction(redaction_ctx, || seed.deserialize(de))
                             .map(Some)
@@ -1310,6 +1314,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 }
 
                 let mut de = YamlDeserializer::new(self.ev, self.cfg);
+                de.pending_value_separator_comments = value_separator_comments;
                 let redaction_ctx = de.peek_scalar_redaction_ctx()?;
                 with_subtree_redaction(redaction_ctx, || seed.deserialize(de))
                     .map(Some)

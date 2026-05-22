@@ -187,6 +187,14 @@ pub(crate) trait Events<'de> {
         Ok(Vec::new())
     }
 
+    /// Take same-line comments after a block sequence item marker.
+    ///
+    /// This is the `# comment` in `- # comment`, separated from ordinary
+    /// trailing comments after the previous sequence value.
+    fn take_separator_comments_before_sequence_item_value(&mut self) -> Result<Vec<String>, Error> {
+        Ok(Vec::new())
+    }
+
     /// Take same-line comments immediately after the node that was just deserialized.
     fn take_trailing_comments_after_node(&mut self) -> Result<Vec<String>, Error> {
         Ok(Vec::new())

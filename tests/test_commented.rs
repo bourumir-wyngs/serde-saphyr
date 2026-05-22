@@ -184,6 +184,24 @@ fn commented_deserialize_captures_sequence_item_comments_without_leaking() {
 }
 
 #[test]
+fn commented_deserialize_captures_sequence_dash_comment_before_value() {
+    let input = "- # one\n  1\n- # two\n  2\n";
+    let value: Vec<Commented<i32>> = serde_saphyr::from_str(input).unwrap();
+
+    assert_eq!(value[0], Commented(1, "one".to_string()));
+    assert_eq!(value[1], Commented(2, "two".to_string()));
+}
+
+#[test]
+fn commented_deserialize_keeps_trailing_and_dash_comments_separate() {
+    let input = "- 1 # one\n- # two\n  2\n";
+    let value: Vec<Commented<i32>> = serde_saphyr::from_str(input).unwrap();
+
+    assert_eq!(value[0], Commented(1, "one".to_string()));
+    assert_eq!(value[1], Commented(2, "two".to_string()));
+}
+
+#[test]
 fn commented_deserialize_does_not_leak_parent_comments_into_nested_values() {
     #[derive(Debug, Deserialize, PartialEq)]
     struct Outer {

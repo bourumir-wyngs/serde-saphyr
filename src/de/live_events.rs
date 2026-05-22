@@ -66,6 +66,36 @@ struct RecFrame<'a> {
     buf: SmallVec<[Ev<'a>; SMALLVECT_INLINE]>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ConsumedEventKind {
+    Scalar,
+    SeqStart,
+    SeqEnd,
+    MapStart,
+    MapEnd,
+}
+
+impl ConsumedEventKind {
+    fn can_own_same_line_trailing_comment(self) -> bool {
+        matches!(
+            self,
+            ConsumedEventKind::Scalar | ConsumedEventKind::SeqEnd | ConsumedEventKind::MapEnd
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PendingTrailingCommentKind {
+    AfterConsumedNode,
+    BeforeUpcomingNode,
+}
+
+#[derive(Debug)]
+struct PendingTrailingComment {
+    text: String,
+    kind: PendingTrailingCommentKind,
+}
+
 /// Handle input polymorphism
 pub(crate) enum GranitParser<'a> {
     #[cfg(feature = "include")]
@@ -156,9 +186,9 @@ pub(crate) struct LiveEvents<'a> {
     look_leading_comments: Vec<String>,
     /// Comments gathered while scanning before the next data event.
     pending_leading_comments: Vec<String>,
-    /// Same-line comments after the previous data/syntax event, pending until
-    /// a caller claims them or the next data event is consumed.
-    pending_trailing_comments: Vec<String>,
+    /// Right-side comments pending until a caller claims them or the next data
+    /// event is consumed.
+    pending_trailing_comments: Vec<PendingTrailingComment>,
     /// Comments attached to the event most recently produced by `next_impl`.
     produced_leading_comments: Vec<String>,
     /// For alias replay: a stack of injected buffers; we always read from the top first.
@@ -177,6 +207,10 @@ pub(crate) struct LiveEvents<'a> {
     budget_report_cb: Option<BudgetReportCallback>,
     /// Location of the last yielded event (for better error reporting).
     last_location: Location,
+    /// Location of the last event actually consumed by `next`.
+    last_consumed_event_location: Location,
+    /// Kind of the last event actually consumed by `next`.
+    last_consumed_event_kind: Option<ConsumedEventKind>,
 
     /// Alias-bomb hardening limits and counters.
     alias_limits: AliasLimits,
@@ -295,6 +329,8 @@ impl<'a> LiveEvents<'a> {
             budget_report_cb,
 
             last_location: Location::UNKNOWN,
+            last_consumed_event_location: Location::UNKNOWN,
+            last_consumed_event_kind: None,
 
             alias_limits,
             total_replayed_events: 0,
@@ -375,6 +411,8 @@ impl<'a> LiveEvents<'a> {
             budget_report_cb,
 
             last_location: Location::UNKNOWN,
+            last_consumed_event_location: Location::UNKNOWN,
+            last_consumed_event_kind: None,
 
             alias_limits,
             total_replayed_events: 0,
@@ -406,11 +444,70 @@ impl<'a> LiveEvents<'a> {
         text.trim().to_owned()
     }
 
-    fn remember_comment(&mut self, text: Cow<'a, str>, placement: Placement) {
+    fn event_kind(ev: &Ev<'_>) -> Option<ConsumedEventKind> {
+        match ev {
+            Ev::Scalar { .. } => Some(ConsumedEventKind::Scalar),
+            Ev::SeqStart { .. } => Some(ConsumedEventKind::SeqStart),
+            Ev::SeqEnd { .. } => Some(ConsumedEventKind::SeqEnd),
+            Ev::MapStart { .. } => Some(ConsumedEventKind::MapStart),
+            Ev::MapEnd { .. } => Some(ConsumedEventKind::MapEnd),
+            Ev::Taken { .. } => None,
+        }
+    }
+
+    fn remember_consumed_event(&mut self, ev: &Ev<'_>) {
+        self.last_consumed_event_location = ev.location();
+        self.last_consumed_event_kind = Self::event_kind(ev);
+    }
+
+    fn trailing_comment_kind(&self, location: Location) -> PendingTrailingCommentKind {
+        let follows_completed_node_on_same_line = self
+            .last_consumed_event_kind
+            .is_some_and(ConsumedEventKind::can_own_same_line_trailing_comment)
+            && self.last_consumed_event_location.source_id() == location.source_id()
+            && self.last_consumed_event_location.line() == location.line();
+
+        if follows_completed_node_on_same_line {
+            PendingTrailingCommentKind::AfterConsumedNode
+        } else {
+            PendingTrailingCommentKind::BeforeUpcomingNode
+        }
+    }
+
+    fn take_pending_trailing_comments_where(
+        &mut self,
+        mut predicate: impl FnMut(PendingTrailingCommentKind) -> bool,
+    ) -> Vec<String> {
+        let mut taken = Vec::new();
+        let mut retained = Vec::new();
+
+        for comment in std::mem::take(&mut self.pending_trailing_comments) {
+            if predicate(comment.kind) {
+                taken.push(comment.text);
+            } else {
+                retained.push(comment);
+            }
+        }
+
+        self.pending_trailing_comments = retained;
+        taken
+    }
+
+    fn take_all_pending_trailing_comments(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.pending_trailing_comments)
+            .into_iter()
+            .map(|comment| comment.text)
+            .collect()
+    }
+
+    fn remember_comment(&mut self, text: Cow<'a, str>, placement: Placement, location: Location) {
         let text = Self::normalize_comment_text(text);
         match placement {
             Placement::Above => self.pending_leading_comments.push(text),
-            Placement::Right => self.pending_trailing_comments.push(text),
+            Placement::Right => self.pending_trailing_comments.push(PendingTrailingComment {
+                text,
+                kind: self.trailing_comment_kind(location),
+            }),
             Placement::Free | Placement::Last => {}
         }
     }
@@ -825,7 +922,7 @@ impl<'a> LiveEvents<'a> {
                 }
 
                 Event::Comment(text, placement) => {
-                    self.remember_comment(text, placement);
+                    self.remember_comment(text, placement, location);
                     self.last_location = location;
                     continue;
                 }
@@ -886,6 +983,8 @@ impl<'a> LiveEvents<'a> {
 
         self.total_replayed_events = 0;
         self.seen_doc_end = false;
+        self.last_consumed_event_location = Location::UNKNOWN;
+        self.last_consumed_event_kind = None;
 
         // Reset uniform indentation memory for the new document.
         if let crate::RequireIndent::Uniform(ref mut remembered) = self.require_indent {
@@ -1030,10 +1129,14 @@ impl<'de> Events<'de> for LiveEvents<'de> {
         if let Some(ev) = self.look.take() {
             self.clear_comments_for_consumed_event();
             self.last_location = ev.location();
+            self.remember_consumed_event(&ev);
             return Ok(Some(ev));
         }
         let event = self.next_impl()?;
         self.clear_comments_for_consumed_event();
+        if let Some(ev) = event.as_ref() {
+            self.remember_consumed_event(ev);
+        }
         Ok(event)
     }
     /// Peek at the next event without consuming it, filling the lookahead buffer if empty.
@@ -1071,12 +1174,21 @@ impl<'de> Events<'de> for LiveEvents<'de> {
 
     fn take_separator_comments_before_mapping_value(&mut self) -> Result<Vec<String>, Error> {
         let _ = self.peek()?;
-        Ok(std::mem::take(&mut self.pending_trailing_comments))
+        Ok(self.take_all_pending_trailing_comments())
+    }
+
+    fn take_separator_comments_before_sequence_item_value(&mut self) -> Result<Vec<String>, Error> {
+        let _ = self.peek()?;
+        Ok(self.take_pending_trailing_comments_where(|kind| {
+            kind == PendingTrailingCommentKind::BeforeUpcomingNode
+        }))
     }
 
     fn take_trailing_comments_after_node(&mut self) -> Result<Vec<String>, Error> {
         let _ = self.peek()?;
-        Ok(std::mem::take(&mut self.pending_trailing_comments))
+        Ok(self.take_pending_trailing_comments_where(|kind| {
+            kind == PendingTrailingCommentKind::AfterConsumedNode
+        }))
     }
 
     fn input_for_borrowing(&self) -> Option<&'de str> {
