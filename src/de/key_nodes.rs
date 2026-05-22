@@ -166,7 +166,9 @@ pub(super) struct PendingEntry<'a> {
     pub(super) reference_location: Location,
     /// Comments that visually belong to this key/value field.
     pub(super) field_comments: Vec<String>,
-    /// Comments between the key and the value node.
+    /// Same-line comments after the key/value separator.
+    pub(super) value_separator_comments: Vec<String>,
+    /// Comments immediately above the value node.
     pub(super) value_comments: Vec<String>,
 }
 
@@ -775,13 +777,15 @@ pub(super) fn collect_entries_from_map<'a>(
                     }
                 }
                 let field_comments = key_comments;
-                let value_comments = ev.take_comments_before_mapping_value()?;
+                let value_separator_comments = ev.take_separator_comments_before_mapping_value()?;
+                let value_comments = ev.take_leading_comments_for_next_node()?;
                 let value = capture_node(ev)?;
                 fields.push(PendingEntry {
                     key,
                     value,
                     reference_location,
                     field_comments,
+                    value_separator_comments,
                     value_comments,
                 });
             }

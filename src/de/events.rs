@@ -178,12 +178,13 @@ pub(crate) trait Events<'de> {
         Ok(Vec::new())
     }
 
-    /// Take comments between a mapping key and its value.
+    /// Take same-line comments after a mapping key/value separator.
     ///
-    /// This includes comments immediately above the value and same-line comments
-    /// after the key/value separator, such as `key: # comment`.
-    fn take_comments_before_mapping_value(&mut self) -> Result<Vec<String>, Error> {
-        self.take_leading_comments_for_next_node()
+    /// This is the `# comment` in `key: # comment`, separated from comments
+    /// immediately above the value node so nested containers do not treat the
+    /// separator comment as a child-key comment.
+    fn take_separator_comments_before_mapping_value(&mut self) -> Result<Vec<String>, Error> {
+        Ok(Vec::new())
     }
 
     /// Take same-line comments immediately after the node that was just deserialized.

@@ -203,6 +203,23 @@ fn commented_deserialize_does_not_leak_parent_comments_into_nested_values() {
 }
 
 #[test]
+fn commented_deserialize_does_not_leak_parent_separator_comment_into_nested_map_field() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Outer {
+        inner: Inner,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Inner {
+        field: Commented<i32>,
+    }
+
+    let value: Outer = serde_saphyr::from_str("inner: # inner object\n  field: 1\n").unwrap();
+
+    assert_eq!(value.inner.field, Commented(1, String::new()));
+}
+
+#[test]
 fn test_commented_rc() -> anyhow::Result<()> {
     #[derive(Serialize)]
     struct Notable {

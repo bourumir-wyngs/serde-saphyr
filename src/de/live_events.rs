@@ -1069,11 +1069,9 @@ impl<'de> Events<'de> for LiveEvents<'de> {
         Ok(std::mem::take(&mut self.look_leading_comments))
     }
 
-    fn take_comments_before_mapping_value(&mut self) -> Result<Vec<String>, Error> {
+    fn take_separator_comments_before_mapping_value(&mut self) -> Result<Vec<String>, Error> {
         let _ = self.peek()?;
-        let mut comments = std::mem::take(&mut self.pending_trailing_comments);
-        comments.extend(std::mem::take(&mut self.look_leading_comments));
-        Ok(comments)
+        Ok(std::mem::take(&mut self.pending_trailing_comments))
     }
 
     fn take_trailing_comments_after_node(&mut self) -> Result<Vec<String>, Error> {

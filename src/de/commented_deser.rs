@@ -13,6 +13,7 @@ where
     V: Visitor<'de>,
 {
     let mut comments = std::mem::take(&mut de.pending_comments);
+    comments.extend(std::mem::take(&mut de.pending_value_separator_comments));
     comments.extend(std::mem::take(&mut de.pending_value_comments));
     comments.extend(de.ev.take_leading_comments_for_next_node()?);
 
