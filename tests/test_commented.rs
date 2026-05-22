@@ -1,5 +1,5 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use serde_saphyr::{
@@ -133,18 +133,73 @@ fn commented_scalar_suppressed_in_flow_seq_above() {
 }
 
 #[test]
-fn commented_deserialize_ignores_comment_and_keeps_value() {
-    // Even if the source contains a YAML comment, deserialization into Commented<T>
-    // should yield the inner T and an empty comment string.
+fn commented_deserialize_captures_inline_comment_and_keeps_value() {
     let input = "5 # whatever\n";
     let v: Commented<i32> = serde_saphyr::from_str(input).unwrap();
     assert_eq!(v.0, 5);
-    assert!(v.1.is_empty());
+    assert_eq!(v.1, "whatever");
+
+    let v3: Commented<i32> = serde_saphyr::from_str("# root\n5\n").unwrap();
+    assert_eq!(v3, Commented(5, "root".to_string()));
 
     // Also round-trip without comment in input
     let v2: Commented<i32> = serde_saphyr::from_str("5\n").unwrap();
     assert_eq!(v2.0, 5);
     assert!(v2.1.is_empty());
+}
+
+#[test]
+fn commented_deserialize_captures_comments_around_mapping_fields() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Wrap {
+        first: Commented<i32>,
+        second: Commented<i32>,
+        third: Commented<i32>,
+    }
+
+    let input = "\
+# first field
+first: 1
+second:
+  # second value
+  2
+third: # third separator
+  3
+";
+    let value: Wrap = serde_saphyr::from_str(input).unwrap();
+
+    assert_eq!(value.first, Commented(1, "first field".to_string()));
+    assert_eq!(value.second, Commented(2, "second value".to_string()));
+    assert_eq!(value.third, Commented(3, "third separator".to_string()));
+}
+
+#[test]
+fn commented_deserialize_captures_sequence_item_comments_without_leaking() {
+    let input = "- 1 # one\n- 2 # two\n- 3\n";
+    let value: Vec<Commented<i32>> = serde_saphyr::from_str(input).unwrap();
+
+    assert_eq!(value[0], Commented(1, "one".to_string()));
+    assert_eq!(value[1], Commented(2, "two".to_string()));
+    assert_eq!(value[2], Commented(3, String::new()));
+}
+
+#[test]
+fn commented_deserialize_does_not_leak_parent_comments_into_nested_values() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Outer {
+        inner: Inner,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Inner {
+        field: Commented<i32>,
+    }
+
+    let value: Outer = serde_saphyr::from_str("# inner object\ninner:\n  field: 1\n").unwrap();
+    assert_eq!(value.inner.field, Commented(1, String::new()));
+
+    let value: Outer = serde_saphyr::from_str("inner:\n  # actual field\n  field: 1\n").unwrap();
+    assert_eq!(value.inner.field, Commented(1, "actual field".to_string()));
 }
 
 #[test]

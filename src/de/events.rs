@@ -170,6 +170,27 @@ pub(crate) trait Events<'de> {
     /// until the node is consumed.
     fn reference_location(&self) -> Location;
 
+    /// Take comments immediately above the next data node.
+    ///
+    /// Implementations may fill lookahead while doing this. The default is empty
+    /// for replay buffers that do not carry presentation metadata.
+    fn take_leading_comments_for_next_node(&mut self) -> Result<Vec<String>, Error> {
+        Ok(Vec::new())
+    }
+
+    /// Take comments between a mapping key and its value.
+    ///
+    /// This includes comments immediately above the value and same-line comments
+    /// after the key/value separator, such as `key: # comment`.
+    fn take_comments_before_mapping_value(&mut self) -> Result<Vec<String>, Error> {
+        self.take_leading_comments_for_next_node()
+    }
+
+    /// Take same-line comments immediately after the node that was just deserialized.
+    fn take_trailing_comments_after_node(&mut self) -> Result<Vec<String>, Error> {
+        Ok(Vec::new())
+    }
+
     /// Get the original input string for zero-copy borrowing.
     ///
     /// Returns `Some(&str)` when the input is available for borrowing (string-based parsing),

@@ -35,7 +35,7 @@ use crate::include::{BaseParser, create_parser_from_str};
 use crate::location::location_from_span;
 use crate::options::BudgetReportCallback;
 use crate::tags::SfTag;
-use granit_parser::{Event, ScalarStyle, ScanError, Span, StructureStyle};
+use granit_parser::{Event, Placement, ScalarStyle, ScanError, Span, StructureStyle};
 
 #[cfg(not(feature = "include"))]
 use granit_parser::StrInput;
@@ -152,6 +152,15 @@ pub(crate) struct LiveEvents<'a> {
     synthesized_null_emitted: bool,
     /// Single-item lookahead buffer (peeked event not yet consumed).
     look: Option<Ev<'a>>,
+    /// Comments immediately above the lookahead event.
+    look_leading_comments: Vec<String>,
+    /// Comments gathered while scanning before the next data event.
+    pending_leading_comments: Vec<String>,
+    /// Same-line comments after the previous data/syntax event, pending until
+    /// a caller claims them or the next data event is consumed.
+    pending_trailing_comments: Vec<String>,
+    /// Comments attached to the event most recently produced by `next_impl`.
+    produced_leading_comments: Vec<String>,
     /// For alias replay: a stack of injected buffers; we always read from the top first.
     inject: Vec<InjectFrame>,
     /// Recorded buffers for anchors (index = anchor_id).
@@ -273,6 +282,10 @@ impl<'a> LiveEvents<'a> {
             parser: GranitParser::StreamParser(parser),
             input: None, // Reader-based input cannot support zero-copy borrowing
             look: None,
+            look_leading_comments: Vec::new(),
+            pending_leading_comments: Vec::new(),
+            pending_trailing_comments: Vec::new(),
+            produced_leading_comments: Vec::new(),
             inject: Vec::with_capacity(2),
             anchors: Vec::with_capacity(8),
             rec_stack: Vec::with_capacity(2),
@@ -348,6 +361,10 @@ impl<'a> LiveEvents<'a> {
             parser: GranitParser::StringParser(parser),
             input: Some(input),
             look: None,
+            look_leading_comments: Vec::new(),
+            pending_leading_comments: Vec::new(),
+            pending_trailing_comments: Vec::new(),
+            produced_leading_comments: Vec::new(),
             inject: Vec::with_capacity(2),
             anchors: Vec::with_capacity(8),
             rec_stack: Vec::with_capacity(2),
@@ -383,6 +400,29 @@ impl<'a> LiveEvents<'a> {
             #[cfg(feature = "include")]
             pending_include_anchor: 0,
         }
+    }
+
+    fn normalize_comment_text(text: Cow<'a, str>) -> String {
+        text.trim().to_owned()
+    }
+
+    fn remember_comment(&mut self, text: Cow<'a, str>, placement: Placement) {
+        let text = Self::normalize_comment_text(text);
+        match placement {
+            Placement::Above => self.pending_leading_comments.push(text),
+            Placement::Right => self.pending_trailing_comments.push(text),
+            Placement::Free | Placement::Last => {}
+        }
+    }
+
+    fn attach_leading_comments_to_next_event(&mut self) {
+        self.produced_leading_comments = std::mem::take(&mut self.pending_leading_comments);
+    }
+
+    fn clear_comments_for_consumed_event(&mut self) {
+        self.look_leading_comments.clear();
+        self.produced_leading_comments.clear();
+        self.pending_trailing_comments.clear();
     }
 
     /// Core event pump: pulls the next logical event.
@@ -456,6 +496,7 @@ impl<'a> LiveEvents<'a> {
             self.record(
                 &ev, /*is_start*/ false, /*seeded_new_frame*/ false,
             );
+            self.attach_leading_comments_to_next_event();
             self.last_location = ev.location();
             self.produced_any_in_doc = true;
             return Ok(Some(ev));
@@ -547,6 +588,7 @@ impl<'a> LiveEvents<'a> {
                         self.ensure_anchor_capacity(anchor_id);
                         self.anchors[anchor_id] = Some(vec![ev.clone()].into_boxed_slice());
                     }
+                    self.attach_leading_comments_to_next_event();
                     self.last_location = location;
                     self.produced_any_in_doc = true;
                     return Ok(Some(ev));
@@ -601,6 +643,7 @@ impl<'a> LiveEvents<'a> {
                         /*is_start*/ true,
                         /*seeded_new_frame*/ anchor_id != 0,
                     );
+                    self.attach_leading_comments_to_next_event();
                     self.last_location = location;
                     self.produced_any_in_doc = true;
                     return Ok(Some(ev));
@@ -610,6 +653,7 @@ impl<'a> LiveEvents<'a> {
                     self.record(&ev, false, false);
                     self.bump_depth_on_end()
                         .map_err(|err| err.with_location(location))?; // may finalize frames
+                    self.produced_leading_comments.clear();
                     self.last_location = location;
                     self.produced_any_in_doc = true;
                     return Ok(Some(ev));
@@ -654,6 +698,7 @@ impl<'a> LiveEvents<'a> {
                         /*is_start*/ true,
                         /*seeded_new_frame*/ anchor_id != 0,
                     );
+                    self.attach_leading_comments_to_next_event();
                     self.last_location = location;
                     self.produced_any_in_doc = true;
                     return Ok(Some(ev));
@@ -663,6 +708,7 @@ impl<'a> LiveEvents<'a> {
                     self.record(&ev, false, false);
                     self.bump_depth_on_end()
                         .map_err(|err| err.with_location(location))?;
+                    self.produced_leading_comments.clear();
                     self.last_location = location;
                     self.produced_any_in_doc = true;
                     return Ok(Some(ev));
@@ -719,6 +765,7 @@ impl<'a> LiveEvents<'a> {
                                 location,
                             };
                             self.record(&ev, false, false);
+                            self.attach_leading_comments_to_next_event();
                             self.last_location = location;
                             self.produced_any_in_doc = true;
                             return Ok(Some(ev));
@@ -777,8 +824,8 @@ impl<'a> LiveEvents<'a> {
                     continue;
                 }
 
-                Event::Comment(_, _) => {
-                    // Parser comments are presentation metadata, not Serde data nodes.
+                Event::Comment(text, placement) => {
+                    self.remember_comment(text, placement);
                     self.last_location = location;
                     continue;
                 }
@@ -801,6 +848,7 @@ impl<'a> LiveEvents<'a> {
             self.produced_any_in_doc = true;
             self.synthesized_null_emitted = true;
             self.last_location = ev.location();
+            self.produced_leading_comments.clear();
             return Ok(Some(ev));
         }
 
@@ -980,10 +1028,13 @@ impl<'de> Events<'de> for LiveEvents<'de> {
         self.io_error()?;
 
         if let Some(ev) = self.look.take() {
+            self.clear_comments_for_consumed_event();
             self.last_location = ev.location();
             return Ok(Some(ev));
         }
-        self.next_impl()
+        let event = self.next_impl()?;
+        self.clear_comments_for_consumed_event();
+        Ok(event)
     }
     /// Peek at the next event without consuming it, filling the lookahead buffer if empty.
     fn peek(&mut self) -> Result<Option<&Ev<'de>>, Error> {
@@ -991,6 +1042,7 @@ impl<'de> Events<'de> for LiveEvents<'de> {
 
         if self.look.is_none() {
             self.look = self.next_impl()?;
+            self.look_leading_comments = std::mem::take(&mut self.produced_leading_comments);
         }
         if let Some(ev) = self.look.as_ref() {
             self.last_location = ev.location();
@@ -1010,6 +1062,23 @@ impl<'de> Events<'de> for LiveEvents<'de> {
             .as_ref()
             .map(|e| e.location())
             .unwrap_or(self.last_location)
+    }
+
+    fn take_leading_comments_for_next_node(&mut self) -> Result<Vec<String>, Error> {
+        let _ = self.peek()?;
+        Ok(std::mem::take(&mut self.look_leading_comments))
+    }
+
+    fn take_comments_before_mapping_value(&mut self) -> Result<Vec<String>, Error> {
+        let _ = self.peek()?;
+        let mut comments = std::mem::take(&mut self.pending_trailing_comments);
+        comments.extend(std::mem::take(&mut self.look_leading_comments));
+        Ok(comments)
+    }
+
+    fn take_trailing_comments_after_node(&mut self) -> Result<Vec<String>, Error> {
+        let _ = self.peek()?;
+        Ok(std::mem::take(&mut self.pending_trailing_comments))
     }
 
     fn input_for_borrowing(&self) -> Option<&'de str> {

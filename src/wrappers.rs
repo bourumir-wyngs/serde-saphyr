@@ -1,4 +1,6 @@
-use serde::de::{Deserialize, Deserializer};
+use serde::de::{self, Deserialize, Deserializer, Visitor};
+use std::fmt;
+use std::marker::PhantomData;
 
 /// Force a sequence to be emitted in flow style: `[a, b, c]`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -42,6 +44,8 @@ pub struct SpaceAfter<T>(pub T);
 /// `value # comment`. This is the most useful when deserializing the anchor
 /// reference (so a human reader can see what a referenced value represents).
 ///
+/// Comment is also captured into its field when deserializing YAML.
+///
 /// Behavior
 /// - Block style (default): the comment appears after the scalar on the same line.
 /// - Flow style (inside `[ ... ]` or `{ ... }`): comments are suppressed to keep
@@ -50,8 +54,9 @@ pub struct SpaceAfter<T>(pub T);
 ///   inner value is serialized to preserve indentation and layout.
 /// - Newlines in comments are sanitized to spaces so the comment remains on a
 ///   single line (e.g., "a\nb" becomes "a b").
-/// - Deserialization of `Commented<T>` ignores comments: it behaves like `T` and
-///   produces an empty comment string.
+/// - Deserialization of `Commented<T>` captures nearby source comments when the
+///   `serde-saphyr` deserializer can provide them. Other deserializers treat it
+///   transparently and produce an empty comment string.
 ///
 /// Examples
 ///
@@ -86,9 +91,9 @@ pub struct SpaceAfter<T>(pub T);
 /// ```
 ///
 /// *Important*: Comments are suppressed in flow contexts (no `#` appears), and
-/// ignored for complex inner values. Value with `Commented` wrapper will be
-/// deserialized correctly as well, but deserializing comments is currently not
-/// supported.
+/// ignored for complex inner values. During deserialization, comments directly
+/// above a field/key, above the wrapped value, or on the same line after the
+/// wrapped value are captured when they are present.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Commented<T>(pub T, pub String);
 
@@ -106,7 +111,38 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for FlowMap<T> {
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for Commented<T> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
-        T::deserialize(deserializer).map(|v| Commented(v, String::new()))
+        struct CommentedVisitor<T>(PhantomData<T>);
+
+        impl<'de, T: Deserialize<'de>> Visitor<'de> for CommentedVisitor<T> {
+            type Value = Commented<T>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a commented YAML value")
+            }
+
+            fn visit_newtype_struct<D>(
+                self,
+                deserializer: D,
+            ) -> std::result::Result<Self::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                T::deserialize(deserializer).map(|value| Commented(value, String::new()))
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: de::SeqAccess<'de>,
+            {
+                let value = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+                let comment = seq.next_element()?.unwrap_or_default();
+                Ok(Commented(value, comment))
+            }
+        }
+
+        deserializer.deserialize_newtype_struct("__yaml_commented", CommentedVisitor(PhantomData))
     }
 }
 

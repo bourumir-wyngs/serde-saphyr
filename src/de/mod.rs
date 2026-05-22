@@ -64,6 +64,7 @@ pub(crate) mod tags;
 
 pub(crate) mod api;
 mod cfg;
+mod commented_deser;
 mod deserializer;
 mod events;
 mod key_nodes;

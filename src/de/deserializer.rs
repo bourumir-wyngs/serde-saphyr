@@ -7,6 +7,7 @@ use serde::de::{self, Deserializer as _, IntoDeserializer, Visitor};
 
 use super::base64::decode_base64_yaml;
 use super::cfg::Cfg;
+use super::commented_deser;
 use super::error::{Error, MissingFieldLocationGuard, TransformReason};
 use super::events::{Ev, Events, ReplayEvents, attach_alias_locations_if_missing, eof_with_loc};
 use super::key_nodes::{
@@ -83,6 +84,10 @@ pub struct YamlDeserializer<'de, 'e> {
     in_key: bool,
     /// True when the recorded key node was exactly an empty mapping (MapStart followed by MapEnd).
     key_empty_map_node: bool,
+    /// Comments that the parent mapping associated with this value.
+    pub(super) pending_comments: Vec<String>,
+    /// Comments that appeared after the key but before the value node itself.
+    pub(super) pending_value_comments: Vec<String>,
 
     #[cfg(any(feature = "garde", feature = "validator"))]
     garde: Option<&'e mut PathRecorder>,
@@ -229,6 +234,8 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
             cfg,
             in_key: false,
             key_empty_map_node: false,
+            pending_comments: Vec::new(),
+            pending_value_comments: Vec::new(),
 
             #[cfg(any(feature = "garde", feature = "validator"))]
             garde: None,
@@ -283,6 +290,8 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
             cfg,
             in_key: false,
             key_empty_map_node: false,
+            pending_comments: Vec::new(),
+            pending_value_comments: Vec::new(),
             garde: Some(garde),
         }
     }
@@ -1118,6 +1127,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
         match n {
             // Internal wrapper types use `__yaml_*` names (see `__yaml_rc_anchor`, etc.).
             "__yaml_spanned" => spanned_deser::deserialize_yaml_spanned(self, visitor),
+            "__yaml_commented" => commented_deser::deserialize_yaml_commented(self, visitor),
             "__yaml_rc_anchor" => {
                 let anchor = self.peek_anchor_id()?;
                 anchor_store::with_anchor_context(AnchorKind::Rc, anchor, || {
@@ -1375,6 +1385,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             }
             return visitor.visit_map(EmptyMap);
         }
+        let mut map_start_comments = std::mem::take(&mut self.pending_value_comments);
+        map_start_comments.extend(self.ev.take_leading_comments_for_next_node()?);
         self.expect_map_start()?;
 
         // Ensure "missing field" errors (which have no natural span) get attributed to the
@@ -1417,6 +1429,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             merge_stack: Vec<Vec<PendingEntry<'de>>>,
             flushing_merges: bool,
             pending_value: Option<(Vec<Ev<'de>>, Location)>,
+            pending_field_comments: Vec<String>,
+            pending_value_comments: Vec<String>,
+            pending_first_key_comments: Vec<String>,
         }
 
         impl<'de, 'e> MA<'de, 'e> {
@@ -1491,6 +1506,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     cfg: self.cfg,
                     in_key: true,
                     key_empty_map_node: kemn,
+                    pending_comments: Vec::new(),
+                    pending_value_comments: Vec::new(),
 
                     #[cfg(any(feature = "garde", feature = "validator"))]
                     garde: None,
@@ -1541,6 +1558,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                             mut key,
                             mut value,
                             reference_location,
+                            field_comments,
+                            value_comments,
                         } = entry;
                         let fingerprint = key.take_fingerprint();
                         let location = key.location();
@@ -1645,6 +1664,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
                         let key_value = self.deserialize_recorded_key(key_seed, events, kemn)?;
                         self.have_key = true;
+                        self.pending_field_comments = field_comments;
+                        self.pending_value_comments = value_comments;
                         self.pending_value = Some((value_events, reference_location));
 
                         #[cfg(any(feature = "garde", feature = "validator"))]
@@ -1679,6 +1700,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                             return Ok(None);
                         }
                         Some(_) => {
+                            let mut key_comments =
+                                std::mem::take(&mut self.pending_first_key_comments);
+                            key_comments.extend(self.ev.take_leading_comments_for_next_node()?);
                             let mut key_node = capture_node(self.ev)?;
                             if is_merge_key(&key_node) {
                                 match self.cfg.merge_keys {
@@ -1762,13 +1786,17 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                                 // from the anchor definition, so `value_node.location()` would point
                                 // at the definition-site. `Spanned<T>` wants the alias token location
                                 // in `referenced`, so take it from `Events::reference_location()`.
-                                let _ = self.ev.peek()?;
+                                let field_comments = key_comments;
+                                let value_comments =
+                                    self.ev.take_comments_before_mapping_value()?;
                                 let reference_location = self.ev.reference_location();
                                 let value_node = capture_node(self.ev)?;
                                 self.enqueue_entries(vec![PendingEntry {
                                     key: key_node,
                                     value: value_node,
                                     reference_location,
+                                    field_comments,
+                                    value_comments,
                                 }]);
                                 continue;
                             }
@@ -1799,6 +1827,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                             let key_value =
                                 self.deserialize_recorded_key(key_seed, events, kemn_direct)?;
                             self.have_key = true;
+                            self.pending_field_comments = key_comments;
                             self.pending_value = None; // value will be read live
 
                             #[cfg(any(feature = "garde", feature = "validator"))]
@@ -1829,6 +1858,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
                 #[cfg(any(feature = "garde", feature = "validator"))]
                 let pending_segment = self.pending_path_segment.take();
+
+                let field_comments = std::mem::take(&mut self.pending_field_comments);
+                let mut value_comments = std::mem::take(&mut self.pending_value_comments);
 
                 if let Some(events) = self.pending_value.take() {
                     let (events, reference_location) = events;
@@ -1868,6 +1900,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                                 self.cfg,
                                 recorder,
                             );
+                            de.pending_comments = field_comments.clone();
+                            de.pending_value_comments = value_comments.clone();
                             let redaction_ctx = de.peek_scalar_redaction_ctx()?;
                             let res =
                                 with_subtree_redaction(redaction_ctx, || seed.deserialize(de))
@@ -1884,11 +1918,15 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     }
 
                     let mut de = YamlDeserializer::new(&mut replay, self.cfg);
+                    de.pending_comments = field_comments;
+                    de.pending_value_comments = value_comments;
                     let redaction_ctx = de.peek_scalar_redaction_ctx()?;
                     with_subtree_redaction(redaction_ctx, || seed.deserialize(de)).map_err(|e| {
                         attach_alias_locations_if_missing(e, reference_location, defined_location)
                     })
                 } else {
+                    value_comments.extend(self.ev.take_comments_before_mapping_value()?);
+
                     // Live stream: get both locations for potential alias error reporting.
                     let defined_location = self
                         .ev
@@ -1917,6 +1955,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                             let mut de = YamlDeserializer::new_with_path_recorder(
                                 self.ev, self.cfg, recorder,
                             );
+                            de.pending_comments = field_comments.clone();
+                            de.pending_value_comments = value_comments.clone();
                             let redaction_ctx = de.peek_scalar_redaction_ctx()?;
                             let res =
                                 with_subtree_redaction(redaction_ctx, || seed.deserialize(de))
@@ -1933,6 +1973,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     }
 
                     let mut de = YamlDeserializer::new(self.ev, self.cfg);
+                    de.pending_comments = field_comments;
+                    de.pending_value_comments = value_comments;
                     let redaction_ctx = de.peek_scalar_redaction_ctx()?;
                     with_scalar_redaction(redaction_ctx, || seed.deserialize(de)).map_err(|e| {
                         attach_alias_locations_if_missing(e, reference_location, defined_location)
@@ -1961,6 +2003,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             merge_stack: Vec::new(),
             flushing_merges: false,
             pending_value: None,
+            pending_field_comments: Vec::new(),
+            pending_value_comments: Vec::new(),
+            pending_first_key_comments: map_start_comments,
         })
     }
 

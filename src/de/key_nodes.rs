@@ -164,6 +164,10 @@ pub(super) struct PendingEntry<'a> {
     ///
     /// For merge-derived entries, this is the `<<` entry location.
     pub(super) reference_location: Location,
+    /// Comments that visually belong to this key/value field.
+    pub(super) field_comments: Vec<String>,
+    /// Comments between the key and the value node.
+    pub(super) value_comments: Vec<String>,
 }
 
 /// Return the span lengths of key and value for a one-entry map encoded in `events`.
@@ -745,6 +749,7 @@ pub(super) fn collect_entries_from_map<'a>(
                 break;
             }
             Some(_) => {
+                let key_comments = ev.take_leading_comments_for_next_node()?;
                 let key = capture_node(ev)?;
                 if is_merge_key(&key) {
                     match merge_keys {
@@ -769,11 +774,15 @@ pub(super) fn collect_entries_from_map<'a>(
                         }
                     }
                 }
+                let field_comments = key_comments;
+                let value_comments = ev.take_comments_before_mapping_value()?;
                 let value = capture_node(ev)?;
                 fields.push(PendingEntry {
                     key,
                     value,
                     reference_location,
+                    field_comments,
+                    value_comments,
                 });
             }
             None => {

@@ -704,12 +704,15 @@ While recursive YAML is unusual, it is not forbidden by the specification. Real-
 
 Serde-saphyr supports recursive structures, but Rust requires being very explicit about this. A structure that may hold recursive references to itself must be wrapped in a [`RcRecursive<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.RcRecursive.html), and any reference that points to it must be [`RcRecursion<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.RcRecursion.html). Arc varieties exist. See also [examples/recursive_yaml.rs](examples/recursive_yaml.rs).
 
+### Comments
+- The wrapper [Commented](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) allows emitting a comment next to a scalar or reference (handy when the reference is far from its definition and needs explanation).
+- As granit-parser now supports comments, the wrapper [Commented](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) will also capture the relevant YAML comment into its field when deserializing YAML.
+
 ### Controlling deserialization
 
 - Empty maps are serialized as {} and empty lists as [] by default.
 - Strings containing newlines, and very long strings are serialized as appropriate block scalars, except in cases where they would need escaping (like ending with `:`).
-- Indentation is configurable.
-- The wrapper [Commented](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) allows emitting a comment next to a scalar or reference (handy when the reference is far from its definition and needs explanation).
+- Indentation is configurable. 
 - The wrapper [SpaceAfter](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.SpaceAfter.html) adds an empty line after the wrapped value, useful for visually separating sections in the output YAML.
 - It is possible to request that all strings be **quoted** — using single quotes when no escape sequences are present, and double quotes otherwise. This is very explicit and unambiguous, but such YAML may be less readable for humans. Line wrapping is disabled in this mode.
 - YAML 1.1 booleans (`y`, `yes`, `on`, etc.) are normally quoted as both keys and values. If this is undesired (y is a coordinate), set `yaml_12` to true.
