@@ -35,7 +35,7 @@ use crate::include::{BaseParser, create_parser_from_str};
 use crate::location::location_from_span;
 use crate::options::BudgetReportCallback;
 use crate::tags::SfTag;
-use granit_parser::{Event, ScalarStyle, ScanError, Span};
+use granit_parser::{Event, ScalarStyle, ScanError, Span, StructureStyle};
 
 #[cfg(not(feature = "include"))]
 use granit_parser::StrInput;
@@ -552,7 +552,7 @@ impl<'a> LiveEvents<'a> {
                     return Ok(Some(ev));
                 }
 
-                Event::SequenceStart(anchor_id, tag) => {
+                Event::SequenceStart(_style, anchor_id, tag) => {
                     #[cfg(feature = "include")]
                     let mut anchor_id = anchor_id;
                     let tag_s = SfTag::from_optional_cow(&tag);
@@ -615,7 +615,7 @@ impl<'a> LiveEvents<'a> {
                     return Ok(Some(ev));
                 }
 
-                Event::MappingStart(anchor_id, _tag) => {
+                Event::MappingStart(_style, anchor_id, _tag) => {
                     #[cfg(feature = "include")]
                     let mut anchor_id = anchor_id;
                     #[cfg(feature = "include")]
@@ -777,6 +777,12 @@ impl<'a> LiveEvents<'a> {
                     continue;
                 }
 
+                Event::Comment(_, _) => {
+                    // Parser comments are presentation metadata, not Serde data nodes.
+                    self.last_location = location;
+                    continue;
+                }
+
                 Event::Nothing => continue,
             }
         }
@@ -850,9 +856,9 @@ impl<'a> LiveEvents<'a> {
 
         let raw = match ev {
             Ev::Scalar { value, style, .. } => Event::Scalar(Cow::Borrowed(value), *style, 0, None),
-            Ev::SeqStart { .. } => Event::SequenceStart(0, None),
+            Ev::SeqStart { .. } => Event::SequenceStart(StructureStyle::Block, 0, None),
             Ev::SeqEnd { .. } => Event::SequenceEnd,
-            Ev::MapStart { .. } => Event::MappingStart(0, None),
+            Ev::MapStart { .. } => Event::MappingStart(StructureStyle::Block, 0, None),
             Ev::MapEnd { .. } => Event::MappingEnd,
             Ev::Taken { location } => {
                 return Err(Error::unexpected("consumed event").with_location(*location));

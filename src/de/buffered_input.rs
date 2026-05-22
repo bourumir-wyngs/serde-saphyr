@@ -258,7 +258,7 @@ mod tests {
                 Ok((ev, _)) => {
                     // Keep only a small subset we care about
                     match &ev {
-                        Event::SequenceStart(_, _)
+                        Event::SequenceStart(_, _, _)
                         | Event::SequenceEnd
                         | Event::Scalar(..)
                         | Event::StreamStart
@@ -285,7 +285,7 @@ mod tests {
         assert!(
             events
                 .iter()
-                .any(|e| matches!(e, Event::SequenceStart(_, _))),
+                .any(|e| matches!(e, Event::SequenceStart(_, _, _))),
             "no SequenceStart in events: {:?}",
             events
         );

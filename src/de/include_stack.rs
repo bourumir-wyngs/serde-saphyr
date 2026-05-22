@@ -372,7 +372,7 @@ struct CollectedAnchorEvents {
 
 fn anchored_event_initial_depth(event: &Event<'_>) -> usize {
     match event {
-        Event::SequenceStart(_, _) | Event::MappingStart(_, _) => 1,
+        Event::SequenceStart(_, _, _) | Event::MappingStart(_, _, _) => 1,
         _ => 0,
     }
 }
@@ -431,7 +431,7 @@ fn collect_anchor_events(
             }
         }
         match &event {
-            Event::SequenceStart(_, _) | Event::MappingStart(_, _) => {
+            Event::SequenceStart(_, _, _) | Event::MappingStart(_, _, _) => {
                 current_depth += 1;
                 if current_depth > budget.max_depth {
                     return Err(format!(
@@ -492,7 +492,7 @@ fn collect_anchor_events(
         } else {
             for (idx, (event, _)) in events.iter().enumerate().skip(start + 1) {
                 match event {
-                    Event::SequenceStart(_, _) | Event::MappingStart(_, _) => depth += 1,
+                    Event::SequenceStart(_, _, _) | Event::MappingStart(_, _, _) => depth += 1,
                     Event::SequenceEnd | Event::MappingEnd => {
                         if depth == 0 {
                             return Err(format!(
@@ -569,14 +569,19 @@ fn own_event(event: Event<'_>) -> Event<'static> {
             anchor_id,
             tag.map(|tag| Cow::Owned(tag.into_owned())),
         ),
-        Event::SequenceStart(anchor_id, tag) => {
-            Event::SequenceStart(anchor_id, tag.map(|tag| Cow::Owned(tag.into_owned())))
-        }
+        Event::SequenceStart(style, anchor_id, tag) => Event::SequenceStart(
+            style,
+            anchor_id,
+            tag.map(|tag| Cow::Owned(tag.into_owned())),
+        ),
         Event::SequenceEnd => Event::SequenceEnd,
-        Event::MappingStart(anchor_id, tag) => {
-            Event::MappingStart(anchor_id, tag.map(|tag| Cow::Owned(tag.into_owned())))
-        }
+        Event::MappingStart(style, anchor_id, tag) => Event::MappingStart(
+            style,
+            anchor_id,
+            tag.map(|tag| Cow::Owned(tag.into_owned())),
+        ),
         Event::MappingEnd => Event::MappingEnd,
+        Event::Comment(text, placement) => Event::Comment(Cow::Owned(text.into_owned()), placement),
     }
 }
 impl<'input> Iterator for ParserStack<'input> {

@@ -385,7 +385,7 @@ impl BudgetEnforcer {
                 self.record_anchor(*anchor_id)?;
                 self.handle_scalar(value, style, tag_opt.is_some())?;
             }
-            Event::MappingStart(anchor_id, _tag_opt) => {
+            Event::MappingStart(_style, anchor_id, _tag_opt) => {
                 self.bump_nodes()?;
                 self.depth = self.depth.saturating_add(1);
                 if self.depth > self.report.max_depth {
@@ -411,7 +411,7 @@ impl BudgetEnforcer {
                 }
                 self.leave_mapping()?;
             }
-            Event::SequenceStart(anchor_id, _tag_opt) => {
+            Event::SequenceStart(_style, anchor_id, _tag_opt) => {
                 self.bump_nodes()?;
                 self.depth = self.depth.saturating_add(1);
                 if self.depth > self.report.max_depth {
@@ -451,6 +451,7 @@ impl BudgetEnforcer {
                 }
             }
             Event::DocumentEnd => {}
+            Event::Comment(_, _) => {}
             Event::Nothing => {}
             Event::StreamStart | Event::StreamEnd => {}
         }
