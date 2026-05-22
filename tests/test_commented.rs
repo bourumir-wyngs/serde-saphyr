@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use serde_saphyr::{
-    CommentPosition, Commented, FlowMap, FlowSeq, RcAnchor, ser_options, to_string,
+    CommentPosition, Commented, FlowMap, FlowSeq, RcAnchor, Spanned, ser_options, to_string,
     to_string_with_options,
 };
 
@@ -171,6 +171,20 @@ third: # third separator
     assert_eq!(value.first, Commented(1, "first field".to_string()));
     assert_eq!(value.second, Commented(2, "second value".to_string()));
     assert_eq!(value.third, Commented(3, "third separator".to_string()));
+}
+
+#[test]
+fn commented_deserialize_inside_spanned_preserves_field_comment() {
+    #[derive(Debug, Deserialize)]
+    struct Wrap {
+        x: Spanned<Commented<i32>>,
+    }
+
+    for yaml in ["# note\nx: 1\n", "x: # note\n  1\n", "x:\n  # note\n  1\n"] {
+        let value: Wrap = serde_saphyr::from_str(yaml).unwrap();
+
+        assert_eq!(value.x.value, Commented(1, "note".to_string()));
+    }
 }
 
 #[test]

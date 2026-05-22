@@ -142,7 +142,14 @@ impl<'de, 'e> de::MapAccess<'de> for SpannedMapAccess<'de, 'e> {
             1 => {
                 // value
                 // Reborrow the event source instead of moving `&mut` out of `self.de`.
-                seed.deserialize(Deserializer::new(&mut *self.de.ev, self.de.cfg))
+                // The delegated value still belongs to the same YAML node, so preserve
+                // any comments the parent map/sequence associated with that node.
+                let mut de = Deserializer::new(&mut *self.de.ev, self.de.cfg);
+                de.pending_comments = std::mem::take(&mut self.de.pending_comments);
+                de.pending_value_separator_comments =
+                    std::mem::take(&mut self.de.pending_value_separator_comments);
+                de.pending_value_comments = std::mem::take(&mut self.de.pending_value_comments);
+                seed.deserialize(de)
             }
             2 => {
                 // referenced
