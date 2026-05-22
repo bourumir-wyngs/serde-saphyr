@@ -20,7 +20,13 @@ where
 
     let mut comments = std::mem::take(&mut de.pending_comments);
     comments.extend(std::mem::take(&mut de.pending_value_separator_comments));
-    if !next_is_container {
+    if next_is_container {
+        // Parent-classified value comments belong inside the container; otherwise,
+        // live leading comments on the container start belong to this wrapper.
+        if de.pending_value_comments.is_empty() {
+            comments.extend(de.ev.take_leading_comments_for_next_node()?);
+        }
+    } else {
         comments.extend(std::mem::take(&mut de.pending_value_comments));
         comments.extend(de.ev.take_leading_comments_for_next_node()?);
     }

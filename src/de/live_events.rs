@@ -455,8 +455,15 @@ impl<'a> LiveEvents<'a> {
         }
     }
 
+    fn consumed_comment_location(&self, ev: &Ev<'_>) -> Location {
+        self.inject
+            .last()
+            .map(|frame| frame.reference_location)
+            .unwrap_or_else(|| ev.location())
+    }
+
     fn remember_consumed_event(&mut self, ev: &Ev<'_>) {
-        self.last_consumed_event_location = ev.location();
+        self.last_consumed_event_location = self.consumed_comment_location(ev);
         self.last_consumed_event_kind = Self::event_kind(ev);
     }
 

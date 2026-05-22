@@ -314,6 +314,81 @@ fn commented_deserialize_sequence_element_comment_is_captured_by_element() {
 }
 
 #[test]
+fn commented_deserialize_root_sequence_leading_comment_belongs_to_container() {
+    let value: Commented<Vec<i32>> = serde_saphyr::from_str(
+        "\
+# root list
+- 1
+",
+    )
+    .unwrap();
+
+    assert_eq!(value, Commented(vec![1], "root list".to_string()));
+}
+
+#[test]
+fn commented_deserialize_root_map_leading_comment_belongs_to_container() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Inner {
+        child: i32,
+    }
+
+    let value: Commented<Inner> = serde_saphyr::from_str(
+        "\
+# root object
+child: 1
+",
+    )
+    .unwrap();
+
+    assert_eq!(
+        value,
+        Commented(Inner { child: 1 }, "root object".to_string())
+    );
+}
+
+#[test]
+fn commented_deserialize_captures_alias_use_site_trailing_comment() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Wrap {
+        a: i32,
+        b: Commented<i32>,
+    }
+
+    let value: Wrap = serde_saphyr::from_str(
+        "\
+a: &a 1
+b: *a # use site
+",
+    )
+    .unwrap();
+
+    assert_eq!(value.b, Commented(1, "use site".to_string()));
+}
+
+#[test]
+fn commented_deserialize_alias_trailing_comment_does_not_leak_to_next_sequence_item() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Wrap {
+        a: i32,
+        items: Vec<Commented<i32>>,
+    }
+
+    let value: Wrap = serde_saphyr::from_str(
+        "\
+a: &a 1
+items:
+  - *a # first alias use
+  - 2
+",
+    )
+    .unwrap();
+
+    assert_eq!(value.items[0], Commented(1, "first alias use".to_string()));
+    assert_eq!(value.items[1], Commented(2, String::new()));
+}
+
+#[test]
 fn test_commented_rc() -> anyhow::Result<()> {
     #[derive(Serialize)]
     struct Notable {

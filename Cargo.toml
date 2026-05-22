@@ -140,6 +140,10 @@ name = "benchmark"
 required-features = ["serialize", "deserialize"]
 
 [[example]]
+name = "commented"
+required-features = ["serialize", "deserialize"]
+
+[[example]]
 name = "graph_swiss_trains"
 required-features = ["serialize", "deserialize"]
 
