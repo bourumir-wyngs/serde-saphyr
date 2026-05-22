@@ -57,6 +57,10 @@ pub struct SpaceAfter<T>(pub T);
 /// - Deserialization of `Commented<T>` captures nearby source comments when the
 ///   `serde-saphyr` deserializer can provide them. Other deserializers treat it
 ///   transparently and produce an empty comment string.
+/// - Comment capture is use-site oriented for replayed YAML. Comments from an
+///   anchor definition are not copied through aliases or merge keys; a field
+///   materialized by `<<: *defaults` does not inherit comments that were written
+///   above the field inside `&defaults`.
 /// - For container values, comments attached to the parent value itself are
 ///   captured only by `Commented<Container>` and are not inherited by the first
 ///   child field or element. A comment inside the container, directly above a

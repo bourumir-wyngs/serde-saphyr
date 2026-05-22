@@ -53,6 +53,11 @@ pub(super) fn attach_alias_locations_if_missing(
 }
 
 /// Our simplified owned event kind that we feed into Serde.
+///
+/// This intentionally carries semantic YAML node data, anchors, tags, style, and
+/// locations, but not presentation metadata such as comments. Live streams expose
+/// comments through the `Events` comment hooks; replay streams can only preserve
+/// comments that callers captured separately before buffering/replay.
 #[derive(Clone, Debug)]
 pub(crate) enum Ev<'a> {
     /// Scalar value from YAML (text), with optional tag and style.
@@ -173,7 +178,9 @@ pub(crate) trait Events<'de> {
     /// Take comments immediately above the next data node.
     ///
     /// Implementations may fill lookahead while doing this. The default is empty
-    /// for replay buffers that do not carry presentation metadata.
+    /// for replay buffers that do not carry presentation metadata. If a caller
+    /// needs comments for a captured node, it must take them from the live stream
+    /// before calling `capture_node` and carry them separately.
     fn take_leading_comments_for_next_node(&mut self) -> Result<Vec<String>, Error> {
         Ok(Vec::new())
     }
@@ -227,6 +234,10 @@ pub(super) fn eof_with_loc(events: &dyn Events<'_>) -> Error {
 }
 
 /// Event source that replays a pre-recorded buffer.
+///
+/// Replay buffers contain `Ev` values only. Comment hooks therefore use the
+/// trait defaults and return empty comment sets; use-site comments must be passed
+/// around separately by the map/sequence access code.
 pub(super) struct ReplayEvents<'a> {
     buf: Vec<Ev<'a>>,
     /// Index of the next event to yield (0..=buf.len()).

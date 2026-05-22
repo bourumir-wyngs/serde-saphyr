@@ -708,6 +708,7 @@ Serde-saphyr supports recursive structures, but Rust requires being very explici
 - The wrapper [Commented](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) allows emitting a comment next to a scalar or reference (handy when the reference is far from its definition and needs explanation).
 - As granit-parser now supports comments, the wrapper [Commented](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) will also capture the relevant YAML comment into its field when deserializing YAML.
 - For container values, a comment attached to the parent value itself, such as `root: # comment`, is captured only by `Commented<Container>` and is not inherited by the first child. A comment inside the container, directly above a child key or sequence item, is captured by that child.
+- Comments are not copied from anchor definitions through aliases or merge keys. In `actual: { <<: *defaults }`, a `Commented` field materialized from `&defaults` will not receive a comment that was written at the definition site above `defaults.port`; that comment belongs to the original field.
 
 ### Controlling deserialization
 
