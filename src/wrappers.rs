@@ -57,6 +57,10 @@ pub struct SpaceAfter<T>(pub T);
 /// - Deserialization of `Commented<T>` captures nearby source comments when the
 ///   `serde-saphyr` deserializer can provide them. Other deserializers treat it
 ///   transparently and produce an empty comment string.
+/// - For container values, comments attached to the parent value itself are
+///   captured only by `Commented<Container>` and are not inherited by the first
+///   child field or element. A comment inside the container, directly above a
+///   child key or element, is captured by that child.
 ///
 /// Examples
 ///
@@ -91,9 +95,10 @@ pub struct SpaceAfter<T>(pub T);
 /// ```
 ///
 /// *Important*: Comments are suppressed in flow contexts (no `#` appears), and
-/// ignored for complex inner values. During deserialization, comments directly
-/// above a field/key, above the wrapped value, or on the same line after the
-/// wrapped value are captured when they are present.
+/// ignored for complex inner values during serialization. During deserialization,
+/// parent-side comments on a container such as `root: # comment` are captured by
+/// `Commented<Container>` only; comments inside the container, directly above the
+/// first child key or element, remain available to that child.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Commented<T>(pub T, pub String);
 

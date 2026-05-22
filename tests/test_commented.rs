@@ -238,6 +238,68 @@ fn commented_deserialize_does_not_leak_parent_separator_comment_into_nested_map_
 }
 
 #[test]
+fn commented_deserialize_container_comment_is_not_inherited_by_first_child_key() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Outer {
+        root: Commented<Inner>,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Inner {
+        child: Commented<i32>,
+    }
+
+    let value: Outer = serde_saphyr::from_str("root: # root container\n  child: 1\n").unwrap();
+
+    assert_eq!(value.root.1, "root container");
+    assert_eq!(value.root.0.child, Commented(1, String::new()));
+}
+
+#[test]
+fn commented_deserialize_child_key_comment_is_captured_by_child() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Outer {
+        root: Commented<Inner>,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Inner {
+        child: Commented<i32>,
+    }
+
+    let value: Outer = serde_saphyr::from_str("root:\n  # child\n  child: 1\n").unwrap();
+
+    assert_eq!(value.root.1, "");
+    assert_eq!(value.root.0.child, Commented(1, "child".to_string()));
+}
+
+#[test]
+fn commented_deserialize_sequence_container_comment_is_not_inherited_by_first_element() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Outer {
+        root: Commented<Vec<Commented<i32>>>,
+    }
+
+    let value: Outer = serde_saphyr::from_str("root: # root container\n  - 1\n").unwrap();
+
+    assert_eq!(value.root.1, "root container");
+    assert_eq!(value.root.0[0], Commented(1, String::new()));
+}
+
+#[test]
+fn commented_deserialize_sequence_element_comment_is_captured_by_element() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Outer {
+        root: Commented<Vec<Commented<i32>>>,
+    }
+
+    let value: Outer = serde_saphyr::from_str("root:\n  # item\n  - 1\n").unwrap();
+
+    assert_eq!(value.root.1, "");
+    assert_eq!(value.root.0[0], Commented(1, "item".to_string()));
+}
+
+#[test]
 fn test_commented_rc() -> anyhow::Result<()> {
     #[derive(Serialize)]
     struct Notable {

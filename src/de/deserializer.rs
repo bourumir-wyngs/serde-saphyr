@@ -1239,11 +1239,14 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 return visitor.visit_seq(ByteSeq { data, idx: 0 });
             }
         }
+        let mut seq_start_comments = std::mem::take(&mut self.pending_value_comments);
+        seq_start_comments.extend(self.ev.take_leading_comments_for_next_node()?);
         self.expect_seq_start()?;
         /// Streaming `SeqAccess` over the underlying `Events`.
         struct SA<'de, 'e> {
             ev: &'e mut dyn Events<'de>,
             cfg: Cfg,
+            pending_first_element_comments: Vec<String>,
 
             #[cfg(any(feature = "garde", feature = "validator"))]
             garde: Option<&'e mut PathRecorder>,
@@ -1276,6 +1279,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 let value_separator_comments = self
                     .ev
                     .take_separator_comments_before_sequence_item_value()?;
+                let value_comments = std::mem::take(&mut self.pending_first_element_comments);
 
                 #[cfg(any(feature = "garde", feature = "validator"))]
                 {
@@ -1296,6 +1300,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         let mut de =
                             YamlDeserializer::new_with_path_recorder(self.ev, self.cfg, recorder);
                         de.pending_value_separator_comments = value_separator_comments.clone();
+                        de.pending_value_comments = value_comments.clone();
                         let redaction_ctx = de.peek_scalar_redaction_ctx()?;
                         let res = with_subtree_redaction(redaction_ctx, || seed.deserialize(de))
                             .map(Some)
@@ -1315,6 +1320,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
                 let mut de = YamlDeserializer::new(self.ev, self.cfg);
                 de.pending_value_separator_comments = value_separator_comments;
+                de.pending_value_comments = value_comments;
                 let redaction_ctx = de.peek_scalar_redaction_ctx()?;
                 with_subtree_redaction(redaction_ctx, || seed.deserialize(de))
                     .map(Some)
@@ -1330,6 +1336,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
         let result = visitor.visit_seq(SA {
             ev: self.ev,
             cfg: self.cfg,
+            pending_first_element_comments: seq_start_comments,
 
             #[cfg(any(feature = "garde", feature = "validator"))]
             garde,
@@ -1395,9 +1402,11 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             return visitor.visit_map(EmptyMap);
         }
         // Same-line separator comments on the parent field belong to this mapping node.
-        // `Commented<T>` consumes them before this point; a plain map must not reattach
-        // them to the first child key.
+        // `Commented<Container>` consumes those comments before this point; a plain map
+        // must not reattach them to the first child key.
         let _map_node_comments = std::mem::take(&mut self.pending_value_separator_comments);
+        // Comments already inside the map, before the first key, remain first-key
+        // comments. `Commented<Container>` defers these instead of capturing them.
         let mut map_start_comments = std::mem::take(&mut self.pending_value_comments);
         map_start_comments.extend(self.ev.take_leading_comments_for_next_node()?);
         self.expect_map_start()?;
