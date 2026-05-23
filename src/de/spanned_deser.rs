@@ -1,7 +1,7 @@
 //! Internal serde wrapper implementations.
 //!
 //! These are used by the YAML deserializer to implement crate-level helper types
-//! (like `Spanned<T>`) without bloating `de.rs` with large nested state machines.
+//! (like `Spanned<T>`) without bloating the main deserializer with large nested state machines.
 
 use serde::de::{self, IntoDeserializer, Visitor};
 
@@ -52,7 +52,7 @@ where
 ///
 /// Why:
 /// - It lets `Spanned<T>` be implemented without building an intermediate YAML AST.
-/// - It keeps the heavy state machine out of `de.rs`.
+/// - It keeps the heavy state machine out of the main deserializer.
 ///
 /// Lifetime note:
 /// - This owns a `Deser<'a>` by value. When deserializing `value`, we must

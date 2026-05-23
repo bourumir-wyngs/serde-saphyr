@@ -3,7 +3,7 @@ use serde::ser::{Serialize, Serializer};
 use std::ops::Deref;
 
 // Flow hints and block-string hints: we use newtype-struct names.
-// These are consumed by the YAML serializer (see `ser.rs`) via Serde's data model.
+// These are consumed by the YAML serializer via Serde's data model.
 pub(crate) const NAME_LIT_STR: &str = "__yaml_lit_str";
 pub(crate) const NAME_FOLD_STR: &str = "__yaml_fold_str";
 

@@ -11,9 +11,9 @@ use std::cell::RefCell;
 /// source text.
 ///
 /// This module implements the interpolation redaction layer that prevents such leaks. While a
-/// deserialization operation is running, `src/de.rs`, `src/lib.rs`, and
-/// `src/de/with_deserializer.rs` open subtree-local scopes and record every interpolated scalar as
-/// a `{ raw, effective }` pair. When Serde eventually formats a dynamic error in `src/de_error.rs`,
+/// deserialization operation is running, `src/de/deserializer.rs`, `src/de/api.rs`,
+/// and `src/de/with_deserializer.rs` open subtree-local scopes and record every interpolated scalar as
+/// a `{ raw, effective }` pair. When Serde eventually formats a dynamic error in `src/de/error.rs`,
 /// the redaction helpers in this module scan the message and replace any remembered resolved value
 /// with its original interpolation form, or with a generic redacted form when needed.
 ///
@@ -26,8 +26,8 @@ use std::cell::RefCell;
 /// Stores one interpolated scalar's original `${...}` text together with the resolved value that
 /// must be redacted back out of later error messages.
 ///
-/// Constructed from scalar deserialization code in `src/de.rs` and then recorded into the current
-/// subtree scope by [`ScalarRedactionGuard`].
+/// Constructed from scalar deserialization code in `src/de/deserializer.rs` and then recorded into
+/// the current subtree scope by [`ScalarRedactionGuard`].
 #[cfg_attr(not(feature = "properties"), allow(dead_code))]
 #[derive(Clone, Debug)]
 pub(crate) struct ScalarRedactionCtx {
@@ -53,7 +53,7 @@ thread_local! {
 
 /// Registers one interpolated scalar with the current subtree redaction scope.
 ///
-/// Created by `with_scalar_redaction` in `src/de.rs` around scalar and subtree
+/// Created by `with_scalar_redaction` in `src/de/deserializer.rs` around scalar and subtree
 /// deserialization boundaries so later container-level errors can still redact the resolved
 /// value back to the original interpolation expression.
 #[cfg(feature = "properties")]
@@ -64,7 +64,7 @@ pub(crate) struct ScalarRedactionGuard {
 /// Registers one interpolated scalar with the current subtree redaction scope.
 ///
 /// In non-`properties` builds there is no interpolation state to track, so this becomes a
-/// no-op guard with the same API for callers in `src/de.rs`.
+/// no-op guard with the same API for callers in `src/de/deserializer.rs`.
 #[cfg(not(feature = "properties"))]
 pub(crate) struct ScalarRedactionGuard;
 
@@ -94,7 +94,7 @@ impl ScalarRedactionGuard {
     /// Records the current interpolated scalar in the active subtree scope, avoiding
     /// duplicate `{ raw, effective }` pairs.
     ///
-    /// Called by `with_scalar_redaction` in `src/de.rs` whenever deserialization enters a
+    /// Called by `with_scalar_redaction` in `src/de/deserializer.rs` whenever deserialization enters a
     /// scalar or subtree that may later need error-message redaction.
     pub(crate) fn new(ctx: ScalarRedactionCtx) -> Self {
         INTERP_REDACTION.with(|cell| {
@@ -115,7 +115,7 @@ impl ScalarRedactionGuard {
 
 #[cfg(not(feature = "properties"))]
 impl ScalarRedactionGuard {
-    /// Keeps the redaction-guard call sites in `src/de.rs` uniform when property
+    /// Keeps the redaction-guard call sites in `src/de/deserializer.rs` uniform when property
     /// interpolation support is compiled out.
     pub(crate) fn new(_: ScalarRedactionCtx) -> Self {
         Self
@@ -144,7 +144,7 @@ impl Drop for InterpRedactionScopeGuard {
 /// Exposes the current subtree's recorded interpolation pairs to the redaction helpers below.
 ///
 /// Called by `redact_custom_message`, `redact_dynamic_value`, `redact_dynamic_identifier`,
-/// and validation issue sanitization in `src/de_error.rs`.
+/// and validation issue sanitization in `src/de/error.rs`.
 pub(crate) fn with_interp_redaction<T>(f: impl FnOnce(&[ScalarRedactionCtx]) -> T) -> T {
     INTERP_REDACTION.with(|cell| {
         let borrow = cell.borrow();
@@ -214,7 +214,7 @@ pub(crate) fn redact_custom_message(text: String) -> String {
 #[cfg(not(feature = "properties"))]
 /// Preserves the core error formatting flow when interpolation redaction is disabled.
 ///
-/// Called from `src/de_error.rs`; without the `properties` feature the original message is
+/// Called from `src/de/error.rs`; without the `properties` feature the original message is
 /// returned unchanged.
 pub(crate) fn redact_custom_message(text: String) -> String {
     text
@@ -240,7 +240,7 @@ pub(crate) fn redact_dynamic_value(text: String, fallback: &str) -> String {
 #[cfg(not(feature = "properties"))]
 /// Preserves dynamic Serde error text unchanged when interpolation redaction is disabled.
 ///
-/// Called from `src/de_error.rs` for `invalid_type` and `invalid_value` in non-`properties`
+/// Called from `src/de/error.rs` for `invalid_type` and `invalid_value` in non-`properties`
 /// builds.
 pub(crate) fn redact_dynamic_value(text: String, _: &str) -> String {
     text
@@ -271,7 +271,7 @@ pub(crate) fn redact_dynamic_identifier(text: &str, fallback: &str) -> String {
 #[cfg(not(feature = "properties"))]
 /// Preserves identifier text unchanged when interpolation redaction is disabled.
 ///
-/// Called from `src/de_error.rs` for `unknown_variant` and `unknown_field` in non-`properties`
+/// Called from `src/de/error.rs` for `unknown_variant` and `unknown_field` in non-`properties`
 /// builds.
 pub(crate) fn redact_dynamic_identifier(text: &str, _: &str) -> String {
     text.to_owned()

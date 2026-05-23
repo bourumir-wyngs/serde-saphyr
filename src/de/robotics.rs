@@ -37,7 +37,6 @@ const DEG2RAD: f64 = PI / 180.0;
 const MAX_EXPR_DEPTH: u32 = 256; // guard against deeply nested parentheses/functions
 const MAX_NUM_DIGITS: usize = 1_000_000; // cap digits in a single numeric token (DoS mitigation)
 
-// Adjust imports to your crate layout:
 use crate::tags::SfTag;
 use crate::{Error, Location};
 

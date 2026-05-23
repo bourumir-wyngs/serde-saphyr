@@ -52,7 +52,7 @@ type StreamParser<'a> = BaseParser<'a>;
 #[cfg(not(feature = "include"))]
 type StreamParser<'a> = granit_parser::Parser<'a, ReaderInput<'a>>;
 
-/// This is enough to hold a single scalar that is common  case in YAML anchors.
+/// This is enough to hold a single scalar, which is a common case in YAML anchors.
 const SMALLVECT_INLINE: usize = 8;
 
 /// A frame that records events for an anchored container until its end.

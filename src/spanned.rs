@@ -4,9 +4,9 @@
 //! (line/column) of the YAML node it came from.
 //!
 //! This is especially useful for config validation errors, where you want to
-//! point at the exact place in the YAML. Many configuration errors are not kind
-//! of "invalid YAML" but rather "valid YAML, still invalid value". Using
-//! Spanned allows to tell where the invalid value comes from.
+//! point at the exact place in the YAML. Many configuration errors are not
+//! "invalid YAML", but rather "valid YAML with an invalid value". Using
+//! `Spanned` shows where the invalid value came from.
 //!
 //! ```rust
 //! # #[cfg(feature = "deserialize")]
@@ -30,9 +30,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::Location;
 
-/// A value paired with source locations describing where it came from. Spanned location
-/// is specified in character positions and, when possible, in byte offsets as well (byte offsets
-/// are available for a string source but not from the reader.
+/// A value paired with source locations describing where it came from. Spanned locations
+/// are specified in character positions and, when possible, in byte offsets as well. Byte offsets
+/// are available for string sources but not reader sources.
 ///
 /// # Example
 ///

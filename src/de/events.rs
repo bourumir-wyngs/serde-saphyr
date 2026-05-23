@@ -83,8 +83,8 @@ pub(crate) enum Ev<'a> {
     MapStart { anchor: usize, location: Location },
     /// End of a mapping.
     MapEnd { location: Location },
-    /// The event have been taken from the array, with only location remaining. This should not
-    /// appear in the event stream and reserved for internal usage withing container.
+    /// The event has been taken from the array, with only its location remaining.
+    /// This should not appear in the event stream and is reserved for internal container state.
     Taken { location: Location },
 }
 
@@ -134,7 +134,7 @@ pub(crate) trait Events<'de> {
     /// Peek at the next event without consuming it.
     ///
     /// Returns:
-    /// - `Ok(Some(&Ev))` with the even reference
+    /// - `Ok(Some(&Ev))` with the event reference,
     /// - `Ok(None)` at end-of-stream,
     /// - `Err(Error)` on error.
     ///
@@ -215,8 +215,7 @@ pub(crate) trait Events<'de> {
     /// Used by:
     /// - The deserializer to return borrowed `&str` references when possible.
     ///
-    /// Note: This method is part of the zero-copy deserialization infrastructure.
-    /// It will be used when full `Deserialize<'de>` support is implemented.
+    /// This is used by string deserialization to return borrowed scalars when possible.
     fn input_for_borrowing(&self) -> Option<&'de str> {
         None // Default: borrowing not supported
     }
