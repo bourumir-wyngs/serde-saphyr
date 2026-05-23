@@ -1239,6 +1239,10 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 return visitor.visit_seq(ByteSeq { data, idx: 0 });
             }
         }
+        // Comments passed in from the parent value slot belong to the first item
+        // of the sequence. If this sequence is reached through a nested alias,
+        // alias replay exposes the anchored sequence start here, so the same
+        // rule applies to comments written above the alias token.
         let mut seq_start_comments = std::mem::take(&mut self.pending_value_comments);
         seq_start_comments.extend(self.ev.take_leading_comments_for_next_node()?);
         self.expect_seq_start()?;
@@ -1408,6 +1412,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
         let _map_node_comments = std::mem::take(&mut self.pending_value_separator_comments);
         // Comments already inside the map, before the first key, remain first-key
         // comments. `Commented<Container>` defers these instead of capturing them.
+        // If this map is reached through a nested alias, alias replay exposes the
+        // anchored map start here; comments above the alias follow the same rule.
         let mut map_start_comments = std::mem::take(&mut self.pending_value_comments);
         map_start_comments.extend(self.ev.take_leading_comments_for_next_node()?);
         self.expect_map_start()?;

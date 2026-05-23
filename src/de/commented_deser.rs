@@ -21,8 +21,13 @@ where
     let mut comments = std::mem::take(&mut de.pending_comments);
     comments.extend(std::mem::take(&mut de.pending_value_separator_comments));
     if next_is_container {
-        // Parent-classified value comments belong inside the container; otherwise,
-        // live leading comments on the container start belong to this wrapper.
+        // Parent-classified value comments belong inside the container. This
+        // also covers nested aliases to containers: alias replay exposes the
+        // anchored container start here, and comments above the alias stay
+        // available to the first replayed child.
+        //
+        // If no parent has classified comments for us, live leading comments on
+        // the container start belong to this wrapper.
         if de.pending_value_comments.is_empty() {
             comments.extend(de.ev.take_leading_comments_for_next_node()?);
         }
@@ -35,7 +40,8 @@ where
         de,
         comments,
         // For containers, comments already inside the container must stay with
-        // the wrapped value so the first child key/item can claim them.
+        // the wrapped value so the first child key/item can claim them. This is
+        // intentionally the same for a nested alias whose target is a container.
         defer_value_comments: next_is_container,
         state: 0,
     })

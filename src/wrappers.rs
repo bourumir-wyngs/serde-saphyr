@@ -65,6 +65,10 @@ pub struct SpaceAfter<T>(pub T);
 ///   captured only by `Commented<Container>` and are not inherited by the first
 ///   child field or element. A comment inside the container, directly above a
 ///   child key or element, is captured by that child.
+/// - When an alias to a container is used as a nested value, leading comments
+///   above the alias follow the same inside-container rule. For example,
+///   `root:\n  # comment\n  *defaults` leaves the comment available to the
+///   expanded container's first child rather than capturing it on the alias use.
 ///
 /// Examples
 ///
@@ -102,7 +106,8 @@ pub struct SpaceAfter<T>(pub T);
 /// ignored for complex inner values during serialization. During deserialization,
 /// parent-side comments on a container such as `root: # comment` are captured by
 /// `Commented<Container>` only; comments inside the container, directly above the
-/// first child key or element, remain available to that child.
+/// first child key or element, remain available to that child. The same applies
+/// to leading comments above a nested alias whose target is a container.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Commented<T>(pub T, pub String);
 
