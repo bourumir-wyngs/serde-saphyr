@@ -66,6 +66,7 @@ The test suite currently includes over 2000 passing tests, including the fully c
 - **Configurable budgets:** Enforce input limits to mitigate resource exhaustion (e.g., deeply nested structures or very large arrays); see [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
 - Precise error reporting with **snippet rendering**.
 - Optional **!include** support with a custom or default resolver (inclusion of either a complete document or the node referenced by a specified anchor).
+- Comment support (wrapper [Commented](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) can both capture and emit comments)
 - **Property support** (to prevent leaking any secrets from YAML files via error messages or files themselves)
 - **Serializer supports emitting anchors** (Rc, Arc, Weak) if they are properly wrapped (see below).
 - **Declarative validation with optional [`validator`](https://crates.io/crates/validator) ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/validator_validate.rs))** or **[`garde`](https://crates.io/crates/garde)** ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/garde_validate.rs)).
@@ -132,6 +133,13 @@ The optional `huge_documents` feature switches span storage from `u32` indices t
 ### Snippets
 To make debugging easier, **serde-saphyr** renders snippets of the YAML that caused an error (similar to how many compilers report errors). These snippets include the line where the error occurred along with some surrounding context. Any terminal control sequences that might be present in the YAML are stripped out. If not desired, snippets can be removed for a specific error using [`without_snippet`](https://docs.rs/serde-saphyr/latest/serde_saphyr/enum.Error.html#method.without_snippet), or disabled entirely via the `Options` configuration.
 
+### Comments
+- As granit-parser now supports comments, the wrapper [Commented](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) will also capture the relevant YAML comment into its field when deserializing YAML.
+- During serialization, [Commented](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) also emits a comment next to a scalar or reference (handy when the reference is far from its definition and needs explanation).
+- For container values, a comment attached to the parent value itself, such as `root: # comment`, is captured only by `Commented<Container>` and is not inherited by the first child. A comment inside the container, directly above a child key or sequence item, is captured by that child.
+- Comments are not copied from anchor definitions through aliases or merge keys. In `actual: { <<: *defaults }`, a `Commented` field materialized from `&defaults` will not receive a comment that was written at the definition site above `defaults.port`; that comment belongs to the original field.
+- serde-saphyr does not capture freestanding comments, not obviously attached to any node (separeted by multiple empty lines, or at the end of the document). Use [`granit-parser`](https://crates.io/crates/granit-parser). directly to capture such comments (serde-saphyr re-exports it).
+- See example [commented.rs](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/commented.rs).
 
 ### Garde and Validator integration
 
@@ -703,13 +711,6 @@ To support round-tripping, the library can also deserialize into these anchor st
 While recursive YAML is unusual, it is not forbidden by the specification. Real-world examples and [requests to implement it](https://github.com/saphyr-rs/saphyr/issues/24) exist.
 
 Serde-saphyr supports recursive structures, but Rust requires being very explicit about this. A structure that may hold recursive references to itself must be wrapped in a [`RcRecursive<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.RcRecursive.html), and any reference that points to it must be [`RcRecursion<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.RcRecursion.html). Arc varieties exist. See also [examples/recursive_yaml.rs](examples/recursive_yaml.rs).
-
-### Comments
-- The wrapper [Commented](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) allows emitting a comment next to a scalar or reference (handy when the reference is far from its definition and needs explanation).
-- As granit-parser now supports comments, the wrapper [Commented](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) will also capture the relevant YAML comment into its field when deserializing YAML.
-- For container values, a comment attached to the parent value itself, such as `root: # comment`, is captured only by `Commented<Container>` and is not inherited by the first child. A comment inside the container, directly above a child key or sequence item, is captured by that child.
-- Comments are not copied from anchor definitions through aliases or merge keys. In `actual: { <<: *defaults }`, a `Commented` field materialized from `&defaults` will not receive a comment that was written at the definition site above `defaults.port`; that comment belongs to the original field.
-- See example [commented.rs](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/commented.rs).
 
 ### Controlling deserialization
 
