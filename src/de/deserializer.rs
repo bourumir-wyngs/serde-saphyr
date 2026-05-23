@@ -1276,10 +1276,11 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 // The peek borrow is now released, so it's safe to query other cursor state.
                 let reference_location = self.ev.reference_location();
                 let _missing_field_guard = MissingFieldLocationGuard::new(reference_location);
+                let mut item_comments = std::mem::take(&mut self.pending_first_element_comments);
+                item_comments.extend(self.ev.take_leading_comments_for_next_node()?);
                 let value_separator_comments = self
                     .ev
                     .take_separator_comments_before_sequence_item_value()?;
-                let item_comments = std::mem::take(&mut self.pending_first_element_comments);
 
                 #[cfg(any(feature = "garde", feature = "validator"))]
                 {

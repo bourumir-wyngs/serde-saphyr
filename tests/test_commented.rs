@@ -369,6 +369,57 @@ root:
 }
 
 #[test]
+fn commented_deserialize_unwrapped_sequence_container_item_comment_does_not_leak_to_first_child() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Outer {
+        root: Vec<Inner>,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Inner {
+        child: Commented<i32>,
+    }
+
+    let value: Outer = serde_saphyr::from_str(
+        "\
+root:
+  # item
+  - child: 1
+",
+    )
+    .unwrap();
+
+    assert_eq!(value.root[0].child, Commented(1, String::new()));
+}
+
+#[test]
+fn commented_deserialize_unwrapped_sequence_container_comments_do_not_leak_to_children() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Outer {
+        root: Vec<Inner>,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Inner {
+        child: Commented<i32>,
+    }
+
+    let value: Outer = serde_saphyr::from_str(
+        "\
+root:
+  # first item
+  - child: 1
+  # second item
+  - child: 2
+",
+    )
+    .unwrap();
+
+    assert_eq!(value.root[0].child, Commented(1, String::new()));
+    assert_eq!(value.root[1].child, Commented(2, String::new()));
+}
+
+#[test]
 fn commented_deserialize_root_sequence_leading_comment_belongs_to_container() {
     let value: Commented<Vec<i32>> = serde_saphyr::from_str(
         "\
