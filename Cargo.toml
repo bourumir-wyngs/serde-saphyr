@@ -25,7 +25,7 @@ encoding_rs_io = { version = "0.1", optional = true }
 ahash = { version = "0.8", optional = true }
 annotate-snippets = { version = "0.12", optional = true }
 figment = { version = "0.10", optional = true }
-garde = { version = ">= 0.19.0, < 0.23", optional = true, features = ["derive"] }
+garde = { version = ">= 0.19.0, < 0.24", optional = true, features = ["derive"] }
 miette = { version = "7", optional = true, features = ["fancy"] }
 validator = { version = ">= 0.11, < 0.21", optional = true, features = ["derive"] }
 
