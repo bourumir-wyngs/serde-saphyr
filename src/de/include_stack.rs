@@ -377,6 +377,27 @@ fn anchored_event_initial_depth(event: &Event<'_>) -> usize {
     }
 }
 
+/// Adds one expanded event's retained comment bytes to the include-fragment budget.
+fn observe_expanded_comment_budget(
+    event: &Event<'_>,
+    total_expanded_comment_bytes: &mut usize,
+    budget: &crate::Budget,
+    target_anchor: &str,
+) -> Result<(), String> {
+    if let Event::Comment(text, _) = event {
+        *total_expanded_comment_bytes = total_expanded_comment_bytes.saturating_add(text.len());
+
+        if *total_expanded_comment_bytes > budget.max_total_comment_bytes {
+            return Err(format!(
+                "include fragment '{}' exceeds maximum allowed expanded comment bytes of {}",
+                target_anchor, budget.max_total_comment_bytes
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 fn collect_anchor_events(
     text: &str,
     target_anchor: &str,
@@ -457,10 +478,10 @@ fn collect_anchor_events(
         }
         if let Event::Comment(ref text, _) = event {
             total_comment_bytes = total_comment_bytes.saturating_add(text.len());
-            if total_comment_bytes > budget.max_comments_bytes {
+            if total_comment_bytes > budget.max_total_comment_bytes {
                 return Err(format!(
                     "include fragment '{}' exceeds maximum allowed total comment bytes of {}",
-                    target_anchor, budget.max_comments_bytes
+                    target_anchor, budget.max_total_comment_bytes
                 ));
             }
         }
@@ -532,6 +553,7 @@ fn collect_anchor_events(
     let mut expanded_events = Vec::new();
     let mut to_process: Vec<usize> = target_events.rev().collect();
     let mut expansion_count = 0;
+    let mut expanded_comment_bytes = 0usize;
 
     while let Some(event_index) = to_process.pop() {
         let (event, span) = &events[event_index];
@@ -551,6 +573,7 @@ fn collect_anchor_events(
             }
             continue;
         }
+        observe_expanded_comment_budget(event, &mut expanded_comment_bytes, budget, target_anchor)?;
         expanded_events.push((event.clone(), *span));
         if expanded_events.len() > budget.max_events {
             return Err(format!(
@@ -757,9 +780,9 @@ mod tests {
     }
 
     #[test]
-    fn collect_anchor_events_enforces_max_comments_bytes() {
+    fn collect_anchor_events_enforces_max_total_comment_bytes() {
         let budget = crate::Budget {
-            max_comments_bytes: 5,
+            max_total_comment_bytes: 5,
             ..crate::Budget::default()
         };
         let yaml = "#abcdef\na: &a ok\n";
@@ -767,6 +790,31 @@ mod tests {
             .expect_err("should reject when comment bytes exceed budget");
         assert!(
             error.contains("exceeds maximum allowed total comment bytes of 5"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn collect_anchor_events_enforces_expanded_comment_bytes() {
+        let budget = crate::Budget {
+            max_total_comment_bytes: 8,
+            ..crate::Budget::default()
+        };
+
+        let yaml = "\
+base: &base
+  #abcdef
+  k: v
+selected: &selected
+  a: *base
+  b: *base
+";
+
+        let error = collect_anchor_events(yaml, "selected", 0, &budget)
+            .expect_err("alias-expanded comments should exceed expanded comment budget");
+
+        assert!(
+            error.contains("expanded comment bytes"),
             "unexpected error: {error}"
         );
     }

@@ -11,10 +11,10 @@ use smallvec::SmallVec;
 use std::collections::HashSet;
 
 const DEFAULT_MAX_SCALAR_BYTES: usize = 64 * 1024 * 1024;
-const DEFAULT_MAX_COMMENT_BYTES: usize = 64 * 1024 * 1024;
+const DEFAULT_MAX_TOTAL_COMMENT_BYTES: usize = 64 * 1024 * 1024;
 
-fn default_max_comments_bytes() -> usize {
-    DEFAULT_MAX_COMMENT_BYTES
+fn default_max_total_comment_bytes() -> usize {
+    DEFAULT_MAX_TOTAL_COMMENT_BYTES
 }
 
 /// Budgets for a streaming YAML scan.
@@ -137,8 +137,8 @@ pub struct Budget {
     #[deprecated(
         note = "Direct construction of `Budget` will be disabled from 1.0.0, use macro `budget!`"
     )]
-    #[serde(default = "default_max_comments_bytes")]
-    pub max_comments_bytes: usize,
+    #[serde(default = "default_max_total_comment_bytes")]
+    pub max_total_comment_bytes: usize,
     /// Maximum number of merge keys (`<<`) allowed across the stream when merge-key
     /// expansion is enabled.
     ///
@@ -189,7 +189,7 @@ impl Default for Budget {
             max_documents: 1_024, // doc separator storms
             max_nodes: 250_000,   // sequences + maps + scalars
             max_total_scalar_bytes: DEFAULT_MAX_SCALAR_BYTES, // 64 MiB of scalar text
-            max_comments_bytes: DEFAULT_MAX_COMMENT_BYTES, // 64 MiB of comment text
+            max_total_comment_bytes: DEFAULT_MAX_TOTAL_COMMENT_BYTES, // 64 MiB of comment text
             max_merge_keys: 10_000, // generous cap for merge keys
             enforce_alias_anchor_ratio: true,
             alias_anchor_min_aliases: 100,
@@ -254,7 +254,7 @@ pub enum BudgetBreach {
         total_scalar_bytes: usize,
     },
 
-    /// The cumulative size of comment contents exceeded [`Budget::max_comments_bytes`].
+    /// The cumulative size of comment contents exceeded [`Budget::max_total_comment_bytes`].
     CommentBytes {
         /// Sum of comment text lengths over all comments seen so far.
         total_comment_bytes: usize,
@@ -484,7 +484,7 @@ impl BudgetEnforcer {
             Event::Comment(text, _) => {
                 self.report.total_comment_bytes =
                     self.report.total_comment_bytes.saturating_add(text.len());
-                if self.report.total_comment_bytes > self.budget.max_comments_bytes {
+                if self.report.total_comment_bytes > self.budget.max_total_comment_bytes {
                     return Err(BudgetBreach::CommentBytes {
                         total_comment_bytes: self.report.total_comment_bytes,
                     });
@@ -889,7 +889,7 @@ e: *A
     fn comment_budget_counts_comment_bytes() {
         let yaml = "#abcdef\nroot: ok\n";
         let budget = Budget {
-            max_comments_bytes: 5,
+            max_total_comment_bytes: 5,
             ..Default::default()
         };
 

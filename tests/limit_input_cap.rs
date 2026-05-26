@@ -118,7 +118,7 @@ fn read_rejects_oversized_comments_when_reader_byte_cap_is_disabled() {
     let opts = serde_saphyr::options! {
         budget: serde_saphyr::budget! {
             max_reader_input_bytes: None,
-            max_comments_bytes: 32,
+            max_total_comment_bytes: 32,
         },
     };
 
