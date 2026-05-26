@@ -25,6 +25,8 @@ pub(crate) mod buffered_input;
 pub(crate) mod error;
 #[cfg(feature = "figment")]
 pub mod figment;
+#[cfg(feature = "figment2")]
+pub mod figment2;
 #[cfg(feature = "deserialize")]
 pub(crate) mod include;
 #[cfg(all(feature = "deserialize", feature = "include"))]

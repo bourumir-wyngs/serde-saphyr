@@ -1,4 +1,3 @@
-use figment::{Figment, providers::Format};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -40,8 +39,17 @@ struct Metadata {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let cfg = Figment::from(serde_saphyr::figment::Yaml::file("examples/value.yaml"))
-        .extract::<Config>()?;
-    println!("{cfg:?}");
+    let cfg_figment = figment::Figment::from(
+        <serde_saphyr::figment::Yaml as figment::providers::Format>::file("examples/value.yaml"),
+    )
+    .extract::<Config>()?;
+
+    let cfg_figment2 = figment2::Figment::from(
+        <serde_saphyr::figment2::Yaml as figment2::providers::Format>::file("examples/value.yaml"),
+    )
+    .extract::<Config>()?;
+
+    println!("figment: {cfg_figment:?}");
+    println!("figment2: {cfg_figment2:?}");
     Ok(())
 }

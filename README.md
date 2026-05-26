@@ -732,6 +732,9 @@ This requires enabling the crate’s `miette` feature.
 For a complete custom formatter/localizer example, see `examples/pirate_formatter.rs`. For an
 end-to-end `miette` example, see `examples/miette.rs`.
 
+### Figment
+Both [figment](https://crates.io/crates/figment) and [figment2](https://crates.io/crates/figment2) are supported as optional features (see `examples/figment_yaml`).
+
 ## Serialization and round-tripping
 
 ### Serialization

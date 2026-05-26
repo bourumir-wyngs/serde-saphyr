@@ -180,9 +180,9 @@ dependencies = [
 
 [[package]]
 name = "compact_str"
-version = "0.8.1"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b79c4069c6cad78e2e0cdfcbd26275770669fb39fd308a752dc110e83b9af32"
+checksum = "3fdb1325a1cece981e8a296ab8f0f9b63ae357bd0784a9faaf548cc7b480707a"
 dependencies = [
  "castaway",
  "cfg-if",
@@ -297,6 +297,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "figment2"
+version = "0.11.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87d63dee16df12076c7770919713c0b92f4e1c85eac828dc2ade0b6c998f016b"
+dependencies = [
+ "atomic",
+ "serde",
+ "uncased",
+ "version_check",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -325,9 +337,9 @@ dependencies = [
 
 [[package]]
 name = "garde"
-version = "0.22.1"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a74b56a4039a46e8c91cc9d84e8a7df4e1f8b24239ca57d1304b3263cb599b9"
+checksum = "5d7f479d28d1daedf23970890723b8774d120aa627abcb33c1d7c93d0965e6c3"
 dependencies = [
  "compact_str",
  "garde_derive",
@@ -336,9 +348,9 @@ dependencies = [
 
 [[package]]
 name = "garde_derive"
-version = "0.22.1"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7224c08ec489e2840af29ed882b47f7f6ac8f4ce15c275d9fc0d6d1b94578ae6"
+checksum = "7b0252cacdca8e6f30a900e6d436fbf294e23f674b9288ca4a5bd35976bef87c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -387,7 +399,8 @@ checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 [[package]]
 name = "granit-parser"
 version = "0.0.3"
-source = "git+https://github.com/bourumir-wyngs/granit-parser?branch=bw%2Fcomments#b9eeaebe6cd9652738056e5aa71fe7bcea9a726f"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f50ba32164f9e098d5da618776a32afbb32270adcbe3d3d006107dae11e37c91"
 dependencies = [
  "arraydeque",
  "smallvec",
@@ -871,6 +884,7 @@ dependencies = [
  "chrono",
  "encoding_rs_io",
  "figment",
+ "figment2",
  "garde",
  "getrandom 0.3.4",
  "granit-parser",
