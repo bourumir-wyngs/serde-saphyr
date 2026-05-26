@@ -112,6 +112,50 @@ fn read_respects_max_input_bytes_budget() {
 }
 
 #[test]
+fn read_rejects_oversized_comments_when_reader_byte_cap_is_disabled() {
+    let yaml = format!("---\n#{}\na1: 1\n", "c".repeat(128));
+    let mut reader = std::io::Cursor::new(yaml.as_bytes());
+    let opts = serde_saphyr::options! {
+        budget: serde_saphyr::budget! {
+            max_reader_input_bytes: None,
+            max_comments_bytes: 32,
+        },
+    };
+
+    let mut iter = read_with_options::<_, Simple>(&mut reader, opts);
+    match iter.next().expect("budget error expected") {
+        Err(Error::Budget {
+            breach: BudgetBreach::CommentBytes {
+                total_comment_bytes,
+            },
+            ..
+        }) => assert!(total_comment_bytes > 32),
+        other => panic!("Unexpected result: {:?}", other),
+    }
+}
+
+#[test]
+fn read_still_rejects_oversized_scalars_when_reader_byte_cap_is_disabled() {
+    let yaml = format!("---\n{}\n", "s".repeat(128));
+    let mut reader = std::io::Cursor::new(yaml.as_bytes());
+    let opts = serde_saphyr::options! {
+        budget: serde_saphyr::budget! {
+            max_reader_input_bytes: None,
+            max_total_scalar_bytes: 32,
+        },
+    };
+
+    let mut iter = read_with_options::<_, String>(&mut reader, opts);
+    match iter.next().expect("budget error expected") {
+        Err(Error::Budget {
+            breach: BudgetBreach::ScalarBytes { total_scalar_bytes },
+            ..
+        }) => assert!(total_scalar_bytes > 32),
+        other => panic!("Unexpected result: {:?}", other),
+    }
+}
+
+#[test]
 fn read_limits_are_per_document() {
     let (opts, yaml) = yaml_and_options();
     let mut reader = std::io::Cursor::new(yaml.as_bytes());

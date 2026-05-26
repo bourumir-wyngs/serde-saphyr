@@ -787,7 +787,8 @@ pub fn from_reader<'a, R: std::io::Read + 'a, T: DeserializeOwned>(reader: R) ->
 ///
 /// Notes on limits and large inputs
 /// - Parsing limits: Use [`Options::budget`] to constrain YAML complexity (events, nodes,
-///   nesting depth, total scalar bytes, number of documents, anchors, aliases, etc.). These
+///   nesting depth, total scalar bytes, total comment bytes, number of documents, anchors,
+///   aliases, etc.). These
 ///   limits are enforced during parsing and are enabled by default via `Options::default()`.
 /// - Byte-level input cap: `Budget::max_reader_input_bytes` is enforced while reading.
 ///   The default budget sets this to 256 MiB. You can override it by customizing `Options::budget`.
@@ -904,7 +905,7 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
 ///
 /// Limits and budget
 /// - Uses the same limits as `Options::default()` (events, nodes, nesting depth, total scalar
-///   bytes) and the default alias-replay caps. The only change is that
+///   bytes, total comment bytes) and the default alias-replay caps. The only change is that
 ///   `Budget::max_reader_input_bytes` is set to `None` so the streaming iterator can handle
 ///   arbitrarily long inputs. To customize these limits, call [`read_with_options`] and set
 ///   `Options::budget.max_reader_input_bytes` in the provided `Options`.
@@ -990,9 +991,9 @@ where
 ///
 /// Limits and budget
 /// - All parsing limits configured via [`Options::budget`] (such as maximum events, nodes,
-///   nesting depth, total scalar bytes) are enforced while streaming. The reader input-byte
-///   cap is also enforced via `Budget::max_reader_input_bytes` (256 MiB by default). Set this
-///   to `None` if the stream may legitimately run without a fixed byte cap.
+///   nesting depth, total scalar bytes, total comment bytes) are enforced while streaming. The
+///   reader input-byte cap is also enforced via `Budget::max_reader_input_bytes` (256 MiB by
+///   default). Set this to `None` if the stream may legitimately run without a fixed byte cap.
 /// - Alias replay limits from [`Options::alias_limits`] are also enforced to mitigate alias bombs.
 ///
 /// ```rust
