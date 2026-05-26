@@ -1,7 +1,7 @@
 //! Internal serde wrapper implementations.
 //!
 //! These are used by the YAML deserializer to implement crate-level helper types
-//! (like `Spanned<T>`) without bloating `de.rs` with large nested state machines.
+//! (like `Spanned<T>`) without bloating the main deserializer with large nested state machines.
 
 use serde::de::{self, IntoDeserializer, Visitor};
 
@@ -52,7 +52,7 @@ where
 ///
 /// Why:
 /// - It lets `Spanned<T>` be implemented without building an intermediate YAML AST.
-/// - It keeps the heavy state machine out of `de.rs`.
+/// - It keeps the heavy state machine out of the main deserializer.
 ///
 /// Lifetime note:
 /// - This owns a `Deser<'a>` by value. When deserializing `value`, we must
@@ -142,7 +142,14 @@ impl<'de, 'e> de::MapAccess<'de> for SpannedMapAccess<'de, 'e> {
             1 => {
                 // value
                 // Reborrow the event source instead of moving `&mut` out of `self.de`.
-                seed.deserialize(Deserializer::new(&mut *self.de.ev, self.de.cfg))
+                // The delegated value still belongs to the same YAML node, so preserve
+                // any comments the parent map/sequence associated with that node.
+                let mut de = Deserializer::new(&mut *self.de.ev, self.de.cfg);
+                de.pending_comments = std::mem::take(&mut self.de.pending_comments);
+                de.pending_value_separator_comments =
+                    std::mem::take(&mut self.de.pending_value_separator_comments);
+                de.pending_value_comments = std::mem::take(&mut self.de.pending_value_comments);
+                seed.deserialize(de)
             }
             2 => {
                 // referenced

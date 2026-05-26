@@ -55,7 +55,7 @@ use serde::de::{Error as _, Visitor};
 #[cfg(feature = "deserialize")]
 use crate::anchor_store;
 
-/// A wrapper around [`Rc<T>`] that opt-ins a field for **anchor emission** (e.g. serialization by reference).
+/// A wrapper around [`Rc<T>`] that opts a field into **anchor emission** (e.g. serialization by reference).
 ///
 /// This type behaves like a normal [`Rc<T>`] but signals that the value
 /// should be treated as an *anchorable* reference — for instance,
@@ -81,7 +81,7 @@ use crate::anchor_store;
 #[derive(Clone)]
 pub struct RcAnchor<T>(pub Rc<T>);
 
-/// A wrapper around [`Arc<T>`] that opt-ins a field for **anchor emission** (e.g. serialization by reference).
+/// A wrapper around [`Arc<T>`] that opts a field into **anchor emission** (e.g. serialization by reference).
 ///
 /// It behaves exactly like an [`Arc<T>`] but explicitly marks shared ownership
 /// as an *anchor* for reference tracking or cross-object linking.
@@ -106,15 +106,15 @@ pub struct RcAnchor<T>(pub Rc<T>);
 #[derive(Clone)]
 pub struct ArcAnchor<T>(pub Arc<T>);
 
-/// A wrapper around [`std::rc::Weak<T>`] that opt-ins for **anchor emission**.
+/// A wrapper around [`std::rc::Weak<T>`] that opts into **anchor emission**.
 ///
 /// When serialized, if the weak reference is **dangling** (i.e., the value was dropped),
 /// it emits `null` to indicate that the target no longer exists.
 /// Provides convenience methods like [`upgrade`](Self::upgrade) and [`is_dangling`](Self::is_dangling).
 ///
 /// > **Note on deserialization:** `null` deserializes back into a dangling weak (`Weak::new()`).
-/// > Non-`null` cannot be safely reconstructed into a `Weak` without a shared registry; we reject it.
-/// > Ask if you want an ID/registry-based scheme to restore sharing.
+/// > Non-`null` is resolved through the YAML anchor context; it is rejected when no matching
+/// > strong anchor is available.
 ///
 /// # Examples
 ///
@@ -135,7 +135,7 @@ pub struct ArcAnchor<T>(pub Arc<T>);
 #[derive(Clone)]
 pub struct RcWeakAnchor<T>(pub RcWeak<T>);
 
-/// A wrapper around [`std::sync::Weak<T>`] that opt-ins for **anchor emission**.
+/// A wrapper around [`std::sync::Weak<T>`] that opts into **anchor emission**.
 ///
 /// This variant is thread-safe and uses [`Arc`] / [`Weak`](std::sync::Weak) instead of [`Rc`].
 /// If the weak reference is **dangling**, it serializes as `null`.
@@ -251,8 +251,8 @@ pub struct ArcRecursive<T>(pub Arc<Mutex<Option<T>>>);
 #[derive(Clone)]
 pub struct RcRecursion<T>(pub RcWeak<RefCell<Option<T>>>);
 
-/// The possibly recursive reference to the parent anchor that must be [`ArcRecursive`], thread safe
-/// It is more complex to use than [`RcRecursive`] (you need to lock it before accessing the value)
+/// Thread-safe recursive reference to a parent [`ArcRecursive`] anchor.
+/// It is more complex to use than [`RcRecursive`] because you must lock it before accessing the value.
 /// See [`ArcRecursive`] for code example.
 #[repr(transparent)]
 #[derive(Clone)]
@@ -960,7 +960,7 @@ where
                     return Ok(RcWeakAnchor(RcWeak::new()));
                 }
 
-                // Anchor context is established by de.rs when the special name is used.
+                // Anchor context is established by the deserializer when the special name is used.
                 let id = anchor_store::current_rc_anchor().ok_or_else(|| {
                     D::Error::custom(
                         "weak Rc anchor must refer to an existing strong anchor via alias",

@@ -48,11 +48,11 @@ use std::collections::HashSet;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Budget {
     /// Hard cap on the size of the input in bytes.
-    /// This limit only applies for the Reader, to prevent resource starving
-    /// by reading large malicious input (even if valid YAML). String can be
-    /// manually checked only if needed (it is already in RAM anyway).
-    /// If the limit is exceeded, serde_saphyr::IOError is returned, with cause set to
-    /// std::IO::Error having ErrorKind::FileTooLarge.
+    /// This limit only applies to reader-based input, to avoid resource exhaustion
+    /// from large malicious inputs (even when they are valid YAML). String inputs can be
+    /// checked by the caller when needed because they are already in memory.
+    /// If the limit is exceeded, `serde_saphyr::Error::IOError` is returned with a
+    /// `std::io::Error` cause using `ErrorKind::FileTooLarge`.
     ///
     /// If set to None, this check is not active. This may be needed when reading from
     /// stream into iterator, where potentially infinite input may need to be supported.
@@ -385,7 +385,7 @@ impl BudgetEnforcer {
                 self.record_anchor(*anchor_id)?;
                 self.handle_scalar(value, style, tag_opt.is_some())?;
             }
-            Event::MappingStart(anchor_id, _tag_opt) => {
+            Event::MappingStart(_style, anchor_id, _tag_opt) => {
                 self.bump_nodes()?;
                 self.depth = self.depth.saturating_add(1);
                 if self.depth > self.report.max_depth {
@@ -411,7 +411,7 @@ impl BudgetEnforcer {
                 }
                 self.leave_mapping()?;
             }
-            Event::SequenceStart(anchor_id, _tag_opt) => {
+            Event::SequenceStart(_style, anchor_id, _tag_opt) => {
                 self.bump_nodes()?;
                 self.depth = self.depth.saturating_add(1);
                 if self.depth > self.report.max_depth {
@@ -451,6 +451,7 @@ impl BudgetEnforcer {
                 }
             }
             Event::DocumentEnd => {}
+            Event::Comment(_, _) => {}
             Event::Nothing => {}
             Event::StreamStart | Event::StreamEnd => {}
         }

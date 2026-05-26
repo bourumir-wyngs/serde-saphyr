@@ -94,6 +94,9 @@ impl KeyFingerprint {
 /// - `fingerprint`: canonical representation for duplicate detection.
 /// - `events`: exact event slice that replays the node on demand.
 /// - `location`: start location of the node (for diagnostics).
+///
+/// Comments are not part of `KeyNode`; callers that buffer a node and later
+/// replay it must capture any relevant comment metadata alongside the node.
 pub(super) enum KeyNode<'a> {
     Fingerprinted {
         fingerprint: KeyFingerprint,
@@ -164,6 +167,16 @@ pub(super) struct PendingEntry<'a> {
     ///
     /// For merge-derived entries, this is the `<<` entry location.
     pub(super) reference_location: Location,
+    /// Comments that visually belong to this key/value field.
+    ///
+    /// For replayed entries these are comments captured at the use site while
+    /// scanning the containing map. Definition-site comments inside an anchored
+    /// mapping are not reconstructed from the recorded event buffer.
+    pub(super) field_comments: Vec<String>,
+    /// Same-line comments after the key/value separator.
+    pub(super) value_separator_comments: Vec<String>,
+    /// Comments immediately above the value node.
+    pub(super) value_comments: Vec<String>,
 }
 
 /// Return the span lengths of key and value for a one-entry map encoded in `events`.
@@ -256,6 +269,10 @@ pub(super) fn skip_one_node_len<'a>(events: &[Ev<'a>], mut i: usize) -> Option<u
 /// Capture a complete node (scalar/sequence/mapping) from an `Events` source,
 /// returning both a fingerprint (for duplicate checks) and a replayable buffer.
 /// This is recursive function.
+///
+/// This records only `Ev` values. Since `Ev` does not carry comments, callers
+/// must claim comment hooks before capture when comments should survive later
+/// replay.
 ///
 /// Arguments:
 /// - `ev`: event source supporting lookahead and consumption.
@@ -745,6 +762,7 @@ pub(super) fn collect_entries_from_map<'a>(
                 break;
             }
             Some(_) => {
+                let key_comments = ev.take_leading_comments_for_next_node()?;
                 let key = capture_node(ev)?;
                 if is_merge_key(&key) {
                     match merge_keys {
@@ -769,11 +787,17 @@ pub(super) fn collect_entries_from_map<'a>(
                         }
                     }
                 }
+                let field_comments = key_comments;
+                let value_separator_comments = ev.take_separator_comments_before_mapping_value()?;
+                let value_comments = ev.take_leading_comments_for_next_node()?;
                 let value = capture_node(ev)?;
                 fields.push(PendingEntry {
                     key,
                     value,
                     reference_location,
+                    field_comments,
+                    value_separator_comments,
+                    value_comments,
                 });
             }
             None => {

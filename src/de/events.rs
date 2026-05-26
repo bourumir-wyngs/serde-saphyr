@@ -53,6 +53,11 @@ pub(super) fn attach_alias_locations_if_missing(
 }
 
 /// Our simplified owned event kind that we feed into Serde.
+///
+/// This intentionally carries semantic YAML node data, anchors, tags, style, and
+/// locations, but not presentation metadata such as comments. Live streams expose
+/// comments through the `Events` comment hooks; replay streams can only preserve
+/// comments that callers captured separately before buffering/replay.
 #[derive(Clone, Debug)]
 pub(crate) enum Ev<'a> {
     /// Scalar value from YAML (text), with optional tag and style.
@@ -78,8 +83,8 @@ pub(crate) enum Ev<'a> {
     MapStart { anchor: usize, location: Location },
     /// End of a mapping.
     MapEnd { location: Location },
-    /// The event have been taken from the array, with only location remaining. This should not
-    /// appear in the event stream and reserved for internal usage withing container.
+    /// The event has been taken from the array, with only its location remaining.
+    /// This should not appear in the event stream and is reserved for internal container state.
     Taken { location: Location },
 }
 
@@ -129,7 +134,7 @@ pub(crate) trait Events<'de> {
     /// Peek at the next event without consuming it.
     ///
     /// Returns:
-    /// - `Ok(Some(&Ev))` with the even reference
+    /// - `Ok(Some(&Ev))` with the event reference,
     /// - `Ok(None)` at end-of-stream,
     /// - `Err(Error)` on error.
     ///
@@ -170,6 +175,38 @@ pub(crate) trait Events<'de> {
     /// until the node is consumed.
     fn reference_location(&self) -> Location;
 
+    /// Take comments immediately above the next data node.
+    ///
+    /// Implementations may fill lookahead while doing this. The default is empty
+    /// for replay buffers that do not carry presentation metadata. If a caller
+    /// needs comments for a captured node, it must take them from the live stream
+    /// before calling `capture_node` and carry them separately.
+    fn take_leading_comments_for_next_node(&mut self) -> Result<Vec<String>, Error> {
+        Ok(Vec::new())
+    }
+
+    /// Take same-line comments after a mapping key/value separator.
+    ///
+    /// This is the `# comment` in `key: # comment`, separated from comments
+    /// immediately above the value node so nested containers do not treat the
+    /// separator comment as a child-key comment.
+    fn take_separator_comments_before_mapping_value(&mut self) -> Result<Vec<String>, Error> {
+        Ok(Vec::new())
+    }
+
+    /// Take same-line comments after a block sequence item marker.
+    ///
+    /// This is the `# comment` in `- # comment`, separated from ordinary
+    /// trailing comments after the previous sequence value.
+    fn take_separator_comments_before_sequence_item_value(&mut self) -> Result<Vec<String>, Error> {
+        Ok(Vec::new())
+    }
+
+    /// Take same-line comments immediately after the node that was just deserialized.
+    fn take_trailing_comments_after_node(&mut self) -> Result<Vec<String>, Error> {
+        Ok(Vec::new())
+    }
+
     /// Get the original input string for zero-copy borrowing.
     ///
     /// Returns `Some(&str)` when the input is available for borrowing (string-based parsing),
@@ -178,8 +215,7 @@ pub(crate) trait Events<'de> {
     /// Used by:
     /// - The deserializer to return borrowed `&str` references when possible.
     ///
-    /// Note: This method is part of the zero-copy deserialization infrastructure.
-    /// It will be used when full `Deserialize<'de>` support is implemented.
+    /// This is used by string deserialization to return borrowed scalars when possible.
     fn input_for_borrowing(&self) -> Option<&'de str> {
         None // Default: borrowing not supported
     }
@@ -197,6 +233,10 @@ pub(super) fn eof_with_loc(events: &dyn Events<'_>) -> Error {
 }
 
 /// Event source that replays a pre-recorded buffer.
+///
+/// Replay buffers contain `Ev` values only. Comment hooks therefore use the
+/// trait defaults and return empty comment sets; use-site comments must be passed
+/// around separately by the map/sequence access code.
 pub(super) struct ReplayEvents<'a> {
     buf: Vec<Ev<'a>>,
     /// Index of the next event to yield (0..=buf.len()).

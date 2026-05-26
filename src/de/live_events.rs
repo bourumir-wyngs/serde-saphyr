@@ -35,7 +35,7 @@ use crate::include::{BaseParser, create_parser_from_str};
 use crate::location::location_from_span;
 use crate::options::BudgetReportCallback;
 use crate::tags::SfTag;
-use granit_parser::{Event, ScalarStyle, ScanError, Span};
+use granit_parser::{Event, Placement, ScalarStyle, ScanError, Span, StructureStyle};
 
 #[cfg(not(feature = "include"))]
 use granit_parser::StrInput;
@@ -52,7 +52,7 @@ type StreamParser<'a> = BaseParser<'a>;
 #[cfg(not(feature = "include"))]
 type StreamParser<'a> = granit_parser::Parser<'a, ReaderInput<'a>>;
 
-/// This is enough to hold a single scalar that is common  case in YAML anchors.
+/// This is enough to hold a single scalar, which is a common case in YAML anchors.
 const SMALLVECT_INLINE: usize = 8;
 
 /// A frame that records events for an anchored container until its end.
@@ -64,6 +64,36 @@ struct RecFrame<'a> {
     depth: usize,
     /// inline up to SMALLVECT_INLINE events; spills to heap beyond
     buf: SmallVec<[Ev<'a>; SMALLVECT_INLINE]>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ConsumedEventKind {
+    Scalar,
+    SeqStart,
+    SeqEnd,
+    MapStart,
+    MapEnd,
+}
+
+impl ConsumedEventKind {
+    fn can_own_same_line_trailing_comment(self) -> bool {
+        matches!(
+            self,
+            ConsumedEventKind::Scalar | ConsumedEventKind::SeqEnd | ConsumedEventKind::MapEnd
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PendingTrailingCommentKind {
+    AfterConsumedNode,
+    BeforeUpcomingNode,
+}
+
+#[derive(Debug)]
+struct PendingTrailingComment {
+    text: String,
+    kind: PendingTrailingCommentKind,
 }
 
 /// Handle input polymorphism
@@ -152,6 +182,15 @@ pub(crate) struct LiveEvents<'a> {
     synthesized_null_emitted: bool,
     /// Single-item lookahead buffer (peeked event not yet consumed).
     look: Option<Ev<'a>>,
+    /// Comments immediately above the lookahead event.
+    look_leading_comments: Vec<String>,
+    /// Comments gathered while scanning before the next data event.
+    pending_leading_comments: Vec<String>,
+    /// Right-side comments pending until a caller claims them or the next data
+    /// event is consumed.
+    pending_trailing_comments: Vec<PendingTrailingComment>,
+    /// Comments attached to the event most recently produced by `next_impl`.
+    produced_leading_comments: Vec<String>,
     /// For alias replay: a stack of injected buffers; we always read from the top first.
     inject: Vec<InjectFrame>,
     /// Recorded buffers for anchors (index = anchor_id).
@@ -168,6 +207,10 @@ pub(crate) struct LiveEvents<'a> {
     budget_report_cb: Option<BudgetReportCallback>,
     /// Location of the last yielded event (for better error reporting).
     last_location: Location,
+    /// Location of the last event actually consumed by `next`.
+    last_consumed_event_location: Location,
+    /// Kind of the last event actually consumed by `next`.
+    last_consumed_event_kind: Option<ConsumedEventKind>,
 
     /// Alias-bomb hardening limits and counters.
     alias_limits: AliasLimits,
@@ -273,6 +316,10 @@ impl<'a> LiveEvents<'a> {
             parser: GranitParser::StreamParser(parser),
             input: None, // Reader-based input cannot support zero-copy borrowing
             look: None,
+            look_leading_comments: Vec::new(),
+            pending_leading_comments: Vec::new(),
+            pending_trailing_comments: Vec::new(),
+            produced_leading_comments: Vec::new(),
             inject: Vec::with_capacity(2),
             anchors: Vec::with_capacity(8),
             rec_stack: Vec::with_capacity(2),
@@ -282,6 +329,8 @@ impl<'a> LiveEvents<'a> {
             budget_report_cb,
 
             last_location: Location::UNKNOWN,
+            last_consumed_event_location: Location::UNKNOWN,
+            last_consumed_event_kind: None,
 
             alias_limits,
             total_replayed_events: 0,
@@ -348,6 +397,10 @@ impl<'a> LiveEvents<'a> {
             parser: GranitParser::StringParser(parser),
             input: Some(input),
             look: None,
+            look_leading_comments: Vec::new(),
+            pending_leading_comments: Vec::new(),
+            pending_trailing_comments: Vec::new(),
+            produced_leading_comments: Vec::new(),
             inject: Vec::with_capacity(2),
             anchors: Vec::with_capacity(8),
             rec_stack: Vec::with_capacity(2),
@@ -358,6 +411,8 @@ impl<'a> LiveEvents<'a> {
             budget_report_cb,
 
             last_location: Location::UNKNOWN,
+            last_consumed_event_location: Location::UNKNOWN,
+            last_consumed_event_kind: None,
 
             alias_limits,
             total_replayed_events: 0,
@@ -383,6 +438,95 @@ impl<'a> LiveEvents<'a> {
             #[cfg(feature = "include")]
             pending_include_anchor: 0,
         }
+    }
+
+    fn normalize_comment_text(text: Cow<'a, str>) -> String {
+        text.trim().to_owned()
+    }
+
+    fn event_kind(ev: &Ev<'_>) -> Option<ConsumedEventKind> {
+        match ev {
+            Ev::Scalar { .. } => Some(ConsumedEventKind::Scalar),
+            Ev::SeqStart { .. } => Some(ConsumedEventKind::SeqStart),
+            Ev::SeqEnd { .. } => Some(ConsumedEventKind::SeqEnd),
+            Ev::MapStart { .. } => Some(ConsumedEventKind::MapStart),
+            Ev::MapEnd { .. } => Some(ConsumedEventKind::MapEnd),
+            Ev::Taken { .. } => None,
+        }
+    }
+
+    fn consumed_comment_location(&self, ev: &Ev<'_>) -> Location {
+        self.inject
+            .last()
+            .map(|frame| frame.reference_location)
+            .unwrap_or_else(|| ev.location())
+    }
+
+    fn remember_consumed_event(&mut self, ev: &Ev<'_>) {
+        self.last_consumed_event_location = self.consumed_comment_location(ev);
+        self.last_consumed_event_kind = Self::event_kind(ev);
+    }
+
+    fn trailing_comment_kind(&self, location: Location) -> PendingTrailingCommentKind {
+        let follows_completed_node_on_same_line = self
+            .last_consumed_event_kind
+            .is_some_and(ConsumedEventKind::can_own_same_line_trailing_comment)
+            && self.last_consumed_event_location.source_id() == location.source_id()
+            && self.last_consumed_event_location.line() == location.line();
+
+        if follows_completed_node_on_same_line {
+            PendingTrailingCommentKind::AfterConsumedNode
+        } else {
+            PendingTrailingCommentKind::BeforeUpcomingNode
+        }
+    }
+
+    fn take_pending_trailing_comments_where(
+        &mut self,
+        mut predicate: impl FnMut(PendingTrailingCommentKind) -> bool,
+    ) -> Vec<String> {
+        let mut taken = Vec::new();
+        let mut retained = Vec::new();
+
+        for comment in std::mem::take(&mut self.pending_trailing_comments) {
+            if predicate(comment.kind) {
+                taken.push(comment.text);
+            } else {
+                retained.push(comment);
+            }
+        }
+
+        self.pending_trailing_comments = retained;
+        taken
+    }
+
+    fn take_all_pending_trailing_comments(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.pending_trailing_comments)
+            .into_iter()
+            .map(|comment| comment.text)
+            .collect()
+    }
+
+    fn remember_comment(&mut self, text: Cow<'a, str>, placement: Placement, location: Location) {
+        let text = Self::normalize_comment_text(text);
+        match placement {
+            Placement::Above => self.pending_leading_comments.push(text),
+            Placement::Right => self.pending_trailing_comments.push(PendingTrailingComment {
+                text,
+                kind: self.trailing_comment_kind(location),
+            }),
+            Placement::Free | Placement::Last => {}
+        }
+    }
+
+    fn attach_leading_comments_to_next_event(&mut self) {
+        self.produced_leading_comments = std::mem::take(&mut self.pending_leading_comments);
+    }
+
+    fn clear_comments_for_consumed_event(&mut self) {
+        self.look_leading_comments.clear();
+        self.produced_leading_comments.clear();
+        self.pending_trailing_comments.clear();
     }
 
     /// Core event pump: pulls the next logical event.
@@ -456,6 +600,7 @@ impl<'a> LiveEvents<'a> {
             self.record(
                 &ev, /*is_start*/ false, /*seeded_new_frame*/ false,
             );
+            self.attach_leading_comments_to_next_event();
             self.last_location = ev.location();
             self.produced_any_in_doc = true;
             return Ok(Some(ev));
@@ -547,12 +692,13 @@ impl<'a> LiveEvents<'a> {
                         self.ensure_anchor_capacity(anchor_id);
                         self.anchors[anchor_id] = Some(vec![ev.clone()].into_boxed_slice());
                     }
+                    self.attach_leading_comments_to_next_event();
                     self.last_location = location;
                     self.produced_any_in_doc = true;
                     return Ok(Some(ev));
                 }
 
-                Event::SequenceStart(anchor_id, tag) => {
+                Event::SequenceStart(_style, anchor_id, tag) => {
                     #[cfg(feature = "include")]
                     let mut anchor_id = anchor_id;
                     let tag_s = SfTag::from_optional_cow(&tag);
@@ -601,6 +747,7 @@ impl<'a> LiveEvents<'a> {
                         /*is_start*/ true,
                         /*seeded_new_frame*/ anchor_id != 0,
                     );
+                    self.attach_leading_comments_to_next_event();
                     self.last_location = location;
                     self.produced_any_in_doc = true;
                     return Ok(Some(ev));
@@ -610,12 +757,13 @@ impl<'a> LiveEvents<'a> {
                     self.record(&ev, false, false);
                     self.bump_depth_on_end()
                         .map_err(|err| err.with_location(location))?; // may finalize frames
+                    self.produced_leading_comments.clear();
                     self.last_location = location;
                     self.produced_any_in_doc = true;
                     return Ok(Some(ev));
                 }
 
-                Event::MappingStart(anchor_id, _tag) => {
+                Event::MappingStart(_style, anchor_id, _tag) => {
                     #[cfg(feature = "include")]
                     let mut anchor_id = anchor_id;
                     #[cfg(feature = "include")]
@@ -654,6 +802,7 @@ impl<'a> LiveEvents<'a> {
                         /*is_start*/ true,
                         /*seeded_new_frame*/ anchor_id != 0,
                     );
+                    self.attach_leading_comments_to_next_event();
                     self.last_location = location;
                     self.produced_any_in_doc = true;
                     return Ok(Some(ev));
@@ -663,6 +812,7 @@ impl<'a> LiveEvents<'a> {
                     self.record(&ev, false, false);
                     self.bump_depth_on_end()
                         .map_err(|err| err.with_location(location))?;
+                    self.produced_leading_comments.clear();
                     self.last_location = location;
                     self.produced_any_in_doc = true;
                     return Ok(Some(ev));
@@ -719,6 +869,7 @@ impl<'a> LiveEvents<'a> {
                                 location,
                             };
                             self.record(&ev, false, false);
+                            self.attach_leading_comments_to_next_event();
                             self.last_location = location;
                             self.produced_any_in_doc = true;
                             return Ok(Some(ev));
@@ -777,6 +928,12 @@ impl<'a> LiveEvents<'a> {
                     continue;
                 }
 
+                Event::Comment(text, placement) => {
+                    self.remember_comment(text, placement, location);
+                    self.last_location = location;
+                    continue;
+                }
+
                 Event::Nothing => continue,
             }
         }
@@ -795,6 +952,7 @@ impl<'a> LiveEvents<'a> {
             self.produced_any_in_doc = true;
             self.synthesized_null_emitted = true;
             self.last_location = ev.location();
+            self.produced_leading_comments.clear();
             return Ok(Some(ev));
         }
 
@@ -832,6 +990,8 @@ impl<'a> LiveEvents<'a> {
 
         self.total_replayed_events = 0;
         self.seen_doc_end = false;
+        self.last_consumed_event_location = Location::UNKNOWN;
+        self.last_consumed_event_kind = None;
 
         // Reset uniform indentation memory for the new document.
         if let crate::RequireIndent::Uniform(ref mut remembered) = self.require_indent {
@@ -850,9 +1010,9 @@ impl<'a> LiveEvents<'a> {
 
         let raw = match ev {
             Ev::Scalar { value, style, .. } => Event::Scalar(Cow::Borrowed(value), *style, 0, None),
-            Ev::SeqStart { .. } => Event::SequenceStart(0, None),
+            Ev::SeqStart { .. } => Event::SequenceStart(StructureStyle::Block, 0, None),
             Ev::SeqEnd { .. } => Event::SequenceEnd,
-            Ev::MapStart { .. } => Event::MappingStart(0, None),
+            Ev::MapStart { .. } => Event::MappingStart(StructureStyle::Block, 0, None),
             Ev::MapEnd { .. } => Event::MappingEnd,
             Ev::Taken { location } => {
                 return Err(Error::unexpected("consumed event").with_location(*location));
@@ -974,10 +1134,17 @@ impl<'de> Events<'de> for LiveEvents<'de> {
         self.io_error()?;
 
         if let Some(ev) = self.look.take() {
+            self.clear_comments_for_consumed_event();
             self.last_location = ev.location();
+            self.remember_consumed_event(&ev);
             return Ok(Some(ev));
         }
-        self.next_impl()
+        let event = self.next_impl()?;
+        self.clear_comments_for_consumed_event();
+        if let Some(ev) = event.as_ref() {
+            self.remember_consumed_event(ev);
+        }
+        Ok(event)
     }
     /// Peek at the next event without consuming it, filling the lookahead buffer if empty.
     fn peek(&mut self) -> Result<Option<&Ev<'de>>, Error> {
@@ -985,6 +1152,7 @@ impl<'de> Events<'de> for LiveEvents<'de> {
 
         if self.look.is_none() {
             self.look = self.next_impl()?;
+            self.look_leading_comments = std::mem::take(&mut self.produced_leading_comments);
         }
         if let Some(ev) = self.look.as_ref() {
             self.last_location = ev.location();
@@ -1004,6 +1172,30 @@ impl<'de> Events<'de> for LiveEvents<'de> {
             .as_ref()
             .map(|e| e.location())
             .unwrap_or(self.last_location)
+    }
+
+    fn take_leading_comments_for_next_node(&mut self) -> Result<Vec<String>, Error> {
+        let _ = self.peek()?;
+        Ok(std::mem::take(&mut self.look_leading_comments))
+    }
+
+    fn take_separator_comments_before_mapping_value(&mut self) -> Result<Vec<String>, Error> {
+        let _ = self.peek()?;
+        Ok(self.take_all_pending_trailing_comments())
+    }
+
+    fn take_separator_comments_before_sequence_item_value(&mut self) -> Result<Vec<String>, Error> {
+        let _ = self.peek()?;
+        Ok(self.take_pending_trailing_comments_where(|kind| {
+            kind == PendingTrailingCommentKind::BeforeUpcomingNode
+        }))
+    }
+
+    fn take_trailing_comments_after_node(&mut self) -> Result<Vec<String>, Error> {
+        let _ = self.peek()?;
+        Ok(self.take_pending_trailing_comments_where(|kind| {
+            kind == PendingTrailingCommentKind::AfterConsumedNode
+        }))
     }
 
     fn input_for_borrowing(&self) -> Option<&'de str> {

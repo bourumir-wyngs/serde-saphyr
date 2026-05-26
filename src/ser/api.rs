@@ -53,7 +53,7 @@ pub fn to_string_with_options<T: serde::Serialize>(
 }
 
 /// Deprecated: use `to_fmt_writer` or `to_io_writer`
-/// Kept for a transition release to avoid instant breakage.
+/// Retained for backward compatibility.
 #[deprecated(
     since = "0.0.7",
     note = "Use `to_fmt_writer` for `fmt::Write` (String, fmt::Formatter) or `to_io_writer` for files/sockets."

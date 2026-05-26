@@ -64,16 +64,16 @@ pub enum CommentPosition {
 /// ```
 #[derive(Clone, Copy)]
 pub struct SerializerOptions {
-    /// If true, empty maps are emitted as braces {} and empty lists as []  (this is the default).
-    /// Such form is equally valid YAML, allows to tell empty from null and may be easier for a
-    /// human to grasp.
+    /// If true, empty maps are emitted as braces {} and empty lists as [] (this is the default).
+    /// This form is valid YAML, distinguishes empty collections from null, and may be easier
+    /// for a human to read.
     #[deprecated(
         note = "Direct construction of `SerializerOptions` will be disabled from 1.0.0, use macro `ser_options!`"
     )]
     pub empty_as_braces: bool,
     /// Number of spaces to indent per nesting level when emitting block-style collections (2 by default).
-    /// 0 value is invalid and will result and error when trying to deserialize, because
-    /// no indentation would produce invalid YAML otherwise.
+    /// A value of 0 is invalid and will produce an error when serializing, because
+    /// no indentation would otherwise produce invalid YAML.
     #[deprecated(
         note = "Direct construction of `SerializerOptions` will be disabled from 1.0.0, use macro `ser_options!`"
     )]
@@ -125,7 +125,7 @@ pub struct SerializerOptions {
     /// this many characters long (excluding indentation). If no whitespace is present
     /// within the limit (e.g., a single long token), the line is emitted unwrapped
     /// to preserve round-trip correctness: YAML folded scalars typically fold inserted
-    /// newlines back as spaces when parsing. 32 default.
+    /// newlines back as spaces when parsing. Default: 80.
     #[deprecated(
         note = "Direct construction of `SerializerOptions` will be disabled from 1.0.0, use macro `ser_options!`"
     )]
@@ -138,9 +138,9 @@ pub struct SerializerOptions {
     )]
     pub tagged_enums: bool,
 
-    /// When enabled, strings containing more than folded_wrap_chars (80 by default) are written
-    /// in wrapped multistring folded form (>), and strings containing new lines are written in
-    /// literal form (|), selecting format depending on the number of empty lines at the end.
+    /// When enabled, strings containing more than `folded_wrap_chars` (80 by default) are written
+    /// in folded block scalar style (`>`), and strings containing newlines are written in
+    /// literal block scalar style (`|`), selecting chomping based on the number of trailing empty lines.
     /// On by default.
     #[deprecated(
         note = "Direct construction of `SerializerOptions` will be disabled from 1.0.0, use macro `ser_options!`"

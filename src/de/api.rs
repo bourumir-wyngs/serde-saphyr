@@ -435,7 +435,7 @@ pub(crate) fn maybe_with_snippet_from_events(
 }
 
 /// Deserialize multiple YAML documents from a single string into a vector of `T`.
-/// Completely empty documents are ignored and not included into returned vector.
+/// Completely empty documents are ignored and not included in the returned vector.
 ///
 /// Example: read two `Config` documents separated by `---`.
 ///
@@ -692,7 +692,7 @@ pub fn from_slice_multiple<T: DeserializeOwned>(bytes: &[u8]) -> Result<Vec<T>, 
 }
 
 /// Deserialize multiple YAML documents from bytes with configurable [`Options`].
-/// Completely empty documents are ignored and not included into returned vector.
+/// Completely empty documents are ignored and not included in the returned vector.
 ///
 /// Example: two `Config` documents with a custom budget from bytes.
 ///
@@ -789,7 +789,7 @@ pub fn from_reader<'a, R: std::io::Read + 'a, T: DeserializeOwned>(reader: R) ->
 /// - Parsing limits: Use [`Options::budget`] to constrain YAML complexity (events, nodes,
 ///   nesting depth, total scalar bytes, number of documents, anchors, aliases, etc.). These
 ///   limits are enforced during parsing and are enabled by default via `Options::default()`.
-/// - Byte-level input cap: from_slice_multiple hard cap on input bytes is enforced via `Options::budget.max_reader_input_bytes`.
+/// - Byte-level input cap: `Budget::max_reader_input_bytes` is enforced while reading.
 ///   The default budget sets this to 256 MiB. You can override it by customizing `Options::budget`.
 ///   When the cap is exceeded, deserialization fails early with a budget error.
 ///
@@ -990,9 +990,9 @@ where
 ///
 /// Limits and budget
 /// - All parsing limits configured via [`Options::budget`] (such as maximum events, nodes,
-///   nesting depth, total scalar bytes) are enforced while streaming. from_slice_multiple hard input-byte cap
-///   is also enforced via `Budget::max_reader_input_bytes` (256 MiB by default), set this
-///   to None if you need a streamer to exist for arbitrary long time.
+///   nesting depth, total scalar bytes) are enforced while streaming. The reader input-byte
+///   cap is also enforced via `Budget::max_reader_input_bytes` (256 MiB by default). Set this
+///   to `None` if the stream may legitimately run without a fixed byte cap.
 /// - Alias replay limits from [`Options::alias_limits`] are also enforced to mitigate alias bombs.
 ///
 /// ```rust

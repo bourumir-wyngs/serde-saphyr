@@ -12,9 +12,14 @@ keywords = ["yaml", "serde", "config", "ros", "wasm"]
 exclude = ["Cargo.lock"]
 
 [dependencies]
-granit-parser = { version = "0.0.2", optional = true }
+ granit-parser = { version = "0.0.3", optional = true }
 # granit-parser = { path = "/home/audrius/rust/granit-parser", optional = true }
 # granit-parser = { git = "https://github.com/bourumir-wyngs/granit-parser", optional = true }
+#granit-parser = {
+#    git = "https://github.com/bourumir-wyngs/granit-parser",
+#    branch = "bw/comments",
+#    optional = true
+#}
 serde = { version = "1", features = ["derive"] }
 smallvec = {  version = ">= 1.0.0, < 1.16.0", optional = true }
 num-traits = { version = ">=0.2.0, <=0.2.19", optional = true }
@@ -25,6 +30,7 @@ encoding_rs_io = { version = "0.1", optional = true }
 ahash = { version = "0.8", optional = true }
 annotate-snippets = { version = "0.12", optional = true }
 figment = { version = "0.10", optional = true }
+figment2 = { version = "0.11", optional = true }
 garde = { version = ">= 0.19.0, < 0.24", optional = true, features = ["derive"] }
 miette = { version = "7", optional = true, features = ["fancy"] }
 validator = { version = ">= 0.11, < 0.21", optional = true, features = ["derive"] }
@@ -64,6 +70,9 @@ miette = ["dep:miette", "deserialize"]
 
 # Enables integration with the `figment` configuration crate.
 figment = ["dep:figment", "deserialize"]
+
+# Enables integration with the `figment2` configuration crate.
+figment2 = ["dep:figment2", "deserialize"]
 
 # Adds YAML conventions common in robotics: conversion functions (deg, rad) and simple mathematical expressions such
 # as deg(180), rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). angle_conversions must be set to true in the Options.
@@ -128,10 +137,14 @@ required-features = ["include_fs"]
 
 [[example]]
 name = "figment_yaml"
-required-features = ["deserialize", "figment"]
+required-features = ["deserialize", "figment", "figment2"]
 
 [[example]]
 name = "benchmark"
+required-features = ["serialize", "deserialize"]
+
+[[example]]
+name = "commented"
 required-features = ["serialize", "deserialize"]
 
 [[example]]

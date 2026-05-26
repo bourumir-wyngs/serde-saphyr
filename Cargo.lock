@@ -297,6 +297,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "figment2"
+version = "0.11.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87d63dee16df12076c7770919713c0b92f4e1c85eac828dc2ade0b6c998f016b"
+dependencies = [
+ "atomic",
+ "serde",
+ "uncased",
+ "version_check",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -386,9 +398,9 @@ checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
 name = "granit-parser"
-version = "0.0.2"
+version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7e736dfe3881c53a7dce0685eb18202d0d9fe6911782f9870946eb9ee89d778"
+checksum = "f50ba32164f9e098d5da618776a32afbb32270adcbe3d3d006107dae11e37c91"
 dependencies = [
  "arraydeque",
  "smallvec",
@@ -872,6 +884,7 @@ dependencies = [
  "chrono",
  "encoding_rs_io",
  "figment",
+ "figment2",
  "garde",
  "getrandom 0.3.4",
  "granit-parser",
