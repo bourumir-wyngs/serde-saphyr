@@ -210,6 +210,42 @@ plain
         assert_eq!(m.len(), 2);
     }
 
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Background {
+        color: String,
+    }
+
+    #[test]
+    fn duplicate_keys_last_wins_direct_struct() {
+        let y = "color: red\ncolor: blue\n";
+        let opt = serde_saphyr::options! {
+            duplicate_keys: DuplicateKeyPolicy::LastWins,
+        };
+        let bg = from_str_with_options::<Background>(y, opt).unwrap();
+        assert_eq!(bg.color, "blue");
+    }
+
+    #[test]
+    fn duplicate_keys_first_wins_direct_struct() {
+        let y = "color: red\ncolor: blue\n";
+        let opt = serde_saphyr::options! {
+            duplicate_keys: DuplicateKeyPolicy::FirstWins,
+        };
+        let bg = from_str_with_options::<Background>(y, opt).unwrap();
+        assert_eq!(bg.color, "red");
+    }
+
+    #[test]
+    fn duplicate_keys_error_direct_struct() {
+        let y = "color: red\ncolor: blue\n";
+        let opt = serde_saphyr::options! {
+            duplicate_keys: DuplicateKeyPolicy::Error,
+        };
+        let err = from_str_with_options::<Background>(y, opt).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("duplicate mapping key: color"));
+    }
+
     #[test]
     fn duplicate_sequence_keys_policies() {
         let y = "?\n  - 1\n  - 2\n: first\n?\n  - 1\n  - 2\n: second\n";

@@ -19,7 +19,8 @@ pub enum DuplicateKeyPolicy {
     Error,
     /// First key wins: later duplicate pairs are skipped (key+value are consumed and ignored).
     FirstWins,
-    /// Last key wins: later duplicate pairs are passed through (default Serde targets typically overwrite).
+    /// Last key wins: later duplicate pairs replace earlier ones when deserializing maps,
+    /// and duplicate struct fields are collapsed before Serde sees them.
     LastWins,
 }
 

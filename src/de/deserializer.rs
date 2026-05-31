@@ -82,6 +82,11 @@ pub struct YamlDeserializer<'de, 'e> {
     pub(super) cfg: Cfg,
     /// True when deserializing a map key.
     in_key: bool,
+    /// True when Serde entered through `deserialize_struct`.
+    ///
+    /// Derived struct visitors reject repeated fields themselves, so `LastWins`
+    /// needs duplicate fields collapsed before they reach Serde.
+    struct_mode: bool,
     /// True when the recorded key node was exactly an empty mapping (MapStart followed by MapEnd).
     key_empty_map_node: bool,
     /// Comments that the parent mapping associated with this value.
@@ -235,6 +240,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
             ev,
             cfg,
             in_key: false,
+            struct_mode: false,
             key_empty_map_node: false,
             pending_comments: Vec::new(),
             pending_value_separator_comments: Vec::new(),
@@ -292,6 +298,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
             ev,
             cfg,
             in_key: false,
+            struct_mode: false,
             key_empty_map_node: false,
             pending_comments: Vec::new(),
             pending_value_separator_comments: Vec::new(),
@@ -1436,6 +1443,108 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             );
         }
 
+        fn keep_last_explicit_entries<'de>(
+            entries: Vec<PendingEntry<'de>>,
+            merge_keys: MergeKeyPolicy,
+        ) -> Result<Vec<PendingEntry<'de>>, Error> {
+            let mut seen = FastHashSet::with_capacity(entries.len());
+            let mut kept = Vec::with_capacity(entries.len());
+
+            for entry in entries.into_iter().rev() {
+                let fingerprint = entry.key.fingerprint().into_owned();
+                if seen.insert(fingerprint) {
+                    kept.push(entry);
+                } else if matches!(merge_keys, MergeKeyPolicy::Error) {
+                    validate_no_merge_keys_in_node_events(entry.value.events())?;
+                }
+            }
+
+            kept.reverse();
+            Ok(kept)
+        }
+
+        fn collect_struct_last_wins_entries<'de>(
+            ev: &mut dyn Events<'de>,
+            mut first_key_comments: Vec<String>,
+            merge_keys: MergeKeyPolicy,
+        ) -> Result<VecDeque<PendingEntry<'de>>, Error> {
+            let mut explicit_entries = Vec::new();
+            let mut merge_batches = Vec::new();
+
+            loop {
+                match ev.peek()? {
+                    Some(Ev::MapEnd { .. }) => {
+                        let _ = ev.next()?;
+                        break;
+                    }
+                    Some(_) => {
+                        let mut key_comments = std::mem::take(&mut first_key_comments);
+                        key_comments.extend(ev.take_leading_comments_for_next_node()?);
+                        let key = capture_node(ev)?;
+
+                        if is_merge_key(&key) {
+                            match merge_keys {
+                                MergeKeyPolicy::Merge => {
+                                    let _ = ev.peek()?;
+                                    let merge_ref_loc = ev.reference_location();
+                                    let entries = pending_entries_from_live_events(
+                                        ev,
+                                        merge_ref_loc,
+                                        merge_keys,
+                                    )?;
+                                    if !entries.is_empty() {
+                                        merge_batches.push(entries);
+                                    }
+                                    continue;
+                                }
+                                MergeKeyPolicy::AsOrdinary => {}
+                                MergeKeyPolicy::Error => {
+                                    return Err(Error::MergeKeyNotAllowed {
+                                        location: key.location(),
+                                    });
+                                }
+                            }
+                        }
+
+                        let field_comments = key_comments;
+                        let value_separator_comments =
+                            ev.take_separator_comments_before_mapping_value()?;
+                        let value_comments = ev.take_leading_comments_for_next_node()?;
+                        let reference_location = ev.reference_location();
+                        let value = capture_node(ev)?;
+                        explicit_entries.push(PendingEntry {
+                            key,
+                            value,
+                            reference_location,
+                            field_comments,
+                            value_separator_comments,
+                            value_comments,
+                        });
+                    }
+                    None => return Err(eof_with_loc(ev)),
+                }
+            }
+
+            let mut explicit_entries = keep_last_explicit_entries(explicit_entries, merge_keys)?;
+            let mut seen = FastHashSet::with_capacity(explicit_entries.len());
+            for entry in &explicit_entries {
+                seen.insert(entry.key.fingerprint().into_owned());
+            }
+
+            let mut merge_entries = Vec::new();
+            while let Some(batch) = merge_batches.pop() {
+                for entry in batch {
+                    let fingerprint = entry.key.fingerprint().into_owned();
+                    if seen.insert(fingerprint) {
+                        merge_entries.push(entry);
+                    }
+                }
+            }
+
+            explicit_entries.extend(merge_entries);
+            Ok(explicit_entries.into_iter().collect())
+        }
+
         /// Streaming `MapAccess` over the underlying `Events`.
         struct MA<'de, 'e> {
             ev: &'e mut dyn Events<'de>,
@@ -1457,6 +1566,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             pending: VecDeque<PendingEntry<'de>>,
             merge_stack: Vec<Vec<PendingEntry<'de>>>,
             flushing_merges: bool,
+            live_done: bool,
             pending_value: Option<(Vec<Ev<'de>>, Location)>,
             pending_field_comments: Vec<String>,
             pending_value_separator_comments: Vec<String>,
@@ -1535,6 +1645,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     ev: &mut replay,
                     cfg: self.cfg,
                     in_key: true,
+                    struct_mode: false,
                     key_empty_map_node: kemn,
                     pending_comments: Vec::new(),
                     pending_value_separator_comments: Vec::new(),
@@ -1711,11 +1822,16 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         return Ok(Some(key_value));
                     }
 
+                    if self.live_done {
+                        return Ok(None);
+                    }
+
                     if self.flushing_merges {
                         if self.enqueue_next_merge_batch() {
                             continue;
                         }
                         self.flushing_merges = false;
+                        self.live_done = true;
                         return Ok(None);
                     }
 
@@ -1723,6 +1839,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         Some(Ev::MapEnd { .. }) => {
                             let _ = self.ev.next()?; // consume end
                             if self.merge_stack.is_empty() {
+                                self.live_done = true;
                                 return Ok(None);
                             }
                             self.flushing_merges = true;
@@ -1730,6 +1847,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                                 continue;
                             }
                             self.flushing_merges = false;
+                            self.live_done = true;
                             return Ok(None);
                         }
                         Some(_) => {
@@ -2027,6 +2145,18 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             }
         }
 
+        let (pending, pending_first_key_comments, live_done) = if self.struct_mode
+            && matches!(self.cfg.dup_policy, DuplicateKeyPolicy::LastWins)
+        {
+            (
+                collect_struct_last_wins_entries(self.ev, map_start_comments, self.cfg.merge_keys)?,
+                Vec::new(),
+                true,
+            )
+        } else {
+            (VecDeque::new(), map_start_comments, false)
+        };
+
         #[cfg(any(feature = "garde", feature = "validator"))]
         let garde = self.garde;
 
@@ -2043,14 +2173,15 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             pending_path_segment: None,
 
             seen: FastHashSet::with_capacity(8),
-            pending: VecDeque::new(),
+            pending,
             merge_stack: Vec::new(),
             flushing_merges: false,
+            live_done,
             pending_value: None,
             pending_field_comments: Vec::new(),
             pending_value_separator_comments: Vec::new(),
             pending_value_comments: Vec::new(),
-            pending_first_key_comments: map_start_comments,
+            pending_first_key_comments,
         })
     }
 
@@ -2067,7 +2198,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
         _fields: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
-        self.deserialize_map(visitor)
+        let mut de = self;
+        de.struct_mode = true;
+        de.deserialize_map(visitor)
     }
 
     /// Deserialize an externally-tagged enum in either `Variant` or `{ Variant: value }` form.
