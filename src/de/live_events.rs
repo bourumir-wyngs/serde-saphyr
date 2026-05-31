@@ -91,8 +91,8 @@ enum PendingTrailingCommentKind {
 }
 
 #[derive(Debug)]
-struct PendingTrailingComment {
-    text: String,
+struct PendingTrailingComment<'a> {
+    text: Cow<'a, str>,
     kind: PendingTrailingCommentKind,
 }
 
@@ -183,14 +183,14 @@ pub(crate) struct LiveEvents<'a> {
     /// Single-item lookahead buffer (peeked event not yet consumed).
     look: Option<Ev<'a>>,
     /// Comments immediately above the lookahead event.
-    look_leading_comments: Vec<String>,
+    look_leading_comments: Vec<Cow<'a, str>>,
     /// Comments gathered while scanning before the next data event.
-    pending_leading_comments: Vec<String>,
+    pending_leading_comments: Vec<Cow<'a, str>>,
     /// Right-side comments pending until a caller claims them or the next data
     /// event is consumed.
-    pending_trailing_comments: Vec<PendingTrailingComment>,
+    pending_trailing_comments: Vec<PendingTrailingComment<'a>>,
     /// Comments attached to the event most recently produced by `next_impl`.
-    produced_leading_comments: Vec<String>,
+    produced_leading_comments: Vec<Cow<'a, str>>,
     /// For alias replay: a stack of injected buffers; we always read from the top first.
     inject: Vec<InjectFrame>,
     /// Recorded buffers for anchors (index = anchor_id).
@@ -440,8 +440,18 @@ impl<'a> LiveEvents<'a> {
         }
     }
 
-    fn normalize_comment_text(text: Cow<'a, str>) -> String {
-        text.trim().to_owned()
+    fn normalize_comment_text(text: Cow<'a, str>) -> Cow<'a, str> {
+        match text {
+            Cow::Borrowed(text) => Cow::Borrowed(text.trim()),
+            Cow::Owned(text) => {
+                let trimmed = text.trim();
+                if trimmed.len() == text.len() {
+                    Cow::Owned(text)
+                } else {
+                    Cow::Owned(trimmed.to_owned())
+                }
+            }
+        }
     }
 
     fn event_kind(ev: &Ev<'_>) -> Option<ConsumedEventKind> {
@@ -484,7 +494,7 @@ impl<'a> LiveEvents<'a> {
     fn take_pending_trailing_comments_where(
         &mut self,
         mut predicate: impl FnMut(PendingTrailingCommentKind) -> bool,
-    ) -> Vec<String> {
+    ) -> Vec<Cow<'a, str>> {
         let mut taken = Vec::new();
         let mut retained = Vec::new();
 
@@ -500,7 +510,7 @@ impl<'a> LiveEvents<'a> {
         taken
     }
 
-    fn take_all_pending_trailing_comments(&mut self) -> Vec<String> {
+    fn take_all_pending_trailing_comments(&mut self) -> Vec<Cow<'a, str>> {
         std::mem::take(&mut self.pending_trailing_comments)
             .into_iter()
             .map(|comment| comment.text)
@@ -1174,24 +1184,28 @@ impl<'de> Events<'de> for LiveEvents<'de> {
             .unwrap_or(self.last_location)
     }
 
-    fn take_leading_comments_for_next_node(&mut self) -> Result<Vec<String>, Error> {
+    fn take_leading_comments_for_next_node(&mut self) -> Result<Vec<Cow<'de, str>>, Error> {
         let _ = self.peek()?;
         Ok(std::mem::take(&mut self.look_leading_comments))
     }
 
-    fn take_separator_comments_before_mapping_value(&mut self) -> Result<Vec<String>, Error> {
+    fn take_separator_comments_before_mapping_value(
+        &mut self,
+    ) -> Result<Vec<Cow<'de, str>>, Error> {
         let _ = self.peek()?;
         Ok(self.take_all_pending_trailing_comments())
     }
 
-    fn take_separator_comments_before_sequence_item_value(&mut self) -> Result<Vec<String>, Error> {
+    fn take_separator_comments_before_sequence_item_value(
+        &mut self,
+    ) -> Result<Vec<Cow<'de, str>>, Error> {
         let _ = self.peek()?;
         Ok(self.take_pending_trailing_comments_where(|kind| {
             kind == PendingTrailingCommentKind::BeforeUpcomingNode
         }))
     }
 
-    fn take_trailing_comments_after_node(&mut self) -> Result<Vec<String>, Error> {
+    fn take_trailing_comments_after_node(&mut self) -> Result<Vec<Cow<'de, str>>, Error> {
         let _ = self.peek()?;
         Ok(self.take_pending_trailing_comments_where(|kind| {
             kind == PendingTrailingCommentKind::AfterConsumedNode
