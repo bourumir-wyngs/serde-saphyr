@@ -85,7 +85,13 @@ fn pending_from_events(
     location: Location,
     reference_location: Location,
 ) -> Result<Vec<PendingEntry<'static>>, Error> {
-    pending_entries_from_events(events, location, reference_location, MergeKeyPolicy::Merge)
+    pending_entries_from_events(
+        events,
+        location,
+        reference_location,
+        MergeKeyPolicy::Merge,
+        DuplicateKeyPolicy::Error,
+    )
 }
 
 #[cfg(feature = "properties")]
@@ -99,6 +105,7 @@ fn pending_from_events(
         location,
         reference_location,
         MergeKeyPolicy::Merge,
+        DuplicateKeyPolicy::Error,
         None,
     )
 }
@@ -624,9 +631,14 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
         loc(29, 1),
     )]);
     assert!(
-        pending_entries_from_live_events(&mut null_replay, merge_reference, MergeKeyPolicy::Merge)
-            .unwrap()
-            .is_empty()
+        pending_entries_from_live_events(
+            &mut null_replay,
+            merge_reference,
+            MergeKeyPolicy::Merge,
+            DuplicateKeyPolicy::Error,
+        )
+        .unwrap()
+        .is_empty()
     );
 
     let mut scalar_replay = replay_events(vec![scalar(
@@ -640,6 +652,7 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
         &mut scalar_replay,
         merge_reference,
         MergeKeyPolicy::Merge,
+        DuplicateKeyPolicy::Error,
     ));
     assert!(matches!(
         err,
@@ -658,9 +671,13 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
         map_end(loc(32, 5)),
         seq_end(loc(33, 1)),
     ]);
-    let entries =
-        pending_entries_from_live_events(&mut seq_replay, merge_reference, MergeKeyPolicy::Merge)
-            .unwrap();
+    let entries = pending_entries_from_live_events(
+        &mut seq_replay,
+        merge_reference,
+        MergeKeyPolicy::Merge,
+        DuplicateKeyPolicy::Error,
+    )
+    .unwrap();
     assert_eq!(entries.len(), 2);
     assert_eq!(
         pending_pair(&entries[0]),
@@ -676,6 +693,7 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
         &mut empty,
         merge_reference,
         MergeKeyPolicy::Merge,
+        DuplicateKeyPolicy::Error,
     ));
     assert!(matches!(err, Error::Eof { location } if location == Location::UNKNOWN));
 }
@@ -693,6 +711,7 @@ fn collect_entries_from_map_expands_merges_and_preserves_reference_locations() {
         &mut not_a_map,
         loc(34, 9),
         MergeKeyPolicy::Merge,
+        DuplicateKeyPolicy::Error,
     ));
     assert!(matches!(
         err,
@@ -713,8 +732,13 @@ fn collect_entries_from_map_expands_merges_and_preserves_reference_locations() {
         map_end(loc(35, 10)),
     ]);
 
-    let entries =
-        collect_entries_from_map(&mut replay, outer_reference, MergeKeyPolicy::Merge).unwrap();
+    let entries = collect_entries_from_map(
+        &mut replay,
+        outer_reference,
+        MergeKeyPolicy::Merge,
+        DuplicateKeyPolicy::Error,
+    )
+    .unwrap();
     assert_eq!(entries.len(), 2);
     assert_eq!(
         pending_pair(&entries[0]),
@@ -736,8 +760,13 @@ fn collect_entries_from_map_treats_merge_key_as_ordinary_under_policy() {
         map_end(loc(36, 4)),
     ]);
 
-    let entries =
-        collect_entries_from_map(&mut replay, reference, MergeKeyPolicy::AsOrdinary).unwrap();
+    let entries = collect_entries_from_map(
+        &mut replay,
+        reference,
+        MergeKeyPolicy::AsOrdinary,
+        DuplicateKeyPolicy::Error,
+    )
+    .unwrap();
 
     assert_eq!(entries.len(), 1);
     assert_eq!(
@@ -759,6 +788,7 @@ fn collect_entries_from_map_rejects_merge_key_under_error_policy() {
         &mut replay,
         loc(37, 9),
         MergeKeyPolicy::Error,
+        DuplicateKeyPolicy::Error,
     ));
 
     assert!(matches!(

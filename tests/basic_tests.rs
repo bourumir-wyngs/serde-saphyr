@@ -215,6 +215,27 @@ plain
         color: String,
     }
 
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct BackgroundRoot {
+        target: Background,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct BackgroundNestedRoot {
+        background: Background,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct BackgroundRootWithBase {
+        base: HashMap<String, String>,
+        target: Background,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    enum BackgroundNode {
+        Background { color: String },
+    }
+
     #[test]
     fn duplicate_keys_last_wins_direct_struct() {
         let y = "color: red\ncolor: blue\n";
@@ -223,6 +244,31 @@ plain
         };
         let bg = from_str_with_options::<Background>(y, opt).unwrap();
         assert_eq!(bg.color, "blue");
+    }
+
+    #[test]
+    fn duplicate_keys_last_wins_nested_struct() {
+        let y = "background:\n  color: red\n  color: blue\n";
+        let opt = serde_saphyr::options! {
+            duplicate_keys: DuplicateKeyPolicy::LastWins,
+        };
+        let root = from_str_with_options::<BackgroundNestedRoot>(y, opt).unwrap();
+        assert_eq!(root.background.color, "blue");
+    }
+
+    #[test]
+    fn duplicate_keys_last_wins_struct_variant() {
+        let y = "Background:\n  color: red\n  color: blue\n";
+        let opt = serde_saphyr::options! {
+            duplicate_keys: DuplicateKeyPolicy::LastWins,
+        };
+        let node = from_str_with_options::<BackgroundNode>(y, opt).unwrap();
+        assert_eq!(
+            node,
+            BackgroundNode::Background {
+                color: "blue".to_owned(),
+            }
+        );
     }
 
     #[test]
@@ -242,6 +288,61 @@ plain
             duplicate_keys: DuplicateKeyPolicy::Error,
         };
         let err = from_str_with_options::<Background>(y, opt).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("duplicate mapping key: color"));
+    }
+
+    #[test]
+    fn duplicate_keys_last_wins_direct_struct_from_merge_source() {
+        let y = r#"
+target:
+  <<: { color: red, color: blue }
+"#;
+        let opt = serde_saphyr::options! {
+            duplicate_keys: DuplicateKeyPolicy::LastWins,
+        };
+        let root = from_str_with_options::<BackgroundRoot>(y, opt).unwrap();
+        assert_eq!(root.target.color, "blue");
+    }
+
+    #[test]
+    fn duplicate_keys_last_wins_direct_struct_from_aliased_merge_source() {
+        let y = r#"
+base: &B { color: red, color: blue }
+target:
+  <<: *B
+"#;
+        let opt = serde_saphyr::options! {
+            duplicate_keys: DuplicateKeyPolicy::LastWins,
+        };
+        let root = from_str_with_options::<BackgroundRootWithBase>(y, opt).unwrap();
+        assert_eq!(root.base.get("color").map(String::as_str), Some("blue"));
+        assert_eq!(root.target.color, "blue");
+    }
+
+    #[test]
+    fn duplicate_keys_first_wins_direct_struct_from_merge_source() {
+        let y = r#"
+target:
+  <<: { color: red, color: blue }
+"#;
+        let opt = serde_saphyr::options! {
+            duplicate_keys: DuplicateKeyPolicy::FirstWins,
+        };
+        let root = from_str_with_options::<BackgroundRoot>(y, opt).unwrap();
+        assert_eq!(root.target.color, "red");
+    }
+
+    #[test]
+    fn duplicate_keys_error_direct_struct_from_merge_source() {
+        let y = r#"
+target:
+  <<: { color: red, color: blue }
+"#;
+        let opt = serde_saphyr::options! {
+            duplicate_keys: DuplicateKeyPolicy::Error,
+        };
+        let err = from_str_with_options::<BackgroundRoot>(y, opt).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("duplicate mapping key: color"));
     }

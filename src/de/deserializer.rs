@@ -11,8 +11,9 @@ use super::commented_deser;
 use super::error::{Error, MissingFieldLocationGuard, TransformReason};
 use super::events::{Ev, Events, ReplayEvents, attach_alias_locations_if_missing, eof_with_loc};
 use super::key_nodes::{
-    KeyFingerprint, KeyNode, PendingEntry, capture_node, capture_simple_tagged_node_as_map_events,
-    is_merge_key, one_entry_map_spans, pending_entries_from_live_events, simple_tagged_enum_name,
+    KeyFingerprint, KeyNode, PendingEntry, apply_duplicate_key_policy_to_entries, capture_node,
+    capture_simple_tagged_node_as_map_events, is_merge_key, one_entry_map_spans,
+    pending_entries_from_live_events, simple_tagged_enum_name,
     validate_no_merge_keys_in_node_events,
 };
 use super::options::{DuplicateKeyPolicy, MergeKeyPolicy};
@@ -1443,29 +1444,10 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             );
         }
 
-        fn keep_last_explicit_entries<'de>(
-            entries: Vec<PendingEntry<'de>>,
-            merge_keys: MergeKeyPolicy,
-        ) -> Result<Vec<PendingEntry<'de>>, Error> {
-            let mut seen = FastHashSet::with_capacity(entries.len());
-            let mut kept = Vec::with_capacity(entries.len());
-
-            for entry in entries.into_iter().rev() {
-                let fingerprint = entry.key.fingerprint().into_owned();
-                if seen.insert(fingerprint) {
-                    kept.push(entry);
-                } else if matches!(merge_keys, MergeKeyPolicy::Error) {
-                    validate_no_merge_keys_in_node_events(entry.value.events())?;
-                }
-            }
-
-            kept.reverse();
-            Ok(kept)
-        }
-
         fn collect_struct_last_wins_entries<'de>(
             ev: &mut dyn Events<'de>,
             mut first_key_comments: Vec<String>,
+            duplicate_keys: DuplicateKeyPolicy,
             merge_keys: MergeKeyPolicy,
         ) -> Result<VecDeque<PendingEntry<'de>>, Error> {
             let mut explicit_entries = Vec::new();
@@ -1491,6 +1473,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                                         ev,
                                         merge_ref_loc,
                                         merge_keys,
+                                        duplicate_keys,
                                     )?;
                                     if !entries.is_empty() {
                                         merge_batches.push(entries);
@@ -1525,7 +1508,11 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 }
             }
 
-            let mut explicit_entries = keep_last_explicit_entries(explicit_entries, merge_keys)?;
+            let mut explicit_entries = apply_duplicate_key_policy_to_entries(
+                explicit_entries,
+                duplicate_keys,
+                merge_keys,
+            )?;
             let mut seen = FastHashSet::with_capacity(explicit_entries.len());
             for entry in &explicit_entries {
                 seen.insert(entry.key.fingerprint().into_owned());
@@ -1868,6 +1855,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                                             self.ev,
                                             merge_ref_loc,
                                             self.cfg.merge_keys,
+                                            self.cfg.dup_policy,
                                         )?;
                                         if !entries.is_empty() {
                                             self.merge_stack.push(entries);
@@ -2145,17 +2133,21 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             }
         }
 
-        let (pending, pending_first_key_comments, live_done) = if self.struct_mode
-            && matches!(self.cfg.dup_policy, DuplicateKeyPolicy::LastWins)
-        {
-            (
-                collect_struct_last_wins_entries(self.ev, map_start_comments, self.cfg.merge_keys)?,
-                Vec::new(),
-                true,
-            )
-        } else {
-            (VecDeque::new(), map_start_comments, false)
-        };
+        let (pending, pending_first_key_comments, live_done) =
+            if self.struct_mode && matches!(self.cfg.dup_policy, DuplicateKeyPolicy::LastWins) {
+                (
+                    collect_struct_last_wins_entries(
+                        self.ev,
+                        map_start_comments,
+                        self.cfg.dup_policy,
+                        self.cfg.merge_keys,
+                    )?,
+                    Vec::new(),
+                    true,
+                )
+            } else {
+                (VecDeque::new(), map_start_comments, false)
+            };
 
         #[cfg(any(feature = "garde", feature = "validator"))]
         let garde = self.garde;

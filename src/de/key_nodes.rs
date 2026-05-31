@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 #[cfg(feature = "properties")]
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::mem;
 #[cfg(feature = "properties")]
 use std::rc::Rc;
@@ -9,7 +10,7 @@ use granit_parser::ScalarStyle;
 
 use super::error::Error;
 use super::events::{Ev, Events, ReplayEvents};
-use super::options::MergeKeyPolicy;
+use super::options::{DuplicateKeyPolicy, MergeKeyPolicy};
 use super::tags::SfTag;
 use crate::location::Location;
 use crate::parse_scalars::scalar_is_nullish;
@@ -576,6 +577,48 @@ pub(super) fn validate_no_merge_keys_in_node_events(events: &[Ev<'_>]) -> Result
     }
 }
 
+pub(super) fn apply_duplicate_key_policy_to_entries(
+    mut entries: Vec<PendingEntry>,
+    duplicate_keys: DuplicateKeyPolicy,
+    merge_keys: MergeKeyPolicy,
+) -> Result<Vec<PendingEntry>, Error> {
+    let last_wins = matches!(duplicate_keys, DuplicateKeyPolicy::LastWins);
+    if last_wins {
+        entries.reverse();
+    }
+
+    let mut seen = HashSet::with_capacity(entries.len());
+    let mut kept = Vec::with_capacity(entries.len());
+
+    for entry in entries {
+        if seen.insert(entry.key.fingerprint().into_owned()) {
+            kept.push(entry);
+            continue;
+        }
+
+        if matches!(duplicate_keys, DuplicateKeyPolicy::Error) {
+            // This is an error path. We would rather get the fingerprint
+            // a second time here for error reporting than clone it before.
+            let fingerprint = entry.key.fingerprint();
+            let key = fingerprint.stringy_scalar_value().map(ToOwned::to_owned);
+            return Err(Error::DuplicateMappingKey {
+                key,
+                location: entry.key.location(),
+            });
+        }
+
+        if matches!(merge_keys, MergeKeyPolicy::Error) {
+            validate_no_merge_keys_in_node_events(entry.value.events())?;
+        }
+    }
+
+    if last_wins {
+        kept.reverse();
+    }
+
+    Ok(kept)
+}
+
 /// Expand a merge value node into a queue of `PendingEntry`s in correct order.
 ///
 /// Arguments:
@@ -593,6 +636,7 @@ pub(super) fn pending_entries_from_events<'a>(
     location: Location,
     reference_location: Location,
     merge_keys: MergeKeyPolicy,
+    duplicate_keys: DuplicateKeyPolicy,
     #[cfg(feature = "properties")] property_map: Option<Rc<HashMap<String, String>>>,
 ) -> Result<Vec<PendingEntry<'a>>, Error> {
     let mut replay = ReplayEvents::with_reference(
@@ -609,7 +653,7 @@ pub(super) fn pending_entries_from_events<'a>(
             location: *location,
         }),
         Some(Ev::MapStart { .. }) => {
-            collect_entries_from_map(&mut replay, reference_location, merge_keys)
+            collect_entries_from_map(&mut replay, reference_location, merge_keys, duplicate_keys)
         }
         Some(Ev::SeqStart { .. }) => {
             let mut batches = Vec::new();
@@ -632,6 +676,7 @@ pub(super) fn pending_entries_from_events<'a>(
                             element.location(),
                             element_ref_loc,
                             merge_keys,
+                            duplicate_keys,
                             #[cfg(feature = "properties")]
                             property_map.clone(),
                         )?); // recursive
@@ -671,6 +716,7 @@ pub(super) fn pending_entries_from_live_events<'a>(
     ev: &mut dyn Events<'a>,
     merge_reference_location: Location,
     merge_keys: MergeKeyPolicy,
+    duplicate_keys: DuplicateKeyPolicy,
 ) -> Result<Vec<PendingEntry<'a>>, Error> {
     #[cfg(feature = "properties")]
     let property_map = ev.property_map().map(Rc::clone);
@@ -689,6 +735,7 @@ pub(super) fn pending_entries_from_live_events<'a>(
                 node.location(),
                 merge_reference_location,
                 merge_keys,
+                duplicate_keys,
                 #[cfg(feature = "properties")]
                 property_map,
             )
@@ -711,6 +758,7 @@ pub(super) fn pending_entries_from_live_events<'a>(
                             element.location(),
                             element_ref_loc,
                             merge_keys,
+                            duplicate_keys,
                             #[cfg(feature = "properties")]
                             property_map.clone(),
                         )?);
@@ -745,6 +793,7 @@ pub(super) fn collect_entries_from_map<'a>(
     ev: &mut dyn Events<'a>,
     reference_location: Location,
     merge_keys: MergeKeyPolicy,
+    duplicate_keys: DuplicateKeyPolicy,
 ) -> Result<Vec<PendingEntry<'a>>, Error> {
     let Some(Ev::MapStart { .. }) = ev.next()? else {
         return Err(Error::MergeValueNotMapOrSeqOfMaps {
@@ -776,6 +825,7 @@ pub(super) fn collect_entries_from_map<'a>(
                                 ev,
                                 merge_ref_loc,
                                 merge_keys,
+                                duplicate_keys,
                             )?);
                             continue;
                         }
@@ -806,7 +856,7 @@ pub(super) fn collect_entries_from_map<'a>(
         }
     }
 
-    let mut entries = fields;
+    let mut entries = apply_duplicate_key_policy_to_entries(fields, duplicate_keys, merge_keys)?;
     while let Some(mut nested) = merges.pop() {
         entries.append(&mut nested);
     }
