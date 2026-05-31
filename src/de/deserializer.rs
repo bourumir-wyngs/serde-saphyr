@@ -91,11 +91,11 @@ pub struct YamlDeserializer<'de, 'e> {
     /// True when the recorded key node was exactly an empty mapping (MapStart followed by MapEnd).
     key_empty_map_node: bool,
     /// Comments that the parent mapping associated with this value.
-    pub(super) pending_comments: Vec<String>,
+    pub(super) pending_comments: Vec<Cow<'de, str>>,
     /// Same-line comments after the parent container separator (`key:` or `-`).
-    pub(super) pending_value_separator_comments: Vec<String>,
+    pub(super) pending_value_separator_comments: Vec<Cow<'de, str>>,
     /// Comments that appeared above the value node itself.
-    pub(super) pending_value_comments: Vec<String>,
+    pub(super) pending_value_comments: Vec<Cow<'de, str>>,
 
     #[cfg(any(feature = "garde", feature = "validator"))]
     garde: Option<&'e mut PathRecorder>,
@@ -1258,7 +1258,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
         struct SA<'de, 'e> {
             ev: &'e mut dyn Events<'de>,
             cfg: Cfg,
-            pending_first_element_comments: Vec<String>,
+            pending_first_element_comments: Vec<Cow<'de, str>>,
 
             #[cfg(any(feature = "garde", feature = "validator"))]
             garde: Option<&'e mut PathRecorder>,
@@ -1446,7 +1446,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
         fn collect_struct_last_wins_entries<'de>(
             ev: &mut dyn Events<'de>,
-            mut first_key_comments: Vec<String>,
+            mut first_key_comments: Vec<Cow<'de, str>>,
             duplicate_keys: DuplicateKeyPolicy,
             merge_keys: MergeKeyPolicy,
         ) -> Result<VecDeque<PendingEntry<'de>>, Error> {
@@ -1555,10 +1555,10 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             flushing_merges: bool,
             live_done: bool,
             pending_value: Option<(Vec<Ev<'de>>, Location)>,
-            pending_field_comments: Vec<String>,
-            pending_value_separator_comments: Vec<String>,
-            pending_value_comments: Vec<String>,
-            pending_first_key_comments: Vec<String>,
+            pending_field_comments: Vec<Cow<'de, str>>,
+            pending_value_separator_comments: Vec<Cow<'de, str>>,
+            pending_value_comments: Vec<Cow<'de, str>>,
+            pending_first_key_comments: Vec<Cow<'de, str>>,
         }
 
         impl<'de, 'e> MA<'de, 'e> {

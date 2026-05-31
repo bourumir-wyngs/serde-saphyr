@@ -1,5 +1,7 @@
 //! Internal support for deserializing `Commented<T>`.
 
+use std::borrow::Cow;
+
 use serde::de::{self, IntoDeserializer, Visitor};
 
 use super::Error;
@@ -47,17 +49,18 @@ where
     })
 }
 
-fn joined_comments(comments: Vec<String>) -> String {
+fn joined_comments(comments: Vec<Cow<'_, str>>) -> String {
     comments
         .into_iter()
         .filter(|comment| !comment.is_empty())
+        .map(Cow::into_owned)
         .collect::<Vec<_>>()
         .join("\n")
 }
 
 struct CommentedSeqAccess<'de, 'e> {
     de: Deserializer<'de, 'e>,
-    comments: Vec<String>,
+    comments: Vec<Cow<'de, str>>,
     defer_value_comments: bool,
     state: u8,
 }

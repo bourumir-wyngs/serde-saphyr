@@ -173,11 +173,11 @@ pub(super) struct PendingEntry<'a> {
     /// For replayed entries these are comments captured at the use site while
     /// scanning the containing map. Definition-site comments inside an anchored
     /// mapping are not reconstructed from the recorded event buffer.
-    pub(super) field_comments: Vec<String>,
+    pub(super) field_comments: Vec<Cow<'a, str>>,
     /// Same-line comments after the key/value separator.
-    pub(super) value_separator_comments: Vec<String>,
+    pub(super) value_separator_comments: Vec<Cow<'a, str>>,
     /// Comments immediately above the value node.
-    pub(super) value_comments: Vec<String>,
+    pub(super) value_comments: Vec<Cow<'a, str>>,
 }
 
 /// Return the span lengths of key and value for a one-entry map encoded in `events`.

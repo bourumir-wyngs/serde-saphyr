@@ -306,6 +306,46 @@ target:
     }
 
     #[test]
+    fn duplicate_keys_last_wins_struct_treats_merge_key_as_ordinary_when_configured() {
+        #[derive(Debug, Deserialize, PartialEq)]
+        struct HasMergeLikeField {
+            #[serde(rename = "<<")]
+            merge_like: HashMap<String, String>,
+        }
+
+        let y = r#"
+<<: { color: blue }
+"#;
+
+        let opt = serde_saphyr::options! {
+            duplicate_keys: DuplicateKeyPolicy::LastWins,
+            merge_keys: serde_saphyr::options::MergeKeyPolicy::AsOrdinary,
+        };
+
+        let got = from_str_with_options::<HasMergeLikeField>(y, opt).unwrap();
+        assert_eq!(
+            got.merge_like.get("color").map(String::as_str),
+            Some("blue")
+        );
+    }
+
+    #[test]
+    fn duplicate_keys_last_wins_struct_explicit_field_still_overrides_merge_source() {
+        let y = r#"
+target:
+  <<: { color: red, color: blue }
+  color: green
+"#;
+
+        let opt = serde_saphyr::options! {
+            duplicate_keys: DuplicateKeyPolicy::LastWins,
+        };
+
+        let root = from_str_with_options::<BackgroundRoot>(y, opt).unwrap();
+        assert_eq!(root.target.color, "green");
+    }
+
+    #[test]
     fn duplicate_keys_last_wins_direct_struct_from_aliased_merge_source() {
         let y = r#"
 base: &B { color: red, color: blue }

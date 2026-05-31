@@ -181,7 +181,7 @@ pub(crate) trait Events<'de> {
     /// for replay buffers that do not carry presentation metadata. If a caller
     /// needs comments for a captured node, it must take them from the live stream
     /// before calling `capture_node` and carry them separately.
-    fn take_leading_comments_for_next_node(&mut self) -> Result<Vec<String>, Error> {
+    fn take_leading_comments_for_next_node(&mut self) -> Result<Vec<Cow<'de, str>>, Error> {
         Ok(Vec::new())
     }
 
@@ -190,7 +190,9 @@ pub(crate) trait Events<'de> {
     /// This is the `# comment` in `key: # comment`, separated from comments
     /// immediately above the value node so nested containers do not treat the
     /// separator comment as a child-key comment.
-    fn take_separator_comments_before_mapping_value(&mut self) -> Result<Vec<String>, Error> {
+    fn take_separator_comments_before_mapping_value(
+        &mut self,
+    ) -> Result<Vec<Cow<'de, str>>, Error> {
         Ok(Vec::new())
     }
 
@@ -198,12 +200,14 @@ pub(crate) trait Events<'de> {
     ///
     /// This is the `# comment` in `- # comment`, separated from ordinary
     /// trailing comments after the previous sequence value.
-    fn take_separator_comments_before_sequence_item_value(&mut self) -> Result<Vec<String>, Error> {
+    fn take_separator_comments_before_sequence_item_value(
+        &mut self,
+    ) -> Result<Vec<Cow<'de, str>>, Error> {
         Ok(Vec::new())
     }
 
     /// Take same-line comments immediately after the node that was just deserialized.
-    fn take_trailing_comments_after_node(&mut self) -> Result<Vec<String>, Error> {
+    fn take_trailing_comments_after_node(&mut self) -> Result<Vec<Cow<'de, str>>, Error> {
         Ok(Vec::new())
     }
 
