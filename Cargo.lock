@@ -398,9 +398,8 @@ checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
 name = "granit-parser"
-version = "0.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f50ba32164f9e098d5da618776a32afbb32270adcbe3d3d006107dae11e37c91"
+version = "0.0.4"
+source = "git+https://github.com/bourumir-wyngs/granit-parser?branch=bw%2Fperformance#e53a7eb194dab0749dfcdad8db3f096e498e2372"
 dependencies = [
  "arraydeque",
  "smallvec",
@@ -875,7 +874,7 @@ dependencies = [
 
 [[package]]
 name = "serde-saphyr"
-version = "0.0.27"
+version = "0.0.28"
 dependencies = [
  "ahash",
  "annotate-snippets",

@@ -1,6 +1,6 @@
 [package]
 name = "serde-saphyr"
-version = "0.0.27"
+version = "0.0.28"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "YAML (de)serializer for Serde, emphasizing panic-free parsing and good error reporting"
@@ -12,14 +12,14 @@ keywords = ["yaml", "serde", "config", "ros", "wasm"]
 exclude = ["Cargo.lock"]
 
 [dependencies]
- granit-parser = { version = "0.0.3", optional = true }
+# granit-parser = { version = "0.0.4", optional = true }
 # granit-parser = { path = "/home/audrius/rust/granit-parser", optional = true }
-# granit-parser = { git = "https://github.com/bourumir-wyngs/granit-parser", optional = true }
-#granit-parser = {
-#    git = "https://github.com/bourumir-wyngs/granit-parser",
-#    branch = "bw/comments",
-#    optional = true
-#}
+#granit-parser = { git = "https://github.com/bourumir-wyngs/granit-parser", optional = true }
+granit-parser = {
+    git = "https://github.com/bourumir-wyngs/granit-parser",
+    branch = "bw/performance",
+    optional = true
+}
 serde = { version = "1", features = ["derive"] }
 smallvec = {  version = ">= 1.0.0, < 1.16.0", optional = true }
 num-traits = { version = ">=0.2.0, <=0.2.19", optional = true }
