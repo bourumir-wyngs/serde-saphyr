@@ -39,7 +39,7 @@ fn run_flow_collections_fuzzer_entrypoints(data: &[u8]) {
 }
 
 #[test]
-fn crash_ca24c2f5b1341124fcd324cbaafcaa9a1f6d034c_does_not_panic() {
+fn case_1() {
     let data = [
         255u8, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 10, 9, 35, 8, 10, 9, 255,
         255, 255, 255, 255, 10, 9, 35, 8, 35, 91, 93, 58,
@@ -47,3 +47,12 @@ fn crash_ca24c2f5b1341124fcd324cbaafcaa9a1f6d034c_does_not_panic() {
 
     run_flow_collections_fuzzer_entrypoints(&data);
 }
+
+#[test]
+fn case_2() {
+    let data = [134, 128, 128, 128, 128, 3, 42, 44, 198, 10, 9, 35, 10, 9, 41, 10,
+        9, 35, 125, 46];
+
+    run_flow_collections_fuzzer_entrypoints(&data);
+}
+
