@@ -469,10 +469,15 @@ Many configuration formats contain secret values that should not be part of chec
 
 Interpolation is intentionally narrow in scope:
 
-- it only applies to **plain scalars**,
-- quoted scalars and block scalars stay literal,
+- it only applies to **plain scalars**; quoted scalars and block scalars stay literal,
+- the supported forms are `${NAME}` and `${NAME:-default}`. No other docker-compose modifiers (`:-` is the only one) are supported,
 - `$${NAME}` escapes to a literal `${NAME}`,
-- and if no property map is configured, `${NAME}` remains unchanged instead of being treated specially.
+- if no property map is configured, `${NAME}` and `${NAME:-default}` remain unchanged instead of being treated specially.
+
+For `${NAME:-default}`, the `default` text is used when `NAME` is unset or set to an empty string.
+It is taken verbatim up to the first `}` with no escape processing, so it cannot itself contain a `}`.
+Defaults are treated as ordinary literal text from the YAML source.
+Only values pulled from the property map are tracked for redaction.
 
 That means you can opt in where it is useful without changing the meaning of YAML constructs that are typically expected to remain exact text.
 
@@ -521,7 +526,7 @@ fn property_map_example_works() {
 }
 ```
 
-If interpolation is enabled but a referenced property is missing, or the `${...}` name is invalid, deserialization fails with a dedicated error that points to the YAML source location. This is useful both for correctness and for security: configuration mistakes should fail closed instead of silently producing partial or surprising values.
+If interpolation is enabled but a referenced property is missing and no `${NAME:-default}` was supplied, or the `${...}` name is invalid, deserialization fails with a dedicated error that points to the YAML source location. This is useful both for correctness and for security: configuration mistakes should fail closed instead of silently producing partial or surprising values.
 
 The security aspect matters most when the property values are secrets. Interpolation resolves the final value before Serde finishes deserializing the surrounding type, so downstream custom deserializers, validation code, or other error paths could otherwise end up echoing the resolved secret. `serde-saphyr` tracks interpolated values during deserialization and redacts them back to their original `${NAME}` form in later error messages, reducing the risk of leaking secrets into logs or diagnostics. You should still treat the property map itself as sensitive input and avoid formatting or logging it directly in your application.
 
