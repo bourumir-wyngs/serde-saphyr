@@ -89,8 +89,8 @@ fn resolve_brace<'a>(
     vars: &'a HashMap<String, String>,
 ) -> Result<&'a str, &'a str> {
     match (vars.get(brace.name).map(String::as_str), brace.default) {
-        (Some(value), _) => Ok(value),
         (None | Some(""), Some(default)) => Ok(default),
+        (Some(value), _) => Ok(value),
         (None, None) => Err(brace.name),
     }
 }
