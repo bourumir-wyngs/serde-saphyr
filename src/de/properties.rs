@@ -88,11 +88,11 @@ fn resolve_brace<'a>(
     brace: &'a BraceRef<'a>,
     vars: &'a HashMap<String, String>,
 ) -> Result<&'a str, &'a str> {
-    let value = vars
-        .get(brace.name)
-        .map(String::as_str)
-        .filter(|v| !v.is_empty());
-    value.or(brace.default).ok_or(brace.name)
+    match (vars.get(brace.name).map(String::as_str), brace.default) {
+        (Some(value), _) => Ok(value),
+        (None | Some(""), Some(default)) => Ok(default),
+        (None, None) => Err(brace.name),
+    }
 }
 
 /// Expands `${NAME}` and `${NAME:-default}` references in `input` against `vars`.

@@ -202,6 +202,39 @@ fn disabled_properties_leave_placeholder_verbatim_without_error() {
 }
 
 #[test]
+fn bare_reference_resolves_explicitly_empty_value_without_default() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct OptValue {
+        value: Option<String>,
+    }
+
+    let mut properties = HashMap::new();
+    properties.insert("EMPTY".to_string(), String::new());
+
+    let parsed: OptValue = from_str_with_options(
+        "value: ${EMPTY}\n",
+        property_options_with_map(Some(properties)),
+    )
+    .unwrap();
+
+    assert_eq!(parsed.value, None);
+}
+
+#[test]
+fn default_form_uses_default_when_property_is_explicitly_empty() {
+    let mut properties = HashMap::new();
+    properties.insert("EMPTY".to_string(), String::new());
+
+    let parsed: ScalarConfig = from_str_with_options(
+        "value: ${EMPTY:-fallback}\n",
+        property_options_with_map(Some(properties)),
+    )
+    .unwrap();
+
+    assert_eq!(parsed.value, "fallback");
+}
+
+#[test]
 fn missing_property_is_an_error_when_properties_are_enabled() {
     let err = from_str_with_options::<ScalarConfig>(
         "value: ${MISSING}\n",
