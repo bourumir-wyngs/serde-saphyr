@@ -474,12 +474,9 @@ Interpolation is intentionally narrow in scope:
 - `$${NAME}` escapes to a literal `${NAME}`,
 - if no property map is configured, `${NAME}` and `${NAME:-default}` remain unchanged instead of being treated specially.
 
-For `${NAME:-default}`, the `default` text is used when `NAME` is unset or set to an empty string.
-It is taken verbatim up to the first `}` with no escape processing, so it cannot itself contain a `}`.
-Defaults are treated as ordinary literal text from the YAML source.
-Only values pulled from the property map are tracked for redaction.
+For `${NAME:-default}`, the `default` text is used when `NAME` is unset or set to an empty string. It is taken verbatim up to the first `}` with no escape processing, so it cannot itself contain a `}`. Defaults are treated as ordinary literal text from the YAML source; they are not considered secret because they already appear in the YAML. 
 
-That means you can opt in where it is useful without changing the meaning of YAML constructs that are typically expected to remain exact text.
+When interpolation changes a scalar, later dynamic error messages may redact the resolved text back to the original `${...}` expression. This redaction is primarily intended to protect values pulled from the property map. That means you can opt in where it is useful without changing the meaning of YAML constructs that are typically expected to remain exact text.
 
 `properties` is gated behind the `properties` feature flag. Once enabled, pass a property map through `Options::with_properties(...)`:
 
