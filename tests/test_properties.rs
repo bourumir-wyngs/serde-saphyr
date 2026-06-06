@@ -202,6 +202,39 @@ fn disabled_properties_leave_placeholder_verbatim_without_error() {
 }
 
 #[test]
+fn bare_reference_resolves_explicitly_empty_value_without_default() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct OptValue {
+        value: Option<String>,
+    }
+
+    let mut properties = HashMap::new();
+    properties.insert("EMPTY".to_string(), String::new());
+
+    let parsed: OptValue = from_str_with_options(
+        "value: ${EMPTY}\n",
+        property_options_with_map(Some(properties)),
+    )
+    .unwrap();
+
+    assert_eq!(parsed.value, None);
+}
+
+#[test]
+fn default_form_uses_default_when_property_is_explicitly_empty() {
+    let mut properties = HashMap::new();
+    properties.insert("EMPTY".to_string(), String::new());
+
+    let parsed: ScalarConfig = from_str_with_options(
+        "value: ${EMPTY:-fallback}\n",
+        property_options_with_map(Some(properties)),
+    )
+    .unwrap();
+
+    assert_eq!(parsed.value, "fallback");
+}
+
+#[test]
 fn missing_property_is_an_error_when_properties_are_enabled() {
     let err = from_str_with_options::<ScalarConfig>(
         "value: ${MISSING}\n",
@@ -250,6 +283,106 @@ fn invalid_property_name_is_an_error_when_properties_are_enabled() {
         "unexpected: {err_str}"
     );
     assert!(err_str.contains("value: ${ab-cd}"), "unexpected: {err_str}");
+}
+
+#[test]
+fn interpolation_works_after_non_ascii_text() {
+    let mut properties = HashMap::new();
+    properties.insert("NAME".to_string(), "world".to_string());
+
+    let parsed: ScalarConfig = from_str_with_options(
+        "value: h\u{e9} ${NAME}\n",
+        property_options_with_map(Some(properties)),
+    )
+    .unwrap();
+
+    assert_eq!(parsed.value, "h\u{e9} world");
+}
+
+#[test]
+fn unsupported_default_form_errors() {
+    let err = from_str_with_options::<ScalarConfig>(
+        "value: ${NAME:?required}\n",
+        property_options_with_map(Some(HashMap::new())),
+    )
+    .unwrap_err();
+
+    match err.without_snippet() {
+        serde_saphyr::Error::InvalidPropertyName { name, .. } => {
+            assert_eq!(name, "${NAME:?required}");
+        }
+        other => panic!("unexpected error variant: {other:?}"),
+    }
+}
+
+#[test]
+fn bare_dash_form_errors() {
+    let err = from_str_with_options::<ScalarConfig>(
+        "value: ${NAME-fallback}\n",
+        property_options_with_map(Some(HashMap::new())),
+    )
+    .unwrap_err();
+
+    match err.without_snippet() {
+        serde_saphyr::Error::InvalidPropertyName { name, .. } => {
+            assert_eq!(name, "${NAME-fallback}");
+        }
+        other => panic!("unexpected error variant: {other:?}"),
+    }
+}
+
+#[test]
+fn default_text_is_taken_literally() {
+    let parsed: ScalarConfig = from_str_with_options(
+        "value: ${NAME:-keep $$ as-is}\n",
+        property_options_with_map(Some(HashMap::new())),
+    )
+    .unwrap();
+
+    assert_eq!(parsed.value, "keep $$ as-is");
+}
+
+#[test]
+fn whitespace_around_name_is_rejected() {
+    let err = from_str_with_options::<ScalarConfig>(
+        "value: ${NAME :- fallback}\n",
+        property_options_with_map(Some(HashMap::new())),
+    )
+    .unwrap_err();
+
+    match err.without_snippet() {
+        serde_saphyr::Error::InvalidPropertyName { name, .. } => {
+            assert_eq!(name, "${NAME :- fallback}");
+        }
+        other => panic!("unexpected error variant: {other:?}"),
+    }
+}
+
+#[test]
+fn leading_space_in_name_is_rejected() {
+    let err = from_str_with_options::<ScalarConfig>(
+        "value: ${ NAME}\n",
+        property_options_with_map(Some(HashMap::new())),
+    )
+    .unwrap_err();
+
+    match err.without_snippet() {
+        serde_saphyr::Error::InvalidPropertyName { name, .. } => {
+            assert_eq!(name, "${ NAME}");
+        }
+        other => panic!("unexpected error variant: {other:?}"),
+    }
+}
+
+#[test]
+fn first_closing_brace_ends_default_text() {
+    let parsed: ScalarConfig = from_str_with_options(
+        "value: ${NAME:-a}b}\n",
+        property_options_with_map(Some(HashMap::new())),
+    )
+    .unwrap();
+
+    assert_eq!(parsed.value, "ab}");
 }
 
 #[test]

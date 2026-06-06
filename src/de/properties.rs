@@ -1,12 +1,12 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-/// Property interpolation failure reported while scanning a scalar value.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum PropertyError {
-    /// A valid `${NAME}` reference could not be resolved from the property map.
+    /// `${NAME}` had no value in the property map and no default was supplied.
     Unresolved(String),
-    /// A `${...}` candidate was present but did not use a valid property name.
+    /// A `${...}` candidate was present but did not parse as `${NAME}` or
+    /// `${NAME:-default}`. The string is the full candidate including braces.
     InvalidName(String),
 }
 
@@ -40,36 +40,64 @@ fn parse_name(input: &str) -> Option<(&str, &str)> {
     Some((&input[..end], &input[end..]))
 }
 
-/// Parses `${name}` starting at `start`, returning the referenced property name and the end index.
-///
-/// Returns `Err(candidate)` when a braced `${...}` sequence is present but its name is invalid.
-/// Returns `Ok(None)` when the input does not contain a complete braced candidate at `start`.
-fn parse_braced_reference(input: &str, start: usize) -> Result<Option<(&str, usize)>, String> {
+struct BraceRef<'a> {
+    name: &'a str,
+    default: Option<&'a str>,
+}
+
+/// Returns `Err` when the `${...}` candidate is malformed, `Ok(None)` when the brace
+/// isn't closed (treat the `$` as literal), or `Ok(Some(...))` with the parsed reference
+/// and the byte index just past the closing `}`.
+fn parse_braced_reference(
+    input: &str,
+    start: usize,
+) -> Result<Option<(BraceRef<'_>, usize)>, String> {
     let body_start = start + 2;
     let Some(close_rel) = input[body_start..].find('}') else {
         return Ok(None);
     };
     let close = close_rel + body_start;
     let body = &input[body_start..close];
-    let candidate = input[start..close + 1].to_owned();
     let Some((name, rest)) = parse_name(body) else {
-        return Err(candidate);
+        return Err(input[start..close + 1].to_owned());
     };
 
     if rest.is_empty() {
-        Ok(Some((name, close + 1)))
-    } else {
-        Err(candidate)
+        return Ok(Some((
+            BraceRef {
+                name,
+                default: None,
+            },
+            close + 1,
+        )));
+    }
+
+    let default_text = rest
+        .strip_prefix(":-")
+        .ok_or_else(|| input[start..close + 1].to_owned())?;
+    Ok(Some((
+        BraceRef {
+            name,
+            default: Some(default_text),
+        },
+        close + 1,
+    )))
+}
+
+fn resolve_brace<'a>(
+    brace: &'a BraceRef<'a>,
+    vars: &'a HashMap<String, String>,
+) -> Result<&'a str, &'a str> {
+    match (vars.get(brace.name).map(String::as_str), brace.default) {
+        (None | Some(""), Some(default)) => Ok(default),
+        (Some(value), _) => Ok(value),
+        (None, None) => Err(brace.name),
     }
 }
 
-/// Parameters:
-/// - `input`: scalar text after YAML parsing, before Serde type conversion.
-/// - `vars`: final caller-supplied property map. Values are treated as final values,
-///   so this function does not recursively expand placeholders inside map entries.
-///
-/// Returns:
-/// - `Cow::Borrowed` when the scalar is unchanged, or `Cow::Owned` with the expanded value.
+/// Expands `${NAME}` and `${NAME:-default}` references in `input` against `vars`.
+/// Values in `vars` are taken as final, so placeholders inside map entries are not re-expanded.
+/// Returns `Cow::Borrowed` when nothing changed so the common no-`$` path stays allocation-free.
 pub(crate) fn interpolate_compose_style<'s>(
     input: Cow<'s, str>,
     vars: &HashMap<String, String>,
@@ -115,17 +143,15 @@ pub(crate) fn interpolate_compose_style<'s>(
             continue;
         }
 
-        let Some((name, end)) =
+        let Some((brace, end)) =
             parse_braced_reference(input_str, i).map_err(PropertyError::InvalidName)?
         else {
             i += 1;
             continue;
         };
 
-        let value = vars
-            .get(name)
-            .map(String::as_str)
-            .ok_or_else(|| PropertyError::Unresolved(name.to_owned()))?;
+        let value =
+            resolve_brace(&brace, vars).map_err(|n| PropertyError::Unresolved(n.to_owned()))?;
 
         if !changed {
             out.push_str(&input_str[..i]);
@@ -186,11 +212,11 @@ mod tests {
         let vars = HashMap::from([(String::from("NAME"), String::from("world"))]);
 
         let error =
-            interpolate_compose_style(Cow::Borrowed("${NAME:-fallback}"), &vars).unwrap_err();
+            interpolate_compose_style(Cow::Borrowed("${NAME:?fallback}"), &vars).unwrap_err();
 
         assert_eq!(
             error,
-            PropertyError::InvalidName("${NAME:-fallback}".to_string())
+            PropertyError::InvalidName("${NAME:?fallback}".to_string())
         );
     }
 
