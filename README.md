@@ -465,20 +465,31 @@ merge keys.
 
 ### Properties
 
-Many configuration formats contain secret values that should not be part of checked-in repository content and should not leak into error snippets or other messages. The optional `properties` feature adds docker-compose-style `${NAME}` interpolation for that use case, allowing you to provide values through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). The feature can also be used to configure generated values, or values that change between releases or deployments, or are otherwise more convenient to specify separately from the main YAML document.
+Many configuration formats contain secret values that should not live in checked-in YAML or leak into error snippets.
+The optional `properties` feature adds docker-compose-style `${NAME}` interpolation for that use case, with values supplied through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html).
+It is also useful for generated values or values that change between releases or deployments.
 
-Interpolation is intentionally narrow in scope:
+Interpolation is intentionally narrow:
 
-- it only applies to **plain scalars**; quoted scalars and block scalars stay literal,
-- the supported forms are `${NAME}` and `${NAME:-default}`. No other docker-compose modifiers (`:-` is the only one) are supported,
+- it only applies to **plain scalars**; quoted and block scalars stay literal,
+- the supported forms are listed in the table below.
+  The error-message modifiers (`?`, `:?`) and the unbraced `$NAME` form are not currently supported,
 - `$${NAME}` escapes to a literal `${NAME}`,
-- if no property map is configured, `${NAME}` and `${NAME:-default}` remain unchanged instead of being treated specially.
+- nesting is not supported: `default`/`replacement` text is taken verbatim up to the first `}` with no further interpolation or escape processing,
+- if no property map is configured, every `${...}` form remains unchanged.
 
-For `${NAME:-default}`, the `default` text is used when `NAME` is unset or set to an empty string. It is taken verbatim up to the first `}` with no escape processing, so it cannot itself contain a `}`. Defaults are treated as ordinary literal text from the YAML source; they are not considered secret because they already appear in the YAML. 
+| Form | `NAME` unset | `NAME` set to empty | `NAME` set to non-empty |
+| --- | --- | --- | --- |
+| `${NAME}` | error | `""` | the value |
+| `${NAME-default}` | `default` | `""` | the value |
+| `${NAME:-default}` | `default` | `default` | the value |
+| `${NAME+replacement}` | `""` | `replacement` | `replacement` |
+| `${NAME:+replacement}` | `""` | `""` | `replacement` |
 
-When interpolation changes a scalar, later dynamic error messages may redact the resolved text back to the original `${...}` expression. This redaction is primarily intended to protect values pulled from the property map. That means you can opt in where it is useful without changing the meaning of YAML constructs that are typically expected to remain exact text.
+`default` and `replacement` are literal text from the YAML and are not treated as secret.
 
-`properties` is gated behind the `properties` feature flag. Once enabled, pass a property map through `Options::with_properties(...)`:
+`properties` is gated behind the `properties` feature flag.
+Once enabled, pass a property map through `Options::with_properties(...)`:
 
 ```rust
 #[cfg(feature = "properties")]
@@ -523,9 +534,12 @@ fn property_map_example_works() {
 }
 ```
 
-If interpolation is enabled but a referenced property is missing and no `${NAME:-default}` was supplied, or the `${...}` name is invalid, deserialization fails with a dedicated error that points to the YAML source location. This is useful both for correctness and for security: configuration mistakes should fail closed instead of silently producing partial or surprising values.
+A bare `${NAME}` with no value in the map (and no `-`/`:-` default), or a malformed `${...}` candidate (invalid name, unsupported modifier), fails deserialization with a dedicated error pointing at the YAML source location.
+Configuration mistakes fail closed rather than silently producing partial values.
 
-The security aspect matters most when the property values are secrets. Interpolation resolves the final value before Serde finishes deserializing the surrounding type, so downstream custom deserializers, validation code, or other error paths could otherwise end up echoing the resolved secret. `serde-saphyr` tracks interpolated values during deserialization and redacts them back to their original `${NAME}` form in later error messages, reducing the risk of leaking secrets into logs or diagnostics. You should still treat the property map itself as sensitive input and avoid formatting or logging it directly in your application.
+When the property values are secrets, interpolation resolves the final value before Serde finishes deserializing the surrounding type, so a downstream custom deserializer or validation path could otherwise echo the resolved secret.
+`serde-saphyr` tracks interpolated values and redacts them back to their `${...}` form in later error messages.
+Treat the property map itself as sensitive - do not log or format it directly.
 
 ### Includes
 

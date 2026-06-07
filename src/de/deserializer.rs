@@ -826,8 +826,10 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     fn deserialize_str<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let view = match self.peek_scalar_view()? {
             Some(view) => {
-                // Check for null - not valid for string deserialization
-                if (view.tag == SfTag::Null || scalar_is_nullish(&view.effective, &view.style))
+                // Check for null - not valid for string deserialization. A deliberately
+                // substituted ${...} that resolved to "" stays a string, not null.
+                if (view.tag == SfTag::Null
+                    || (!view.interpolated && scalar_is_nullish(&view.effective, &view.style)))
                     && view.tag != SfTag::String
                 {
                     let loc = view.location;
@@ -910,7 +912,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
         // Reject YAML null when deserializing into String. Allow quoted forms.
         let view = if let Some(view) = self.peek_scalar_view()? {
             // If explicitly tagged as null, or plain null-like, this is not a valid String.
-            if (view.tag == SfTag::Null || scalar_is_nullish(&view.effective, &view.style))
+            // A ${...} that the user deliberately substituted to "" is a legitimate string.
+            if (view.tag == SfTag::Null
+                || (!view.interpolated && scalar_is_nullish(&view.effective, &view.style)))
                 && view.tag != SfTag::String
             {
                 // Consume the scalar to anchor the error at the correct location.

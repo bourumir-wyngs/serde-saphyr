@@ -40,9 +40,28 @@ fn parse_name(input: &str) -> Option<(&str, &str)> {
     Some((&input[..end], &input[end..]))
 }
 
+/// The five docker-compose `${...}` substitution forms.
+/// The `&str` payload is the default or replacement text.
+/// It may be empty.
+enum BraceOp<'a> {
+    /// `${VAR}`.
+    /// Errors when `VAR` is unset.
+    Required,
+    /// `${VAR-text}`.
+    /// An empty `VAR` still passes through.
+    DefaultIfUnset(&'a str),
+    /// `${VAR:-text}`.
+    DefaultIfUnsetOrEmpty(&'a str),
+    /// `${VAR+text}`.
+    /// An empty `VAR` counts as set.
+    AlternateIfSet(&'a str),
+    /// `${VAR:+text}`.
+    AlternateIfSetAndNonEmpty(&'a str),
+}
+
 struct BraceRef<'a> {
     name: &'a str,
-    default: Option<&'a str>,
+    op: BraceOp<'a>,
 }
 
 /// Returns `Err` when the `${...}` candidate is malformed, `Ok(None)` when the brace
@@ -62,41 +81,46 @@ fn parse_braced_reference(
         return Err(input[start..close + 1].to_owned());
     };
 
-    if rest.is_empty() {
-        return Ok(Some((
-            BraceRef {
-                name,
-                default: None,
-            },
-            close + 1,
-        )));
-    }
+    let op = if rest.is_empty() {
+        BraceOp::Required
+    } else if let Some(text) = rest.strip_prefix(":-") {
+        BraceOp::DefaultIfUnsetOrEmpty(text)
+    } else if let Some(text) = rest.strip_prefix(":+") {
+        BraceOp::AlternateIfSetAndNonEmpty(text)
+    } else if let Some(text) = rest.strip_prefix('-') {
+        BraceOp::DefaultIfUnset(text)
+    } else if let Some(text) = rest.strip_prefix('+') {
+        BraceOp::AlternateIfSet(text)
+    } else {
+        return Err(input[start..close + 1].to_owned());
+    };
 
-    let default_text = rest
-        .strip_prefix(":-")
-        .ok_or_else(|| input[start..close + 1].to_owned())?;
-    Ok(Some((
-        BraceRef {
-            name,
-            default: Some(default_text),
-        },
-        close + 1,
-    )))
+    Ok(Some((BraceRef { name, op }, close + 1)))
 }
 
 fn resolve_brace<'a>(
     brace: &'a BraceRef<'a>,
     vars: &'a HashMap<String, String>,
 ) -> Result<&'a str, &'a str> {
-    match (vars.get(brace.name).map(String::as_str), brace.default) {
-        (None | Some(""), Some(default)) => Ok(default),
-        (Some(value), _) => Ok(value),
-        (None, None) => Err(brace.name),
+    let value = vars.get(brace.name).map(String::as_str);
+    match (&brace.op, value) {
+        (BraceOp::Required, Some(v)) => Ok(v),
+        (BraceOp::Required, None) => Err(brace.name),
+        (BraceOp::DefaultIfUnset(text), None) => Ok(text),
+        (BraceOp::DefaultIfUnset(_), Some(v)) => Ok(v),
+        (BraceOp::DefaultIfUnsetOrEmpty(text), None | Some("")) => Ok(text),
+        (BraceOp::DefaultIfUnsetOrEmpty(_), Some(v)) => Ok(v),
+        (BraceOp::AlternateIfSet(text), Some(_)) => Ok(text),
+        (BraceOp::AlternateIfSet(_), None) => Ok(""),
+        (BraceOp::AlternateIfSetAndNonEmpty(_), None | Some("")) => Ok(""),
+        (BraceOp::AlternateIfSetAndNonEmpty(text), Some(_)) => Ok(text),
     }
 }
 
-/// Expands `${NAME}` and `${NAME:-default}` references in `input` against `vars`.
-/// Values in `vars` are taken as final, so placeholders inside map entries are not re-expanded.
+/// Expands docker-compose-style `${...}` references in `input` against `vars`.
+/// See [`BraceOp`] for the supported forms.
+/// Values in `vars` are taken as final.
+/// Placeholders inside map entries are not re-expanded.
 /// Returns `Cow::Borrowed` when nothing changed so the common no-`$` path stays allocation-free.
 pub(crate) fn interpolate_compose_style<'s>(
     input: Cow<'s, str>,
@@ -176,43 +200,74 @@ pub(crate) fn interpolate_compose_style<'s>(
 #[cfg(test)]
 mod tests {
     use super::{PropertyError, interpolate_compose_style};
+    use rstest::rstest;
     use std::borrow::Cow;
     use std::collections::HashMap;
 
+    fn vars() -> HashMap<String, String> {
+        HashMap::from([
+            (String::from("SET"), String::from("value")),
+            (String::from("EMPTY"), String::new()),
+        ])
+    }
+
+    #[rstest]
+    #[case::required_nonempty("${SET}", "value")]
+    #[case::required_empty("${EMPTY}", "")]
+    #[case::default_unset("${MISSING-fallback}", "fallback")]
+    #[case::default_empty("${EMPTY-fallback}", "")]
+    #[case::default_nonempty("${SET-fallback}", "value")]
+    #[case::default_if_empty_unset("${MISSING:-fallback}", "fallback")]
+    #[case::default_if_empty_empty("${EMPTY:-fallback}", "fallback")]
+    #[case::default_if_empty_nonempty("${SET:-fallback}", "value")]
+    #[case::alternate_unset("${MISSING+yes}", "")]
+    #[case::alternate_empty("${EMPTY+yes}", "yes")]
+    #[case::alternate_nonempty("${SET+yes}", "yes")]
+    #[case::alternate_if_nonempty_unset("${MISSING:+yes}", "")]
+    #[case::alternate_if_nonempty_empty("${EMPTY:+yes}", "")]
+    #[case::alternate_if_nonempty_nonempty("${SET:+yes}", "yes")]
+    fn brace_op_resolves(#[case] input: &str, #[case] expected: &str) {
+        let output = interpolate_compose_style(Cow::Borrowed(input), &vars()).unwrap();
+        assert_eq!(output.as_ref(), expected);
+    }
+
+    #[test]
+    fn required_form_errors_when_var_is_unset() {
+        let error = interpolate_compose_style(Cow::Borrowed("${MISSING}"), &vars()).unwrap_err();
+
+        assert_eq!(error, PropertyError::Unresolved("MISSING".to_string()));
+    }
+
+    #[rstest]
+    #[case("${MISSING-}")]
+    #[case("${MISSING:-}")]
+    #[case("${SET+}")]
+    #[case("${SET:+}")]
+    fn empty_default_or_replacement_text_resolves_to_empty(#[case] input: &str) {
+        let output = interpolate_compose_style(Cow::Borrowed(input), &vars()).unwrap();
+        assert_eq!(output.as_ref(), "");
+    }
+
     #[test]
     fn keeps_input_without_dollar_borrowed() {
-        let vars = HashMap::from([(String::from("NAME"), String::from("value"))]);
         let input = Cow::Borrowed("plain text");
 
-        let output = interpolate_compose_style(input, &vars).unwrap();
+        let output = interpolate_compose_style(input, &vars()).unwrap();
 
         assert_eq!(output, Cow::Borrowed("plain text"));
     }
 
     #[test]
-    fn replaces_braced_property_reference() {
-        let vars = HashMap::from([(String::from("NAME"), String::from("world"))]);
-
-        let output = interpolate_compose_style(Cow::Borrowed("hello ${NAME}"), &vars).unwrap();
-
-        assert_eq!(output.as_ref(), "hello world");
-    }
-
-    #[test]
     fn replaces_reference_after_non_ascii_text() {
-        let vars = HashMap::from([(String::from("NAME"), String::from("world"))]);
+        let output = interpolate_compose_style(Cow::Borrowed("h\u{e9} ${SET}"), &vars()).unwrap();
 
-        let output = interpolate_compose_style(Cow::Borrowed("h\u{e9} ${NAME}"), &vars).unwrap();
-
-        assert_eq!(output.as_ref(), "h\u{e9} world");
+        assert_eq!(output.as_ref(), "h\u{e9} value");
     }
 
     #[test]
     fn reports_invalid_property_name() {
-        let vars = HashMap::from([(String::from("NAME"), String::from("world"))]);
-
         let error =
-            interpolate_compose_style(Cow::Borrowed("${NAME:?fallback}"), &vars).unwrap_err();
+            interpolate_compose_style(Cow::Borrowed("${NAME:?fallback}"), &vars()).unwrap_err();
 
         assert_eq!(
             error,
@@ -221,20 +276,9 @@ mod tests {
     }
 
     #[test]
-    fn returns_unresolved_property_name() {
-        let vars = HashMap::new();
-
-        let error = interpolate_compose_style(Cow::Borrowed("${NAME}"), &vars).unwrap_err();
-
-        assert_eq!(error, PropertyError::Unresolved("NAME".to_string()));
-    }
-
-    #[test]
     fn treats_double_dollar_as_escape() {
-        let vars = HashMap::from([(String::from("NAME"), String::from("world"))]);
+        let output = interpolate_compose_style(Cow::Borrowed("$${SET}"), &vars()).unwrap();
 
-        let output = interpolate_compose_style(Cow::Borrowed("$${NAME}"), &vars).unwrap();
-
-        assert_eq!(output.as_ref(), "${NAME}");
+        assert_eq!(output.as_ref(), "${SET}");
     }
 }

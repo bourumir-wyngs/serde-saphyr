@@ -1,6 +1,7 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 #![cfg(feature = "properties")]
 
+use rstest::rstest;
 use serde::Deserialize;
 use serde_saphyr::{
     Options, from_multiple_with_options, from_reader_with_options, from_str_with_options,
@@ -264,14 +265,14 @@ fn missing_property_is_an_error_when_properties_are_enabled() {
 #[test]
 fn invalid_property_name_is_an_error_when_properties_are_enabled() {
     let err = from_str_with_options::<ScalarConfig>(
-        "value: ${ab-cd}\n",
+        "value: ${1abc}\n",
         property_options_with_map(Some(HashMap::new())),
     )
     .unwrap_err();
 
     match err.without_snippet() {
         serde_saphyr::Error::InvalidPropertyName { name, location } => {
-            assert_eq!(name, "${ab-cd}");
+            assert_eq!(name, "${1abc}");
             assert_ne!(*location, serde_saphyr::Location::UNKNOWN);
         }
         other => panic!("unexpected error variant: {other:?}"),
@@ -279,10 +280,10 @@ fn invalid_property_name_is_an_error_when_properties_are_enabled() {
 
     let err_str = err.to_string();
     assert!(
-        err_str.contains("Invalid name: '${ab-cd}'"),
+        err_str.contains("Invalid name: '${1abc}'"),
         "unexpected: {err_str}"
     );
-    assert!(err_str.contains("value: ${ab-cd}"), "unexpected: {err_str}");
+    assert!(err_str.contains("value: ${1abc}"), "unexpected: {err_str}");
 }
 
 #[test]
@@ -316,19 +317,81 @@ fn unsupported_default_form_errors() {
 }
 
 #[test]
-fn bare_dash_form_errors() {
-    let err = from_str_with_options::<ScalarConfig>(
+fn bare_dash_form_uses_default_when_unset() {
+    let parsed: ScalarConfig = from_str_with_options(
         "value: ${NAME-fallback}\n",
         property_options_with_map(Some(HashMap::new())),
     )
-    .unwrap_err();
+    .unwrap();
 
-    match err.without_snippet() {
-        serde_saphyr::Error::InvalidPropertyName { name, .. } => {
-            assert_eq!(name, "${NAME-fallback}");
-        }
-        other => panic!("unexpected error variant: {other:?}"),
-    }
+    assert_eq!(parsed.value, "fallback");
+}
+
+#[test]
+fn bare_dash_form_passes_empty_value_through() {
+    let mut properties = HashMap::new();
+    properties.insert("NAME".to_string(), String::new());
+
+    let parsed: ScalarConfig = from_str_with_options(
+        "value: prefix-${NAME-fallback}-suffix\n",
+        property_options_with_map(Some(properties)),
+    )
+    .unwrap();
+
+    assert_eq!(parsed.value, "prefix--suffix");
+}
+
+#[test]
+fn alternate_form_substitutes_when_set() {
+    let mut properties = HashMap::new();
+    properties.insert("FLAG".to_string(), "anything".to_string());
+
+    let parsed: ScalarConfig = from_str_with_options(
+        "value: ${FLAG+enabled}\n",
+        property_options_with_map(Some(properties)),
+    )
+    .unwrap();
+
+    assert_eq!(parsed.value, "enabled");
+}
+
+#[test]
+fn alternate_with_colon_skips_empty_value() {
+    let mut properties = HashMap::new();
+    properties.insert("FLAG".to_string(), String::new());
+
+    let parsed: ScalarConfig = from_str_with_options(
+        "value: ${FLAG:+enabled}tail\n",
+        property_options_with_map(Some(properties)),
+    )
+    .unwrap();
+    assert_eq!(parsed.value, "tail");
+}
+
+#[rstest]
+#[case::bare_reference_set_empty("${EMPTY}", &[("EMPTY", "")])]
+#[case::alternate_unset("${FLAG+enabled}", &[])]
+#[case::alternate_colon_unset("${FLAG:+enabled}", &[])]
+#[case::alternate_colon_set_empty("${FLAG:+enabled}", &[("FLAG", "")])]
+#[case::empty_default_for_unset("${MISSING-}", &[])]
+#[case::empty_colon_default_for_unset("${MISSING:-}", &[])]
+#[case::dash_passes_empty_value_through("${EMPTY-fallback}", &[("EMPTY", "")])]
+fn whole_scalar_empty_interpolation_deserializes_as_empty_string(
+    #[case] placeholder: &str,
+    #[case] entries: &[(&str, &str)],
+) {
+    let properties: HashMap<String, String> = entries
+        .iter()
+        .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+        .collect();
+
+    let parsed: ScalarConfig = from_str_with_options(
+        &format!("value: {placeholder}\n"),
+        property_options_with_map(Some(properties)),
+    )
+    .unwrap();
+
+    assert_eq!(parsed.value, "");
 }
 
 #[test]
