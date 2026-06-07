@@ -5,8 +5,8 @@ use std::collections::HashMap;
 pub(crate) enum PropertyError {
     /// `${NAME}` had no value in the property map and no default was supplied.
     Unresolved(String),
-    /// A `${...}` candidate was present but did not parse as `${NAME}` or
-    /// `${NAME:-default}`. The string is the full candidate including braces.
+    /// A `${...}` candidate was present but did not parse as a supported braced
+    /// property form. The string is the full candidate including braces.
     InvalidName(String),
 }
 
