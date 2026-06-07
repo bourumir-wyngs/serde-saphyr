@@ -487,7 +487,7 @@ Interpolation is intentionally narrow:
 | `${NAME:+replacement}` | `""` | `""` | `replacement` |
 
 `default` and `replacement` are literal text from the YAML and are not treated as secret. If the target is `Option`,
-nullish values (null, empty and ~) are deserialized into None.
+nullish values (null, empty and ~) are deserialized into `None`.
 
 `properties` is gated behind the `properties` feature flag.
 Once enabled, pass a property map through `Options::with_properties(...)`:
