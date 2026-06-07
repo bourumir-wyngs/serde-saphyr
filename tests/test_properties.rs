@@ -1,6 +1,7 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 #![cfg(feature = "properties")]
 
+use rstest::rstest;
 use serde::Deserialize;
 use serde_saphyr::{
     Options, from_multiple_with_options, from_reader_with_options, from_str_with_options,
@@ -365,6 +366,32 @@ fn alternate_with_colon_skips_empty_value() {
     )
     .unwrap();
     assert_eq!(parsed.value, "tail");
+}
+
+#[rstest]
+#[case::bare_reference_set_empty("${EMPTY}", &[("EMPTY", "")])]
+#[case::alternate_unset("${FLAG+enabled}", &[])]
+#[case::alternate_colon_unset("${FLAG:+enabled}", &[])]
+#[case::alternate_colon_set_empty("${FLAG:+enabled}", &[("FLAG", "")])]
+#[case::empty_default_for_unset("${MISSING-}", &[])]
+#[case::empty_colon_default_for_unset("${MISSING:-}", &[])]
+#[case::dash_passes_empty_value_through("${EMPTY-fallback}", &[("EMPTY", "")])]
+fn whole_scalar_empty_interpolation_deserializes_as_empty_string(
+    #[case] placeholder: &str,
+    #[case] entries: &[(&str, &str)],
+) {
+    let properties: HashMap<String, String> = entries
+        .iter()
+        .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+        .collect();
+
+    let parsed: ScalarConfig = from_str_with_options(
+        &format!("value: {placeholder}\n"),
+        property_options_with_map(Some(properties)),
+    )
+    .unwrap();
+
+    assert_eq!(parsed.value, "");
 }
 
 #[test]
