@@ -983,3 +983,34 @@ mod include_tests {
         );
     }
 }
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct OptionalScalarConfig {
+    value: Option<String>,
+}
+
+// With the current code, interpolated nullish values are deserialized into
+// None when target is an Option. 
+#[rstest]
+#[case::empty_property("${EMPTY}", &[("EMPTY", "")], None)]
+#[case::empty_default("${MISSING-}", &[], None)]
+#[case::literal_null_default("${MISSING-null}", &[], None)]
+#[case::literal_tilde_default("${MISSING-~}", &[], None)]
+fn whole_scalar_nullish_interpolation_deserializes_as_some_string(
+    #[case] placeholder: &str,
+    #[case] entries: &[(&str, &str)],
+    #[case] expected: Option<&str>,
+) {
+    let properties: HashMap<String, String> = entries
+        .iter()
+        .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+        .collect();
+
+    let parsed: OptionalScalarConfig = from_str_with_options(
+        &format!("value: {placeholder}\n"),
+        property_options_with_map(Some(properties)),
+    )
+        .unwrap();
+
+    assert_eq!(parsed.value.as_deref(), expected);
+}
