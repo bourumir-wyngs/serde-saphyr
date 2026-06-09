@@ -226,24 +226,26 @@ pub(crate) fn interpolate_compose_style<'s>(
         } else {
             // not a ${.. reference but we are PropertySyntax::BracedOrBare, so parse as bare
             let body = &input_str[next..];
-            if let Some((name, _rest)) = parse_name(body) {
-                let value = vars
-                    .get(name)
-                    .map(String::as_str)
-                    .ok_or_else(|| PropertyError::Unresolved(name.to_owned()))?;
-
-                if !changed {
-                    out.push_str(&input_str[..i]);
-                    changed = true;
-                } else {
-                    out.push_str(&input_str[last..i]);
-                }
-                out.push_str(value);
-
-                i = next + name.len();
-                last = i;
+            let Some((name, _rest)) = parse_name(body) else {
+                // $ not followed by a valid name start -> treat $ as literal
+                i += 1;
                 continue;
+            };
+            let value = vars
+                .get(name)
+                .map(String::as_str)
+                .ok_or_else(|| PropertyError::Unresolved(name.to_owned()))?;
+
+            if !changed {
+                out.push_str(&input_str[..i]);
+                changed = true;
+            } else {
+                out.push_str(&input_str[last..i]);
             }
+            out.push_str(value);
+
+            i = next + name.len();
+            last = i;
         }
     }
 
