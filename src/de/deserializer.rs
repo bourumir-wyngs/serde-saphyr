@@ -479,6 +479,20 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
                 Err(crate::properties::PropertyError::InvalidName(name)) => {
                     Err(Error::InvalidPropertyName { name, location })
                 }
+                Err(crate::properties::PropertyError::RequiredButUnset { name, message }) => {
+                    Err(Error::PropertyRequiredButUnset {
+                        name,
+                        message,
+                        location,
+                    })
+                }
+                Err(crate::properties::PropertyError::RequiredButEmpty { name, message }) => {
+                    Err(Error::PropertyRequiredButEmpty {
+                        name,
+                        message,
+                        location,
+                    })
+                }
             }
         }
     }

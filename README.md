@@ -473,9 +473,9 @@ Interpolation is intentionally narrow:
 
 - it only applies to **plain scalars**; quoted and block scalars stay literal,
 - the supported forms are listed in the table below.
-  The error-message modifiers (`?`, `:?`) and the unbraced `$NAME` form are not currently supported,
+  The unbraced `$NAME` form is not currently supported,
 - `$${NAME}` escapes to a literal `${NAME}`,
-- nesting is not supported: `default`/`replacement` text is taken verbatim up to the first `}` with no further interpolation or escape processing,
+- nesting is not supported: `default`/`replacement`/`error` text is taken verbatim up to the first `}` with no further interpolation or escape processing,
 - if no property map is configured, every `${...}` form remains unchanged.
 
 | Form | `NAME` unset | `NAME` set to empty | `NAME` set to non-empty |
@@ -485,9 +485,11 @@ Interpolation is intentionally narrow:
 | `${NAME:-default}` | `default` | `default` | the value |
 | `${NAME+replacement}` | `""` | `replacement` | `replacement` |
 | `${NAME:+replacement}` | `""` | `""` | `replacement` |
+| `${NAME?error}` | error (with `error` as hint) | `""` | the value |
+| `${NAME:?error}` | error (with `error` as hint) | error (with `error` as hint) | the value |
 
-`default` and `replacement` are literal text from the YAML and are not treated as secret. If the target is `Option`,
-nullish values (null, empty and ~) are deserialized into `None`.
+`default`, `replacement`, and `error` are literal text from the YAML and are not treated as secret.
+The `error` hint may be empty (`${NAME?}` / `${NAME:?}`), matching docker-compose.
 
 `properties` is gated behind the `properties` feature flag.
 Once enabled, pass a property map through `Options::with_properties(...)`:
@@ -535,7 +537,7 @@ fn property_map_example_works() {
 }
 ```
 
-A bare `${NAME}` with no value in the map (and no `-`/`:-` default), or a malformed `${...}` candidate (invalid name, unsupported modifier), fails deserialization with a dedicated error pointing at the YAML source location.
+A bare `${NAME}` with no value in the map (and no `-`/`:-` default), a `${NAME?msg}` / `${NAME:?msg}` that triggers its error condition, or a malformed `${...}` candidate (invalid name, unsupported modifier), fails deserialization with a dedicated error pointing at the YAML source location.
 Configuration mistakes fail closed rather than silently producing partial values.
 
 When the property values are secrets, interpolation resolves the final value before Serde finishes deserializing the surrounding type, so a downstream custom deserializer or validation path could otherwise echo the resolved secret.
