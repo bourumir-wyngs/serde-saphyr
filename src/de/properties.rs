@@ -380,7 +380,11 @@ mod tests {
     #[case::braced("$${SET}", "${SET}", PropertySyntax::BracedOrBare)]
     #[case::bare("$$SET", "$SET", PropertySyntax::Braced)]
     #[case::bare("$$SET", "$SET", PropertySyntax::BracedOrBare)]
-    fn treats_double_dollar_as_escape(#[case] input: &str, #[case] expected: &str, #[case] syntax: PropertySyntax) {
+    fn treats_double_dollar_as_escape(
+        #[case] input: &str,
+        #[case] expected: &str,
+        #[case] syntax: PropertySyntax,
+    ) {
         let output = interpolate_compose_style(Cow::Borrowed(input), &vars(), syntax).unwrap();
         assert_eq!(output.as_ref(), expected);
     }
@@ -419,10 +423,11 @@ mod tests {
     #[case::space("price: $ 100")]
     #[case::end_of_input("trailing $")]
     #[case::unicode_letter("$\u{03a9}")]
-    fn does_not_change_literal(#[case] input: &str, #[values(PropertySyntax::Braced, PropertySyntax::BracedOrBare)] syntax: PropertySyntax) {
-        let output =
-            interpolate_compose_style(Cow::Borrowed(input), &vars(), syntax)
-                .unwrap();
+    fn does_not_change_literal(
+        #[case] input: &str,
+        #[values(PropertySyntax::Braced, PropertySyntax::BracedOrBare)] syntax: PropertySyntax,
+    ) {
+        let output = interpolate_compose_style(Cow::Borrowed(input), &vars(), syntax).unwrap();
         assert_eq!(output.as_ref(), input);
     }
 

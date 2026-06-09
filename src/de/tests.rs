@@ -2,12 +2,12 @@ use std::borrow::Cow;
 
 use granit_parser::ScalarStyle;
 
+#[cfg(feature = "properties")]
+use super::PropertySyntax;
 use super::cfg::Cfg;
 use super::events::{Ev, Events, ReplayEvents, attach_alias_locations_if_missing};
 use super::key_nodes::*;
 use super::tags::SfTag;
-#[cfg(feature = "properties")]
-use super::PropertySyntax;
 use super::{DuplicateKeyPolicy, Error, Location, MergeKeyPolicy, Options};
 
 fn loc(line: usize, column: usize) -> Location {
