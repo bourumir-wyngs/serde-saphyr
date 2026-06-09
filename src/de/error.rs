@@ -746,6 +746,20 @@ pub enum Error {
         name: String,
         location: Location,
     },
+    /// A `${NAME?text}` or `${NAME:?text}` reference required a value but the property was unset.
+    /// `message` may be empty.
+    PropertyRequiredButUnset {
+        name: String,
+        message: String,
+        location: Location,
+    },
+    /// A `${NAME:?text}` reference required a non-empty value but the property was present and empty.
+    /// `message` may be empty.
+    PropertyRequiredButEmpty {
+        name: String,
+        message: String,
+        location: Location,
+    },
     /// A YAML budget limit was exceeded.
     Budget {
         breach: BudgetBreach,
@@ -1411,6 +1425,8 @@ impl Error {
             | Error::HookError { location, .. }
             | Error::UnresolvedProperty { location, .. }
             | Error::InvalidPropertyName { location, .. }
+            | Error::PropertyRequiredButUnset { location, .. }
+            | Error::PropertyRequiredButEmpty { location, .. }
             | Error::ContainerEndMismatch { location, .. }
             | Error::UnknownAnchor { location, .. }
             | Error::CyclicInclude { location, .. }
@@ -1507,6 +1523,8 @@ impl Error {
             | Error::HookError { location, .. }
             | Error::UnresolvedProperty { location, .. }
             | Error::InvalidPropertyName { location, .. }
+            | Error::PropertyRequiredButUnset { location, .. }
+            | Error::PropertyRequiredButEmpty { location, .. }
             | Error::ContainerEndMismatch { location, .. }
             | Error::UnknownAnchor { location, .. }
             | Error::CyclicInclude { location, .. }
@@ -1618,6 +1636,8 @@ impl Error {
             | Error::HookError { location, .. }
             | Error::UnresolvedProperty { location, .. }
             | Error::InvalidPropertyName { location, .. }
+            | Error::PropertyRequiredButUnset { location, .. }
+            | Error::PropertyRequiredButEmpty { location, .. }
             | Error::ContainerEndMismatch { location, .. }
             | Error::UnknownAnchor { location, .. }
             | Error::CyclicInclude { location, .. }

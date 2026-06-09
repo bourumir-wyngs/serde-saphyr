@@ -303,14 +303,14 @@ fn interpolation_works_after_non_ascii_text() {
 #[test]
 fn unsupported_default_form_errors() {
     let err = from_str_with_options::<ScalarConfig>(
-        "value: ${NAME:?required}\n",
+        "value: ${NAME:=required}\n",
         property_options_with_map(Some(HashMap::new())),
     )
     .unwrap_err();
 
     match err.without_snippet() {
         serde_saphyr::Error::InvalidPropertyName { name, .. } => {
-            assert_eq!(name, "${NAME:?required}");
+            assert_eq!(name, "${NAME:=required}");
         }
         other => panic!("unexpected error variant: {other:?}"),
     }
@@ -610,16 +610,22 @@ fn scalar_enum_variant_error_redacts_interpolated_value() {
     assert!(msg.contains("${MODE}"), "raw placeholder missing: {msg}");
 }
 
-#[test]
-fn with_snippet_output_redacts_resolved_token_values() {
+#[rstest]
+#[case::bare("${TOKEN}")]
+#[case::default_if_unset("${TOKEN-fallback}")]
+#[case::default_if_unset_or_empty("${TOKEN:-fallback}")]
+#[case::error_if_unset("${TOKEN?must be set}")]
+#[case::error_if_unset_or_empty("${TOKEN:?must be set}")]
+#[case::alternate_if_set("${TOKEN+fallback-replacement}")]
+#[case::alternate_if_set_and_nonempty("${TOKEN:+fallback-replacement}")]
+fn with_snippet_output_redacts_resolved_token_values(#[case] placeholder: &str) {
     let mut properties = HashMap::new();
     properties.insert("TOKEN".to_string(), "super-secret-token".to_string());
 
-    let err = from_str_with_options::<NumericConfig>(
-        "value: ${TOKEN}\nnearby: ${TOKEN}\n",
-        property_options_with_map(Some(properties)),
-    )
-    .unwrap_err();
+    let yaml = format!("value: {placeholder}\nnearby: {placeholder}\n");
+    let err =
+        from_str_with_options::<NumericConfig>(&yaml, property_options_with_map(Some(properties)))
+            .unwrap_err();
 
     assert!(
         matches!(err, serde_saphyr::Error::WithSnippet { .. }),
@@ -627,7 +633,7 @@ fn with_snippet_output_redacts_resolved_token_values() {
     );
 
     let msg = err.to_string();
-    assert_redacted_message(&msg, "${TOKEN}", "super-secret-token");
+    assert_redacted_message(&msg, placeholder, "super-secret-token");
 }
 
 #[test]

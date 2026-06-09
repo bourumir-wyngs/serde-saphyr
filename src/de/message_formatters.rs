@@ -44,6 +44,18 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
         | Error::SerdeVariantId { msg, .. } => Cow::Borrowed(msg.as_str()),
         Error::UnresolvedProperty { name, .. } => Cow::Owned(format!("missing property `{name}`")),
         Error::InvalidPropertyName { name, .. } => Cow::Owned(format!("Invalid name: '{name}'")),
+        Error::PropertyRequiredButUnset { name, message, .. } if message.is_empty() => {
+            Cow::Owned(format!("missing property `{name}`"))
+        }
+        Error::PropertyRequiredButUnset { name, message, .. } => {
+            Cow::Owned(format!("missing property `{name}`: {message}"))
+        }
+        Error::PropertyRequiredButEmpty { name, message, .. } if message.is_empty() => {
+            Cow::Owned(format!("empty property `{name}`"))
+        }
+        Error::PropertyRequiredButEmpty { name, message, .. } => {
+            Cow::Owned(format!("empty property `{name}`: {message}"))
+        }
         Error::Eof { .. } => Cow::Borrowed("unexpected end of input"),
         Error::MultipleDocuments { hint, .. } => {
             Cow::Owned(format!("multiple YAML documents detected; {hint}"))
@@ -806,6 +818,44 @@ mod tests {
             location: loc(),
         };
         assert_eq!(formatter.format_message(&err), "Invalid name: '${ab-cd}'");
+    }
+
+    #[rstest::rstest]
+    #[case::unset_with_message(
+        Error::PropertyRequiredButUnset {
+            name: "DB_HOST".to_owned(),
+            message: "set DB_HOST in .env".to_owned(),
+            location: loc(),
+        },
+        "missing property `DB_HOST`: set DB_HOST in .env",
+    )]
+    #[case::unset_empty_message(
+        Error::PropertyRequiredButUnset {
+            name: "DB_HOST".to_owned(),
+            message: String::new(),
+            location: loc(),
+        },
+        "missing property `DB_HOST`",
+    )]
+    #[case::empty_with_message(
+        Error::PropertyRequiredButEmpty {
+            name: "DB_HOST".to_owned(),
+            message: "must not be blank".to_owned(),
+            location: loc(),
+        },
+        "empty property `DB_HOST`: must not be blank",
+    )]
+    #[case::empty_empty_message(
+        Error::PropertyRequiredButEmpty {
+            name: "DB_HOST".to_owned(),
+            message: String::new(),
+            location: loc(),
+        },
+        "empty property `DB_HOST`",
+    )]
+    fn default_property_required_messages(#[case] err: Error, #[case] expected: &str) {
+        let formatter = DefaultMessageFormatter;
+        assert_eq!(formatter.format_message(&err), expected);
     }
 
     #[test]

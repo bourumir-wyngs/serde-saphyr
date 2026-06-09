@@ -5,9 +5,15 @@ use std::collections::HashMap;
 pub(crate) enum PropertyError {
     /// `${NAME}` had no value in the property map and no default was supplied.
     Unresolved(String),
-    /// A `${...}` candidate was present but did not parse as a supported braced
-    /// property form. The string is the full candidate including braces.
+    /// A `${...}` candidate was present but did not parse as a supported form.
+    /// The string is the full candidate including braces.
     InvalidName(String),
+    /// `${NAME?text}` or `${NAME:?text}` referenced a variable that was unset.
+    /// `message` may be empty.
+    RequiredButUnset { name: String, message: String },
+    /// `${NAME:?text}` referenced a variable that was present but empty.
+    /// `message` may be empty.
+    RequiredButEmpty { name: String, message: String },
 }
 
 /// Checks whether a character is valid as the first character of a variable name.
@@ -40,8 +46,8 @@ fn parse_name(input: &str) -> Option<(&str, &str)> {
     Some((&input[..end], &input[end..]))
 }
 
-/// The five docker-compose `${...}` substitution forms.
-/// The `&str` payload is the default or replacement text.
+/// The docker-compose `${...}` substitution forms.
+/// The `&str` payload is the default, replacement, or error text.
 /// It may be empty.
 enum BraceOp<'a> {
     /// `${VAR}`.
@@ -57,6 +63,12 @@ enum BraceOp<'a> {
     AlternateIfSet(&'a str),
     /// `${VAR:+text}`.
     AlternateIfSetAndNonEmpty(&'a str),
+    /// `${VAR?text}`.
+    /// Errors when `VAR` is unset; an empty `VAR` still passes through.
+    ErrorIfUnset(&'a str),
+    /// `${VAR:?text}`.
+    /// Errors when `VAR` is unset or empty.
+    ErrorIfUnsetOrEmpty(&'a str),
 }
 
 struct BraceRef<'a> {
@@ -91,6 +103,10 @@ fn parse_braced_reference(
         BraceOp::DefaultIfUnset(text)
     } else if let Some(text) = rest.strip_prefix('+') {
         BraceOp::AlternateIfSet(text)
+    } else if let Some(text) = rest.strip_prefix(":?") {
+        BraceOp::ErrorIfUnsetOrEmpty(text)
+    } else if let Some(text) = rest.strip_prefix('?') {
+        BraceOp::ErrorIfUnset(text)
     } else {
         return Err(input[start..close + 1].to_owned());
     };
@@ -101,11 +117,12 @@ fn parse_braced_reference(
 fn resolve_brace<'a>(
     brace: &'a BraceRef<'a>,
     vars: &'a HashMap<String, String>,
-) -> Result<&'a str, &'a str> {
-    let value = vars.get(brace.name).map(String::as_str);
+) -> Result<&'a str, PropertyError> {
+    let name = brace.name;
+    let value = vars.get(name).map(String::as_str);
     match (&brace.op, value) {
         (BraceOp::Required, Some(v)) => Ok(v),
-        (BraceOp::Required, None) => Err(brace.name),
+        (BraceOp::Required, None) => Err(PropertyError::Unresolved(name.to_owned())),
         (BraceOp::DefaultIfUnset(text), None) => Ok(text),
         (BraceOp::DefaultIfUnset(_), Some(v)) => Ok(v),
         (BraceOp::DefaultIfUnsetOrEmpty(text), None | Some("")) => Ok(text),
@@ -114,6 +131,20 @@ fn resolve_brace<'a>(
         (BraceOp::AlternateIfSet(_), None) => Ok(""),
         (BraceOp::AlternateIfSetAndNonEmpty(_), None | Some("")) => Ok(""),
         (BraceOp::AlternateIfSetAndNonEmpty(text), Some(_)) => Ok(text),
+        (BraceOp::ErrorIfUnset(_), Some(v)) => Ok(v),
+        (BraceOp::ErrorIfUnset(msg), None) => Err(PropertyError::RequiredButUnset {
+            name: name.to_owned(),
+            message: (*msg).to_owned(),
+        }),
+        (BraceOp::ErrorIfUnsetOrEmpty(_), Some(v)) if !v.is_empty() => Ok(v),
+        (BraceOp::ErrorIfUnsetOrEmpty(msg), Some(_)) => Err(PropertyError::RequiredButEmpty {
+            name: name.to_owned(),
+            message: (*msg).to_owned(),
+        }),
+        (BraceOp::ErrorIfUnsetOrEmpty(msg), None) => Err(PropertyError::RequiredButUnset {
+            name: name.to_owned(),
+            message: (*msg).to_owned(),
+        }),
     }
 }
 
@@ -174,8 +205,7 @@ pub(crate) fn interpolate_compose_style<'s>(
             continue;
         };
 
-        let value =
-            resolve_brace(&brace, vars).map_err(|n| PropertyError::Unresolved(n.to_owned()))?;
+        let value = resolve_brace(&brace, vars)?;
 
         if !changed {
             out.push_str(&input_str[..i]);
@@ -212,30 +242,26 @@ mod tests {
     }
 
     #[rstest]
-    #[case::required_nonempty("${SET}", "value")]
+    #[case::required_set("${SET}", "value")]
     #[case::required_empty("${EMPTY}", "")]
-    #[case::default_unset("${MISSING-fallback}", "fallback")]
-    #[case::default_empty("${EMPTY-fallback}", "")]
-    #[case::default_nonempty("${SET-fallback}", "value")]
-    #[case::default_if_empty_unset("${MISSING:-fallback}", "fallback")]
-    #[case::default_if_empty_empty("${EMPTY:-fallback}", "fallback")]
-    #[case::default_if_empty_nonempty("${SET:-fallback}", "value")]
-    #[case::alternate_unset("${MISSING+yes}", "")]
-    #[case::alternate_empty("${EMPTY+yes}", "yes")]
-    #[case::alternate_nonempty("${SET+yes}", "yes")]
-    #[case::alternate_if_nonempty_unset("${MISSING:+yes}", "")]
-    #[case::alternate_if_nonempty_empty("${EMPTY:+yes}", "")]
-    #[case::alternate_if_nonempty_nonempty("${SET:+yes}", "yes")]
+    #[case::default_if_unset_set("${SET-fallback}", "value")]
+    #[case::default_if_unset_empty("${EMPTY-fallback}", "")]
+    #[case::default_if_unset_missing("${MISSING-fallback}", "fallback")]
+    #[case::default_if_unset_or_empty_set("${SET:-fallback}", "value")]
+    #[case::default_if_unset_or_empty_empty("${EMPTY:-fallback}", "fallback")]
+    #[case::default_if_unset_or_empty_missing("${MISSING:-fallback}", "fallback")]
+    #[case::alternate_if_set_set("${SET+yes}", "yes")]
+    #[case::alternate_if_set_empty("${EMPTY+yes}", "yes")]
+    #[case::alternate_if_set_missing("${MISSING+yes}", "")]
+    #[case::alternate_if_set_and_nonempty_set("${SET:+yes}", "yes")]
+    #[case::alternate_if_set_and_nonempty_empty("${EMPTY:+yes}", "")]
+    #[case::alternate_if_set_and_nonempty_missing("${MISSING:+yes}", "")]
+    #[case::error_if_unset_set("${SET?msg}", "value")]
+    #[case::error_if_unset_empty("${EMPTY?msg}", "")]
+    #[case::error_if_unset_or_empty_set("${SET:?msg}", "value")]
     fn brace_op_resolves(#[case] input: &str, #[case] expected: &str) {
         let output = interpolate_compose_style(Cow::Borrowed(input), &vars()).unwrap();
         assert_eq!(output.as_ref(), expected);
-    }
-
-    #[test]
-    fn required_form_errors_when_var_is_unset() {
-        let error = interpolate_compose_style(Cow::Borrowed("${MISSING}"), &vars()).unwrap_err();
-
-        assert_eq!(error, PropertyError::Unresolved("MISSING".to_string()));
     }
 
     #[rstest]
@@ -267,12 +293,43 @@ mod tests {
     #[test]
     fn reports_invalid_property_name() {
         let error =
-            interpolate_compose_style(Cow::Borrowed("${NAME:?fallback}"), &vars()).unwrap_err();
+            interpolate_compose_style(Cow::Borrowed("${NAME:=fallback}"), &vars()).unwrap_err();
 
         assert_eq!(
             error,
-            PropertyError::InvalidName("${NAME:?fallback}".to_string())
+            PropertyError::InvalidName("${NAME:=fallback}".to_string())
         );
+    }
+
+    #[rstest]
+    #[case::required_missing("${MISSING}", PropertyError::Unresolved("MISSING".into()))]
+    #[case::error_if_unset_missing(
+        "${MISSING?nope}",
+        PropertyError::RequiredButUnset { name: "MISSING".into(), message: "nope".into() }
+    )]
+    #[case::error_if_unset_missing_empty_msg(
+        "${MISSING?}",
+        PropertyError::RequiredButUnset { name: "MISSING".into(), message: "".into() }
+    )]
+    #[case::error_if_unset_or_empty_missing(
+        "${MISSING:?nope}",
+        PropertyError::RequiredButUnset { name: "MISSING".into(), message: "nope".into() }
+    )]
+    #[case::error_if_unset_or_empty_missing_empty_msg(
+        "${MISSING:?}",
+        PropertyError::RequiredButUnset { name: "MISSING".into(), message: "".into() }
+    )]
+    #[case::error_if_unset_or_empty_empty(
+        "${EMPTY:?nope}",
+        PropertyError::RequiredButEmpty { name: "EMPTY".into(), message: "nope".into() }
+    )]
+    #[case::error_if_unset_or_empty_empty_empty_msg(
+        "${EMPTY:?}",
+        PropertyError::RequiredButEmpty { name: "EMPTY".into(), message: "".into() }
+    )]
+    fn brace_op_errors(#[case] input: &str, #[case] expected: PropertyError) {
+        let error = interpolate_compose_style(Cow::Borrowed(input), &vars()).unwrap_err();
+        assert_eq!(error, expected);
     }
 
     #[test]
