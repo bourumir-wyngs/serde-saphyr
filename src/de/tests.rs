@@ -6,6 +6,8 @@ use super::cfg::Cfg;
 use super::events::{Ev, Events, ReplayEvents, attach_alias_locations_if_missing};
 use super::key_nodes::*;
 use super::tags::SfTag;
+#[cfg(feature = "properties")]
+use super::PropertySyntax;
 use super::{DuplicateKeyPolicy, Error, Location, MergeKeyPolicy, Options};
 
 fn loc(line: usize, column: usize) -> Location {
@@ -60,7 +62,7 @@ fn replay_events(buf: Vec<Ev<'static>>) -> ReplayEvents<'static> {
 
 #[cfg(feature = "properties")]
 fn replay_events(buf: Vec<Ev<'static>>) -> ReplayEvents<'static> {
-    ReplayEvents::new(buf, None)
+    ReplayEvents::new(buf, None, PropertySyntax::Braced)
 }
 
 #[cfg(not(feature = "properties"))]
@@ -76,7 +78,7 @@ fn replay_events_with_reference(
     buf: Vec<Ev<'static>>,
     reference: Location,
 ) -> ReplayEvents<'static> {
-    ReplayEvents::with_reference(buf, reference, None)
+    ReplayEvents::with_reference(buf, reference, None, PropertySyntax::Braced)
 }
 
 #[cfg(not(feature = "properties"))]
@@ -107,6 +109,7 @@ fn pending_from_events(
         MergeKeyPolicy::Merge,
         DuplicateKeyPolicy::Error,
         None,
+        PropertySyntax::Braced,
     )
 }
 

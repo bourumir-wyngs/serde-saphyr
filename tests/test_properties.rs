@@ -4,7 +4,8 @@
 use rstest::rstest;
 use serde::Deserialize;
 use serde_saphyr::{
-    Options, from_multiple_with_options, from_reader_with_options, from_str_with_options,
+    Options, PropertySyntax, from_multiple_with_options, from_reader_with_options,
+    from_str_with_options,
 };
 use std::collections::HashMap;
 #[cfg(feature = "validator")]
@@ -235,13 +236,18 @@ fn default_form_uses_default_when_property_is_explicitly_empty() {
     assert_eq!(parsed.value, "fallback");
 }
 
-#[test]
-fn missing_property_is_an_error_when_properties_are_enabled() {
-    let err = from_str_with_options::<ScalarConfig>(
-        "value: ${MISSING}\n",
-        property_options_with_map(Some(HashMap::new())),
-    )
-    .unwrap_err();
+#[rstest]
+#[case::braced("${MISSING}", PropertySyntax::Braced)]
+#[case::unbraced("$MISSING", PropertySyntax::BracedOrBare)]
+fn missing_property_is_an_error_when_properties_are_enabled(
+    #[case] placeholder: &str,
+    #[case] syntax: PropertySyntax,
+) {
+    let options =
+        serde_saphyr::options! { property_syntax: syntax }.with_properties(HashMap::new());
+
+    let err = from_str_with_options::<ScalarConfig>(&format!("value: {placeholder}\n"), options)
+        .unwrap_err();
 
     match err.without_snippet() {
         serde_saphyr::Error::UnresolvedProperty { name, location } => {
@@ -257,7 +263,7 @@ fn missing_property_is_an_error_when_properties_are_enabled() {
         "unexpected: {err_str}"
     );
     assert!(
-        err_str.contains("value: ${MISSING}"),
+        err_str.contains(&format!("value: {placeholder}")),
         "unexpected: {err_str}"
     );
 }
@@ -542,20 +548,32 @@ struct CustomHexCfg {
     value: CustomHexByte,
 }
 
-#[test]
-fn quoting_required_error_redacts_interpolated_string_value() {
+#[rstest]
+#[case::braced("${PORT}", PropertySyntax::Braced)]
+#[case::unbraced("$PORT", PropertySyntax::BracedOrBare)]
+fn quoting_required_error_redacts_interpolated_string_value(
+    #[case] placeholder: &str,
+    #[case] syntax: PropertySyntax,
+) {
     let mut properties = HashMap::new();
     properties.insert("PORT".to_string(), "5432".to_string());
 
-    let err = from_str_with_options::<InterpolatedString>(
-        "value: ${PORT}\n",
-        property_options_with_map_and_no_schema(Some(properties)),
-    )
-    .unwrap_err();
+    let options = serde_saphyr::options! {
+        no_schema: true,
+        property_syntax: syntax,
+    }
+    .with_properties(properties);
+
+    let err =
+        from_str_with_options::<InterpolatedString>(&format!("value: {placeholder}\n"), options)
+            .unwrap_err();
 
     let msg = err.to_string();
     assert!(msg.contains("must be quoted"), "unexpected: {msg}");
-    assert_redacted_message(&msg, "${PORT}", "5432");
+    assert_redacted_message(&msg, placeholder, "5432");
+    if syntax == PropertySyntax::BracedOrBare {
+        assert!(!msg.contains("${PORT}"));
+    }
 }
 
 #[test]
@@ -636,20 +654,27 @@ fn with_snippet_output_redacts_resolved_token_values(#[case] placeholder: &str) 
     assert_redacted_message(&msg, placeholder, "super-secret-token");
 }
 
-#[test]
-fn unknown_field_error_redacts_interpolated_key() {
+#[rstest]
+#[case::braced("${FIELD}", PropertySyntax::Braced)]
+#[case::unbraced("$FIELD", PropertySyntax::BracedOrBare)]
+fn unknown_field_error_redacts_interpolated_key(
+    #[case] placeholder: &str,
+    #[case] syntax: PropertySyntax,
+) {
     let mut properties = HashMap::new();
     properties.insert("FIELD".to_string(), "secret-field".to_string());
 
-    let err = from_str_with_options::<OnlyField>(
-        "${FIELD}: value\n",
-        property_options_with_map(Some(properties)),
-    )
-    .unwrap_err();
+    let options = serde_saphyr::options! {
+        property_syntax: syntax,
+    }
+    .with_properties(properties);
+
+    let err = from_str_with_options::<OnlyField>(&format!("{placeholder}: value\n"), options)
+        .unwrap_err();
 
     let msg = err.to_string();
     assert!(
-        msg.contains("unknown field `${FIELD}`"),
+        msg.contains(&format!("unknown field `{placeholder}`")),
         "unexpected: {msg}"
     );
     assert!(
@@ -996,7 +1021,7 @@ struct OptionalScalarConfig {
 }
 
 // With the current code, interpolated nullish values are deserialized into
-// None when target is an Option. 
+// None when target is an Option.
 #[rstest]
 #[case::empty_property("${EMPTY}", &[("EMPTY", "")], None)]
 #[case::empty_default("${MISSING-}", &[], None)]
@@ -1016,7 +1041,45 @@ fn whole_scalar_nullish_interpolation_deserializes_as_some_string(
         &format!("value: {placeholder}\n"),
         property_options_with_map(Some(properties)),
     )
-        .unwrap();
+    .unwrap();
 
     assert_eq!(parsed.value.as_deref(), expected);
+}
+
+#[rstest]
+#[case::braced_only_keeps_dollar_literal("value: $TOKEN\n", PropertySyntax::Braced, "$TOKEN")]
+#[case::resolves_bare_dollar_name(
+    "value: $TOKEN\n",
+    PropertySyntax::BracedOrBare,
+    "resolved-value"
+)]
+#[case::still_resolves_braced_form(
+    "value: ${TOKEN}\n",
+    PropertySyntax::BracedOrBare,
+    "resolved-value"
+)]
+#[case::quoted_scalar_stays_literal("value: \"$TOKEN\"\n", PropertySyntax::BracedOrBare, "$TOKEN")]
+#[case::double_dollar_still_escapes("value: $$TOKEN\n", PropertySyntax::BracedOrBare, "$TOKEN")]
+#[case::non_name_follower_stays_literal(
+    "value: cost is $100 today\n",
+    PropertySyntax::BracedOrBare,
+    "cost is $100 today"
+)]
+#[case::brace_default_body_unchanged(
+    "value: ${MISSING-$TOKEN}\n",
+    PropertySyntax::BracedOrBare,
+    "$TOKEN"
+)]
+fn property_syntax_scalar_deserialization(
+    #[case] yaml: &str,
+    #[case] syntax: PropertySyntax,
+    #[case] expected: &str,
+) {
+    let properties = HashMap::from([("TOKEN".to_string(), "resolved-value".to_string())]);
+
+    let options = serde_saphyr::options! { property_syntax: syntax }.with_properties(properties);
+
+    let parsed: ScalarConfig = from_str_with_options(yaml, options).unwrap();
+
+    assert_eq!(parsed.value, expected);
 }

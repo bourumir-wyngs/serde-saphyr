@@ -8,6 +8,8 @@ use std::rc::Rc;
 use granit_parser::ScalarStyle;
 
 use super::error::Error;
+#[cfg(feature = "properties")]
+use super::options::PropertySyntax;
 use super::tags::SfTag;
 use crate::location::{Location, Locations};
 
@@ -229,6 +231,11 @@ pub(crate) trait Events<'de> {
     fn property_map(&self) -> Option<&Rc<HashMap<String, String>>> {
         None
     }
+
+    #[cfg(feature = "properties")]
+    fn property_syntax(&self) -> PropertySyntax {
+        PropertySyntax::Braced
+    }
 }
 
 #[cold]
@@ -260,6 +267,9 @@ pub(super) struct ReplayEvents<'a> {
 
     #[cfg(feature = "properties")]
     property_map: Option<Rc<HashMap<String, String>>>,
+
+    #[cfg(feature = "properties")]
+    property_syntax: PropertySyntax,
 }
 
 impl<'a> ReplayEvents<'a> {
@@ -273,6 +283,7 @@ impl<'a> ReplayEvents<'a> {
     pub(super) fn new(
         buf: Vec<Ev<'a>>,
         #[cfg(feature = "properties")] property_map: Option<Rc<HashMap<String, String>>>,
+        #[cfg(feature = "properties")] property_syntax: PropertySyntax,
     ) -> Self {
         Self {
             buf,
@@ -280,6 +291,8 @@ impl<'a> ReplayEvents<'a> {
             ref_override: None,
             #[cfg(feature = "properties")]
             property_map,
+            #[cfg(feature = "properties")]
+            property_syntax,
         }
     }
 
@@ -299,6 +312,7 @@ impl<'a> ReplayEvents<'a> {
         buf: Vec<Ev<'a>>,
         reference: Location,
         #[cfg(feature = "properties")] property_map: Option<Rc<HashMap<String, String>>>,
+        #[cfg(feature = "properties")] property_syntax: PropertySyntax,
     ) -> Self {
         Self {
             buf,
@@ -306,6 +320,8 @@ impl<'a> ReplayEvents<'a> {
             ref_override: Some(reference),
             #[cfg(feature = "properties")]
             property_map,
+            #[cfg(feature = "properties")]
+            property_syntax,
         }
     }
 }
@@ -348,5 +364,10 @@ impl<'a> Events<'a> for ReplayEvents<'a> {
     #[cfg(feature = "properties")]
     fn property_map(&self) -> Option<&Rc<HashMap<String, String>>> {
         self.property_map.as_ref()
+    }
+
+    #[cfg(feature = "properties")]
+    fn property_syntax(&self) -> PropertySyntax {
+        self.property_syntax
     }
 }

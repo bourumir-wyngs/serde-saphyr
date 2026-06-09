@@ -27,6 +27,8 @@ use crate::budget::{BudgetEnforcer, EnforcingPolicy};
 use crate::buffered_input::ReaderInput;
 
 use crate::buffered_input::buffered_input_from_reader_with_limit;
+#[cfg(feature = "properties")]
+use crate::de::PropertySyntax;
 use crate::de::{AliasLimits, Error, Ev, Events, Location, Options};
 use crate::de_error::budget_error;
 #[cfg(feature = "include")]
@@ -220,6 +222,8 @@ pub(crate) struct LiveEvents<'a> {
     /// Property map for interpolation.
     #[cfg(feature = "properties")]
     property_map: Option<Rc<HashMap<String, String>>>,
+    #[cfg(feature = "properties")]
+    property_syntax: PropertySyntax,
     /// Per-anchor replay expansion counters, indexed by anchor id (dense ids).
     per_anchor_expansions: Vec<usize>,
     /// In single-document mode, stop producing events when a DocumentEnd is seen.
@@ -287,6 +291,8 @@ impl<'a> LiveEvents<'a> {
         let require_indent = options.require_indent;
         #[cfg(feature = "properties")]
         let property_map = options.property_map.clone();
+        #[cfg(feature = "properties")]
+        let property_syntax = options.property_syntax;
         #[cfg(feature = "include")]
         let resolver = crate::resolver_from_options(options);
 
@@ -336,6 +342,8 @@ impl<'a> LiveEvents<'a> {
             total_replayed_events: 0,
             #[cfg(feature = "properties")]
             property_map,
+            #[cfg(feature = "properties")]
+            property_syntax,
             per_anchor_expansions: Vec::new(),
             stop_at_doc_end,
             seen_doc_end: false,
@@ -368,6 +376,8 @@ impl<'a> LiveEvents<'a> {
         let require_indent = options.require_indent;
         #[cfg(feature = "properties")]
         let property_map = options.property_map.clone();
+        #[cfg(feature = "properties")]
+        let property_syntax = options.property_syntax;
         #[cfg(feature = "include")]
         let resolver = crate::resolver_from_options(options);
 
@@ -418,6 +428,8 @@ impl<'a> LiveEvents<'a> {
             total_replayed_events: 0,
             #[cfg(feature = "properties")]
             property_map: property_map.clone(),
+            #[cfg(feature = "properties")]
+            property_syntax,
             per_anchor_expansions: Vec::new(),
             stop_at_doc_end,
             seen_doc_end: false,
@@ -1219,6 +1231,11 @@ impl<'de> Events<'de> for LiveEvents<'de> {
     #[cfg(feature = "properties")]
     fn property_map(&self) -> Option<&Rc<HashMap<String, String>>> {
         self.property_map.as_ref()
+    }
+
+    #[cfg(feature = "properties")]
+    fn property_syntax(&self) -> PropertySyntax {
+        self.property_syntax
     }
 }
 

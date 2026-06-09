@@ -1,3 +1,4 @@
+use super::options::PropertySyntax;
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -150,12 +151,16 @@ fn resolve_brace<'a>(
 
 /// Expands docker-compose-style `${...}` references in `input` against `vars`.
 /// See [`BraceOp`] for the supported forms.
+/// Pass [`PropertySyntax::BracedOrBare`] to also recognize the bare `$NAME` form
+/// (which uses Required semantics).
+///
 /// Values in `vars` are taken as final.
 /// Placeholders inside map entries are not re-expanded.
 /// Returns `Cow::Borrowed` when nothing changed so the common no-`$` path stays allocation-free.
 pub(crate) fn interpolate_compose_style<'s>(
     input: Cow<'s, str>,
     vars: &HashMap<String, String>,
+    syntax: PropertySyntax,
 ) -> Result<Cow<'s, str>, PropertyError> {
     if !input.contains('$') {
         return Ok(input);
@@ -181,6 +186,7 @@ pub(crate) fn interpolate_compose_style<'s>(
         }
 
         if bytes[next] == b'$' {
+            // $$ = escaped, so skip and treat as literal
             if !changed {
                 out.push_str(&input_str[..i]);
                 changed = true;
@@ -193,30 +199,52 @@ pub(crate) fn interpolate_compose_style<'s>(
             continue;
         }
 
-        if bytes[next] != b'{' {
-            i += 1;
+        if bytes[next] == b'{' {
+            // a ${.. reference, so parse as braced
+            let Some((brace, end)) =
+                parse_braced_reference(input_str, i).map_err(PropertyError::InvalidName)?
+            else {
+                i += 1;
+                continue;
+            };
+
+            let value = resolve_brace(&brace, vars)?;
+
+            if !changed {
+                out.push_str(&input_str[..i]);
+                changed = true;
+            } else {
+                out.push_str(&input_str[last..i]);
+            }
+            out.push_str(value);
+
+            i = end;
+            last = i;
+        } else if syntax == PropertySyntax::Braced {
+            i += 1; // not a ${.. reference, so skip and treat as literal
             continue;
-        }
-
-        let Some((brace, end)) =
-            parse_braced_reference(input_str, i).map_err(PropertyError::InvalidName)?
-        else {
-            i += 1;
-            continue;
-        };
-
-        let value = resolve_brace(&brace, vars)?;
-
-        if !changed {
-            out.push_str(&input_str[..i]);
-            changed = true;
         } else {
-            out.push_str(&input_str[last..i]);
-        }
-        out.push_str(value);
+            // not a ${.. reference but we are PropertySyntax::BracedOrBare, so parse as bare
+            let body = &input_str[next..];
+            if let Some((name, _rest)) = parse_name(body) {
+                let value = vars
+                    .get(name)
+                    .map(String::as_str)
+                    .ok_or_else(|| PropertyError::Unresolved(name.to_owned()))?;
 
-        i = end;
-        last = i;
+                if !changed {
+                    out.push_str(&input_str[..i]);
+                    changed = true;
+                } else {
+                    out.push_str(&input_str[last..i]);
+                }
+                out.push_str(value);
+
+                i = next + name.len();
+                last = i;
+                continue;
+            }
+        }
     }
 
     if !changed {
@@ -229,7 +257,7 @@ pub(crate) fn interpolate_compose_style<'s>(
 
 #[cfg(test)]
 mod tests {
-    use super::{PropertyError, interpolate_compose_style};
+    use super::{PropertyError, PropertySyntax, interpolate_compose_style};
     use rstest::rstest;
     use std::borrow::Cow;
     use std::collections::HashMap;
@@ -260,7 +288,9 @@ mod tests {
     #[case::error_if_unset_empty("${EMPTY?msg}", "")]
     #[case::error_if_unset_or_empty_set("${SET:?msg}", "value")]
     fn brace_op_resolves(#[case] input: &str, #[case] expected: &str) {
-        let output = interpolate_compose_style(Cow::Borrowed(input), &vars()).unwrap();
+        let output =
+            interpolate_compose_style(Cow::Borrowed(input), &vars(), PropertySyntax::Braced)
+                .unwrap();
         assert_eq!(output.as_ref(), expected);
     }
 
@@ -270,7 +300,9 @@ mod tests {
     #[case("${SET+}")]
     #[case("${SET:+}")]
     fn empty_default_or_replacement_text_resolves_to_empty(#[case] input: &str) {
-        let output = interpolate_compose_style(Cow::Borrowed(input), &vars()).unwrap();
+        let output =
+            interpolate_compose_style(Cow::Borrowed(input), &vars(), PropertySyntax::Braced)
+                .unwrap();
         assert_eq!(output.as_ref(), "");
     }
 
@@ -278,22 +310,31 @@ mod tests {
     fn keeps_input_without_dollar_borrowed() {
         let input = Cow::Borrowed("plain text");
 
-        let output = interpolate_compose_style(input, &vars()).unwrap();
+        let output = interpolate_compose_style(input, &vars(), PropertySyntax::Braced).unwrap();
 
         assert_eq!(output, Cow::Borrowed("plain text"));
     }
 
     #[test]
     fn replaces_reference_after_non_ascii_text() {
-        let output = interpolate_compose_style(Cow::Borrowed("h\u{e9} ${SET}"), &vars()).unwrap();
+        let output = interpolate_compose_style(
+            Cow::Borrowed("h\u{e9} ${SET}"),
+            &vars(),
+            PropertySyntax::Braced,
+        )
+        .unwrap();
 
         assert_eq!(output.as_ref(), "h\u{e9} value");
     }
 
     #[test]
     fn reports_invalid_property_name() {
-        let error =
-            interpolate_compose_style(Cow::Borrowed("${NAME:=fallback}"), &vars()).unwrap_err();
+        let error = interpolate_compose_style(
+            Cow::Borrowed("${NAME:=fallback}"),
+            &vars(),
+            PropertySyntax::Braced,
+        )
+        .unwrap_err();
 
         assert_eq!(
             error,
@@ -328,14 +369,82 @@ mod tests {
         PropertyError::RequiredButEmpty { name: "EMPTY".into(), message: "".into() }
     )]
     fn brace_op_errors(#[case] input: &str, #[case] expected: PropertyError) {
-        let error = interpolate_compose_style(Cow::Borrowed(input), &vars()).unwrap_err();
+        let error =
+            interpolate_compose_style(Cow::Borrowed(input), &vars(), PropertySyntax::Braced)
+                .unwrap_err();
         assert_eq!(error, expected);
     }
 
-    #[test]
-    fn treats_double_dollar_as_escape() {
-        let output = interpolate_compose_style(Cow::Borrowed("$${SET}"), &vars()).unwrap();
+    #[rstest]
+    #[case::braced("$${SET}", "${SET}", PropertySyntax::Braced)]
+    #[case::braced("$${SET}", "${SET}", PropertySyntax::BracedOrBare)]
+    #[case::bare("$$SET", "$SET", PropertySyntax::Braced)]
+    #[case::bare("$$SET", "$SET", PropertySyntax::BracedOrBare)]
+    fn treats_double_dollar_as_escape(#[case] input: &str, #[case] expected: &str, #[case] syntax: PropertySyntax) {
+        let output = interpolate_compose_style(Cow::Borrowed(input), &vars(), syntax).unwrap();
+        assert_eq!(output.as_ref(), expected);
+    }
 
-        assert_eq!(output.as_ref(), "${SET}");
+    #[rstest]
+    #[case::bare_set("$SET", "value")]
+    #[case::bare_empty("$EMPTY", "")]
+    #[case::with_prefix("hello $SET", "hello value")]
+    #[case::with_suffix("$SET world", "value world")]
+    #[case::two_adjacent("$SET$EMPTY", "value")]
+    #[case::dot_terminator("$SET.tail", "value.tail")]
+    #[case::slash_terminator("$SET/tail", "value/tail")]
+    #[case::dash_is_literal_unbraced("$SET-default", "value-default")]
+    #[case::underscore("_$SET", "_value")]
+    fn unbraced_resolves(#[case] input: &str, #[case] expected: &str) {
+        let output =
+            interpolate_compose_style(Cow::Borrowed(input), &vars(), PropertySyntax::BracedOrBare)
+                .unwrap();
+        assert_eq!(output.as_ref(), expected);
+    }
+
+    #[rstest]
+    #[case::set("$SET")]
+    #[case::empty("$EMPTY")]
+    #[case::unset("$MISSING")]
+    fn braced_ignores_unbraced(#[case] input: &str) {
+        let output =
+            interpolate_compose_style(Cow::Borrowed(input), &vars(), PropertySyntax::Braced)
+                .unwrap();
+        assert_eq!(output.as_ref(), input);
+    }
+
+    #[rstest]
+    #[case::digit("$1.99")]
+    #[case::slash("$/path")]
+    #[case::space("price: $ 100")]
+    #[case::end_of_input("trailing $")]
+    #[case::unicode_letter("$\u{03a9}")]
+    fn does_not_change_literal(#[case] input: &str, #[values(PropertySyntax::Braced, PropertySyntax::BracedOrBare)] syntax: PropertySyntax) {
+        let output =
+            interpolate_compose_style(Cow::Borrowed(input), &vars(), syntax)
+                .unwrap();
+        assert_eq!(output.as_ref(), input);
+    }
+
+    #[rstest]
+    #[case::like_braced("$MISSING", "MISSING")]
+    #[case::like_braced("$SET_", "SET_")]
+    #[case::greedy_name_boundary("$SETfoo", "SETfoo")]
+    fn unbraced_unresolved_errors(#[case] input: &str, #[case] expected_name: &str) {
+        let error =
+            interpolate_compose_style(Cow::Borrowed(input), &vars(), PropertySyntax::BracedOrBare)
+                .unwrap_err();
+        assert_eq!(error, PropertyError::Unresolved(expected_name.into()));
+    }
+
+    #[test]
+    fn unbraced_does_not_change_default_as_literal() {
+        let output = interpolate_compose_style(
+            Cow::Borrowed("${MISSING-$SET}"),
+            &vars(),
+            PropertySyntax::BracedOrBare,
+        )
+        .unwrap();
+        assert_eq!(output.as_ref(), "$SET");
     }
 }

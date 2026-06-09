@@ -472,8 +472,8 @@ It is also useful for generated values or values that change between releases or
 Interpolation is intentionally narrow:
 
 - it only applies to **plain scalars**; quoted and block scalars stay literal,
-- the supported forms are listed in the table below.
-  The unbraced `$NAME` form is not currently supported,
+- the supported forms are listed in the table below,
+- the unbraced `$NAME` form is opt-in (see below) so a bare `$NAME` stays a literal by default,
 - `$${NAME}` escapes to a literal `${NAME}`,
 - nesting is not supported: `default`/`replacement`/`error` text is taken verbatim up to the first `}` with no further interpolation or escape processing,
 - if no property map is configured, every `${...}` form remains unchanged.
@@ -534,6 +534,38 @@ fn property_map_example_works() {
             mode: "production".to_string(),
         }
     );
+}
+```
+
+Set `property_syntax: PropertySyntax::BracedOrBare` to also accept the unbraced `$NAME` shorthand.
+It uses the same Required semantics as `${NAME}`, including `"$$NAME"` being a literal `"$NAME"`.
+Name boundaries are greedy.
+`$NAMEfoo` looks up `NAMEfoo`, so write `${NAME}foo` instead when you need to concatenate.
+Unset names produce an error.
+Modifiers stay brace-only:
+
+```rust
+#[derive(Debug, Deserialize, PartialEq)]
+struct Config {
+    db: String,
+}
+
+#[cfg(feature = "properties")]
+fn unbraced() -> Result<(), serde_saphyr::Error> {
+    use serde::Deserialize;
+    use serde_saphyr::{PropertySyntax, options, from_str_with_options};
+    use std::collections::HashMap;
+
+    let mut properties = HashMap::from([
+        ("DATABASE_URL".to_string(), "postgres://db.example/app".to_string()),
+    ]);
+    let opts = options! { property_syntax: PropertySyntax::BracedOrBare }
+        .with_properties(properties);
+
+    let parsed: Config = from_str_with_options("db: $DATABASE_URL\n", opts)?;
+    let expected = Config { db: "postgres://db.example/app".to_string() };
+    assert_eq!(expected, parsed);
+    Ok(())
 }
 ```
 
