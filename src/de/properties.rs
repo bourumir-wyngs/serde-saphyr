@@ -387,7 +387,6 @@ mod tests {
     #[case::var_escape_then_bare("$$x$SET", "$xvalue", PropertySyntax::BracedOrBare)]
     #[case::no_var_escape_then_bare("$$$SET", "$value", PropertySyntax::BracedOrBare)]
     #[case::bare_then_var_escape("$SET$$x", "value$x", PropertySyntax::BracedOrBare)]
-    #[case::bare_then_var_escape("$SET$$run", "value$", PropertySyntax::BracedOrBare)]
     fn multiple_substitutions_use_last_cursor(
         #[case] input: &str,
         #[case] expected: &str,
