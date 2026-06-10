@@ -1,21 +1,13 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
-#[test]
-fn string_from_plain_null_errors() {
-    // Plain null keyword should not deserialize into String
-    let yaml = "null";
+use rstest::rstest;
+
+#[rstest]
+#[case::plain_null("null")]
+#[case::tilde("~")]
+#[case::tagged_null("!!null")]
+fn string_from_null_errors(#[case] yaml: &str) {
     let err =
         serde_saphyr::from_str::<String>(yaml).expect_err("expected error for null -> String");
-    let msg = format!("{}", err);
-    assert!(
-        msg.contains("cannot deserialize null into string"),
-        "unexpected error message: {msg}"
-    );
-}
-
-#[test]
-fn string_from_tilde_errors() {
-    let yaml = "~";
-    let err = serde_saphyr::from_str::<String>(yaml).expect_err("expected error for ~ -> String");
     let msg = format!("{}", err);
     assert!(
         msg.contains("cannot deserialize null into string"),
@@ -50,18 +42,6 @@ fn string_from_single_quoted_null_ok() {
     let yaml = "'null'"; // single-quoted 'null'
     let s = serde_saphyr::from_str::<String>(yaml).expect("single-quoted null should be a string");
     assert_eq!(s, "null");
-}
-
-#[test]
-fn string_from_tagged_null_errors() {
-    let yaml = "!!null";
-    let err =
-        serde_saphyr::from_str::<String>(yaml).expect_err("expected error for !!null -> String");
-    let msg = format!("{}", err);
-    assert!(
-        msg.contains("cannot deserialize null into string"),
-        "unexpected error message: {msg}"
-    );
 }
 
 #[test]

@@ -1,4 +1,5 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
+use rstest::rstest;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -190,54 +191,25 @@ struct HasChar {
     c: char,
 }
 
-#[test]
-fn char_ok_cases() {
-    // unquoted ASCII
-    let y1 = "c: A\n";
-    let v1: HasChar = serde_saphyr::from_str(y1).unwrap();
-    assert_eq!(v1.c, 'A');
-
-    // quoted ASCII
-    let y2 = "c: 'B'\n";
-    let v2: HasChar = serde_saphyr::from_str(y2).unwrap();
-    assert_eq!(v2.c, 'B');
-
-    // single Unicode scalar (Greek lambda)
-    let y3 = "c: λ\n";
-    let v3: HasChar = serde_saphyr::from_str(y3).unwrap();
-    assert_eq!(v3.c, 'λ');
-
-    // single Unicode scalar (emoji)
-    let y4 = "c: 🙂\n";
-    let v4: HasChar = serde_saphyr::from_str(y4).unwrap();
-    assert_eq!(v4.c, '🙂');
+#[rstest]
+#[case::unquoted_ascii("c: A\n", 'A')]
+#[case::quoted_ascii("c: 'B'\n", 'B')]
+#[case::greek_lambda("c: λ\n", 'λ')]
+#[case::emoji("c: 🙂\n", '🙂')]
+fn char_ok_cases(#[case] yaml: &str, #[case] expected: char) {
+    let v: HasChar = serde_saphyr::from_str(yaml).unwrap();
+    assert_eq!(v.c, expected);
 }
 
-#[test]
-fn char_error_cases() {
-    // more than one character
-    let y1 = "c: AB\n";
-    let err1 = serde_saphyr::from_str::<HasChar>(y1).unwrap_err();
-    let msg1 = format!("{err1}");
-    assert!(msg1.contains("invalid char"));
-
-    // YAML null tilde
-    let y2 = "c: ~\n";
-    let err2 = serde_saphyr::from_str::<HasChar>(y2).unwrap_err();
-    let msg2 = format!("{err2}");
-    assert!(msg2.contains("invalid char"));
-
-    // YAML 'null' (any case)
-    let y3 = "c: Null\n";
-    let err3 = serde_saphyr::from_str::<HasChar>(y3).unwrap_err();
-    let msg3 = format!("{err3}");
-    assert!(msg3.contains("invalid char"));
-
-    // empty scalar (missing value)
-    let y4 = "c:\n";
-    let err4 = serde_saphyr::from_str::<HasChar>(y4).unwrap_err();
-    let msg4 = format!("{err4}");
-    assert!(msg4.contains("invalid char"));
+#[rstest]
+#[case::more_than_one_character("c: AB\n")]
+#[case::yaml_null_tilde("c: ~\n")]
+#[case::yaml_null_word("c: Null\n")]
+#[case::empty_scalar("c:\n")]
+fn char_error_cases(#[case] yaml: &str) {
+    let err = serde_saphyr::from_str::<HasChar>(yaml).unwrap_err();
+    let msg = format!("{err}");
+    assert!(msg.contains("invalid char"));
 }
 
 #[test]
