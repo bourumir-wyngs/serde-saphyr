@@ -467,9 +467,11 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
 
         #[cfg(feature = "properties")]
         {
-            let Some(vars) = self.ev.property_map().map(|m| m.as_ref()) else {
-                return Ok(value);
-            };
+            let vars = self
+                .ev
+                .property_map()
+                .expect("interpolation_possible() ensures property_map is Some")
+                .as_ref();
             let syntax = self.ev.property_syntax();
 
             match interpolate_compose_style(value, vars, syntax) {

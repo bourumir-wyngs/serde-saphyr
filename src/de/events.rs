@@ -228,14 +228,10 @@ pub(crate) trait Events<'de> {
 
     /// Return the property map used for variable interpolation, if configured.
     #[cfg(feature = "properties")]
-    fn property_map(&self) -> Option<&Rc<HashMap<String, String>>> {
-        None
-    }
+    fn property_map(&self) -> Option<&Rc<HashMap<String, String>>>;
 
     #[cfg(feature = "properties")]
-    fn property_syntax(&self) -> PropertySyntax {
-        PropertySyntax::Braced
-    }
+    fn property_syntax(&self) -> PropertySyntax;
 }
 
 #[cold]

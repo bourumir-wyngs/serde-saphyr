@@ -378,6 +378,26 @@ mod tests {
     }
 
     #[rstest]
+    #[case::two_braced("${SET}-${SET}", "value-value", PropertySyntax::Braced)]
+    #[case::two_braced_bare("${SET}-${SET}", "value-value", PropertySyntax::BracedOrBare)]
+    #[case::two_escapes("$$a$$b", "$a$b", PropertySyntax::Braced)]
+    #[case::two_escapes_bare("$$a$$b", "$a$b", PropertySyntax::BracedOrBare)]
+    #[case::escape_then_braced("$$x${SET}", "$xvalue", PropertySyntax::Braced)]
+    #[case::braced_then_escape("${SET}$$x", "value$x", PropertySyntax::Braced)]
+    #[case::var_escape_then_bare("$$x$SET", "$xvalue", PropertySyntax::BracedOrBare)]
+    #[case::no_var_escape_then_bare("$$$SET", "$value", PropertySyntax::BracedOrBare)]
+    #[case::bare_then_var_escape("$SET$$x", "value$x", PropertySyntax::BracedOrBare)]
+    #[case::bare_then_var_escape("$SET$$run", "value$", PropertySyntax::BracedOrBare)]
+    fn multiple_substitutions_use_last_cursor(
+        #[case] input: &str,
+        #[case] expected: &str,
+        #[case] syntax: PropertySyntax,
+    ) {
+        let output = interpolate_compose_style(Cow::Borrowed(input), &vars(), syntax).unwrap();
+        assert_eq!(output.as_ref(), expected);
+    }
+
+    #[rstest]
     #[case::braced("$${SET}", "${SET}", PropertySyntax::Braced)]
     #[case::braced("$${SET}", "${SET}", PropertySyntax::BracedOrBare)]
     #[case::bare("$$SET", "$SET", PropertySyntax::Braced)]
@@ -425,6 +445,9 @@ mod tests {
     #[case::space("price: $ 100")]
     #[case::end_of_input("trailing $")]
     #[case::unicode_letter("$\u{03a9}")]
+    #[case::unclosed_brace("${SET")]
+    #[case::unclosed_empty_brace("${")]
+    #[case::unclosed_brace_with_prefix("prefix ${SET and more")]
     fn does_not_change_literal(
         #[case] input: &str,
         #[values(PropertySyntax::Braced, PropertySyntax::BracedOrBare)] syntax: PropertySyntax,
