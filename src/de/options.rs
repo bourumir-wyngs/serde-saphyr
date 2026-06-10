@@ -272,6 +272,7 @@ pub struct Options {
     #[deprecated(
         note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
     )]
+    #[serde(default)]
     pub property_syntax: PropertySyntax,
 }
 
