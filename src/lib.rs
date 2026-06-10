@@ -7,6 +7,8 @@ compile_error!(
      \"serialize\" or \"deserialize\"."
 );
 
+#[cfg(all(feature = "deserialize", feature = "properties"))]
+pub use self::de::PropertySyntax;
 #[cfg(feature = "serialize")]
 pub use self::ser::{
     error as ser_error,

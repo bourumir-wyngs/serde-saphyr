@@ -25,6 +25,21 @@ pub enum DuplicateKeyPolicy {
     LastWins,
 }
 
+/// Recognized syntaxes for `${NAME}` / `$NAME` property interpolation.
+#[cfg(feature = "properties")]
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PropertySyntax {
+    /// Only the braced `${NAME}` form is interpolated. Bare `$NAME` stays literal.
+    #[default]
+    Braced,
+
+    /// Both `${NAME}` and the unbraced shorthand `$NAME` are interpolated.
+    /// The unbraced form uses Required semantics (missing values error).
+    BracedOrBare,
+}
+
 /// Merge key handling policy for YAML mappings.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -250,6 +265,15 @@ pub struct Options {
         note = "Direct construction of `Options` will be disabled from 1.0.0, use `Options::with_properties`"
     )]
     pub property_map: Option<Rc<HashMap<String, String>>>,
+
+    /// Which property-interpolation syntaxes are recognized.
+    /// Defaults to [`PropertySyntax::Braced`] (only `${NAME}`).
+    #[cfg(feature = "properties")]
+    #[deprecated(
+        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
+    )]
+    #[serde(default)]
+    pub property_syntax: PropertySyntax,
 }
 
 #[cfg(feature = "include")]
@@ -457,6 +481,8 @@ impl Default for Options {
             include_resolver: None,
             #[cfg(feature = "properties")]
             property_map: None,
+            #[cfg(feature = "properties")]
+            property_syntax: PropertySyntax::Braced,
         }
     }
 }
@@ -517,6 +543,16 @@ impl std::fmt::Debug for Options {
                     "disabled"
                 }
             })
+            .field("property_syntax", &{
+                #[cfg(feature = "properties")]
+                {
+                    format!("{:?}", self.property_syntax)
+                }
+                #[cfg(not(feature = "properties"))]
+                {
+                    "disabled".to_string()
+                }
+            })
             .finish()
     }
 }
@@ -555,6 +591,7 @@ mod tests {
         #[cfg(feature = "properties")]
         {
             assert!(opts.property_map.is_none());
+            assert_eq!(opts.property_syntax, PropertySyntax::Braced);
         }
     }
 

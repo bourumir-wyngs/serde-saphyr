@@ -467,11 +467,14 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
 
         #[cfg(feature = "properties")]
         {
-            let Some(vars) = self.ev.property_map().map(|m| m.as_ref()) else {
-                return Ok(value);
-            };
+            let vars = self
+                .ev
+                .property_map()
+                .expect("interpolation_possible() ensures property_map is Some")
+                .as_ref();
+            let syntax = self.ev.property_syntax();
 
-            match interpolate_compose_style(value, vars) {
+            match interpolate_compose_style(value, vars, syntax) {
                 Ok(value) => Ok(value),
                 Err(crate::properties::PropertyError::Unresolved(name)) => {
                     Err(Error::UnresolvedProperty { name, location })
@@ -559,6 +562,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 events,
                 #[cfg(feature = "properties")]
                 self.ev.property_map().cloned(),
+                #[cfg(feature = "properties")]
+                self.ev.property_syntax(),
             );
             return YamlDeserializer::new(&mut replay, self.cfg).deserialize_map(visitor);
         }
@@ -1641,6 +1646,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     events,
                     #[cfg(feature = "properties")]
                     self.ev.property_map().cloned(),
+                    #[cfg(feature = "properties")]
+                    self.ev.property_syntax(),
                 );
 
                 // Get location from replay events for error reporting.
@@ -2031,6 +2038,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         reference_location,
                         #[cfg(feature = "properties")]
                         self.ev.property_map().cloned(),
+                        #[cfg(feature = "properties")]
+                        self.ev.property_syntax(),
                     );
 
                     // Definition-site location: where the node is defined in the YAML.
@@ -2381,6 +2390,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         replay_events,
                         #[cfg(feature = "properties")]
                         self.ev.property_map().cloned(),
+                        #[cfg(feature = "properties")]
+                        self.ev.property_syntax(),
                     ));
                     return visitor.visit_enum(TaggedEA {
                         replay,
@@ -2635,6 +2646,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     replay_buf,
                     #[cfg(feature = "properties")]
                     self.ev.property_map().cloned(),
+                    #[cfg(feature = "properties")]
+                    self.ev.property_syntax(),
                 ));
                 // We need to use a replay source for the payload
                 return visitor.visit_enum(TaggedEA {

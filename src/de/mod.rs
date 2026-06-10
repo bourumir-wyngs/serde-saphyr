@@ -84,6 +84,8 @@ pub use with_deserializer::{
 pub use self::budget::Budget;
 pub use self::deserializer::YamlDeserializer;
 pub use self::error::Error;
+#[cfg(feature = "properties")]
+pub use self::options::PropertySyntax;
 pub use self::options::{AliasLimits, DuplicateKeyPolicy, MergeKeyPolicy, Options};
 pub use crate::location::Location;
 
