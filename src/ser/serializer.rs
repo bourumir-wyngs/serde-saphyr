@@ -1207,7 +1207,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     fn serialize_tuple_struct(
         self,
         name: &'static str,
-        _len: usize,
+        len: usize,
     ) -> Result<Self::SerializeTupleStruct> {
         if name == NAME_TUPLE_ANCHOR {
             Ok(TupleSer::anchor_strong(self))
@@ -1216,8 +1216,8 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         } else if name == NAME_TUPLE_COMMENTED {
             Ok(TupleSer::commented(self))
         } else {
-            // Treat as normal block sequence
-            Ok(TupleSer::normal(self))
+            // Normal tuple-struct: emit as a block sequence.
+            Ok(TupleSer::Seq(self.serialize_seq(Some(len))?))
         }
     }
 
