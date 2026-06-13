@@ -1151,13 +1151,17 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             let inline_first = (!self.at_line_start)
                 && self.after_dash_depth.is_some()
                 && !self.pending_space_after_colon;
-            // If we are a mapping value (space after colon was pending), we will handle
-            // the newline later in SeqSer::serialize_element to keep empty sequences inline.
+            // `inline_first` assumes we stay mid-line, but a pending anchor writes `&aN\n` first.
+            let anchor_broke_line = false;
             self.write_anchor_for_complex_node()?;
             if inline_first {
-                // Keep staged inline (pending_inline_map) so the child can inline its first dash.
-                // Ensure we stay mid-line so the child can emit its first dash inline.
-                self.at_line_start = false;
+                if anchor_broke_line {
+                    // Inlining now would drop the nested dashes to column 0, past the anchor.
+                    self.pending_inline_map = false;
+                } else {
+                    // Collapsing onto the parent dash yields the preferred `- - 1` shape.
+                    self.at_line_start = false;
+                }
             } else if was_inline_value {
                 // Mid-line start. If we are here due to a map value (after ':'), defer the newline
                 // decision until the first element is emitted so that empty sequences can stay inline
