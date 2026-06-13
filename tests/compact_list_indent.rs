@@ -90,7 +90,6 @@ fn compact_list_indent_enabled() {
     assert_eq!(lines[3], "    value: WATCH");
 }
 
-/// A tuple-struct serializes via `serialize_tuple_struct`, a Vec via `serialize_seq`.
 #[test]
 fn tuple_struct_serializes_like_a_vec() {
     use std::collections::BTreeMap;

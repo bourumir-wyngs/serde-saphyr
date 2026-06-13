@@ -1,5 +1,6 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[test]
 fn test_enum_struct_1() -> anyhow::Result<()> {
@@ -49,6 +50,42 @@ fn test_enum_struct_2() -> anyhow::Result<()> {
     let yaml = serde_saphyr::to_string(&value)?;
 
     let r: Outer = serde_saphyr::from_str(&yaml)?;
+    assert_eq!(value, r);
+
+    Ok(())
+}
+
+#[test]
+fn tuple_variant_round_trips_when_nested_under_a_key() -> anyhow::Result<()> {
+    #[derive(Serialize, Deserialize, PartialEq, Debug)]
+    enum E {
+        Tup(u8, u8, u8),
+    }
+
+    let value = BTreeMap::from([(
+        "hello".to_string(),
+        BTreeMap::from([("world".to_string(), E::Tup(1, 2, 3))]),
+    )]);
+    let yaml = serde_saphyr::to_string(&value)?;
+    let r: BTreeMap<String, BTreeMap<String, E>> = serde_saphyr::from_str(&yaml)?;
+    assert_eq!(value, r);
+
+    Ok(())
+}
+
+#[test]
+fn struct_variant_round_trips_when_nested_under_a_key() -> anyhow::Result<()> {
+    #[derive(Serialize, Deserialize, PartialEq, Debug)]
+    enum E {
+        Strukt { a: u8, b: u8 },
+    }
+
+    let value = BTreeMap::from([(
+        "hello".to_string(),
+        BTreeMap::from([("world".to_string(), E::Strukt { a: 1, b: 2 })]),
+    )]);
+    let yaml = serde_saphyr::to_string(&value)?;
+    let r: BTreeMap<String, BTreeMap<String, E>> = serde_saphyr::from_str(&yaml)?;
     assert_eq!(value, r);
 
     Ok(())
