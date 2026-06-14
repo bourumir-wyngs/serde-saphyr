@@ -1,5 +1,6 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 /// Targeted tests to increase coverage of src/de.rs.
+use rstest::rstest;
 use serde::Deserialize;
 
 // ---------------------------------------------------------------------------
@@ -226,25 +227,14 @@ fn enum_from_seq_error() {
 // deserialize_any edge cases
 // ---------------------------------------------------------------------------
 
-/// deserialize_any with NaN → returns string ".nan".
-#[test]
-fn deserialize_any_nan_as_string() {
-    let v: serde_json::Value = serde_saphyr::from_str(".nan\n").unwrap();
-    assert_eq!(v, serde_json::Value::String(".nan".to_string()));
-}
-
-/// deserialize_any with +inf → returns string ".inf".
-#[test]
-fn deserialize_any_inf_as_string() {
-    let v: serde_json::Value = serde_saphyr::from_str(".inf\n").unwrap();
-    assert_eq!(v, serde_json::Value::String(".inf".to_string()));
-}
-
-/// deserialize_any with -inf → returns string "-.inf".
-#[test]
-fn deserialize_any_neg_inf_as_string() {
-    let v: serde_json::Value = serde_saphyr::from_str("-.inf\n").unwrap();
-    assert_eq!(v, serde_json::Value::String("-.inf".to_string()));
+/// deserialize_any with NaN/±inf -> returns the literal as a string.
+#[rstest]
+#[case::nan(".nan\n", ".nan")]
+#[case::inf(".inf\n", ".inf")]
+#[case::neg_inf("-.inf\n", "-.inf")]
+fn deserialize_any_special_float_as_string(#[case] yaml: &str, #[case] expected: &str) {
+    let v: serde_json::Value = serde_saphyr::from_str(yaml).unwrap();
+    assert_eq!(v, serde_json::Value::String(expected.to_string()));
 }
 
 /// deserialize_any with empty document → null/unit.
@@ -581,18 +571,13 @@ fn deserialize_any_float() {
 // deserialize_any: strict_booleans true/false paths
 // ---------------------------------------------------------------------------
 
-#[test]
-fn deserialize_any_strict_bool_true() {
+#[rstest]
+#[case::bool_true("true\n", true)]
+#[case::bool_false("false\n", false)]
+fn deserialize_any_strict_bool(#[case] yaml: &str, #[case] expected: bool) {
     let opts = serde_saphyr::options! { strict_booleans: true };
-    let v: serde_json::Value = serde_saphyr::from_str_with_options("true\n", opts).unwrap();
-    assert_eq!(v, serde_json::Value::Bool(true));
-}
-
-#[test]
-fn deserialize_any_strict_bool_false() {
-    let opts = serde_saphyr::options! { strict_booleans: true };
-    let v: serde_json::Value = serde_saphyr::from_str_with_options("false\n", opts).unwrap();
-    assert_eq!(v, serde_json::Value::Bool(false));
+    let v: serde_json::Value = serde_saphyr::from_str_with_options(yaml, opts).unwrap();
+    assert_eq!(v, serde_json::Value::Bool(expected));
 }
 
 /// In strict mode, "yes" is not a bool → treated as string.
@@ -992,15 +977,11 @@ fn deserialize_any_quoted_number_as_string() {
 // deserialize_any: null-like plain scalar → null
 // ---------------------------------------------------------------------------
 
-#[test]
-fn deserialize_any_null_plain() {
-    let v: serde_json::Value = serde_saphyr::from_str("null\n").unwrap();
-    assert_eq!(v, serde_json::Value::Null);
-}
-
-#[test]
-fn deserialize_any_tilde_null() {
-    let v: serde_json::Value = serde_saphyr::from_str("~\n").unwrap();
+#[rstest]
+#[case::plain("null\n")]
+#[case::tilde("~\n")]
+fn deserialize_any_null_forms(#[case] yaml: &str) {
+    let v: serde_json::Value = serde_saphyr::from_str(yaml).unwrap();
     assert_eq!(v, serde_json::Value::Null);
 }
 

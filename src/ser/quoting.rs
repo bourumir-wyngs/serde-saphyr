@@ -378,70 +378,80 @@ fn contains_any_or_is_control(string: &str, values: &[char]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{is_numeric_looking, is_plain_safe};
+    use rstest::rstest;
 
-    #[test]
-    fn numeric_looking_scalar_forms() {
-        for s in [
-            "0",
-            "-19",
-            "+12",
-            "01",
-            "1_0",
-            "1000_1000_1000",
-            "0b10",
-            "+0b10",
-            "-0B10",
-            "0b1010_1010",
-            "0o7",
-            "+0O7",
-            "0o7_1",
-            "0x3A",
-            "+0X3A",
-            "0x3_A",
-            ".5",
-            "+.5",
-            "-.5",
-            "0.",
-            "-0.0",
-            "12e03",
-            "12e0_3",
-            "-2E+05",
-            "12.34e-5",
-        ] {
-            assert!(is_numeric_looking(s), "{s:?} should match");
-        }
-
-        for s in [
-            "", "+", "-", ".", "_1000", "1000_", "1__0", "1e_2", "_.5", "._5", "0b", "0b10_",
-            "0o_7", "0x3A_", "0o", "0x", "0x+1", "-0x-1", "12e", ".e5",
-            ".inf", // handled by the separate special-float helper
-            ".nan", // handled by the separate special-float helper
-        ] {
-            assert!(!is_numeric_looking(s), "{s:?} should not match");
-        }
+    #[rstest]
+    #[case::zero("0")]
+    #[case::neg_int("-19")]
+    #[case::pos_int("+12")]
+    #[case::leading_zero("01")]
+    #[case::underscore_sep("1_0")]
+    #[case::multi_underscore("1000_1000_1000")]
+    #[case::binary("0b10")]
+    #[case::pos_binary("+0b10")]
+    #[case::neg_binary_upper("-0B10")]
+    #[case::binary_underscore("0b1010_1010")]
+    #[case::octal("0o7")]
+    #[case::pos_octal_upper("+0O7")]
+    #[case::octal_underscore("0o7_1")]
+    #[case::hex("0x3A")]
+    #[case::pos_hex_upper("+0X3A")]
+    #[case::hex_underscore("0x3_A")]
+    #[case::leading_dot(".5")]
+    #[case::pos_leading_dot("+.5")]
+    #[case::neg_leading_dot("-.5")]
+    #[case::trailing_dot("0.")]
+    #[case::pos_zero_float("+0.0")]
+    #[case::neg_zero_float("-0.0")]
+    #[case::exponent("12e03")]
+    #[case::exponent_underscore("12e0_3")]
+    #[case::neg_exponent_upper("-2E+05")]
+    #[case::float_neg_exponent("12.34e-5")]
+    #[case::leading_dot_exponent(".5e+1")]
+    #[case::neg_leading_dot_exponent("-.5E-2")]
+    fn numeric_looking_matches(#[case] input: &str) {
+        assert!(is_numeric_looking(input), "{input:?} should match");
     }
 
-    #[test]
-    fn numeric_looking_dot_leading_exponents_and_invalid_fractional_underscores() {
-        for s in [".5e+1", "-.5E-2"] {
-            assert!(is_numeric_looking(s), "{s:?} should match");
-        }
-
-        assert!(
-            !is_numeric_looking("1._0"),
-            "underscores must stay between digits in the fractional part"
-        );
+    #[rstest]
+    #[case::empty("")]
+    #[case::lone_plus("+")]
+    #[case::lone_minus("-")]
+    #[case::lone_dot(".")]
+    #[case::leading_underscore("_1000")]
+    #[case::trailing_underscore("1000_")]
+    #[case::double_underscore("1__0")]
+    #[case::exponent_leading_underscore("1e_2")]
+    #[case::underscore_before_dot("_.5")]
+    #[case::underscore_after_dot("._5")]
+    #[case::empty_binary("0b")]
+    #[case::binary_trailing_underscore("0b10_")]
+    #[case::octal_leading_underscore("0o_7")]
+    #[case::hex_trailing_underscore("0x3A_")]
+    #[case::empty_octal("0o")]
+    #[case::empty_hex("0x")]
+    #[case::hex_with_sign("0x+1")]
+    #[case::hex_inner_sign("-0x-1")]
+    #[case::exponent_no_digits("12e")]
+    #[case::dot_exponent_no_mantissa(".e5")]
+    #[case::inf(".inf")]
+    #[case::nan(".nan")]
+    #[case::fractional_inner_underscore("1._0")]
+    fn numeric_looking_non_matches(#[case] input: &str) {
+        assert!(!is_numeric_looking(input), "{input:?} should not match");
     }
 
-    #[test]
-    fn plain_keys_reject_indicator_followed_by_whitespace() {
-        assert!(!is_plain_safe("- value"));
-        assert!(!is_plain_safe("?\tvalue"));
+    #[rstest]
+    #[case::dash_space("- value")]
+    #[case::question_tab("?\tvalue")]
+    fn plain_keys_reject_indicator_followed_by_whitespace(#[case] input: &str) {
+        assert!(!is_plain_safe(input), "{input:?}");
     }
 
-    #[test]
-    fn plain_keys_allow_indicator_without_following_whitespace() {
-        assert!(is_plain_safe("-value"));
-        assert!(is_plain_safe("?query"));
+    #[rstest]
+    #[case::dash_no_space("-value")]
+    #[case::question_no_space("?query")]
+    fn plain_keys_allow_indicator_without_following_whitespace(#[case] input: &str) {
+        assert!(is_plain_safe(input), "{input:?}");
     }
 }
