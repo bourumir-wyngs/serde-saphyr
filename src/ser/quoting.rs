@@ -456,7 +456,8 @@ mod tests {
     #[rstest]
     #[case::dash_no_space("-value")]
     #[case::question_no_space("?query")]
-    fn plain_keys_allow_indicator_without_following_whitespace(#[case] input: &str) {
+    #[case::interior_space("a b")]
+    fn plain_keys_allow_safe_inputs(#[case] input: &str) {
         assert!(is_plain_safe(input), "{input:?}");
     }
 
@@ -466,11 +467,5 @@ mod tests {
     #[case::trailing_tab("foo\t")]
     fn plain_keys_reject_surrounding_whitespace(#[case] input: &str) {
         assert!(!is_plain_safe(input), "{input:?}");
-    }
-
-    #[rstest]
-    #[case::interior_space("a b")]
-    fn plain_keys_allow_interior_whitespace(#[case] input: &str) {
-        assert!(is_plain_safe(input), "{input:?}");
     }
 }
