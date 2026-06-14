@@ -81,6 +81,8 @@ impl<'a, 'b, W: Write> SerializeSeq for SeqSer<'a, 'b, W> {
             self.ser.after_dash_depth = Some(self.depth);
             // Hint to emit first key/element of a following mapping/sequence inline on the same line.
             self.ser.pending_inline_map = true;
+            // A sibling element's block-collection state must not leak into this element.
+            self.ser.last_value_was_block = false;
             v.serialize(&mut *self.ser)?;
         }
         self.first = false;
@@ -125,14 +127,22 @@ impl<'a, 'b, W: Write> SerializeSeq for SeqSer<'a, 'b, W> {
     }
 }
 
-// Tuple-struct serializer (normal or anchor payload)
 /// Serializer for tuple-structs.
 ///
 /// Used for three shapes:
 /// - Normal tuple-structs (treated like sequences in block style),
-/// - Internal strong-anchor payloads (`__yaml_anchor`),
-/// - Internal weak-anchor payloads (`__yaml_weak_anchor`).
-pub struct TupleSer<'a, 'b, W: Write> {
+/// - Anchors:
+///   - Internal strong-anchor payloads (`__yaml_anchor`),
+///   - Internal weak-anchor payloads (`__yaml_weak_anchor`).
+pub enum TupleSer<'a, 'b, W: Write> {
+    /// Normal tuple-struct: a block sequence.
+    Seq(SeqSer<'a, 'b, W>),
+    /// Anchor/comment wrapper payload.
+    Special(SpecialTupleSer<'a, 'b, W>),
+}
+
+/// State machine for the internal anchor/comment tuple wrappers.
+pub struct SpecialTupleSer<'a, 'b, W: Write> {
     /// Parent YAML serializer.
     ser: &'a mut YamlSerializer<'b, W>,
     /// Variant describing how to interpret fields.
@@ -156,60 +166,30 @@ pub struct TupleSer<'a, 'b, W: Write> {
     comment_text: Option<String>,
 }
 enum TupleKind {
-    Normal,       // treat as block seq
     AnchorStrong, // [ptr, value]
     AnchorWeak,   // [ptr, present, value]
     Commented,    // [comment, value]
 }
 impl<'a, 'b, W: Write> TupleSer<'a, 'b, W> {
-    /// Create a tuple serializer for normal tuple-structs.
-    pub(super) fn normal(ser: &'a mut YamlSerializer<'b, W>) -> Self {
-        let depth_next = ser.depth + 1;
-        Self {
-            ser,
-            kind: TupleKind::Normal,
-            idx: 0,
-            depth_for_normal: depth_next,
-            strong_alias_id: None,
-            weak_present: false,
-            skip_third: false,
-            weak_alias_id: None,
-            comment_text: None,
-        }
-    }
     /// Create a tuple serializer for internal strong-anchor payloads.
     pub(super) fn anchor_strong(ser: &'a mut YamlSerializer<'b, W>) -> Self {
-        Self {
-            ser,
-            kind: TupleKind::AnchorStrong,
-            idx: 0,
-            depth_for_normal: 0,
-            strong_alias_id: None,
-            weak_present: false,
-            skip_third: false,
-            weak_alias_id: None,
-            comment_text: None,
-        }
+        TupleSer::Special(SpecialTupleSer::new(ser, TupleKind::AnchorStrong))
     }
     /// Create a tuple serializer for internal weak-anchor payloads.
     pub(super) fn anchor_weak(ser: &'a mut YamlSerializer<'b, W>) -> Self {
-        Self {
-            ser,
-            kind: TupleKind::AnchorWeak,
-            idx: 0,
-            depth_for_normal: 0,
-            strong_alias_id: None,
-            weak_present: false,
-            skip_third: false,
-            weak_alias_id: None,
-            comment_text: None,
-        }
+        TupleSer::Special(SpecialTupleSer::new(ser, TupleKind::AnchorWeak))
     }
     /// Create a tuple serializer for internal commented wrapper.
     pub(super) fn commented(ser: &'a mut YamlSerializer<'b, W>) -> Self {
+        TupleSer::Special(SpecialTupleSer::new(ser, TupleKind::Commented))
+    }
+}
+
+impl<'a, 'b, W: Write> SpecialTupleSer<'a, 'b, W> {
+    fn new(ser: &'a mut YamlSerializer<'b, W>, kind: TupleKind) -> Self {
         Self {
             ser,
-            kind: TupleKind::Commented,
+            kind,
             idx: 0,
             depth_for_normal: 0,
             strong_alias_id: None,
@@ -226,19 +206,23 @@ impl<'a, 'b, W: Write> SerializeTupleStruct for TupleSer<'a, 'b, W> {
     type Error = Error;
 
     fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<()> {
+        match self {
+            TupleSer::Seq(seq) => SerializeSeq::serialize_element(seq, value),
+            TupleSer::Special(s) => s.serialize_field(value),
+        }
+    }
+
+    fn end(self) -> Result<()> {
+        match self {
+            TupleSer::Seq(seq) => SerializeSeq::end(seq),
+            TupleSer::Special(s) => s.end(),
+        }
+    }
+}
+
+impl<'a, 'b, W: Write> SpecialTupleSer<'a, 'b, W> {
+    fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<()> {
         match self.kind {
-            TupleKind::Normal => {
-                if self.idx == 0 {
-                    self.ser.write_anchor_for_complex_node()?;
-                    if !self.ser.at_line_start {
-                        self.ser.newline()?;
-                    }
-                }
-                self.ser.write_indent(self.ser.depth + 1)?;
-                self.ser.out.write_str("- ")?;
-                self.ser.at_line_start = false;
-                value.serialize(&mut *self.ser)?;
-            }
             TupleKind::AnchorStrong => {
                 match self.idx {
                     0 => {
@@ -359,29 +343,19 @@ impl<'a, 'b, W: Write> SerializeTupleStruct for TupleSer<'a, 'b, W> {
     }
 }
 
-// Tuple variant (enum Variant: ( ... ))
-/// Serializer for tuple variants (enum Variant: ( ... )).
-///
-/// Created by `YamlSerializer::serialize_tuple_variant` to emit the variant name
-/// followed by a block sequence of fields.
-pub struct TupleVariantSer<'a, 'b, W: Write> {
-    /// Parent YAML serializer.
-    pub(super) ser: &'a mut YamlSerializer<'b, W>,
-    /// Target indentation depth for the fields.
-    pub(super) depth: usize,
-}
-impl<'a, 'b, W: Write> SerializeTupleVariant for TupleVariantSer<'a, 'b, W> {
+// Tuple variant (enum Variant: ( ... )).
+// `serialize_tuple_variant` writes the variant name and colon, then hands the
+// fields to a `SeqSer`: the body is just a block sequence, so it reuses the same
+// dash/indentation logic as `serialize_seq`.
+impl<'a, 'b, W: Write> SerializeTupleVariant for SeqSer<'a, 'b, W> {
     type Ok = ();
     type Error = Error;
 
     fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<()> {
-        self.ser.write_indent(self.depth)?;
-        self.ser.out.write_str("- ")?;
-        self.ser.at_line_start = false;
-        value.serialize(&mut *self.ser)
+        SerializeSeq::serialize_element(self, value)
     }
     fn end(self) -> Result<()> {
-        Ok(())
+        SerializeSeq::end(self)
     }
 }
 
