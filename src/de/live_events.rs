@@ -235,6 +235,10 @@ pub(crate) struct LiveEvents<'a> {
     error: Rc<RefCell<Option<std::io::Error>>>,
 
     /// Indentation requirement to validate against parser-reported indentation hints.
+    ///
+    /// For `Uniform(None)` this also memoizes the inferred unit on first use.
+    /// The inferred value persists for the whole input, so indentation stays consistent across every
+    /// document and `!include` (see [`RequireIndent`](crate::RequireIndent)).
     require_indent: crate::RequireIndent,
 
     #[cfg(feature = "include")]
@@ -1014,11 +1018,6 @@ impl<'a> LiveEvents<'a> {
         self.seen_doc_end = false;
         self.last_consumed_event_location = Location::UNKNOWN;
         self.last_consumed_event_kind = None;
-
-        // Reset uniform indentation memory for the new document.
-        if let crate::RequireIndent::Uniform(ref mut remembered) = self.require_indent {
-            *remembered = None;
-        }
     }
 
     /// Observe the configured budget for a replayed (injected) event.
