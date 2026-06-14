@@ -32,6 +32,46 @@ fn rejects_invalid_indentation(#[case] require: RequireIndent, #[case] yaml: &st
     assert!(err.contains("indentation"), "{err}");
 }
 
+#[rstest]
+#[case::literal("|")]
+#[case::folded(">")]
+fn rejects_invalid_non_empty_block_scalar_content_indentation(#[case] marker: &str) {
+    let yaml = format!("root:\n  text: {marker}\n   body\n");
+
+    let err = parse(RequireIndent::Even, &yaml).unwrap_err();
+    assert!(err.contains("expected even"), "{err}");
+    assert!(err.contains("found 3 spaces"), "{err}");
+}
+
+#[rstest]
+#[case::literal("|")]
+#[case::folded(">")]
+fn accepts_valid_non_empty_block_scalar_content_indentation(#[case] marker: &str) {
+    let yaml = format!("root:\n  text: {marker}\n    body\n");
+
+    assert!(parse(RequireIndent::Even, &yaml).is_ok());
+}
+
+#[rstest]
+#[case::literal("|+")]
+#[case::folded(">+")]
+fn whitespace_only_block_scalar_content_does_not_set_indentation_unit(#[case] marker: &str) {
+    let yaml = format!("empty: {marker}\n   \nnext:\n  value: ok\n");
+
+    assert!(parse(RequireIndent::Uniform(None), &yaml).is_ok());
+}
+
+#[rstest]
+#[case::literal("|")]
+#[case::folded(">")]
+fn non_empty_block_scalar_content_sets_uniform_indentation_unit(#[case] marker: &str) {
+    let yaml = format!("text: {marker}\n   body\nnext:\n  value: ok\n");
+
+    let err = parse(RequireIndent::Uniform(None), &yaml).unwrap_err();
+    assert!(err.contains("expected uniform (3 spaces)"), "{err}");
+    assert!(err.contains("found 2 spaces"), "{err}");
+}
+
 // Regression for https://github.com/bourumir-wyngs/serde-saphyr/issues/132.
 #[rstest]
 #[case::first_indent_too_wide("x:\n   z: 1\n", 3)]
