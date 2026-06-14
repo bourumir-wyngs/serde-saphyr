@@ -235,10 +235,11 @@ pub(crate) struct LiveEvents<'a> {
     error: Rc<RefCell<Option<std::io::Error>>>,
 
     /// Indentation requirement to validate against parser-reported indentation hints.
+    ///
+    /// For `Uniform(None)` this also memoizes the inferred unit on first use.
+    /// The inferred value persists for the whole input, so indentation stays consistent across every
+    /// document and `!include` (see [`RequireIndent`](crate::RequireIndent)).
     require_indent: crate::RequireIndent,
-    /// `require_indent` as originally configured.
-    /// used to restore it at document boundaries instead of dropping a user-supplied `Uniform(Some(n))`.
-    require_indent_initial: crate::RequireIndent,
 
     #[cfg(feature = "include")]
     pending_include_anchor: usize,
@@ -354,7 +355,6 @@ impl<'a> LiveEvents<'a> {
             error,
 
             require_indent,
-            require_indent_initial: require_indent,
             #[cfg(feature = "include")]
             pending_include_anchor: 0,
         }
@@ -451,7 +451,6 @@ impl<'a> LiveEvents<'a> {
             },
 
             require_indent,
-            require_indent_initial: require_indent,
             #[cfg(feature = "include")]
             pending_include_anchor: 0,
         }
@@ -1019,16 +1018,6 @@ impl<'a> LiveEvents<'a> {
         self.seen_doc_end = false;
         self.last_consumed_event_location = Location::UNKNOWN;
         self.last_consumed_event_kind = None;
-
-        // Reset uniform indentation memory to the configured value:
-        // - Uniform(Some(n)) persists across documents,
-        // - Uniform(None) re-infers per document.
-        if let crate::RequireIndent::Uniform(ref mut remembered) = self.require_indent {
-            *remembered = match self.require_indent_initial {
-                crate::RequireIndent::Uniform(initial) => initial,
-                _ => None,
-            };
-        }
     }
 
     /// Observe the configured budget for a replayed (injected) event.
