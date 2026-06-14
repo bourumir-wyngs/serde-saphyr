@@ -252,6 +252,10 @@ pub(crate) fn is_plain_safe(s: &str) -> bool {
     if is_ambiguous(s) {
         return false;
     }
+    // A plain, untagged "<<" key would be a YAML merge key, not the literal string "<<".
+    if s == "<<" {
+        return false;
+    }
     let bytes = s.as_bytes();
     // Keys with leading or trailing whitespace must be quoted:
     // Unlike values, a key's surrounding whitespace is not preserved across a round trip
@@ -457,13 +461,6 @@ mod tests {
     }
 
     #[rstest]
-    #[case::dash_space("- value")]
-    #[case::question_tab("?\tvalue")]
-    fn plain_keys_reject_indicator_followed_by_whitespace(#[case] input: &str) {
-        assert!(!is_plain_safe(input), "{input:?}");
-    }
-
-    #[rstest]
     #[case::dash_no_space("-value")]
     #[case::question_no_space("?query")]
     #[case::interior_space("a b")]
@@ -472,10 +469,13 @@ mod tests {
     }
 
     #[rstest]
+    #[case::dash_indicator_space("- value")]
+    #[case::question_indicator_tab("?\tvalue")]
     #[case::trailing_space("foo ")]
     #[case::leading_space(" foo")]
     #[case::trailing_tab("foo\t")]
-    fn plain_keys_reject_surrounding_whitespace(#[case] input: &str) {
+    #[case::merge_key("<<")]
+    fn plain_keys_reject_unsafe_inputs(#[case] input: &str) {
         assert!(!is_plain_safe(input), "{input:?}");
     }
 
