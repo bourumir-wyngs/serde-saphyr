@@ -93,6 +93,8 @@ pub(crate) enum SfTag {
 
 static TAG_LOOKUP_MAP: LazyLock<BTreeMap<&'static str, SfTag>> = LazyLock::new(|| {
     BTreeMap::from([
+        // Core-like spellings kept for compatibility. Resolved YAML 1.2.2 Core Schema tags are
+        // handled first via `Tag::core_suffix()`, which is independent of source handle spelling.
         // int
         ("!!int", SfTag::Int),
         ("!int", SfTag::Int),
@@ -159,6 +161,19 @@ static TAG_LOOKUP_MAP: LazyLock<BTreeMap<&'static str, SfTag>> = LazyLock::new(|
     ])
 });
 
+fn core_suffix_to_sf_tag(suffix: &str) -> Option<SfTag> {
+    match suffix {
+        "null" => Some(SfTag::Null),
+        "bool" => Some(SfTag::Bool),
+        "int" => Some(SfTag::Int),
+        "float" => Some(SfTag::Float),
+        "map" => Some(SfTag::Map),
+        "seq" => Some(SfTag::Seq),
+        "str" => Some(SfTag::String),
+        _ => None,
+    }
+}
+
 impl SfTag {
     pub(crate) fn from_optional_cow(tag: &Option<Cow<Tag>>) -> SfTag {
         match parse_include_tag(tag) {
@@ -170,6 +185,10 @@ impl SfTag {
 
         match tag {
             Some(cow) => {
+                if let Some(core_tag) = cow.core_suffix().and_then(core_suffix_to_sf_tag) {
+                    return core_tag;
+                }
+
                 let key = cow.to_string();
                 TAG_LOOKUP_MAP
                     .get(key.as_str())
@@ -195,5 +214,57 @@ impl SfTag {
             | SfTag::Radians
             | SfTag::NonSpecific => false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SfTag, core_suffix_to_sf_tag};
+    use granit_parser::Tag;
+    use std::borrow::Cow;
+
+    fn sf_tag(tag: Tag) -> SfTag {
+        SfTag::from_optional_cow(&Some(Cow::Owned(tag)))
+    }
+
+    #[test]
+    fn maps_resolved_yaml_core_schema_suffixes() {
+        for (suffix, expected) in [
+            ("null", SfTag::Null),
+            ("bool", SfTag::Bool),
+            ("int", SfTag::Int),
+            ("float", SfTag::Float),
+            ("map", SfTag::Map),
+            ("seq", SfTag::Seq),
+            ("str", SfTag::String),
+        ] {
+            assert_eq!(core_suffix_to_sf_tag(suffix), Some(expected));
+            assert_eq!(
+                sf_tag(Tag::with_original_handle(
+                    "tag:yaml.org,2002:",
+                    suffix,
+                    "!!"
+                )),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn maps_resolved_core_tag_split_by_tag_directive() {
+        let tag = Tag::with_original_handle("tag:yaml.org,2002:i", "nt", "!core!");
+
+        assert_eq!(sf_tag(tag), SfTag::Int);
+    }
+
+    #[test]
+    fn keeps_non_core_yaml_tags_on_fallback_path() {
+        let timestamp = Tag::with_original_handle("tag:yaml.org,2002:", "timestamp", "!!");
+        let binary = Tag::with_original_handle("tag:yaml.org,2002:", "binary", "!!");
+        let unknown = Tag::with_original_handle("tag:yaml.org,2002:", "application", "!!");
+
+        assert_eq!(sf_tag(timestamp), SfTag::TimeStamp);
+        assert_eq!(sf_tag(binary), SfTag::Binary);
+        assert_eq!(sf_tag(unknown), SfTag::Other);
     }
 }
