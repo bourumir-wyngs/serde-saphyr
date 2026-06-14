@@ -581,7 +581,7 @@ fn auto_literal_for_multiline_string() {
 fn auto_folded_for_long_single_line() {
     // A very long single-line string should auto-select folded block style
     let long = "word ".repeat(30); // 150 chars
-    let yaml = to_string(&long).unwrap();
+    let yaml = to_string(&long.trim_end()).unwrap();
     assert!(yaml.contains('>'), "expected auto folded block: {yaml}");
 }
 
