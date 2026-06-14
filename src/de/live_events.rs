@@ -236,6 +236,9 @@ pub(crate) struct LiveEvents<'a> {
 
     /// Indentation requirement to validate against parser-reported indentation hints.
     require_indent: crate::RequireIndent,
+    /// `require_indent` as originally configured.
+    /// used to restore it at document boundaries instead of dropping a user-supplied `Uniform(Some(n))`.
+    require_indent_initial: crate::RequireIndent,
 
     #[cfg(feature = "include")]
     pending_include_anchor: usize,
@@ -351,6 +354,7 @@ impl<'a> LiveEvents<'a> {
             error,
 
             require_indent,
+            require_indent_initial: require_indent,
             #[cfg(feature = "include")]
             pending_include_anchor: 0,
         }
@@ -447,6 +451,7 @@ impl<'a> LiveEvents<'a> {
             },
 
             require_indent,
+            require_indent_initial: require_indent,
             #[cfg(feature = "include")]
             pending_include_anchor: 0,
         }
@@ -1015,9 +1020,14 @@ impl<'a> LiveEvents<'a> {
         self.last_consumed_event_location = Location::UNKNOWN;
         self.last_consumed_event_kind = None;
 
-        // Reset uniform indentation memory for the new document.
+        // Reset uniform indentation memory to the configured value:
+        // - Uniform(Some(n)) persists across documents,
+        // - Uniform(None) re-infers per document.
         if let crate::RequireIndent::Uniform(ref mut remembered) = self.require_indent {
-            *remembered = None;
+            *remembered = match self.require_indent_initial {
+                crate::RequireIndent::Uniform(initial) => initial,
+                _ => None,
+            };
         }
     }
 
