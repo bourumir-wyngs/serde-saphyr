@@ -3,7 +3,7 @@ mod compound;
 #[path = "helpers.rs"]
 mod helpers;
 
-pub use self::compound::{MapSer, SeqSer, StructVariantSer, TupleSer, TupleVariantSer};
+pub use self::compound::{MapSer, SeqSer, StructVariantSer, TupleSer};
 
 use self::helpers::StrCapture;
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
@@ -577,7 +577,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     type SerializeSeq = SeqSer<'a, 'b, W>;
     type SerializeTuple = SeqSer<'a, 'b, W>;
     type SerializeTupleStruct = TupleSer<'a, 'b, W>;
-    type SerializeTupleVariant = TupleVariantSer<'a, 'b, W>;
+    type SerializeTupleVariant = SeqSer<'a, 'b, W>;
     type SerializeMap = MapSer<'a, 'b, W>;
     type SerializeStruct = MapSer<'a, 'b, W>;
     type SerializeStructVariant = StructVariantSer<'a, 'b, W>;
@@ -1244,9 +1244,11 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             self.out.write_str(":\n")?;
             self.at_line_start = true;
             let depth_next = base + 1;
-            return Ok(TupleVariantSer {
+            return Ok(SeqSer {
                 ser: self,
                 depth: depth_next,
+                flow: false,
+                first: true,
             });
         }
         // Otherwise (top-level or sequence context).
@@ -1261,9 +1263,11 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             depth_next = d + 2;
             self.pending_inline_map = false;
         }
-        Ok(TupleVariantSer {
+        Ok(SeqSer {
             ser: self,
             depth: depth_next,
+            flow: false,
+            first: true,
         })
     }
 

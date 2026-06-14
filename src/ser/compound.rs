@@ -341,29 +341,19 @@ impl<'a, 'b, W: Write> SpecialTupleSer<'a, 'b, W> {
     }
 }
 
-// Tuple variant (enum Variant: ( ... ))
-/// Serializer for tuple variants (enum Variant: ( ... )).
-///
-/// Created by `YamlSerializer::serialize_tuple_variant` to emit the variant name
-/// followed by a block sequence of fields.
-pub struct TupleVariantSer<'a, 'b, W: Write> {
-    /// Parent YAML serializer.
-    pub(super) ser: &'a mut YamlSerializer<'b, W>,
-    /// Target indentation depth for the fields.
-    pub(super) depth: usize,
-}
-impl<'a, 'b, W: Write> SerializeTupleVariant for TupleVariantSer<'a, 'b, W> {
+// Tuple variant (enum Variant: ( ... )).
+// `serialize_tuple_variant` writes the variant name and colon, then hands the
+// fields to a `SeqSer`: the body is just a block sequence, so it reuses the same
+// dash/indentation logic as `serialize_seq`.
+impl<'a, 'b, W: Write> SerializeTupleVariant for SeqSer<'a, 'b, W> {
     type Ok = ();
     type Error = Error;
 
     fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<()> {
-        self.ser.write_indent(self.depth)?;
-        self.ser.out.write_str("- ")?;
-        self.ser.at_line_start = false;
-        value.serialize(&mut *self.ser)
+        SerializeSeq::serialize_element(self, value)
     }
     fn end(self) -> Result<()> {
-        Ok(())
+        SerializeSeq::end(self)
     }
 }
 

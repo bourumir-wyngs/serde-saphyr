@@ -1,4 +1,5 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
+use rstest::rstest;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -69,6 +70,38 @@ fn tuple_variant_round_trips_when_nested_under_a_key() -> anyhow::Result<()> {
     let yaml = serde_saphyr::to_string(&value)?;
     let r: BTreeMap<String, BTreeMap<String, E>> = serde_saphyr::from_str(&yaml)?;
     assert_eq!(value, r);
+
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
+enum ComplexFieldEnum {
+    Tup(Box<ComplexFieldEnum>, Box<ComplexFieldEnum>),
+    Strukt { field: Box<ComplexFieldEnum> },
+    Seq(Vec<ComplexFieldEnum>),
+    Unit,
+}
+
+/// A tuple-variant whose first field is itself a complex node (a struct variant,
+/// a sequence, another tuple variant). Each field must keep its body indented
+/// under its own dash rather than dedenting to the dash column.
+#[rstest]
+#[case::struct_variant(ComplexFieldEnum::Strukt {
+    field: Box::new(ComplexFieldEnum::Unit),
+})]
+#[case::sequence(ComplexFieldEnum::Seq(vec![ComplexFieldEnum::Unit]))]
+#[case::tuple_variant(ComplexFieldEnum::Tup(
+    Box::new(ComplexFieldEnum::Unit),
+    Box::new(ComplexFieldEnum::Unit),
+))]
+fn tuple_variant_round_trips_with_complex_fields(
+    #[case] first_field: ComplexFieldEnum,
+) -> anyhow::Result<()> {
+    let value = ComplexFieldEnum::Tup(Box::new(first_field), Box::new(ComplexFieldEnum::Unit));
+    let yaml = serde_saphyr::to_string(&value)?;
+    let r: ComplexFieldEnum =
+        serde_saphyr::from_str(&yaml).map_err(|e| anyhow::anyhow!("{e}\n--- yaml ---\n{yaml}"))?;
+    assert_eq!(value, r, "round-trip mismatch for:\n{yaml}");
 
     Ok(())
 }
