@@ -16,9 +16,9 @@ enum Node {
     Bool(bool),
     Int(i64),
     Str(String),
-    Tuple(Box<Node>, Box<Node>),
+    EnumTuple(Box<Node>, Box<Node>),
+    EnumStruct { foo: Box<Node> },
     Seq(Vec<Node>),
-    Struct { foo: Box<Node> },
     Map(BTreeMap<String, Node>),
 }
 
@@ -31,15 +31,15 @@ fn gen_node(u: &mut Unstructured, depth: u32) -> arbitrary::Result<Node> {
         2 => Node::Int(i64::arbitrary(u)?),
         3 => {
             let s = String::arbitrary(u)?;
-            // We need to trim here because trailing newlines and spaces are intentionally
+            // TODO: We need to trim here because trailing newlines and spaces are intentionally
             // not preserved by the serializer according to `is_auto_block_scalar_readable`
             Node::Str(s.trim().to_string())
         }
-        4 => Node::Tuple(
+        4 => Node::EnumTuple(
             Box::new(gen_node(u, depth - 1)?),
             Box::new(gen_node(u, depth - 1)?),
         ),
-        5 => Node::Struct {
+        5 => Node::EnumStruct {
             foo: Box::new(gen_node(u, depth - 1)?),
         },
         6 => {
@@ -72,10 +72,10 @@ impl<'a> Arbitrary<'a> for Node {
 
 fuzz_target!(|node: Node| {
     let opts = serde_saphyr::ser_options! {};
-    // serialization is panic-free, but may return an `Err` (e.g. invalid options)
+    // serialization is panic-free and from valid input, so may never return an `Err`
     let text = match serde_saphyr::to_string_with_options(&node, opts) {
         Ok(text) => text,
-        Err(_) => return,
+        Err(e) => panic!("{e}"),
     };
 
     // anything we emit must be parseable YAML for this model.
