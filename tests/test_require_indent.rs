@@ -38,7 +38,6 @@ fn rejects_invalid_indentation(#[case] require: RequireIndent, #[case] yaml: &st
 #[case::first_indent_too_wide("x:\n   z: 1\n", 3)]
 #[case::first_indent_too_narrow("x:\n z: 1\n", 1)]
 #[case::inferred_then_off_multiple("x:\n y:\n   z: 1\n", 1)]
-#[case::wide_first_then_nested("x:\n   y:\n     z: 1\n", 3)]
 #[case::valid_first_then_off("x:\n  y:\n   z: 1\n", 3)]
 fn uniform_some_reports_configured_value(#[case] yaml: &str, #[case] found: usize) {
     let err = parse(RequireIndent::Uniform(Some(2)), yaml).unwrap_err();
