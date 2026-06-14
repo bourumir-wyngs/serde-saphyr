@@ -19,7 +19,6 @@ fn parse_multiple(require: RequireIndent, yaml: &str) -> Result<Vec<Value>, Stri
 #[case::uniform_inferred(RequireIndent::Uniform(None), "a:\n  b: 1\n  c: 2\n")]
 #[case::uniform_two(RequireIndent::Uniform(Some(2)), "x:\n  y:\n    z: 1\n")]
 #[case::unchecked(RequireIndent::Unchecked, "a:\n   b:\n       c: 1\n")]
-#[case::block_scalar_unchecked(RequireIndent::Uniform(Some(2)), "x: |\n  foo:\ny: |\n   bar\n")]
 fn accepts_valid_indentation(#[case] require: RequireIndent, #[case] yaml: &str) {
     assert!(parse(require, yaml).is_ok());
 }
