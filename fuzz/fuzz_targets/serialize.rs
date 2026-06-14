@@ -17,7 +17,7 @@ enum Node {
     Int(i64),
     Str(String),
     EnumTuple(Box<Node>, Box<Node>),
-    EnumStruct { foo: Box<Node> },
+    EnumStruct { field: Box<Node> },
     Seq(Vec<Node>),
     Map(BTreeMap<String, Node>),
 }
@@ -40,7 +40,7 @@ fn gen_node(u: &mut Unstructured, depth: u32) -> arbitrary::Result<Node> {
             Box::new(gen_node(u, depth - 1)?),
         ),
         5 => Node::EnumStruct {
-            foo: Box::new(gen_node(u, depth - 1)?),
+            field: Box::new(gen_node(u, depth - 1)?),
         },
         6 => {
             let n = u.int_in_range(0..=MAX_BREADTH)?;
