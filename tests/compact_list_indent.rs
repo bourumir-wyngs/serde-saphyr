@@ -89,3 +89,26 @@ fn compact_list_indent_enabled() {
     assert_eq!(lines[2], "  - name: METHOD");
     assert_eq!(lines[3], "    value: WATCH");
 }
+
+#[test]
+fn tuple_struct_serializes_like_a_vec() {
+    use std::collections::BTreeMap;
+
+    #[derive(Serialize)]
+    struct Tup(u8, u8, u8, u8);
+
+    let tup = Tup(9, 19, 11, 21);
+    let vec = vec![9u8, 19, 11, 21];
+
+    assert_eq!(
+        serde_saphyr::to_string(&tup).unwrap(),
+        serde_saphyr::to_string(&vec).unwrap(),
+    );
+
+    let as_tup = BTreeMap::from([("hello", BTreeMap::from([("world", &tup)]))]);
+    let as_vec = BTreeMap::from([("hello", BTreeMap::from([("world", &vec)]))]);
+    assert_eq!(
+        serde_saphyr::to_string(&as_tup).unwrap(),
+        serde_saphyr::to_string(&as_vec).unwrap(),
+    );
+}
