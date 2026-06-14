@@ -49,6 +49,21 @@ mod tests {
         assert_eq!(parsed, h, "Comma key/value did not round-trip as expected");
     }
 
+    #[test]
+    fn whitespace_padded_keys_roundtrip() {
+        let mut h = HashMap::new();
+        // if we were to trim or not quote the keys, they would collapse
+        h.insert("foo ".to_string(), "trailing".to_string());
+        h.insert("foo".to_string(), "bare".to_string());
+        h.insert(" foo".to_string(), "leading".to_string());
+        h.insert("foo bar".to_string(), "inner".to_string());
+
+        let yaml = to_string(&h).expect("serialize HashMap with whitespace-padded keys");
+
+        let parsed: HashMap<String, String> = from_str(&yaml).unwrap();
+        assert_eq!(parsed, h);
+    }
+
     /// Ensures that string keys that look like numbers ("1", "2.42") are quoted
     /// during serialization so they round-trip as strings, not numbers.
     #[test]

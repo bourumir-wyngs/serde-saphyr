@@ -253,7 +253,7 @@ pub(crate) fn is_plain_safe(s: &str) -> bool {
         return false;
     }
     let bytes = s.as_bytes();
-    if bytes[0].is_ascii_whitespace() {
+    if bytes[0].is_ascii_whitespace() || bytes[bytes.len() - 1].is_ascii_whitespace() {
         return false;
     }
 
@@ -292,7 +292,7 @@ pub(crate) fn is_plain_value_safe(s: &str, yaml_12: bool, in_flow: bool) -> bool
     }
 
     let bytes = s.as_bytes();
-    if bytes[0].is_ascii_whitespace() {
+    if bytes[0].is_ascii_whitespace() || bytes[bytes.len() - 1].is_ascii_whitespace() {
         return false;
     }
 
@@ -452,6 +452,20 @@ mod tests {
     #[case::dash_no_space("-value")]
     #[case::question_no_space("?query")]
     fn plain_keys_allow_indicator_without_following_whitespace(#[case] input: &str) {
+        assert!(is_plain_safe(input), "{input:?}");
+    }
+
+    #[rstest]
+    #[case::trailing_space("foo ")]
+    #[case::leading_space(" foo")]
+    #[case::trailing_tab("foo\t")]
+    fn plain_keys_reject_surrounding_whitespace(#[case] input: &str) {
+        assert!(!is_plain_safe(input), "{input:?}");
+    }
+
+    #[rstest]
+    #[case::interior_space("a b")]
+    fn plain_keys_allow_interior_whitespace(#[case] input: &str) {
         assert!(is_plain_safe(input), "{input:?}");
     }
 }
