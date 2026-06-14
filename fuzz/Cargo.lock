@@ -272,6 +272,7 @@ dependencies = [
 name = "serde_yaml_bw-fuzz"
 version = "0.0.0"
 dependencies = [
+ "arbitrary",
  "libfuzzer-sys",
  "serde",
  "serde-saphyr",
