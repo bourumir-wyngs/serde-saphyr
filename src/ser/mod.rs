@@ -43,7 +43,7 @@ mod zmij_format;
 
 pub use self::error::Error;
 pub use self::serializer::{
-    MapSer, SeqSer, StructVariantSer, TupleSer, TupleVariantSer, YamlSerializer,
+    MapSer, SeqSer, StructVariantSer, TupleSer, YamlSerializer,
 };
 
 /// Result alias.

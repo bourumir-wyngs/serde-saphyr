@@ -94,6 +94,36 @@ seq:
     }
 
     #[test]
+    fn block_seq_anchor_payload_in_sequence_indents_under_dash() {
+        #[derive(Serialize)]
+        struct Tup(u8, u8);
+
+        let shared = Rc::new(Tup(1, 2));
+        let tup_data: Vec<RcAnchor<Tup>> = vec![RcAnchor(shared.clone()), RcAnchor(shared)];
+
+        let expected = indoc! {r#"
+            - &a1
+              - 1
+              - 2
+            - *a1
+        "#};
+
+        let tup_yaml = to_string(&tup_data).expect("serialize tuple-struct anchor sequence");
+        assert_eq!(
+            tup_yaml, expected,
+            "tuple-struct payload. Got:\n{}",
+            tup_yaml
+        );
+
+        let shared_vec = Rc::new(vec![1u8, 2]);
+        let vec_data: Vec<RcAnchor<Vec<u8>>> =
+            vec![RcAnchor(shared_vec.clone()), RcAnchor(shared_vec)];
+
+        let vec_yaml = to_string(&vec_data).expect("serialize Vec anchor sequence");
+        assert_eq!(vec_yaml, expected, "Vec payload. Got:\n{}", vec_yaml);
+    }
+
+    #[test]
     fn rc_weak_anchor_present_and_dangling() {
         // Present (upgraded) weak -> emits anchored value
         let strong = Rc::new(Node {

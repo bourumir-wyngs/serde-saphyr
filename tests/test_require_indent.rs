@@ -1,117 +1,137 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
+use rstest::rstest;
 use serde_json::Value;
+use serde_saphyr::RequireIndent;
 
-#[test]
-fn require_indent_even_accepts_even_indentation() {
-    let yaml = "root:\n  child: value\n";
-    let options = serde_saphyr::options! {
-        require_indent: serde_saphyr::RequireIndent::Even,
-    };
-    let result = serde_saphyr::from_str_with_options::<Value>(yaml, options);
+fn parse(require: RequireIndent, yaml: &str) -> Result<Value, String> {
+    let options = serde_saphyr::options! { require_indent: require };
+    serde_saphyr::from_str_with_options::<Value>(yaml, options).map_err(|e| e.to_string())
+}
+
+fn parse_multiple(require: RequireIndent, yaml: &str) -> Result<Vec<Value>, String> {
+    let options = serde_saphyr::options! { require_indent: require };
+    serde_saphyr::from_multiple_with_options::<Value>(yaml, options).map_err(|e| e.to_string())
+}
+
+#[rstest]
+#[case::even_two(RequireIndent::Even, "root:\n  child: value\n")]
+#[case::divisible_four(RequireIndent::Divisible(4), "root:\n    child: value\n")]
+#[case::uniform_inferred(RequireIndent::Uniform(None), "a:\n  b: 1\n  c: 2\n")]
+#[case::uniform_two(RequireIndent::Uniform(Some(2)), "x:\n  y:\n    z: 1\n")]
+#[case::unchecked(RequireIndent::Unchecked, "a:\n   b:\n       c: 1\n")]
+fn accepts_valid_indentation(#[case] require: RequireIndent, #[case] yaml: &str) {
+    assert!(parse(require, yaml).is_ok());
+}
+
+#[rstest]
+#[case::even_rejects_odd(RequireIndent::Even, "root:\n   child: value\n")]
+#[case::divisible_four_rejects_two(RequireIndent::Divisible(4), "root:\n  child: value\n")]
+#[case::uniform_rejects_mixed(RequireIndent::Uniform(None), "a:\n  b:\n     c: 1\n")]
+fn rejects_invalid_indentation(#[case] require: RequireIndent, #[case] yaml: &str) {
+    let err = parse(require, yaml).unwrap_err();
+    assert!(err.contains("indentation"), "{err}");
+}
+
+#[rstest]
+#[case::literal("|")]
+#[case::folded(">")]
+fn rejects_invalid_non_empty_block_scalar_content_indentation(#[case] marker: &str) {
+    let yaml = format!("root:\n  text: {marker}\n   body\n");
+
+    let err = parse(RequireIndent::Even, &yaml).unwrap_err();
+    assert!(err.contains("expected even"), "{err}");
+    assert!(err.contains("found 3 spaces"), "{err}");
+}
+
+#[rstest]
+#[case::literal("|")]
+#[case::folded(">")]
+fn accepts_valid_non_empty_block_scalar_content_indentation(#[case] marker: &str) {
+    let yaml = format!("root:\n  text: {marker}\n    body\n");
+
+    assert!(parse(RequireIndent::Even, &yaml).is_ok());
+}
+
+#[rstest]
+#[case::literal("|+")]
+#[case::folded(">+")]
+fn whitespace_only_block_scalar_content_does_not_set_indentation_unit(#[case] marker: &str) {
+    let yaml = format!("empty: {marker}\n   \nnext:\n  value: ok\n");
+
+    assert!(parse(RequireIndent::Uniform(None), &yaml).is_ok());
+}
+
+#[rstest]
+#[case::literal("|")]
+#[case::folded(">")]
+fn non_empty_block_scalar_content_sets_uniform_indentation_unit(#[case] marker: &str) {
+    let yaml = format!("text: {marker}\n   body\nnext:\n  value: ok\n");
+
+    let err = parse(RequireIndent::Uniform(None), &yaml).unwrap_err();
+    assert!(err.contains("expected uniform (3 spaces)"), "{err}");
+    assert!(err.contains("found 2 spaces"), "{err}");
+}
+
+// Regression for https://github.com/bourumir-wyngs/serde-saphyr/issues/132.
+#[rstest]
+#[case::first_indent_too_wide("x:\n   z: 1\n", 3)]
+#[case::first_indent_too_narrow("x:\n z: 1\n", 1)]
+#[case::inferred_then_off_multiple("x:\n y:\n   z: 1\n", 1)]
+#[case::valid_first_then_off("x:\n  y:\n   z: 1\n", 3)]
+fn uniform_some_reports_configured_value(#[case] yaml: &str, #[case] found: usize) {
+    let err = parse(RequireIndent::Uniform(Some(2)), yaml).unwrap_err();
     assert!(
-        result.is_ok(),
-        "Even indentation (2) should be accepted: {result:?}"
+        err.contains(&format!(
+            "expected uniform (2 spaces), found {found} spaces"
+        )),
+        "{err}"
     );
 }
 
 #[test]
-fn require_indent_even_rejects_odd_indentation() {
-    let yaml = "root:\n   child: value\n";
-    let options = serde_saphyr::options! {
-        require_indent: serde_saphyr::RequireIndent::Even,
-    };
-    let result = serde_saphyr::from_str_with_options::<Value>(yaml, options);
-    assert!(result.is_err(), "Odd indentation (3) should be rejected");
-}
-
-#[test]
-fn require_indent_divisible_by_4_accepts_4() {
-    let yaml = "root:\n    child: value\n";
-    let options = serde_saphyr::options! {
-        require_indent: serde_saphyr::RequireIndent::Divisible(4),
-    };
-    let result = serde_saphyr::from_str_with_options::<Value>(yaml, options);
-    assert!(
-        result.is_ok(),
-        "Indentation of 4 should be accepted by Divisible(4): {result:?}"
-    );
-}
-
-#[test]
-fn require_indent_divisible_by_4_rejects_2() {
-    let yaml = "root:\n  child: value\n";
-    let options = serde_saphyr::options! {
-        require_indent: serde_saphyr::RequireIndent::Divisible(4),
-    };
-    let result = serde_saphyr::from_str_with_options::<Value>(yaml, options);
-    assert!(
-        result.is_err(),
-        "Indentation of 2 should be rejected by Divisible(4)"
-    );
-}
-
-#[test]
-fn require_indent_uniform_accepts_consistent_indentation() {
-    let yaml = "a:\n  b: 1\n  c: 2\n";
-    let options = serde_saphyr::options! {
-        require_indent: serde_saphyr::RequireIndent::Uniform(None),
-    };
-    let result = serde_saphyr::from_str_with_options::<Value>(yaml, options);
-    assert!(
-        result.is_ok(),
-        "Consistent 2-space indentation should be accepted: {result:?}"
-    );
-}
-
-#[test]
-fn require_indent_uniform_rejects_mixed_indentation() {
-    // First level uses 2 spaces, second level uses 3 (not a multiple of 2).
-    let yaml = "a:\n  b:\n     c: 1\n";
-    let options = serde_saphyr::options! {
-        require_indent: serde_saphyr::RequireIndent::Uniform(None),
-    };
-    let result = serde_saphyr::from_str_with_options::<Value>(yaml, options);
-    assert!(
-        result.is_err(),
-        "Mixed indentation (2 then 3) should be rejected by Uniform"
-    );
-}
-
-#[test]
-fn require_indent_unchecked_accepts_anything() {
-    let yaml = "a:\n   b:\n       c: 1\n";
-    let options = serde_saphyr::options! {
-        require_indent: serde_saphyr::RequireIndent::Unchecked,
-    };
-    let result = serde_saphyr::from_str_with_options::<Value>(yaml, options);
-    assert!(
-        result.is_ok(),
-        "Unchecked should accept any indentation: {result:?}"
-    );
-}
-
-#[test]
-fn require_indent_error_is_indentation_error() {
-    let yaml = "root:\n   child: value\n";
-    let options = serde_saphyr::options! {
-        require_indent: serde_saphyr::RequireIndent::Even,
-    };
-    let err = serde_saphyr::from_str_with_options::<Value>(yaml, options).unwrap_err();
-    let msg = format!("{err}");
-    assert!(
-        msg.contains("indentation"),
-        "Error message should mention indentation: {msg}"
-    );
-}
-
-#[test]
-fn require_indent_default_is_unchecked() {
+fn default_is_unchecked() {
     let options = serde_saphyr::options! {};
-    // Odd indentation should pass with default (Unchecked)
-    let yaml = "a:\n   b: 1\n";
-    let result = serde_saphyr::from_str_with_options::<Value>(yaml, options);
+    let result = serde_saphyr::from_str_with_options::<Value>("a:\n   b: 1\n", options);
+    assert!(result.is_ok(), "{result:?}");
+}
+
+#[test]
+fn uniform_some_persists_across_documents() {
+    let err = parse_multiple(RequireIndent::Uniform(Some(2)), r#"a:
+  b: 1
+---
+x:
+   z: 1
+"#)
+        .unwrap_err();
     assert!(
-        result.is_ok(),
-        "Default (Unchecked) should accept any indentation: {result:?}"
+        err.contains("expected uniform (2 spaces), found 3 spaces"),
+        "{err}"
+    );
+}
+
+#[test]
+fn uniform_some_accepts_matching_second_document() {
+    let result = parse_multiple(RequireIndent::Uniform(Some(2)), r#"a:
+  b: 1
+---
+x:
+  z: 1
+"#);
+    assert!(result.is_ok(), "{result:?}");
+}
+
+#[test]
+fn uniform_none_infers_once_and_stays_consistent_across_documents() {
+    let err = parse_multiple(RequireIndent::Uniform(None), r#"a:
+  b: 1
+---
+x:
+   z: 1
+"#)
+        .unwrap_err();
+    assert!(
+        err.contains("expected uniform (2 spaces), found 3 spaces"),
+        "{err}"
     );
 }

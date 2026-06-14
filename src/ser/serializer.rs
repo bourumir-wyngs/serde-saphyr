@@ -3,7 +3,7 @@ mod compound;
 #[path = "helpers.rs"]
 mod helpers;
 
-pub use self::compound::{MapSer, SeqSer, StructVariantSer, TupleSer, TupleVariantSer};
+pub use self::compound::{MapSer, SeqSer, StructVariantSer, TupleSer};
 
 use self::helpers::StrCapture;
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
@@ -577,7 +577,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     type SerializeSeq = SeqSer<'a, 'b, W>;
     type SerializeTuple = SeqSer<'a, 'b, W>;
     type SerializeTupleStruct = TupleSer<'a, 'b, W>;
-    type SerializeTupleVariant = TupleVariantSer<'a, 'b, W>;
+    type SerializeTupleVariant = SeqSer<'a, 'b, W>;
     type SerializeMap = MapSer<'a, 'b, W>;
     type SerializeStruct = MapSer<'a, 'b, W>;
     type SerializeStructVariant = StructVariantSer<'a, 'b, W>;
@@ -1151,13 +1151,17 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             let inline_first = (!self.at_line_start)
                 && self.after_dash_depth.is_some()
                 && !self.pending_space_after_colon;
-            // If we are a mapping value (space after colon was pending), we will handle
-            // the newline later in SeqSer::serialize_element to keep empty sequences inline.
+            // `inline_first` assumes we stay mid-line, but a pending anchor writes `&aN\n` first.
+            let anchor_broke_line = self.pending_anchor_id.is_some();
             self.write_anchor_for_complex_node()?;
             if inline_first {
-                // Keep staged inline (pending_inline_map) so the child can inline its first dash.
-                // Ensure we stay mid-line so the child can emit its first dash inline.
-                self.at_line_start = false;
+                if anchor_broke_line {
+                    // Inlining now would drop the nested dashes to column 0, past the anchor.
+                    self.pending_inline_map = false;
+                } else {
+                    // Collapsing onto the parent dash yields the preferred `- - 1` shape.
+                    self.at_line_start = false;
+                }
             } else if was_inline_value {
                 // Mid-line start. If we are here due to a map value (after ':'), defer the newline
                 // decision until the first element is emitted so that empty sequences can stay inline
@@ -1207,7 +1211,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     fn serialize_tuple_struct(
         self,
         name: &'static str,
-        _len: usize,
+        len: usize,
     ) -> Result<Self::SerializeTupleStruct> {
         if name == NAME_TUPLE_ANCHOR {
             Ok(TupleSer::anchor_strong(self))
@@ -1216,8 +1220,8 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         } else if name == NAME_TUPLE_COMMENTED {
             Ok(TupleSer::commented(self))
         } else {
-            // Treat as normal block sequence
-            Ok(TupleSer::normal(self))
+            // Normal tuple-struct: emit as a block sequence.
+            Ok(TupleSer::Seq(self.serialize_seq(Some(len))?))
         }
     }
 
@@ -1240,9 +1244,11 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             self.out.write_str(":\n")?;
             self.at_line_start = true;
             let depth_next = base + 1;
-            return Ok(TupleVariantSer {
+            return Ok(SeqSer {
                 ser: self,
                 depth: depth_next,
+                flow: false,
+                first: true,
             });
         }
         // Otherwise (top-level or sequence context).
@@ -1257,9 +1263,11 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             depth_next = d + 2;
             self.pending_inline_map = false;
         }
-        Ok(TupleVariantSer {
+        Ok(SeqSer {
             ser: self,
             depth: depth_next,
+            flow: false,
+            first: true,
         })
     }
 
