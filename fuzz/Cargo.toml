@@ -10,6 +10,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 serde = { version = "1.0.218", features = ["derive"] }
+arbitrary = "1"
 [dependencies.serde-saphyr]
 path = ".."
 
@@ -37,6 +38,13 @@ bench = false
 [[bin]]
 name = "duplicate_keys"
 path = "fuzz_targets/duplicate_keys.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "serialize"
+path = "fuzz_targets/serialize.rs"
 test = false
 doc = false
 bench = false
