@@ -4,7 +4,7 @@ use serde::ser::{
 };
 use std::fmt::Write;
 
-use super::helpers::{BoolCapture, StrCapture, UsizeCapture, scalar_key_to_string};
+use super::helpers::{scalar_key_to_string, BoolCapture, StrCapture, UsizeCapture};
 use super::{AnchorId, YamlSerializer};
 use crate::ser::options::CommentPosition;
 use crate::ser::{Error, Result};
@@ -230,6 +230,9 @@ impl<'a, 'b, W: Write> SerializeTupleStruct for TupleSer<'a, 'b, W> {
             TupleKind::Normal => {
                 if self.idx == 0 {
                     self.ser.write_anchor_for_complex_node()?;
+                    if self.ser.pending_space_after_colon {
+                        self.ser.pending_space_after_colon = false;
+                    }
                     if !self.ser.at_line_start {
                         self.ser.newline()?;
                     }

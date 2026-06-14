@@ -1,4 +1,5 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
+use indoc::indoc;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -38,4 +39,22 @@ fn block_sequence_value_must_not_make_next_map_inline() -> anyhow::Result<()> {
     assert_eq!(decoded, with_vector);
 
     Ok(())
+}
+
+#[test]
+fn nested_tuple_struct_under_map_key_uses_sequence_value_indentation() {
+    #[derive(Serialize)]
+    struct Tup(u8, u8, u8);
+
+    let value = BTreeMap::from([("foo", BTreeMap::from([("bar", Tup(1, 2, 3))]))]);
+
+    let expected = indoc! {r#"
+        foo:
+          bar:
+          - 1
+          - 2
+          - 3
+    "#};
+
+    assert_eq!(serde_saphyr::to_string(&value).unwrap(), expected);
 }
