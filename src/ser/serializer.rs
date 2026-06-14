@@ -1152,7 +1152,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 && self.after_dash_depth.is_some()
                 && !self.pending_space_after_colon;
             // `inline_first` assumes we stay mid-line, but a pending anchor writes `&aN\n` first.
-            let anchor_broke_line = false;
+            let anchor_broke_line = self.pending_anchor_id.is_some();
             self.write_anchor_for_complex_node()?;
             if inline_first {
                 if anchor_broke_line {
