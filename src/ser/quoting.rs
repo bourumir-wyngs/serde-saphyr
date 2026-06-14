@@ -374,15 +374,25 @@ pub(crate) fn is_auto_block_scalar_readable(s: &str) -> bool {
     !s.is_empty()
 }
 
+/// Characters that cannot survive a round-trip inside a plain or single-quoted
+/// scalar and therefore force double-quoted emission.
+/// `char::is_control` misses BOM (U+FEFF) and the LS/PS separators (U+2028/U+2029), which are not controls.
+#[inline]
+pub(crate) fn is_controll_which_needs_escaping(ch: char) -> bool {
+    ch.is_control() || matches!(ch, '\u{FEFF}' | '\u{2028}' | '\u{2029}')
+}
+
 fn contains_any_or_is_control(string: &str, values: &[char]) -> bool {
     string
         .chars()
-        .any(|x| values.iter().any(|v| &x == v || x.is_control()))
+        .any(|x| is_controll_which_needs_escaping(x) || values.iter().any(|v| &x == v))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{is_numeric_looking, is_plain_safe};
+    use super::{
+        is_controll_which_needs_escaping, is_numeric_looking, is_plain_safe, is_plain_value_safe,
+    };
     use rstest::rstest;
 
     #[rstest]
@@ -467,5 +477,44 @@ mod tests {
     #[case::trailing_tab("foo\t")]
     fn plain_keys_reject_surrounding_whitespace(#[case] input: &str) {
         assert!(!is_plain_safe(input), "{input:?}");
+    }
+
+    #[rstest]
+    #[case::nul('\0')]
+    #[case::tab('\t')]
+    #[case::newline('\n')]
+    #[case::carriage_return('\r')]
+    #[case::nel('\u{0085}')]
+    #[case::bom('\u{FEFF}')]
+    #[case::line_sep('\u{2028}')]
+    #[case::para_sep('\u{2029}')]
+    fn chars_needing_escaping(#[case] ch: char) {
+        assert!(is_controll_which_needs_escaping(ch), "{ch:?} should escape");
+    }
+
+    #[rstest]
+    #[case::ascii('a')]
+    #[case::space(' ')]
+    #[case::unicode('é')]
+    #[case::cjk('字')]
+    fn chars_not_needing_escaping(#[case] ch: char) {
+        assert!(
+            !is_controll_which_needs_escaping(ch),
+            "{ch:?} should stay plain"
+        );
+    }
+
+    #[rstest]
+    #[case::bom("\u{FEFF}")]
+    #[case::bom_prefixed("\u{FEFF}key")]
+    #[case::line_sep("a\u{2028}b")]
+    #[case::para_sep("a\u{2029}b")]
+    fn format_chars_are_not_plain_safe(#[case] input: &str) {
+        assert!(!is_plain_safe(input), "key {input:?}");
+        assert!(!is_plain_value_safe(input, false, false), "value {input:?}");
+        assert!(
+            !is_plain_value_safe(input, true, true),
+            "flow value {input:?}"
+        );
     }
 }
