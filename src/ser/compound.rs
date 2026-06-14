@@ -4,7 +4,7 @@ use serde::ser::{
 };
 use std::fmt::Write;
 
-use super::helpers::{BoolCapture, StrCapture, UsizeCapture, scalar_key_to_string};
+use super::helpers::{scalar_key_to_string, BoolCapture, StrCapture, UsizeCapture};
 use super::{AnchorId, YamlSerializer};
 use crate::ser::options::CommentPosition;
 use crate::ser::{Error, Result};
@@ -149,9 +149,9 @@ pub struct SpecialTupleSer<'a, 'b, W: Write> {
     kind: TupleKind,
     /// Current field index being serialized.
     idx: usize,
-    /// For normal tuples: target indentation depth.
-    /// For weak/strong: temporary storage (ptr id or state).
-    depth_for_normal: usize,
+    /// Captured pointer identity for a weak-anchor payload while waiting for
+    /// its `present` field.
+    weak_anchor_ptr: usize,
 
     // ---- Extra fields for refactoring/perf/correctness ----
     /// For strong anchors: if Some(id) then we must emit an alias instead of a definition at field #2.
@@ -191,7 +191,7 @@ impl<'a, 'b, W: Write> SpecialTupleSer<'a, 'b, W> {
             ser,
             kind,
             idx: 0,
-            depth_for_normal: 0,
+            weak_anchor_ptr: 0,
             strong_alias_id: None,
             weak_present: false,
             skip_third: false,
@@ -256,7 +256,7 @@ impl<'a, 'b, W: Write> SpecialTupleSer<'a, 'b, W> {
                         let mut cap = UsizeCapture::default();
                         value.serialize(&mut cap)?;
                         let ptr = cap.finish()?;
-                        self.depth_for_normal = ptr; // store ptr for fields #2/#3
+                        self.weak_anchor_ptr = ptr;
                     }
                     1 => {
                         let mut bc = BoolCapture::default();
@@ -272,7 +272,7 @@ impl<'a, 'b, W: Write> SpecialTupleSer<'a, 'b, W> {
                             self.ser.write_end_of_scalar()?;
                             self.skip_third = true;
                         } else {
-                            let ptr = self.depth_for_normal;
+                            let ptr = self.weak_anchor_ptr;
                             let (id, fresh) = self.ser.alloc_anchor_for(ptr);
                             if fresh {
                                 self.ser.pending_anchor_id = Some(id); // define before value
