@@ -253,7 +253,12 @@ pub(crate) fn is_plain_safe(s: &str) -> bool {
         return false;
     }
     let bytes = s.as_bytes();
-    if bytes[0].is_ascii_whitespace() || bytes[bytes.len() - 1].is_ascii_whitespace() {
+    // Keys with leading or trailing whitespace must be quoted:
+    // Unlike values, a key's surrounding whitespace is not preserved across a round trip
+    // (e.g. `foo : x` and `foo: x` parse to the same key), so a plain scalar would silently collapse distinct keys.
+    if bytes.first().is_some_and(u8::is_ascii_whitespace)
+        || bytes.last().is_some_and(u8::is_ascii_whitespace)
+    {
         return false;
     }
 
@@ -281,7 +286,11 @@ pub(crate) fn is_plain_safe(s: &str) -> bool {
 }
 
 /// Returns true if `s` can be emitted as a plain scalar in VALUE position without quoting.
-/// This is slightly more permissive than `is_plain_safe` for keys: it allows ':' inside values.
+///
+/// This is slightly more permissive than `is_plain_safe` for keys:
+/// - it allows ':' inside values
+/// - trailing whitespace is allowed
+///
 /// Additionally, we make this stricter for strings that appear inside flow-style sequences/maps
 /// where certain characters would break parsing (e.g., commas and brackets) or where the token
 /// could be misinterpreted as a number or boolean.
@@ -292,23 +301,19 @@ pub(crate) fn is_plain_value_safe(s: &str, yaml_12: bool, in_flow: bool) -> bool
     }
 
     let bytes = s.as_bytes();
-    if bytes[0].is_ascii_whitespace() || bytes[bytes.len() - 1].is_ascii_whitespace() {
+    if bytes.first().is_some_and(u8::is_ascii_whitespace) {
         return false;
     }
 
-    match bytes[0] {
-        b'-' | b'?' => {
-            if bytes.len() == 1 {
-                return false;
-            }
-            if bytes[1].is_ascii_whitespace() {
-                return false;
-            }
-        }
+    match bytes {
+        [b'-' | b'?'] => return false,
+        [b'-' | b'?', b1, ..] if b1.is_ascii_whitespace() => return false,
         // ',' is a flow indicator and cannot start a plain scalar.
-        b',' => return false,
-        b':' | b'[' | b']' | b'{' | b'}' | b'#' | b'&' | b'*' | b'!' | b'|' | b'>' | b'\''
-        | b'"' | b'%' | b'@' | b'`' => return false,
+        [
+            b',' | b':' | b'[' | b']' | b'{' | b'}' | b'#' | b'&' | b'*' | b'!' | b'|' | b'>'
+            | b'\'' | b'"' | b'%' | b'@' | b'`',
+            ..,
+        ] => return false,
         _ => {}
     }
 
