@@ -106,6 +106,29 @@ fn tuple_variant_round_trips_with_complex_fields(
     Ok(())
 }
 
+#[rstest]
+#[case::after_block_seq(ComplexFieldEnum::Seq(vec![
+    ComplexFieldEnum::Unit,
+    ComplexFieldEnum::Unit,
+]))]
+#[case::after_nested_tuple(ComplexFieldEnum::Tup(
+    Box::new(ComplexFieldEnum::Unit),
+    Box::new(ComplexFieldEnum::Unit),
+))]
+fn empty_tuple_field_after_block_sibling_round_trips(
+    #[case] block_first_field: ComplexFieldEnum,
+) -> anyhow::Result<()> {
+    let value = ComplexFieldEnum::Tup(
+        Box::new(block_first_field),
+        Box::new(ComplexFieldEnum::Seq(vec![])),
+    );
+    let yaml = serde_saphyr::to_string(&value)?;
+    let r: ComplexFieldEnum = serde_saphyr::from_str(&yaml).unwrap();
+    assert_eq!(value, r, "round-trip mismatch for:\n{yaml}");
+
+    Ok(())
+}
+
 #[test]
 fn struct_variant_round_trips_when_nested_under_a_key() -> anyhow::Result<()> {
     #[derive(Serialize, Deserialize, PartialEq, Debug)]

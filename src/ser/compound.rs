@@ -81,6 +81,8 @@ impl<'a, 'b, W: Write> SerializeSeq for SeqSer<'a, 'b, W> {
             self.ser.after_dash_depth = Some(self.depth);
             // Hint to emit first key/element of a following mapping/sequence inline on the same line.
             self.ser.pending_inline_map = true;
+            // A sibling element's block-collection state must not leak into this element.
+            self.ser.last_value_was_block = false;
             v.serialize(&mut *self.ser)?;
         }
         self.first = false;
