@@ -807,10 +807,7 @@ mod tests {
         Error::MultipleDocuments { hint: "use from_str_multidoc", location: loc() },
         "only single YAML document expected but multiple found"
     )]
-    #[case::invalid_utf8_input(
-        Error::InvalidUtf8Input,
-        "YAML parser input is not valid UTF-8"
-    )]
+    #[case::invalid_utf8_input(Error::InvalidUtf8Input, "YAML parser input is not valid UTF-8")]
     #[case::invalid_boolean_strict(
         Error::InvalidBooleanStrict { location: loc() },
         "invalid boolean (true or false expected)"

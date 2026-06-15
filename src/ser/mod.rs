@@ -42,9 +42,7 @@ mod wrapping;
 mod zmij_format;
 
 pub use self::error::Error;
-pub use self::serializer::{
-    MapSer, SeqSer, StructVariantSer, TupleSer, YamlSerializer,
-};
+pub use self::serializer::{MapSer, SeqSer, StructVariantSer, TupleSer, YamlSerializer};
 
 /// Result alias.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -58,3 +56,4 @@ const NAME_FLOW_SEQ: &str = "__yaml_flow_seq";
 const NAME_FLOW_MAP: &str = "__yaml_flow_map";
 const NAME_TUPLE_COMMENTED: &str = "__yaml_commented";
 const NAME_SPACE_AFTER: &str = "__yaml_space_after";
+const NAME_QUOTED: &str = "__yaml_quoted";
