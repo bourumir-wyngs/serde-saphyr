@@ -18,6 +18,7 @@ use crate::long_strings::{NAME_FOLD_STR, NAME_LIT_STR};
 use super::options::{CommentPosition, FOLDED_WRAP_CHARS, MIN_FOLD_CHARS, SerializerOptions};
 use super::quoting::{
     is_auto_block_scalar_readable, is_block_scalar_content_safe, is_plain_safe, is_plain_value_safe,
+    is_controll_which_needs_escaping,
 };
 use super::{
     Error, NAME_FLOW_MAP, NAME_FLOW_SEQ, NAME_SPACE_AFTER, NAME_TUPLE_ANCHOR, NAME_TUPLE_COMMENTED,
@@ -216,7 +217,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         s.chars().any(|c| {
             c == '\''       // single quote present - cannot use single-quoted style
                 || c == '\\' // backslash - needs escape processing
-                || c.is_control() // control chars (includes \n, \t, \r, etc.) need escaping
+                || is_controll_which_needs_escaping(c) // control chars (includes \n, \t, \r, etc.) need escaping
         })
     }
 

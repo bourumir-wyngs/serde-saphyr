@@ -54,8 +54,7 @@ fn gen_node(u: &mut Unstructured, depth: u32) -> arbitrary::Result<Node> {
             let n = u.int_in_range(0..=MAX_BREADTH)?;
             let mut m = BTreeMap::new();
             for _ in 0..n {
-                // TODO: We need to trim here because trailing newlines and spaces are intentionally
-                let k = String::arbitrary(u)?.trim().to_string();
+                let k = String::arbitrary(u)?;
                 let val = gen_node(u, depth - 1)?;
                 m.insert(k, val);
             }
@@ -82,7 +81,9 @@ fuzz_target!(|node: Node| {
     let _: Node = match serde_saphyr::from_str(&text) {
         Ok(back) => back,
         Err(e) => {
-            panic!("serializer emitted YAML that fails to parse back: {e}\n--- yaml ---\n{text}")
+            panic!(
+                "serializer emitted YAML that fails to parse back:\n---error---\n{e}\n--- yaml ---\n{text}\n---debug---\n{node:#?}"
+            )
         }
     };
 

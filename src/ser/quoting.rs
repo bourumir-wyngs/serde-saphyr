@@ -252,8 +252,17 @@ pub(crate) fn is_plain_safe(s: &str) -> bool {
     if is_ambiguous(s) {
         return false;
     }
+    // A plain, untagged "<<" key would be a YAML merge key, not the literal string "<<".
+    if s == "<<" {
+        return false;
+    }
     let bytes = s.as_bytes();
-    if bytes[0].is_ascii_whitespace() {
+    // Keys with leading or trailing whitespace must be quoted:
+    // Unlike values, a key's surrounding whitespace is not preserved across a round trip
+    // (e.g. `foo : x` and `foo: x` parse to the same key), so a plain scalar would silently collapse distinct keys.
+    if bytes.first().is_some_and(u8::is_ascii_whitespace)
+        || bytes.last().is_some_and(u8::is_ascii_whitespace)
+    {
         return false;
     }
 
@@ -281,7 +290,11 @@ pub(crate) fn is_plain_safe(s: &str) -> bool {
 }
 
 /// Returns true if `s` can be emitted as a plain scalar in VALUE position without quoting.
-/// This is slightly more permissive than `is_plain_safe` for keys: it allows ':' inside values.
+///
+/// This is slightly more permissive than `is_plain_safe` for keys:
+/// - it allows ':' inside values
+/// - trailing whitespace is allowed
+///
 /// Additionally, we make this stricter for strings that appear inside flow-style sequences/maps
 /// where certain characters would break parsing (e.g., commas and brackets) or where the token
 /// could be misinterpreted as a number or boolean.
@@ -292,23 +305,19 @@ pub(crate) fn is_plain_value_safe(s: &str, yaml_12: bool, in_flow: bool) -> bool
     }
 
     let bytes = s.as_bytes();
-    if bytes[0].is_ascii_whitespace() {
+    if bytes.first().is_some_and(u8::is_ascii_whitespace) {
         return false;
     }
 
-    match bytes[0] {
-        b'-' | b'?' => {
-            if bytes.len() == 1 {
-                return false;
-            }
-            if bytes[1].is_ascii_whitespace() {
-                return false;
-            }
-        }
+    match bytes {
+        [b'-' | b'?'] => return false,
+        [b'-' | b'?', b1, ..] if b1.is_ascii_whitespace() => return false,
         // ',' is a flow indicator and cannot start a plain scalar.
-        b',' => return false,
-        b':' | b'[' | b']' | b'{' | b'}' | b'#' | b'&' | b'*' | b'!' | b'|' | b'>' | b'\''
-        | b'"' | b'%' | b'@' | b'`' => return false,
+        [
+            b',' | b':' | b'[' | b']' | b'{' | b'}' | b'#' | b'&' | b'*' | b'!' | b'|' | b'>'
+            | b'\'' | b'"' | b'%' | b'@' | b'`',
+            ..,
+        ] => return false,
         _ => {}
     }
 
@@ -369,15 +378,25 @@ pub(crate) fn is_auto_block_scalar_readable(s: &str) -> bool {
     !s.is_empty()
 }
 
+/// Characters that cannot survive a round-trip inside a plain or single-quoted
+/// scalar and therefore force double-quoted emission.
+/// `char::is_control` misses BOM (U+FEFF) and the LS/PS separators (U+2028/U+2029), which are not controls.
+#[inline]
+pub(crate) fn is_controll_which_needs_escaping(ch: char) -> bool {
+    ch.is_control() || matches!(ch, '\u{FEFF}' | '\u{2028}' | '\u{2029}')
+}
+
 fn contains_any_or_is_control(string: &str, values: &[char]) -> bool {
     string
         .chars()
-        .any(|x| values.iter().any(|v| &x == v || x.is_control()))
+        .any(|x| is_controll_which_needs_escaping(x) || values.iter().any(|v| &x == v))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{is_numeric_looking, is_plain_safe};
+    use super::{
+        is_controll_which_needs_escaping, is_numeric_looking, is_plain_safe, is_plain_value_safe,
+    };
     use rstest::rstest;
 
     #[rstest]
@@ -442,16 +461,60 @@ mod tests {
     }
 
     #[rstest]
-    #[case::dash_space("- value")]
-    #[case::question_tab("?\tvalue")]
-    fn plain_keys_reject_indicator_followed_by_whitespace(#[case] input: &str) {
+    #[case::dash_no_space("-value")]
+    #[case::question_no_space("?query")]
+    #[case::interior_space("a b")]
+    fn plain_keys_allow_safe_inputs(#[case] input: &str) {
+        assert!(is_plain_safe(input), "{input:?}");
+    }
+
+    #[rstest]
+    #[case::dash_indicator_space("- value")]
+    #[case::question_indicator_tab("?\tvalue")]
+    #[case::trailing_space("foo ")]
+    #[case::leading_space(" foo")]
+    #[case::trailing_tab("foo\t")]
+    #[case::merge_key("<<")]
+    fn plain_keys_reject_unsafe_inputs(#[case] input: &str) {
         assert!(!is_plain_safe(input), "{input:?}");
     }
 
     #[rstest]
-    #[case::dash_no_space("-value")]
-    #[case::question_no_space("?query")]
-    fn plain_keys_allow_indicator_without_following_whitespace(#[case] input: &str) {
-        assert!(is_plain_safe(input), "{input:?}");
+    #[case::nul('\0')]
+    #[case::tab('\t')]
+    #[case::newline('\n')]
+    #[case::carriage_return('\r')]
+    #[case::nel('\u{0085}')]
+    #[case::bom('\u{FEFF}')]
+    #[case::line_sep('\u{2028}')]
+    #[case::para_sep('\u{2029}')]
+    fn chars_needing_escaping(#[case] ch: char) {
+        assert!(is_controll_which_needs_escaping(ch), "{ch:?} should escape");
+    }
+
+    #[rstest]
+    #[case::ascii('a')]
+    #[case::space(' ')]
+    #[case::unicode('é')]
+    #[case::cjk('字')]
+    fn chars_not_needing_escaping(#[case] ch: char) {
+        assert!(
+            !is_controll_which_needs_escaping(ch),
+            "{ch:?} should stay plain"
+        );
+    }
+
+    #[rstest]
+    #[case::bom("\u{FEFF}")]
+    #[case::bom_prefixed("\u{FEFF}key")]
+    #[case::line_sep("a\u{2028}b")]
+    #[case::para_sep("a\u{2029}b")]
+    fn format_chars_are_not_plain_safe(#[case] input: &str) {
+        assert!(!is_plain_safe(input), "key {input:?}");
+        assert!(!is_plain_value_safe(input, false, false), "value {input:?}");
+        assert!(
+            !is_plain_value_safe(input, true, true),
+            "flow value {input:?}"
+        );
     }
 }
