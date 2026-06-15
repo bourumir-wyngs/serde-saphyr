@@ -22,6 +22,17 @@ enum Node {
     Map(BTreeMap<String, Node>),
 }
 
+/// Generate a map key which occasionally is overly-long to ensure `? key` paths are triggered.
+fn gen_key(u: &mut Unstructured) -> arbitrary::Result<String> {
+    let key = String::arbitrary(u)?;
+    if u.ratio(1, 8)? {
+        let seed = if key.is_empty() { "k" } else { key.as_str() };
+        Ok(seed.repeat(1024 / seed.len() + 2))
+    } else {
+        Ok(key)
+    }
+}
+
 fn gen_node(u: &mut Unstructured, depth: u32) -> arbitrary::Result<Node> {
     // At depth 0, only scalar variants are allowed
     let max_variant: u32 = if depth == 0 { 3 } else { 7 };
@@ -54,7 +65,7 @@ fn gen_node(u: &mut Unstructured, depth: u32) -> arbitrary::Result<Node> {
             let n = u.int_in_range(0..=MAX_BREADTH)?;
             let mut m = BTreeMap::new();
             for _ in 0..n {
-                let k = String::arbitrary(u)?;
+                let k = gen_key(u)?;
                 let val = gen_node(u, depth - 1)?;
                 m.insert(k, val);
             }

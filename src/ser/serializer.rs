@@ -1401,6 +1401,8 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             self.write_plain_or_quoted(variant)?;
             self.out.write_str(":\n")?;
             self.at_line_start = true;
+            // A complex key stages an inline hint for its value; clear it before the fields.
+            self.pending_inline_map = false;
             // Fields indent one more level under the variant label.
             let depth_next = base + 1;
             return Ok(StructVariantSer {

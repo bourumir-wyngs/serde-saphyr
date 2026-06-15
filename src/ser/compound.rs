@@ -416,6 +416,18 @@ impl<'a, 'b, W: Write> MapSer<'a, 'b, W> {
         Ok(())
     }
 
+    /// Emit an over-long scalar key in explicit `? key` form using its precomputed key-safe
+    /// `text`. Re-serializing via the value serializer would use value-position quoting and
+    /// could drop trailing whitespace, which YAML treats as separation in plain style.
+    fn write_explicit_scalar_key(&mut self, text: &str) -> Result<()> {
+        self.ser.write_indent(self.depth)?;
+        self.ser.out.write_str("? ")?;
+        self.ser.out.write_str(text)?;
+        self.ser.newline()?;
+        self.last_key_complex = true;
+        Ok(())
+    }
+
     /// Emit a key using the explicit `? key` form; the value follows on a `: value` line.
     fn write_explicit_key<T: ?Sized + Serialize>(&mut self, key: &T) -> Result<()> {
         self.ser.write_anchor_for_complex_node()?;
@@ -494,7 +506,7 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
                 {
                     self.write_simple_key(&text)?;
                 }
-                Ok(_) => self.write_explicit_key(key)?,
+                Ok(text) => self.write_explicit_scalar_key(&text)?,
                 Err(Error::Unexpected { msg }) if msg == "non-scalar key" => {
                     self.write_explicit_key(key)?;
                 }
