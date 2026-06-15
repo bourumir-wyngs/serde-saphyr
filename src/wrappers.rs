@@ -10,6 +10,31 @@ pub struct FlowSeq<T>(pub T);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FlowMap<T>(pub T);
 
+/// Force a string value to be emitted in double-quoted style.
+///
+/// This wrapper is transparent during deserialization: the inner value is
+/// deserialized normally and placed into `Quoted<T>`. `Quoted<T>` implements
+/// Serde traits only for string-like `T` values.
+///
+/// ```rust
+/// # #[cfg(feature = "serialize")]
+/// # {
+/// use serde::Serialize;
+/// use serde_saphyr::Quoted;
+///
+/// #[derive(Serialize)]
+/// struct Config {
+///     value: Quoted<String>,
+/// }
+///
+/// let cfg = Config { value: Quoted("plain text".to_string()) };
+/// let yaml = serde_saphyr::to_string(&cfg).unwrap();
+/// assert_eq!(yaml, "value: \"plain text\"\n");
+/// # }
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Quoted<T>(pub T);
+
 /// Add an empty line after the wrapped value when serializing.
 ///
 /// This wrapper is transparent during deserialization and can be nested with
@@ -123,6 +148,15 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for FlowMap<T> {
     }
 }
 
+impl<'de, T> Deserialize<'de> for Quoted<T>
+where
+    T: Deserialize<'de> + AsRef<str>,
+{
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        T::deserialize(deserializer).map(Quoted)
+    }
+}
+
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for Commented<T> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
         struct CommentedVisitor<T>(PhantomData<T>);
@@ -170,7 +204,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for SpaceAfter<T> {
 mod tests {
     use serde::Deserialize;
 
-    use crate::{Commented, FlowMap, FlowSeq, SpaceAfter};
+    use crate::{Commented, FlowMap, FlowSeq, Quoted, SpaceAfter};
 
     #[derive(Debug, Deserialize, PartialEq)]
     struct WrappersDoc {
@@ -178,16 +212,20 @@ mod tests {
         map: FlowMap<std::collections::BTreeMap<String, u32>>,
         after: SpaceAfter<String>,
         commented: Commented<bool>,
+        quoted: Quoted<String>,
     }
 
     #[test]
     fn wrappers_remain_deserializable_without_serialize() {
-        let value: WrappersDoc =
-            crate::from_str("seq: [1, 2]\nmap: {a: 1}\nafter: hello\ncommented: true\n").unwrap();
+        let value: WrappersDoc = crate::from_str(
+            "seq: [1, 2]\nmap: {a: 1}\nafter: hello\ncommented: true\nquoted: value\n",
+        )
+        .unwrap();
 
         assert_eq!(value.seq, FlowSeq(vec![1, 2]));
         assert_eq!(value.after, SpaceAfter("hello".to_string()));
         assert_eq!(value.commented, Commented(true, String::new()));
+        assert_eq!(value.quoted, Quoted("value".to_string()));
         assert_eq!(value.map.0.get("a"), Some(&1));
     }
 }
