@@ -1244,6 +1244,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             self.write_plain_or_quoted(variant)?;
             self.out.write_str(":\n")?;
             self.at_line_start = true;
+            self.pending_inline_map = false;
             let depth_next = base + 1;
             return Ok(SeqSer {
                 ser: self,

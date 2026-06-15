@@ -4,10 +4,17 @@ use serde::ser::{
 };
 use std::fmt::Write;
 
-use super::helpers::{scalar_key_to_string, BoolCapture, StrCapture, UsizeCapture};
+use super::helpers::{BoolCapture, StrCapture, UsizeCapture, scalar_key_to_string};
 use super::{AnchorId, YamlSerializer};
 use crate::ser::options::CommentPosition;
 use crate::ser::{Error, Result};
+
+/// From the spec:
+///
+/// > If the "?" indicator is omitted, parsing needs to see past the implicit key to recognize it as such.
+/// > To limit the amount of lookahead required, the ":" indicator must appear at most 1024 Unicode characters beyond the start of the key.
+/// > In addition, the key is restricted to a single line.
+const SIMPLE_KEY_MAX_LEN: usize = 1024;
 
 // ------------------------------------------------------------
 // Seq / Tuple serializers
@@ -386,6 +393,64 @@ pub struct MapSer<'a, 'b, W: Write> {
     pub(super) inline_value_start: bool,
 }
 
+impl<'a, 'b, W: Write> MapSer<'a, 'b, W> {
+    /// Emit a scalar key inline as `key:`.
+    fn write_simple_key(&mut self, text: &str) -> Result<()> {
+        // Indent continuation lines. If this map started inline after a dash,
+        // align under the first key by adding two spaces instead of a full indent step.
+        if self.align_after_dash && self.ser.at_line_start {
+            let base = self.depth.saturating_sub(1);
+            for _ in 0..self.ser.indent_step * base {
+                self.ser.out.write_char(' ')?;
+            }
+            self.ser.out.write_str("  ")?; // width of "- "
+            self.ser.at_line_start = false;
+        } else {
+            self.ser.write_indent(self.depth)?;
+        }
+        self.ser.out.write_str(text)?;
+        self.ser.out.write_str(":")?;
+        self.ser.pending_space_after_colon = true;
+        self.ser.at_line_start = false;
+        self.last_key_complex = false;
+        Ok(())
+    }
+
+    /// Emit a key using the explicit `? key` form; the value follows on a `: value` line.
+    fn write_explicit_key<T: ?Sized + Serialize>(&mut self, key: &T) -> Result<()> {
+        self.ser.write_anchor_for_complex_node()?;
+        self.ser.write_indent(self.depth)?;
+        self.ser.out.write_str("? ")?;
+        self.ser.at_line_start = false;
+
+        let saved_depth = self.ser.depth;
+        let saved_current_map_depth = self.ser.current_map_depth;
+        let saved_pending_inline_map = self.ser.pending_inline_map;
+        let saved_inline_map_after_dash = self.ser.inline_map_after_dash;
+        let saved_after_dash_depth = self.ser.after_dash_depth;
+
+        self.ser.pending_inline_map = true;
+        self.ser.depth = self.depth;
+        // Provide a base depth for nested maps within this complex key so that
+        // continuation lines indent one level deeper than the parent mapping.
+        self.ser.current_map_depth = Some(self.depth);
+        self.ser.after_dash_depth = None;
+        key.serialize(&mut *self.ser)?;
+
+        self.ser.depth = saved_depth;
+        self.ser.current_map_depth = saved_current_map_depth;
+        self.ser.pending_inline_map = saved_pending_inline_map;
+        self.ser.inline_map_after_dash = saved_inline_map_after_dash;
+        self.ser.after_dash_depth = saved_after_dash_depth;
+        // A complex key may have been serialized as a block collection, which sets
+        // `last_value_was_block`. That state must NOT affect the *value* of this same
+        // map entry (e.g. we still want `: x: 3` inline for composite-key maps).
+        self.ser.last_value_was_block = false;
+        self.last_key_complex = true;
+        Ok(())
+    }
+}
+
 impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
     type Ok = ();
     type Error = Error;
@@ -422,56 +487,16 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
             self.ser.last_value_was_block = false;
 
             match scalar_key_to_string(key, self.ser.yaml_12) {
-                Ok(text) => {
-                    // Indent continuation lines. If this map started inline after a dash,
-                    // align under the first key by adding two spaces instead of a full indent step.
-                    if self.align_after_dash && self.ser.at_line_start {
-                        let base = self.depth.saturating_sub(1);
-                        for _ in 0..self.ser.indent_step * base {
-                            self.ser.out.write_char(' ')?;
-                        }
-                        self.ser.out.write_str("  ")?; // width of "- "
-                        self.ser.at_line_start = false;
-                    } else {
-                        self.ser.write_indent(self.depth)?;
-                    }
-                    self.ser.out.write_str(&text)?;
-                    // Defer the decision to put a space vs. newline until we see the value type.
-                    self.ser.out.write_str(":")?;
-                    self.ser.pending_space_after_colon = true;
-                    self.ser.at_line_start = false;
-                    self.last_key_complex = false;
+              Ok(text)
+              // since a utf8 "character" is at min one byte, text.len() is an cheap upper bound on the number of chars
+                    if text.len() <= SIMPLE_KEY_MAX_LEN
+                        || text.chars().count() <= SIMPLE_KEY_MAX_LEN =>
+                {
+                    self.write_simple_key(&text)?;
                 }
+                Ok(_) => self.write_explicit_key(key)?,
                 Err(Error::Unexpected { msg }) if msg == "non-scalar key" => {
-                    self.ser.write_anchor_for_complex_node()?;
-                    self.ser.write_indent(self.depth)?;
-                    self.ser.out.write_str("? ")?;
-                    self.ser.at_line_start = false;
-
-                    let saved_depth = self.ser.depth;
-                    let saved_current_map_depth = self.ser.current_map_depth;
-                    let saved_pending_inline_map = self.ser.pending_inline_map;
-                    let saved_inline_map_after_dash = self.ser.inline_map_after_dash;
-                    let saved_after_dash_depth = self.ser.after_dash_depth;
-
-                    self.ser.pending_inline_map = true;
-                    self.ser.depth = self.depth;
-                    // Provide a base depth for nested maps within this complex key so that
-                    // continuation lines indent one level deeper than the parent mapping.
-                    self.ser.current_map_depth = Some(self.depth);
-                    self.ser.after_dash_depth = None;
-                    key.serialize(&mut *self.ser)?;
-
-                    self.ser.depth = saved_depth;
-                    self.ser.current_map_depth = saved_current_map_depth;
-                    self.ser.pending_inline_map = saved_pending_inline_map;
-                    self.ser.inline_map_after_dash = saved_inline_map_after_dash;
-                    self.ser.after_dash_depth = saved_after_dash_depth;
-                    // A complex key may have been serialized as a block collection, which sets
-                    // `last_value_was_block`. That state must NOT affect the *value* of this same
-                    // map entry (e.g. we still want `: x: 3` inline for composite-key maps).
-                    self.ser.last_value_was_block = false;
-                    self.last_key_complex = true;
+                    self.write_explicit_key(key)?;
                 }
                 Err(e) => return Err(e),
             }
