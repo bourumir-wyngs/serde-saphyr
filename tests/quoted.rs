@@ -1,3 +1,5 @@
+use serde_saphyr::Quoted;
+
 #[cfg(feature = "serialize")]
 mod serialize_tests {
     use serde::Serialize;
@@ -51,4 +53,10 @@ mod round_trip_tests {
         );
         assert_eq!(serde_saphyr::to_string(&list).unwrap(), yaml);
     }
+}
+
+#[test]
+fn quoted_forces_double_quoted_top_level_scalar_output() {
+    let yaml = serde_saphyr::to_string(&Quoted("plain")).unwrap();
+    assert_eq!(yaml, "\"plain\"\n");
 }
