@@ -449,10 +449,6 @@ fn duplicate_struct_keys_policies() {
     assert_eq!(last.len(), 1);
 }
 
-use serde::Deserialize;
-use serde_saphyr::from_str_with_options;
-use std::collections::HashMap;
-
 // ---------- Duplicate key policy: LastWins ----------
 #[test]
 fn duplicate_keys_last_wins_policy() {

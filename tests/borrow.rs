@@ -835,8 +835,6 @@ fn test_deserialize_string_falls_back_to_owned_for_escapes() {
 
 // Unicode-specific edge-case tests for zero-copy deserialization.
 
-use serde::Deserialize;
-
 #[derive(Debug, Deserialize, PartialEq)]
 struct Data<'a> {
     text: &'a str,

@@ -1,7 +1,6 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 use std::collections::HashMap;
 
-use super::*;
 use serde_saphyr::{from_str, to_string};
 
 /// Round-trips every printable ASCII single-character key (32..=126)
