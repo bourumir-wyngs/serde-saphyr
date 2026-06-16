@@ -89,7 +89,7 @@ fuzz_target!(|node: Node| {
     };
 
     // anything we emit must be parseable YAML for this model.
-    let _: Node = match serde_saphyr::from_str(&text) {
+    let back: Node = match serde_saphyr::from_str(&text) {
         Ok(back) => back,
         Err(e) => {
             panic!(
@@ -98,5 +98,10 @@ fuzz_target!(|node: Node| {
         }
     };
 
-    // todo: equality, roundtrip, indepotance
+    // equality
+    assert_eq!(
+        node, back,
+        "round-trip changed the value\n--- yaml ---\n{text}\n--- original ---\n{node:#?}\n--- decoded ---\n{back:#?}"
+    );
+    // todo: indepotance
 });
