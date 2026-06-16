@@ -22,10 +22,8 @@ fn format_budget_report(report: &BudgetReport) -> String {
     let mut out = String::new();
 
     match &report.breached {
-        Some(breach) => {
-            out.push_str("breached:\n");
-            format_budget_breach(&mut out, breach);
-        }
+        Some(BudgetBreach::SequenceUnbalanced) => out.push_str("breached: SequenceUnbalanced\n"),
+        Some(breach) => format_budget_breach(&mut out, breach),
         None => out.push_str("breached: null\n"),
     }
 
@@ -45,58 +43,58 @@ fn format_budget_report(report: &BudgetReport) -> String {
 fn format_budget_breach(out: &mut String, breach: &BudgetBreach) {
     match breach {
         BudgetBreach::Events { events } => {
-            out.push_str("  type: events\n");
-            let _ = writeln!(out, "  events: {events}");
+            out.push_str("breached:\n  Events:\n");
+            let _ = writeln!(out, "    events: {events}");
         }
         BudgetBreach::Aliases { aliases } => {
-            out.push_str("  type: aliases\n");
-            let _ = writeln!(out, "  aliases: {aliases}");
+            out.push_str("breached:\n  Aliases:\n");
+            let _ = writeln!(out, "    aliases: {aliases}");
         }
         BudgetBreach::Anchors { anchors } => {
-            out.push_str("  type: anchors\n");
-            let _ = writeln!(out, "  anchors: {anchors}");
+            out.push_str("breached:\n  Anchors:\n");
+            let _ = writeln!(out, "    anchors: {anchors}");
         }
         BudgetBreach::Depth { depth } => {
-            out.push_str("  type: depth\n");
-            let _ = writeln!(out, "  depth: {depth}");
+            out.push_str("breached:\n  Depth:\n");
+            let _ = writeln!(out, "    depth: {depth}");
         }
         BudgetBreach::InclusionDepth { depth } => {
-            out.push_str("  type: inclusion_depth\n");
-            let _ = writeln!(out, "  depth: {depth}");
+            out.push_str("breached:\n  InclusionDepth:\n");
+            let _ = writeln!(out, "    depth: {depth}");
         }
         BudgetBreach::Documents { documents } => {
-            out.push_str("  type: documents\n");
-            let _ = writeln!(out, "  documents: {documents}");
+            out.push_str("breached:\n  Documents:\n");
+            let _ = writeln!(out, "    documents: {documents}");
         }
         BudgetBreach::Nodes { nodes } => {
-            out.push_str("  type: nodes\n");
-            let _ = writeln!(out, "  nodes: {nodes}");
+            out.push_str("breached:\n  Nodes:\n");
+            let _ = writeln!(out, "    nodes: {nodes}");
         }
         BudgetBreach::ScalarBytes { total_scalar_bytes } => {
-            out.push_str("  type: scalar_bytes\n");
-            let _ = writeln!(out, "  total_scalar_bytes: {total_scalar_bytes}");
+            out.push_str("breached:\n  ScalarBytes:\n");
+            let _ = writeln!(out, "    total_scalar_bytes: {total_scalar_bytes}");
         }
         BudgetBreach::CommentBytes {
             total_comment_bytes,
         } => {
-            out.push_str("  type: comment_bytes\n");
-            let _ = writeln!(out, "  total_comment_bytes: {total_comment_bytes}");
+            out.push_str("breached:\n  CommentBytes:\n");
+            let _ = writeln!(out, "    total_comment_bytes: {total_comment_bytes}");
         }
         BudgetBreach::MergeKeys { merge_keys } => {
-            out.push_str("  type: merge_keys\n");
-            let _ = writeln!(out, "  merge_keys: {merge_keys}");
+            out.push_str("breached:\n  MergeKeys:\n");
+            let _ = writeln!(out, "    merge_keys: {merge_keys}");
         }
         BudgetBreach::AliasAnchorRatio { aliases, anchors } => {
-            out.push_str("  type: alias_anchor_ratio\n");
-            let _ = writeln!(out, "  aliases: {aliases}");
-            let _ = writeln!(out, "  anchors: {anchors}");
+            out.push_str("breached:\n  AliasAnchorRatio:\n");
+            let _ = writeln!(out, "    aliases: {aliases}");
+            let _ = writeln!(out, "    anchors: {anchors}");
         }
         BudgetBreach::SequenceUnbalanced => {
-            out.push_str("  type: sequence_unbalanced\n");
+            out.push_str("breached: SequenceUnbalanced\n");
         }
         BudgetBreach::InputBytes { input_bytes } => {
-            out.push_str("  type: input_bytes\n");
-            let _ = writeln!(out, "  input_bytes: {input_bytes}");
+            out.push_str("breached:\n  InputBytes:\n");
+            let _ = writeln!(out, "    input_bytes: {input_bytes}");
         }
     }
 }
@@ -268,75 +266,75 @@ mod tests {
         let cases = [
             (
                 report_with_breach(BudgetBreach::Events { events: 11 }),
-                "type: events",
-                "events: 11",
+                "  Events:",
+                "    events: 11",
             ),
             (
                 report_with_breach(BudgetBreach::Aliases { aliases: 12 }),
-                "type: aliases",
-                "aliases: 12",
+                "  Aliases:",
+                "    aliases: 12",
             ),
             (
                 report_with_breach(BudgetBreach::Anchors { anchors: 13 }),
-                "type: anchors",
-                "anchors: 13",
+                "  Anchors:",
+                "    anchors: 13",
             ),
             (
                 report_with_breach(BudgetBreach::Depth { depth: 14 }),
-                "type: depth",
-                "depth: 14",
+                "  Depth:",
+                "    depth: 14",
             ),
             (
                 report_with_breach(BudgetBreach::InclusionDepth { depth: 15 }),
-                "type: inclusion_depth",
-                "depth: 15",
+                "  InclusionDepth:",
+                "    depth: 15",
             ),
             (
                 report_with_breach(BudgetBreach::Documents { documents: 16 }),
-                "type: documents",
-                "documents: 16",
+                "  Documents:",
+                "    documents: 16",
             ),
             (
                 report_with_breach(BudgetBreach::Nodes { nodes: 17 }),
-                "type: nodes",
-                "nodes: 17",
+                "  Nodes:",
+                "    nodes: 17",
             ),
             (
                 report_with_breach(BudgetBreach::ScalarBytes {
                     total_scalar_bytes: 18,
                 }),
-                "type: scalar_bytes",
-                "total_scalar_bytes: 18",
+                "  ScalarBytes:",
+                "    total_scalar_bytes: 18",
             ),
             (
                 report_with_breach(BudgetBreach::CommentBytes {
                     total_comment_bytes: 19,
                 }),
-                "type: comment_bytes",
-                "total_comment_bytes: 19",
+                "  CommentBytes:",
+                "    total_comment_bytes: 19",
             ),
             (
                 report_with_breach(BudgetBreach::MergeKeys { merge_keys: 20 }),
-                "type: merge_keys",
-                "merge_keys: 20",
+                "  MergeKeys:",
+                "    merge_keys: 20",
             ),
             (
                 report_with_breach(BudgetBreach::AliasAnchorRatio {
                     aliases: 21,
                     anchors: 22,
                 }),
-                "type: alias_anchor_ratio",
-                "anchors: 22",
+                "  AliasAnchorRatio:",
+                "    anchors: 22",
             ),
             (
                 report_with_breach(BudgetBreach::SequenceUnbalanced),
-                "type: sequence_unbalanced",
+                "breached: SequenceUnbalanced",
                 "nodes: 5",
             ),
             (
                 report_with_breach(BudgetBreach::InputBytes { input_bytes: 23 }),
-                "type: input_bytes",
-                "input_bytes: 23",
+                "  InputBytes:",
+                "    input_bytes: 23",
             ),
         ];
 
@@ -344,6 +342,39 @@ mod tests {
             let formatted = format_budget_report(&report);
             assert!(formatted.contains(expected_type), "{formatted}");
             assert!(formatted.contains(expected_value), "{formatted}");
+        }
+    }
+
+    #[cfg(feature = "serde_derived_types")]
+    #[test]
+    fn format_budget_report_matches_serde_output() {
+        let reports = [
+            BudgetReport {
+                breached: None,
+                events: 10,
+                aliases: 0,
+                anchors: 1,
+                documents: 2,
+                nodes: 3,
+                max_depth: 4,
+                total_scalar_bytes: 5,
+                total_comment_bytes: 6,
+                merge_keys: 7,
+            },
+            report_with_breach(BudgetBreach::Events { events: 11 }),
+            report_with_breach(BudgetBreach::AliasAnchorRatio {
+                aliases: 21,
+                anchors: 22,
+            }),
+            report_with_breach(BudgetBreach::SequenceUnbalanced),
+            report_with_breach(BudgetBreach::InputBytes { input_bytes: 23 }),
+        ];
+
+        for report in reports {
+            assert_eq!(
+                format_budget_report(&report),
+                crate::to_string(&report).unwrap()
+            );
         }
     }
 }
