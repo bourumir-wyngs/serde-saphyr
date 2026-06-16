@@ -408,3 +408,55 @@ where
         self.value.serialize(serializer)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deserialize_spanned_accepts_named_fields_and_ignores_unknown_fields() {
+        let spanned: Spanned<u32> = serde_json::from_str(
+            r#"{
+                "unknown": true,
+                "value": 42,
+                "referenced": { "line": 1, "column": 2 },
+                "defined": { "line": 3, "column": 4 }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(spanned.value, 42);
+        assert_eq!(spanned.referenced.line(), 1);
+        assert_eq!(spanned.referenced.column(), 2);
+        assert_eq!(spanned.defined.line(), 3);
+        assert_eq!(spanned.defined.column(), 4);
+    }
+
+    #[test]
+    fn deserialize_spanned_rejects_duplicate_fields() {
+        let err = serde_json::from_str::<Spanned<u32>>(
+            r#"{
+                "value": 1,
+                "value": 2,
+                "referenced": { "line": 1, "column": 2 },
+                "defined": { "line": 3, "column": 4 }
+            }"#,
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("duplicate field `value`"));
+    }
+
+    #[test]
+    fn deserialize_spanned_rejects_missing_fields() {
+        let err = serde_json::from_str::<Spanned<u32>>(
+            r#"{
+                "value": 1,
+                "referenced": { "line": 1, "column": 2 }
+            }"#,
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("missing field `defined`"));
+    }
+}

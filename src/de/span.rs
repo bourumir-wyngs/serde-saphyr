@@ -319,6 +319,41 @@ mod tests {
         assert!(Span::UNKNOWN.is_empty());
     }
 
+    #[test]
+    fn deserialize_span_accepts_unknown_fields() {
+        let span: Span = serde_json::from_str(
+            r#"{
+                "ignored": "value",
+                "offset": 10,
+                "len": 5,
+                "byte_info": [20, 5]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(span.offset(), 10);
+        assert_eq!(span.len(), 5);
+        assert_eq!(span.byte_offset(), Some(20));
+        assert_eq!(span.byte_len(), Some(5));
+    }
+
+    #[test]
+    fn deserialize_span_rejects_duplicate_fields() {
+        let err = serde_json::from_str::<Span>(
+            r#"{ "offset": 1, "offset": 2, "len": 3, "byte_info": [4, 5] }"#,
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("duplicate field `offset`"));
+    }
+
+    #[test]
+    fn deserialize_span_rejects_missing_fields() {
+        let err = serde_json::from_str::<Span>(r#"{ "offset": 1, "len": 2 }"#).unwrap_err();
+
+        assert!(err.to_string().contains("missing field `byte_info`"));
+    }
+
     #[cfg(feature = "huge_documents")]
     #[test]
     fn huge_document_indices_saturate_to_48_bits() {

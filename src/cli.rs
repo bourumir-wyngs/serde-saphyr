@@ -223,3 +223,127 @@ where
 
     0
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn report_with_breach(breached: BudgetBreach) -> BudgetReport {
+        BudgetReport {
+            breached: Some(breached),
+            events: 1,
+            aliases: 2,
+            anchors: 3,
+            documents: 4,
+            nodes: 5,
+            max_depth: 6,
+            total_scalar_bytes: 7,
+            total_comment_bytes: 8,
+            merge_keys: 9,
+        }
+    }
+
+    #[test]
+    fn format_budget_report_without_breach() {
+        let formatted = format_budget_report(&BudgetReport {
+            breached: None,
+            events: 10,
+            aliases: 0,
+            anchors: 1,
+            documents: 2,
+            nodes: 3,
+            max_depth: 4,
+            total_scalar_bytes: 5,
+            total_comment_bytes: 6,
+            merge_keys: 7,
+        });
+
+        assert!(formatted.contains("breached: null"));
+        assert!(formatted.contains("events: 10"));
+        assert!(formatted.contains("total_comment_bytes: 6"));
+    }
+
+    #[test]
+    fn format_budget_report_covers_all_breach_variants() {
+        let cases = [
+            (
+                report_with_breach(BudgetBreach::Events { events: 11 }),
+                "type: events",
+                "events: 11",
+            ),
+            (
+                report_with_breach(BudgetBreach::Aliases { aliases: 12 }),
+                "type: aliases",
+                "aliases: 12",
+            ),
+            (
+                report_with_breach(BudgetBreach::Anchors { anchors: 13 }),
+                "type: anchors",
+                "anchors: 13",
+            ),
+            (
+                report_with_breach(BudgetBreach::Depth { depth: 14 }),
+                "type: depth",
+                "depth: 14",
+            ),
+            (
+                report_with_breach(BudgetBreach::InclusionDepth { depth: 15 }),
+                "type: inclusion_depth",
+                "depth: 15",
+            ),
+            (
+                report_with_breach(BudgetBreach::Documents { documents: 16 }),
+                "type: documents",
+                "documents: 16",
+            ),
+            (
+                report_with_breach(BudgetBreach::Nodes { nodes: 17 }),
+                "type: nodes",
+                "nodes: 17",
+            ),
+            (
+                report_with_breach(BudgetBreach::ScalarBytes {
+                    total_scalar_bytes: 18,
+                }),
+                "type: scalar_bytes",
+                "total_scalar_bytes: 18",
+            ),
+            (
+                report_with_breach(BudgetBreach::CommentBytes {
+                    total_comment_bytes: 19,
+                }),
+                "type: comment_bytes",
+                "total_comment_bytes: 19",
+            ),
+            (
+                report_with_breach(BudgetBreach::MergeKeys { merge_keys: 20 }),
+                "type: merge_keys",
+                "merge_keys: 20",
+            ),
+            (
+                report_with_breach(BudgetBreach::AliasAnchorRatio {
+                    aliases: 21,
+                    anchors: 22,
+                }),
+                "type: alias_anchor_ratio",
+                "anchors: 22",
+            ),
+            (
+                report_with_breach(BudgetBreach::SequenceUnbalanced),
+                "type: sequence_unbalanced",
+                "nodes: 5",
+            ),
+            (
+                report_with_breach(BudgetBreach::InputBytes { input_bytes: 23 }),
+                "type: input_bytes",
+                "input_bytes: 23",
+            ),
+        ];
+
+        for (report, expected_type, expected_value) in cases {
+            let formatted = format_budget_report(&report);
+            assert!(formatted.contains(expected_type), "{formatted}");
+            assert!(formatted.contains(expected_value), "{formatted}");
+        }
+    }
+}

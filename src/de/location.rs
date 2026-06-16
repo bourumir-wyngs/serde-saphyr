@@ -396,6 +396,53 @@ mod tests {
     }
 
     #[test]
+    fn deserialize_location_accepts_optional_and_unknown_fields() {
+        let loc: Location = serde_json::from_str(
+            r#"{
+                "ignored": true,
+                "line": 5,
+                "column": 10,
+                "span": { "offset": 20, "len": 3, "byte_info": [40, 3] },
+                "source_id": 7
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(loc.line(), 5);
+        assert_eq!(loc.column(), 10);
+        assert_eq!(loc.span().offset(), 20);
+        assert_eq!(loc.span().len(), 3);
+        assert_eq!(loc.span().byte_offset(), Some(40));
+        assert_eq!(loc.span().byte_len(), Some(3));
+        assert_eq!(loc.source_id(), 7);
+    }
+
+    #[test]
+    fn deserialize_location_defaults_span_and_source_id() {
+        let loc: Location = serde_json::from_str(r#"{ "line": 1, "column": 2 }"#).unwrap();
+
+        assert_eq!(loc.line(), 1);
+        assert_eq!(loc.column(), 2);
+        assert_eq!(loc.span(), Span::default());
+        assert_eq!(loc.source_id(), 0);
+    }
+
+    #[test]
+    fn deserialize_location_rejects_duplicate_required_fields() {
+        let err = serde_json::from_str::<Location>(r#"{ "line": 1, "line": 2, "column": 3 }"#)
+            .unwrap_err();
+
+        assert!(err.to_string().contains("duplicate field `line`"));
+    }
+
+    #[test]
+    fn deserialize_location_rejects_missing_required_fields() {
+        let err = serde_json::from_str::<Location>(r#"{ "line": 1 }"#).unwrap_err();
+
+        assert!(err.to_string().contains("missing field `column`"));
+    }
+
+    #[test]
     fn test_locations_methods() {
         let l1 = Location::new(1, 1);
         let locations = Locations::same(&l1).unwrap();
