@@ -83,10 +83,7 @@ impl<'a> Arbitrary<'a> for Node {
 fuzz_target!(|node: Node| {
     let opts = serde_saphyr::ser_options! {};
     // serialization is panic-free and from valid input, so may never return an `Err`
-    let text = match serde_saphyr::to_string_with_options(&node, opts) {
-        Ok(text) => text,
-        Err(e) => panic!("{e}"),
-    };
+    let text = serde_saphyr::to_string_with_options(&node, opts).unwrap();
 
     // anything we emit must be parseable YAML for this model.
     let back: Node = match serde_saphyr::from_str(&text) {
@@ -103,5 +100,11 @@ fuzz_target!(|node: Node| {
         node, back,
         "round-trip changed the value\n--- yaml ---\n{text}\n--- original ---\n{node:#?}\n--- decoded ---\n{back:#?}"
     );
-    // todo: indepotance
+
+    // idempotence
+    let text2 = serde_saphyr::to_string_with_options(&back, opts).unwrap();
+    assert_eq!(
+        text, text2,
+        "serialization is not idempotent\n--- first ---\n{text}\n--- second ---\n{text2}\n--- value ---\n{node:#?}"
+    );
 });
