@@ -2,7 +2,7 @@
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use serde_saphyr as yaml;
-use serde_saphyr::LitString;
+use serde_saphyr::{FlowMap, LitString};
 use std::collections::BTreeMap;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
@@ -41,6 +41,24 @@ fn long_scalar_key_with_trailing_space_round_trips() -> anyhow::Result<()> {
     )?;
     let decoded: BTreeMap<String, i32> = yaml::from_str(&serialized)
         .map_err(|e| anyhow::anyhow!("{e}\n--- yaml ---\n{serialized}"))?;
+    assert_eq!(reference, decoded);
+    Ok(())
+}
+
+#[test]
+fn flow_map_overlong_scalar_key_round_trips() -> anyhow::Result<()> {
+    let mut reference = BTreeMap::new();
+    reference.insert("K".repeat(2000), 42);
+
+    let serialized = yaml::to_string(&FlowMap(reference.clone()))?;
+    assert!(
+        serialized.contains("? "),
+        "overlong flow key should use explicit form:\n{serialized}"
+    );
+
+    let decoded: BTreeMap<String, i32> = yaml::from_str(&serialized)
+        .map_err(|e| anyhow::anyhow!("{e}\n--- yaml ---\n{serialized}"))?;
+
     assert_eq!(reference, decoded);
     Ok(())
 }

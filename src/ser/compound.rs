@@ -16,6 +16,12 @@ use crate::ser::{Error, Result};
 /// > In addition, the key is restricted to a single line.
 const SIMPLE_KEY_MAX_LEN: usize = 1024;
 
+#[inline]
+fn is_simple_key_text(text: &str) -> bool {
+    // UTF-8 bytes are an upper bound on Unicode scalar count.
+    text.len() <= SIMPLE_KEY_MAX_LEN || text.chars().count() <= SIMPLE_KEY_MAX_LEN
+}
+
 // ------------------------------------------------------------
 // Seq / Tuple serializers
 // ------------------------------------------------------------
@@ -474,8 +480,14 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
                 self.ser.out.write_str(", ")?;
             }
             let text = scalar_key_to_string(key, self.ser.yaml_12)?;
-            self.ser.out.write_str(&text)?;
-            self.ser.out.write_str(": ")?;
+            if is_simple_key_text(&text) {
+                self.ser.out.write_str(&text)?;
+                self.ser.out.write_str(": ")?;
+            } else {
+                self.ser.out.write_str("? ")?;
+                self.ser.out.write_str(&text)?;
+                self.ser.out.write_str(" : ")?;
+            }
             self.ser.at_line_start = false;
             self.last_key_complex = false;
         } else {
@@ -500,11 +512,7 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
             self.ser.last_value_was_block = false;
 
             match scalar_key_to_string(key, self.ser.yaml_12) {
-              Ok(text)
-              // since a utf8 "character" is at min one byte, text.len() is an cheap upper bound on the number of chars
-                    if text.len() <= SIMPLE_KEY_MAX_LEN
-                        || text.chars().count() <= SIMPLE_KEY_MAX_LEN =>
-                {
+                Ok(text) if is_simple_key_text(&text) => {
                     self.write_simple_key(&text)?;
                 }
                 Ok(text) => self.write_explicit_scalar_key(&text)?,
