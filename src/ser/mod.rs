@@ -42,9 +42,7 @@ mod wrapping;
 mod zmij_format;
 
 pub use self::error::Error;
-pub use self::serializer::{
-    MapSer, SeqSer, StructVariantSer, TupleSer, YamlSerializer,
-};
+pub use self::serializer::{MapSer, SeqSer, StructVariantSer, TupleSer, YamlSerializer};
 
 /// Result alias.
 pub type Result<T> = std::result::Result<T, Error>;

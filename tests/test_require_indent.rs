@@ -97,13 +97,16 @@ fn default_is_unchecked() {
 
 #[test]
 fn uniform_some_persists_across_documents() {
-    let err = parse_multiple(RequireIndent::Uniform(Some(2)), r#"a:
+    let err = parse_multiple(
+        RequireIndent::Uniform(Some(2)),
+        r#"a:
   b: 1
 ---
 x:
    z: 1
-"#)
-        .unwrap_err();
+"#,
+    )
+    .unwrap_err();
     assert!(
         err.contains("expected uniform (2 spaces), found 3 spaces"),
         "{err}"
@@ -112,24 +115,30 @@ x:
 
 #[test]
 fn uniform_some_accepts_matching_second_document() {
-    let result = parse_multiple(RequireIndent::Uniform(Some(2)), r#"a:
+    let result = parse_multiple(
+        RequireIndent::Uniform(Some(2)),
+        r#"a:
   b: 1
 ---
 x:
   z: 1
-"#);
+"#,
+    );
     assert!(result.is_ok(), "{result:?}");
 }
 
 #[test]
 fn uniform_none_infers_once_and_stays_consistent_across_documents() {
-    let err = parse_multiple(RequireIndent::Uniform(None), r#"a:
+    let err = parse_multiple(
+        RequireIndent::Uniform(None),
+        r#"a:
   b: 1
 ---
 x:
    z: 1
-"#)
-        .unwrap_err();
+"#,
+    )
+    .unwrap_err();
     assert!(
         err.contains("expected uniform (2 spaces), found 3 spaces"),
         "{err}"

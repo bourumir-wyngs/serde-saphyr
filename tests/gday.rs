@@ -23,10 +23,9 @@ struct Root {
     pub settings: Settings,
 }
 
-
-    #[test]
-    fn parse_and_assert_settings() -> anyhow::Result<()> {
-        let yaml = r#"
+#[test]
+fn parse_and_assert_settings() -> anyhow::Result<()> {
+    let yaml = r#"
 settings:
     endpoint: "http://localhost/api/search/instant"
     limit: 50
@@ -37,27 +36,26 @@ settings:
     1000: 1001
 "#;
 
-        let root: Root =
-            serde_saphyr::from_str(yaml).with_context(|| "Failed to deserialize YAML into Root")?;
-        let settings = root.settings;
+    let root: Root =
+        serde_saphyr::from_str(yaml).with_context(|| "Failed to deserialize YAML into Root")?;
+    let settings = root.settings;
 
-        // Exact assertions
-        assert_eq!(settings.endpoint, "http://localhost/api/search/instant");
-        assert_eq!(settings.limit, 50);
-        assert_eq!(settings.site_language, "en");
-        assert_eq!(settings.restrict, "all");
-        assert!(!settings.match_partial);
-        assert_eq!(settings.the_thousand, 1001);
+    // Exact assertions
+    assert_eq!(settings.endpoint, "http://localhost/api/search/instant");
+    assert_eq!(settings.limit, 50);
+    assert_eq!(settings.site_language, "en");
+    assert_eq!(settings.restrict, "all");
+    assert!(!settings.match_partial);
+    assert_eq!(settings.the_thousand, 1001);
 
-        // Languages list equality (order is preserved from YAML)
-        let expected = vec![
-            "lzh", "en", "pgd", "kho", "pli", "pra", "san", "xct", "xto", "uig",
-        ]
-        .into_iter()
-        .map(String::from)
-        .collect::<Vec<_>>();
-        assert_eq!(settings.selected_languages, expected);
+    // Languages list equality (order is preserved from YAML)
+    let expected = vec![
+        "lzh", "en", "pgd", "kho", "pli", "pra", "san", "xct", "xto", "uig",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect::<Vec<_>>();
+    assert_eq!(settings.selected_languages, expected);
 
-        Ok(())
-    }
+    Ok(())
 }
