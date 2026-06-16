@@ -1,4 +1,4 @@
-use serde::de::DeserializeOwned;
+use serde_core::de::DeserializeOwned;
 use std::path::Path;
 
 /// A [`figment2::providers::Format`] implementation for YAML backed by `serde-saphyr`.

@@ -18,7 +18,9 @@ use super::options::SerializerOptions;
 /// assert!(s.contains("a: 1"));
 /// ```
 #[cfg(feature = "serialize")]
-pub fn to_string<T: serde::Serialize>(value: &T) -> std::result::Result<String, crate::ser::Error> {
+pub fn to_string<T: serde_core::Serialize>(
+    value: &T,
+) -> std::result::Result<String, crate::ser::Error> {
     let mut out = String::new();
     to_fmt_writer(&mut out, value)?;
     Ok(out)
@@ -43,7 +45,7 @@ pub fn to_string<T: serde::Serialize>(value: &T) -> std::result::Result<String, 
 /// assert!(s.contains("a: 1"));
 /// ```
 #[cfg(feature = "serialize")]
-pub fn to_string_with_options<T: serde::Serialize>(
+pub fn to_string_with_options<T: serde_core::Serialize>(
     value: &T,
     options: SerializerOptions,
 ) -> std::result::Result<String, crate::ser::Error> {
@@ -59,7 +61,7 @@ pub fn to_string_with_options<T: serde::Serialize>(
     note = "Use `to_fmt_writer` for `fmt::Write` (String, fmt::Formatter) or `to_io_writer` for files/sockets."
 )]
 #[cfg(feature = "serialize")]
-pub fn to_writer<W: std::fmt::Write, T: serde::Serialize>(
+pub fn to_writer<W: std::fmt::Write, T: serde_core::Serialize>(
     output: &mut W,
     value: &T,
 ) -> std::result::Result<(), crate::ser::Error> {
@@ -69,7 +71,7 @@ pub fn to_writer<W: std::fmt::Write, T: serde::Serialize>(
 
 /// Serialize a value as YAML into any [`std::fmt::Write`] target.
 #[cfg(feature = "serialize")]
-pub fn to_fmt_writer<W: std::fmt::Write, T: serde::Serialize>(
+pub fn to_fmt_writer<W: std::fmt::Write, T: serde_core::Serialize>(
     output: &mut W,
     value: &T,
 ) -> std::result::Result<(), crate::ser::Error> {
@@ -78,7 +80,7 @@ pub fn to_fmt_writer<W: std::fmt::Write, T: serde::Serialize>(
 
 /// Serialize a value as YAML into any [`std::io::Write`] target.
 #[cfg(feature = "serialize")]
-pub fn to_io_writer<W: std::io::Write, T: serde::Serialize>(
+pub fn to_io_writer<W: std::io::Write, T: serde_core::Serialize>(
     output: &mut W,
     value: &T,
 ) -> std::result::Result<(), crate::ser::Error> {
@@ -88,7 +90,7 @@ pub fn to_io_writer<W: std::io::Write, T: serde::Serialize>(
 /// Serialize a value as YAML into any [`std::fmt::Write`] target, with options.
 /// Options are consumed because anchor generator may be taken from them.
 #[cfg(feature = "serialize")]
-pub fn to_fmt_writer_with_options<W: std::fmt::Write, T: serde::Serialize>(
+pub fn to_fmt_writer_with_options<W: std::fmt::Write, T: serde_core::Serialize>(
     output: &mut W,
     value: &T,
     mut options: SerializerOptions,
@@ -101,7 +103,7 @@ pub fn to_fmt_writer_with_options<W: std::fmt::Write, T: serde::Serialize>(
 /// Serialize a value as YAML into any [`std::io::Write`] target, with options.
 /// Options are consumed because anchor generator may be taken from them.
 #[cfg(feature = "serialize")]
-pub fn to_io_writer_with_options<W: std::io::Write, T: serde::Serialize>(
+pub fn to_io_writer_with_options<W: std::io::Write, T: serde_core::Serialize>(
     output: &mut W,
     value: &T,
     mut options: SerializerOptions,
@@ -147,7 +149,7 @@ pub fn to_io_writer_with_options<W: std::io::Write, T: serde::Serialize>(
     note = "Use `to_fmt_writer_with_options` for fmt::Write or `to_io_writer_with_options` for io::Write."
 )]
 #[cfg(feature = "serialize")]
-pub fn to_writer_with_options<W: std::fmt::Write, T: serde::Serialize>(
+pub fn to_writer_with_options<W: std::fmt::Write, T: serde_core::Serialize>(
     output: &mut W,
     value: &T,
     options: SerializerOptions,
@@ -174,7 +176,7 @@ pub fn to_writer_with_options<W: std::fmt::Write, T: serde::Serialize>(
 /// assert_eq!(out, "x: 1\n---\nx: 2\n");
 /// ```
 #[cfg(feature = "serialize")]
-pub fn to_string_multiple<T: serde::Serialize>(
+pub fn to_string_multiple<T: serde_core::Serialize>(
     values: &[T],
 ) -> std::result::Result<String, crate::ser::Error> {
     to_string_multiple_with_options(values, SerializerOptions::default())
@@ -203,7 +205,7 @@ pub fn to_string_multiple<T: serde::Serialize>(
 /// assert_eq!(out, "coords:\n- 0\n- 1\n---\ncoords:\n- 3\n- 2\n");
 /// ```
 #[cfg(feature = "serialize")]
-pub fn to_string_multiple_with_options<T: serde::Serialize>(
+pub fn to_string_multiple_with_options<T: serde_core::Serialize>(
     values: &[T],
     options: SerializerOptions,
 ) -> std::result::Result<String, crate::ser::Error> {

@@ -1,5 +1,5 @@
-use serde::de::{Deserialize, Deserializer};
-use serde::ser::{Serialize, Serializer};
+use serde_core::de::{Deserialize, Deserializer};
+use serde_core::ser::{Serialize, Serializer};
 use std::ops::Deref;
 
 // Flow hints and block-string hints: we use newtype-struct names.

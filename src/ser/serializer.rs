@@ -8,8 +8,8 @@ pub use self::compound::{MapSer, SeqSer, StructVariantSer, TupleSer};
 use self::helpers::StrCapture;
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use nohash_hasher::BuildNoHashHasher;
-use serde::ser::Error as _;
-use serde::ser::{Serialize, Serializer};
+use serde_core::ser::Error as _;
+use serde_core::ser::{Serialize, Serializer};
 use std::collections::HashMap;
 use std::fmt::Write;
 
@@ -941,9 +941,9 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             // Top-level or start-of-line: emit as sequence of numbers
             let mut seq = self.serialize_seq(Some(v.len()))?;
             for b in v {
-                serde::ser::SerializeSeq::serialize_element(&mut seq, b)?;
+                serde_core::ser::SerializeSeq::serialize_element(&mut seq, b)?;
             }
-            return serde::ser::SerializeSeq::end(seq);
+            return serde_core::ser::SerializeSeq::end(seq);
         }
 
         // Inline value position: emit !!binary with base64.

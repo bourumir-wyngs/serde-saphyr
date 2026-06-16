@@ -1,4 +1,4 @@
-use serde::ser::{self, Serialize, Serializer};
+use serde_core::ser::{self, Serialize, Serializer};
 use std::fmt::{self, Write};
 
 use super::super::quoting::{is_plain_safe, is_plain_value_safe};

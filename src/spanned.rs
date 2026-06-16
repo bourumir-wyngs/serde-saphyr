@@ -25,8 +25,8 @@
 //! # }
 //! ```
 
-use serde::de::{self, Deserializer, IntoDeserializer};
-use serde::{Deserialize, Serialize};
+use serde_core::de::{self, Deserializer, IntoDeserializer};
+use serde_core::{Deserialize, Serialize};
 
 use crate::Location;
 
@@ -228,15 +228,81 @@ where
             where
                 A: de::MapAccess<'de>,
             {
-                #[derive(Deserialize)]
-                struct Repr<T> {
-                    value: T,
-                    referenced: Location,
-                    defined: Location,
+                enum Field {
+                    Value,
+                    Referenced,
+                    Defined,
+                    Ignore,
                 }
 
-                Repr::<T>::deserialize(de::value::MapAccessDeserializer::new(map))
-                    .map(|repr| Spanned::new(repr.value, repr.referenced, repr.defined))
+                impl<'de> Deserialize<'de> for Field {
+                    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+                    where
+                        D: Deserializer<'de>,
+                    {
+                        struct FieldVisitor;
+
+                        impl<'a> de::Visitor<'a> for FieldVisitor {
+                            type Value = Field;
+
+                            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                                f.write_str("a Spanned<T> field")
+                            }
+
+                            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+                            where
+                                E: de::Error,
+                            {
+                                Ok(match value {
+                                    "value" => Field::Value,
+                                    "referenced" => Field::Referenced,
+                                    "defined" => Field::Defined,
+                                    _ => Field::Ignore,
+                                })
+                            }
+                        }
+
+                        deserializer.deserialize_identifier(FieldVisitor)
+                    }
+                }
+
+                let mut map = map;
+                let mut value = None;
+                let mut referenced = None;
+                let mut defined = None;
+
+                while let Some(field) = map.next_key::<Field>()? {
+                    match field {
+                        Field::Value => {
+                            if value.is_some() {
+                                return Err(de::Error::duplicate_field("value"));
+                            }
+                            value = Some(map.next_value()?);
+                        }
+                        Field::Referenced => {
+                            if referenced.is_some() {
+                                return Err(de::Error::duplicate_field("referenced"));
+                            }
+                            referenced = Some(map.next_value()?);
+                        }
+                        Field::Defined => {
+                            if defined.is_some() {
+                                return Err(de::Error::duplicate_field("defined"));
+                            }
+                            defined = Some(map.next_value()?);
+                        }
+                        Field::Ignore => {
+                            let _ = map.next_value::<de::IgnoredAny>()?;
+                        }
+                    }
+                }
+
+                let value = value.ok_or_else(|| de::Error::missing_field("value"))?;
+                let referenced =
+                    referenced.ok_or_else(|| de::Error::missing_field("referenced"))?;
+                let defined = defined.ok_or_else(|| de::Error::missing_field("defined"))?;
+
+                Ok(Spanned::new(value, referenced, defined))
             }
 
             // Fallback handlers for plain values arriving via ContentDeserializer
@@ -335,10 +401,62 @@ where
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: serde_core::Serializer,
     {
         // `Spanned<T>` is a deserialization helper that records source locations.
         // When serializing, we emit the wrapped value only.
         self.value.serialize(serializer)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deserialize_spanned_accepts_named_fields_and_ignores_unknown_fields() {
+        let spanned: Spanned<u32> = serde_json::from_str(
+            r#"{
+                "unknown": true,
+                "value": 42,
+                "referenced": { "line": 1, "column": 2 },
+                "defined": { "line": 3, "column": 4 }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(spanned.value, 42);
+        assert_eq!(spanned.referenced.line(), 1);
+        assert_eq!(spanned.referenced.column(), 2);
+        assert_eq!(spanned.defined.line(), 3);
+        assert_eq!(spanned.defined.column(), 4);
+    }
+
+    #[test]
+    fn deserialize_spanned_rejects_duplicate_fields() {
+        let err = serde_json::from_str::<Spanned<u32>>(
+            r#"{
+                "value": 1,
+                "value": 2,
+                "referenced": { "line": 1, "column": 2 },
+                "defined": { "line": 3, "column": 4 }
+            }"#,
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("duplicate field `value`"));
+    }
+
+    #[test]
+    fn deserialize_spanned_rejects_missing_fields() {
+        let err = serde_json::from_str::<Spanned<u32>>(
+            r#"{
+                "value": 1,
+                "referenced": { "line": 1, "column": 2 }
+            }"#,
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("missing field `defined`"));
     }
 }

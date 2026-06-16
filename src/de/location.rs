@@ -3,7 +3,7 @@
 pub use crate::span::Span;
 #[cfg(feature = "deserialize")]
 use granit_parser::Span as ParserSpan;
-use serde::Deserialize;
+use serde_core::de::{self, IgnoredAny, MapAccess, Visitor};
 
 /// Row/column location within the source YAML document (1-indexed, character-based).
 ///
@@ -41,7 +41,7 @@ use serde::Deserialize;
 /// }
 /// # }
 /// ```
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Location {
     /// 1-indexed row number in the input stream.
     pub(crate) line: u32,
@@ -49,11 +49,124 @@ pub struct Location {
     pub(crate) column: u32,
     /// Character-based span within the document
     /// Byte offsets are available for string source but not from the reader.
-    #[serde(default)]
     pub(crate) span: Span,
     /// Numeric id of the source where this location is from.
-    #[serde(default)]
     pub(crate) source_id: u32,
+}
+
+// As we do not use serde here (serde core only), we need manual implementation.
+impl<'de> serde_core::Deserialize<'de> for Location {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde_core::Deserializer<'de>,
+    {
+        enum Field {
+            Line,
+            Column,
+            Span,
+            SourceId,
+            Ignore,
+        }
+
+        impl<'de> serde_core::Deserialize<'de> for Field {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde_core::Deserializer<'de>,
+            {
+                struct FieldVisitor;
+
+                impl<'a> Visitor<'a> for FieldVisitor {
+                    type Value = Field;
+
+                    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                        f.write_str("a Location field")
+                    }
+
+                    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+                    where
+                        E: de::Error,
+                    {
+                        Ok(match value {
+                            "line" => Field::Line,
+                            "column" => Field::Column,
+                            "span" => Field::Span,
+                            "source_id" => Field::SourceId,
+                            _ => Field::Ignore,
+                        })
+                    }
+                }
+
+                deserializer.deserialize_identifier(FieldVisitor)
+            }
+        }
+
+        struct LocationVisitor;
+
+        impl<'de> Visitor<'de> for LocationVisitor {
+            type Value = Location;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a source location")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut line = None;
+                let mut column = None;
+                let mut span = None;
+                let mut source_id = None;
+
+                while let Some(field) = map.next_key::<Field>()? {
+                    match field {
+                        Field::Line => {
+                            if line.is_some() {
+                                return Err(de::Error::duplicate_field("line"));
+                            }
+                            line = Some(map.next_value()?);
+                        }
+                        Field::Column => {
+                            if column.is_some() {
+                                return Err(de::Error::duplicate_field("column"));
+                            }
+                            column = Some(map.next_value()?);
+                        }
+                        Field::Span => {
+                            if span.is_some() {
+                                return Err(de::Error::duplicate_field("span"));
+                            }
+                            span = Some(map.next_value()?);
+                        }
+                        Field::SourceId => {
+                            if source_id.is_some() {
+                                return Err(de::Error::duplicate_field("source_id"));
+                            }
+                            source_id = Some(map.next_value()?);
+                        }
+                        Field::Ignore => {
+                            let _ = map.next_value::<IgnoredAny>()?;
+                        }
+                    }
+                }
+
+                let line = line.ok_or_else(|| de::Error::missing_field("line"))?;
+                let column = column.ok_or_else(|| de::Error::missing_field("column"))?;
+                let span = span.unwrap_or_default();
+                let source_id = source_id.unwrap_or_default();
+
+                Ok(Location {
+                    line,
+                    column,
+                    span,
+                    source_id,
+                })
+            }
+        }
+
+        const FIELDS: &[&str] = &["line", "column", "span", "source_id"];
+        deserializer.deserialize_struct("Location", FIELDS, LocationVisitor)
+    }
 }
 
 impl Location {
@@ -288,6 +401,81 @@ mod tests {
         assert_eq!(loc_with_span.line(), 5);
         assert_eq!(loc_with_span.column(), 10);
         assert_eq!(loc_with_span.span(), span);
+    }
+
+    #[test]
+    fn deserialize_location_accepts_optional_and_unknown_fields() {
+        let loc: Location = serde_json::from_str(
+            r#"{
+                "ignored": true,
+                "line": 5,
+                "column": 10,
+                "span": { "offset": 20, "len": 3, "byte_info": [40, 3] },
+                "source_id": 7
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(loc.line(), 5);
+        assert_eq!(loc.column(), 10);
+        assert_eq!(loc.span().offset(), 20);
+        assert_eq!(loc.span().len(), 3);
+        assert_eq!(loc.span().byte_offset(), Some(40));
+        assert_eq!(loc.span().byte_len(), Some(3));
+        assert_eq!(loc.source_id(), 7);
+    }
+
+    #[test]
+    fn deserialize_location_defaults_span_and_source_id() {
+        let loc: Location = serde_json::from_str(r#"{ "line": 1, "column": 2 }"#).unwrap();
+
+        assert_eq!(loc.line(), 1);
+        assert_eq!(loc.column(), 2);
+        assert_eq!(loc.span(), Span::default());
+        assert_eq!(loc.source_id(), 0);
+    }
+
+    #[test]
+    fn deserialize_location_rejects_duplicate_required_fields() {
+        let err = serde_json::from_str::<Location>(r#"{ "line": 1, "line": 2, "column": 3 }"#)
+            .unwrap_err();
+
+        assert!(err.to_string().contains("duplicate field `line`"));
+    }
+
+    #[test]
+    fn deserialize_location_rejects_duplicate_defaulted_fields() {
+        let duplicate_span = serde_json::from_str::<Location>(
+            r#"{
+                "line": 1,
+                "column": 2,
+                "span": { "offset": 1, "len": 1, "byte_info": [0, 0] },
+                "span": { "offset": 2, "len": 2, "byte_info": [0, 0] }
+            }"#,
+        )
+        .unwrap_err();
+        assert!(
+            duplicate_span
+                .to_string()
+                .contains("duplicate field `span`")
+        );
+
+        let duplicate_source_id = serde_json::from_str::<Location>(
+            r#"{ "line": 1, "column": 2, "source_id": 1, "source_id": 2 }"#,
+        )
+        .unwrap_err();
+        assert!(
+            duplicate_source_id
+                .to_string()
+                .contains("duplicate field `source_id`")
+        );
+    }
+
+    #[test]
+    fn deserialize_location_rejects_missing_required_fields() {
+        let err = serde_json::from_str::<Location>(r#"{ "line": 1 }"#).unwrap_err();
+
+        assert!(err.to_string().contains("missing field `column`"));
     }
 
     #[test]

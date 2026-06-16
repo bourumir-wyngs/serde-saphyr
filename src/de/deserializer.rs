@@ -3,7 +3,7 @@ use std::collections::{HashSet, VecDeque};
 
 use ahash::{HashSetExt, RandomState};
 use granit_parser::ScalarStyle;
-use serde::de::{self, Deserializer as _, IntoDeserializer, Visitor};
+use serde_core::de::{self, Deserializer as _, IntoDeserializer, Visitor};
 
 use super::base64::decode_base64_yaml;
 use super::cfg::Cfg;
@@ -217,7 +217,7 @@ impl<'de> de::Deserializer<'de> for EnumScalarId<'de> {
         .map_err(|err| err.with_location(location))
     }
 
-    serde::forward_to_deserialize_any! {
+    serde_core::forward_to_deserialize_any! {
         bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string bytes byte_buf
         option unit unit_struct newtype_struct seq tuple tuple_struct map struct enum
         ignored_any
@@ -1009,7 +1009,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         }
                         Some(_) => {
                             // Deserialize each element as u8 using our own Deser
-                            let b: u8 = <u8 as serde::Deserialize>::deserialize(
+                            let b: u8 = <u8 as serde_core::Deserialize>::deserialize(
                                 YamlDeserializer::new(&mut *self.ev, self.cfg),
                             )?;
                             out.push(b);
@@ -1263,7 +1263,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         }
                         let b = self.data[self.idx];
                         self.idx += 1;
-                        let deser = serde::de::value::U8Deserializer::<Error>::new(b);
+                        let deser = serde_core::de::value::U8Deserializer::<Error>::new(b);
                         seed.deserialize(deser).map(Some)
                     }
                 }

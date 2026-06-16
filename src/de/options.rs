@@ -1,6 +1,5 @@
 use crate::budget::Budget;
 use crate::indentation::RequireIndent;
-use serde::{Deserialize, Serialize};
 #[cfg(feature = "properties")]
 use std::collections::HashMap;
 #[cfg(feature = "include_fs")]
@@ -13,7 +12,11 @@ use std::rc::Rc;
 
 /// Duplicate key handling policy for mappings.
 #[non_exhaustive]
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(
+    feature = "serde_derived_types",
+    derive(serde::Serialize, serde::Deserialize)
+)]
 pub enum DuplicateKeyPolicy {
     /// Error out on encountering a duplicate key.
     Error,
@@ -28,8 +31,12 @@ pub enum DuplicateKeyPolicy {
 /// Recognized syntaxes for `${NAME}` / `$NAME` property interpolation.
 #[cfg(feature = "properties")]
 #[non_exhaustive]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "serde_derived_types",
+    derive(serde::Serialize, serde::Deserialize)
+)]
+#[cfg_attr(feature = "serde_derived_types", serde(rename_all = "snake_case"))]
 pub enum PropertySyntax {
     /// Only the braced `${NAME}` form is interpolated. Bare `$NAME` stays literal.
     #[default]
@@ -42,8 +49,12 @@ pub enum PropertySyntax {
 
 /// Merge key handling policy for YAML mappings.
 #[non_exhaustive]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "serde_derived_types",
+    derive(serde::Serialize, serde::Deserialize)
+)]
+#[cfg_attr(feature = "serde_derived_types", serde(rename_all = "snake_case"))]
 pub enum MergeKeyPolicy {
     /// Expand YAML merge keys (`<<`) into the surrounding mapping, as per YAML 1.1 specs.
     #[default]
@@ -71,7 +82,11 @@ pub enum MergeKeyPolicy {
 /// assert_eq!(limits.max_replay_stack_depth, 32);
 /// # }
 /// ```
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(
+    feature = "serde_derived_types",
+    derive(serde::Serialize, serde::Deserialize)
+)]
 pub struct AliasLimits {
     /// Maximum total number of **replayed** events injected from aliases across the entire parse.
     /// When exceeded, deserialization errors (alias replay limit exceeded).
@@ -138,7 +153,11 @@ impl Default for AliasLimits {
 /// let cfg: Config = from_str_with_options(yaml, options).unwrap();
 /// assert_eq!(cfg.name, "My Application");
 /// ```
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone)]
+#[cfg_attr(
+    feature = "serde_derived_types",
+    derive(serde::Serialize, serde::Deserialize)
+)]
 pub struct Options {
     /// Optional YAML budget to enforce before parsing (counts raw parser events).
     #[deprecated(
@@ -147,14 +166,14 @@ pub struct Options {
     pub budget: Option<Budget>,
     /// Optional callback invoked with the final budget report after parsing.
     /// It is invoked both when parsing is successful and when budget was breached.
-    #[serde(skip)]
+    #[cfg_attr(feature = "serde_derived_types", serde(skip))]
     #[deprecated(
         note = "Direct construction of `Options` will be disabled from 1.0.0, use `Options::with_budget_report`"
     )]
     pub budget_report: Option<fn(&crate::budget::BudgetReport)>,
 
     /// Invoked both when parsing is successful and when budget was breached.
-    #[serde(skip)]
+    #[cfg_attr(feature = "serde_derived_types", serde(skip))]
     #[deprecated(
         note = "Direct construction of `Options` will be disabled from 1.0.0, use `Options::with_budget_report`"
     )]
@@ -172,7 +191,7 @@ pub struct Options {
     /// as a regular key. [`MergeKeyPolicy::Error`] rejects merge keys.
     ///
     /// Default: [`MergeKeyPolicy::Merge`].
-    #[serde(default)]
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
     #[deprecated(
         note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
     )]
@@ -251,7 +270,7 @@ pub struct Options {
     /// When provided, it can push parsers onto the internal parser stack to resolve `!include`
     ///-like constructs.
     #[cfg(feature = "include")]
-    #[serde(skip)]
+    #[cfg_attr(feature = "serde_derived_types", serde(skip))]
     #[deprecated(
         note = "Direct construction of `Options` will be disabled from 1.0.0, use `Options::with_include_resolver`"
     )]
@@ -260,7 +279,7 @@ pub struct Options {
     /// A map of properties to substitute in scalar values.
     /// Used for docker-compose-style interpolation like `${VAR}`.
     #[cfg(feature = "properties")]
-    #[serde(skip)]
+    #[cfg_attr(feature = "serde_derived_types", serde(skip))]
     #[deprecated(
         note = "Direct construction of `Options` will be disabled from 1.0.0, use `Options::with_properties`"
     )]
@@ -272,7 +291,7 @@ pub struct Options {
     #[deprecated(
         note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
     )]
-    #[serde(default)]
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub property_syntax: PropertySyntax,
 }
 

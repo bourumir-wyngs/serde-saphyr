@@ -321,6 +321,7 @@ pub(crate) fn maybe_not_string(s: &str, style: &ScalarStyle, strict_booleans: bo
 }
 
 /// Check if a scalar looks like a YAML boolean, respecting `strict_booleans`.
+#[cfg(feature = "deserialize")]
 #[inline]
 fn maybe_bool(s: &str, strict: bool) -> bool {
     if strict {

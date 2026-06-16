@@ -1,4 +1,4 @@
-use serde::ser::{self, Serialize, SerializeTupleStruct, Serializer};
+use serde_core::ser::{self, Serialize, SerializeTupleStruct, Serializer};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};

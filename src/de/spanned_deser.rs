@@ -3,7 +3,7 @@
 //! These are used by the YAML deserializer to implement crate-level helper types
 //! (like `Spanned<T>`) without bloating the main deserializer with large nested state machines.
 
-use serde::de::{self, IntoDeserializer, Visitor};
+use serde_core::de::{self, IntoDeserializer, Visitor};
 
 use super::{Error, Location};
 use crate::Deserializer;
@@ -89,7 +89,7 @@ impl<'de, 'e> de::Deserializer<'de> for SpannedDeser<'de, 'e> {
         })
     }
 
-    serde::forward_to_deserialize_any! {
+    serde_core::forward_to_deserialize_any! {
         bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
         bytes byte_buf option unit unit_struct newtype_struct seq tuple
         tuple_struct map enum identifier ignored_any
@@ -103,9 +103,9 @@ impl<'de, 'e> de::Deserializer<'de> for SpannedDeser<'de, 'e> {
 /// 2) `referenced`
 /// 3) `defined`
 ///
-/// This is intentionally a map/struct view (rather than a tuple) because the
-/// public `Spanned<T>` `Deserialize` implementation uses a derived helper
-/// struct (`Repr`) with named fields.
+/// This is intentionally a map/struct view (rather than a tuple) so the public
+/// `Spanned<T>` `Deserialize` implementation can parse the same named fields in
+/// both YAML-backed and buffered-content paths.
 struct SpannedMapAccess<'de, 'e> {
     /// Underlying YAML deserializer.
     de: Deserializer<'de, 'e>,
@@ -196,7 +196,7 @@ impl<'de> de::Deserializer<'de> for LocationDeser {
         })
     }
 
-    serde::forward_to_deserialize_any! {
+    serde_core::forward_to_deserialize_any! {
         bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
         bytes byte_buf option unit unit_struct newtype_struct seq tuple
         tuple_struct map enum identifier ignored_any
@@ -272,7 +272,7 @@ impl<'de> de::Deserializer<'de> for SpanDeser {
         })
     }
 
-    serde::forward_to_deserialize_any! {
+    serde_core::forward_to_deserialize_any! {
         bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
         bytes byte_buf option unit unit_struct newtype_struct seq tuple
         tuple_struct map enum identifier ignored_any
@@ -302,7 +302,7 @@ impl<'de> de::Deserializer<'de> for ByteInfoTupleDeser {
         })
     }
 
-    serde::forward_to_deserialize_any! {
+    serde_core::forward_to_deserialize_any! {
         bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
         bytes byte_buf option unit unit_struct newtype_struct seq
         tuple_struct map struct enum identifier ignored_any
