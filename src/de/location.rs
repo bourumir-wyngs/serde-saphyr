@@ -115,8 +115,8 @@ impl<'de> serde_core::Deserialize<'de> for Location {
             {
                 let mut line = None;
                 let mut column = None;
-                let mut span = Span::default();
-                let mut source_id = 0;
+                let mut span = None;
+                let mut source_id = None;
 
                 while let Some(field) = map.next_key::<Field>()? {
                     match field {
@@ -133,10 +133,16 @@ impl<'de> serde_core::Deserialize<'de> for Location {
                             column = Some(map.next_value()?);
                         }
                         Field::Span => {
-                            span = map.next_value()?;
+                            if span.is_some() {
+                                return Err(de::Error::duplicate_field("span"));
+                            }
+                            span = Some(map.next_value()?);
                         }
                         Field::SourceId => {
-                            source_id = map.next_value()?;
+                            if source_id.is_some() {
+                                return Err(de::Error::duplicate_field("source_id"));
+                            }
+                            source_id = Some(map.next_value()?);
                         }
                         Field::Ignore => {
                             let _ = map.next_value::<IgnoredAny>()?;
@@ -146,6 +152,8 @@ impl<'de> serde_core::Deserialize<'de> for Location {
 
                 let line = line.ok_or_else(|| de::Error::missing_field("line"))?;
                 let column = column.ok_or_else(|| de::Error::missing_field("column"))?;
+                let span = span.unwrap_or_default();
+                let source_id = source_id.unwrap_or_default();
 
                 Ok(Location {
                     line,
@@ -433,6 +441,34 @@ mod tests {
             .unwrap_err();
 
         assert!(err.to_string().contains("duplicate field `line`"));
+    }
+
+    #[test]
+    fn deserialize_location_rejects_duplicate_defaulted_fields() {
+        let duplicate_span = serde_json::from_str::<Location>(
+            r#"{
+                "line": 1,
+                "column": 2,
+                "span": { "offset": 1, "len": 1, "byte_info": [0, 0] },
+                "span": { "offset": 2, "len": 2, "byte_info": [0, 0] }
+            }"#,
+        )
+        .unwrap_err();
+        assert!(
+            duplicate_span
+                .to_string()
+                .contains("duplicate field `span`")
+        );
+
+        let duplicate_source_id = serde_json::from_str::<Location>(
+            r#"{ "line": 1, "column": 2, "source_id": 1, "source_id": 2 }"#,
+        )
+        .unwrap_err();
+        assert!(
+            duplicate_source_id
+                .to_string()
+                .contains("duplicate field `source_id`")
+        );
     }
 
     #[test]
