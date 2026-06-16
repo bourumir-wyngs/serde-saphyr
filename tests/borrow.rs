@@ -11,7 +11,6 @@
 //! `T::Owned` and wraps it in `Cow::Owned`, so a direct `Cow<str>` cannot borrow
 //! even when `visit_borrowed_str` is offered.
 
-#[cfg(test)]
 mod tests {
     use serde::Deserialize;
     use serde::de::{self, Deserializer, Visitor};
@@ -837,7 +836,6 @@ second: *name
 
     // Unicode-specific edge-case tests for zero-copy deserialization.
 
-    #[cfg(test)]
     mod unicode_tests {
         use serde::Deserialize;
 

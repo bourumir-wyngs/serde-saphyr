@@ -1,5 +1,4 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
-#[cfg(test)]
 mod tests {
     use serde::Deserialize;
     use serde_saphyr::budget::BudgetBreach;
@@ -452,7 +451,6 @@ target:
         assert_eq!(last.len(), 1);
     }
 
-    #[cfg(test)]
     mod hardening_policy_fixed_yaml_tests {
         use super::*;
         use serde::Deserialize;

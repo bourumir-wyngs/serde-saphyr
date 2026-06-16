@@ -23,7 +23,6 @@ struct Root {
     pub settings: Settings,
 }
 
-#[cfg(test)]
 mod tests {
     use super::*;
 

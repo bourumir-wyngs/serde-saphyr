@@ -5,7 +5,6 @@
 //! which provides clear error messages when deserializing to `&str` fails because
 //! the string was transformed during parsing.
 
-#[cfg(test)]
 mod tests {
     use serde_saphyr::{Error, TransformReason};
 

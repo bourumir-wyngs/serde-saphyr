@@ -13,7 +13,6 @@ struct Nested {
     nested_list: Vec<u32>,
 }
 
-#[cfg(test)]
 mod tests {
     use super::*;
 

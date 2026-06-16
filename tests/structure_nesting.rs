@@ -15,7 +15,6 @@ const DATA: &str = r#"
   groups: [all]
 "#;
 
-#[cfg(test)]
 mod tests {
     use super::*;
 
