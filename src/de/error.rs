@@ -20,7 +20,7 @@ use crate::{
 };
 use annotate_snippets::Level;
 use granit_parser::{ScalarStyle, ScanError};
-use serde::de::{self};
+use serde_core::de::{self};
 use std::borrow::Cow;
 use std::cell::Cell;
 use std::fmt;

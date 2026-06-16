@@ -1,4 +1,4 @@
-use serde::de::{self, Deserialize, Deserializer, Visitor};
+use serde_core::de::{self, Deserialize, Deserializer, Visitor};
 use std::fmt;
 use std::marker::PhantomData;
 

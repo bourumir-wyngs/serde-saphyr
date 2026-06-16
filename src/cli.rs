@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use serde::de::IgnoredAny;
+use serde_core::de::IgnoredAny;
 
 use crate::{Error, from_str_with_options};
 

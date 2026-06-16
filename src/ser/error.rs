@@ -32,7 +32,7 @@ pub enum Error {
     InvalidOptions(String),
 }
 
-impl serde::ser::Error for Error {
+impl serde_core::ser::Error for Error {
     fn custom<T: fmt::Display>(msg: T) -> Self {
         Error::Message {
             msg: msg.to_string(),

@@ -1,6 +1,6 @@
 use std::io::Read;
 
-use serde::de::DeserializeOwned;
+use serde_core::de::DeserializeOwned;
 
 use super::{Error, Ev, Events, Options, ring_reader};
 use crate::budget::EnforcingPolicy;
@@ -83,7 +83,7 @@ pub(crate) fn resolver_from_options<'a>(
 #[cfg(feature = "deserialize")]
 pub fn from_str<'de, T>(input: &'de str) -> Result<T, Error>
 where
-    T: serde::de::Deserialize<'de>,
+    T: serde_core::de::Deserialize<'de>,
 {
     from_str_with_options(input, Options::default())
 }
@@ -92,7 +92,7 @@ where
 #[cfg(feature = "deserialize")]
 fn from_str_with_options_impl<'de, T>(input: &'de str, options: Options) -> Result<T, Error>
 where
-    T: serde::de::Deserialize<'de>,
+    T: serde_core::de::Deserialize<'de>,
 {
     // Normalize: ignore a single leading UTF-8 BOM if present.
     let input = if let Some(rest) = input.strip_prefix('\u{FEFF}') {
@@ -215,7 +215,7 @@ where
 #[cfg(feature = "deserialize")]
 pub fn from_str_with_options<'de, T>(input: &'de str, options: Options) -> Result<T, Error>
 where
-    T: serde::de::Deserialize<'de>,
+    T: serde_core::de::Deserialize<'de>,
 {
     from_str_with_options_impl(input, options)
 }
@@ -614,7 +614,7 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
 #[cfg(feature = "deserialize")]
 pub fn from_slice<'de, T>(bytes: &'de [u8]) -> Result<T, Error>
 where
-    T: serde::Deserialize<'de>,
+    T: serde_core::Deserialize<'de>,
 {
     from_slice_with_options(bytes, Options::default())
 }
@@ -652,7 +652,7 @@ where
 #[cfg(feature = "deserialize")]
 pub fn from_slice_with_options<'de, T>(bytes: &'de [u8], options: Options) -> Result<T, Error>
 where
-    T: serde::Deserialize<'de>,
+    T: serde_core::Deserialize<'de>,
 {
     let s = std::str::from_utf8(bytes).map_err(|_| Error::InvalidUtf8Input)?;
     from_str_with_options(s, options)

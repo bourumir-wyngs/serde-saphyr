@@ -1,6 +1,6 @@
-use serde::Deserialize;
 #[cfg(feature = "huge_documents")]
-use serde::Deserializer;
+use serde_core::Deserializer;
+use serde_core::de::{self, IgnoredAny, MapAccess, Visitor};
 #[cfg(feature = "huge_documents")]
 use std::fmt;
 
@@ -51,7 +51,7 @@ impl fmt::Debug for SpanIndex {
 }
 
 #[cfg(feature = "huge_documents")]
-impl<'de> Deserialize<'de> for SpanIndex {
+impl<'de> serde_core::Deserialize<'de> for SpanIndex {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -99,11 +99,114 @@ const fn span_index_to_u64(value: SpanIndex) -> u64 {
 /// Public getters still return `u64`, and values beyond 48 bits saturate instead of wrapping.
 /// This keeps [`crate::Location`] compact enough to avoid inflating [`crate::Error`] as much
 /// as a full `u64`-based layout would.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub struct Span {
     offset: SpanIndex,
     len: SpanIndex,
     byte_info: (SpanIndex, SpanIndex),
+}
+
+impl<'de> serde_core::Deserialize<'de> for Span {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde_core::Deserializer<'de>,
+    {
+        enum Field {
+            Offset,
+            Len,
+            ByteInfo,
+            Ignore,
+        }
+
+        impl<'de> serde_core::Deserialize<'de> for Field {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde_core::Deserializer<'de>,
+            {
+                struct FieldVisitor;
+
+                impl<'a> Visitor<'a> for FieldVisitor {
+                    type Value = Field;
+
+                    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                        f.write_str("a Span field")
+                    }
+
+                    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+                    where
+                        E: de::Error,
+                    {
+                        Ok(match value {
+                            "offset" => Field::Offset,
+                            "len" => Field::Len,
+                            "byte_info" => Field::ByteInfo,
+                            _ => Field::Ignore,
+                        })
+                    }
+                }
+
+                deserializer.deserialize_identifier(FieldVisitor)
+            }
+        }
+
+        struct SpanVisitor;
+
+        impl<'de> Visitor<'de> for SpanVisitor {
+            type Value = Span;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a source span")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut offset = None;
+                let mut len = None;
+                let mut byte_info = None;
+
+                while let Some(field) = map.next_key::<Field>()? {
+                    match field {
+                        Field::Offset => {
+                            if offset.is_some() {
+                                return Err(de::Error::duplicate_field("offset"));
+                            }
+                            offset = Some(map.next_value()?);
+                        }
+                        Field::Len => {
+                            if len.is_some() {
+                                return Err(de::Error::duplicate_field("len"));
+                            }
+                            len = Some(map.next_value()?);
+                        }
+                        Field::ByteInfo => {
+                            if byte_info.is_some() {
+                                return Err(de::Error::duplicate_field("byte_info"));
+                            }
+                            byte_info = Some(map.next_value()?);
+                        }
+                        Field::Ignore => {
+                            let _ = map.next_value::<IgnoredAny>()?;
+                        }
+                    }
+                }
+
+                let offset = offset.ok_or_else(|| de::Error::missing_field("offset"))?;
+                let len = len.ok_or_else(|| de::Error::missing_field("len"))?;
+                let byte_info = byte_info.ok_or_else(|| de::Error::missing_field("byte_info"))?;
+
+                Ok(Span {
+                    offset,
+                    len,
+                    byte_info,
+                })
+            }
+        }
+
+        const FIELDS: &[&str] = &["offset", "len", "byte_info"];
+        deserializer.deserialize_struct("Span", FIELDS, SpanVisitor)
+    }
 }
 
 impl Span {

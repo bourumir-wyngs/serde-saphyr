@@ -50,7 +50,7 @@ use std::rc::{Rc, Weak as RcWeak};
 use std::sync::{Arc, Mutex, Weak as ArcWeak};
 
 #[cfg(feature = "deserialize")]
-use serde::de::{Error as _, Visitor};
+use serde_core::de::{Error as _, Visitor};
 
 #[cfg(feature = "deserialize")]
 use crate::anchor_store;
@@ -671,19 +671,19 @@ impl<T: Default> Default for ArcRecursive<T> {
 // Deserialize impls
 // -------------------------------
 #[cfg(feature = "deserialize")]
-impl<'de, T> serde::de::Deserialize<'de> for RcAnchor<T>
+impl<'de, T> serde_core::de::Deserialize<'de> for RcAnchor<T>
 where
-    T: serde::de::Deserialize<'de> + 'static,
+    T: serde_core::de::Deserialize<'de> + 'static,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::de::Deserializer<'de>,
+        D: serde_core::de::Deserializer<'de>,
     {
         struct RcAnchorVisitor<T>(PhantomData<T>);
 
         impl<'de, T> Visitor<'de> for RcAnchorVisitor<T>
         where
-            T: serde::de::Deserialize<'de> + 'static,
+            T: serde_core::de::Deserialize<'de> + 'static,
         {
             type Value = RcAnchor<T>;
 
@@ -693,7 +693,7 @@ where
 
             fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
             where
-                D: serde::de::Deserializer<'de>,
+                D: serde_core::de::Deserializer<'de>,
             {
                 let anchor_id = anchor_store::claim_rc_anchor();
                 let existing = match anchor_id {
@@ -729,19 +729,19 @@ where
 }
 
 #[cfg(feature = "deserialize")]
-impl<'de, T> serde::de::Deserialize<'de> for ArcAnchor<T>
+impl<'de, T> serde_core::de::Deserialize<'de> for ArcAnchor<T>
 where
-    T: serde::de::Deserialize<'de> + Send + Sync + 'static,
+    T: serde_core::de::Deserialize<'de> + Send + Sync + 'static,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::de::Deserializer<'de>,
+        D: serde_core::de::Deserializer<'de>,
     {
         struct ArcAnchorVisitor<T>(PhantomData<T>);
 
         impl<'de, T> Visitor<'de> for ArcAnchorVisitor<T>
         where
-            T: serde::de::Deserialize<'de> + Send + Sync + 'static,
+            T: serde_core::de::Deserialize<'de> + Send + Sync + 'static,
         {
             type Value = ArcAnchor<T>;
 
@@ -751,7 +751,7 @@ where
 
             fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
             where
-                D: serde::de::Deserializer<'de>,
+                D: serde_core::de::Deserializer<'de>,
             {
                 let anchor_id = anchor_store::claim_arc_anchor();
                 let existing = match anchor_id {
@@ -788,19 +788,19 @@ where
 }
 
 #[cfg(feature = "deserialize")]
-impl<'de, T> serde::de::Deserialize<'de> for RcRecursive<T>
+impl<'de, T> serde_core::de::Deserialize<'de> for RcRecursive<T>
 where
-    T: serde::de::Deserialize<'de> + 'static,
+    T: serde_core::de::Deserialize<'de> + 'static,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::de::Deserializer<'de>,
+        D: serde_core::de::Deserializer<'de>,
     {
         struct RcRecursiveVisitor<T>(PhantomData<T>);
 
         impl<'de, T> Visitor<'de> for RcRecursiveVisitor<T>
         where
-            T: serde::de::Deserialize<'de> + 'static,
+            T: serde_core::de::Deserialize<'de> + 'static,
         {
             type Value = RcRecursive<T>;
 
@@ -810,7 +810,7 @@ where
 
             fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
             where
-                D: serde::de::Deserializer<'de>,
+                D: serde_core::de::Deserializer<'de>,
             {
                 let anchor_id = anchor_store::claim_rc_recursive_anchor();
                 let existing = match anchor_id {
@@ -855,19 +855,19 @@ where
 }
 
 #[cfg(feature = "deserialize")]
-impl<'de, T> serde::de::Deserialize<'de> for ArcRecursive<T>
+impl<'de, T> serde_core::de::Deserialize<'de> for ArcRecursive<T>
 where
-    T: serde::de::Deserialize<'de> + Send + Sync + 'static,
+    T: serde_core::de::Deserialize<'de> + Send + Sync + 'static,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::de::Deserializer<'de>,
+        D: serde_core::de::Deserializer<'de>,
     {
         struct ArcRecursiveVisitor<T>(PhantomData<T>);
 
         impl<'de, T> Visitor<'de> for ArcRecursiveVisitor<T>
         where
-            T: serde::de::Deserialize<'de> + Send + Sync + 'static,
+            T: serde_core::de::Deserialize<'de> + Send + Sync + 'static,
         {
             type Value = ArcRecursive<T>;
 
@@ -877,7 +877,7 @@ where
 
             fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
             where
-                D: serde::de::Deserializer<'de>,
+                D: serde_core::de::Deserializer<'de>,
             {
                 let anchor_id = anchor_store::claim_arc_recursive_anchor();
                 let existing = match anchor_id {
@@ -927,18 +927,18 @@ where
 // Deserialize impls for WEAK anchors (RcWeakAnchor / ArcWeakAnchor)
 // -------------------------------
 #[cfg(feature = "deserialize")]
-impl<'de, T> serde::de::Deserialize<'de> for RcWeakAnchor<T>
+impl<'de, T> serde_core::de::Deserialize<'de> for RcWeakAnchor<T>
 where
-    T: serde::de::Deserialize<'de> + 'static,
+    T: serde_core::de::Deserialize<'de> + 'static,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::de::Deserializer<'de>,
+        D: serde_core::de::Deserializer<'de>,
     {
         struct RcWeakVisitor<T>(PhantomData<T>);
         impl<'de, T> Visitor<'de> for RcWeakVisitor<T>
         where
-            T: serde::de::Deserialize<'de> + 'static,
+            T: serde_core::de::Deserialize<'de> + 'static,
         {
             type Value = RcWeakAnchor<T>;
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -948,11 +948,11 @@ where
             }
             fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
             where
-                D: serde::de::Deserializer<'de>,
+                D: serde_core::de::Deserializer<'de>,
             {
                 // `null` is the serialization form for dangling weak refs.
                 let is_null =
-                    <Option<serde::de::IgnoredAny> as serde::de::Deserialize>::deserialize(
+                    <Option<serde_core::de::IgnoredAny> as serde_core::de::Deserialize>::deserialize(
                         deserializer,
                     )?
                     .is_none();
@@ -983,18 +983,18 @@ where
 }
 
 #[cfg(feature = "deserialize")]
-impl<'de, T> serde::de::Deserialize<'de> for ArcWeakAnchor<T>
+impl<'de, T> serde_core::de::Deserialize<'de> for ArcWeakAnchor<T>
 where
-    T: serde::de::Deserialize<'de> + Send + Sync + 'static,
+    T: serde_core::de::Deserialize<'de> + Send + Sync + 'static,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::de::Deserializer<'de>,
+        D: serde_core::de::Deserializer<'de>,
     {
         struct ArcWeakVisitor<T>(PhantomData<T>);
         impl<'de, T> Visitor<'de> for ArcWeakVisitor<T>
         where
-            T: serde::de::Deserialize<'de> + Send + Sync + 'static,
+            T: serde_core::de::Deserialize<'de> + Send + Sync + 'static,
         {
             type Value = ArcWeakAnchor<T>;
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -1004,10 +1004,10 @@ where
             }
             fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
             where
-                D: serde::de::Deserializer<'de>,
+                D: serde_core::de::Deserializer<'de>,
             {
                 let is_null =
-                    <Option<serde::de::IgnoredAny> as serde::de::Deserialize>::deserialize(
+                    <Option<serde_core::de::IgnoredAny> as serde_core::de::Deserialize>::deserialize(
                         deserializer,
                     )?
                     .is_none();
@@ -1037,18 +1037,18 @@ where
 }
 
 #[cfg(feature = "deserialize")]
-impl<'de, T> serde::de::Deserialize<'de> for RcRecursion<T>
+impl<'de, T> serde_core::de::Deserialize<'de> for RcRecursion<T>
 where
-    T: serde::de::Deserialize<'de> + 'static,
+    T: serde_core::de::Deserialize<'de> + 'static,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::de::Deserializer<'de>,
+        D: serde_core::de::Deserializer<'de>,
     {
         struct RcRecursionVisitor<T>(PhantomData<T>);
         impl<'de, T> Visitor<'de> for RcRecursionVisitor<T>
         where
-            T: serde::de::Deserialize<'de> + 'static,
+            T: serde_core::de::Deserialize<'de> + 'static,
         {
             type Value = RcRecursion<T>;
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -1058,15 +1058,16 @@ where
             }
             fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
             where
-                D: serde::de::Deserializer<'de>,
+                D: serde_core::de::Deserializer<'de>,
             {
                 let id = anchor_store::current_rc_recursive_anchor().ok_or_else(|| {
                     D::Error::custom(
                         "RcRecursion must refer to an existing recursive strong anchor via alias",
                     )
                 })?;
-                let _ =
-                    <serde::de::IgnoredAny as serde::de::Deserialize>::deserialize(deserializer)?;
+                let _ = <serde_core::de::IgnoredAny as serde_core::de::Deserialize>::deserialize(
+                    deserializer,
+                )?;
                 match anchor_store::get_rc_recursive::<RefCell<Option<T>>>(id)
                     .map_err(D::Error::custom)?
                 {
@@ -1083,18 +1084,18 @@ where
 }
 
 #[cfg(feature = "deserialize")]
-impl<'de, T> serde::de::Deserialize<'de> for ArcRecursion<T>
+impl<'de, T> serde_core::de::Deserialize<'de> for ArcRecursion<T>
 where
-    T: serde::de::Deserialize<'de> + Send + Sync + 'static,
+    T: serde_core::de::Deserialize<'de> + Send + Sync + 'static,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::de::Deserializer<'de>,
+        D: serde_core::de::Deserializer<'de>,
     {
         struct ArcRecursionVisitor<T>(PhantomData<T>);
         impl<'de, T> Visitor<'de> for ArcRecursionVisitor<T>
         where
-            T: serde::de::Deserialize<'de> + Send + Sync + 'static,
+            T: serde_core::de::Deserialize<'de> + Send + Sync + 'static,
         {
             type Value = ArcRecursion<T>;
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -1104,15 +1105,16 @@ where
             }
             fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
             where
-                D: serde::de::Deserializer<'de>,
+                D: serde_core::de::Deserializer<'de>,
             {
                 let id = anchor_store::current_arc_recursive_anchor().ok_or_else(|| {
                     D::Error::custom(
                         "ArcRecursion must refer to an existing recursive strong anchor via alias",
                     )
                 })?;
-                let _ =
-                    <serde::de::IgnoredAny as serde::de::Deserialize>::deserialize(deserializer)?;
+                let _ = <serde_core::de::IgnoredAny as serde_core::de::Deserialize>::deserialize(
+                    deserializer,
+                )?;
                 match anchor_store::get_arc_recursive::<Mutex<Option<T>>>(id)
                     .map_err(D::Error::custom)?
                 {

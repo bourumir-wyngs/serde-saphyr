@@ -6,13 +6,13 @@
 use crate::options::MergeKeyPolicy;
 use ahash::HashSetExt;
 use granit_parser::{Event, Parser, ScalarStyle, ScanError};
-use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use std::collections::HashSet;
 
 const DEFAULT_MAX_SCALAR_BYTES: usize = 64 * 1024 * 1024;
 const DEFAULT_MAX_TOTAL_COMMENT_BYTES: usize = 64 * 1024 * 1024;
 
+#[cfg(feature = "serde_derived_types")]
 fn default_max_total_comment_bytes() -> usize {
     DEFAULT_MAX_TOTAL_COMMENT_BYTES
 }
@@ -52,7 +52,11 @@ fn default_max_total_comment_bytes() -> usize {
 /// let cfg: Config = serde_saphyr::from_str_with_options(yaml, options).unwrap();
 /// assert_eq!(cfg.retries, 5);
 /// ```
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "serde_derived_types",
+    derive(serde::Serialize, serde::Deserialize)
+)]
 pub struct Budget {
     /// Hard cap on the size of the input in bytes.
     /// This limit only applies to reader-based input, to avoid resource exhaustion
@@ -137,7 +141,10 @@ pub struct Budget {
     #[deprecated(
         note = "Direct construction of `Budget` will be disabled from 1.0.0, use macro `budget!`"
     )]
-    #[serde(default = "default_max_total_comment_bytes")]
+    #[cfg_attr(
+        feature = "serde_derived_types",
+        serde(default = "default_max_total_comment_bytes")
+    )]
     pub max_total_comment_bytes: usize,
     /// Maximum number of merge keys (`<<`) allowed across the stream when merge-key
     /// expansion is enabled.
@@ -200,7 +207,11 @@ impl Default for Budget {
 
 /// What tripped the budget (if anything).
 #[non_exhaustive]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "serde_derived_types",
+    derive(serde::Serialize, serde::Deserialize)
+)]
 pub enum BudgetBreach {
     /// The total number of parser events exceeded [`Budget::max_events`].
     Events {
@@ -291,7 +302,11 @@ pub enum BudgetBreach {
 }
 
 /// Summary of the scan (even if no breach).
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default)]
+#[cfg_attr(
+    feature = "serde_derived_types",
+    derive(serde::Serialize, serde::Deserialize)
+)]
 pub struct BudgetReport {
     /// `Some(..)` if a limit was exceeded; `None` if all budgets were respected.
     pub breached: Option<BudgetBreach>,
@@ -318,7 +333,7 @@ pub struct BudgetReport {
     pub total_scalar_bytes: usize,
 
     /// Sum of bytes across all comment values, saturating on overflow.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub total_comment_bytes: usize,
 
     /// Total number of merge keys (`<<`) encountered while merge-key expansion was enabled.

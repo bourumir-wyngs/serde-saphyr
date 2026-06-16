@@ -10,7 +10,7 @@ use crate::live_events::LiveEvents;
 use crate::maybe_with_snippet_from_events;
 use crate::parse_scalars::scalar_is_nullish;
 use crate::properties_redaction::with_interp_redaction_scope;
-use serde::de::DeserializeOwned;
+use serde_core::de::DeserializeOwned;
 use std::io::Read;
 
 #[cfg(feature = "garde")]
