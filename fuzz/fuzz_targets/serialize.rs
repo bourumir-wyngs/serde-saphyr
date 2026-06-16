@@ -22,6 +22,17 @@ enum Node {
     Map(BTreeMap<String, Node>),
 }
 
+/// Generate a map key which occasionally is overly-long to ensure `? key` paths are triggered.
+fn gen_key(u: &mut Unstructured) -> arbitrary::Result<String> {
+    let key = String::arbitrary(u)?;
+    if u.ratio(1, 8)? {
+        let seed = if key.is_empty() { "k" } else { key.as_str() };
+        Ok(seed.repeat(1024 / seed.len() + 2))
+    } else {
+        Ok(key)
+    }
+}
+
 fn gen_node(u: &mut Unstructured, depth: u32) -> arbitrary::Result<Node> {
     // At depth 0, only scalar variants are allowed
     let max_variant: u32 = if depth == 0 { 3 } else { 7 };
@@ -54,7 +65,7 @@ fn gen_node(u: &mut Unstructured, depth: u32) -> arbitrary::Result<Node> {
             let n = u.int_in_range(0..=MAX_BREADTH)?;
             let mut m = BTreeMap::new();
             for _ in 0..n {
-                let k = String::arbitrary(u)?;
+                let k = gen_key(u)?;
                 let val = gen_node(u, depth - 1)?;
                 m.insert(k, val);
             }
@@ -72,13 +83,10 @@ impl<'a> Arbitrary<'a> for Node {
 fuzz_target!(|node: Node| {
     let opts = serde_saphyr::ser_options! {};
     // serialization is panic-free and from valid input, so may never return an `Err`
-    let text = match serde_saphyr::to_string_with_options(&node, opts) {
-        Ok(text) => text,
-        Err(e) => panic!("{e}"),
-    };
+    let text = serde_saphyr::to_string_with_options(&node, opts).unwrap();
 
     // anything we emit must be parseable YAML for this model.
-    let _: Node = match serde_saphyr::from_str(&text) {
+    let back: Node = match serde_saphyr::from_str(&text) {
         Ok(back) => back,
         Err(e) => {
             panic!(
@@ -87,5 +95,16 @@ fuzz_target!(|node: Node| {
         }
     };
 
-    // todo: equality, roundtrip, indepotance
+    // equality
+    assert_eq!(
+        node, back,
+        "round-trip changed the value\n--- yaml ---\n{text}\n--- original ---\n{node:#?}\n--- decoded ---\n{back:#?}"
+    );
+
+    // idempotence
+    let text2 = serde_saphyr::to_string_with_options(&back, opts).unwrap();
+    assert_eq!(
+        text, text2,
+        "serialization is not idempotent\n--- first ---\n{text}\n--- second ---\n{text2}\n--- value ---\n{node:#?}"
+    );
 });

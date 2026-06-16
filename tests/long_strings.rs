@@ -3,6 +3,67 @@ use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use serde_saphyr as yaml;
 use serde_saphyr::LitString;
+use std::collections::BTreeMap;
+
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
+enum StructVariantEnum {
+    V { data: BTreeMap<String, i32> },
+}
+
+#[test]
+fn struct_variant_value_under_long_key_round_trips() -> anyhow::Result<()> {
+    // Over-long keys use the explicit `? key` form; the struct-variant value must not
+    // emit its nested map inline (e.g. `data: a: 1`), which would not parse back.
+    let mut data = BTreeMap::new();
+    data.insert("a".to_string(), 1);
+    data.insert("b".to_string(), 2);
+    let mut reference: BTreeMap<String, StructVariantEnum> = BTreeMap::new();
+    reference.insert("K".repeat(2000), StructVariantEnum::V { data });
+
+    let serialized = yaml::to_string(&reference)?;
+    let decoded: BTreeMap<String, StructVariantEnum> = yaml::from_str(&serialized)
+        .map_err(|e| anyhow::anyhow!("{e}\n--- yaml ---\n{serialized}"))?;
+    assert_eq!(reference, decoded);
+    Ok(())
+}
+
+#[test]
+fn long_scalar_key_with_trailing_space_round_trips() -> anyhow::Result<()> {
+    // With block scalars disabled, the explicit `? key` form must still quote the key so the
+    // trailing space is not lost as separation on the way back.
+    let key = "a".repeat(1024) + " ";
+    let mut reference: BTreeMap<String, i32> = BTreeMap::new();
+    reference.insert(key, 7);
+
+    let serialized = yaml::to_string_with_options(
+        &reference,
+        yaml::ser_options! { prefer_block_scalars: false },
+    )?;
+    let decoded: BTreeMap<String, i32> = yaml::from_str(&serialized)
+        .map_err(|e| anyhow::anyhow!("{e}\n--- yaml ---\n{serialized}"))?;
+    assert_eq!(reference, decoded);
+    Ok(())
+}
+
+#[test]
+fn sequence_value_under_long_key_in_nested_map_round_trips() -> anyhow::Result<()> {
+    let value = BTreeMap::from([("wrap", BTreeMap::from([("K".repeat(2000), vec![1, 2])]))]);
+    let serialized = yaml::to_string(&value)?;
+    let decoded = yaml::from_str(&serialized)
+        .map_err(|e| anyhow::anyhow!("{e}\n--- yaml ---\n{serialized}"))?;
+    assert_eq!(value, decoded);
+    Ok(())
+}
+
+#[test]
+fn tuple_value_under_long_key_in_nested_map_round_trips() -> anyhow::Result<()> {
+    let value = BTreeMap::from([("wrap", BTreeMap::from([("K".repeat(2000), (1, 2, 3))]))]);
+    let serialized = yaml::to_string(&value)?;
+    let decoded = yaml::from_str(&serialized)
+        .map_err(|e| anyhow::anyhow!("{e}\n--- yaml ---\n{serialized}"))?;
+    assert_eq!(value, decoded);
+    Ok(())
+}
 
 #[derive(Serialize, Deserialize)]
 struct Foo {
