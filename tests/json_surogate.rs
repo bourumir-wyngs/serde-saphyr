@@ -1,24 +1,22 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
-///! Verifies that a JSON string containing a UTF-16 surrogate pair is accepted
-///! and decoded the same way as the equivalent YAML `\U` escape.
-///!
-///! The JSON input `{"a":"\uD834\uDD1E"}` encodes the Unicode scalar value
-///! U+1D11E (MUSICAL SYMBOL G CLEF) using a UTF-16 surrogate pair, as permitted
-///! by JSON string escaping rules. For JSON compatibility, the YAML parser is
-///! expected to accept this input and deserialize it to the single Unicode
-///! character `𝄞`.
-///!
-///! This test also checks semantic equivalence with the YAML-native form
-///! `a: "\U0001D11E"`, ensuring that both inputs produce the same deserialized
-///! value rather than preserving escape syntax details.
-///!
-///! Related negative tests should reject malformed surrogate usage such as:
-///! - an unpaired high surrogate
-///! - an unpaired low surrogate
-///! - a reversed surrogate pair
+/// Verifies that a JSON string containing a UTF-16 surrogate pair is accepted
+/// and decoded the same way as the equivalent YAML `\U` escape.
+///
+/// The JSON input `{"a":"\uD834\uDD1E"}` encodes the Unicode scalar value
+/// U+1D11E (MUSICAL SYMBOL G CLEF) using a UTF-16 surrogate pair, as permitted
+/// by JSON string escaping rules. For JSON compatibility, the YAML parser is
+/// expected to accept this input and deserialize it to the single Unicode
+/// character `𝄞`.
+///
+/// This test also checks semantic equivalence with the YAML-native form
+/// `a: "\U0001D11E"`, ensuring that both inputs produce the same deserialized
+/// value rather than preserving escape syntax details.
+///
+/// Related negative tests should reject malformed surrogate usage such as:
+/// - an unpaired high surrogate
+/// - an unpaired low surrogate
+/// - a reversed surrogate pair
 use serde::Deserialize;
-
-// Adjust this import if serde-saphyr exposes from_str somewhere else.
 use serde_saphyr::from_str;
 
 #[derive(Debug, Deserialize, PartialEq)]
