@@ -45,6 +45,26 @@ fn long_scalar_key_with_trailing_space_round_trips() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[test]
+fn sequence_value_under_long_key_in_nested_map_round_trips() -> anyhow::Result<()> {
+    let value = BTreeMap::from([("wrap", BTreeMap::from([("K".repeat(2000), vec![1, 2])]))]);
+    let serialized = yaml::to_string(&value)?;
+    let decoded = yaml::from_str(&serialized)
+        .map_err(|e| anyhow::anyhow!("{e}\n--- yaml ---\n{serialized}"))?;
+    assert_eq!(value, decoded);
+    Ok(())
+}
+
+#[test]
+fn tuple_value_under_long_key_in_nested_map_round_trips() -> anyhow::Result<()> {
+    let value = BTreeMap::from([("wrap", BTreeMap::from([("K".repeat(2000), (1, 2, 3))]))]);
+    let serialized = yaml::to_string(&value)?;
+    let decoded = yaml::from_str(&serialized)
+        .map_err(|e| anyhow::anyhow!("{e}\n--- yaml ---\n{serialized}"))?;
+    assert_eq!(value, decoded);
+    Ok(())
+}
+
 #[derive(Serialize, Deserialize)]
 struct Foo {
     a: i32,

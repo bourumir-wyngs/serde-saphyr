@@ -66,6 +66,7 @@ impl<'a, 'b, W: Write> SerializeSeq for SeqSer<'a, 'b, W> {
                 if !self.ser.at_line_start {
                     self.ser.newline()?;
                 }
+                self.ser.pending_inline_map = false;
             }
             // If previous element was an inline map after a dash, just clear the flag; do not change depth.
             if !self.first && self.ser.inline_map_after_dash {
