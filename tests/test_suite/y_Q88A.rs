@@ -1,5 +1,4 @@
-#[cfg(test)]
-mod tests {
+
     use serde::Deserialize;
     use serde_json::{self, Value as JsonValue};
     use std::collections::BTreeMap;
@@ -180,4 +179,3 @@ mod tests {
         let dump_json = Node::Seq(dump_parsed).to_json();
         assert_eq!(dump_json, expected_json, "'dump' must match semantics");
     }
-}

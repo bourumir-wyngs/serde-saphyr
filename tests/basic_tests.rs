@@ -1,562 +1,556 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
-#[cfg(test)]
-mod tests {
-    use serde::Deserialize;
-    use serde_saphyr::budget::BudgetBreach;
-    use serde_saphyr::{DuplicateKeyPolicy, Error, from_reader};
-    use serde_saphyr::{
-        from_multiple, from_multiple_with_options, from_str, from_str_with_options,
-    };
-    use std::collections::HashMap;
 
-    fn unwrap_snippet(err: &Error) -> &Error {
-        match err {
-            Error::WithSnippet { error, .. } => error,
-            other => other,
-        }
+use serde::Deserialize;
+use serde_saphyr::budget::BudgetBreach;
+use serde_saphyr::{DuplicateKeyPolicy, Error, from_reader};
+use serde_saphyr::{from_multiple, from_multiple_with_options, from_str, from_str_with_options};
+use std::collections::HashMap;
+
+fn unwrap_snippet(err: &Error) -> &Error {
+    match err {
+        Error::WithSnippet { error, .. } => error,
+        other => other,
     }
+}
 
+#[derive(Debug, Deserialize, PartialEq)]
+struct Details {
+    city: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct Person {
+    name: String,
+    age: usize,
+    details: Details,
+}
+
+#[test]
+fn simple_nested_struct() {
+    let y = "name: John\nage: 80\ndetails: { city: Paris }\n";
+    let p: Person = from_str(y).unwrap();
+    assert_eq!(p.name, "John");
+    assert_eq!(p.age, 80);
+    assert_eq!(p.details.city, "Paris");
+}
+
+#[test]
+fn simple_nested_struct_from_reader() {
+    let y = "name: John\nage: 80\ndetails: { city: Paris }\n";
+    let reader = std::io::Cursor::new(y.as_bytes().to_owned());
+    let p: Person = from_reader(reader).unwrap();
+    assert_eq!(p.name, "John");
+    assert_eq!(p.age, 80);
+    assert_eq!(p.details.city, "Paris");
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct Named {
+    name: String,
+}
+
+#[test]
+fn anchors_and_aliases_map_clone() {
+    let y = "a: &A { name: John }\nb: *A\n";
+    let m: HashMap<String, Named> = from_str(y).unwrap();
+    assert_eq!(m.get("a").unwrap().name, "John");
+    assert_eq!(m.get("b").unwrap().name, "John");
+}
+
+#[test]
+fn legacy_misplaced_bracket_in_flow_sequence_is_accepted() {
     #[derive(Debug, Deserialize, PartialEq)]
-    struct Details {
-        city: String,
+    struct Cfg {
+        key: Vec<usize>,
     }
 
-    #[derive(Debug, Deserialize, PartialEq)]
-    struct Person {
-        name: String,
-        age: usize,
-        details: Details,
-    }
-
-    #[test]
-    fn simple_nested_struct() {
-        let y = "name: John\nage: 80\ndetails: { city: Paris }\n";
-        let p: Person = from_str(y).unwrap();
-        assert_eq!(p.name, "John");
-        assert_eq!(p.age, 80);
-        assert_eq!(p.details.city, "Paris");
-    }
-
-    #[test]
-    fn simple_nested_struct_from_reader() {
-        let y = "name: John\nage: 80\ndetails: { city: Paris }\n";
-        let reader = std::io::Cursor::new(y.as_bytes().to_owned());
-        let p: Person = from_reader(reader).unwrap();
-        assert_eq!(p.name, "John");
-        assert_eq!(p.age, 80);
-        assert_eq!(p.details.city, "Paris");
-    }
-
-    #[derive(Debug, Deserialize, PartialEq)]
-    struct Named {
-        name: String,
-    }
-
-    #[test]
-    fn anchors_and_aliases_map_clone() {
-        let y = "a: &A { name: John }\nb: *A\n";
-        let m: HashMap<String, Named> = from_str(y).unwrap();
-        assert_eq!(m.get("a").unwrap().name, "John");
-        assert_eq!(m.get("b").unwrap().name, "John");
-    }
-
-    #[test]
-    fn legacy_misplaced_bracket_in_flow_sequence_is_accepted() {
-        #[derive(Debug, Deserialize, PartialEq)]
-        struct Cfg {
-            key: Vec<usize>,
-        }
-
-        let yaml = r#"
+    let yaml = r#"
             key: [ 1, 2, 2
             ] # this sits wrongly but okay
         "#;
 
-        let cfg: Cfg = from_str(yaml).unwrap();
-        assert_eq!(cfg.key, vec![1, 2, 2]);
-    }
+    let cfg: Cfg = from_str(yaml).unwrap();
+    assert_eq!(cfg.key, vec![1, 2, 2]);
+}
 
-    #[test]
-    fn multiple_documents_deserialize_into_vec() {
-        let yaml = "---\nname: John\nage: 80\ndetails:\n  city: Paris\n---\nname: Jane\nage: 42\ndetails:\n  city: London\n";
-        let people: Vec<Person> = from_multiple(yaml).unwrap();
-        assert_eq!(people.len(), 2);
-        assert_eq!(people[0].name, "John");
-        assert_eq!(people[1].name, "Jane");
-    }
+#[test]
+fn multiple_documents_deserialize_into_vec() {
+    let yaml = "---\nname: John\nage: 80\ndetails:\n  city: Paris\n---\nname: Jane\nage: 42\ndetails:\n  city: London\n";
+    let people: Vec<Person> = from_multiple(yaml).unwrap();
+    assert_eq!(people.len(), 2);
+    assert_eq!(people[0].name, "John");
+    assert_eq!(people[1].name, "Jane");
+}
 
-    #[test]
-    fn multiple_documents_preserves_tagged_string_nullish_scalar() {
-        let yaml = "--- !!str null
+#[test]
+fn multiple_documents_preserves_tagged_string_nullish_scalar() {
+    let yaml = "--- !!str null
 ---
 plain
 ";
-        let values: Vec<String> = from_multiple(yaml).unwrap();
-        assert_eq!(values, vec!["null", "plain"]);
-    }
+    let values: Vec<String> = from_multiple(yaml).unwrap();
+    assert_eq!(values, vec!["null", "plain"]);
+}
 
-    #[test]
-    fn multiple_documents_still_skips_explicit_null() {
-        let yaml = "--- null
+#[test]
+fn multiple_documents_still_skips_explicit_null() {
+    let yaml = "--- null
 ---
 plain
 ";
-        let values: Vec<String> = from_multiple(yaml).unwrap();
-        assert_eq!(values, vec!["plain"]);
-    }
+    let values: Vec<String> = from_multiple(yaml).unwrap();
+    assert_eq!(values, vec!["plain"]);
+}
 
-    #[test]
-    fn budget_violation_is_reported() {
-        use std::collections::HashMap;
+#[test]
+fn budget_violation_is_reported() {
+    use std::collections::HashMap;
 
-        let options = serde_saphyr::options! {
-            budget: serde_saphyr::budget! {
-                max_nodes: 1,
-            },
-        };
+    let options = serde_saphyr::options! {
+        budget: serde_saphyr::budget! {
+            max_nodes: 1,
+        },
+    };
 
-        let yaml = "a: 1\n";
-        let err = from_str_with_options::<HashMap<String, String>>(yaml, options).unwrap_err();
-        assert!(matches!(
-            unwrap_snippet(&err),
-            Error::Budget {
-                breach: BudgetBreach::Nodes { .. },
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn multiple_documents_budget_violation() {
-        use std::collections::HashMap;
-
-        let options = serde_saphyr::options! {
-            budget: serde_saphyr::budget! {
-                max_nodes: 1,
-            },
-        };
-
-        let yaml = "a: 1\n---\nb: 2\n";
-        let err = from_multiple_with_options::<HashMap<String, String>>(yaml, options).unwrap_err();
-        assert!(matches!(
-            unwrap_snippet(&err),
-            Error::Budget {
-                breach: BudgetBreach::Nodes { .. },
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn anchor_with_nested_nonanchored_container_records_balanced_events() {
-        #[derive(Deserialize, Debug, PartialEq)]
-        struct Inner {
-            m: String,
+    let yaml = "a: 1\n";
+    let err = from_str_with_options::<HashMap<String, String>>(yaml, options).unwrap_err();
+    assert!(matches!(
+        unwrap_snippet(&err),
+        Error::Budget {
+            breach: BudgetBreach::Nodes { .. },
+            ..
         }
-        #[derive(Deserialize, Debug, PartialEq)]
-        struct Outer {
-            k: Inner,
+    ));
+}
+
+#[test]
+fn multiple_documents_budget_violation() {
+    use std::collections::HashMap;
+
+    let options = serde_saphyr::options! {
+        budget: serde_saphyr::budget! {
+            max_nodes: 1,
+        },
+    };
+
+    let yaml = "a: 1\n---\nb: 2\n";
+    let err = from_multiple_with_options::<HashMap<String, String>>(yaml, options).unwrap_err();
+    assert!(matches!(
+        unwrap_snippet(&err),
+        Error::Budget {
+            breach: BudgetBreach::Nodes { .. },
+            ..
         }
+    ));
+}
 
-        let y = "a: &A { k: { m: v } }\nb: *A\n";
-        let m: HashMap<String, Outer> = from_str(y).unwrap();
-        assert_eq!(m["a"].k.m, "v");
-        assert_eq!(m["b"].k.m, "v");
+#[test]
+fn anchor_with_nested_nonanchored_container_records_balanced_events() {
+    #[derive(Deserialize, Debug, PartialEq)]
+    struct Inner {
+        m: String,
+    }
+    #[derive(Deserialize, Debug, PartialEq)]
+    struct Outer {
+        k: Inner,
     }
 
-    // ---------- YAML 1.2 floats ----------
-    #[derive(Debug, Deserialize)]
-    struct Floats {
-        a: f64,
-        b: f64,
-        c: f32,
-    }
+    let y = "a: &A { k: { m: v } }\nb: *A\n";
+    let m: HashMap<String, Outer> = from_str(y).unwrap();
+    assert_eq!(m["a"].k.m, "v");
+    assert_eq!(m["b"].k.m, "v");
+}
 
-    #[test]
-    fn yaml12_float_specials() {
-        let y = "a: .nan\nb: +.inf\nc: -.inf\n";
-        let v: Floats = from_str(y).unwrap();
-        assert!(v.a.is_nan());
-        assert!(v.b.is_infinite() && v.b.is_sign_positive());
-        assert!(v.c.is_infinite() && (v.c.is_sign_negative() as bool));
-    }
+// ---------- YAML 1.2 floats ----------
+#[derive(Debug, Deserialize)]
+struct Floats {
+    a: f64,
+    b: f64,
+    c: f32,
+}
 
-    // ---------- Duplicate key policy ----------
-    #[test]
-    fn duplicate_keys_error_policy() {
-        let y = "a: 1\na: 2\n";
-        let err = from_str::<HashMap<String, i32>>(y).unwrap_err();
-        let msg = format!("{err}");
-        assert!(msg.contains("duplicate mapping key: a"));
-    }
+#[test]
+fn yaml12_float_specials() {
+    let y = "a: .nan\nb: +.inf\nc: -.inf\n";
+    let v: Floats = from_str(y).unwrap();
+    assert!(v.a.is_nan());
+    assert!(v.b.is_infinite() && v.b.is_sign_positive());
+    assert!(v.c.is_infinite() && (v.c.is_sign_negative() as bool));
+}
 
-    #[test]
-    fn duplicate_keys_error_policy_custom_tagged_string_key() {
-        let y = "a: 1\n!foo a: 2\n";
-        let err = from_str::<HashMap<String, i32>>(y).unwrap_err();
-        let msg = format!("{err}");
-        assert!(msg.contains("duplicate mapping key: a"));
-    }
+// ---------- Duplicate key policy ----------
+#[test]
+fn duplicate_keys_error_policy() {
+    let y = "a: 1\na: 2\n";
+    let err = from_str::<HashMap<String, i32>>(y).unwrap_err();
+    let msg = format!("{err}");
+    assert!(msg.contains("duplicate mapping key: a"));
+}
 
-    #[test]
-    fn duplicate_keys_first_wins_policy() {
-        let y = "a: 1\na: 2\nb: 3\n";
-        let opt = serde_saphyr::options! {
-            duplicate_keys: DuplicateKeyPolicy::FirstWins,
-        };
-        let m = from_str_with_options::<HashMap<String, i32>>(y, opt).unwrap();
-        assert_eq!(m.get("a"), Some(&1));
-        assert_eq!(m.get("b"), Some(&3));
-        assert_eq!(m.len(), 2);
-    }
+#[test]
+fn duplicate_keys_error_policy_custom_tagged_string_key() {
+    let y = "a: 1\n!foo a: 2\n";
+    let err = from_str::<HashMap<String, i32>>(y).unwrap_err();
+    let msg = format!("{err}");
+    assert!(msg.contains("duplicate mapping key: a"));
+}
 
-    #[derive(Debug, Deserialize, PartialEq)]
-    struct Background {
-        color: String,
-    }
+#[test]
+fn duplicate_keys_first_wins_policy() {
+    let y = "a: 1\na: 2\nb: 3\n";
+    let opt = serde_saphyr::options! {
+        duplicate_keys: DuplicateKeyPolicy::FirstWins,
+    };
+    let m = from_str_with_options::<HashMap<String, i32>>(y, opt).unwrap();
+    assert_eq!(m.get("a"), Some(&1));
+    assert_eq!(m.get("b"), Some(&3));
+    assert_eq!(m.len(), 2);
+}
 
-    #[derive(Debug, Deserialize, PartialEq)]
-    struct BackgroundRoot {
-        target: Background,
-    }
+#[derive(Debug, Deserialize, PartialEq)]
+struct Background {
+    color: String,
+}
 
-    #[derive(Debug, Deserialize, PartialEq)]
-    struct BackgroundNestedRoot {
-        background: Background,
-    }
+#[derive(Debug, Deserialize, PartialEq)]
+struct BackgroundRoot {
+    target: Background,
+}
 
-    #[derive(Debug, Deserialize, PartialEq)]
-    struct BackgroundRootWithBase {
-        base: HashMap<String, String>,
-        target: Background,
-    }
+#[derive(Debug, Deserialize, PartialEq)]
+struct BackgroundNestedRoot {
+    background: Background,
+}
 
-    #[derive(Debug, Deserialize, PartialEq)]
-    enum BackgroundNode {
-        Background { color: String },
-    }
+#[derive(Debug, Deserialize, PartialEq)]
+struct BackgroundRootWithBase {
+    base: HashMap<String, String>,
+    target: Background,
+}
 
-    #[test]
-    fn duplicate_keys_last_wins_direct_struct() {
-        let y = "color: red\ncolor: blue\n";
-        let opt = serde_saphyr::options! {
-            duplicate_keys: DuplicateKeyPolicy::LastWins,
-        };
-        let bg = from_str_with_options::<Background>(y, opt).unwrap();
-        assert_eq!(bg.color, "blue");
-    }
+#[derive(Debug, Deserialize, PartialEq)]
+enum BackgroundNode {
+    Background { color: String },
+}
 
-    #[test]
-    fn duplicate_keys_last_wins_nested_struct() {
-        let y = "background:\n  color: red\n  color: blue\n";
-        let opt = serde_saphyr::options! {
-            duplicate_keys: DuplicateKeyPolicy::LastWins,
-        };
-        let root = from_str_with_options::<BackgroundNestedRoot>(y, opt).unwrap();
-        assert_eq!(root.background.color, "blue");
-    }
+#[test]
+fn duplicate_keys_last_wins_direct_struct() {
+    let y = "color: red\ncolor: blue\n";
+    let opt = serde_saphyr::options! {
+        duplicate_keys: DuplicateKeyPolicy::LastWins,
+    };
+    let bg = from_str_with_options::<Background>(y, opt).unwrap();
+    assert_eq!(bg.color, "blue");
+}
 
-    #[test]
-    fn duplicate_keys_last_wins_struct_variant() {
-        let y = "Background:\n  color: red\n  color: blue\n";
-        let opt = serde_saphyr::options! {
-            duplicate_keys: DuplicateKeyPolicy::LastWins,
-        };
-        let node = from_str_with_options::<BackgroundNode>(y, opt).unwrap();
-        assert_eq!(
-            node,
-            BackgroundNode::Background {
-                color: "blue".to_owned(),
-            }
-        );
-    }
+#[test]
+fn duplicate_keys_last_wins_nested_struct() {
+    let y = "background:\n  color: red\n  color: blue\n";
+    let opt = serde_saphyr::options! {
+        duplicate_keys: DuplicateKeyPolicy::LastWins,
+    };
+    let root = from_str_with_options::<BackgroundNestedRoot>(y, opt).unwrap();
+    assert_eq!(root.background.color, "blue");
+}
 
-    #[test]
-    fn duplicate_keys_first_wins_direct_struct() {
-        let y = "color: red\ncolor: blue\n";
-        let opt = serde_saphyr::options! {
-            duplicate_keys: DuplicateKeyPolicy::FirstWins,
-        };
-        let bg = from_str_with_options::<Background>(y, opt).unwrap();
-        assert_eq!(bg.color, "red");
-    }
+#[test]
+fn duplicate_keys_last_wins_struct_variant() {
+    let y = "Background:\n  color: red\n  color: blue\n";
+    let opt = serde_saphyr::options! {
+        duplicate_keys: DuplicateKeyPolicy::LastWins,
+    };
+    let node = from_str_with_options::<BackgroundNode>(y, opt).unwrap();
+    assert_eq!(
+        node,
+        BackgroundNode::Background {
+            color: "blue".to_owned(),
+        }
+    );
+}
 
-    #[test]
-    fn duplicate_keys_error_direct_struct() {
-        let y = "color: red\ncolor: blue\n";
-        let opt = serde_saphyr::options! {
-            duplicate_keys: DuplicateKeyPolicy::Error,
-        };
-        let err = from_str_with_options::<Background>(y, opt).unwrap_err();
-        let msg = format!("{err}");
-        assert!(msg.contains("duplicate mapping key: color"));
-    }
+#[test]
+fn duplicate_keys_first_wins_direct_struct() {
+    let y = "color: red\ncolor: blue\n";
+    let opt = serde_saphyr::options! {
+        duplicate_keys: DuplicateKeyPolicy::FirstWins,
+    };
+    let bg = from_str_with_options::<Background>(y, opt).unwrap();
+    assert_eq!(bg.color, "red");
+}
 
-    #[test]
-    fn duplicate_keys_last_wins_direct_struct_from_merge_source() {
-        let y = r#"
+#[test]
+fn duplicate_keys_error_direct_struct() {
+    let y = "color: red\ncolor: blue\n";
+    let opt = serde_saphyr::options! {
+        duplicate_keys: DuplicateKeyPolicy::Error,
+    };
+    let err = from_str_with_options::<Background>(y, opt).unwrap_err();
+    let msg = format!("{err}");
+    assert!(msg.contains("duplicate mapping key: color"));
+}
+
+#[test]
+fn duplicate_keys_last_wins_direct_struct_from_merge_source() {
+    let y = r#"
 target:
   <<: { color: red, color: blue }
 "#;
-        let opt = serde_saphyr::options! {
-            duplicate_keys: DuplicateKeyPolicy::LastWins,
-        };
-        let root = from_str_with_options::<BackgroundRoot>(y, opt).unwrap();
-        assert_eq!(root.target.color, "blue");
+    let opt = serde_saphyr::options! {
+        duplicate_keys: DuplicateKeyPolicy::LastWins,
+    };
+    let root = from_str_with_options::<BackgroundRoot>(y, opt).unwrap();
+    assert_eq!(root.target.color, "blue");
+}
+
+#[test]
+fn duplicate_keys_last_wins_struct_treats_merge_key_as_ordinary_when_configured() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct HasMergeLikeField {
+        #[serde(rename = "<<")]
+        merge_like: HashMap<String, String>,
     }
 
-    #[test]
-    fn duplicate_keys_last_wins_struct_treats_merge_key_as_ordinary_when_configured() {
-        #[derive(Debug, Deserialize, PartialEq)]
-        struct HasMergeLikeField {
-            #[serde(rename = "<<")]
-            merge_like: HashMap<String, String>,
-        }
-
-        let y = r#"
+    let y = r#"
 <<: { color: blue }
 "#;
 
-        let opt = serde_saphyr::options! {
-            duplicate_keys: DuplicateKeyPolicy::LastWins,
-            merge_keys: serde_saphyr::options::MergeKeyPolicy::AsOrdinary,
-        };
+    let opt = serde_saphyr::options! {
+        duplicate_keys: DuplicateKeyPolicy::LastWins,
+        merge_keys: serde_saphyr::options::MergeKeyPolicy::AsOrdinary,
+    };
 
-        let got = from_str_with_options::<HasMergeLikeField>(y, opt).unwrap();
-        assert_eq!(
-            got.merge_like.get("color").map(String::as_str),
-            Some("blue")
-        );
-    }
+    let got = from_str_with_options::<HasMergeLikeField>(y, opt).unwrap();
+    assert_eq!(
+        got.merge_like.get("color").map(String::as_str),
+        Some("blue")
+    );
+}
 
-    #[test]
-    fn duplicate_keys_last_wins_struct_explicit_field_still_overrides_merge_source() {
-        let y = r#"
+#[test]
+fn duplicate_keys_last_wins_struct_explicit_field_still_overrides_merge_source() {
+    let y = r#"
 target:
   <<: { color: red, color: blue }
   color: green
 "#;
 
-        let opt = serde_saphyr::options! {
-            duplicate_keys: DuplicateKeyPolicy::LastWins,
-        };
+    let opt = serde_saphyr::options! {
+        duplicate_keys: DuplicateKeyPolicy::LastWins,
+    };
 
-        let root = from_str_with_options::<BackgroundRoot>(y, opt).unwrap();
-        assert_eq!(root.target.color, "green");
-    }
+    let root = from_str_with_options::<BackgroundRoot>(y, opt).unwrap();
+    assert_eq!(root.target.color, "green");
+}
 
-    #[test]
-    fn duplicate_keys_last_wins_direct_struct_from_aliased_merge_source() {
-        let y = r#"
+#[test]
+fn duplicate_keys_last_wins_direct_struct_from_aliased_merge_source() {
+    let y = r#"
 base: &B { color: red, color: blue }
 target:
   <<: *B
 "#;
-        let opt = serde_saphyr::options! {
-            duplicate_keys: DuplicateKeyPolicy::LastWins,
-        };
-        let root = from_str_with_options::<BackgroundRootWithBase>(y, opt).unwrap();
-        assert_eq!(root.base.get("color").map(String::as_str), Some("blue"));
-        assert_eq!(root.target.color, "blue");
-    }
+    let opt = serde_saphyr::options! {
+        duplicate_keys: DuplicateKeyPolicy::LastWins,
+    };
+    let root = from_str_with_options::<BackgroundRootWithBase>(y, opt).unwrap();
+    assert_eq!(root.base.get("color").map(String::as_str), Some("blue"));
+    assert_eq!(root.target.color, "blue");
+}
 
-    #[test]
-    fn duplicate_keys_first_wins_direct_struct_from_merge_source() {
-        let y = r#"
+#[test]
+fn duplicate_keys_first_wins_direct_struct_from_merge_source() {
+    let y = r#"
 target:
   <<: { color: red, color: blue }
 "#;
-        let opt = serde_saphyr::options! {
-            duplicate_keys: DuplicateKeyPolicy::FirstWins,
-        };
-        let root = from_str_with_options::<BackgroundRoot>(y, opt).unwrap();
-        assert_eq!(root.target.color, "red");
-    }
+    let opt = serde_saphyr::options! {
+        duplicate_keys: DuplicateKeyPolicy::FirstWins,
+    };
+    let root = from_str_with_options::<BackgroundRoot>(y, opt).unwrap();
+    assert_eq!(root.target.color, "red");
+}
 
-    #[test]
-    fn duplicate_keys_error_direct_struct_from_merge_source() {
-        let y = r#"
+#[test]
+fn duplicate_keys_error_direct_struct_from_merge_source() {
+    let y = r#"
 target:
   <<: { color: red, color: blue }
 "#;
-        let opt = serde_saphyr::options! {
-            duplicate_keys: DuplicateKeyPolicy::Error,
-        };
-        let err = from_str_with_options::<BackgroundRoot>(y, opt).unwrap_err();
-        let msg = format!("{err}");
-        assert!(msg.contains("duplicate mapping key: color"));
-    }
+    let opt = serde_saphyr::options! {
+        duplicate_keys: DuplicateKeyPolicy::Error,
+    };
+    let err = from_str_with_options::<BackgroundRoot>(y, opt).unwrap_err();
+    let msg = format!("{err}");
+    assert!(msg.contains("duplicate mapping key: color"));
+}
 
-    #[test]
-    fn duplicate_sequence_keys_policies() {
-        let y = "?\n  - 1\n  - 2\n: first\n?\n  - 1\n  - 2\n: second\n";
+#[test]
+fn duplicate_sequence_keys_policies() {
+    let y = "?\n  - 1\n  - 2\n: first\n?\n  - 1\n  - 2\n: second\n";
 
-        // Error policy should reject duplicate sequence keys.
-        let err = from_str::<HashMap<Vec<i32>, String>>(y).unwrap_err();
-        let msg = format!("{err}");
-        assert!(msg.contains("duplicate mapping key"));
+    // Error policy should reject duplicate sequence keys.
+    let err = from_str::<HashMap<Vec<i32>, String>>(y).unwrap_err();
+    let msg = format!("{err}");
+    assert!(msg.contains("duplicate mapping key"));
 
-        let opt_first = serde_saphyr::options! {
-            duplicate_keys: DuplicateKeyPolicy::FirstWins,
-        };
-        let first = from_str_with_options::<HashMap<Vec<i32>, String>>(y, opt_first).unwrap();
-        assert_eq!(first.get(&vec![1, 2]).map(String::as_str), Some("first"));
-        assert_eq!(first.len(), 1);
+    let opt_first = serde_saphyr::options! {
+        duplicate_keys: DuplicateKeyPolicy::FirstWins,
+    };
+    let first = from_str_with_options::<HashMap<Vec<i32>, String>>(y, opt_first).unwrap();
+    assert_eq!(first.get(&vec![1, 2]).map(String::as_str), Some("first"));
+    assert_eq!(first.len(), 1);
 
-        let opt_last = serde_saphyr::options! {
-            duplicate_keys: DuplicateKeyPolicy::LastWins,
-        };
-        let last = from_str_with_options::<HashMap<Vec<i32>, String>>(y, opt_last).unwrap();
-        assert_eq!(last.get(&vec![1, 2]).map(String::as_str), Some("second"));
-        assert_eq!(last.len(), 1);
-    }
+    let opt_last = serde_saphyr::options! {
+        duplicate_keys: DuplicateKeyPolicy::LastWins,
+    };
+    let last = from_str_with_options::<HashMap<Vec<i32>, String>>(y, opt_last).unwrap();
+    assert_eq!(last.get(&vec![1, 2]).map(String::as_str), Some("second"));
+    assert_eq!(last.len(), 1);
+}
 
-    #[derive(Debug, Deserialize, PartialEq, Eq, Hash)]
-    struct StructKey {
-        a: i32,
-        b: String,
-    }
+#[derive(Debug, Deserialize, PartialEq, Eq, Hash)]
+struct StructKey {
+    a: i32,
+    b: String,
+}
 
-    #[test]
-    fn duplicate_struct_keys_policies() {
-        let y = "?\n  a: 1\n  b: foo\n: 7\n?\n  a: 1\n  b: foo\n: 9\n";
+#[test]
+fn duplicate_struct_keys_policies() {
+    let y = "?\n  a: 1\n  b: foo\n: 7\n?\n  a: 1\n  b: foo\n: 9\n";
 
-        let err = from_str::<HashMap<StructKey, i32>>(y).unwrap_err();
-        let msg = format!("{err}");
-        assert!(msg.contains("duplicate mapping key"));
+    let err = from_str::<HashMap<StructKey, i32>>(y).unwrap_err();
+    let msg = format!("{err}");
+    assert!(msg.contains("duplicate mapping key"));
 
-        let opt_first = serde_saphyr::options! {
-            duplicate_keys: DuplicateKeyPolicy::FirstWins,
-        };
-        let first = from_str_with_options::<HashMap<StructKey, i32>>(y, opt_first).unwrap();
-        assert_eq!(
-            first.get(&StructKey {
-                a: 1,
-                b: "foo".into()
-            }),
-            Some(&7)
-        );
-        assert_eq!(first.len(), 1);
+    let opt_first = serde_saphyr::options! {
+        duplicate_keys: DuplicateKeyPolicy::FirstWins,
+    };
+    let first = from_str_with_options::<HashMap<StructKey, i32>>(y, opt_first).unwrap();
+    assert_eq!(
+        first.get(&StructKey {
+            a: 1,
+            b: "foo".into()
+        }),
+        Some(&7)
+    );
+    assert_eq!(first.len(), 1);
 
-        let opt_last = serde_saphyr::options! {
-            duplicate_keys: DuplicateKeyPolicy::LastWins,
-        };
-        let last = from_str_with_options::<HashMap<StructKey, i32>>(y, opt_last).unwrap();
-        assert_eq!(
-            last.get(&StructKey {
-                a: 1,
-                b: "foo".into()
-            }),
-            Some(&9)
-        );
-        assert_eq!(last.len(), 1);
-    }
+    let opt_last = serde_saphyr::options! {
+        duplicate_keys: DuplicateKeyPolicy::LastWins,
+    };
+    let last = from_str_with_options::<HashMap<StructKey, i32>>(y, opt_last).unwrap();
+    assert_eq!(
+        last.get(&StructKey {
+            a: 1,
+            b: "foo".into()
+        }),
+        Some(&9)
+    );
+    assert_eq!(last.len(), 1);
+}
 
-    #[cfg(test)]
-    mod hardening_policy_fixed_yaml_tests {
-        use super::*;
-        use serde::Deserialize;
-        use serde_saphyr::from_str_with_options;
-        use std::collections::HashMap;
+use serde::Deserialize;
+use serde_saphyr::from_str_with_options;
+use std::collections::HashMap;
 
-        // ---------- Duplicate key policy: LastWins ----------
-        #[test]
-        fn duplicate_keys_last_wins_policy() {
-            let y = "a: 1\na: 2\nb: 3\n";
-            let opt = serde_saphyr::options! {
-                duplicate_keys: DuplicateKeyPolicy::LastWins,
-            };
-            let m = from_str_with_options::<HashMap<String, i32>>(y, opt).unwrap();
-            assert_eq!(m.get("a"), Some(&2));
-            assert_eq!(m.get("b"), Some(&3));
-            assert_eq!(m.len(), 2);
-        }
+// ---------- Duplicate key policy: LastWins ----------
+#[test]
+fn duplicate_keys_last_wins_policy() {
+    let y = "a: 1\na: 2\nb: 3\n";
+    let opt = serde_saphyr::options! {
+        duplicate_keys: DuplicateKeyPolicy::LastWins,
+    };
+    let m = from_str_with_options::<HashMap<String, i32>>(y, opt).unwrap();
+    assert_eq!(m.get("a"), Some(&2));
+    assert_eq!(m.get("b"), Some(&3));
+    assert_eq!(m.len(), 2);
+}
 
-        // ---------- Alias-bomb hardening: per-anchor expansion cap ----------
-        //
-        // NOTE: The previous version placed the anchored node as a *separate root node*,
-        // which is invalid when deserializing into a mapping. Here we anchor the value
-        // under a key ("defs") so the whole document is a single mapping.
-        #[test]
-        fn alias_per_anchor_expansion_limit() {
-            // Anchor &A once, then reference it three times; cap expansions at 2.
-            let y = "defs: &A { k: v }\nx: *A\ny: *A\nz: *A\n";
-            let opt = serde_saphyr::options! {
-                alias_limits: serde_saphyr::alias_limits! {
-                    max_alias_expansions_per_anchor: 2,
-                },
-            };
-            let err = from_str_with_options::<HashMap<String, HashMap<String, String>>>(y, opt)
-                .unwrap_err();
-            let msg = format!("{err}");
-            assert!(
-                msg.contains("alias expansion limit exceeded"),
-                "unexpected error: {msg}"
-            );
-        }
+// ---------- Alias-bomb hardening: per-anchor expansion cap ----------
+//
+// NOTE: The previous version placed the anchored node as a *separate root node*,
+// which is invalid when deserializing into a mapping. Here we anchor the value
+// under a key ("defs") so the whole document is a single mapping.
+#[test]
+fn alias_per_anchor_expansion_limit() {
+    // Anchor &A once, then reference it three times; cap expansions at 2.
+    let y = "defs: &A { k: v }\nx: *A\ny: *A\nz: *A\n";
+    let opt = serde_saphyr::options! {
+        alias_limits: serde_saphyr::alias_limits! {
+            max_alias_expansions_per_anchor: 2,
+        },
+    };
+    let err =
+        from_str_with_options::<HashMap<String, HashMap<String, String>>>(y, opt).unwrap_err();
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("alias expansion limit exceeded"),
+        "unexpected error: {msg}"
+    );
+}
 
-        // ---------- Alias-bomb hardening: total replayed events cap ----------
-        //
-        // We define the anchor under "defs" and then use it twice in "list".
-        // Each expansion of [1,2,3,4] injects 6 events (start, 4 scalars, end) → 12 total.
-        // With a cap of 10 this must fail.
-        #[derive(Debug, Deserialize)]
-        #[allow(dead_code)]
-        struct Data {
-            defs: Vec<u32>,
-            list: Vec<Vec<u32>>,
-        }
+// ---------- Alias-bomb hardening: total replayed events cap ----------
+//
+// We define the anchor under "defs" and then use it twice in "list".
+// Each expansion of [1,2,3,4] injects 6 events (start, 4 scalars, end) → 12 total.
+// With a cap of 10 this must fail.
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct Data {
+    defs: Vec<u32>,
+    list: Vec<Vec<u32>>,
+}
 
-        #[test]
-        fn alias_total_replayed_events_limit() {
-            let y = "defs: &A [1, 2, 3, 4]\nlist: [*A, *A]\n";
-            let opt = serde_saphyr::options! {
-                alias_limits: serde_saphyr::alias_limits! {
-                    max_total_replayed_events: 10,
-                },
-            };
-            let err = from_str_with_options::<Data>(y, opt).unwrap_err();
-            let msg = format!("{err}");
-            assert!(
-                msg.contains("alias replay limit exceeded"),
-                "unexpected error: {msg}"
-            );
-        }
+#[test]
+fn alias_total_replayed_events_limit() {
+    let y = "defs: &A [1, 2, 3, 4]\nlist: [*A, *A]\n";
+    let opt = serde_saphyr::options! {
+        alias_limits: serde_saphyr::alias_limits! {
+            max_total_replayed_events: 10,
+        },
+    };
+    let err = from_str_with_options::<Data>(y, opt).unwrap_err();
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("alias replay limit exceeded"),
+        "unexpected error: {msg}"
+    );
+}
 
-        // ---------- Alias-bomb hardening: replay stack depth cap ----------
-        //
-        // Due to the design that *resolves aliases during recording* of anchors,
-        // nested alias chains are flattened before use. To still verify the guard,
-        // we set the maximum replay stack depth to 0 and trigger a single alias,
-        // which must fail immediately.
-        #[test]
-        fn alias_replay_stack_depth_limit() {
-            let y = "defs: &A [1]\nout: *A\n";
-            let opt = serde_saphyr::options! {
-                alias_limits: serde_saphyr::alias_limits! {
-                    max_replay_stack_depth: 0,
-                },
-            };
-            let err = from_str_with_options::<HashMap<String, Vec<u32>>>(y, opt).unwrap_err();
-            let msg = format!("{err}");
-            assert!(
-                msg.contains("alias replay stack depth exceeded"),
-                "unexpected error: {msg}"
-            );
-        }
+// ---------- Alias-bomb hardening: replay stack depth cap ----------
+//
+// Due to the design that *resolves aliases during recording* of anchors,
+// nested alias chains are flattened before use. To still verify the guard,
+// we set the maximum replay stack depth to 0 and trigger a single alias,
+// which must fail immediately.
+#[test]
+fn alias_replay_stack_depth_limit() {
+    let y = "defs: &A [1]\nout: *A\n";
+    let opt = serde_saphyr::options! {
+        alias_limits: serde_saphyr::alias_limits! {
+            max_replay_stack_depth: 0,
+        },
+    };
+    let err = from_str_with_options::<HashMap<String, Vec<u32>>>(y, opt).unwrap_err();
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("alias replay stack depth exceeded"),
+        "unexpected error: {msg}"
+    );
+}
 
-        // Place the anchor *inside* the mapping so the document root is a mapping
-        // (which matches HashMap<_, _>), then alias it multiple times to exceed the budget.
-        #[test]
-        fn alias_replay_counts_toward_budget() {
-            let options = serde_saphyr::options! {
-                budget: serde_saphyr::budget! {
-                    max_nodes: 10,
-                },
-            };
+// Place the anchor *inside* the mapping so the document root is a mapping
+// (which matches HashMap<_, _>), then alias it multiple times to exceed the budget.
+#[test]
+fn alias_replay_counts_toward_budget() {
+    let options = serde_saphyr::options! {
+        budget: serde_saphyr::budget! {
+            max_nodes: 10,
+        },
+    };
 
-            // Root is a mapping with key "seq". First element defines &A, the rest alias it.
-            let y = "\
+    // Root is a mapping with key "seq". First element defines &A, the rest alias it.
+    let y = "\
                 seq:
                   - &A [1,2,3]
                   - *A
@@ -564,14 +558,13 @@ target:
                   - *A
                   - *A
                 ";
-            let err =
-                from_str_with_options::<HashMap<String, Vec<Vec<u32>>>>(y, options).unwrap_err();
-            assert!(format!("{err}").contains("budget"));
-        }
+    let err = from_str_with_options::<HashMap<String, Vec<Vec<u32>>>>(y, options).unwrap_err();
+    assert!(format!("{err}").contains("budget"));
+}
 
-        #[test]
-        fn merge_key_budget_still_counts_after_alias_value_replay() {
-            let y = r#"
+#[test]
+fn merge_key_budget_still_counts_after_alias_value_replay() {
+    let y = r#"
 base: &base
   x: 1
 root:
@@ -579,21 +572,18 @@ root:
   <<: *base
 "#;
 
-            let options = serde_saphyr::options! {
-                budget: serde_saphyr::budget! {
-                    max_merge_keys: 0,
-                },
-            };
+    let options = serde_saphyr::options! {
+        budget: serde_saphyr::budget! {
+            max_merge_keys: 0,
+        },
+    };
 
-            let err = from_str_with_options::<HashMap<String, serde_json::Value>>(y, options)
-                .unwrap_err();
-            assert!(matches!(
-                unwrap_snippet(&err),
-                Error::Budget {
-                    breach: BudgetBreach::MergeKeys { .. },
-                    ..
-                }
-            ));
+    let err = from_str_with_options::<HashMap<String, serde_json::Value>>(y, options).unwrap_err();
+    assert!(matches!(
+        unwrap_snippet(&err),
+        Error::Budget {
+            breach: BudgetBreach::MergeKeys { .. },
+            ..
         }
-    }
+    ));
 }

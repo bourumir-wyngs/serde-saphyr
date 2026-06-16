@@ -1,8 +1,6 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 pub mod select_enum_with_tags;
 
-#[cfg(test)]
-mod tests {
     use serde::Deserialize;
 
     #[derive(Debug, Deserialize, PartialEq)]
@@ -436,4 +434,3 @@ seq:
             "inner alias *one inside flattened enum should preserve RcAnchor<Inner> identity"
         );
     }
-}

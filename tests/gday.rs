@@ -23,9 +23,6 @@ struct Root {
     pub settings: Settings,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
 
     #[test]
     fn parse_and_assert_settings() -> anyhow::Result<()> {
