@@ -3,7 +3,7 @@ name = "serde-saphyr"
 version = "0.0.28"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-description = "YAML (de)serializer for Serde, emphasizing panic-free parsing and good error reporting"
+description = "YAML (de)serializer for Serde, emphasizing panic-free parsing, fast builds and good error reporting."
 documentation = "https://docs.rs/serde-saphyr/latest/serde-saphyr/"
 repository = "https://github.com/bourumir-wyngs/serde-saphyr"
 readme = "README.md"
@@ -20,6 +20,9 @@ granit-parser = { git = "https://github.com/bourumir-wyngs/granit-parser", optio
 #    branch = "bw/performance",
 #    optional = true
 #}
+
+# Normal builds use core only, to allow building serde-saphyr in parallel with serde.
+# Complete serde is only used when serde_derived_types is enabled (off by default)
 serde_core = "1"
 serde = { version = "1", default-features = false, features = ["derive"], optional = true }
 smallvec = {  version = ">= 1.0.0, < 1.16.0", optional = true }
