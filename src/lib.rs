@@ -57,7 +57,7 @@ pub use long_strings::{FoldStr, FoldString, LitStr, LitString};
 pub use span::Span;
 pub use spanned::Spanned;
 #[cfg(any(feature = "serialize", feature = "deserialize"))]
-pub use wrappers::{Commented, FlowMap, FlowSeq, Quoted, SpaceAfter};
+pub use wrappers::{Commented, DoubleQuoted, FlowMap, FlowSeq, SingleQuoted, SpaceAfter};
 
 #[cfg(any(feature = "garde", feature = "validator"))]
 pub(crate) use self::de::api::ReaderSnippetContext;

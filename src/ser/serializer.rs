@@ -21,8 +21,8 @@ use super::quoting::{
     is_plain_safe, is_plain_value_safe,
 };
 use super::{
-    Error, NAME_FLOW_MAP, NAME_FLOW_SEQ, NAME_QUOTED, NAME_SPACE_AFTER, NAME_TUPLE_ANCHOR,
-    NAME_TUPLE_COMMENTED, NAME_TUPLE_WEAK, Result, wrapping, zmij_format,
+    Error, NAME_DOUBLE_QUOTED, NAME_FLOW_MAP, NAME_FLOW_SEQ, NAME_SINGLE_QUOTED, NAME_SPACE_AFTER,
+    NAME_TUPLE_ANCHOR, NAME_TUPLE_COMMENTED, NAME_TUPLE_WEAK, Result, wrapping, zmij_format,
 };
 
 // ------------------------------------------------------------
@@ -496,6 +496,16 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
             self.write_indent(self.depth)?;
         }
         self.write_quoted(value)?;
+        self.write_end_of_scalar()
+    }
+
+    fn serialize_single_quoted_scalar(&mut self, value: &str) -> Result<()> {
+        self.write_space_if_pending()?;
+        self.write_scalar_prefix_if_anchor()?;
+        if self.at_line_start {
+            self.write_indent(self.depth)?;
+        }
+        self.write_single_quoted(value)?;
         self.write_end_of_scalar()
     }
 
@@ -1048,11 +1058,17 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 }
                 return result;
             }
-            NAME_QUOTED => {
+            NAME_DOUBLE_QUOTED => {
                 let mut cap = StrCapture::default();
                 value.serialize(&mut cap)?;
                 let text = cap.finish()?;
                 return self.serialize_double_quoted_scalar(&text);
+            }
+            NAME_SINGLE_QUOTED => {
+                let mut cap = StrCapture::default();
+                value.serialize(&mut cap)?;
+                let text = cap.finish()?;
+                return self.serialize_single_quoted_scalar(&text);
             }
             _ => {}
         }

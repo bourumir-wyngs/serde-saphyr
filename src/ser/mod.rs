@@ -56,4 +56,5 @@ const NAME_FLOW_SEQ: &str = "__yaml_flow_seq";
 const NAME_FLOW_MAP: &str = "__yaml_flow_map";
 const NAME_TUPLE_COMMENTED: &str = "__yaml_commented";
 const NAME_SPACE_AFTER: &str = "__yaml_space_after";
-const NAME_QUOTED: &str = "__yaml_quoted";
+const NAME_DOUBLE_QUOTED: &str = "__yaml_double_quoted";
+const NAME_SINGLE_QUOTED: &str = "__yaml_single_quoted";
