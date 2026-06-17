@@ -24,7 +24,9 @@
 //!   options (see the validation examples below).
 
 use serde::Deserialize;
-use serde_saphyr::{Error, Localizer, Location, MessageFormatter, UserMessageFormatter};
+use serde_saphyr::{
+    Error, Localizer, Location, MessageFormatter, SingleQuoted, UserMessageFormatter, ser_error,
+};
 use std::borrow::Cow;
 
 /// Pirate wording for message pieces that are formatted *outside* `MessageFormatter::format_message`.
@@ -127,6 +129,17 @@ impl MessageFormatter for PirateFormatter {
     }
 }
 
+impl PirateFormatter {
+    fn format_serialization_error<'a>(&self, err: &'a ser_error::Error) -> Cow<'a, str> {
+        match err {
+            ser_error::Error::SingleQuotedRequiresEscaping { ch } => Cow::Owned(format!(
+                "That rune {ch:?} needs two horns, no unicorns here!"
+            )),
+            _ => Cow::Owned(err.to_string()),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 struct CrewMember {
@@ -216,7 +229,20 @@ fn main() {
         );
     }
 
-    // Example 4: Validation with dual-snippet (anchor + alias)
+    // Example 4: Serialization error customization. Serialization uses `ser_error::Error`,
+    // so customize it by matching typed serializer variants directly.
+    let single_quoted = SingleQuoted("line\nbreak");
+    println!("\n\n--- Attempting to serialize a value that cannot use SingleQuoted safely ---");
+
+    if let Err(e) = serde_saphyr::to_string(&single_quoted) {
+        println!("\n[Default Serialization Error]:\n{e}");
+        println!(
+            "\n[Pirate Serialization Error]:\n{}",
+            PirateFormatter.format_serialization_error(&e)
+        );
+    }
+
+    // Example 5: Validation with dual-snippet (anchor + alias)
     // The invalid value is defined with an anchor and referenced via alias,
     // so the error shows both where the alias is used and where the anchor defined the value.
     #[cfg(feature = "garde")]

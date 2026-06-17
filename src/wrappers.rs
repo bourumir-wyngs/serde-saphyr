@@ -35,11 +35,16 @@ pub struct FlowMap<T>(pub T);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DoubleQuoted<T>(pub T);
 
-/// Force a string value to be emitted in single-quoted style.
+/// Force a string value to be emitted in a single-quoted style. This provides additional
+/// safety constraints, as serializer rejects control characters and other values that require
+/// double-quoted string escaping.
 ///
 /// This wrapper is transparent during deserialization: the inner value is
 /// deserialized normally and placed into `SingleQuoted<T>`. `SingleQuoted<T>` implements
 /// Serde traits only for string-like `T` values.
+///
+/// Serialization fails if the value cannot be represented
+/// safely in YAML single-quoted style.
 ///
 /// ```rust
 /// # #[cfg(feature = "serialize")]

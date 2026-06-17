@@ -500,6 +500,12 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     }
 
     fn serialize_single_quoted_scalar(&mut self, value: &str) -> Result<()> {
+        if let Some(ch) = value
+            .chars()
+            .find(|ch| is_controll_which_needs_escaping(*ch))
+        {
+            return Err(Error::SingleQuotedRequiresEscaping { ch });
+        }
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
         if self.at_line_start {

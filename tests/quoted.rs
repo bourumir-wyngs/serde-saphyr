@@ -2,7 +2,9 @@ use serde_saphyr::{DoubleQuoted, SingleQuoted};
 
 #[cfg(feature = "serialize")]
 mod serialize_tests {
+    use rstest::rstest;
     use serde::Serialize;
+    use serde_saphyr::ser_error::Error as SerError;
     use serde_saphyr::{DoubleQuoted, SingleQuoted};
 
     #[derive(Serialize)]
@@ -48,6 +50,34 @@ mod serialize_tests {
         let yaml = serde_saphyr::to_string(&value).unwrap();
 
         assert_eq!(yaml, "text: 'plain'\nescaped: 'can''t'\nowned: 'owned'\n");
+    }
+
+    #[rstest]
+    #[case::double_quotes("say \"hi\"", "'say \"hi\"'\n")]
+    #[case::literal_backslash("with \\ slash", "'with \\ slash'\n")]
+    #[case::single_quote_escape("can't", "'can''t'\n")]
+    fn single_quoted_allows_values_that_do_not_need_yaml_escapes(
+        #[case] value: &str,
+        #[case] expected: &str,
+    ) {
+        let yaml = serde_saphyr::to_string(&SingleQuoted(value)).unwrap();
+        assert_eq!(yaml, expected);
+    }
+
+    #[rstest]
+    #[case::newline("line\nbreak", '\n')]
+    #[case::tab("tab\tvalue", '\t')]
+    #[case::nul("nul\0value", '\0')]
+    #[case::unicode_line_separator("\u{2028}", '\u{2028}')]
+    fn single_quoted_rejects_values_that_need_yaml_escapes(
+        #[case] value: &str,
+        #[case] expected_ch: char,
+    ) {
+        let err = serde_saphyr::to_string(&SingleQuoted(value)).unwrap_err();
+        match &err {
+            SerError::SingleQuotedRequiresEscaping { ch } => assert_eq!(*ch, expected_ch),
+            other => panic!("unexpected error variant: {other:?}"),
+        }
     }
 }
 

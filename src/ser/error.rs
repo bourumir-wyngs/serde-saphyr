@@ -15,6 +15,9 @@ use std::{fmt, io};
 ///   `fmt::Write` target.
 /// - `IO` wraps a `std::io::Error` produced when writing to an `io::Write`
 ///   target.
+/// - `SingleQuotedRequiresEscaping` reports a `SingleQuoted` wrapper value
+///   that needs YAML escape sequences and therefore cannot be emitted in
+///   single-quoted style.
 /// - `Unexpected` is used internally for invariant violations (e.g., around
 ///   anchors). It should not normally surface; if it does, please file a bug.
 #[non_exhaustive]
@@ -30,6 +33,9 @@ pub enum Error {
     Unexpected { msg: String },
     /// Options used would produce invalid YAML (0 indentation, etc)
     InvalidOptions(String),
+    /// A [`crate::SingleQuoted`] value contains a character that cannot be represented safely in
+    /// YAML single-quoted style.
+    SingleQuotedRequiresEscaping { ch: char },
 }
 
 impl serde_core::ser::Error for Error {
@@ -92,6 +98,13 @@ impl fmt::Display for Error {
             Error::IO { error } => write!(f, "I/O error: {error}"),
             Error::Unexpected { msg } => write!(f, "unexpected internal error: {msg}"),
             Error::InvalidOptions(msg) => write!(f, "invalid serialization options: {msg}"),
+            Error::SingleQuotedRequiresEscaping { ch } => {
+                // Debug formatting keeps rejected control characters escaped in the error message.
+                write!(
+                    f,
+                    "Single quotes cannot be used for a string containing {ch:?}. Use double quoting for values that require YAML escape sequences"
+                )
+            }
         }
     }
 }
@@ -104,6 +117,7 @@ impl std::error::Error for Error {
             Error::Format { error } => Some(error),
             Error::IO { error } => Some(error),
             Error::InvalidOptions(_) => None,
+            Error::SingleQuotedRequiresEscaping { .. } => None,
         }
     }
 }
