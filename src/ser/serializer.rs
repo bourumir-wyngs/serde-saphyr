@@ -15,7 +15,9 @@ use std::fmt::Write;
 
 use crate::long_strings::{NAME_FOLD_STR, NAME_LIT_STR};
 
-use super::options::{CommentPosition, FOLDED_WRAP_CHARS, MIN_FOLD_CHARS, SerializerOptions};
+use super::options::{
+    CommentPosition, FOLDED_WRAP_CHARS, MIN_FOLD_CHARS, NullPolicy, SerializerOptions,
+};
 use super::quoting::{
     is_auto_block_scalar_readable, is_block_scalar_content_safe, is_controll_which_needs_escaping,
     is_plain_safe, is_plain_value_safe,
@@ -138,6 +140,9 @@ pub struct YamlSerializer<'a, W: Write> {
     /// double quotes when the string contains escape sequences or single quotes.
     quote_all: bool,
 
+    /// Controls how null values are emitted.
+    null_policy: NullPolicy,
+
     /// When enabled, emit YAML 1.2 directive and use YAML 1.2-friendly heuristics.
     yaml_12: bool,
     /// Whether we have started emitting the current document.
@@ -177,6 +182,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
             after_dash_depth: None,
             current_map_depth: None,
             quote_all: false,
+            null_policy: NullPolicy::NullNull,
             yaml_12: false,
             doc_started: false,
         }
@@ -204,6 +210,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         s.quote_all = options.quote_all;
         s.comment_position = options.comment_position;
         s.yaml_12 = options.yaml_12;
+        s.null_policy = options.null_policy;
         s
     }
 
@@ -512,6 +519,42 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
             self.write_indent(self.depth)?;
         }
         self.write_single_quoted(value)?;
+        self.write_end_of_scalar()
+    }
+
+    #[inline]
+    fn null_text(&self) -> &'static str {
+        match self.null_policy {
+            NullPolicy::NullNull => "null",
+            NullPolicy::NullTilde => "~",
+            NullPolicy::NullEmpty if self.in_flow > 0 => "null",
+            NullPolicy::NullEmpty => "",
+        }
+    }
+
+    fn serialize_null_scalar(&mut self) -> Result<()> {
+        self.last_value_was_block = false;
+
+        let text = self.null_text();
+        if text.is_empty() {
+            if self.pending_anchor_id.is_some() {
+                self.write_space_if_pending()?;
+            } else {
+                self.pending_space_after_colon = false;
+            }
+            self.write_scalar_prefix_if_anchor()?;
+            if self.at_line_start {
+                self.write_indent(self.depth)?;
+            }
+        } else {
+            self.write_space_if_pending()?;
+            self.write_scalar_prefix_if_anchor()?;
+            if self.at_line_start {
+                self.write_indent(self.depth)?;
+            }
+            self.out.write_str(text)?;
+        }
+
         self.write_end_of_scalar()
     }
 
@@ -975,29 +1018,18 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     }
 
     fn serialize_none(self) -> Result<()> {
-        self.write_space_if_pending()?;
-        self.last_value_was_block = false;
-        if self.at_line_start {
-            self.write_indent(self.depth)?;
-        }
-        self.out.write_str("null")?;
-        self.write_end_of_scalar()?;
-        Ok(())
+        self.serialize_null_scalar()
     }
 
     fn serialize_some<T: ?Sized + Serialize>(self, value: &T) -> Result<()> {
         value.serialize(self)
     }
 
+    // YAML has no separate unit scalar. Serde unit values (`()`, unit structs)
+    // are represented as YAML null, so they follow the same configurable null
+    // spelling policy as `Option::None`.
     fn serialize_unit(self) -> Result<()> {
-        self.write_space_if_pending()?;
-        self.last_value_was_block = false;
-        if self.at_line_start {
-            self.write_indent(self.depth)?;
-        }
-        self.out.write_str("null")?;
-        self.write_end_of_scalar()?;
-        Ok(())
+        self.serialize_null_scalar()
     }
 
     fn serialize_unit_struct(self, _name: &'static str) -> Result<()> {

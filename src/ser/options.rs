@@ -31,6 +31,21 @@ pub enum CommentPosition {
     Above,
 }
 
+/// Scalar spelling used when serializing null values.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NullPolicy {
+    /// Emit null values as `null` (default).
+    NullNull,
+    /// Emit null values as `~`.
+    NullTilde,
+    /// Emit null values as empty scalars where YAML allows them.
+    ///
+    /// In flow-style/JSON-like collections such as `[null]` and `{key: null}`,
+    /// empty values are not valid, so the serializer falls back to [`NullPolicy::NullNull`].
+    NullEmpty,
+}
+
 /// Serializer options for YAML emission.
 ///
 /// This struct controls various aspects of YAML serialization, such as indentation,
@@ -179,6 +194,16 @@ pub struct SerializerOptions {
         note = "Direct construction of `SerializerOptions` will be disabled from 1.0.0, use macro `ser_options!`"
     )]
     pub yaml_12: bool,
+
+    /// Controls how null values are emitted.
+    ///
+    /// Defaults to [`NullPolicy::NullNull`]. [`NullPolicy::NullEmpty`] emits empty
+    /// scalars in block-style positions, but falls back to `null` in flow-style
+    /// collections where an empty scalar would be invalid.
+    #[deprecated(
+        note = "Direct construction of `SerializerOptions` will be disabled from 1.0.0, use macro `ser_options!`"
+    )]
+    pub null_policy: NullPolicy,
 }
 
 // Below this length, block-string wrappers serialize as regular scalars
@@ -218,6 +243,7 @@ impl Default for SerializerOptions {
             quote_all: false,
             comment_position: CommentPosition::Inline,
             yaml_12: false,
+            null_policy: NullPolicy::NullNull,
         }
     }
 }

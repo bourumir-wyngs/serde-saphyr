@@ -278,12 +278,7 @@ impl<'a, 'b, W: Write> SpecialTupleSer<'a, 'b, W> {
                         self.weak_present = bc.finish()?;
                         if !self.weak_present {
                             // present == false: emit null and skip field #3
-                            if self.ser.at_line_start {
-                                self.ser.write_indent(self.ser.depth)?;
-                            }
-                            self.ser.out.write_str("null")?;
-                            // Use shared end-of-scalar so pending inline comments (if any) are appended
-                            self.ser.write_end_of_scalar()?;
+                            self.ser.serialize_null_scalar()?;
                             self.skip_third = true;
                         } else {
                             let ptr = self.weak_anchor_ptr;

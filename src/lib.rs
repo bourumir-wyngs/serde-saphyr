@@ -12,7 +12,7 @@ pub use self::de::PropertySyntax;
 #[cfg(feature = "serialize")]
 pub use self::ser::{
     error as ser_error,
-    options::{CommentPosition, SerializerOptions},
+    options::{CommentPosition, NullPolicy, SerializerOptions},
 };
 #[cfg(feature = "deserialize")]
 pub use self::{
