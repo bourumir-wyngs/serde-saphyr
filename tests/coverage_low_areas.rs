@@ -53,6 +53,14 @@ mod ser_error_tests {
     }
 
     #[test]
+    fn display_single_quoted_requires_escaping() {
+        let e = Error::SingleQuotedRequiresEscaping { ch: '\n' };
+        let s = e.to_string();
+        assert!(s.contains("'\\n'"));
+        assert!(!s.contains("\n'")); // not literally
+    }
+
+    #[test]
     fn source_delegates() {
         let fmt_err = Error::Format {
             error: std::fmt::Error,
@@ -72,6 +80,9 @@ mod ser_error_tests {
 
         let inv = Error::InvalidOptions("i".into());
         assert!(inv.source().is_none());
+
+        let single_quoted = Error::SingleQuotedRequiresEscaping { ch: '\n' };
+        assert!(single_quoted.source().is_none());
     }
 
     #[test]

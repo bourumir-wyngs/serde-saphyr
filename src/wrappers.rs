@@ -13,27 +13,57 @@ pub struct FlowMap<T>(pub T);
 /// Force a string value to be emitted in double-quoted style.
 ///
 /// This wrapper is transparent during deserialization: the inner value is
-/// deserialized normally and placed into `Quoted<T>`. `Quoted<T>` implements
+/// deserialized normally and placed into `DoubleQuoted<T>`. `DoubleQuoted<T>` implements
 /// Serde traits only for string-like `T` values.
 ///
 /// ```rust
 /// # #[cfg(feature = "serialize")]
 /// # {
 /// use serde::Serialize;
-/// use serde_saphyr::Quoted;
+/// use serde_saphyr::DoubleQuoted;
 ///
 /// #[derive(Serialize)]
 /// struct Config {
-///     value: Quoted<String>,
+///     value: DoubleQuoted<String>,
 /// }
 ///
-/// let cfg = Config { value: Quoted("plain text".to_string()) };
+/// let cfg = Config { value: DoubleQuoted("plain text".to_string()) };
 /// let yaml = serde_saphyr::to_string(&cfg).unwrap();
 /// assert_eq!(yaml, "value: \"plain text\"\n");
 /// # }
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Quoted<T>(pub T);
+pub struct DoubleQuoted<T>(pub T);
+
+/// Force a string value to be emitted in a single-quoted style. This provides additional
+/// safety constraints, as serializer rejects control characters and other values that require
+/// double-quoted string escaping.
+///
+/// This wrapper is transparent during deserialization: the inner value is
+/// deserialized normally and placed into `SingleQuoted<T>`. `SingleQuoted<T>` implements
+/// Serde traits only for string-like `T` values.
+///
+/// Serialization fails if the value cannot be represented
+/// safely in YAML single-quoted style.
+///
+/// ```rust
+/// # #[cfg(feature = "serialize")]
+/// # {
+/// use serde::Serialize;
+/// use serde_saphyr::SingleQuoted;
+///
+/// #[derive(Serialize)]
+/// struct Config {
+///     value: SingleQuoted<String>,
+/// }
+///
+/// let cfg = Config { value: SingleQuoted("plain text".to_string()) };
+/// let yaml = serde_saphyr::to_string(&cfg).unwrap();
+/// assert_eq!(yaml, "value: 'plain text'\n");
+/// # }
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SingleQuoted<T>(pub T);
 
 /// Add an empty line after the wrapped value when serializing.
 ///
@@ -148,12 +178,21 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for FlowMap<T> {
     }
 }
 
-impl<'de, T> Deserialize<'de> for Quoted<T>
+impl<'de, T> Deserialize<'de> for DoubleQuoted<T>
 where
     T: Deserialize<'de> + AsRef<str>,
 {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
-        T::deserialize(deserializer).map(Quoted)
+        T::deserialize(deserializer).map(DoubleQuoted)
+    }
+}
+
+impl<'de, T> Deserialize<'de> for SingleQuoted<T>
+where
+    T: Deserialize<'de> + AsRef<str>,
+{
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        T::deserialize(deserializer).map(SingleQuoted)
     }
 }
 
@@ -204,7 +243,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for SpaceAfter<T> {
 mod tests {
     use serde::Deserialize;
 
-    use crate::{Commented, FlowMap, FlowSeq, Quoted, SpaceAfter};
+    use crate::{Commented, DoubleQuoted, FlowMap, FlowSeq, SingleQuoted, SpaceAfter};
 
     #[derive(Debug, Deserialize, PartialEq)]
     struct WrappersDoc {
@@ -212,20 +251,22 @@ mod tests {
         map: FlowMap<std::collections::BTreeMap<String, u32>>,
         after: SpaceAfter<String>,
         commented: Commented<bool>,
-        quoted: Quoted<String>,
+        double_quoted: DoubleQuoted<String>,
+        single_quoted: SingleQuoted<String>,
     }
 
     #[test]
     fn wrappers_remain_deserializable_without_serialize() {
         let value: WrappersDoc = crate::from_str(
-            "seq: [1, 2]\nmap: {a: 1}\nafter: hello\ncommented: true\nquoted: value\n",
+            "seq: [1, 2]\nmap: {a: 1}\nafter: hello\ncommented: true\ndouble_quoted: value\nsingle_quoted: value\n",
         )
         .unwrap();
 
         assert_eq!(value.seq, FlowSeq(vec![1, 2]));
         assert_eq!(value.after, SpaceAfter("hello".to_string()));
         assert_eq!(value.commented, Commented(true, String::new()));
-        assert_eq!(value.quoted, Quoted("value".to_string()));
+        assert_eq!(value.double_quoted, DoubleQuoted("value".to_string()));
+        assert_eq!(value.single_quoted, SingleQuoted("value".to_string()));
         assert_eq!(value.map.0.get("a"), Some(&1));
     }
 }

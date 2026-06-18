@@ -191,6 +191,26 @@ mod tests {
         }
     }
 
+    /// Verifies that a single-quoted string without `''` escapes deserializes
+    /// into a `Cow::Borrowed`.
+    #[test]
+    fn test_cow_borrowing_single_quoted_no_escape() {
+        let input = "s: 'hello world'\n";
+        let cow: CowStruct = from_str(input).unwrap();
+
+        match &cow.s {
+            Cow::Borrowed(b) => {
+                assert_eq!(*b, "hello world");
+            }
+            Cow::Owned(s) => {
+                panic!(
+                    "Expected Cow::Borrowed for single-quoted string 'hello world', but got Cow::Owned('{}')",
+                    s
+                );
+            }
+        }
+    }
+
     /// Verifies that a struct value referenced via an anchor still borrows
     /// the inner string when possible.
     ///

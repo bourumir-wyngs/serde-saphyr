@@ -4,13 +4,13 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use crate::{
-    ArcAnchor, ArcRecursion, ArcRecursive, ArcWeakAnchor, Commented, FlowMap, FlowSeq, Quoted,
-    RcAnchor, RcRecursion, RcRecursive, RcWeakAnchor, SpaceAfter,
+    ArcAnchor, ArcRecursion, ArcRecursive, ArcWeakAnchor, Commented, DoubleQuoted, FlowMap,
+    FlowSeq, RcAnchor, RcRecursion, RcRecursive, RcWeakAnchor, SingleQuoted, SpaceAfter,
 };
 
 use super::{
-    NAME_FLOW_MAP, NAME_FLOW_SEQ, NAME_QUOTED, NAME_SPACE_AFTER, NAME_TUPLE_ANCHOR,
-    NAME_TUPLE_COMMENTED, NAME_TUPLE_WEAK,
+    NAME_DOUBLE_QUOTED, NAME_FLOW_MAP, NAME_FLOW_SEQ, NAME_SINGLE_QUOTED, NAME_SPACE_AFTER,
+    NAME_TUPLE_ANCHOR, NAME_TUPLE_COMMENTED, NAME_TUPLE_WEAK,
 };
 
 // ------------------------------------------------------------
@@ -173,9 +173,14 @@ impl<T: Serialize> Serialize for SpaceAfter<T> {
         s.serialize_newtype_struct(NAME_SPACE_AFTER, &self.0)
     }
 }
-impl<T: AsRef<str>> Serialize for Quoted<T> {
+impl<T: AsRef<str>> Serialize for DoubleQuoted<T> {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
-        s.serialize_newtype_struct(NAME_QUOTED, self.0.as_ref())
+        s.serialize_newtype_struct(NAME_DOUBLE_QUOTED, self.0.as_ref())
+    }
+}
+impl<T: AsRef<str>> Serialize for SingleQuoted<T> {
+    fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        s.serialize_newtype_struct(NAME_SINGLE_QUOTED, self.0.as_ref())
     }
 }
 
