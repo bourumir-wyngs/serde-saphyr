@@ -186,9 +186,13 @@ impl<T: AsRef<str>> Serialize for SingleQuoted<T> {
 }
 impl<T: Serialize> Serialize for NullableTilde<T> {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        if !s.is_human_readable() {
+            return self.0.serialize(s);
+        }
+
         match &self.0 {
-            Some(value) => value.serialize(s),
-            None => s.serialize_newtype_struct(NAME_NULLABLE_TILDE, &()),
+            Some(value) => s.serialize_some(value),
+            None => s.serialize_newtype_struct(NAME_NULLABLE_TILDE, &self.0),
         }
     }
 }

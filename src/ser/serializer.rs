@@ -517,6 +517,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     }
 
     fn serialize_tilde_null(&mut self) -> Result<()> {
+        self.pending_flow = None;
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
         if self.at_line_start {
