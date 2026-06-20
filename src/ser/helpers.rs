@@ -3,7 +3,7 @@ use std::fmt::{self, Write};
 
 use super::super::quoting::{is_plain_safe, is_plain_value_safe};
 use super::super::zmij_format;
-use super::super::{Error, Result};
+use super::super::{Error, NAME_NULLABLE_TILDE, Result};
 
 // ------------------------------------------------------------
 // Helpers used for extracting ptr/bool inside tuple payloads
@@ -313,8 +313,6 @@ impl BoolCapture {
 }
 
 /// Minimal serializer that captures a string from a serialized field.
-///
-/// Used internally to read the comment text for the Commented wrapper.
 #[derive(Default)]
 pub(super) struct StrCapture {
     s: Option<String>,
@@ -607,9 +605,13 @@ impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
     }
     fn serialize_newtype_struct<T: ?Sized + Serialize>(
         self,
-        _name: &'static str,
+        name: &'static str,
         value: &T,
     ) -> Result<()> {
+        if name == NAME_NULLABLE_TILDE {
+            self.s.push('~');
+            return Ok(());
+        }
         // Treat newtype structs transparently. This allows common key wrappers like
         // `struct Key(String);` / `struct Id(u64);` to be emitted as scalar keys.
         value.serialize(self)

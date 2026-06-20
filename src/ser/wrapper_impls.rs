@@ -5,12 +5,13 @@ use std::sync::{Arc, Mutex};
 
 use crate::{
     ArcAnchor, ArcRecursion, ArcRecursive, ArcWeakAnchor, Commented, DoubleQuoted, FlowMap,
-    FlowSeq, RcAnchor, RcRecursion, RcRecursive, RcWeakAnchor, SingleQuoted, SpaceAfter,
+    FlowSeq, NullableTilde, RcAnchor, RcRecursion, RcRecursive, RcWeakAnchor, SingleQuoted,
+    SpaceAfter,
 };
 
 use super::{
-    NAME_DOUBLE_QUOTED, NAME_FLOW_MAP, NAME_FLOW_SEQ, NAME_SINGLE_QUOTED, NAME_SPACE_AFTER,
-    NAME_TUPLE_ANCHOR, NAME_TUPLE_COMMENTED, NAME_TUPLE_WEAK,
+    NAME_DOUBLE_QUOTED, NAME_FLOW_MAP, NAME_FLOW_SEQ, NAME_NULLABLE_TILDE, NAME_SINGLE_QUOTED,
+    NAME_SPACE_AFTER, NAME_TUPLE_ANCHOR, NAME_TUPLE_COMMENTED, NAME_TUPLE_WEAK,
 };
 
 // ------------------------------------------------------------
@@ -181,6 +182,14 @@ impl<T: AsRef<str>> Serialize for DoubleQuoted<T> {
 impl<T: AsRef<str>> Serialize for SingleQuoted<T> {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
         s.serialize_newtype_struct(NAME_SINGLE_QUOTED, self.0.as_ref())
+    }
+}
+impl<T: Serialize> Serialize for NullableTilde<T> {
+    fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        match &self.0 {
+            Some(value) => value.serialize(s),
+            None => s.serialize_newtype_struct(NAME_NULLABLE_TILDE, &()),
+        }
     }
 }
 

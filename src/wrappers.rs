@@ -92,6 +92,32 @@ pub struct SingleQuoted<T>(pub T);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SpaceAfter<T>(pub T);
 
+/// Serialize `None` as YAML tilde (`~`) while otherwise behaving like `Option<T>`.
+///
+/// `Some(value)` is serialized transparently as `value`. `None` is serialized
+/// as `~` instead of the serializer's regular null spelling. Deserialization
+/// delegates to `Option<T>`, so `~`, `null`, and empty YAML values all become
+/// `NullableTilde(None)`.
+///
+/// ```rust
+/// # #[cfg(feature = "serialize")]
+/// # {
+/// use serde::Serialize;
+/// use serde_saphyr::NullableTilde;
+///
+/// #[derive(Serialize)]
+/// struct Config {
+///     maybe: NullableTilde<String>,
+/// }
+///
+/// let cfg = Config { maybe: NullableTilde(None) };
+/// let yaml = serde_saphyr::to_string(&cfg).unwrap();
+/// assert_eq!(yaml, "maybe: ~\n");
+/// # }
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NullableTilde<T>(pub Option<T>);
+
 /// Attach an inline YAML comment to a value when serializing.
 ///
 /// This wrapper lets you annotate a scalar with an inline YAML comment that is
@@ -239,17 +265,27 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for SpaceAfter<T> {
     }
 }
 
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for NullableTilde<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        Option::<T>::deserialize(deserializer).map(NullableTilde)
+    }
+}
+
 #[cfg(all(test, feature = "deserialize"))]
 mod tests {
     use serde::Deserialize;
 
-    use crate::{Commented, DoubleQuoted, FlowMap, FlowSeq, SingleQuoted, SpaceAfter};
+    use crate::{
+        Commented, DoubleQuoted, FlowMap, FlowSeq, NullableTilde, SingleQuoted, SpaceAfter,
+    };
 
     #[derive(Debug, Deserialize, PartialEq)]
     struct WrappersDoc {
         seq: FlowSeq<Vec<u32>>,
         map: FlowMap<std::collections::BTreeMap<String, u32>>,
         after: SpaceAfter<String>,
+        nullable_tilde_none: NullableTilde<String>,
+        nullable_tilde_some: NullableTilde<String>,
         commented: Commented<bool>,
         double_quoted: DoubleQuoted<String>,
         single_quoted: SingleQuoted<String>,
@@ -258,12 +294,17 @@ mod tests {
     #[test]
     fn wrappers_remain_deserializable_without_serialize() {
         let value: WrappersDoc = crate::from_str(
-            "seq: [1, 2]\nmap: {a: 1}\nafter: hello\ncommented: true\ndouble_quoted: value\nsingle_quoted: value\n",
+            "seq: [1, 2]\nmap: {a: 1}\nafter: hello\nnullable_tilde_none: ~\nnullable_tilde_some: value\ncommented: true\ndouble_quoted: value\nsingle_quoted: value\n",
         )
         .unwrap();
 
         assert_eq!(value.seq, FlowSeq(vec![1, 2]));
         assert_eq!(value.after, SpaceAfter("hello".to_string()));
+        assert_eq!(value.nullable_tilde_none, NullableTilde(None));
+        assert_eq!(
+            value.nullable_tilde_some,
+            NullableTilde(Some("value".to_string()))
+        );
         assert_eq!(value.commented, Commented(true, String::new()));
         assert_eq!(value.double_quoted, DoubleQuoted("value".to_string()));
         assert_eq!(value.single_quoted, SingleQuoted("value".to_string()));
