@@ -9,7 +9,7 @@ repository = "https://github.com/bourumir-wyngs/serde-saphyr"
 readme = "README.md"
 categories = ["encoding", "parser-implementations", "config", "command-line-utilities"]
 keywords = ["yaml", "serde", "config", "ros", "wasm"]
-exclude = ["Cargo.lock"]
+exclude = ["Cargo.lock", ".github/**", ".idea/**"]
 
 [dependencies]
 #granit-parser = { version = "0.0.6", optional = true }
