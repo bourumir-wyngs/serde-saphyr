@@ -263,7 +263,7 @@ mod tests {
                         | Event::Scalar(..)
                         | Event::StreamStart
                         | Event::StreamEnd
-                        | Event::DocumentStart(_)
+                        | Event::DocumentStart(..)
                         | Event::DocumentEnd => {
                             events.push(ev.clone());
                         }

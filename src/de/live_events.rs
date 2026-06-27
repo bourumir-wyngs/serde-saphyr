@@ -920,7 +920,7 @@ impl<'a> LiveEvents<'a> {
                     return self.next_impl();
                 }
 
-                Event::DocumentStart(_) => {
+                Event::DocumentStart(..) => {
                     // Skip doc start and reset per-document state.
                     self.reset_document_state();
                     self.last_location = location;
@@ -935,7 +935,7 @@ impl<'a> LiveEvents<'a> {
                         // One-step lookahead to distinguish multi-doc streams from garbage
                         // after an explicit end marker. If the very next token is a
                         // DocumentStart, signal multi-doc error; otherwise ignore anything else.
-                        if let Some(Ok((Event::DocumentStart(_), span2))) = self.parser.next() {
+                        if let Some(Ok((Event::DocumentStart(..), span2))) = self.parser.next() {
                             let loc2 = location_from_span(&span2)
                                 .with_source_id(self.parser.current_source_id());
                             return Err(Error::multiple_documents(
@@ -1294,7 +1294,7 @@ impl<'a> LiveEvents<'a> {
             }
 
             match raw {
-                Event::DocumentStart(_) => {
+                Event::DocumentStart(..) => {
                     // Found the start of the next document
                     self.reset_document_state();
                     self.produced_any_in_doc = false;

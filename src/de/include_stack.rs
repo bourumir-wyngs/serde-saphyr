@@ -443,7 +443,7 @@ fn collect_anchor_events(
                 target_anchor, err
             )
         })?;
-        if matches!(event, Event::DocumentStart(_)) {
+        if matches!(event, Event::DocumentStart(..)) {
             document_count += 1;
             if document_count > 1 {
                 return Err(format!(
@@ -593,7 +593,7 @@ fn own_event(event: Event<'_>) -> Event<'static> {
         Event::Nothing => Event::Nothing,
         Event::StreamStart => Event::StreamStart,
         Event::StreamEnd => Event::StreamEnd,
-        Event::DocumentStart(explicit) => Event::DocumentStart(explicit),
+        Event::DocumentStart(explicit, version) => Event::DocumentStart(explicit, version),
         Event::DocumentEnd => Event::DocumentEnd,
         Event::Alias(anchor_id) => Event::Alias(anchor_id),
         Event::Scalar(value, style, anchor_id, tag) => Event::Scalar(
@@ -633,12 +633,12 @@ impl<'input> Iterator for ParserStack<'input> {
                     Some(Err(e))
                 }
             }
-            Some(Ok((Event::DocumentStart(explicit), span))) => {
+            Some(Ok((Event::DocumentStart(explicit, version), span))) => {
                 self.sync_source_tracking(self.inner.stack().len());
                 if self.inner.stack().len() == 1 {
                     self.prune_resolved_sources();
                 }
-                Some(Ok((Event::DocumentStart(explicit), span)))
+                Some(Ok((Event::DocumentStart(explicit, version), span)))
             }
             other => {
                 self.sync_source_tracking(self.inner.stack().len());
@@ -931,7 +931,7 @@ selected: &selected
         // Read until the first document finishes and the second document starts
         let mut doc_starts = 0;
         for item in stack.by_ref() {
-            if let Ok((Event::DocumentStart(_), _)) = item {
+            if let Ok((Event::DocumentStart(..), _)) = item {
                 doc_starts += 1;
                 if doc_starts == 2 {
                     break;

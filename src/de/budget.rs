@@ -483,7 +483,7 @@ impl BudgetEnforcer {
             Event::Alias(_anchor_id) => {
                 self.observe_alias_event(true)?;
             }
-            Event::DocumentStart(_explicit) => {
+            Event::DocumentStart(..) => {
                 if self.policy == EnforcingPolicy::PerDocument {
                     self.report.reset();
                 } else {
