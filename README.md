@@ -12,7 +12,6 @@
 [![crates.io](https://img.shields.io/crates/v/serde-saphyr.svg)](https://crates.io/crates/serde-saphyr)
 [![0.0.18 compatible (see API note)](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/api-compat.yml/badge.svg)](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/api-compat.yml)
 [![Socket](https://socket.dev/api/badge/cargo/package/serde-saphyr)](https://socket.dev/cargo/package/serde-saphyr)
-[![Dependency Vulnerabilities](https://img.shields.io/endpoint?url=https%3A%2F%2Fapi-hooks.soos.io%2Fapi%2Fshieldsio-badges%3FbadgeType%3DDependencyVulnerabilities%26pid%3D35n1d5d4v%26)](https://app.soos.io)
 [![crates.io](https://img.shields.io/crates/d/serde-saphyr.svg)](https://crates.io/crates/serde-saphyr)
 
 **serde-saphyr** is a strongly typed YAML deserializer built on top of [`granit-parser`](https://crates.io/crates/granit-parser). It aims to be **panic-free** on malformed input and to exclude `unsafe` code from the library. The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.” Try it online as a WebAssembly application [here](https://verdanta.tech/yva/).
