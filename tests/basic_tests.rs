@@ -147,6 +147,30 @@ plain
     }
 
     #[test]
+    fn multiple_documents_peek_scan_error_has_snippet() {
+        let err = from_multiple::<String>("@\n").expect_err("reserved indicator should fail");
+
+        assert!(
+            matches!(err, Error::WithSnippet { .. }),
+            "expected snippet wrapper, got: {err:?}"
+        );
+        assert!(matches!(
+            unwrap_snippet(&err),
+            Error::ExternalMessage { .. }
+        ));
+
+        let rendered = err.to_string();
+        assert!(
+            rendered.contains("--> <input>:1:1"),
+            "expected snippet location, got: {rendered}"
+        );
+        assert!(
+            rendered.contains("@"),
+            "expected offending input in snippet, got: {rendered}"
+        );
+    }
+
+    #[test]
     fn anchor_with_nested_nonanchored_container_records_balanced_events() {
         #[derive(Deserialize, Debug, PartialEq)]
         struct Inner {

@@ -523,19 +523,19 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
     let mut values = Vec::new();
 
     loop {
-        match src.peek()? {
+        match src.peek() {
             // Skip documents that are explicit null-like scalars ("", "~", or "null").
-            Some(Ev::Scalar {
+            Ok(Some(Ev::Scalar {
                 value: s,
                 style,
                 tag,
                 ..
-            }) if scalar_document_is_empty_or_null(tag, s, style) => {
+            })) if scalar_document_is_empty_or_null(tag, s, style) => {
                 let _ = src.next()?; // consume the null scalar document
                 // Do not push anything for this document; move to the next one.
                 continue;
             }
-            Some(_) => {
+            Ok(Some(_)) => {
                 let value_res = crate::anchor_store::with_document_scope(|| {
                     with_interp_redaction_scope(|| {
                         crate::de::with_root_redaction(
@@ -558,7 +558,16 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
                 };
                 values.push(value);
             }
-            None => break,
+            Ok(None) => break,
+            Err(e) => {
+                return Err(maybe_with_snippet_from_events(
+                    e,
+                    input,
+                    &src,
+                    with_snippet,
+                    crop_radius,
+                ));
+            }
         }
     }
 
