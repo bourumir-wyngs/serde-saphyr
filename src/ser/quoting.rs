@@ -219,6 +219,15 @@ fn is_ambiguous(s: &str) -> bool {
     false
 }
 
+#[inline]
+fn starts_with_document_marker(s: &str) -> bool {
+    let Some(rest) = s.strip_prefix("---").or_else(|| s.strip_prefix("...")) else {
+        return false;
+    };
+
+    rest.is_empty() || rest.as_bytes().first().is_some_and(u8::is_ascii_whitespace)
+}
+
 /// Like `is_ambiguous`, but used for VALUE position.
 ///
 /// For values we are more conservative: quote additional spellings that many YAML
@@ -254,6 +263,9 @@ pub(crate) fn is_plain_safe(s: &str) -> bool {
     }
     // A plain, untagged "<<" key would be a YAML merge key, not the literal string "<<".
     if s == "<<" {
+        return false;
+    }
+    if starts_with_document_marker(s) {
         return false;
     }
     let bytes = s.as_bytes();
@@ -300,6 +312,9 @@ pub(crate) fn is_plain_safe(s: &str) -> bool {
 #[inline]
 pub(crate) fn is_plain_value_safe(s: &str, yaml_12: bool, in_flow: bool) -> bool {
     if is_ambiguous_value(s, yaml_12) {
+        return false;
+    }
+    if starts_with_document_marker(s) {
         return false;
     }
 
@@ -466,6 +481,8 @@ mod tests {
     #[rstest]
     #[case::dash_no_space("-value")]
     #[case::question_no_space("?query")]
+    #[case::document_start_prefix_no_separation("---value")]
+    #[case::document_end_prefix_no_separation("...value")]
     #[case::interior_space("a b")]
     fn plain_keys_allow_safe_inputs(#[case] input: &str) {
         assert!(is_plain_safe(input), "{input:?}");
@@ -478,6 +495,10 @@ mod tests {
     #[case::leading_space(" foo")]
     #[case::trailing_tab("foo\t")]
     #[case::merge_key("<<")]
+    #[case::document_start_marker("---")]
+    #[case::document_end_marker("...")]
+    #[case::document_start_marker_with_value("--- value")]
+    #[case::document_end_marker_with_value("... value")]
     fn plain_keys_reject_unsafe_inputs(#[case] input: &str) {
         assert!(!is_plain_safe(input), "{input:?}");
     }
@@ -487,6 +508,10 @@ mod tests {
     #[case::trailing_space("foo ")]
     #[case::leading_tab("\tfoo")]
     #[case::trailing_tab("foo\t")]
+    #[case::document_start_marker("---")]
+    #[case::document_end_marker("...")]
+    #[case::document_start_marker_with_value("--- value")]
+    #[case::document_end_marker_with_value("... value")]
     fn plain_values_reject_lossy_surrounding_whitespace(#[case] input: &str) {
         assert!(!is_plain_value_safe(input, false, false), "{input:?}");
         assert!(
