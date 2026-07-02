@@ -582,11 +582,10 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
 
         #[cfg(feature = "properties")]
         {
-            let vars = self
-                .ev
-                .property_map()
-                .expect("interpolation_possible() ensures property_map is Some")
-                .as_ref();
+            let Some(vars) = self.ev.property_map() else {
+                return Ok(value);
+            };
+            let vars = vars.as_ref();
             let syntax = self.ev.property_syntax();
 
             match interpolate_compose_style(value, vars, syntax) {
@@ -802,7 +801,9 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             Some(Ev::Taken { location }) => {
                 Err(Error::unexpected("consumed event").with_location(*location))
             }
-            Some(Ev::Scalar { .. }) => unreachable!("handled above"),
+            Some(Ev::Scalar { location, .. }) => {
+                Err(Error::unexpected("scalar").with_location(*location))
+            }
         }
     }
 
@@ -1100,7 +1101,12 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     Some(Ev::Scalar {
                         value, location, ..
                     }) => (value, location),
-                    _ => unreachable!(),
+                    Some(other) => {
+                        return Err(
+                            Error::unexpected("binary scalar").with_location(other.location())
+                        );
+                    }
+                    None => return Err(eof_with_loc(self.ev)),
                 };
                 let data =
                     decode_base64_yaml(&value).map_err(|err| err.with_location(data_location))?;
@@ -1356,7 +1362,12 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     Some(Ev::Scalar {
                         value, location, ..
                     }) => (value, location),
-                    _ => unreachable!(),
+                    Some(other) => {
+                        return Err(
+                            Error::unexpected("binary scalar").with_location(other.location())
+                        );
+                    }
+                    None => return Err(eof_with_loc(self.ev)),
                 };
                 let data =
                     decode_base64_yaml(&scalar).map_err(|err| err.with_location(data_location))?;
@@ -2773,5 +2784,28 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     fn deserialize_ignored_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
         // Delegate to `any`—callers that truly want to ignore should request `IgnoredAny`.
         self.deserialize_any(visitor)
+    }
+}
+
+#[cfg(all(test, feature = "properties"))]
+mod tests {
+    use super::super::options::{Options, PropertySyntax};
+    use super::*;
+
+    #[test]
+    fn effective_scalar_value_without_property_map_returns_original_scalar() {
+        let mut events = ReplayEvents::new(Vec::new(), None, PropertySyntax::Braced);
+        let de = YamlDeserializer::new(&mut events, Cfg::from_options(&Options::default()));
+
+        let value = de
+            .effective_scalar_value(
+                Cow::Borrowed("${MISSING}"),
+                SfTag::None,
+                ScalarStyle::Plain,
+                Location::new(1, 1),
+            )
+            .expect("missing property map should not be treated as interpolation");
+
+        assert_eq!(value, Cow::Borrowed("${MISSING}"));
     }
 }
