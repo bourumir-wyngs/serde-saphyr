@@ -437,6 +437,7 @@ fn get_source_and_span(
             padded_text.push('\n');
         }
         padded_text.push_str(&region.text);
+        let padded_text = sanitize_terminal_snippet_preserve_len(padded_text);
 
         let synthetic_src = Arc::new(NamedSource::new(
             region.source_name.as_str(),
@@ -698,6 +699,31 @@ mod tests {
         let picked_span = picked_span.expect("expected a span");
         assert_eq!(picked_span.offset(), 2);
         assert_eq!(picked_span.len(), 0);
+    }
+
+    #[test]
+    fn get_source_and_span_sanitizes_raw_region_text() {
+        let src: Arc<NamedSource<String>> =
+            Arc::new(NamedSource::new("input.yaml", "root: 1\n".to_owned()));
+        let location = Location {
+            line: 1,
+            column: 8,
+            span: crate::Span::new(7, 10),
+            source_id: 1,
+        };
+        let regions = vec![CroppedRegion {
+            text: "field: \x1B]0;malicious title\x07\n".to_string(),
+            source_name: "snippet.yaml".to_string(),
+            start_line: 1,
+            end_line: 1,
+            location,
+        }];
+
+        let (picked_src, picked_span) = get_source_and_span(&src, &location, &regions);
+
+        assert!(picked_span.is_some());
+        assert!(!picked_src.inner().contains("\x1B]0;"));
+        assert!(!picked_src.inner().contains('\x07'));
     }
 
     #[test]

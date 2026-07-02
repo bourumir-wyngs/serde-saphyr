@@ -159,6 +159,27 @@ fn test_miette_integration_filters_escapes() {
     );
 }
 
+#[cfg(feature = "miette")]
+#[test]
+fn test_miette_graphical_report_filters_escapes_from_snippet_regions() {
+    use serde_saphyr::miette::to_miette_report;
+
+    let yaml = "field: \x1B]0;malicious title\x07";
+
+    let err = from_str::<TestStruct>(yaml).unwrap_err();
+    let report = to_miette_report(&err, yaml, "test.yaml");
+    let report_output = format!("{report:?}");
+
+    assert!(
+        !report_output.contains("\x1B]0;"),
+        "Miette graphical report should not contain OSC escape sequences from snippets: {report_output:?}"
+    );
+    assert!(
+        !report_output.contains('\x07'),
+        "Miette graphical report should not contain BEL from OSC sequences: {report_output:?}"
+    );
+}
+
 #[test]
 fn test_crlf_normalization_with_escapes() {
     // Test that CRLF normalization works together with escape filtering

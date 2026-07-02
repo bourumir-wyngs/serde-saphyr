@@ -116,7 +116,7 @@ pub(crate) fn crop_source_window(
 
         if !needs_storage_crop {
             return (
-                window_text.to_owned(),
+                sanitize_terminal_snippet_preserve_len(window_text.to_owned()),
                 match mapping {
                     LineMapping::Identity => window_start_row,
                     LineMapping::Offset { start_line } => start_line
@@ -267,6 +267,19 @@ mod tests {
 
         assert_eq!(before, "…", "unexpected before line: {before:?}");
         assert_eq!(after, "…", "unexpected after line: {after:?}");
+    }
+
+    #[test]
+    fn crop_source_window_sanitizes_normal_sized_windows() {
+        let text = "field: \x1B]0;malicious title\x07\n";
+        let loc = Location::new(1, 8);
+
+        let (cropped, start_line) = crop_source_window(text, &loc, LineMapping::Identity, 80);
+
+        assert_eq!(start_line, 1);
+        assert_eq!(cropped.len(), text.len());
+        assert!(!cropped.contains("\x1B]0;"));
+        assert!(!cropped.contains('\x07'));
     }
 }
 
