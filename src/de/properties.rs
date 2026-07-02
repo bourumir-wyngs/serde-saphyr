@@ -85,10 +85,9 @@ fn parse_braced_reference(
     start: usize,
 ) -> Result<Option<(BraceRef<'_>, usize)>, String> {
     let body_start = start + 2;
-    let Some(close_rel) = input[body_start..].find('}') else {
+    let Some(close) = find_braced_reference_close(input, body_start) else {
         return Ok(None);
     };
-    let close = close_rel + body_start;
     let body = &input[body_start..close];
     let Some((name, rest)) = parse_name(body) else {
         return Err(input[start..close + 1].to_owned());
@@ -115,37 +114,84 @@ fn parse_braced_reference(
     Ok(Some((BraceRef { name, op }, close + 1)))
 }
 
+fn find_braced_reference_close(input: &str, body_start: usize) -> Option<usize> {
+    let bytes = input.as_bytes();
+    let mut depth = 0usize;
+    let mut i = body_start;
+
+    while i < bytes.len() {
+        if bytes[i] == b'$' && bytes.get(i + 1) == Some(&b'{') {
+            depth = depth.saturating_add(1);
+            i += 2;
+            continue;
+        }
+
+        if bytes[i] == b'}' {
+            if depth == 0 {
+                return Some(i);
+            }
+            depth -= 1;
+        }
+
+        i += 1;
+    }
+
+    None
+}
+
+fn resolve_operator_text<'a>(
+    text: &'a str,
+    vars: &'a HashMap<String, String>,
+) -> Result<Cow<'a, str>, PropertyError> {
+    if text.contains("${") {
+        interpolate_compose_style(Cow::Borrowed(text), vars, PropertySyntax::Braced)
+    } else {
+        Ok(Cow::Borrowed(text))
+    }
+}
+
 fn resolve_brace<'a>(
     brace: &'a BraceRef<'a>,
     vars: &'a HashMap<String, String>,
-) -> Result<&'a str, PropertyError> {
+) -> Result<Cow<'a, str>, PropertyError> {
     let name = brace.name;
     let value = vars.get(name).map(String::as_str);
     match (&brace.op, value) {
-        (BraceOp::Required, Some(v)) => Ok(v),
+        (BraceOp::Required, Some(v)) => Ok(Cow::Borrowed(v)),
         (BraceOp::Required, None) => Err(PropertyError::Unresolved(name.to_owned())),
-        (BraceOp::DefaultIfUnset(text), None) => Ok(text),
-        (BraceOp::DefaultIfUnset(_), Some(v)) => Ok(v),
-        (BraceOp::DefaultIfUnsetOrEmpty(text), None | Some("")) => Ok(text),
-        (BraceOp::DefaultIfUnsetOrEmpty(_), Some(v)) => Ok(v),
-        (BraceOp::AlternateIfSet(text), Some(_)) => Ok(text),
-        (BraceOp::AlternateIfSet(_), None) => Ok(""),
-        (BraceOp::AlternateIfSetAndNonEmpty(_), None | Some("")) => Ok(""),
-        (BraceOp::AlternateIfSetAndNonEmpty(text), Some(_)) => Ok(text),
-        (BraceOp::ErrorIfUnset(_), Some(v)) => Ok(v),
-        (BraceOp::ErrorIfUnset(msg), None) => Err(PropertyError::RequiredButUnset {
-            name: name.to_owned(),
-            message: (*msg).to_owned(),
-        }),
-        (BraceOp::ErrorIfUnsetOrEmpty(_), Some(v)) if !v.is_empty() => Ok(v),
-        (BraceOp::ErrorIfUnsetOrEmpty(msg), Some(_)) => Err(PropertyError::RequiredButEmpty {
-            name: name.to_owned(),
-            message: (*msg).to_owned(),
-        }),
-        (BraceOp::ErrorIfUnsetOrEmpty(msg), None) => Err(PropertyError::RequiredButUnset {
-            name: name.to_owned(),
-            message: (*msg).to_owned(),
-        }),
+        (BraceOp::DefaultIfUnset(text), None) => resolve_operator_text(text, vars),
+        (BraceOp::DefaultIfUnset(_), Some(v)) => Ok(Cow::Borrowed(v)),
+        (BraceOp::DefaultIfUnsetOrEmpty(text), None | Some("")) => {
+            resolve_operator_text(text, vars)
+        }
+        (BraceOp::DefaultIfUnsetOrEmpty(_), Some(v)) => Ok(Cow::Borrowed(v)),
+        (BraceOp::AlternateIfSet(text), Some(_)) => resolve_operator_text(text, vars),
+        (BraceOp::AlternateIfSet(_), None) => Ok(Cow::Borrowed("")),
+        (BraceOp::AlternateIfSetAndNonEmpty(_), None | Some("")) => Ok(Cow::Borrowed("")),
+        (BraceOp::AlternateIfSetAndNonEmpty(text), Some(_)) => resolve_operator_text(text, vars),
+        (BraceOp::ErrorIfUnset(_), Some(v)) => Ok(Cow::Borrowed(v)),
+        (BraceOp::ErrorIfUnset(msg), None) => {
+            let message = resolve_operator_text(msg, vars)?.into_owned();
+            Err(PropertyError::RequiredButUnset {
+                name: name.to_owned(),
+                message,
+            })
+        }
+        (BraceOp::ErrorIfUnsetOrEmpty(_), Some(v)) if !v.is_empty() => Ok(Cow::Borrowed(v)),
+        (BraceOp::ErrorIfUnsetOrEmpty(msg), Some(_)) => {
+            let message = resolve_operator_text(msg, vars)?.into_owned();
+            Err(PropertyError::RequiredButEmpty {
+                name: name.to_owned(),
+                message,
+            })
+        }
+        (BraceOp::ErrorIfUnsetOrEmpty(msg), None) => {
+            let message = resolve_operator_text(msg, vars)?.into_owned();
+            Err(PropertyError::RequiredButUnset {
+                name: name.to_owned(),
+                message,
+            })
+        }
     }
 }
 
@@ -155,7 +201,8 @@ fn resolve_brace<'a>(
 /// (which uses Required semantics).
 ///
 /// Values in `vars` are taken as final.
-/// Placeholders inside map entries are not re-expanded.
+/// Placeholders inside map entries are not re-expanded. Braced placeholders inside
+/// default, alternate, and error text from the input are expanded recursively.
 /// Returns `Cow::Borrowed` when nothing changed so the common no-`$` path stays allocation-free.
 pub(crate) fn interpolate_compose_style<'s>(
     input: Cow<'s, str>,
@@ -216,7 +263,7 @@ pub(crate) fn interpolate_compose_style<'s>(
             } else {
                 out.push_str(&input_str[last..i]);
             }
-            out.push_str(value);
+            out.push_str(value.as_ref());
 
             i = end;
             last = i;
@@ -306,6 +353,52 @@ mod tests {
             interpolate_compose_style(Cow::Borrowed(input), &vars(), PropertySyntax::Braced)
                 .unwrap();
         assert_eq!(output.as_ref(), "");
+    }
+
+    #[rstest]
+    #[case::outer_set_skips_nested_default("${SET:-${MISSING}}", "value")]
+    #[case::outer_missing_resolves_nested_default("${MISSING:-${SET}}", "value")]
+    #[case::outer_empty_resolves_nested_default("${EMPTY:-${SET}}", "value")]
+    #[case::multiple_levels("${MISSING:-${ALSO_MISSING:-${SET}}}", "value")]
+    #[case::with_prefix_and_suffix("prefix-${MISSING:-${SET}}-suffix", "prefix-value-suffix")]
+    fn nested_braced_references_in_operator_text_resolve(
+        #[case] input: &str,
+        #[case] expected: &str,
+    ) {
+        let output =
+            interpolate_compose_style(Cow::Borrowed(input), &vars(), PropertySyntax::Braced)
+                .unwrap();
+        assert_eq!(output.as_ref(), expected);
+    }
+
+    #[test]
+    fn nested_braced_reference_can_be_escaped_in_operator_text() {
+        let output = interpolate_compose_style(
+            Cow::Borrowed("${MISSING:-$${SET}}"),
+            &vars(),
+            PropertySyntax::Braced,
+        )
+        .unwrap();
+
+        assert_eq!(output.as_ref(), "${SET}");
+    }
+
+    #[test]
+    fn nested_braced_reference_in_error_message_resolves_before_error() {
+        let error = interpolate_compose_style(
+            Cow::Borrowed("${MISSING?${SET}}"),
+            &vars(),
+            PropertySyntax::Braced,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            PropertyError::RequiredButUnset {
+                name: "MISSING".into(),
+                message: "value".into()
+            }
+        );
     }
 
     #[test]
