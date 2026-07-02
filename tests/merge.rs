@@ -39,7 +39,7 @@ target:
 }
 
 #[test]
-fn merge_conflicts_skip_duplicates_by_default() {
+fn merge_conflicts_keep_earlier_sequence_mapping_by_default() {
     let yaml = r#"
 base1: &B1 { a: 1, b: 2 }
 base2: &B2 { b: 20 }
@@ -49,11 +49,11 @@ target:
 
     let doc: MergeDoc<BTreeMap<String, i32>> = from_str(yaml).expect("merge must skip duplicates");
     assert_eq!(doc.target.get("a"), Some(&1));
-    assert_eq!(doc.target.get("b"), Some(&20));
+    assert_eq!(doc.target.get("b"), Some(&2));
 }
 
 #[test]
-fn merge_respects_first_wins_policy() {
+fn merge_sequence_precedence_respects_first_wins_policy() {
     let yaml = r#"
 base1: &B1 { a: 1, b: 2 }
 base2: &B2 { b: 20, c: 3 }
@@ -67,12 +67,12 @@ target:
 
     let doc: MergeDoc<BTreeMap<String, i32>> =
         from_str_with_options(yaml, options).expect("merge must honor FirstWins");
-    assert_eq!(doc.target.get("b"), Some(&20));
+    assert_eq!(doc.target.get("b"), Some(&2));
     assert_eq!(doc.target.get("c"), Some(&3));
 }
 
 #[test]
-fn merge_respects_last_wins_policy() {
+fn merge_sequence_precedence_respects_yaml_spec_with_last_wins_policy() {
     let yaml = r#"
 base1: &B1 { a: 1, b: 2 }
 base2: &B2 { b: 20, c: 3 }
@@ -86,7 +86,7 @@ target:
 
     let doc: MergeDoc<BTreeMap<String, i32>> =
         from_str_with_options(yaml, options).expect("merge must honor LastWins");
-    assert_eq!(doc.target.get("b"), Some(&20));
+    assert_eq!(doc.target.get("b"), Some(&2));
     assert_eq!(doc.target.get("c"), Some(&3));
 }
 
@@ -238,7 +238,7 @@ target:
 }
 
 #[test]
-fn merge_keys_expand_in_reverse_order() {
+fn merge_keys_expand_in_source_order() {
     let yaml = r#"
 base1: &B1 { shared: 1, from_one: 10 }
 base2: &B2 { shared: 2, from_two: 20 }
@@ -255,14 +255,14 @@ target:
 
     let doc: MergeDoc<BTreeMap<String, i32>> =
         from_str_with_options(yaml, options).expect("merges must expand");
-    assert_eq!(doc.target.get("shared"), Some(&3));
+    assert_eq!(doc.target.get("shared"), Some(&1));
     assert_eq!(doc.target.get("from_one"), Some(&10));
     assert_eq!(doc.target.get("from_two"), Some(&20));
     assert_eq!(doc.target.get("from_three"), Some(&30));
 }
 
 #[test]
-fn merge_sequence_applies_last_mapping_last() {
+fn merge_sequence_keeps_earlier_mapping_on_conflict() {
     let yaml = r#"
 target:
   <<: [ { shared: 1, first: 10 }, { shared: 2, second: 20 } ]
@@ -274,7 +274,7 @@ target:
 
     let doc: MergeDoc<BTreeMap<String, i32>> =
         from_str_with_options(yaml, options).expect("sequence merges must expand");
-    assert_eq!(doc.target.get("shared"), Some(&2));
+    assert_eq!(doc.target.get("shared"), Some(&1));
     assert_eq!(doc.target.get("first"), Some(&10));
     assert_eq!(doc.target.get("second"), Some(&20));
 }

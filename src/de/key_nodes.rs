@@ -720,7 +720,7 @@ pub(super) fn pending_entries_from_events<'a>(
             }
 
             let mut merged = Vec::new();
-            while let Some(mut nested) = batches.pop() {
+            for mut nested in batches {
                 merged.append(&mut nested);
             }
             Ok(merged)
@@ -805,7 +805,7 @@ pub(super) fn pending_entries_from_live_events<'a>(
                 }
             }
             let mut merged = Vec::new();
-            while let Some(mut nested) = batches.pop() {
+            for mut nested in batches {
                 merged.append(&mut nested);
             }
             Ok(merged)
@@ -895,7 +895,7 @@ pub(super) fn collect_entries_from_map<'a>(
     }
 
     let mut entries = apply_duplicate_key_policy_to_entries(fields, duplicate_keys, merge_keys)?;
-    while let Some(mut nested) = merges.pop() {
+    for mut nested in merges {
         entries.append(&mut nested);
     }
     Ok(entries)

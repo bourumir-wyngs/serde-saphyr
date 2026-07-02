@@ -117,7 +117,15 @@ entries:
     assert_eq!(root.entries[0], base);
     assert_eq!(root.entries[1], base);
     assert_eq!(root.entries[2], base);
-    assert_eq!(root.entries[3], base);
+    assert_eq!(
+        root.entries[3],
+        Entry {
+            x: 0,
+            y: 2,
+            r: 10,
+            label: "center/big".to_string(),
+        }
+    );
 }
 
 #[test]
@@ -164,17 +172,17 @@ fn test_merge_full_ancestor() {
     };
 
     let e3 = Entry {
-        x: -1,
-        y: -1,
-        r: 1000,
+        x: 0,
+        y: 0,
+        r: 5,
         label: "my_center_big".to_string(),
     };
 
     let e4 = Entry {
-        x: -1000,
-        y: 2,
-        r: 12,
-        label: "from_LEFT".to_string(),
+        x: -1,
+        y: -1,
+        r: 1000,
+        label: "from_BIG".to_string(),
     };
 
     assert_eq!(entries[4], e1);

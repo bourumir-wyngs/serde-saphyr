@@ -611,11 +611,11 @@ fn pending_entries_from_events_handles_scalars_maps_sequences_and_eof() {
     assert_eq!(seq_entries.len(), 2);
     assert_eq!(
         pending_pair(&seq_entries[0]),
-        ("second".to_owned(), "2".to_owned(), reference)
+        ("first".to_owned(), "1".to_owned(), reference)
     );
     assert_eq!(
         pending_pair(&seq_entries[1]),
-        ("first".to_owned(), "1".to_owned(), reference)
+        ("second".to_owned(), "2".to_owned(), reference)
     );
 
     let err = unwrap_err(pending_from_events(Vec::new(), loc(28, 1), reference));
@@ -684,11 +684,11 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
     assert_eq!(entries.len(), 2);
     assert_eq!(
         pending_pair(&entries[0]),
-        ("b".to_owned(), "2".to_owned(), loc(32, 2))
+        ("a".to_owned(), "1".to_owned(), loc(31, 2))
     );
     assert_eq!(
         pending_pair(&entries[1]),
-        ("a".to_owned(), "1".to_owned(), loc(31, 2))
+        ("b".to_owned(), "2".to_owned(), loc(32, 2))
     );
 
     let mut empty = replay_events(Vec::new());

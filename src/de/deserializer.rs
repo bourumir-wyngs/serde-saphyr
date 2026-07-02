@@ -1550,7 +1550,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             }
 
             let mut merge_entries = Vec::new();
-            while let Some(batch) = merge_batches.pop() {
+            for batch in merge_batches {
                 for entry in batch {
                     let fingerprint = entry.key.fingerprint().into_owned();
                     if seen.insert(fingerprint) {
@@ -1582,7 +1582,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             // For duplicate-key detection for arbitrary keys.
             seen: FastHashSet<KeyFingerprint>,
             pending: VecDeque<PendingEntry<'de>>,
-            merge_stack: Vec<Vec<PendingEntry<'de>>>,
+            merge_stack: VecDeque<Vec<PendingEntry<'de>>>,
             flushing_merges: bool,
             live_done: bool,
             pending_value: Option<(Vec<Ev<'de>>, Location)>,
@@ -1693,7 +1693,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
             /// Pop the next merge batch and enqueue its entries; return whether anything was queued.
             fn enqueue_next_merge_batch(&mut self) -> bool {
-                while let Some(entries) = self.merge_stack.pop() {
+                while let Some(entries) = self.merge_stack.pop_front() {
                     if entries.is_empty() {
                         continue;
                     }
@@ -1875,7 +1875,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                                             self.cfg.dup_policy,
                                         )?;
                                         if !entries.is_empty() {
-                                            self.merge_stack.push(entries);
+                                            self.merge_stack.push_back(entries);
                                         }
                                         continue;
                                     }
@@ -2168,7 +2168,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
             seen: FastHashSet::with_capacity(8),
             pending,
-            merge_stack: Vec::new(),
+            merge_stack: VecDeque::new(),
             flushing_merges: false,
             live_done,
             pending_value: None,
