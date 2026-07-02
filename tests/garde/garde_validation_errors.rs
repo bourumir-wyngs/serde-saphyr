@@ -11,6 +11,36 @@ struct Root {
     a: String,
 }
 
+fn reject_empty_document(value: &Option<String>, _ctx: &()) -> garde::Result {
+    if value.is_none() {
+        Err(garde::Error::new("empty document is not valid"))
+    } else {
+        Ok(())
+    }
+}
+
+#[derive(Debug, Deserialize, Validate)]
+#[allow(dead_code)]
+struct NullableTopLevel(#[garde(custom(reject_empty_document))] Option<String>);
+
+fn assert_empty_document_validation_error(err: Error) {
+    match &err {
+        Error::ValidationError { .. } => {}
+        Error::WithSnippet { error, .. } if matches!(**error, Error::ValidationError { .. }) => {}
+        other => panic!("expected ValidationError, got: {other:?}"),
+    }
+
+    let rendered = err.to_string();
+    assert!(
+        rendered.contains("empty document is not valid"),
+        "expected validation message, got: {rendered}"
+    );
+    assert!(
+        !rendered.contains("unexpected end of file"),
+        "validation error was rewritten to EOF: {rendered}"
+    );
+}
+
 #[derive(Debug, Deserialize, Validate)]
 #[allow(dead_code)]
 struct AnchorRoot {
@@ -106,6 +136,26 @@ fn from_str_with_options_valid_runs_garde_validation() {
         "  |    ^ validation error: length is lower than 1 for `a`",
     );
     assert_eq!(rendered, expected);
+}
+
+#[test]
+fn from_str_with_options_valid_preserves_validation_error_after_synthetic_null() {
+    let err = serde_saphyr::from_str_with_options_valid::<NullableTopLevel>("", Default::default())
+        .expect_err("empty document must fail validation");
+
+    assert_empty_document_validation_error(err);
+}
+
+#[test]
+fn from_reader_with_options_valid_preserves_validation_error_after_synthetic_null() {
+    let reader = std::io::Cursor::new(Vec::<u8>::new());
+    let err = serde_saphyr::from_reader_with_options_valid::<_, NullableTopLevel>(
+        reader,
+        Default::default(),
+    )
+    .expect_err("empty document must fail validation");
+
+    assert_empty_document_validation_error(err);
 }
 
 #[test]

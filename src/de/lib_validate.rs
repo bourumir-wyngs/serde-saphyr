@@ -18,6 +18,21 @@ use garde::Validate;
 #[cfg(feature = "validator")]
 use validator::Validate as ValidatorValidate;
 
+#[cfg(any(feature = "garde", feature = "validator"))]
+fn synthesized_null_error_should_be_eof(error: &Error) -> bool {
+    #[cfg(feature = "garde")]
+    if matches!(error, Error::ValidationError { .. }) {
+        return false;
+    }
+
+    #[cfg(feature = "validator")]
+    if matches!(error, Error::ValidatorError { .. }) {
+        return false;
+    }
+
+    true
+}
+
 /// Deserialize a single YAML document with configurable [`Options`], and also
 /// return a map from validation paths to source [`Location`]s.
 #[cfg(feature = "garde")]
@@ -62,7 +77,7 @@ where
     let value = match value_res {
         Ok(v) => v,
         Err(e) => {
-            if src.synthesized_null_emitted() {
+            if src.synthesized_null_emitted() && synthesized_null_error_should_be_eof(&e) {
                 let err = Error::eof().with_location(src.last_location());
                 return Err(maybe_with_snippet_from_events(
                     err,
@@ -152,7 +167,7 @@ where
     let value = match value_res {
         Ok(v) => v,
         Err(e) => {
-            if src.synthesized_null_emitted() {
+            if src.synthesized_null_emitted() && synthesized_null_error_should_be_eof(&e) {
                 let err = Error::eof().with_location(src.last_location());
                 return Err(maybe_with_snippet_from_events(
                     err,
@@ -478,7 +493,7 @@ where
     let value = match value_res {
         Ok(v) => v,
         Err(e) => {
-            if src.synthesized_null_emitted() {
+            if src.synthesized_null_emitted() && synthesized_null_error_should_be_eof(&e) {
                 // If the only thing in the input was an empty document (synthetic null),
                 // surface this as an EOF error to preserve expected error semantics
                 // for incompatible target types (e.g., bool).
@@ -880,7 +895,7 @@ where
     let value = match value_res {
         Ok(v) => v,
         Err(e) => {
-            if src.synthesized_null_emitted() {
+            if src.synthesized_null_emitted() && synthesized_null_error_should_be_eof(&e) {
                 // If the only thing in the input was an empty document (synthetic null),
                 // surface this as an EOF error to preserve expected error semantics
                 // for incompatible target types (e.g., bool).

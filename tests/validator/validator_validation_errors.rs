@@ -22,6 +22,40 @@ struct Root {
     a: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct NullableTopLevel(Option<String>);
+
+impl Validate for NullableTopLevel {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        if self.0.is_some() {
+            return Ok(());
+        }
+
+        let mut errors = validator::ValidationErrors::new();
+        errors.add("value", validator::ValidationError::new("empty_document"));
+        Err(errors)
+    }
+}
+
+fn assert_empty_document_validation_error(err: Error) {
+    match &err {
+        Error::ValidatorError { .. } => {}
+        Error::WithSnippet { error, .. } if matches!(**error, Error::ValidatorError { .. }) => {}
+        other => panic!("expected ValidatorError, got: {other:?}"),
+    }
+
+    let rendered = err.to_string();
+    assert!(
+        rendered.contains("empty_document"),
+        "expected validation message, got: {rendered}"
+    );
+    assert!(
+        !rendered.contains("unexpected end of file"),
+        "validation error was rewritten to EOF: {rendered}"
+    );
+}
+
 #[test]
 fn from_str_with_options_validate_runs_validator_validation() {
     let yaml = "a: \"\"\n";
@@ -42,6 +76,27 @@ fn from_str_with_options_validate_runs_validator_validation() {
         rendered.contains("line 1 column 4"),
         "expected location in output, got: {rendered}"
     );
+}
+
+#[test]
+fn from_str_with_options_validate_preserves_validation_error_after_synthetic_null() {
+    let err =
+        serde_saphyr::from_str_with_options_validate::<NullableTopLevel>("", Default::default())
+            .expect_err("empty document must fail validation");
+
+    assert_empty_document_validation_error(err);
+}
+
+#[test]
+fn from_reader_with_options_validate_preserves_validation_error_after_synthetic_null() {
+    let reader = std::io::Cursor::new(Vec::<u8>::new());
+    let err = serde_saphyr::from_reader_with_options_validate::<_, NullableTopLevel>(
+        reader,
+        Default::default(),
+    )
+    .expect_err("empty document must fail validation");
+
+    assert_empty_document_validation_error(err);
 }
 
 #[test]
