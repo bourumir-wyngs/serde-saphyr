@@ -6,7 +6,10 @@ use std::borrow::Cow;
 
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::{
-    Locations, localizer::ExternalMessageSource, path_map::format_path_with_resolved_leaf,
+    Locations,
+    de_error::ValidationIssue,
+    localizer::ExternalMessageSource,
+    path_map::{PathMap, format_path_with_resolved_leaf},
 };
 
 /// Default developer-oriented message formatter.
@@ -19,6 +22,42 @@ pub struct DefaultMessageFormatter;
 
 /// Alias for the default developer-oriented formatter.
 pub type DeveloperMessageFormatter = DefaultMessageFormatter;
+
+#[cfg(any(feature = "garde", feature = "validator"))]
+fn format_validation_issues(
+    l10n: &dyn Localizer,
+    source: ExternalMessageSource,
+    issues: &[ValidationIssue],
+    locations: &PathMap,
+) -> String {
+    let mut lines = Vec::with_capacity(issues.len());
+    for issue in issues {
+        let entry = issue.display_entry_overridden(l10n, source);
+        let path_key = &issue.path;
+        let original_leaf = path_key
+            .leaf_string()
+            .unwrap_or_else(|| l10n.root_path_label().into_owned());
+
+        let (locs, resolved_leaf) = locations
+            .search(path_key)
+            .unwrap_or((Locations::UNKNOWN, original_leaf));
+
+        let loc = if locs.reference_location != Location::UNKNOWN {
+            locs.reference_location
+        } else {
+            locs.defined_location
+        };
+
+        let resolved_path = format_path_with_resolved_leaf(path_key, &resolved_leaf);
+
+        lines.push(l10n.validation_issue_line(
+            &resolved_path,
+            &entry,
+            (loc != Location::UNKNOWN).then_some(loc),
+        ));
+    }
+    l10n.join_validation_issues(&lines)
+}
 
 fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) -> Cow<'a, str> {
     match err {
@@ -337,34 +376,12 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
         #[cfg(feature = "garde")]
         Error::ValidationError { issues, locations } => {
             let l10n = formatter.localizer();
-
-            let mut lines = Vec::with_capacity(issues.len());
-            for issue in issues {
-                let entry = issue.display_entry_overridden(l10n, ExternalMessageSource::Garde);
-                let path_key = &issue.path;
-                let original_leaf = path_key
-                    .leaf_string()
-                    .unwrap_or_else(|| l10n.root_path_label().into_owned());
-
-                let (locs, resolved_leaf) = locations
-                    .search(path_key)
-                    .unwrap_or((Locations::UNKNOWN, original_leaf));
-
-                let loc = if locs.reference_location != Location::UNKNOWN {
-                    locs.reference_location
-                } else {
-                    locs.defined_location
-                };
-
-                let resolved_path = format_path_with_resolved_leaf(path_key, &resolved_leaf);
-
-                lines.push(l10n.validation_issue_line(
-                    &resolved_path,
-                    &entry,
-                    (loc != Location::UNKNOWN).then_some(loc),
-                ));
-            }
-            Cow::Owned(l10n.join_validation_issues(&lines))
+            Cow::Owned(format_validation_issues(
+                l10n,
+                ExternalMessageSource::Garde,
+                issues,
+                locations,
+            ))
         }
         #[cfg(feature = "garde")]
         Error::ValidationErrors { errors } => Cow::Owned(format!(
@@ -374,34 +391,12 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
         #[cfg(feature = "validator")]
         Error::ValidatorError { issues, locations } => {
             let l10n = formatter.localizer();
-
-            let mut lines = Vec::with_capacity(issues.len());
-            for issue in issues {
-                let entry = issue.display_entry_overridden(l10n, ExternalMessageSource::Validator);
-                let path_key = &issue.path;
-                let original_leaf = path_key
-                    .leaf_string()
-                    .unwrap_or_else(|| l10n.root_path_label().into_owned());
-
-                let (locs, resolved_leaf) = locations
-                    .search(path_key)
-                    .unwrap_or((Locations::UNKNOWN, original_leaf));
-
-                let loc = if locs.reference_location != Location::UNKNOWN {
-                    locs.reference_location
-                } else {
-                    locs.defined_location
-                };
-
-                let resolved_path = format_path_with_resolved_leaf(path_key, &resolved_leaf);
-
-                lines.push(l10n.validation_issue_line(
-                    &resolved_path,
-                    &entry,
-                    (loc != Location::UNKNOWN).then_some(loc),
-                ));
-            }
-            Cow::Owned(l10n.join_validation_issues(&lines))
+            Cow::Owned(format_validation_issues(
+                l10n,
+                ExternalMessageSource::Validator,
+                issues,
+                locations,
+            ))
         }
         #[cfg(feature = "validator")]
         Error::ValidatorErrors { errors } => Cow::Owned(format!(

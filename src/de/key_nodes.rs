@@ -61,10 +61,35 @@ pub(super) enum KeyFingerprint {
 }
 
 pub(super) fn canonical_scalar_key_tag(tag: SfTag) -> SfTag {
-    if tag.can_parse_into_string() || tag == SfTag::NonSpecific {
+    if tag.can_parse_into_string() {
         SfTag::String
     } else {
         tag
+    }
+}
+
+pub(super) fn is_empty_mapping_key_fingerprint(fingerprint: &KeyFingerprint) -> bool {
+    matches!(fingerprint, KeyFingerprint::Mapping(pairs) if pairs.is_empty())
+}
+
+fn is_nullish_scalar_key_fingerprint(fingerprint: &KeyFingerprint) -> bool {
+    match fingerprint {
+        KeyFingerprint::Scalar { value, tag } => {
+            *tag == SfTag::Null
+                || value.is_empty()
+                || value == "~"
+                || value.eq_ignore_ascii_case("null")
+        }
+        _ => false,
+    }
+}
+
+pub(super) fn is_one_entry_nullish_mapping_key_fingerprint(fingerprint: &KeyFingerprint) -> bool {
+    match fingerprint {
+        KeyFingerprint::Mapping(pairs) if pairs.len() == 1 => {
+            is_nullish_scalar_key_fingerprint(&pairs[0].0)
+        }
+        _ => false,
     }
 }
 

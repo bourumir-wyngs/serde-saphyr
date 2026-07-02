@@ -12,7 +12,8 @@ use super::error::{Error, MissingFieldLocationGuard, TransformReason};
 use super::events::{Ev, Events, ReplayEvents, attach_alias_locations_if_missing, eof_with_loc};
 use super::key_nodes::{
     KeyFingerprint, KeyNode, PendingEntry, apply_duplicate_key_policy_to_entries, capture_node,
-    capture_simple_tagged_node_as_map_events, is_merge_key, one_entry_map_spans,
+    capture_simple_tagged_node_as_map_events, is_empty_mapping_key_fingerprint, is_merge_key,
+    is_one_entry_nullish_mapping_key_fingerprint, one_entry_map_spans,
     pending_entries_from_live_events, simple_tagged_enum_name,
     validate_no_merge_keys_in_node_events,
 };
@@ -352,12 +353,6 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         }
     }
 
-    /// Consume a scalar and return it without allocating a `String`.
-    fn take_scalar_cow_with_location(&mut self) -> Result<(Cow<'de, str>, SfTag, Location), Error> {
-        let (value, tag, location) = self.take_scalar_cow_event()?;
-        Ok((value, tag, location))
-    }
-
     /// Read a scalar as `String`, decoding `!!binary` into UTF-8 text if needed.
     ///
     /// Errors if the tag is incompatible with strings or if the binary payload
@@ -374,7 +369,6 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
 
         // For non-binary, ensure the tag allows string deserialization.
         if !tag.can_parse_into_string()
-            && tag != SfTag::NonSpecific
             && !(self.cfg.ignore_binary_tag_for_string && tag == SfTag::Binary)
         {
             return Err(Error::TaggedScalarCannotDeserializeIntoString { location });
@@ -584,6 +578,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 || !tag.can_parse_into_string()
                 || tag == SfTag::Binary
                 || tag == SfTag::String
+                || tag == SfTag::NonSpecific
             {
                 // For string-ish scalars, rely on the parser's own zero-copy capability:
                 // if the scalar is returned as `Cow::Borrowed`, we can pass it through.
@@ -592,7 +587,6 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     return visitor.visit_string(self.take_string_scalar()?);
                 }
                 if !tag.can_parse_into_string()
-                    && tag != SfTag::NonSpecific
                     && !(self.cfg.ignore_binary_tag_for_string && tag == SfTag::Binary)
                 {
                     return Err(Error::TaggedScalarCannotDeserializeIntoString { location });
@@ -696,7 +690,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     /// Caller: Serde when target expects `bool`.
     /// Flow: scalar text → `Visitor::visit_bool`.
     fn deserialize_bool<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_cow_with_location()?;
+        let (s, _tag, location) = self.take_scalar_cow_event()?;
         let s = s.as_ref();
         let t = s.trim();
         let b: bool = if self.cfg.strict_booleans {
@@ -718,31 +712,31 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
     /// Parse a signed 8-bit integer.
     fn deserialize_i8<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_cow_with_location()?;
+        let (s, _tag, location) = self.take_scalar_cow_event()?;
         let v: i8 = parse_int_signed(s.as_ref(), "i8", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i8(v)
     }
     /// Parse a signed 16-bit integer.
     fn deserialize_i16<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_cow_with_location()?;
+        let (s, _tag, location) = self.take_scalar_cow_event()?;
         let v: i16 = parse_int_signed(s.as_ref(), "i16", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i16(v)
     }
     /// Parse a signed 32-bit integer.
     fn deserialize_i32<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_cow_with_location()?;
+        let (s, _tag, location) = self.take_scalar_cow_event()?;
         let v: i32 = parse_int_signed(s.as_ref(), "i32", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i32(v)
     }
     /// Parse a signed 64-bit integer.
     fn deserialize_i64<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_cow_with_location()?;
+        let (s, _tag, location) = self.take_scalar_cow_event()?;
         let v: i64 = parse_int_signed(s.as_ref(), "i64", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i64(v)
     }
     /// Parse a signed 128-bit integer.
     fn deserialize_i128<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_cow_with_location()?;
+        let (s, _tag, location) = self.take_scalar_cow_event()?;
         let v: i128 =
             parse_int_signed(s.as_ref(), "i128", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i128(v)
@@ -750,34 +744,34 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
     /// Parse an unsigned 8-bit integer.
     fn deserialize_u8<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_cow_with_location()?;
+        let (s, _tag, location) = self.take_scalar_cow_event()?;
         let v: u8 = parse_int_unsigned(s.as_ref(), "u8", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u8(v)
     }
     /// Parse an unsigned 16-bit integer.
     fn deserialize_u16<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_cow_with_location()?;
+        let (s, _tag, location) = self.take_scalar_cow_event()?;
         let v: u16 =
             parse_int_unsigned(s.as_ref(), "u16", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u16(v)
     }
     /// Parse an unsigned 32-bit integer.
     fn deserialize_u32<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_cow_with_location()?;
+        let (s, _tag, location) = self.take_scalar_cow_event()?;
         let v: u32 =
             parse_int_unsigned(s.as_ref(), "u32", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u32(v)
     }
     /// Parse an unsigned 64-bit integer.
     fn deserialize_u64<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_cow_with_location()?;
+        let (s, _tag, location) = self.take_scalar_cow_event()?;
         let v: u64 =
             parse_int_unsigned(s.as_ref(), "u64", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u64(v)
     }
     /// Parse an unsigned 128-bit integer.
     fn deserialize_u128<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_cow_with_location()?;
+        let (s, _tag, location) = self.take_scalar_cow_event()?;
         let v: u128 =
             parse_int_unsigned(s.as_ref(), "u128", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u128(v)
@@ -785,13 +779,13 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
     /// Parse a 32-bit float (supports YAML 1.2 `+.inf`, `-.inf`, `.nan`).
     fn deserialize_f32<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, tag, location) = self.take_scalar_cow_with_location()?;
+        let (s, tag, location) = self.take_scalar_cow_event()?;
         let v: f32 = parse_yaml12_float(s.as_ref(), location, tag, self.cfg.angle_conversions)?;
         visitor.visit_f32(v)
     }
     /// Parse a 64-bit float (supports YAML 1.2 `+.inf`, `-.inf`, `.nan`).
     fn deserialize_f64<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, tag, location) = self.take_scalar_cow_with_location()?;
+        let (s, tag, location) = self.take_scalar_cow_event()?;
         let v: f64 = parse_yaml12_float(s.as_ref(), location, tag, self.cfg.angle_conversions)?;
         visitor.visit_f64(v)
     }
@@ -822,7 +816,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
         }
 
         // Now consume the scalar and validate it contains exactly one Unicode scalar value.
-        let (s, _tag, location) = self.take_scalar_cow_with_location()?;
+        let (s, _tag, location) = self.take_scalar_cow_event()?;
         let mut it = s.as_ref().chars();
         match (it.next(), it.next()) {
             (Some(c), None) => visitor.visit_char(c),
@@ -875,7 +869,6 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     };
                 }
                 if !view.tag.can_parse_into_string()
-                    && view.tag != SfTag::NonSpecific
                     && !(self.cfg.ignore_binary_tag_for_string && view.tag == SfTag::Binary)
                 {
                     return Err(Error::TaggedScalarCannotDeserializeIntoString {
@@ -951,7 +944,6 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 return visitor.visit_string(self.take_string_scalar()?);
             }
             if !view.tag.can_parse_into_string()
-                && view.tag != SfTag::NonSpecific
                 && !(self.cfg.ignore_binary_tag_for_string && view.tag == SfTag::Binary)
             {
                 return Err(Error::TaggedScalarCannotDeserializeIntoString {
@@ -1765,55 +1757,39 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         let mut value_events = value.take_events();
                         // Special-case: explicit empty key captured as a one-entry mapping { null: V }
                         // In this case, we want key=None and the outer value to be V.
-                        let kemn_direct =
-                            matches!(fingerprint, KeyFingerprint::Mapping(ref v) if v.is_empty());
-                        let mut kemn = kemn_direct;
+                        let mut kemn = is_empty_mapping_key_fingerprint(&fingerprint);
                         if !kemn
-                            && let KeyFingerprint::Mapping(ref pairs) = fingerprint
-                            && pairs.len() == 1
-                            && let (
-                                KeyFingerprint::Scalar {
-                                    value: sv,
-                                    tag: stag,
-                                },
-                                _,
-                            ) = &pairs[0]
+                            && is_one_entry_nullish_mapping_key_fingerprint(&fingerprint)
+                            && let Some((_ks, _ke, vs, ve)) = one_entry_map_spans(&events)
                         {
-                            let is_nullish = *stag == SfTag::Null
-                                || sv.is_empty()
-                                || sv == "~"
-                                || sv.eq_ignore_ascii_case("null");
-                            if is_nullish {
-                                // Zero-copy probe over recorded events to extract inner key/value spans
-                                if let Some((_ks, _ke, vs, ve)) = one_entry_map_spans(&events) {
-                                    // Replace value_events with inner value events and key events with empty map
-                                    value_events = events.drain(vs..ve).collect();
-                                    // Build empty map events using the first and last from original events
-                                    let start = match events.first() {
-                                        Some(Ev::MapStart { anchor, location }) => Ev::MapStart {
-                                            anchor: *anchor,
-                                            location: *location,
-                                        },
-                                        Some(other) => other.clone(),
-                                        None => {
-                                            return Err(Error::unexpected("mapping start")
-                                                .with_location(location));
-                                        }
-                                    };
-                                    let end = match events.last() {
-                                        Some(Ev::MapEnd { location }) => Ev::MapEnd {
-                                            location: *location,
-                                        },
-                                        Some(other) => other.clone(),
-                                        None => {
-                                            return Err(Error::unexpected("mapping end")
-                                                .with_location(location));
-                                        }
-                                    };
-                                    events = vec![start, end];
-                                    kemn = true;
+                            // Zero-copy probe over recorded events to extract inner key/value spans.
+                            value_events = events.drain(vs..ve).collect();
+                            // Build empty map events using the first and last from original events.
+                            let start = match events.first() {
+                                Some(Ev::MapStart { anchor, location }) => Ev::MapStart {
+                                    anchor: *anchor,
+                                    location: *location,
+                                },
+                                Some(other) => other.clone(),
+                                None => {
+                                    return Err(
+                                        Error::unexpected("mapping start").with_location(location)
+                                    );
                                 }
-                            }
+                            };
+                            let end = match events.last() {
+                                Some(Ev::MapEnd { location }) => Ev::MapEnd {
+                                    location: *location,
+                                },
+                                Some(other) => other.clone(),
+                                None => {
+                                    return Err(
+                                        Error::unexpected("mapping end").with_location(location)
+                                    );
+                                }
+                            };
+                            events = vec![start, end];
+                            kemn = true;
                         }
                         let key_seed = match seed.take() {
                             Some(s) => s,
@@ -1936,27 +1912,10 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
                             // Decide whether we need the slow recorded path (only for the tricky
                             // explicit-empty-key-as-one-entry-map-with-nullish-inner-key case).
-                            let kemn_direct = matches!(*fingerprint, KeyFingerprint::Mapping(ref v) if v.is_empty());
-                            let kemn_one_entry_nullish = match &*fingerprint {
-                                KeyFingerprint::Mapping(pairs) if pairs.len() == 1 => {
-                                    if let (
-                                        KeyFingerprint::Scalar {
-                                            value: sv,
-                                            tag: stag,
-                                        },
-                                        _,
-                                    ) = &pairs[0]
-                                    {
-                                        *stag == SfTag::Null
-                                            || sv.is_empty()
-                                            || sv == "~"
-                                            || sv.eq_ignore_ascii_case("null")
-                                    } else {
-                                        false
-                                    }
-                                }
-                                _ => false,
-                            };
+                            let kemn_direct =
+                                is_empty_mapping_key_fingerprint(fingerprint.as_ref());
+                            let kemn_one_entry_nullish =
+                                is_one_entry_nullish_mapping_key_fingerprint(fingerprint.as_ref());
 
                             if kemn_one_entry_nullish {
                                 // Slow path needed: capture value and enqueue so pending branch can

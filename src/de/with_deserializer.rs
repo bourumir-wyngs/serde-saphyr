@@ -96,7 +96,7 @@ where
 
     let cfg = Cfg::from_options(&options);
     // Do not stop at DocumentEnd; we'll probe for trailing content/errors explicitly.
-    let mut src = LiveEvents::from_str(input, options, false);
+    let mut src = LiveEvents::from_str(input, options);
 
     let wrap_err = |e, src: &LiveEvents<'de>| {
         crate::maybe_with_snippet_from_events(e, input, src, with_snippet, crop_radius)
@@ -175,7 +175,7 @@ where
     let cfg = Cfg::from_options(&options);
     let shared_ring = crate::ring_reader::SharedRingReader::new(reader);
     let ring_handle = crate::ring_reader::SharedRingReaderHandle::new(&shared_ring);
-    let mut src = LiveEvents::from_reader(ring_handle, options, false, EnforcingPolicy::AllContent);
+    let mut src = LiveEvents::from_reader(ring_handle, options, EnforcingPolicy::AllContent);
 
     let wrap_err = |e, src: &LiveEvents<'_>| {
         if !with_snippet || crop_radius == 0 {

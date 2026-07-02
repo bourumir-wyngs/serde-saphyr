@@ -201,7 +201,9 @@ impl SfTag {
 
     pub(crate) fn can_parse_into_string(&self) -> bool {
         match self {
-            SfTag::None | SfTag::String | SfTag::Other | SfTag::Include => true,
+            SfTag::None | SfTag::String | SfTag::Other | SfTag::Include | SfTag::NonSpecific => {
+                true
+            }
             SfTag::Binary
             | SfTag::Int
             | SfTag::Float
@@ -211,8 +213,7 @@ impl SfTag {
             | SfTag::Map
             | SfTag::TimeStamp
             | SfTag::Degrees
-            | SfTag::Radians
-            | SfTag::NonSpecific => false,
+            | SfTag::Radians => false,
         }
     }
 }
@@ -266,5 +267,10 @@ mod tests {
         assert_eq!(sf_tag(timestamp), SfTag::TimeStamp);
         assert_eq!(sf_tag(binary), SfTag::Binary);
         assert_eq!(sf_tag(unknown), SfTag::Other);
+    }
+
+    #[test]
+    fn non_specific_tag_is_string_compatible() {
+        assert!(SfTag::NonSpecific.can_parse_into_string());
     }
 }

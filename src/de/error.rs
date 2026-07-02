@@ -244,6 +244,144 @@ fn sanitize_snippet_source_name(name: &str) -> Cow<'_, str> {
     Cow::Owned(sanitized)
 }
 
+fn cropped_region_for_location(
+    text: &str,
+    source_name: &str,
+    location: &Location,
+    mapping: crate::de_snippet::LineMapping,
+    crop_radius: usize,
+) -> Option<CroppedRegion> {
+    if crop_radius == 0 || *location == Location::UNKNOWN {
+        return None;
+    }
+
+    let (cropped, start_line) =
+        crate::de_snippet::crop_source_window(text, location, mapping, crop_radius);
+    if cropped.is_empty() {
+        return None;
+    }
+
+    let lines = line_count_including_trailing_empty_line(cropped.as_str());
+    let end_line = start_line.saturating_add(lines.saturating_sub(1));
+    Some(CroppedRegion {
+        text: cropped,
+        source_name: source_name.to_string(),
+        start_line,
+        end_line,
+        location: *location,
+    })
+}
+
+fn push_region_for_location(
+    regions: &mut Vec<CroppedRegion>,
+    text: &str,
+    source_name: &str,
+    location: &Location,
+    mapping: crate::de_snippet::LineMapping,
+    crop_radius: usize,
+) {
+    if let Some(region) =
+        cropped_region_for_location(text, source_name, location, mapping, crop_radius)
+    {
+        regions.push(region);
+    }
+}
+
+fn push_regions_for_locations(
+    regions: &mut Vec<CroppedRegion>,
+    text: &str,
+    source_name: &str,
+    locations: Locations,
+    mapping: crate::de_snippet::LineMapping,
+    crop_radius: usize,
+) {
+    push_region_for_location(
+        regions,
+        text,
+        source_name,
+        &locations.reference_location,
+        mapping,
+        crop_radius,
+    );
+    if locations.defined_location != locations.reference_location {
+        push_region_for_location(
+            regions,
+            text,
+            source_name,
+            &locations.defined_location,
+            mapping,
+            crop_radius,
+        );
+    }
+}
+
+#[cfg(any(feature = "garde", feature = "validator"))]
+fn push_validation_issue_regions(
+    regions: &mut Vec<CroppedRegion>,
+    issues: &[ValidationIssue],
+    locations: &PathMap,
+    text: &str,
+    source_name: &str,
+    mapping: crate::de_snippet::LineMapping,
+    crop_radius: usize,
+) {
+    for issue in issues {
+        let (locs, _) = locations
+            .search(&issue.path)
+            .unwrap_or((Locations::UNKNOWN, String::new()));
+        push_regions_for_locations(regions, text, source_name, locs, mapping, crop_radius);
+    }
+}
+
+fn collect_snippet_regions(
+    inner: &Error,
+    text: &str,
+    source_name: &str,
+    mapping: crate::de_snippet::LineMapping,
+    crop_radius: usize,
+) -> Vec<CroppedRegion> {
+    let mut regions = Vec::new();
+
+    // Validation errors may contain multiple independent issue locations; pre-crop
+    // one region per issue so we can later pick the region that covers the issue.
+    #[cfg(feature = "garde")]
+    if let Error::ValidationError { issues, locations } = inner {
+        push_validation_issue_regions(
+            &mut regions,
+            issues,
+            locations,
+            text,
+            source_name,
+            mapping,
+            crop_radius,
+        );
+    }
+    #[cfg(feature = "validator")]
+    if let Error::ValidatorError { issues, locations } = inner {
+        push_validation_issue_regions(
+            &mut regions,
+            issues,
+            locations,
+            text,
+            source_name,
+            mapping,
+            crop_radius,
+        );
+    }
+
+    // Fallback: crop around the top-level error locations (including dual-location
+    // errors such as AliasError).
+    if regions.is_empty() {
+        if let Some(locs) = inner.locations() {
+            push_regions_for_locations(&mut regions, text, source_name, locs, mapping, crop_radius);
+        } else if let Some(loc) = inner.location() {
+            push_region_for_location(&mut regions, text, source_name, &loc, mapping, crop_radius);
+        }
+    }
+
+    regions
+}
+
 #[cfg(any(feature = "garde", feature = "validator"))]
 #[derive(Debug, Clone)]
 pub struct ValidationIssue {
@@ -861,124 +999,13 @@ impl Error {
         // Keep snippet coordinates aligned with parsers that ignore a leading UTF-8 BOM.
         let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
 
-        fn push_region_for_location(
-            regions: &mut Vec<CroppedRegion>,
-            text: &str,
-            source_name: &str,
-            location: &Location,
-            mapping: crate::de_snippet::LineMapping,
-            crop_radius: usize,
-        ) {
-            if crop_radius == 0 || *location == Location::UNKNOWN {
-                return;
-            }
-            let (cropped, start_line) =
-                crate::de_snippet::crop_source_window(text, location, mapping, crop_radius);
-            if cropped.is_empty() {
-                return;
-            }
-            let lines = line_count_including_trailing_empty_line(cropped.as_str());
-            let end_line = start_line.saturating_add(lines.saturating_sub(1));
-            regions.push(CroppedRegion {
-                text: cropped,
-                source_name: source_name.to_string(),
-                start_line,
-                end_line,
-                location: *location,
-            });
-        }
-
-        let mut regions: Vec<CroppedRegion> = Vec::new();
-        let mapping = crate::de_snippet::LineMapping::Identity;
-
-        // Validation errors may contain multiple independent issue locations; pre-crop
-        // one region per issue so we can later pick the region that covers the issue.
-        #[cfg(feature = "garde")]
-        if let Error::ValidationError { issues, locations } = &inner {
-            for issue in issues {
-                let (locs, _) = locations
-                    .search(&issue.path)
-                    .unwrap_or((Locations::UNKNOWN, String::new()));
-                push_region_for_location(
-                    &mut regions,
-                    text,
-                    source_name.as_ref(),
-                    &locs.reference_location,
-                    mapping,
-                    crop_radius,
-                );
-                if locs.defined_location != locs.reference_location {
-                    push_region_for_location(
-                        &mut regions,
-                        text,
-                        source_name.as_ref(),
-                        &locs.defined_location,
-                        mapping,
-                        crop_radius,
-                    );
-                }
-            }
-        }
-        #[cfg(feature = "validator")]
-        if let Error::ValidatorError { issues, locations } = &inner {
-            for issue in issues {
-                let (locs, _) = locations
-                    .search(&issue.path)
-                    .unwrap_or((Locations::UNKNOWN, String::new()));
-                push_region_for_location(
-                    &mut regions,
-                    text,
-                    source_name.as_ref(),
-                    &locs.reference_location,
-                    mapping,
-                    crop_radius,
-                );
-                if locs.defined_location != locs.reference_location {
-                    push_region_for_location(
-                        &mut regions,
-                        text,
-                        source_name.as_ref(),
-                        &locs.defined_location,
-                        mapping,
-                        crop_radius,
-                    );
-                }
-            }
-        }
-
-        // Fallback: crop around the top-level error locations (including dual-location
-        // errors such as AliasError).
-        if regions.is_empty() {
-            if let Some(locs) = inner.locations() {
-                push_region_for_location(
-                    &mut regions,
-                    text,
-                    source_name.as_ref(),
-                    &locs.reference_location,
-                    mapping,
-                    crop_radius,
-                );
-                if locs.defined_location != locs.reference_location {
-                    push_region_for_location(
-                        &mut regions,
-                        text,
-                        source_name.as_ref(),
-                        &locs.defined_location,
-                        mapping,
-                        crop_radius,
-                    );
-                }
-            } else if let Some(loc) = inner.location() {
-                push_region_for_location(
-                    &mut regions,
-                    text,
-                    source_name.as_ref(),
-                    &loc,
-                    mapping,
-                    crop_radius,
-                );
-            }
-        }
+        let regions = collect_snippet_regions(
+            &inner,
+            text,
+            source_name.as_ref(),
+            crate::de_snippet::LineMapping::Identity,
+            crop_radius,
+        );
 
         Error::WithSnippet {
             regions,
@@ -1006,20 +1033,10 @@ impl Error {
         let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
         let mapping = crate::de_snippet::LineMapping::Identity;
 
-        let (cropped, start_line) =
-            crate::de_snippet::crop_source_window(text, location, mapping, crop_radius);
-        if cropped.is_empty() {
+        let Some(region) =
+            cropped_region_for_location(text, source_name.as_ref(), location, mapping, crop_radius)
+        else {
             return self;
-        }
-        let lines = line_count_including_trailing_empty_line(cropped.as_str());
-        let end_line = start_line.saturating_add(lines.saturating_sub(1));
-
-        let region = CroppedRegion {
-            text: cropped,
-            source_name: source_name.into_owned(),
-            start_line,
-            end_line,
-            location: *location,
         };
 
         if let Error::WithSnippet {
@@ -1051,20 +1068,10 @@ impl Error {
         let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
         let mapping = crate::de_snippet::LineMapping::Offset { start_line };
 
-        let (cropped, start_line) =
-            crate::de_snippet::crop_source_window(text, location, mapping, crop_radius);
-        if cropped.is_empty() {
+        let Some(region) =
+            cropped_region_for_location(text, source_name.as_ref(), location, mapping, crop_radius)
+        else {
             return self;
-        }
-        let lines = line_count_including_trailing_empty_line(cropped.as_str());
-        let end_line = start_line.saturating_add(lines.saturating_sub(1));
-
-        let region = CroppedRegion {
-            text: cropped,
-            source_name: source_name.into_owned(),
-            start_line,
-            end_line,
-            location: *location,
         };
 
         if let Error::WithSnippet {
@@ -1095,120 +1102,13 @@ impl Error {
         // Keep snippet coordinates aligned with parsers that ignore a leading UTF-8 BOM.
         let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
 
-        fn push_region_for_location(
-            regions: &mut Vec<CroppedRegion>,
-            text: &str,
-            source_name: &str,
-            location: &Location,
-            mapping: crate::de_snippet::LineMapping,
-            crop_radius: usize,
-        ) {
-            if crop_radius == 0 || *location == Location::UNKNOWN {
-                return;
-            }
-            let (cropped, region_start_line) =
-                crate::de_snippet::crop_source_window(text, location, mapping, crop_radius);
-            if cropped.is_empty() {
-                return;
-            }
-            let lines = line_count_including_trailing_empty_line(cropped.as_str());
-            let end_line = region_start_line.saturating_add(lines.saturating_sub(1));
-            regions.push(CroppedRegion {
-                text: cropped,
-                source_name: source_name.to_string(),
-                start_line: region_start_line,
-                end_line,
-                location: *location,
-            });
-        }
-
-        let mut regions: Vec<CroppedRegion> = Vec::new();
-        let mapping = crate::de_snippet::LineMapping::Offset { start_line };
-
-        #[cfg(feature = "garde")]
-        if let Error::ValidationError { issues, locations } = &inner {
-            for issue in issues {
-                let (locs, _) = locations
-                    .search(&issue.path)
-                    .unwrap_or((Locations::UNKNOWN, String::new()));
-                push_region_for_location(
-                    &mut regions,
-                    text,
-                    source_name.as_ref(),
-                    &locs.reference_location,
-                    mapping,
-                    crop_radius,
-                );
-                if locs.defined_location != locs.reference_location {
-                    push_region_for_location(
-                        &mut regions,
-                        text,
-                        source_name.as_ref(),
-                        &locs.defined_location,
-                        mapping,
-                        crop_radius,
-                    );
-                }
-            }
-        }
-        #[cfg(feature = "validator")]
-        if let Error::ValidatorError { issues, locations } = &inner {
-            for issue in issues {
-                let (locs, _) = locations
-                    .search(&issue.path)
-                    .unwrap_or((Locations::UNKNOWN, String::new()));
-                push_region_for_location(
-                    &mut regions,
-                    text,
-                    source_name.as_ref(),
-                    &locs.reference_location,
-                    mapping,
-                    crop_radius,
-                );
-                if locs.defined_location != locs.reference_location {
-                    push_region_for_location(
-                        &mut regions,
-                        text,
-                        source_name.as_ref(),
-                        &locs.defined_location,
-                        mapping,
-                        crop_radius,
-                    );
-                }
-            }
-        }
-
-        if regions.is_empty() {
-            if let Some(locs) = inner.locations() {
-                push_region_for_location(
-                    &mut regions,
-                    text,
-                    source_name.as_ref(),
-                    &locs.reference_location,
-                    mapping,
-                    crop_radius,
-                );
-                if locs.defined_location != locs.reference_location {
-                    push_region_for_location(
-                        &mut regions,
-                        text,
-                        source_name.as_ref(),
-                        &locs.defined_location,
-                        mapping,
-                        crop_radius,
-                    );
-                }
-            } else if let Some(loc) = inner.location() {
-                push_region_for_location(
-                    &mut regions,
-                    text,
-                    source_name.as_ref(),
-                    &loc,
-                    mapping,
-                    crop_radius,
-                );
-            }
-        }
+        let regions = collect_snippet_regions(
+            &inner,
+            text,
+            source_name.as_ref(),
+            crate::de_snippet::LineMapping::Offset { start_line },
+            crop_radius,
+        );
 
         Error::WithSnippet {
             regions,
@@ -1842,6 +1742,7 @@ fn fmt_error_rendered(
                 return fmt_validation_error_with_snippets_offset(
                     f,
                     options.formatter.localizer(),
+                    ExternalMessageSource::Garde,
                     issues,
                     locations,
                     regions,
@@ -1874,9 +1775,10 @@ fn fmt_error_rendered(
 
             #[cfg(feature = "validator")]
             if let Error::ValidatorError { issues, locations } = error.as_ref() {
-                return fmt_validator_error_with_snippets_offset(
+                return fmt_validation_error_with_snippets_offset(
                     f,
                     options.formatter.localizer(),
+                    ExternalMessageSource::Validator,
                     issues,
                     locations,
                     regions,
@@ -2028,10 +1930,11 @@ impl fmt::Display for Error {
     }
 }
 
-#[cfg(feature = "garde")]
+#[cfg(any(feature = "garde", feature = "validator"))]
 fn fmt_validation_error_with_snippets_offset(
     f: &mut fmt::Formatter<'_>,
     l10n: &dyn Localizer,
+    source: ExternalMessageSource,
     issues: &[ValidationIssue],
     locations: &PathMap,
     regions: &[CroppedRegion],
@@ -2057,7 +1960,7 @@ fn fmt_validation_error_with_snippets_offset(
         let def_loc = locs.defined_location;
 
         let resolved_path = format_path_with_resolved_leaf(&issue.path, &resolved_leaf);
-        let entry = issue.display_entry_overridden(l10n, ExternalMessageSource::Garde);
+        let entry = issue.display_entry_overridden(l10n, source);
         let base_msg = l10n.validation_base_message(&entry, &resolved_path);
 
         let mut rendered_regions = Vec::new();
@@ -2148,124 +2051,6 @@ fn fmt_validation_error_with_snippets_offset(
     Ok(())
 }
 
-#[cfg(feature = "validator")]
-fn fmt_validator_error_with_snippets_offset(
-    f: &mut fmt::Formatter<'_>,
-    l10n: &dyn Localizer,
-    issues: &[ValidationIssue],
-    locations: &PathMap,
-    regions: &[CroppedRegion],
-    crop_radius: usize,
-) -> fmt::Result {
-    let mut first = true;
-
-    for issue in issues {
-        if !first {
-            writeln!(f)?;
-        }
-        first = false;
-
-        let original_leaf = issue
-            .path
-            .leaf_string()
-            .unwrap_or_else(|| l10n.root_path_label().into_owned());
-        let (locs, resolved_leaf) = locations
-            .search(&issue.path)
-            .unwrap_or((Locations::UNKNOWN, original_leaf));
-
-        let resolved_path = format_path_with_resolved_leaf(&issue.path, &resolved_leaf);
-        let entry = issue.display_entry_overridden(l10n, ExternalMessageSource::Validator);
-        let base_msg = l10n.validation_base_message(&entry, &resolved_path);
-
-        let mut rendered_regions = Vec::new();
-
-        match (locs.reference_location, locs.defined_location) {
-            (Location::UNKNOWN, Location::UNKNOWN) => {
-                write!(f, "{base_msg}")?;
-            }
-            (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
-                let label = l10n.defined();
-                if let Some(region) = pick_cropped_region(regions, &r) {
-                    rendered_regions.push(region as *const _);
-                    let ctx = crate::de_snippet::Snippet::new(
-                        region.text.as_str(),
-                        label.as_ref(),
-                        crop_radius,
-                    )
-                    .with_offset(region.start_line);
-                    ctx.fmt_or_fallback(f, Level::ERROR, l10n, &base_msg, &r)?;
-                } else {
-                    fmt_with_location(f, l10n, &base_msg, &r)?;
-                }
-            }
-            (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
-                let label = l10n.defined_here();
-                if let Some(region) = pick_cropped_region(regions, &d) {
-                    rendered_regions.push(region as *const _);
-                    let ctx = crate::de_snippet::Snippet::new(
-                        region.text.as_str(),
-                        label.as_ref(),
-                        crop_radius,
-                    )
-                    .with_offset(region.start_line);
-                    ctx.fmt_or_fallback(f, Level::ERROR, l10n, &base_msg, &d)?;
-                } else {
-                    fmt_with_location(f, l10n, &base_msg, &d)?;
-                }
-            }
-            (r, d) => {
-                let label = l10n.value_used_here();
-                let invalid_here = l10n.invalid_here(&base_msg);
-                if let Some(region) = pick_cropped_region(regions, &r) {
-                    rendered_regions.push(region as *const _);
-                    let ctx = crate::de_snippet::Snippet::new(
-                        region.text.as_str(),
-                        label.as_ref(),
-                        crop_radius,
-                    )
-                    .with_offset(region.start_line);
-                    ctx.fmt_or_fallback(f, Level::ERROR, l10n, &invalid_here, &r)?;
-                } else {
-                    fmt_with_location(f, l10n, &invalid_here, &r)?;
-                }
-                writeln!(f)?;
-                writeln!(f, "{}", l10n.value_comes_from_the_anchor(d))?;
-                if let Some(region) = pick_cropped_region(regions, &d) {
-                    rendered_regions.push(region as *const _);
-                    crate::de_snippet::fmt_snippet_window_offset_or_fallback(
-                        f,
-                        l10n,
-                        &d,
-                        region.text.as_str(),
-                        region.start_line,
-                        l10n.defined_window().as_ref(),
-                        crop_radius,
-                    )?;
-                } else {
-                    fmt_with_location(f, l10n, l10n.defined_window().as_ref(), &d)?;
-                }
-            }
-        }
-
-        for extra_region in regions {
-            if rendered_regions.contains(&(extra_region as *const _)) {
-                continue;
-            }
-            writeln!(f)?;
-            writeln!(f, "included from here:")?;
-            let extra_ctx = crate::de_snippet::Snippet::new(
-                extra_region.text.as_str(),
-                extra_region.source_name.as_str(),
-                crop_radius,
-            )
-            .with_offset(extra_region.start_line);
-            extra_ctx.fmt_or_fallback(f, Level::NOTE, l10n, "", &extra_region.location)?;
-        }
-    }
-
-    Ok(())
-}
-
 #[cfg(any(feature = "garde", feature = "validator"))]
 fn fmt_error_with_snippets_offset(
     f: &mut fmt::Formatter<'_>,
@@ -2288,6 +2073,7 @@ fn fmt_error_with_snippets_offset(
         return fmt_validation_error_with_snippets_offset(
             f,
             formatter.localizer(),
+            ExternalMessageSource::Garde,
             issues,
             locations,
             regions,
@@ -2297,9 +2083,10 @@ fn fmt_error_with_snippets_offset(
 
     #[cfg(feature = "validator")]
     if let Error::ValidatorError { issues, locations } = err {
-        return fmt_validator_error_with_snippets_offset(
+        return fmt_validation_error_with_snippets_offset(
             f,
             formatter.localizer(),
+            ExternalMessageSource::Validator,
             issues,
             locations,
             regions,

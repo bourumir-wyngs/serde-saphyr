@@ -106,7 +106,7 @@ where
 
     let cfg = crate::de::Cfg::from_options(&options);
     // Do not stop at DocumentEnd; we'll probe for trailing content/errors explicitly.
-    let mut src = LiveEvents::from_str(input, options, false);
+    let mut src = LiveEvents::from_str(input, options);
     let value_res = crate::anchor_store::with_document_scope(|| {
         with_interp_redaction_scope(|| {
             crate::de::with_root_redaction(crate::de::YamlDeserializer::new(&mut src, cfg), |de| {
@@ -519,7 +519,7 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
     let crop_radius = options.crop_radius;
 
     let cfg = crate::de::Cfg::from_options(&options);
-    let mut src = LiveEvents::from_str(input, options, false);
+    let mut src = LiveEvents::from_str(input, options);
     let mut values = Vec::new();
 
     loop {
@@ -833,7 +833,7 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
     let (snippet_ctx, ring_handle) =
         ReaderSnippetContext::new(reader, options.with_snippet, options.crop_radius);
 
-    let mut src = LiveEvents::from_reader(ring_handle, options, false, EnforcingPolicy::AllContent);
+    let mut src = LiveEvents::from_reader(ring_handle, options, EnforcingPolicy::AllContent);
 
     let value_res = crate::anchor_store::with_document_scope(|| {
         with_interp_redaction_scope(|| {
@@ -1109,7 +1109,7 @@ where
     }
 
     let cfg = crate::de::Cfg::from_options(&options);
-    let src = LiveEvents::from_reader(reader, options, false, EnforcingPolicy::PerDocument);
+    let src = LiveEvents::from_reader(reader, options, EnforcingPolicy::PerDocument);
 
     ReadIter::<T> {
         src,

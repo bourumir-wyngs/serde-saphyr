@@ -390,22 +390,13 @@ impl<'a> Parser<'a> {
             }
         }
 
-        if buf.is_empty() {
-            // no underscores -> use slice directly
-            let s = &self.s[start..self.i];
-            match f64::from_str(s) {
-                Ok(v) => Ok((v, false, true)),
-                Err(_) => Err(self.err("invalid float literal")),
-            }
-        } else {
-            // underscores removed in buf
-            match core::str::from_utf8(&buf)
-                .map_err(|_| self.err("invalid utf-8 in numeric literal"))
-                .and_then(|s| f64::from_str(s).map_err(|_| self.err("invalid float literal")))
-            {
-                Ok(v) => Ok((v, false, true)),
-                Err(_) => Err(self.err("invalid float literal")),
-            }
+        // Underscores are removed while copying digits into `buf`.
+        match core::str::from_utf8(&buf)
+            .map_err(|_| self.err("invalid utf-8 in numeric literal"))
+            .and_then(|s| f64::from_str(s).map_err(|_| self.err("invalid float literal")))
+        {
+            Ok(v) => Ok((v, false, true)),
+            Err(_) => Err(self.err("invalid float literal")),
         }
     }
 

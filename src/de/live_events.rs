@@ -226,8 +226,6 @@ pub(crate) struct LiveEvents<'a> {
     property_syntax: PropertySyntax,
     /// Per-anchor replay expansion counters, indexed by anchor id (dense ids).
     per_anchor_expansions: Vec<usize>,
-    /// In single-document mode, stop producing events when a DocumentEnd is seen.
-    stop_at_doc_end: bool,
     /// Indicates whether a DocumentEnd was seen for the last parsed document.
     seen_doc_end: bool,
 
@@ -284,7 +282,6 @@ impl<'a> LiveEvents<'a> {
     pub(crate) fn from_reader<R: std::io::Read + 'a>(
         inputs: R,
         mut options: Options,
-        stop_at_doc_end: bool,
         policy: EnforcingPolicy,
     ) -> Self {
         let budget = options.budget.take();
@@ -349,7 +346,6 @@ impl<'a> LiveEvents<'a> {
             #[cfg(feature = "properties")]
             property_syntax,
             per_anchor_expansions: Vec::new(),
-            stop_at_doc_end,
             seen_doc_end: false,
 
             error,
@@ -371,7 +367,7 @@ impl<'a> LiveEvents<'a> {
     ///
     /// # Returns
     /// A configured `LiveEvents` ready to stream events.
-    pub(crate) fn from_str(input: &'a str, mut options: Options, stop_at_doc_end: bool) -> Self {
+    pub(crate) fn from_str(input: &'a str, mut options: Options) -> Self {
         let budget = options.budget.take();
         let budget_report = options.budget_report.take();
         let budget_report_cb = options.budget_report_cb.take();
@@ -435,7 +431,6 @@ impl<'a> LiveEvents<'a> {
             #[cfg(feature = "properties")]
             property_syntax,
             per_anchor_expansions: Vec::new(),
-            stop_at_doc_end,
             seen_doc_end: false,
 
             // Used to surface IO errors from reader-based includes.
@@ -927,24 +922,10 @@ impl<'a> LiveEvents<'a> {
                     continue;
                 }
                 Event::DocumentEnd => {
-                    // On document end: in single-document mode, mark and stop producing events.
+                    // On document end, mark and skip the parser marker.
                     self.reset_document_state();
                     self.seen_doc_end = true;
                     self.last_location = location;
-                    if self.stop_at_doc_end {
-                        // One-step lookahead to distinguish multi-doc streams from garbage
-                        // after an explicit end marker. If the very next token is a
-                        // DocumentStart, signal multi-doc error; otherwise ignore anything else.
-                        if let Some(Ok((Event::DocumentStart(..), span2))) = self.parser.next() {
-                            let loc2 = location_from_span(&span2)
-                                .with_source_id(self.parser.current_source_id());
-                            return Err(Error::multiple_documents(
-                                "use from_multiple or from_multiple_with_options",
-                            )
-                            .with_location(loc2));
-                        }
-                        return Ok(None);
-                    }
                     continue;
                 }
 

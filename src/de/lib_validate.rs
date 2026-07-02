@@ -40,7 +40,7 @@ where
     let with_snippet = options.with_snippet;
     let crop_radius = options.crop_radius;
     let cfg = crate::de::Cfg::from_options(&options);
-    let mut src = LiveEvents::from_str(input, options, false);
+    let mut src = LiveEvents::from_str(input, options);
     let mut recorder = crate::path_map::PathRecorder::new();
 
     let value_res = crate::anchor_store::with_document_scope(|| {
@@ -130,7 +130,7 @@ where
     let with_snippet = options.with_snippet;
     let crop_radius = options.crop_radius;
     let cfg = crate::de::Cfg::from_options(&options);
-    let mut src = LiveEvents::from_str(input, options, false);
+    let mut src = LiveEvents::from_str(input, options);
     let mut recorder = crate::path_map::PathRecorder::new();
 
     let value_res = crate::anchor_store::with_document_scope(|| {
@@ -298,7 +298,7 @@ where
     let crop_radius = options.crop_radius;
 
     let cfg = crate::de::Cfg::from_options(&options);
-    let mut src = LiveEvents::from_str(input, options, false);
+    let mut src = LiveEvents::from_str(input, options);
     let mut values = Vec::new();
     let mut validation_errors: Vec<Error> = Vec::new();
 
@@ -457,7 +457,7 @@ where
     let cfg = crate::de::Cfg::from_options(&options);
     let (snippet_ctx, ring_handle) =
         ReaderSnippetContext::new(reader, options.with_snippet, options.crop_radius);
-    let mut src = LiveEvents::from_reader(ring_handle, options, false, EnforcingPolicy::AllContent);
+    let mut src = LiveEvents::from_reader(ring_handle, options, EnforcingPolicy::AllContent);
 
     let mut recorder = crate::path_map::PathRecorder::new();
 
@@ -634,7 +634,7 @@ where
     let cfg = crate::de::Cfg::from_options(&options);
     let (snippet_ctx, ring_handle) =
         ReaderSnippetContext::new(reader, options.with_snippet, options.crop_radius);
-    let src = LiveEvents::from_reader(ring_handle, options, false, EnforcingPolicy::PerDocument);
+    let src = LiveEvents::from_reader(ring_handle, options, EnforcingPolicy::PerDocument);
 
     ReadValidIter::<R, T> {
         snippet_ctx,
@@ -706,7 +706,7 @@ where
     let crop_radius = options.crop_radius;
 
     let cfg = crate::de::Cfg::from_options(&options);
-    let mut src = LiveEvents::from_str(input, options, false);
+    let mut src = LiveEvents::from_str(input, options);
     let mut values = Vec::new();
     let mut validation_errors: Vec<Error> = Vec::new();
 
@@ -860,7 +860,7 @@ where
     let cfg = crate::de::Cfg::from_options(&options);
     let (snippet_ctx, ring_handle) =
         ReaderSnippetContext::new(reader, options.with_snippet, options.crop_radius);
-    let mut src = LiveEvents::from_reader(ring_handle, options, false, EnforcingPolicy::AllContent);
+    let mut src = LiveEvents::from_reader(ring_handle, options, EnforcingPolicy::AllContent);
 
     let mut recorder = crate::path_map::PathRecorder::new();
 
@@ -1034,7 +1034,7 @@ where
     let cfg = crate::de::Cfg::from_options(&options);
     let (snippet_ctx, ring_handle) =
         ReaderSnippetContext::new(reader, options.with_snippet, options.crop_radius);
-    let src = LiveEvents::from_reader(ring_handle, options, false, EnforcingPolicy::PerDocument);
+    let src = LiveEvents::from_reader(ring_handle, options, EnforcingPolicy::PerDocument);
 
     ReadValidateIter::<R, T> {
         snippet_ctx,

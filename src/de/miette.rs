@@ -231,11 +231,12 @@ fn build_diagnostic(
         }
 
         Error::AliasError { msg: _, locations } => {
-            let (actual_src, labels) = build_alias_labels(
+            let (actual_src, labels) = build_dual_location_labels(
                 &src,
                 locations.reference_location,
                 locations.defined_location,
                 regions,
+                "anchor defined here",
             );
 
             ErrorDiagnostic {
@@ -306,7 +307,8 @@ fn build_validation_entry_diagnostic(
     let resolved_path = format_path_with_resolved_leaf(path_key, &resolved_leaf);
     let base_msg = format!("validation error: {entry} for `{resolved_path}`");
 
-    let (actual_src, labels) = build_validation_labels(src, ref_loc, def_loc, regions);
+    let (actual_src, labels) =
+        build_dual_location_labels(src, ref_loc, def_loc, regions, "defined here");
 
     ErrorDiagnostic {
         message: base_msg,
@@ -316,12 +318,12 @@ fn build_validation_entry_diagnostic(
     }
 }
 
-#[cfg(any(feature = "garde", feature = "validator"))]
-fn build_validation_labels(
+fn build_dual_location_labels(
     src: &Arc<NamedSource<String>>,
     ref_loc: Location,
     def_loc: Location,
     regions: &[CroppedRegion],
+    definition_label: &'static str,
 ) -> (Arc<NamedSource<String>>, Vec<LabeledSpan>) {
     let mut labels = Vec::new();
 
@@ -349,49 +351,7 @@ fn build_validation_labels(
             && let Some(span) = def_span
         {
             labels.push(LabeledSpan::new_with_span(
-                Some("defined here".to_owned()),
-                span,
-            ));
-        }
-    }
-
-    (primary_src, labels)
-}
-
-/// Build labels for an alias error with both reference and defined locations.
-fn build_alias_labels(
-    src: &Arc<NamedSource<String>>,
-    ref_loc: Location,
-    def_loc: Location,
-    regions: &[CroppedRegion],
-) -> (Arc<NamedSource<String>>, Vec<LabeledSpan>) {
-    let mut labels = Vec::new();
-
-    let primary_loc = if ref_loc != Location::UNKNOWN {
-        ref_loc
-    } else {
-        def_loc
-    };
-    let (primary_src, span) = get_source_and_span(src, &primary_loc, regions);
-
-    if let Some(span) = span {
-        labels.push(LabeledSpan::new_with_span(
-            Some(if ref_loc != Location::UNKNOWN {
-                "the value is used here".to_owned()
-            } else {
-                "defined here".to_owned()
-            }),
-            span,
-        ));
-    }
-
-    if def_loc != Location::UNKNOWN && def_loc != ref_loc {
-        let (def_src, def_span) = get_source_and_span(src, &def_loc, regions);
-        if (Arc::ptr_eq(&primary_src, &def_src) || def_src.name() == primary_src.name())
-            && let Some(span) = def_span
-        {
-            labels.push(LabeledSpan::new_with_span(
-                Some("anchor defined here".to_owned()),
+                Some(definition_label.to_owned()),
                 span,
             ));
         }

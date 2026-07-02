@@ -33,6 +33,136 @@ pub(crate) enum LineMapping {
     Offset { start_line: usize },
 }
 
+struct SnippetWindowRows<'a> {
+    relative_row: usize,
+    total_lines: usize,
+    window_start_row: usize,
+    window_end_row: usize,
+    window_start_absolute_row: usize,
+    window_start: usize,
+    window_text: &'a str,
+    line_starts: Vec<usize>,
+}
+
+impl SnippetWindowRows<'_> {
+    fn max_display_row(&self) -> usize {
+        self.window_start_absolute_row
+            .saturating_add(self.window_end_row)
+            .saturating_sub(self.window_start_row)
+    }
+}
+
+struct SnippetRenderWindow<'a> {
+    rows: SnippetWindowRows<'a>,
+    error_col: usize,
+    local_start: usize,
+    local_end: usize,
+}
+
+fn resolve_window_rows<'a>(
+    text: &'a str,
+    location: &Location,
+    mapping: LineMapping,
+) -> Result<SnippetWindowRows<'a>, usize> {
+    // Map absolute YAML line to the coordinates within `text`.
+    let absolute_row = location.line as usize;
+    let relative_row = match mapping {
+        LineMapping::Identity => absolute_row,
+        LineMapping::Offset { start_line } => {
+            if absolute_row < start_line {
+                return Err(start_line);
+            }
+            absolute_row.saturating_sub(start_line).saturating_add(1)
+        }
+    };
+
+    let line_starts = line_starts(text);
+    if line_starts.is_empty() {
+        return Err(1);
+    }
+    if relative_row == 0 || relative_row > line_starts.len() {
+        let start_line = match mapping {
+            LineMapping::Identity => 1,
+            LineMapping::Offset { start_line } => start_line,
+        };
+        return Err(start_line);
+    }
+
+    // Render a small window around the error location:
+    // - two lines before
+    // - the error line
+    // - two lines after
+    // clipped to input boundaries.
+    let total_lines = line_starts.len();
+    let window_start_row = relative_row.saturating_sub(2).max(1);
+    let window_end_row = relative_row.saturating_add(2).min(total_lines);
+    let window_start_row = window_start_row.min(window_end_row);
+
+    let window_start = line_starts[window_start_row - 1];
+    let window_end = if window_end_row < total_lines {
+        line_starts[window_end_row]
+    } else {
+        text.len()
+    };
+    let window_text = &text[window_start..window_end];
+
+    // Map the window's starting line number back to absolute coordinates for display.
+    let window_start_absolute_row = match mapping {
+        LineMapping::Identity => window_start_row,
+        LineMapping::Offset { start_line } => start_line
+            .saturating_add(window_start_row)
+            .saturating_sub(1),
+    };
+
+    Ok(SnippetWindowRows {
+        relative_row,
+        total_lines,
+        window_start_row,
+        window_end_row,
+        window_start_absolute_row,
+        window_start,
+        window_text,
+        line_starts,
+    })
+}
+
+fn resolve_render_window<'a>(
+    text: &'a str,
+    location: &Location,
+    mapping: LineMapping,
+) -> Result<SnippetRenderWindow<'a>, usize> {
+    let rows = resolve_window_rows(text, location, mapping)?;
+    let col = location.column as usize;
+
+    let Some(start) =
+        line_col_to_byte_offset_with_starts(text, &rows.line_starts, rows.relative_row, col)
+    else {
+        return Err(rows.window_start_absolute_row);
+    };
+
+    // Create a minimal span for the primary annotation:
+    // - usually one character
+    // - for EOL (pointing at '\n') or EOF, use an empty span (caret-like).
+    let end = match text.as_bytes().get(start) {
+        Some(b'\n') | Some(b'\r') => start,
+        _ => next_char_boundary(text, start).unwrap_or(start),
+    };
+
+    let local_start = start
+        .saturating_sub(rows.window_start)
+        .min(rows.window_text.len());
+    let local_end = end
+        .saturating_sub(rows.window_start)
+        .min(rows.window_text.len());
+
+    Ok(SnippetRenderWindow {
+        rows,
+        error_col: col,
+        local_start,
+        local_end,
+    })
+}
+
 /// Crop a small source window around `location` and return `(cropped_text, start_line)`.
 ///
 /// - `cropped_text` contains a vertical window of a few lines around the error location.
@@ -55,44 +185,11 @@ pub(crate) fn crop_source_window(
     // Keep snippet coordinates aligned with parsers that ignore a leading UTF-8 BOM.
     let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
 
-    // Map absolute YAML line to the coordinates within `text`.
-    let absolute_row = location.line as usize;
-    let relative_row = match mapping {
-        LineMapping::Identity => absolute_row,
-        LineMapping::Offset { start_line } => {
-            if absolute_row < start_line {
-                return (String::new(), start_line);
-            }
-            absolute_row.saturating_sub(start_line).saturating_add(1)
-        }
+    let rows = match resolve_window_rows(text, location, mapping) {
+        Ok(rows) => rows,
+        Err(start_line) => return (String::new(), start_line),
     };
-
-    let starts = line_starts(text);
-    if starts.is_empty() {
-        return (String::new(), 1);
-    }
-    if relative_row == 0 || relative_row > starts.len() {
-        let start_line = match mapping {
-            LineMapping::Identity => 1,
-            LineMapping::Offset { start_line } => start_line,
-        };
-        return (String::new(), start_line);
-    }
-
-    // Keep the same vertical policy as snippet rendering: two lines before/after.
-    let total_lines = starts.len();
-    let window_start_row = relative_row.saturating_sub(2).max(1);
-    let window_end_row = relative_row.saturating_add(2).min(total_lines);
-    let window_start_row = window_start_row.min(window_end_row);
-
-    let window_start = starts[window_start_row - 1];
-    let window_end = if window_end_row < total_lines {
-        starts[window_end_row]
-    } else {
-        text.len()
-    };
-
-    let window_text = &text[window_start..window_end];
+    let window_text = rows.window_text;
 
     // Storage-time horizontal cropping to avoid retaining huge single-line scalars.
     //
@@ -117,70 +214,41 @@ pub(crate) fn crop_source_window(
         if !needs_storage_crop {
             return (
                 sanitize_terminal_snippet_preserve_len(window_text.to_owned()),
-                match mapping {
-                    LineMapping::Identity => window_start_row,
-                    LineMapping::Offset { start_line } => start_line
-                        .saturating_add(window_start_row)
-                        .saturating_sub(1),
-                },
+                rows.window_start_absolute_row,
             );
         }
 
-        let error_row = relative_row;
+        let error_row = rows.relative_row;
         let error_col = location.column as usize;
         let left_col = error_col.saturating_sub(crop_radius).max(1);
         let right_col = error_col.saturating_add(crop_radius);
 
         let mut out = String::with_capacity(window_text.len().min(4096));
-        let mut old_pos = 0usize;
-        let mut row = window_start_row;
-        while old_pos < window_text.len() {
-            let next_nl = window_text[old_pos..].find('\n').map(|i| old_pos + i);
-            let (line_raw, had_nl, consumed) = match next_nl {
-                Some(nl) => (&window_text[old_pos..nl], true, (nl - old_pos) + 1),
-                None => (
-                    &window_text[old_pos..],
-                    false,
-                    window_text.len().saturating_sub(old_pos),
-                ),
-            };
-
-            // Normalize CRLF: strip a trailing '\r' from the line content if present.
-            let line = line_raw.strip_suffix('\r').unwrap_or(line_raw);
-
-            if row == error_row {
+        visit_window_lines(window_text, rows.window_start_row, |window_line| {
+            if window_line.row == error_row {
                 // Preserve the left prefix so `error_col` continues to map correctly.
                 let end_col_excl = right_col.saturating_add(1);
-                let end_byte = col_to_byte_offset_in_line(line, end_col_excl).unwrap_or(line.len());
-                let right_clipped = end_byte < line.len();
-                out.push_str(&line[..end_byte]);
+                let end_byte = col_to_byte_offset_in_line(window_line.line, end_col_excl)
+                    .unwrap_or(window_line.line.len());
+                let right_clipped = end_byte < window_line.line.len();
+                out.push_str(&window_line.line[..end_byte]);
                 if right_clipped {
                     out.push('…');
                 }
             } else {
-                let (rendered, _crop) = crop_line_by_cols(line, left_col, right_col);
+                let (rendered, _crop) = crop_line_by_cols(window_line.line, left_col, right_col);
                 out.push_str(&rendered);
             }
 
-            if had_nl {
+            if window_line.had_nl {
                 out.push('\n');
             }
-
-            old_pos = old_pos.saturating_add(consumed);
-            row = row.saturating_add(1);
-        }
+        });
 
         sanitize_terminal_snippet_preserve_len(out)
     };
 
-    let start_line = match mapping {
-        LineMapping::Identity => window_start_row,
-        LineMapping::Offset { start_line } => start_line
-            .saturating_add(window_start_row)
-            .saturating_sub(1),
-    };
-
-    (cropped, start_line)
+    (cropped, rows.window_start_absolute_row)
 }
 
 #[cfg(test)]
@@ -336,65 +404,10 @@ impl<'a> Snippet<'a> {
             return write!(f, "{msg}");
         }
 
-        // `Location` is 1-based and uses *character* columns (not byte offsets).
-        let absolute_row = location.line as usize;
-        let col = location.column as usize;
-
-        let (relative_row, _window_title_row) = match self.mapping {
-            LineMapping::Identity => (absolute_row, absolute_row),
-            LineMapping::Offset { start_line } => {
-                if absolute_row < start_line {
-                    return fmt_with_location(f, l10n, msg, location);
-                }
-                let relative = absolute_row.saturating_sub(start_line).saturating_add(1);
-                (relative, absolute_row)
-            }
+        let window = match resolve_render_window(self.source.text, location, self.mapping) {
+            Ok(window) => window,
+            Err(_) => return fmt_with_location(f, l10n, msg, location),
         };
-
-        let line_starts = line_starts(self.source.text);
-        if line_starts.is_empty() {
-            return fmt_with_location(f, l10n, msg, location);
-        }
-
-        // Check if the (mapped) row is within our snippet text.
-        if relative_row == 0 || relative_row > line_starts.len() {
-            return fmt_with_location(f, l10n, msg, location);
-        }
-
-        let Some(start) =
-            line_col_to_byte_offset_with_starts(self.source.text, &line_starts, relative_row, col)
-        else {
-            return fmt_with_location(f, l10n, msg, location);
-        };
-
-        // Create a minimal span for the primary annotation:
-        // - usually one character
-        // - for EOL (pointing at '\n') or EOF, use an empty span (caret-like).
-        let end = match self.source.text.as_bytes().get(start) {
-            Some(b'\n') | Some(b'\r') => start,
-            _ => next_char_boundary(self.source.text, start).unwrap_or(start),
-        };
-
-        // Render a small window around the error location:
-        // - two lines before
-        // - the error line
-        // - two lines after
-        // clipped to input boundaries.
-        let total_lines = line_starts.len();
-        let window_start_row = relative_row.saturating_sub(2).max(1);
-        let window_end_row = relative_row.saturating_add(2).min(total_lines);
-        let window_start_row = window_start_row.min(window_end_row);
-
-        let window_start = line_starts[window_start_row - 1];
-        let window_end = if window_end_row < total_lines {
-            line_starts[window_end_row]
-        } else {
-            self.source.text.len()
-        };
-        let window_text = &self.source.text[window_start..window_end];
-
-        let local_start = start.saturating_sub(window_start).min(window_text.len());
-        let local_end = end.saturating_sub(window_start).min(window_text.len());
 
         // Horizontal cropping (by character columns) for very long lines.
         // We crop lines in the vertical window to the same column window around the error,
@@ -402,22 +415,14 @@ impl<'a> Snippet<'a> {
         // Very short context lines that would otherwise crop to empty are left intact to
         // preserve useful context.
         let (window_text, local_start, local_end) = crop_window_text(
-            window_text,
-            window_start_row,
-            relative_row,
-            col,
+            window.rows.window_text,
+            window.rows.window_start_row,
+            window.rows.relative_row,
+            window.error_col,
             self.crop_radius,
-            local_start,
-            local_end,
+            window.local_start,
+            window.local_end,
         );
-
-        // Map the window's starting line number back to absolute coordinates for display.
-        let window_start_absolute_row = match self.mapping {
-            LineMapping::Identity => window_start_row,
-            LineMapping::Offset { start_line } => start_line
-                .saturating_add(window_start_row)
-                .saturating_sub(1),
-        };
 
         let loc_prefix = l10n.snippet_location_prefix(*location);
 
@@ -425,7 +430,7 @@ impl<'a> Snippet<'a> {
             .primary_title(format!("{}: {msg}", loc_prefix))
             .element(
                 AnnotateSnippet::source(&window_text)
-                    .line_start(window_start_absolute_row)
+                    .line_start(window.rows.window_start_absolute_row)
                     .path(self.source.path)
                     .fold(false)
                     .annotation(
@@ -478,83 +483,25 @@ fn fmt_snippet_window_with_mapping_or_fallback(
         return Ok(());
     }
 
-    // `Location` is 1-based and uses *character* columns (not byte offsets).
-    let absolute_row = location.line as usize;
-    let col = location.column as usize;
-
-    let row = match mapping {
-        LineMapping::Identity => absolute_row,
-        LineMapping::Offset { start_line } => {
-            if absolute_row < start_line {
-                return Ok(());
-            }
-            absolute_row.saturating_sub(start_line).saturating_add(1)
-        }
+    let window = match resolve_render_window(text, location, mapping) {
+        Ok(window) => window,
+        Err(_) => return Ok(()),
     };
-
-    let line_starts = line_starts(text);
-    if line_starts.is_empty() {
-        return Ok(());
-    }
-
-    if row == 0 || row > line_starts.len() {
-        return Ok(());
-    }
-
-    let Some(start) = line_col_to_byte_offset_with_starts(text, &line_starts, row, col) else {
-        return Ok(());
-    };
-
-    // Minimal span for caret placement.
-    let end = match text.as_bytes().get(start) {
-        Some(b'\n') | Some(b'\r') => start,
-        _ => next_char_boundary(text, start).unwrap_or(start),
-    };
-
-    // Same vertical window policy as `Snippet::fmt_or_fallback`.
-    let total_lines = line_starts.len();
-    let window_start_row = row.saturating_sub(2).max(1);
-    let window_end_row = row.saturating_add(2).min(total_lines);
-    let window_start_row = window_start_row.min(window_end_row);
-
-    let window_start = line_starts[window_start_row - 1];
-    let window_end = if window_end_row < total_lines {
-        line_starts[window_end_row]
-    } else {
-        text.len()
-    };
-    let window_text = &text[window_start..window_end];
-
-    let local_start = start.saturating_sub(window_start).min(window_text.len());
-    let local_end = end.saturating_sub(window_start).min(window_text.len());
 
     let (window_text, local_start, _local_end) = crop_window_text(
-        window_text,
-        window_start_row,
-        row,
-        col,
+        window.rows.window_text,
+        window.rows.window_start_row,
+        window.rows.relative_row,
+        window.error_col,
         crop_radius,
-        local_start,
-        local_end,
+        window.local_start,
+        window.local_end,
     );
 
-    let window_start_absolute_row = match mapping {
-        LineMapping::Identity => window_start_row,
-        LineMapping::Offset { start_line } => start_line
-            .saturating_add(window_start_row)
-            .saturating_sub(1),
-    };
-
-    let max_display_row = match mapping {
-        LineMapping::Identity => window_end_row,
-        LineMapping::Offset { start_line } => {
-            start_line.saturating_add(window_end_row).saturating_sub(1)
-        }
-    };
-    let gutter_width = max_display_row.to_string().len();
+    let gutter_width = window.rows.max_display_row().to_string().len();
     writeln!(f, "  |")?;
 
-    let mut cur_row = window_start_row;
+    let mut cur_row = window.rows.window_start_row;
     for line in window_text.split_inclusive('\n') {
         let mut line = line;
         if let Some(stripped) = line.strip_suffix('\n') {
@@ -564,12 +511,14 @@ fn fmt_snippet_window_with_mapping_or_fallback(
             line = stripped;
         }
 
-        let display_row = window_start_absolute_row
+        let display_row = window
+            .rows
+            .window_start_absolute_row
             .saturating_add(cur_row)
-            .saturating_sub(window_start_row);
+            .saturating_sub(window.rows.window_start_row);
         writeln!(f, "{display_row:>gutter_width$} | {line}")?;
 
-        if cur_row == row {
+        if cur_row == window.rows.relative_row {
             let line_byte_start = window_text[..local_start]
                 .rfind('\n')
                 .map(|i| i + 1)
@@ -583,18 +532,23 @@ fn fmt_snippet_window_with_mapping_or_fallback(
         }
 
         cur_row += 1;
-        if cur_row > window_end_row {
+        if cur_row > window.rows.window_end_row {
             break;
         }
     }
 
-    if window_end_row == total_lines && window_text.ends_with('\n') && cur_row <= window_end_row {
-        let display_row = window_start_absolute_row
+    if window.rows.window_end_row == window.rows.total_lines
+        && window_text.ends_with('\n')
+        && cur_row <= window.rows.window_end_row
+    {
+        let display_row = window
+            .rows
+            .window_start_absolute_row
             .saturating_add(cur_row)
-            .saturating_sub(window_start_row);
+            .saturating_sub(window.rows.window_start_row);
         writeln!(f, "{display_row:>gutter_width$} |")?;
 
-        if cur_row == row {
+        if cur_row == window.rows.relative_row {
             let line_byte_start = window_text[..local_start]
                 .rfind('\n')
                 .map(|i| i + 1)
@@ -690,6 +644,52 @@ pub(crate) fn sanitize_terminal_snippet_preserve_len(s: String) -> String {
     }
 }
 
+struct WindowLine<'a> {
+    row: usize,
+    line_start_old: usize,
+    line: &'a str,
+    had_nl: bool,
+}
+
+fn visit_window_lines(
+    window_text: &str,
+    window_start_row: usize,
+    mut visit: impl FnMut(WindowLine<'_>),
+) -> usize {
+    let mut old_pos = 0usize;
+    let mut row = window_start_row;
+
+    while old_pos < window_text.len() {
+        let next_nl = window_text[old_pos..].find('\n').map(|i| old_pos + i);
+        let (line_raw, had_nl, consumed) = match next_nl {
+            Some(nl) => (&window_text[old_pos..nl], true, (nl - old_pos) + 1),
+            None => (
+                &window_text[old_pos..],
+                false,
+                window_text.len().saturating_sub(old_pos),
+            ),
+        };
+
+        // Normalize CRLF: strip a trailing '\r' from the line content if present.
+        let line = line_raw.strip_suffix('\r').unwrap_or(line_raw);
+
+        visit(WindowLine {
+            row,
+            line_start_old: old_pos,
+            line,
+            had_nl,
+        });
+
+        old_pos = old_pos.saturating_add(consumed);
+        row = row.saturating_add(1);
+        if !had_nl {
+            break;
+        }
+    }
+
+    row
+}
+
 /// Horizontally crop the snippet window by character columns and normalize CRLF.
 ///
 /// - Crops lines of `window_text` to the same `[left_col, right_col]` window around the
@@ -721,24 +721,14 @@ fn crop_window_text(
     let right_col = error_col.saturating_add(crop_radius);
 
     let mut out = String::with_capacity(window_text.len().min(4096));
-    let mut old_pos = 0usize;
     let mut new_local_start = local_start;
     let mut new_local_end = local_end;
     let mut rebased = false;
 
     // Iterate over lines while preserving '\n' endings (and normalizing away '\r').
-    let mut row = window_start_row;
-    while old_pos < window_text.len() {
-        let next_nl = window_text[old_pos..].find('\n').map(|i| old_pos + i);
-        let (line_raw, had_nl, consumed) = match next_nl {
-            Some(nl) => (&window_text[old_pos..nl], true, (nl - old_pos) + 1),
-            None => (&window_text[old_pos..], false, window_text.len() - old_pos),
-        };
-
-        // Normalize CRLF: strip a trailing '\r' from the line content if present.
-        let line = line_raw.strip_suffix('\r').unwrap_or(line_raw);
-
-        let line_start_old = old_pos;
+    let row = visit_window_lines(window_text, window_start_row, |window_line| {
+        let line = window_line.line;
+        let line_start_old = window_line.line_start_old;
         let line_start_new = out.len();
 
         let (rendered_line, crop) = if do_crop {
@@ -754,11 +744,11 @@ fn crop_window_text(
         };
 
         out.push_str(&rendered_line);
-        if had_nl {
+        if window_line.had_nl {
             out.push('\n');
         }
 
-        if row == error_row {
+        if window_line.row == error_row {
             // Rebase annotation span from the old window_text to the new output.
             //
             // local_start/local_end are byte offsets into the original `window_text`.
@@ -789,13 +779,7 @@ fn crop_window_text(
 
             rebased = true;
         }
-
-        old_pos += consumed;
-        row += 1;
-        if !had_nl {
-            break;
-        }
-    }
+    });
 
     // If the window ends with '\n', there is an implicit trailing empty line.
     // If the error location is on that empty line (common for EOF errors), rebase the
