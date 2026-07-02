@@ -62,6 +62,28 @@ seq:
         name: String,
     }
 
+    #[derive(Debug, PartialEq)]
+    struct NestedParseDuringDeserialize {
+        value: i32,
+    }
+
+    impl<'de> Deserialize<'de> for NestedParseDuringDeserialize {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            #[derive(Deserialize)]
+            struct Raw {
+                value: i32,
+            }
+
+            let _: Vec<i32> =
+                serde_saphyr::from_str("- 1\n- 2\n").map_err(serde::de::Error::custom)?;
+            let raw = Raw::deserialize(deserializer)?;
+            Ok(Self { value: raw.value })
+        }
+    }
+
     #[test]
     fn anchor_assign() {
         let _anchor: RcAnchor<Node> = Rc::new(Node {
@@ -170,6 +192,27 @@ seq:
     }
 
     #[test]
+    fn nested_parse_inside_rc_anchor_value_preserves_outer_anchor_scope() {
+        #[derive(Deserialize)]
+        struct Doc {
+            a: RcAnchor<NestedParseDuringDeserialize>,
+            b: RcAnchor<NestedParseDuringDeserialize>,
+        }
+
+        let y = indoc! {r#"
+            a: &A
+              value: 11
+            b: *A
+        "#};
+
+        let doc: Doc = from_str(y).expect("nested parse inside RcAnchor should deserialize");
+
+        assert_eq!(doc.a.value, 11);
+        assert_eq!(doc.b.value, 11);
+        assert!(Rc::ptr_eq(&doc.a.0, &doc.b.0));
+    }
+
+    #[test]
     fn deserialize_arc_anchor_strong_with_alias_identity() {
         #[derive(Deserialize)]
         struct Doc {
@@ -185,6 +228,27 @@ seq:
         assert_eq!(doc.a.0.name, "one");
         assert_eq!(doc.b.0.name, "one");
         assert!(Arc::ptr_eq(&doc.a.0, &doc.b.0)); // same object
+    }
+
+    #[test]
+    fn nested_parse_inside_arc_anchor_value_preserves_outer_anchor_scope() {
+        #[derive(Deserialize)]
+        struct Doc {
+            a: ArcAnchor<NestedParseDuringDeserialize>,
+            b: ArcAnchor<NestedParseDuringDeserialize>,
+        }
+
+        let y = indoc! {r#"
+            a: &A
+              value: 13
+            b: *A
+        "#};
+
+        let doc: Doc = from_str(y).expect("nested parse inside ArcAnchor should deserialize");
+
+        assert_eq!(doc.a.value, 13);
+        assert_eq!(doc.b.value, 13);
+        assert!(Arc::ptr_eq(&doc.a.0, &doc.b.0));
     }
 
     #[test]

@@ -38,7 +38,8 @@ thread_local! {
     static STATE: RefCell<AnchorState> = RefCell::new(AnchorState::default());
 }
 
-pub(crate) fn reset() {
+#[cfg(test)]
+fn reset() {
     STATE.with(|state| {
         let mut s = state.borrow_mut();
         s.stack.clear();
@@ -308,14 +309,29 @@ pub(crate) fn get_arc_recursive<T: Any + Send + Sync>(id: usize) -> Result<Optio
 }
 
 pub(crate) fn with_document_scope<R>(f: impl FnOnce() -> R) -> R {
-    reset();
-    struct ResetGuard;
-    impl Drop for ResetGuard {
+    struct DocumentScopeGuard {
+        previous: Option<AnchorState>,
+    }
+
+    impl Drop for DocumentScopeGuard {
         fn drop(&mut self) {
-            reset();
+            let previous = self
+                .previous
+                .take()
+                .expect("document scope guard dropped more than once");
+            STATE.with(|state| {
+                *state.borrow_mut() = previous;
+            });
         }
     }
-    let guard = ResetGuard;
+
+    let previous = STATE.with(|state| {
+        let mut state = state.borrow_mut();
+        std::mem::take(&mut *state)
+    });
+    let guard = DocumentScopeGuard {
+        previous: Some(previous),
+    };
     let result = f();
     drop(guard);
     result
@@ -543,46 +559,66 @@ mod tests {
     }
 
     #[test]
-    fn document_scope_resets_before_and_after_success() {
+    fn document_scope_isolates_and_restores_after_success() {
         let _state = isolated_state();
 
         store_rc(1, Rc::new(1_i32));
 
-        let result = with_document_scope(|| {
-            assert!(get_rc::<i32>(1).unwrap().is_none());
+        with_anchor_context(AnchorKind::Rc, Some(1), || {
+            assert_eq!(current_rc_anchor(), Some(1));
 
-            store_rc(2, Rc::new(2_i32));
-            with_anchor_context(AnchorKind::Rc, Some(2), || {
-                assert_eq!(current_rc_anchor(), Some(2));
+            let result = with_document_scope(|| {
+                assert_eq!(current_rc_anchor(), None);
+                assert!(get_rc::<i32>(1).unwrap().is_none());
+
+                store_rc(2, Rc::new(2_i32));
+                with_anchor_context(AnchorKind::Rc, Some(2), || {
+                    assert_eq!(current_rc_anchor(), Some(2));
+                });
+
+                "ok"
             });
 
-            "ok"
+            assert_eq!(result, "ok");
+            assert_eq!(current_rc_anchor(), Some(1));
+            assert!(get_rc::<i32>(1).unwrap().is_some());
+            assert!(get_rc::<i32>(2).unwrap().is_none());
         });
 
-        assert_eq!(result, "ok");
         assert_eq!(current_rc_anchor(), None);
-        assert!(get_rc::<i32>(1).unwrap().is_none());
+        assert!(get_rc::<i32>(1).unwrap().is_some());
         assert!(get_rc::<i32>(2).unwrap().is_none());
     }
 
     #[test]
     #[cfg_attr(not(panic = "unwind"), ignore = "Test requires panic unwinding")]
-    fn document_scope_resets_after_panic() {
+    fn document_scope_restores_after_panic() {
         let _state = isolated_state();
 
-        let panic_result = catch_unwind(AssertUnwindSafe(|| {
-            with_document_scope(|| {
-                store_rc(9, Rc::new(9_i32));
+        store_rc(8, Rc::new(8_i32));
+        with_anchor_context(AnchorKind::Rc, Some(8), || {
+            let panic_result = catch_unwind(AssertUnwindSafe(|| {
+                with_document_scope(|| {
+                    assert_eq!(current_rc_anchor(), None);
+                    assert!(get_rc::<i32>(8).unwrap().is_none());
+                    store_rc(9, Rc::new(9_i32));
 
-                with_anchor_context(AnchorKind::Rc, Some(9), || {
-                    assert_eq!(current_rc_anchor(), Some(9));
-                    panic!("intentional panic while testing anchor store cleanup");
+                    with_anchor_context(AnchorKind::Rc, Some(9), || {
+                        assert_eq!(current_rc_anchor(), Some(9));
+                        panic!("intentional panic while testing anchor store cleanup");
+                    });
                 });
-            });
-        }));
+            }));
 
-        assert!(panic_result.is_err());
+            assert!(panic_result.is_err());
+            assert_eq!(current_rc_anchor(), Some(8));
+            assert!(get_rc::<i32>(8).unwrap().is_some());
+            assert!(!rc_anchor_reentrant(9));
+            assert!(get_rc::<i32>(9).unwrap().is_none());
+        });
+
         assert_eq!(current_rc_anchor(), None);
+        assert!(get_rc::<i32>(8).unwrap().is_some());
         assert!(!rc_anchor_reentrant(9));
         assert!(get_rc::<i32>(9).unwrap().is_none());
     }
