@@ -5,7 +5,7 @@
 
 use crate::options::MergeKeyPolicy;
 use ahash::HashSetExt;
-use granit_parser::{Event, Parser, ScalarStyle, ScanError};
+use granit_parser::{Event, Parser, ScalarStyle, ScanError, Tag};
 use smallvec::SmallVec;
 use std::collections::HashSet;
 
@@ -125,7 +125,7 @@ pub struct Budget {
         note = "Direct construction of `Budget` will be disabled from 1.0.0, use macro `budget!`"
     )]
     pub max_nodes: usize,
-    /// Maximum total bytes of scalar contents (sum of `Scalar.value.len()`).
+    /// Maximum total bytes of scalar contents plus explicit tag spellings.
     ///
     /// Default: 67,108,864 (64 MiB)
     #[deprecated(
@@ -389,6 +389,13 @@ enum ContainerState {
     },
 }
 
+fn tag_display_len(tag: Option<&Tag>) -> usize {
+    tag.map_or(0, |tag| {
+        let (handle, suffix) = tag.parts();
+        handle.len().saturating_add(suffix.len())
+    })
+}
+
 impl BudgetEnforcer {
     /// Create a new enforcer for the provided `budget`.
     pub(crate) fn new(budget: Budget, policy: EnforcingPolicy, merge_keys: MergeKeyPolicy) -> Self {
@@ -417,20 +424,15 @@ impl BudgetEnforcer {
         match ev {
             Event::Scalar(value, style, anchor_id, tag_opt) => {
                 self.bump_nodes()?;
-                let tag_len = tag_opt.as_ref().map_or(0, |tag| tag.to_string().len());
-                self.report.total_scalar_bytes = self
-                    .report
-                    .total_scalar_bytes
-                    .saturating_add(value.len().saturating_add(tag_len));
-                if self.report.total_scalar_bytes > self.budget.max_total_scalar_bytes {
-                    return Err(BudgetBreach::ScalarBytes {
-                        total_scalar_bytes: self.report.total_scalar_bytes,
-                    });
-                }
+                self.bump_total_scalar_bytes(
+                    value
+                        .len()
+                        .saturating_add(tag_display_len(tag_opt.as_deref())),
+                )?;
                 self.record_anchor(*anchor_id)?;
                 self.handle_scalar(value, style, tag_opt.is_some())?;
             }
-            Event::MappingStart(_style, anchor_id, _tag_opt) => {
+            Event::MappingStart(_style, anchor_id, tag_opt) => {
                 self.bump_nodes()?;
                 self.depth = self.depth.saturating_add(1);
                 if self.depth > self.report.max_depth {
@@ -441,6 +443,7 @@ impl BudgetEnforcer {
                         depth: self.report.max_depth,
                     });
                 }
+                self.bump_total_scalar_bytes(tag_display_len(tag_opt.as_deref()))?;
                 let from_mapping_value = self.entering_container();
                 self.containers.push(ContainerState::Mapping {
                     expecting_key: true,
@@ -456,7 +459,7 @@ impl BudgetEnforcer {
                 }
                 self.leave_mapping()?;
             }
-            Event::SequenceStart(_style, anchor_id, _tag_opt) => {
+            Event::SequenceStart(_style, anchor_id, tag_opt) => {
                 self.bump_nodes()?;
                 self.depth = self.depth.saturating_add(1);
                 if self.depth > self.report.max_depth {
@@ -467,6 +470,7 @@ impl BudgetEnforcer {
                         depth: self.report.max_depth,
                     });
                 }
+                self.bump_total_scalar_bytes(tag_display_len(tag_opt.as_deref()))?;
                 let from_mapping_value = self.entering_container();
                 self.containers
                     .push(ContainerState::Sequence { from_mapping_value });
@@ -546,6 +550,16 @@ impl BudgetEnforcer {
         if self.report.nodes > self.budget.max_nodes {
             return Err(BudgetBreach::Nodes {
                 nodes: self.report.nodes,
+            });
+        }
+        Ok(())
+    }
+
+    fn bump_total_scalar_bytes(&mut self, bytes: usize) -> Result<(), BudgetBreach> {
+        self.report.total_scalar_bytes = self.report.total_scalar_bytes.saturating_add(bytes);
+        if self.report.total_scalar_bytes > self.budget.max_total_scalar_bytes {
+            return Err(BudgetBreach::ScalarBytes {
+                total_scalar_bytes: self.report.total_scalar_bytes,
             });
         }
         Ok(())
@@ -922,6 +936,38 @@ e: *A
                 total_scalar_bytes
             }) if total_scalar_bytes > 14
         ));
+    }
+
+    #[test]
+    fn scalar_budget_counts_container_tag_bytes() {
+        for yaml in ["root: !!seq [a]\n", "root: !!map {a: b}\n"] {
+            let budget = Budget {
+                max_total_scalar_bytes: 24,
+                ..Default::default()
+            };
+
+            let report = check_yaml_budget(yaml, budget, EnforcingPolicy::AllContent).unwrap();
+            assert!(
+                matches!(
+                    report.breached,
+                    Some(BudgetBreach::ScalarBytes {
+                        total_scalar_bytes
+                    }) if total_scalar_bytes > 24
+                ),
+                "yaml: {yaml:?}, report: {report:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn tag_display_len_matches_display_without_allocating() {
+        for tag in [
+            Tag::with_original_handle("tag:yaml.org,2002:", "str", "!!"),
+            Tag::with_original_handle("!", "local", "!"),
+            Tag::with_original_handle("", "tag:example.com,2000:thing", ""),
+        ] {
+            assert_eq!(tag_display_len(Some(&tag)), tag.to_string().len());
+        }
     }
 
     #[test]
