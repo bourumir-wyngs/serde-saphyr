@@ -1421,11 +1421,13 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     /// (which Serde also requests via `deserialize_map`).
     fn deserialize_map<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Treat null-like scalar as an empty map/struct.
-        if let Some((s, tag, style, _location)) = self.peek_effective_scalar()?
+        if let Some((s, tag, style, location)) = self.peek_effective_scalar()?
             && (tag == SfTag::Null || scalar_is_nullish(&s, &style))
         {
             let _ = self.ev.next()?; // consume the null-like scalar
-            struct EmptyMap;
+            struct EmptyMap {
+                location: Location,
+            }
             impl<'de> de::MapAccess<'de> for EmptyMap {
                 type Error = Error;
                 fn next_key_seed<K>(&mut self, _seed: K) -> Result<Option<K::Value>, Error>
@@ -1438,10 +1440,12 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 where
                     Vv: de::DeserializeSeed<'de>,
                 {
-                    unreachable!("no values in empty map")
+                    Err(Error::ValueRequestedBeforeKey {
+                        location: self.location,
+                    })
                 }
             }
-            return visitor.visit_map(EmptyMap);
+            return visitor.visit_map(EmptyMap { location });
         }
         // Same-line separator comments on the parent field belong to this mapping node.
         // `Commented<Container>` consumes those comments before this point; a plain map
