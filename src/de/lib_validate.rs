@@ -578,12 +578,13 @@ where
                         let mut recorder = crate::path_map::PathRecorder::new();
                         let value_res = crate::anchor_store::with_document_scope(|| {
                             with_interp_redaction_scope(|| {
-                                let value = T::deserialize(
+                                let value = crate::de::with_root_redaction(
                                     crate::de::YamlDeserializer::new_with_path_recorder(
                                         &mut self.src,
                                         self.cfg,
                                         &mut recorder,
                                     ),
+                                    T::deserialize,
                                 )?;
                                 Validate::validate(&value).map_err(|report| {
                                     Error::ValidationError {
@@ -976,12 +977,13 @@ where
                         let mut recorder = crate::path_map::PathRecorder::new();
                         let value_res = crate::anchor_store::with_document_scope(|| {
                             with_interp_redaction_scope(|| {
-                                let value = T::deserialize(
+                                let value = crate::de::with_root_redaction(
                                     crate::de::YamlDeserializer::new_with_path_recorder(
                                         &mut self.src,
                                         self.cfg,
                                         &mut recorder,
                                     ),
+                                    T::deserialize,
                                 )?;
                                 ValidatorValidate::validate(&value).map_err(|errors| {
                                     Error::ValidatorError {

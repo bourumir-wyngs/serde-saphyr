@@ -804,6 +804,45 @@ fn from_multiple_top_level_custom_error_does_not_leak_interpolated_value() {
     assert!(!msg.contains("zz-secret"), "secret leaked: {msg}");
 }
 
+#[cfg(feature = "garde")]
+mod garde_streaming_redaction {
+    use super::*;
+    use garde::Validate;
+
+    fn reject_with_echo(value: &str, _ctx: &()) -> garde::Result {
+        Err(garde::Error::new(format!("bad value: {value}")))
+    }
+
+    #[derive(Debug, Deserialize, Validate)]
+    #[allow(dead_code)]
+    struct GardeTopLevelSecret(#[garde(custom(reject_with_echo))] String);
+
+    #[test]
+    fn read_valid_top_level_validation_does_not_leak_interpolated_value() {
+        let mut props = HashMap::new();
+        props.insert("BAD".to_string(), "zz-secret".to_string());
+
+        let mut reader = std::io::Cursor::new("${BAD}\n".as_bytes());
+        let mut iter = serde_saphyr::read_with_options_valid::<_, GardeTopLevelSecret>(
+            &mut reader,
+            property_options_with_map(Some(props)),
+        );
+
+        let err = iter
+            .next()
+            .expect("iterator must yield validation result")
+            .expect_err("validation must fail");
+        let msg = err.to_string();
+
+        assert!(!msg.contains("zz-secret"), "secret leaked: {msg}");
+        assert!(
+            msg.contains("${BAD}") || msg.contains("invalid interpolated"),
+            "expected redacted value in message, got: {msg}"
+        );
+        assert!(iter.next().is_none(), "iterator must stop at end of input");
+    }
+}
+
 #[cfg(feature = "validator")]
 fn reject_with_echo(v: &str) -> Result<(), validator::ValidationError> {
     let mut err = validator::ValidationError::new("bad_secret");
@@ -847,6 +886,23 @@ struct ValidatorParamKeyCfg {
 }
 
 #[cfg(feature = "validator")]
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct ValidatorTopLevelSecret(String);
+
+#[cfg(feature = "validator")]
+impl Validate for ValidatorTopLevelSecret {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        let mut errors = validator::ValidationErrors::new();
+        errors.add(
+            "value",
+            reject_with_echo(&self.0).expect_err("test validator must reject"),
+        );
+        Err(errors)
+    }
+}
+
+#[cfg(feature = "validator")]
 #[test]
 fn validator_custom_message_does_not_leak_interpolated_value() {
     let mut props = HashMap::new();
@@ -860,6 +916,32 @@ fn validator_custom_message_does_not_leak_interpolated_value() {
 
     let msg = err.to_string();
     assert!(!msg.contains("zz-secret"), "secret leaked: {msg}");
+}
+
+#[cfg(feature = "validator")]
+#[test]
+fn read_validate_top_level_validation_does_not_leak_interpolated_value() {
+    let mut props = HashMap::new();
+    props.insert("BAD".to_string(), "zz-secret".to_string());
+
+    let mut reader = std::io::Cursor::new("${BAD}\n".as_bytes());
+    let mut iter = serde_saphyr::read_with_options_validate::<_, ValidatorTopLevelSecret>(
+        &mut reader,
+        property_options_with_map(Some(props)),
+    );
+
+    let err = iter
+        .next()
+        .expect("iterator must yield validation result")
+        .expect_err("validation must fail");
+    let msg = err.to_string();
+
+    assert!(!msg.contains("zz-secret"), "secret leaked: {msg}");
+    assert!(
+        msg.contains("${BAD}") || msg.contains("invalid interpolated"),
+        "expected redacted value in message, got: {msg}"
+    );
+    assert!(iter.next().is_none(), "iterator must stop at end of input");
 }
 
 #[cfg(feature = "validator")]
