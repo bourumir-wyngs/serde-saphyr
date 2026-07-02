@@ -96,7 +96,7 @@ pub struct Budget {
     pub max_anchors: usize,
     /// Maximum structural nesting depth (sequences + mappings).
     ///
-    /// Default: 2,000
+    /// Default: 64
     #[deprecated(
         note = "Direct construction of `Budget` will be disabled from 1.0.0, use macro `budget!`"
     )]
@@ -191,7 +191,7 @@ impl Default for Budget {
             max_events: 1_000_000,                           // plenty for normal configs
             max_aliases: 50_000,                             // liberal absolute cap
             max_anchors: 50_000,
-            max_depth: 2_000, // protects stack/CPU
+            max_depth: 64, // protects stack/CPU
             max_inclusion_depth: 24,
             max_documents: 1_024, // doc separator storms
             max_nodes: 250_000,   // sequences + maps + scalars

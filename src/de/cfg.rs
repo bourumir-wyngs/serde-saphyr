@@ -1,4 +1,6 @@
 use super::options::{DuplicateKeyPolicy, MergeKeyPolicy, Options};
+use super::{Error, Location};
+use crate::budget::BudgetBreach;
 
 /// Small immutable runtime configuration that `YamlDeserializer` needs.
 #[derive(Copy, Clone)]
@@ -17,6 +19,11 @@ pub(crate) struct Cfg {
     pub(crate) ignore_binary_tag_for_string: bool,
     /// Do not take into String type that looks like number or boolean (require quoting)
     pub(crate) no_schema: bool,
+    /// Maximum container depth from the configured budget. `None` means budget enforcement
+    /// is disabled for deserializer recursion.
+    pub(crate) max_depth: Option<usize>,
+    /// Current container depth for the recursive Serde deserializer.
+    pub(crate) depth: usize,
 }
 
 impl Cfg {
@@ -31,6 +38,19 @@ impl Cfg {
             angle_conversions: options.angle_conversions,
             ignore_binary_tag_for_string: options.ignore_binary_tag_for_string,
             no_schema: options.no_schema,
+            max_depth: options.budget.as_ref().map(|budget| budget.max_depth),
+            depth: 0,
         }
+    }
+
+    pub(crate) fn enter_container(self, location: Location) -> Result<Self, Error> {
+        let depth = self.depth.saturating_add(1);
+        if let Some(max_depth) = self.max_depth
+            && depth > max_depth
+        {
+            return Err(crate::de_error::budget_error(BudgetBreach::Depth { depth })
+                .with_location(location));
+        }
+        Ok(Self { depth, ..self })
     }
 }

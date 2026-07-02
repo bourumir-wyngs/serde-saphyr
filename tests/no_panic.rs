@@ -55,6 +55,47 @@ fn test_deeply_nested_structures() {
 }
 
 #[test]
+fn deeply_nested_block_mapping_errors_without_abort() {
+    #[allow(deprecated)]
+    let yaml = deeply_nested_block_mapping_yaml(serde_saphyr::Budget::default().max_depth + 1);
+    let err = serde_saphyr::from_str::<serde_json::Value>(&yaml).unwrap_err();
+    assert_budget_depth_error(&err);
+
+    let err =
+        serde_saphyr::from_reader::<_, serde_json::Value>(std::io::Cursor::new(yaml.as_bytes()))
+            .unwrap_err();
+    assert_budget_depth_error(&err);
+}
+
+fn assert_budget_depth_error(err: &serde_saphyr::Error) {
+    assert!(matches!(
+        budget_error_inner(err),
+        serde_saphyr::Error::Budget {
+            breach: serde_saphyr::budget::BudgetBreach::Depth { .. },
+            ..
+        }
+    ));
+}
+
+fn budget_error_inner(err: &serde_saphyr::Error) -> &serde_saphyr::Error {
+    match err {
+        serde_saphyr::Error::WithSnippet { error, .. } => budget_error_inner(error),
+        err => err,
+    }
+}
+
+fn deeply_nested_block_mapping_yaml(depth: usize) -> String {
+    let mut yaml = String::new();
+    for level in 0..depth {
+        yaml.extend(std::iter::repeat_n(' ', level));
+        yaml.push_str("k:\n");
+    }
+    yaml.extend(std::iter::repeat_n(' ', depth));
+    yaml.push_str("leaf: 0\n");
+    yaml
+}
+
+#[test]
 fn test_empty_input() {
     let result: Result<Mura, _> = serde_saphyr::from_str("");
     assert!(result.is_err(), "Empty struct not enough");

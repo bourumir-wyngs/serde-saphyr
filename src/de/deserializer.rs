@@ -1276,6 +1276,12 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
         // rule applies to comments written above the alias token.
         let mut seq_start_comments = std::mem::take(&mut self.pending_value_comments);
         seq_start_comments.extend(self.ev.take_leading_comments_for_next_node()?);
+        let seq_location = self
+            .ev
+            .peek()?
+            .map(|ev| ev.location())
+            .unwrap_or_else(|| self.ev.last_location());
+        let child_cfg = self.cfg.enter_container(seq_location)?;
         self.expect_seq_start()?;
         /// Streaming `SeqAccess` over the underlying `Events`.
         struct SA<'de, 'e> {
@@ -1371,7 +1377,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
         let result = visitor.visit_seq(SA {
             ev: self.ev,
-            cfg: self.cfg,
+            cfg: child_cfg,
             pending_first_element_comments: seq_start_comments,
 
             #[cfg(any(feature = "garde", feature = "validator"))]
@@ -1447,6 +1453,12 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
         // anchored map start here; comments above the alias follow the same rule.
         let mut map_start_comments = std::mem::take(&mut self.pending_value_comments);
         map_start_comments.extend(self.ev.take_leading_comments_for_next_node()?);
+        let map_location = self
+            .ev
+            .peek()?
+            .map(|ev| ev.location())
+            .unwrap_or_else(|| self.ev.last_location());
+        let child_cfg = self.cfg.enter_container(map_location)?;
         self.expect_map_start()?;
 
         // Ensure "missing field" errors (which have no natural span) get attributed to the
@@ -2181,7 +2193,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
         visitor.visit_map(MA {
             ev: self.ev,
-            cfg: self.cfg,
+            cfg: child_cfg,
             have_key: false,
 
             fallback_guard: None,
