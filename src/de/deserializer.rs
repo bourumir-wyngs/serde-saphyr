@@ -1,5 +1,5 @@
-use std::borrow::Cow;
 use std::collections::{HashSet, VecDeque};
+use std::{borrow::Cow, fmt};
 
 use ahash::{HashSetExt, RandomState};
 use granit_parser::ScalarStyle;
@@ -37,6 +37,127 @@ use crate::parse_scalars::{
 };
 
 type FastHashSet<T> = HashSet<T, RandomState>;
+
+struct TupleLenExpected {
+    len: usize,
+}
+
+impl fmt::Display for TupleLenExpected {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "a tuple of size {}", self.len)
+    }
+}
+
+impl de::Expected for TupleLenExpected {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, formatter)
+    }
+}
+
+struct TupleLenVisitor<V> {
+    inner: V,
+    len: usize,
+}
+
+impl<'de, V> Visitor<'de> for TupleLenVisitor<V>
+where
+    V: Visitor<'de>,
+{
+    type Value = V::Value;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.inner.expecting(formatter)
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: de::SeqAccess<'de>,
+    {
+        let mut consumed = 0usize;
+        let value = self.inner.visit_seq(CountingSeqAccess {
+            inner: &mut seq,
+            consumed: &mut consumed,
+        })?;
+
+        if seq.next_element::<de::IgnoredAny>()?.is_some() {
+            return Err(<A::Error as de::Error>::invalid_length(
+                consumed + 1,
+                &TupleLenExpected { len: self.len },
+            ));
+        }
+
+        Ok(value)
+    }
+}
+
+struct CountingSeqAccess<'a, A> {
+    inner: &'a mut A,
+    consumed: &'a mut usize,
+}
+
+impl<'de, A> de::SeqAccess<'de> for CountingSeqAccess<'_, A>
+where
+    A: de::SeqAccess<'de>,
+{
+    type Error = A::Error;
+
+    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
+    where
+        T: de::DeserializeSeed<'de>,
+    {
+        let value = self.inner.next_element_seed(seed)?;
+        if value.is_some() {
+            *self.consumed += 1;
+        }
+        Ok(value)
+    }
+
+    fn size_hint(&self) -> Option<usize> {
+        self.inner.size_hint()
+    }
+}
+
+fn skip_one_node_from_events<'de>(ev: &mut dyn Events<'de>) -> Result<(), Error> {
+    let mut depth;
+    match ev.next()? {
+        Some(Ev::Scalar { .. }) => return Ok(()),
+        Some(Ev::SeqStart { .. } | Ev::MapStart { .. }) => depth = 1usize,
+        Some(Ev::SeqEnd { location } | Ev::MapEnd { location }) => {
+            return Err(Error::UnexpectedContainerEndWhileSkippingNode { location });
+        }
+        Some(Ev::Taken { location }) => {
+            return Err(Error::unexpected("consumed event").with_location(location));
+        }
+        None => return Err(eof_with_loc(ev)),
+    }
+
+    while depth != 0 {
+        match ev.next()? {
+            Some(Ev::SeqStart { .. } | Ev::MapStart { .. }) => depth += 1,
+            Some(Ev::SeqEnd { .. } | Ev::MapEnd { .. }) => depth -= 1,
+            Some(Ev::Scalar { .. }) => {}
+            Some(Ev::Taken { location }) => {
+                return Err(Error::unexpected("consumed event").with_location(location));
+            }
+            None => return Err(eof_with_loc(ev)),
+        }
+    }
+
+    Ok(())
+}
+
+fn drain_remaining_sequence<'de>(ev: &mut dyn Events<'de>) -> Result<(), Error> {
+    loop {
+        match ev.peek()? {
+            Some(Ev::SeqEnd { .. }) => {
+                let _ = ev.next()?;
+                return Ok(());
+            }
+            Some(_) => skip_one_node_from_events(ev)?,
+            None => return Err(eof_with_loc(ev)),
+        }
+    }
+}
 
 /// The streaming Serde deserializer.
 ///
@@ -1377,29 +1498,33 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             #[cfg(any(feature = "garde", feature = "validator"))]
             idx: 0,
         })?;
-        if let Some(Ev::SeqEnd { .. }) = self.ev.peek()? {
-            let _ = self.ev.next()?;
-        }
+        drain_remaining_sequence(self.ev)?;
         Ok(result)
     }
 
     /// Deserialize a tuple; identical mechanics to sequences (fixed length checked by caller).
     fn deserialize_tuple<V: Visitor<'de>>(
         self,
-        _len: usize,
+        len: usize,
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
-        self.deserialize_seq(visitor)
+        self.deserialize_seq(TupleLenVisitor {
+            inner: visitor,
+            len,
+        })
     }
 
     /// Deserialize a tuple struct; identical mechanics to sequences.
     fn deserialize_tuple_struct<V: Visitor<'de>>(
         self,
         _name: &'static str,
-        _len: usize,
+        len: usize,
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
-        self.deserialize_seq(visitor)
+        self.deserialize_seq(TupleLenVisitor {
+            inner: visitor,
+            len,
+        })
     }
 
     /// Deserialize a YAML mapping into a Serde map/struct field stream.

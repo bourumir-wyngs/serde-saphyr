@@ -2226,6 +2226,12 @@ impl de::Error for Error {
 
     #[cold]
     #[inline(never)]
+    fn invalid_length(len: usize, exp: &dyn de::Expected) -> Self {
+        maybe_attach_fallback_location(Error::msg(format!("invalid length {len}, expected {exp}")))
+    }
+
+    #[cold]
+    #[inline(never)]
     fn unknown_variant(variant: &str, expected: &'static [&'static str]) -> Self {
         maybe_attach_fallback_location(Error::SerdeUnknownVariant {
             variant: redact_dynamic_identifier(variant, "an interpolated variant"),
