@@ -988,6 +988,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
 
     fn serialize_none(self) -> Result<()> {
         self.write_space_if_pending()?;
+        self.write_scalar_prefix_if_anchor()?;
         self.last_value_was_block = false;
         if self.at_line_start {
             self.write_indent(self.depth)?;
@@ -1003,6 +1004,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
 
     fn serialize_unit(self) -> Result<()> {
         self.write_space_if_pending()?;
+        self.write_scalar_prefix_if_anchor()?;
         self.last_value_was_block = false;
         if self.at_line_start {
             self.write_indent(self.depth)?;
@@ -1104,14 +1106,21 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         variant: &'static str,
         value: &T,
     ) -> Result<()> {
+        let was_inline_value = self.pending_space_after_colon;
+        let anchor_broke_line = self.pending_anchor_id.is_some();
+        let after_dash_depth = self.after_dash_depth;
+        self.write_anchor_for_complex_node()?;
+
         // If we are the value of a mapping key, YAML forbids "key: Variant: value" inline.
         // Emit the variant mapping on the next line indented one level. Also, do not insert
         // a space after the colon when the value may itself be a mapping; instead, defer
         // space insertion to the value serializer via pending_space_after_colon.
-        if self.pending_space_after_colon {
+        if was_inline_value {
             // consume the pending space request and start a new line
             self.pending_space_after_colon = false;
-            self.newline()?;
+            if !self.at_line_start {
+                self.newline()?;
+            }
             // When used as a mapping value, indent relative to the parent mapping's base,
             // not the serializer's current depth (which may still be the outer level).
             let base = self.current_map_depth.unwrap_or(self.depth);
@@ -1134,7 +1143,12 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         }
         // Otherwise (top-level or sequence context).
         if self.at_line_start {
-            self.write_indent(self.depth)?;
+            let depth = if anchor_broke_line {
+                after_dash_depth.map_or(self.depth, |d| d + 1)
+            } else {
+                self.depth
+            };
+            self.write_indent(depth)?;
         }
         self.write_plain_or_quoted(variant)?;
         // Write ':' without a space and defer spacing/newline to the value serializer.
@@ -1286,12 +1300,19 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         variant: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeTupleVariant> {
+        let was_inline_value = self.pending_space_after_colon;
+        let anchor_broke_line = self.pending_anchor_id.is_some();
+        let after_dash_depth = self.after_dash_depth;
+        self.write_anchor_for_complex_node()?;
+
         // If we are the value of a mapping key, YAML forbids keeping a nested mapping
         // on the same line (e.g., "key: Variant:"). Move the variant mapping to the next line
         // indented under the parent mapping's base depth.
-        if self.pending_space_after_colon {
+        if was_inline_value {
             self.pending_space_after_colon = false;
-            self.newline()?;
+            if !self.at_line_start {
+                self.newline()?;
+            }
             let base = self.current_map_depth.unwrap_or(self.depth) + 1;
             self.write_indent(base)?;
             self.write_plain_or_quoted(variant)?;
@@ -1308,7 +1329,12 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         }
         // Otherwise (top-level or sequence context).
         if self.at_line_start {
-            self.write_indent(self.depth)?;
+            let depth = if anchor_broke_line {
+                after_dash_depth.map_or(self.depth, |d| d + 1)
+            } else {
+                self.depth
+            };
+            self.write_indent(depth)?;
         }
         self.write_plain_or_quoted(variant)?;
         self.out.write_str(":\n")?;
@@ -1441,13 +1467,20 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         variant: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeStructVariant> {
+        let was_inline_value = self.pending_space_after_colon;
+        let anchor_broke_line = self.pending_anchor_id.is_some();
+        let after_dash_depth = self.after_dash_depth;
+        self.write_anchor_for_complex_node()?;
+
         // If we are the value of a mapping key, YAML forbids keeping a nested mapping
         // on the same line (e.g., "key: Variant:"). Move the variant mapping to the next line
         // indented under the parent mapping's base depth.
-        if self.pending_space_after_colon {
+        if was_inline_value {
             // Value position after a map key: start the variant mapping on the next line.
             self.pending_space_after_colon = false;
-            self.newline()?;
+            if !self.at_line_start {
+                self.newline()?;
+            }
             // Indent the variant name one level under the parent mapping.
             let base = self.current_map_depth.unwrap_or(self.depth) + 1;
             self.write_indent(base)?;
@@ -1465,7 +1498,12 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         }
         // Otherwise (top-level or sequence context), emit the variant name at current depth.
         if self.at_line_start {
-            self.write_indent(self.depth)?;
+            let depth = if anchor_broke_line {
+                after_dash_depth.map_or(self.depth, |d| d + 1)
+            } else {
+                self.depth
+            };
+            self.write_indent(depth)?;
         }
         self.write_plain_or_quoted(variant)?;
         self.out.write_str(":\n")?;

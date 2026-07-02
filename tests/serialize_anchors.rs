@@ -4,10 +4,10 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use indoc::indoc;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 // Bring helpers into scope
-use serde_saphyr::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor, to_string};
+use serde_saphyr::{ArcAnchor, ArcWeakAnchor, RcAnchor, RcWeakAnchor, from_str, to_string};
 
 #[derive(Clone, Serialize)]
 struct Node {
@@ -23,6 +23,137 @@ struct NodeArc {
     next: Option<ArcAnchor<NodeArc>>, // allow cycles/shared via ArcAnchor
     prev: Option<ArcWeakAnchor<NodeArc>>, // demonstrate weak back-reference
     unique: Option<ArcAnchor<NodeArc>>, // an additional ArcAnchor that may be unshared
+}
+
+#[test]
+fn rc_anchor_none_consumes_anchor_on_null_node() {
+    #[derive(Debug, Deserialize, Serialize)]
+    struct Doc {
+        a: RcAnchor<Option<i32>>,
+        x: i32,
+        b: RcAnchor<Option<i32>>,
+    }
+
+    let shared = Rc::new(None);
+    let doc = Doc {
+        a: RcAnchor(shared.clone()),
+        x: 5,
+        b: RcAnchor(shared),
+    };
+
+    let yaml = to_string(&doc).expect("serialize shared None anchor");
+    let expected = indoc! {r#"
+        a: &a1 null
+        x: 5
+        b: *a1
+    "#};
+    assert_eq!(yaml, expected);
+
+    let parsed: Doc = from_str(&yaml).expect("deserialize shared None anchor");
+    assert_eq!(*parsed.a.0, None);
+    assert_eq!(*parsed.b.0, None);
+    assert!(
+        Rc::ptr_eq(&parsed.a.0, &parsed.b.0),
+        "alias should refer back to the anchored None node"
+    );
+}
+
+#[test]
+fn rc_anchor_unit_consumes_anchor_on_null_node() {
+    #[derive(Debug, Deserialize, Serialize)]
+    struct Doc {
+        a: RcAnchor<()>,
+        x: i32,
+        b: RcAnchor<()>,
+    }
+
+    let shared = Rc::new(());
+    let doc = Doc {
+        a: RcAnchor(shared.clone()),
+        x: 5,
+        b: RcAnchor(shared),
+    };
+
+    let yaml = to_string(&doc).expect("serialize shared unit anchor");
+    let expected = indoc! {r#"
+        a: &a1 null
+        x: 5
+        b: *a1
+    "#};
+    assert_eq!(yaml, expected);
+
+    let parsed: Doc = from_str(&yaml).expect("deserialize shared unit anchor");
+    assert!(
+        Rc::ptr_eq(&parsed.a.0, &parsed.b.0),
+        "alias should refer back to the anchored unit node"
+    );
+}
+
+#[test]
+fn rc_anchor_enum_variants_anchor_the_variant_node() {
+    #[derive(Debug, Deserialize, PartialEq, Serialize)]
+    enum Event {
+        Newtype(i32),
+        Tuple(i32, i32),
+        Struct { value: i32 },
+    }
+
+    #[derive(Debug, Deserialize, Serialize)]
+    struct Doc {
+        a: RcAnchor<Event>,
+        x: i32,
+        b: RcAnchor<Event>,
+    }
+
+    fn assert_round_trip(event: Event, expected: &str) {
+        let shared = Rc::new(event);
+        let doc = Doc {
+            a: RcAnchor(shared.clone()),
+            x: 5,
+            b: RcAnchor(shared),
+        };
+
+        let yaml = to_string(&doc).expect("serialize shared enum variant anchor");
+        assert_eq!(yaml, expected);
+
+        let parsed: Doc = from_str(&yaml).expect("deserialize shared enum variant anchor");
+        assert_eq!(*parsed.a.0, *parsed.b.0);
+        assert!(
+            Rc::ptr_eq(&parsed.a.0, &parsed.b.0),
+            "alias should refer back to the anchored enum variant node"
+        );
+    }
+
+    assert_round_trip(
+        Event::Newtype(1),
+        indoc! {r#"
+            a: &a1
+              Newtype: 1
+            x: 5
+            b: *a1
+        "#},
+    );
+    assert_round_trip(
+        Event::Tuple(1, 2),
+        indoc! {r#"
+            a: &a1
+              Tuple:
+                - 1
+                - 2
+            x: 5
+            b: *a1
+        "#},
+    );
+    assert_round_trip(
+        Event::Struct { value: 1 },
+        indoc! {r#"
+            a: &a1
+              Struct:
+                value: 1
+            x: 5
+            b: *a1
+        "#},
+    );
 }
 
 #[test]
