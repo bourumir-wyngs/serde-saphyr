@@ -7,6 +7,7 @@ use serde_core::de::{self, IntoDeserializer, Visitor};
 
 use super::{Error, Location};
 use crate::Deserializer;
+use crate::spanned::INTERNAL_SPANNED_MARKER;
 
 #[cold]
 fn unreachable_deserialize_any(what: &str) -> Error {
@@ -17,7 +18,7 @@ fn unreachable_deserialize_any(what: &str) -> Error {
 ///
 /// This captures the current *use-site* (`referenced`) and *definition-site*
 /// (`defined`) locations and then synthesizes a struct-like view:
-/// `{ value: T, referenced: Location, defined: Location }`.
+/// `{ __serde_saphyr_private_spanned: true, value: T, referenced: Location, defined: Location }`.
 pub(super) fn deserialize_yaml_spanned<'de, V>(
     de: Deserializer<'de, '_>,
     visitor: V,
@@ -48,7 +49,7 @@ where
 /// deserializer for *some* representation of the wrapper.
 ///
 /// For `Spanned<T>` we synthesize a struct-like view:
-/// `{ value: T, referenced: Location, defined: Location }`.
+/// `{ __serde_saphyr_private_spanned: true, value: T, referenced: Location, defined: Location }`.
 ///
 /// Why:
 /// - It lets `Spanned<T>` be implemented without building an intermediate YAML AST.
@@ -72,7 +73,11 @@ impl<'de, 'e> de::Deserializer<'de> for SpannedDeser<'de, 'e> {
     type Error = Error;
 
     fn deserialize_any<Vv: Visitor<'de>>(self, visitor: Vv) -> Result<Vv::Value, Self::Error> {
-        self.deserialize_struct("Spanned", &["value", "referenced", "defined"], visitor)
+        self.deserialize_struct(
+            "Spanned",
+            &[INTERNAL_SPANNED_MARKER, "value", "referenced", "defined"],
+            visitor,
+        )
     }
 
     fn deserialize_struct<Vv: Visitor<'de>>(
@@ -98,10 +103,11 @@ impl<'de, 'e> de::Deserializer<'de> for SpannedDeser<'de, 'e> {
 
 /// Map-access state machine that yields the synthesized `Spanned<T>` fields.
 ///
-/// This yields exactly three key/value pairs in a fixed order:
-/// 1) `value`
-/// 2) `referenced`
-/// 3) `defined`
+/// This yields exactly four key/value pairs in a fixed order:
+/// 1) `__serde_saphyr_private_spanned`
+/// 2) `value`
+/// 3) `referenced`
+/// 4) `defined`
 ///
 /// This is intentionally a map/struct view (rather than a tuple) so the public
 /// `Spanned<T>` `Deserialize` implementation can parse the same named fields in
@@ -113,7 +119,7 @@ struct SpannedMapAccess<'de, 'e> {
     referenced: Location,
     /// Definition-site location (typically `Ev::location()` from `peek()`).
     defined: Location,
-    /// 0..=3 field state cursor.
+    /// 0..=4 field state cursor.
     state: u8,
 }
 
@@ -125,9 +131,10 @@ impl<'de, 'e> de::MapAccess<'de> for SpannedMapAccess<'de, 'e> {
         K: de::DeserializeSeed<'de>,
     {
         let key = match self.state {
-            0 => "value",
-            1 => "referenced",
-            2 => "defined",
+            0 => INTERNAL_SPANNED_MARKER,
+            1 => "value",
+            2 => "referenced",
+            3 => "defined",
             _ => return Ok(None),
         };
         self.state += 1;
@@ -140,6 +147,10 @@ impl<'de, 'e> de::MapAccess<'de> for SpannedMapAccess<'de, 'e> {
     {
         match self.state {
             1 => {
+                // internal marker
+                seed.deserialize(true.into_deserializer())
+            }
+            2 => {
                 // value
                 // Reborrow the event source instead of moving `&mut` out of `self.de`.
                 // The delegated value still belongs to the same YAML node, so preserve
@@ -151,13 +162,13 @@ impl<'de, 'e> de::MapAccess<'de> for SpannedMapAccess<'de, 'e> {
                 de.pending_value_comments = std::mem::take(&mut self.de.pending_value_comments);
                 seed.deserialize(de)
             }
-            2 => {
+            3 => {
                 // referenced
                 seed.deserialize(LocationDeser {
                     location: self.referenced,
                 })
             }
-            3 => {
+            4 => {
                 // defined
                 seed.deserialize(LocationDeser {
                     location: self.defined,

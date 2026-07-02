@@ -30,6 +30,8 @@ use serde_core::{Deserialize, Serialize};
 
 use crate::Location;
 
+pub(crate) const INTERNAL_SPANNED_MARKER: &str = "__serde_saphyr_private_spanned";
+
 /// A value paired with source locations describing where it came from. Spanned locations
 /// are specified in character positions and, when possible, in byte offsets as well. Byte offsets
 /// are available for string sources but not reader sources.
@@ -228,6 +230,36 @@ where
             where
                 A: de::MapAccess<'de>,
             {
+                struct PrependMapAccess<A> {
+                    first_key: Option<String>,
+                    tail: A,
+                }
+
+                impl<'de, A> de::MapAccess<'de> for PrependMapAccess<A>
+                where
+                    A: de::MapAccess<'de>,
+                {
+                    type Error = A::Error;
+
+                    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, A::Error>
+                    where
+                        K: de::DeserializeSeed<'de>,
+                    {
+                        if let Some(first_key) = self.first_key.take() {
+                            seed.deserialize(first_key.into_deserializer()).map(Some)
+                        } else {
+                            self.tail.next_key_seed(seed)
+                        }
+                    }
+
+                    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, A::Error>
+                    where
+                        V: de::DeserializeSeed<'de>,
+                    {
+                        self.tail.next_value_seed(seed)
+                    }
+                }
+
                 enum Field {
                     Value,
                     Referenced,
@@ -267,6 +299,24 @@ where
                 }
 
                 let mut map = map;
+                // The YAML deserializer marks the synthetic Spanned<T> representation.
+                // Unmarked maps are user values buffered by serde, such as through flatten.
+                let Some(first_key) = map.next_key::<String>()? else {
+                    return T::deserialize(de::value::MapAccessDeserializer::new(map))
+                        .map(|val| Spanned::new(val, Location::UNKNOWN, Location::UNKNOWN));
+                };
+
+                if first_key != INTERNAL_SPANNED_MARKER {
+                    return T::deserialize(de::value::MapAccessDeserializer::new(
+                        PrependMapAccess {
+                            first_key: Some(first_key),
+                            tail: map,
+                        },
+                    ))
+                    .map(|val| Spanned::new(val, Location::UNKNOWN, Location::UNKNOWN));
+                }
+
+                let _ = map.next_value::<de::IgnoredAny>()?;
                 let mut value = None;
                 let mut referenced = None;
                 let mut defined = None;
@@ -417,6 +467,7 @@ mod tests {
     fn deserialize_spanned_accepts_named_fields_and_ignores_unknown_fields() {
         let spanned: Spanned<u32> = serde_json::from_str(
             r#"{
+                "__serde_saphyr_private_spanned": true,
                 "unknown": true,
                 "value": 42,
                 "referenced": { "line": 1, "column": 2 },
@@ -436,6 +487,7 @@ mod tests {
     fn deserialize_spanned_rejects_duplicate_fields() {
         let err = serde_json::from_str::<Spanned<u32>>(
             r#"{
+                "__serde_saphyr_private_spanned": true,
                 "value": 1,
                 "value": 2,
                 "referenced": { "line": 1, "column": 2 },
@@ -451,6 +503,7 @@ mod tests {
     fn deserialize_spanned_rejects_missing_fields() {
         let err = serde_json::from_str::<Spanned<u32>>(
             r#"{
+                "__serde_saphyr_private_spanned": true,
                 "value": 1,
                 "referenced": { "line": 1, "column": 2 }
             }"#,

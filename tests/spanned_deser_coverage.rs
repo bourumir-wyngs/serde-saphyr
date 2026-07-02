@@ -412,3 +412,56 @@ fn spanned_deser_flatten_multiple() {
     assert_eq!(o.inner.a.referenced.line(), 0);
     assert_eq!(o.inner.b.referenced.line(), 0);
 }
+
+#[test]
+fn spanned_deser_flatten_map_shaped_value() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Payload {
+        name: String,
+        count: u32,
+    }
+    #[derive(Debug, Deserialize)]
+    struct Inner {
+        item: Spanned<Payload>,
+    }
+    #[derive(Debug, Deserialize)]
+    struct Outer {
+        #[serde(flatten)]
+        inner: Inner,
+    }
+
+    let o: Outer = serde_saphyr::from_str("item:\n  name: alpha\n  count: 2\n").unwrap();
+
+    assert_eq!(
+        o.inner.item.value,
+        Payload {
+            name: "alpha".to_owned(),
+            count: 2
+        }
+    );
+    assert_eq!(o.inner.item.referenced.line(), 0);
+    assert_eq!(o.inner.item.defined.line(), 0);
+}
+
+#[test]
+fn spanned_deser_flatten_map_shaped_value_keeps_value_key_as_user_data() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Payload {
+        value: u32,
+    }
+    #[derive(Debug, Deserialize)]
+    struct Inner {
+        item: Spanned<Payload>,
+    }
+    #[derive(Debug, Deserialize)]
+    struct Outer {
+        #[serde(flatten)]
+        inner: Inner,
+    }
+
+    let o: Outer = serde_saphyr::from_str("item:\n  value: 7\n").unwrap();
+
+    assert_eq!(o.inner.item.value, Payload { value: 7 });
+    assert_eq!(o.inner.item.referenced.line(), 0);
+    assert_eq!(o.inner.item.defined.line(), 0);
+}
