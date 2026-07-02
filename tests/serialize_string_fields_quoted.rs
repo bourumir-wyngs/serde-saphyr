@@ -10,6 +10,7 @@ struct HasStrings {
     comment: String,
     ending_colon: String,
     trim_ending_colon: String,
+    trailing_space: String,
 }
 
 #[test]
@@ -21,6 +22,7 @@ fn strings_that_look_special_are_quoted() -> Result<()> {
         comment: "# hi".to_string(),
         ending_colon: "hi:".to_string(),
         trim_ending_colon: "hey:\n".to_string(),
+        trailing_space: "abc ".to_string(),
     };
 
     let out = serde_saphyr::to_string(&v).expect("serialize");
@@ -37,6 +39,10 @@ fn strings_that_look_special_are_quoted() -> Result<()> {
     assert!(
         out.contains("ending_colon: \"hi:\""),
         "ending colon must be quoted: {out}"
+    );
+    assert!(
+        out.contains("trailing_space: \"abc \""),
+        "trailing space must be quoted: {out}"
     );
     // Multiline strings auto-select literal block style when the content is representable
     // (the trailing `:` is fine as block content). The round-trip below verifies that

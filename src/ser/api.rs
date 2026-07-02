@@ -187,6 +187,9 @@ pub fn to_string_multiple<T: serde_core::Serialize>(
 /// Serializes each value in the provided slice as an individual YAML document.
 /// Documents are separated by a standard YAML document start marker ("---\n").
 /// No marker is emitted before the first document.
+/// When `options.yaml_12` is enabled, each document emits its own `%YAML 1.2`
+/// directive and document start marker, and later documents are preceded by an
+/// explicit document end marker ("...\n") so the following directive is valid.
 ///
 /// Example
 ///
@@ -211,9 +214,15 @@ pub fn to_string_multiple_with_options<T: serde_core::Serialize>(
 ) -> std::result::Result<String, crate::ser::Error> {
     let mut out = String::new();
     let mut first = true;
+    #[allow(deprecated)]
+    let yaml_12 = options.yaml_12;
     for v in values {
         if !first {
-            out.push_str("---\n");
+            if yaml_12 {
+                out.push_str("...\n");
+            } else {
+                out.push_str("---\n");
+            }
         }
         first = false;
         to_fmt_writer_with_options(&mut out, v, options)?;

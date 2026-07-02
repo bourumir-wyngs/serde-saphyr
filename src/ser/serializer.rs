@@ -363,8 +363,8 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
             if !self.doc_started {
                 self.doc_started = true;
                 if self.yaml_12 {
-                    self.out.write_str("%YAML 1.2\n")?;
-                    // Still at start of a line after the directive.
+                    self.out.write_str("%YAML 1.2\n---\n")?;
+                    // Still at start of a line after the directive and document start marker.
                     self.at_line_start = true;
                 }
             }
@@ -759,8 +759,12 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 }
             } else if self.prefer_block_scalars {
                 // Single-line string. If it needs quoting as a value, don't auto-fold.
-                let needs_quoting = !is_plain_value_safe(v, self.yaml_12, false);
-                if !needs_quoting {
+                // Folded block scalars can preserve trailing ASCII spaces, unlike plain
+                // scalars, so ignore only those spaces for the eligibility probe.
+                let auto_fold_probe = v.trim_end_matches(' ');
+                let can_auto_fold = !auto_fold_probe.is_empty()
+                    && is_plain_value_safe(auto_fold_probe, self.yaml_12, false);
+                if can_auto_fold {
                     // Measure in characters, not bytes.
                     if v.chars().count() > self.folded_wrap_col {
                         self.pending_str_style = Some(StrStyle::Folded);

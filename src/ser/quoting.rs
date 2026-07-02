@@ -258,7 +258,7 @@ pub(crate) fn is_plain_safe(s: &str) -> bool {
     }
     let bytes = s.as_bytes();
     // Keys with leading or trailing whitespace must be quoted:
-    // Unlike values, a key's surrounding whitespace is not preserved across a round trip
+    // a key's surrounding whitespace is not preserved across a round trip
     // (e.g. `foo : x` and `foo: x` parse to the same key), so a plain scalar would silently collapse distinct keys.
     if bytes.first().is_some_and(u8::is_ascii_whitespace)
         || bytes.last().is_some_and(u8::is_ascii_whitespace)
@@ -293,7 +293,6 @@ pub(crate) fn is_plain_safe(s: &str) -> bool {
 ///
 /// This is slightly more permissive than `is_plain_safe` for keys:
 /// - it allows ':' inside values
-/// - trailing whitespace is allowed
 ///
 /// Additionally, we make this stricter for strings that appear inside flow-style sequences/maps
 /// where certain characters would break parsing (e.g., commas and brackets) or where the token
@@ -305,7 +304,11 @@ pub(crate) fn is_plain_value_safe(s: &str, yaml_12: bool, in_flow: bool) -> bool
     }
 
     let bytes = s.as_bytes();
-    if bytes.first().is_some_and(u8::is_ascii_whitespace) {
+    // Plain scalar edge whitespace is parsed as separation/indentation, not
+    // scalar content, so it would be lost on round-trip.
+    if bytes.first().is_some_and(u8::is_ascii_whitespace)
+        || bytes.last().is_some_and(u8::is_ascii_whitespace)
+    {
         return false;
     }
 
@@ -477,6 +480,19 @@ mod tests {
     #[case::merge_key("<<")]
     fn plain_keys_reject_unsafe_inputs(#[case] input: &str) {
         assert!(!is_plain_safe(input), "{input:?}");
+    }
+
+    #[rstest]
+    #[case::leading_space(" foo")]
+    #[case::trailing_space("foo ")]
+    #[case::leading_tab("\tfoo")]
+    #[case::trailing_tab("foo\t")]
+    fn plain_values_reject_lossy_surrounding_whitespace(#[case] input: &str) {
+        assert!(!is_plain_value_safe(input, false, false), "{input:?}");
+        assert!(
+            !is_plain_value_safe(input, true, true),
+            "flow value {input:?}"
+        );
     }
 
     #[rstest]

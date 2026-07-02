@@ -168,8 +168,9 @@ pub struct SerializerOptions {
     )]
     pub comment_position: CommentPosition,
 
-    /// When enabled, emit `%YAML 1.2` at the beginning of the document and
-    /// use YAML 1.2 rules for certain compatibility heuristics.
+    /// When enabled, emit `%YAML 1.2` and the required document start marker
+    /// at the beginning of the document, and use YAML 1.2 rules for certain
+    /// compatibility heuristics.
     ///
     /// In particular, YAML 1.1 boolean spellings like `yes`/`no`/`on`/`off`/`y`/`n`
     /// will **not** be treated as booleans for the purpose of auto-quoting. In cases
