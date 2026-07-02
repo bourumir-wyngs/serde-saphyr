@@ -7,8 +7,16 @@ use std::fmt;
 #[cfg(not(feature = "huge_documents"))]
 pub(crate) type SpanIndex = u32;
 
+#[cfg(not(feature = "huge_documents"))]
+const SPAN_INDEX_SENTINEL_VALUE: u64 = u32::MAX as u64;
+
 #[cfg(feature = "huge_documents")]
 const MAX_PACKED_SPAN_INDEX: u64 = (1u64 << 48) - 1;
+
+#[cfg(feature = "huge_documents")]
+const SPAN_INDEX_SENTINEL_VALUE: u64 = MAX_PACKED_SPAN_INDEX;
+
+const MAX_REPRESENTABLE_SPAN_INDEX_VALUE: u64 = SPAN_INDEX_SENTINEL_VALUE - 1;
 
 #[cfg(feature = "huge_documents")]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -62,8 +70,8 @@ impl<'de> serde_core::Deserialize<'de> for SpanIndex {
 
 #[cfg(not(feature = "huge_documents"))]
 const fn span_index_from_u64_saturating(value: u64) -> SpanIndex {
-    if value > (u32::MAX as u64) {
-        u32::MAX
+    if value > MAX_REPRESENTABLE_SPAN_INDEX_VALUE {
+        MAX_REPRESENTABLE_SPAN_INDEX_VALUE as u32
     } else {
         value as u32
     }
@@ -71,8 +79,22 @@ const fn span_index_from_u64_saturating(value: u64) -> SpanIndex {
 
 #[cfg(feature = "huge_documents")]
 const fn span_index_from_u64_saturating(value: u64) -> SpanIndex {
+    let value = if value > MAX_REPRESENTABLE_SPAN_INDEX_VALUE {
+        MAX_REPRESENTABLE_SPAN_INDEX_VALUE
+    } else {
+        value
+    };
+
     SpanIndex::from_u64_saturating(value)
 }
+
+#[cfg(not(feature = "huge_documents"))]
+const SPAN_INDEX_SENTINEL: SpanIndex = u32::MAX;
+
+#[cfg(feature = "huge_documents")]
+const SPAN_INDEX_SENTINEL: SpanIndex = SpanIndex::from_u64_saturating(SPAN_INDEX_SENTINEL_VALUE);
+
+const BYTE_INFO_UNAVAILABLE: (SpanIndex, SpanIndex) = (SPAN_INDEX_SENTINEL, SPAN_INDEX_SENTINEL);
 
 #[cfg(not(feature = "huge_documents"))]
 const fn span_index_to_u64(value: SpanIndex) -> u64 {
@@ -99,11 +121,19 @@ const fn span_index_to_u64(value: SpanIndex) -> u64 {
 /// Public getters still return `u64`, and values beyond 48 bits saturate instead of wrapping.
 /// This keeps [`crate::Location`] compact enough to avoid inflating [`crate::Error`] as much
 /// as a full `u64`-based layout would.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+///
+/// The maximum storage value is reserved for [`Span::UNKNOWN`] and unavailable byte info.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Span {
     offset: SpanIndex,
     len: SpanIndex,
     byte_info: (SpanIndex, SpanIndex),
+}
+
+impl Default for Span {
+    fn default() -> Self {
+        Self::UNKNOWN
+    }
 }
 
 impl<'de> serde_core::Deserialize<'de> for Span {
@@ -211,25 +241,26 @@ impl<'de> serde_core::Deserialize<'de> for Span {
 
 impl Span {
     /// Sentinel span meaning "unknown".
-    pub const UNKNOWN: Self = Self::new(0, 0);
+    pub const UNKNOWN: Self = Self {
+        offset: SPAN_INDEX_SENTINEL,
+        len: SPAN_INDEX_SENTINEL,
+        byte_info: BYTE_INFO_UNAVAILABLE,
+    };
 
     /// Construct a span from character-based offset and length.
     ///
-    /// Values that exceed the active storage range are saturated.
+    /// Values that exceed the active non-sentinel storage range are saturated.
     pub const fn new(offset: u64, len: u64) -> Self {
         Self {
             offset: span_index_from_u64_saturating(offset),
             len: span_index_from_u64_saturating(len),
-            byte_info: (
-                span_index_from_u64_saturating(0),
-                span_index_from_u64_saturating(0),
-            ),
+            byte_info: BYTE_INFO_UNAVAILABLE,
         }
     }
 
     /// Attach byte-based offset and length information to the span.
     ///
-    /// Values that exceed the active storage range are saturated.
+    /// Values that exceed the active non-sentinel storage range are saturated.
     pub const fn with_byte_info(mut self, byte_offset: u64, byte_len: u64) -> Self {
         self.byte_info = (
             span_index_from_u64_saturating(byte_offset),
@@ -254,12 +285,7 @@ impl Span {
     /// Returns `None` if byte info is unavailable.
     #[inline]
     pub fn byte_offset(&self) -> Option<u64> {
-        if self.byte_info
-            == (
-                span_index_from_u64_saturating(0),
-                span_index_from_u64_saturating(0),
-            )
-        {
+        if self.byte_info == BYTE_INFO_UNAVAILABLE {
             None
         } else {
             Some(span_index_to_u64(self.byte_info.0))
@@ -270,12 +296,7 @@ impl Span {
     /// Returns `None` if byte info is unavailable.
     #[inline]
     pub fn byte_len(&self) -> Option<u64> {
-        if self.byte_info
-            == (
-                span_index_from_u64_saturating(0),
-                span_index_from_u64_saturating(0),
-            )
-        {
+        if self.byte_info == BYTE_INFO_UNAVAILABLE {
             None
         } else {
             Some(span_index_to_u64(self.byte_info.1))
@@ -289,7 +310,7 @@ impl Span {
 
     #[cfg(feature = "deserialize")]
     #[inline]
-    pub(crate) fn byte_info_or_zero(&self) -> (u64, u64) {
+    pub(crate) fn byte_info_or_unavailable(&self) -> (u64, u64) {
         (
             span_index_to_u64(self.byte_info.0),
             span_index_to_u64(self.byte_info.1),
@@ -316,7 +337,41 @@ mod tests {
     fn unknown_span_has_no_byte_info() {
         assert_eq!(Span::UNKNOWN.byte_offset(), None);
         assert_eq!(Span::UNKNOWN.byte_len(), None);
-        assert!(Span::UNKNOWN.is_empty());
+        assert_eq!(Span::UNKNOWN.offset(), SPAN_INDEX_SENTINEL_VALUE);
+        assert_eq!(Span::UNKNOWN.len(), SPAN_INDEX_SENTINEL_VALUE);
+        assert_eq!(Span::default(), Span::UNKNOWN);
+    }
+
+    #[test]
+    fn zero_length_span_at_offset_zero_is_not_unknown() {
+        let span = Span::new(0, 0);
+
+        assert_ne!(span, Span::UNKNOWN);
+        assert_eq!(span.offset(), 0);
+        assert_eq!(span.len(), 0);
+        assert!(span.is_empty());
+        assert_eq!(span.byte_offset(), None);
+        assert_eq!(span.byte_len(), None);
+    }
+
+    #[test]
+    fn byte_info_at_offset_zero_is_reportable() {
+        let span = Span::new(0, 0).with_byte_info(0, 0);
+
+        assert_ne!(span, Span::UNKNOWN);
+        assert_eq!(span.byte_offset(), Some(0));
+        assert_eq!(span.byte_len(), Some(0));
+    }
+
+    #[test]
+    fn constructor_values_saturate_below_unknown_sentinel() {
+        let span = Span::new(u64::MAX, u64::MAX).with_byte_info(u64::MAX, u64::MAX);
+
+        assert_ne!(span, Span::UNKNOWN);
+        assert_eq!(span.offset(), MAX_REPRESENTABLE_SPAN_INDEX_VALUE);
+        assert_eq!(span.len(), MAX_REPRESENTABLE_SPAN_INDEX_VALUE);
+        assert_eq!(span.byte_offset(), Some(MAX_REPRESENTABLE_SPAN_INDEX_VALUE));
+        assert_eq!(span.byte_len(), Some(MAX_REPRESENTABLE_SPAN_INDEX_VALUE));
     }
 
     #[test]
@@ -358,10 +413,10 @@ mod tests {
     #[test]
     fn huge_document_indices_saturate_to_48_bits() {
         let span = Span::new(u64::MAX, u64::MAX).with_byte_info(u64::MAX, u64::MAX);
-        assert_eq!(span.offset(), MAX_PACKED_SPAN_INDEX);
-        assert_eq!(span.len(), MAX_PACKED_SPAN_INDEX);
-        assert_eq!(span.byte_offset(), Some(MAX_PACKED_SPAN_INDEX));
-        assert_eq!(span.byte_len(), Some(MAX_PACKED_SPAN_INDEX));
+        assert_eq!(span.offset(), MAX_PACKED_SPAN_INDEX - 1);
+        assert_eq!(span.len(), MAX_PACKED_SPAN_INDEX - 1);
+        assert_eq!(span.byte_offset(), Some(MAX_PACKED_SPAN_INDEX - 1));
+        assert_eq!(span.byte_len(), Some(MAX_PACKED_SPAN_INDEX - 1));
     }
 
     #[cfg(feature = "huge_documents")]

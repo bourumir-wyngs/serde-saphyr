@@ -380,7 +380,7 @@ impl<'de> de::MapAccess<'de> for SpanMapAccess {
         match self.state {
             1 => seed.deserialize(self.span.offset().into_deserializer()),
             2 => seed.deserialize(self.span.len().into_deserializer()),
-            3 => seed.deserialize(ByteInfoTupleDeser(self.span.byte_info_or_zero())),
+            3 => seed.deserialize(ByteInfoTupleDeser(self.span.byte_info_or_unavailable())),
             _ => Err(Error::msg("invalid Span internal state")),
         }
     }

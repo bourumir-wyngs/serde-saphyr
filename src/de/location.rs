@@ -399,7 +399,7 @@ mod tests {
         let loc = Location::new(5, 10);
         assert_eq!(loc.line(), 5);
         assert_eq!(loc.column(), 10);
-        assert!(loc.span().is_empty()); // initialized to Span::UNKNOWN which is usually 0,0,0
+        assert_eq!(loc.span(), Span::UNKNOWN);
 
         let span = Span::new(100, 20).with_byte_info(100, 20);
         let loc_with_span = loc.with_span(span);
