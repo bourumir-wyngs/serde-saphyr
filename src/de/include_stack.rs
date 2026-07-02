@@ -441,7 +441,6 @@ fn collect_anchor_events(
 ) -> Result<CollectedAnchorEvents, CollectAnchorEventsError> {
     let mut document_count = 0usize;
     let mut anchor_defs: Vec<(String, usize)> = Vec::new();
-    let mut alias_names: Vec<String> = Vec::new();
     let mut scanner = Scanner::new(StrInput::new(text));
     for token in &mut scanner {
         let marker_offset = token.0.start.index();
@@ -454,7 +453,6 @@ fn collect_anchor_events(
                     }));
                 }
             }
-            TokenType::Alias(name) => alias_names.push(name.into_owned()),
             _ => {}
         }
     }
@@ -465,7 +463,7 @@ fn collect_anchor_events(
         )));
     }
     let mut parser = Parser::new_from_str(text);
-    parser.set_anchor_offset(anchor_offset);
+    parser.set_anchor_offset(anchor_offset.max(1));
     let mut events = Vec::new();
     let mut current_depth: usize = 0;
     let mut total_scalar_bytes: usize = 0;
@@ -528,17 +526,9 @@ fn collect_anchor_events(
 
     let mut anchor_nodes_by_name: HashMap<String, RangeInclusive<usize>> =
         HashMap::with_capacity(anchor_defs.len());
+    let mut anchor_nodes_by_id: HashMap<usize, RangeInclusive<usize>> =
+        HashMap::with_capacity(anchor_defs.len());
     let mut event_cursor = 0usize;
-    let mut alias_id_to_name: HashMap<usize, String> = HashMap::with_capacity(alias_names.len());
-    let mut alias_names = alias_names.into_iter();
-
-    for (event, _) in &events {
-        if let Event::Alias(id) = event
-            && let Some(name) = alias_names.next()
-        {
-            alias_id_to_name.insert(*id, name);
-        }
-    }
 
     for (name, offset) in &anchor_defs {
         while event_cursor < events.len() && events[event_cursor].1.start.index() < *offset {
@@ -585,7 +575,11 @@ fn collect_anchor_events(
                 }
             }
         }
-        anchor_nodes_by_name.insert(name.clone(), start..=end);
+        let node_range = start..=end;
+        if let Some(anchor_id) = events[node_start].0.anchor_id() {
+            anchor_nodes_by_id.insert(anchor_id, node_range.clone());
+        }
+        anchor_nodes_by_name.insert(name.clone(), node_range);
         event_cursor = node_start + 1;
     }
 
@@ -608,8 +602,7 @@ fn collect_anchor_events(
     while let Some(event_index) = to_process.pop() {
         let (event, span) = &events[event_index];
         if let Event::Alias(id) = &event
-            && let Some(alias_name) = alias_id_to_name.get(id)
-            && let Some(alias_events) = anchor_nodes_by_name.get(alias_name)
+            && let Some(alias_events) = anchor_nodes_by_id.get(id)
         {
             expansion_count += 1;
             if expansion_count > budget.max_aliases {
@@ -785,6 +778,37 @@ mod tests {
         assert!(
             !matches!(collected.events.as_slice(), [(Event::Comment(_, _), _)]),
             "comment must not be the only collected anchor event"
+        );
+    }
+
+    #[test]
+    fn collect_anchor_events_resolves_alias_to_preceding_shadowed_anchor() {
+        let collected = collect_anchor_events(
+            "x: &x 1\nselected: &selected\n  value: *x\nx: &x 2\n",
+            "selected",
+            0,
+            &crate::Budget::default(),
+        )
+        .expect("anchor collection should resolve alias by parser anchor id");
+
+        assert!(
+            collected.events.iter().any(
+                |(event, _)| matches!(event, Event::Scalar(value, _, _, _) if value.as_ref() == "1"),
+            ),
+            "alias should expand to the preceding &x definition"
+        );
+        assert!(
+            !collected.events.iter().any(
+                |(event, _)| matches!(event, Event::Scalar(value, _, _, _) if value.as_ref() == "2"),
+            ),
+            "later &x redefinition must not affect an earlier alias"
+        );
+        assert!(
+            !collected
+                .events
+                .iter()
+                .any(|(event, _)| matches!(event, Event::Alias(_))),
+            "expanded event stream should not retain unresolved aliases"
         );
     }
 

@@ -37,6 +37,18 @@ struct FragmentBody {
 }
 
 #[cfg(feature = "include")]
+#[derive(Debug, Deserialize, PartialEq)]
+struct ShadowConfig {
+    cfg: ShadowBody,
+}
+
+#[cfg(feature = "include")]
+#[derive(Debug, Deserialize, PartialEq)]
+struct ShadowBody {
+    value: i32,
+}
+
+#[cfg(feature = "include")]
 #[test]
 fn test_alias_resolution_for_anchor_defined_outside_selected_fragment() {
     let yaml = "cfg: !include value.yaml#selected\n";
@@ -88,4 +100,32 @@ fn test_fragment_anchor_with_same_line_comment_selects_mapping() {
     let config: FragmentConfig = from_str_with_options(yaml, options).unwrap();
 
     assert_eq!(config.cfg.a, 1);
+}
+
+#[cfg(feature = "include")]
+#[test]
+fn test_fragment_alias_uses_preceding_shadowed_anchor_definition() {
+    let yaml = "cfg: !include value.yaml#selected\n";
+
+    let options = serde_saphyr::options! {}.with_include_resolver(
+        |req: IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
+            let s = req.spec;
+            if s == "value.yaml#selected" {
+                Ok(ResolvedInclude {
+                    id: s.to_string(),
+                    name: s.to_string(),
+                    source: InputSource::AnchoredText {
+                        text: "x: &x 1\nselected: &selected\n  value: *x\nx: &x 2\n".to_string(),
+                        anchor: "selected".to_string(),
+                    },
+                })
+            } else {
+                Err(IncludeResolveError::Message("File not found".to_string()))
+            }
+        },
+    );
+
+    let config: ShadowConfig = from_str_with_options(yaml, options).unwrap();
+
+    assert_eq!(config.cfg.value, 1);
 }
