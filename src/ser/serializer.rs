@@ -1379,6 +1379,8 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             })
         } else {
             let inline_first = self.pending_inline_map;
+            // Starting a complex (block) map: drop any staged inline comment.
+            self.pending_inline_comment = None;
             // We only consider "value position" when immediately after a mapping colon.
             let was_inline_value = self.pending_space_after_colon;
             let mut forced_newline = false;

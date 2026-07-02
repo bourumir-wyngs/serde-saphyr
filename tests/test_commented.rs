@@ -1,6 +1,6 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde_saphyr::{
     CommentPosition, Commented, FlowMap, FlowSeq, RcAnchor, Spanned, ser_options, to_string,
@@ -50,6 +50,17 @@ fn commented_scalar_suppressed_in_flow_map_value() {
 fn commented_complex_values() {
     let y = to_string(&Commented(vec![1, 2], "ignored".into())).unwrap();
     assert_eq!(y, "- 1\n- 2\n");
+}
+
+#[test]
+fn commented_block_map_ignores_comment() {
+    let mut map = BTreeMap::new();
+    map.insert("a", 1);
+    map.insert("b", 2);
+
+    let y = to_string(&Commented(map, "note".into())).unwrap();
+
+    assert_eq!(y, "a: 1\nb: 2\n");
 }
 
 #[test]
