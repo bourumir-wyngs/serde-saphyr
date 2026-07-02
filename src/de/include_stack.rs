@@ -1,3 +1,4 @@
+use crate::budget::BudgetBreach;
 use crate::buffered_input::{
     ReaderInput, ReaderInputBytesRead, ReaderInputError,
     buffered_input_from_reader_with_limit_shared,
@@ -345,11 +346,18 @@ impl<'input> ParserStack<'input> {
                     self.inner.current_anchor_offset(),
                     &self.budget,
                 )
-                .map_err(|error| crate::de_error::Error::ResolverError {
-                    target: include_str.to_string(),
-                    error: crate::IncludeResolveError::Message(error),
-                    stack: self.inner.stack().into_iter().collect(),
-                    location,
+                .map_err(|error| match error {
+                    CollectAnchorEventsError::Budget(breach) => {
+                        crate::de_error::budget_error(breach).with_location(location)
+                    }
+                    CollectAnchorEventsError::Message(message) => {
+                        crate::de_error::Error::ResolverError {
+                            target: include_str.to_string(),
+                            error: crate::IncludeResolveError::Message(message),
+                            stack: self.inner.stack().into_iter().collect(),
+                            location,
+                        }
+                    }
                 })?;
                 self.push_replay_parser_with_snippet(
                     granit_parser::parser_stack::ReplayParser::new(
@@ -370,6 +378,12 @@ struct CollectedAnchorEvents {
     anchor_offset: usize,
 }
 
+#[derive(Debug)]
+enum CollectAnchorEventsError {
+    Message(String),
+    Budget(BudgetBreach),
+}
+
 fn anchored_event_initial_depth(event: &Event<'_>) -> usize {
     match event {
         Event::SequenceStart(_, _, _) | Event::MappingStart(_, _, _) => 1,
@@ -382,15 +396,36 @@ fn observe_expanded_comment_budget(
     event: &Event<'_>,
     total_expanded_comment_bytes: &mut usize,
     budget: &crate::Budget,
-    target_anchor: &str,
-) -> Result<(), String> {
+) -> Result<(), CollectAnchorEventsError> {
     if let Event::Comment(text, _) = event {
         *total_expanded_comment_bytes = total_expanded_comment_bytes.saturating_add(text.len());
 
         if *total_expanded_comment_bytes > budget.max_total_comment_bytes {
-            return Err(format!(
-                "include fragment '{}' exceeds maximum allowed expanded comment bytes of {}",
-                target_anchor, budget.max_total_comment_bytes
+            return Err(CollectAnchorEventsError::Budget(
+                BudgetBreach::CommentBytes {
+                    total_comment_bytes: *total_expanded_comment_bytes,
+                },
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Adds one expanded event's retained scalar bytes to the include-fragment budget.
+fn observe_expanded_scalar_budget(
+    event: &Event<'_>,
+    total_expanded_scalar_bytes: &mut usize,
+    budget: &crate::Budget,
+) -> Result<(), CollectAnchorEventsError> {
+    if let Event::Scalar(value, _, _, _) = event {
+        *total_expanded_scalar_bytes = total_expanded_scalar_bytes.saturating_add(value.len());
+
+        if *total_expanded_scalar_bytes > budget.max_total_scalar_bytes {
+            return Err(CollectAnchorEventsError::Budget(
+                BudgetBreach::ScalarBytes {
+                    total_scalar_bytes: *total_expanded_scalar_bytes,
+                },
             ));
         }
     }
@@ -403,7 +438,7 @@ fn collect_anchor_events(
     target_anchor: &str,
     anchor_offset: usize,
     budget: &crate::Budget,
-) -> Result<CollectedAnchorEvents, String> {
+) -> Result<CollectedAnchorEvents, CollectAnchorEventsError> {
     let mut document_count = 0usize;
     let mut anchor_defs: Vec<(String, usize)> = Vec::new();
     let mut alias_names: Vec<String> = Vec::new();
@@ -414,10 +449,9 @@ fn collect_anchor_events(
             TokenType::Anchor(name) => {
                 anchor_defs.push((name.into_owned(), marker_offset));
                 if anchor_defs.len() > budget.max_anchors {
-                    return Err(format!(
-                        "include fragment '{}' exceeds maximum allowed anchors limit of {}",
-                        target_anchor, budget.max_anchors
-                    ));
+                    return Err(CollectAnchorEventsError::Budget(BudgetBreach::Anchors {
+                        anchors: anchor_defs.len(),
+                    }));
                 }
             }
             TokenType::Alias(name) => alias_names.push(name.into_owned()),
@@ -425,10 +459,10 @@ fn collect_anchor_events(
         }
     }
     if let Some(err) = scanner.get_error() {
-        return Err(format!(
+        return Err(CollectAnchorEventsError::Message(format!(
             "failed to scan include fragment '{}': {}",
             target_anchor, err
-        ));
+        )));
     }
     let mut parser = Parser::new_from_str(text);
     parser.set_anchor_offset(anchor_offset);
@@ -438,28 +472,27 @@ fn collect_anchor_events(
     let mut total_comment_bytes: usize = 0;
     while let Some(event) = parser.next_event() {
         let (event, span) = event.map_err(|err| {
-            format!(
+            CollectAnchorEventsError::Message(format!(
                 "failed to parse include fragment '{}': {}",
                 target_anchor, err
-            )
+            ))
         })?;
         if matches!(event, Event::DocumentStart(..)) {
             document_count += 1;
             if document_count > 1 {
-                return Err(format!(
+                return Err(CollectAnchorEventsError::Message(format!(
                     "include fragment '{}' must come from a single YAML document",
                     target_anchor
-                ));
+                )));
             }
         }
         match &event {
             Event::SequenceStart(_, _, _) | Event::MappingStart(_, _, _) => {
                 current_depth += 1;
                 if current_depth > budget.max_depth {
-                    return Err(format!(
-                        "include fragment '{}' exceeds maximum allowed nesting depth of {}",
-                        target_anchor, budget.max_depth
-                    ));
+                    return Err(CollectAnchorEventsError::Budget(BudgetBreach::Depth {
+                        depth: current_depth,
+                    }));
                 }
             }
             Event::SequenceEnd | Event::MappingEnd => {
@@ -470,27 +503,26 @@ fn collect_anchor_events(
         if let Event::Scalar(ref value, _, _, _) = event {
             total_scalar_bytes = total_scalar_bytes.saturating_add(value.len());
             if total_scalar_bytes > budget.max_total_scalar_bytes {
-                return Err(format!(
-                    "include fragment '{}' exceeds maximum allowed total scalar bytes of {}",
-                    target_anchor, budget.max_total_scalar_bytes
+                return Err(CollectAnchorEventsError::Budget(
+                    BudgetBreach::ScalarBytes { total_scalar_bytes },
                 ));
             }
         }
         if let Event::Comment(ref text, _) = event {
             total_comment_bytes = total_comment_bytes.saturating_add(text.len());
             if total_comment_bytes > budget.max_total_comment_bytes {
-                return Err(format!(
-                    "include fragment '{}' exceeds maximum allowed total comment bytes of {}",
-                    target_anchor, budget.max_total_comment_bytes
+                return Err(CollectAnchorEventsError::Budget(
+                    BudgetBreach::CommentBytes {
+                        total_comment_bytes,
+                    },
                 ));
             }
         }
         events.push((own_event(event), span));
         if events.len() > budget.max_events {
-            return Err(format!(
-                "include fragment '{}' exceeds maximum allowed events limit of {}",
-                target_anchor, budget.max_events
-            ));
+            return Err(CollectAnchorEventsError::Budget(BudgetBreach::Events {
+                events: events.len(),
+            }));
         }
     }
 
@@ -526,10 +558,10 @@ fn collect_anchor_events(
                     Event::SequenceStart(_, _, _) | Event::MappingStart(_, _, _) => depth += 1,
                     Event::SequenceEnd | Event::MappingEnd => {
                         if depth == 0 {
-                            return Err(format!(
+                            return Err(CollectAnchorEventsError::Message(format!(
                                 "include fragment '{}' became unbalanced while replaying events",
                                 target_anchor
-                            ));
+                            )));
                         }
                         depth -= 1;
                         if depth == 0 {
@@ -548,11 +580,17 @@ fn collect_anchor_events(
     let target_events = anchor_nodes_by_name
         .get(target_anchor)
         .cloned()
-        .ok_or_else(|| format!("include fragment '{}' was not found", target_anchor))?;
+        .ok_or_else(|| {
+            CollectAnchorEventsError::Message(format!(
+                "include fragment '{}' was not found",
+                target_anchor
+            ))
+        })?;
 
     let mut expanded_events = Vec::new();
     let mut to_process: Vec<usize> = target_events.rev().collect();
     let mut expansion_count = 0;
+    let mut expanded_scalar_bytes = 0usize;
     let mut expanded_comment_bytes = 0usize;
 
     while let Some(event_index) = to_process.pop() {
@@ -563,23 +601,22 @@ fn collect_anchor_events(
         {
             expansion_count += 1;
             if expansion_count > budget.max_aliases {
-                return Err(format!(
-                    "include fragment '{}' exceeds included alias expansion limit of {}",
-                    target_anchor, budget.max_aliases
-                ));
+                return Err(CollectAnchorEventsError::Budget(BudgetBreach::Aliases {
+                    aliases: expansion_count,
+                }));
             }
             for alias_event_index in alias_events.clone().rev() {
                 to_process.push(alias_event_index);
             }
             continue;
         }
-        observe_expanded_comment_budget(event, &mut expanded_comment_bytes, budget, target_anchor)?;
+        observe_expanded_scalar_budget(event, &mut expanded_scalar_bytes, budget)?;
+        observe_expanded_comment_budget(event, &mut expanded_comment_bytes, budget)?;
         expanded_events.push((event.clone(), *span));
         if expanded_events.len() > budget.max_events {
-            return Err(format!(
-                "include fragment '{}' exceeds maximum allowed events limit of {}",
-                target_anchor, budget.max_events
-            ));
+            return Err(CollectAnchorEventsError::Budget(BudgetBreach::Events {
+                events: expanded_events.len(),
+            }));
         }
     }
 
@@ -651,6 +688,24 @@ impl<'input> Iterator for ParserStack<'input> {
 mod tests {
     use super::*;
     use std::cell::{Cell, RefCell};
+
+    fn expect_budget_breach(error: CollectAnchorEventsError) -> BudgetBreach {
+        match error {
+            CollectAnchorEventsError::Budget(breach) => breach,
+            CollectAnchorEventsError::Message(message) => {
+                panic!("expected budget breach, got message error: {message}")
+            }
+        }
+    }
+
+    fn expect_fragment_message(error: CollectAnchorEventsError) -> String {
+        match error {
+            CollectAnchorEventsError::Message(message) => message,
+            CollectAnchorEventsError::Budget(breach) => {
+                panic!("expected message error, got budget breach: {breach:?}")
+            }
+        }
+    }
 
     #[test]
     fn collect_anchor_events_expands_aliases_defined_outside_target_anchor() {
@@ -727,10 +782,10 @@ mod tests {
             Err(error) => error,
         };
 
-        assert!(
-            error.contains("exceeds maximum allowed events limit of 6"),
-            "unexpected error: {error}"
-        );
+        assert!(matches!(
+            expect_budget_breach(error),
+            BudgetBreach::Events { events } if events > 6
+        ));
     }
 
     #[test]
@@ -743,10 +798,10 @@ mod tests {
         let yaml = "root: &root\n  items:\n    - nested:\n        deep: value\n";
         let error = collect_anchor_events(yaml, "root", 0, &budget)
             .expect_err("should reject deeply nested fragment");
-        assert!(
-            error.contains("exceeds maximum allowed nesting depth of 2"),
-            "unexpected error: {error}"
-        );
+        assert!(matches!(
+            expect_budget_breach(error),
+            BudgetBreach::Depth { depth } if depth > 2
+        ));
     }
 
     #[test]
@@ -758,10 +813,10 @@ mod tests {
         let yaml = "a: &a 1\nb: &b 2\nc: &c 3\n";
         let error = collect_anchor_events(yaml, "a", 0, &budget)
             .expect_err("should reject too many anchors");
-        assert!(
-            error.contains("exceeds maximum allowed anchors limit of 1"),
-            "unexpected error: {error}"
-        );
+        assert!(matches!(
+            expect_budget_breach(error),
+            BudgetBreach::Anchors { anchors } if anchors > 1
+        ));
     }
 
     #[test]
@@ -773,10 +828,10 @@ mod tests {
         let yaml = "a: &a hello_world\nb: &b tiny\n";
         let error = collect_anchor_events(yaml, "a", 0, &budget)
             .expect_err("should reject when scalar bytes exceed budget");
-        assert!(
-            error.contains("exceeds maximum allowed total scalar bytes of 5"),
-            "unexpected error: {error}"
-        );
+        assert!(matches!(
+            expect_budget_breach(error),
+            BudgetBreach::ScalarBytes { total_scalar_bytes } if total_scalar_bytes > 5
+        ));
     }
 
     #[test]
@@ -788,10 +843,10 @@ mod tests {
         let yaml = "#abcdef\na: &a ok\n";
         let error = collect_anchor_events(yaml, "a", 0, &budget)
             .expect_err("should reject when comment bytes exceed budget");
-        assert!(
-            error.contains("exceeds maximum allowed total comment bytes of 5"),
-            "unexpected error: {error}"
-        );
+        assert!(matches!(
+            expect_budget_breach(error),
+            BudgetBreach::CommentBytes { total_comment_bytes } if total_comment_bytes > 5
+        ));
     }
 
     #[test]
@@ -813,9 +868,79 @@ selected: &selected
         let error = collect_anchor_events(yaml, "selected", 0, &budget)
             .expect_err("alias-expanded comments should exceed expanded comment budget");
 
+        assert!(matches!(
+            expect_budget_breach(error),
+            BudgetBreach::CommentBytes { total_comment_bytes } if total_comment_bytes > 8
+        ));
+    }
+
+    #[test]
+    fn collect_anchor_events_enforces_expanded_scalar_bytes() {
+        let budget = crate::Budget {
+            max_total_scalar_bytes: 25,
+            ..crate::Budget::default()
+        };
+
+        let yaml = "\
+base: &base abcdefghij
+selected: &selected
+  - *base
+  - *base
+  - *base
+";
+
+        let error = collect_anchor_events(yaml, "selected", 0, &budget)
+            .expect_err("alias-expanded scalars should exceed expanded scalar budget");
+
+        assert!(matches!(
+            expect_budget_breach(error),
+            BudgetBreach::ScalarBytes { total_scalar_bytes } if total_scalar_bytes > 25
+        ));
+    }
+
+    #[test]
+    fn anchored_text_expanded_scalar_budget_surfaces_as_budget_error() {
+        let io_error = Rc::new(RefCell::new(None));
+        let reader_bytes_read = Rc::new(Cell::new(0));
+        let budget = crate::Budget {
+            max_total_scalar_bytes: 25,
+            ..crate::Budget::default()
+        };
+        let mut stack = ParserStack::new(io_error, reader_bytes_read, &budget);
+        let anchored_text = "\
+base: &base abcdefghij
+selected: &selected
+  - *base
+  - *base
+  - *base
+"
+        .to_string();
+        stack.set_resolver(move |req| {
+            assert_eq!(req.spec, "f.yml#selected");
+            Ok(ResolvedInclude {
+                id: req.spec.to_string(),
+                name: req.spec.to_string(),
+                source: InputSource::AnchoredText {
+                    text: anchored_text.clone(),
+                    anchor: "selected".to_string(),
+                },
+            })
+        });
+        stack.push_str_parser(Parser::new_from_str("root: 1\n"), "root.yaml".to_string());
+
+        let error = stack
+            .resolve("f.yml#selected", crate::Location::UNKNOWN)
+            .expect_err("expanded scalar bytes should surface as a budget error");
+
         assert!(
-            error.contains("expanded comment bytes"),
-            "unexpected error: {error}"
+            matches!(
+                error,
+                crate::de_error::Error::Budget {
+                    breach: BudgetBreach::ScalarBytes { total_scalar_bytes },
+                    ..
+                } if total_scalar_bytes > 25
+            ),
+            "unexpected error: {error:?}"
         );
     }
 
@@ -828,6 +953,7 @@ selected: &selected
             &crate::Budget::default(),
         )
         .expect_err("fragment collection should reject multi-document sources");
+        let error = expect_fragment_message(error);
 
         assert!(
             error.contains("must come from a single YAML document"),
