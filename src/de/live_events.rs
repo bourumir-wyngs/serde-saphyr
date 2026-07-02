@@ -662,7 +662,7 @@ impl<'a> LiveEvents<'a> {
             }
 
             match raw {
-                Event::Scalar(val, mut style, anchor_id, tag) => {
+                Event::Scalar(val, style, anchor_id, tag) => {
                     #[cfg(feature = "include")]
                     let mut anchor_id = anchor_id;
                     if matches!(style, ScalarStyle::Folded)
@@ -693,13 +693,6 @@ impl<'a> LiveEvents<'a> {
                         self.pending_include_anchor = 0;
                     }
 
-                    if val.is_empty()
-                        && anchor_id != 0
-                        && matches!(style, ScalarStyle::SingleQuoted | ScalarStyle::DoubleQuoted)
-                    {
-                        // Normalize: anchored empty scalars should behave like plain empty (null-like)
-                        style = ScalarStyle::Plain;
-                    }
                     let ev = Ev::Scalar {
                         value: val,
                         tag: tag_s,

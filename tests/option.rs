@@ -54,6 +54,18 @@ struct NestedOptString {
     quoted: Option<Option<String>>,
 }
 
+#[derive(Debug, Deserialize, PartialEq)]
+struct AnchoredQuotedEmptyStrings {
+    single_string: String,
+    single_option: Option<String>,
+    single_alias_string: String,
+    single_alias_option: Option<String>,
+    double_string: String,
+    double_option: Option<String>,
+    double_alias_string: String,
+    double_alias_option: Option<String>,
+}
+
 #[test]
 fn option_fields_null_and_some() {
     // YAML where `none` is explicit null, `some` is a number
@@ -118,6 +130,29 @@ single_vec: ''\n";
         .map(|v| v.iter().collect::<String>());
     assert_eq!(double_vec.as_deref(), Some(""));
     assert_eq!(single_vec.as_deref(), Some(""));
+}
+
+#[test]
+fn anchored_quoted_empty_strings_are_strings() {
+    let yaml = "\
+single_string: &single_string ''\n\
+single_option: &single_option ''\n\
+single_alias_string: *single_string\n\
+single_alias_option: *single_option\n\
+double_string: &double_string \"\"\n\
+double_option: &double_option \"\"\n\
+double_alias_string: *double_string\n\
+double_alias_option: *double_option\n";
+    let parsed: AnchoredQuotedEmptyStrings = serde_saphyr::from_str(yaml).unwrap();
+
+    assert_eq!(parsed.single_string, "");
+    assert_eq!(parsed.single_option.as_deref(), Some(""));
+    assert_eq!(parsed.single_alias_string, "");
+    assert_eq!(parsed.single_alias_option.as_deref(), Some(""));
+    assert_eq!(parsed.double_string, "");
+    assert_eq!(parsed.double_option.as_deref(), Some(""));
+    assert_eq!(parsed.double_alias_string, "");
+    assert_eq!(parsed.double_alias_option.as_deref(), Some(""));
 }
 
 #[test]
