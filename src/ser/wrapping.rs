@@ -100,7 +100,11 @@ pub fn write_folded_block<W: Write>(
             if in_space_run && ch != ' ' {
                 // run_end = previous char boundary (prev_i + prev_ch_len)
                 let run_end = prev_i + prev_ch_len;
-                last_space_run = Some((run_start, run_end, run_len));
+                // A folded continuation line whose content starts with a tab can be
+                // interpreted as more-indented content, preserving the newline.
+                if ch != '\t' {
+                    last_space_run = Some((run_start, run_end, run_len));
+                }
                 in_space_run = false;
                 run_len = 0;
             }
@@ -218,5 +222,15 @@ mod tests {
         write_folded_block(&mut out, "AA  BB", 0, 2, 4).unwrap();
         // Emits trailing space to preserve the double-space run
         assert_eq!(out, "AA \nBB\n");
+    }
+
+    #[test]
+    fn write_folded_block_does_not_wrap_before_tab() {
+        let mut out = String::new();
+        let input = format!("{} \tx", "a".repeat(79));
+
+        write_folded_block(&mut out, &input, 0, 2, 80).unwrap();
+
+        assert_eq!(out, format!("{input}\n"));
     }
 }

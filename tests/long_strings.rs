@@ -2,7 +2,7 @@
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use serde_saphyr as yaml;
-use serde_saphyr::{FlowMap, LitString};
+use serde_saphyr::{FlowMap, FoldStr, LitString};
 use std::collections::BTreeMap;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
@@ -318,6 +318,22 @@ fn folded_wrap_can_preserve_multi_space_runs_by_emitting_trailing_spaces() -> an
 
     let decoded: Foo = yaml::from_str(&serialized)?;
     assert_eq!(decoded.long, reference.long);
+    Ok(())
+}
+
+#[test]
+fn explicit_foldstr_does_not_start_wrapped_line_with_tab() -> anyhow::Result<()> {
+    let reference = format!("{} \tx\n", "a".repeat(79));
+
+    let serialized = yaml::to_string(&FoldStr(reference.as_str()))?;
+
+    assert!(
+        !serialized.contains("\n  \tx"),
+        "folded scalar body must not start a continuation line with a tab:\n{serialized:?}"
+    );
+
+    let decoded: String = yaml::from_str(&serialized)?;
+    assert_eq!(decoded, reference);
     Ok(())
 }
 
