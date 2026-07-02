@@ -366,6 +366,16 @@ pub(crate) fn scalar_is_nullish(value: &str, style: &ScalarStyle) -> bool {
     value.is_empty() || value == "~" || value.eq_ignore_ascii_case("null")
 }
 
+#[cfg(feature = "deserialize")]
+#[inline]
+pub(crate) fn scalar_document_is_empty_or_null(
+    tag: &SfTag,
+    value: &str,
+    style: &ScalarStyle,
+) -> bool {
+    *tag == SfTag::Null || (*tag != SfTag::String && scalar_is_nullish(value, style))
+}
+
 /// True if a scalar should be turned into `None` for `Option<T>`.
 ///
 /// Arguments:

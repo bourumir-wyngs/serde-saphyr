@@ -121,6 +121,22 @@ fn multiple_documents_preserve_quoted_null_like_scalars() {
 }
 
 #[test]
+fn reader_matches_from_multiple_for_tagged_null_like_scalars() {
+    let y = "--- !!str null\n--- !!null not-null\n--- kept\n";
+    let expected = vec!["null".to_owned(), "kept".to_owned()];
+
+    let docs: Vec<String> = serde_saphyr::from_multiple(y).expect("parse tagged docs");
+    assert_eq!(docs, expected);
+
+    let mut reader = std::io::Cursor::new(y.as_bytes());
+    let docs: Vec<String> = serde_saphyr::read::<_, String>(&mut reader)
+        .map(|res| res.expect("streamed document should parse"))
+        .collect();
+
+    assert_eq!(docs, expected);
+}
+
+#[test]
 fn multiple_documents_strips_bom_and_skips_plain_null_like_documents() {
     let y = "\u{FEFF}~\n---\nname: Bom\n---\nnull\n---\nname: Done\n";
     let docs: Vec<Person> = serde_saphyr::from_multiple(y).expect("parse documents with BOM");

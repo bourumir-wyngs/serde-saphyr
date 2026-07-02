@@ -353,3 +353,16 @@ fn read_validate_uses_default_options() {
     assert_eq!(value.a, "ok");
     assert!(it.next().is_none(), "iterator must stop at end of input");
 }
+
+#[test]
+fn read_validate_skips_explicit_null_tagged_scalar_documents() {
+    let mut reader = std::io::Cursor::new("!!null not-null\n---\na: ok\n".as_bytes());
+    let mut it = serde_saphyr::read_validate::<_, Root>(&mut reader);
+
+    let value = it
+        .next()
+        .expect("iterator must yield the non-null document")
+        .expect("document should be valid");
+    assert_eq!(value.a, "ok");
+    assert!(it.next().is_none(), "iterator must stop at end of input");
+}

@@ -8,7 +8,7 @@ use crate::de_error::collect_validator_issues;
 use crate::de_error::redact_issue;
 use crate::live_events::LiveEvents;
 use crate::maybe_with_snippet_from_events;
-use crate::parse_scalars::scalar_is_nullish;
+use crate::parse_scalars::scalar_document_is_empty_or_null;
 use crate::properties_redaction::with_interp_redaction_scope;
 use serde_core::de::DeserializeOwned;
 use std::io::Read;
@@ -310,9 +310,7 @@ where
                 style,
                 tag,
                 ..
-            }) if *tag == crate::tags::SfTag::Null
-                || (*tag != crate::tags::SfTag::String && scalar_is_nullish(s, style)) =>
-            {
+            }) if scalar_document_is_empty_or_null(tag, s, style) => {
                 let _ = src.next()?; // consume the null scalar document
                 continue;
             }
@@ -570,9 +568,9 @@ where
             }
             loop {
                 match self.src.peek() {
-                    Ok(Some(Ev::Scalar { value, style, .. }))
-                        if scalar_is_nullish(value, style) =>
-                    {
+                    Ok(Some(Ev::Scalar {
+                        value, style, tag, ..
+                    })) if scalar_document_is_empty_or_null(tag, value, style) => {
                         let _ = self.src.next();
                         continue;
                     }
@@ -718,9 +716,7 @@ where
                 style,
                 tag,
                 ..
-            }) if *tag == crate::tags::SfTag::Null
-                || (*tag != crate::tags::SfTag::String && scalar_is_nullish(s, style)) =>
-            {
+            }) if scalar_document_is_empty_or_null(tag, s, style) => {
                 let _ = src.next()?; // consume the null scalar document
                 continue;
             }
@@ -970,9 +966,9 @@ where
             }
             loop {
                 match self.src.peek() {
-                    Ok(Some(Ev::Scalar { value, style, .. }))
-                        if scalar_is_nullish(value, style) =>
-                    {
+                    Ok(Some(Ev::Scalar {
+                        value, style, tag, ..
+                    })) if scalar_document_is_empty_or_null(tag, value, style) => {
                         let _ = self.src.next();
                         continue;
                     }

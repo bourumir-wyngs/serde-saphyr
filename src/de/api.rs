@@ -5,7 +5,7 @@ use serde_core::de::DeserializeOwned;
 use super::{Error, Ev, Events, Options, ring_reader};
 use crate::budget::EnforcingPolicy;
 use crate::live_events::LiveEvents;
-use crate::parse_scalars::scalar_is_nullish;
+use crate::parse_scalars::scalar_document_is_empty_or_null;
 use crate::properties_redaction::with_interp_redaction_scope;
 
 #[cfg(all(feature = "deserialize", feature = "include"))]
@@ -530,9 +530,7 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
                 style,
                 tag,
                 ..
-            }) if *tag == crate::tags::SfTag::Null
-                || (*tag != crate::tags::SfTag::String && scalar_is_nullish(s, style)) =>
-            {
+            }) if scalar_document_is_empty_or_null(tag, s, style) => {
                 let _ = src.next()?; // consume the null scalar document
                 // Do not push anything for this document; move to the next one.
                 continue;
@@ -1066,9 +1064,9 @@ where
             }
             loop {
                 match self.src.peek() {
-                    Ok(Some(Ev::Scalar { value, style, .. }))
-                        if scalar_is_nullish(value, style) =>
-                    {
+                    Ok(Some(Ev::Scalar {
+                        value, style, tag, ..
+                    })) if scalar_document_is_empty_or_null(tag, value, style) => {
                         let _ = self.src.next();
                         continue;
                     }
