@@ -279,6 +279,60 @@ fn alias_error_renders_two_snippet_windows_when_reference_and_defined_locations_
     );
 }
 
+#[cfg(feature = "include")]
+#[test]
+fn alias_error_in_include_uses_source_name_for_dual_snippet_header() {
+    #[derive(Debug, Deserialize)]
+    #[allow(dead_code)]
+    struct Root {
+        cfg: IncludedConfig,
+    }
+
+    #[derive(Debug, Deserialize)]
+    #[allow(dead_code)]
+    struct IncludedConfig {
+        count: u64,
+        flag: bool,
+    }
+
+    let options = serde_saphyr::options! {}.with_include_resolver(
+        |req: serde_saphyr::IncludeRequest| -> Result<
+            serde_saphyr::ResolvedInclude,
+            serde_saphyr::IncludeResolveError,
+        > {
+            assert_eq!(req.spec, "child.yaml");
+            Ok(serde_saphyr::ResolvedInclude {
+                id: "child.yaml".to_string(),
+                name: "child.yaml".to_string(),
+                source: serde_saphyr::InputSource::from_string(
+                    "count: &val 42\nflag: *val\n".to_string(),
+                ),
+            })
+        },
+    );
+
+    let err = from_str_with_options::<Root>("cfg: !include child.yaml\n", options)
+        .expect_err("alias type mismatch inside included file should fail");
+    let rendered = err.to_string();
+
+    assert!(
+        rendered.contains("--> child.yaml:2:7"),
+        "expected included source name in primary dual-location header, got:\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("--> the value is used here:"),
+        "dual-location label must not replace the source name:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("the value is used here"),
+        "expected alias use-site label to remain visible, got:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("count: &val 42") && rendered.contains("flag: *val"),
+        "expected both included source lines, got:\n{rendered}"
+    );
+}
+
 #[cfg(feature = "garde")]
 #[test]
 fn garde_validation_error_renders_two_snippet_windows_when_value_is_anchored_and_aliased() {

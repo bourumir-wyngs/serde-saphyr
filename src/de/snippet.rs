@@ -463,6 +463,18 @@ impl<'a> Snippet<'a> {
         msg: &str,
         location: &Location,
     ) -> fmt::Result {
+        self.fmt_or_fallback_with_label(f, level, l10n, msg, msg, location)
+    }
+
+    pub(crate) fn fmt_or_fallback_with_label(
+        self,
+        f: &mut fmt::Formatter<'_>,
+        level: Level,
+        l10n: &dyn Localizer,
+        msg: &str,
+        label: &str,
+        location: &Location,
+    ) -> fmt::Result {
         if location == &Location::UNKNOWN {
             return write!(f, "{msg}");
         }
@@ -499,7 +511,7 @@ impl<'a> Snippet<'a> {
                     .annotation(
                         AnnotationKind::Primary
                             .span(local_start..local_end)
-                            .label(msg),
+                            .label(label),
                     ),
             )];
 

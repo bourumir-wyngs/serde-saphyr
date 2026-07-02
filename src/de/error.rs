@@ -1877,11 +1877,18 @@ fn fmt_error_rendered(
                 let label = l10n.value_used_here();
                 let ctx = crate::de_snippet::Snippet::new(
                     used_region.text.as_str(),
-                    label.as_ref(),
+                    used_region.source_name.as_str(),
                     *crop_radius,
                 )
                 .with_offset(used_region.start_line);
-                ctx.fmt_or_fallback(f, Level::ERROR, l10n, msg.as_ref(), &ref_loc)?;
+                ctx.fmt_or_fallback_with_label(
+                    f,
+                    Level::ERROR,
+                    l10n,
+                    msg.as_ref(),
+                    label.as_ref(),
+                    &ref_loc,
+                )?;
 
                 let def_region = pick_cropped_region(regions, &def_loc).unwrap_or(region);
                 writeln!(f)?;
@@ -2029,11 +2036,18 @@ fn fmt_validation_error_with_snippets_offset(
                     rendered_regions.push(region as *const _);
                     let ctx = crate::de_snippet::Snippet::new(
                         region.text.as_str(),
-                        label.as_ref(),
+                        region.source_name.as_str(),
                         crop_radius,
                     )
                     .with_offset(region.start_line);
-                    ctx.fmt_or_fallback(f, Level::ERROR, l10n, &invalid_here, &r)?;
+                    ctx.fmt_or_fallback_with_label(
+                        f,
+                        Level::ERROR,
+                        l10n,
+                        &invalid_here,
+                        label.as_ref(),
+                        &r,
+                    )?;
                 } else {
                     fmt_with_location(f, l10n, &invalid_here, &r)?;
                 }

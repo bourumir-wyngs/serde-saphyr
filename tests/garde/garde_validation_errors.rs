@@ -235,8 +235,12 @@ fn validation_error_shows_referenced_and_defined_snippets_for_aliases() {
 
     // We want to see the primary (use-site) diagnostic.
     assert!(
-        rendered.contains(" --> the value is used here:34:4"),
+        rendered.contains(" --> <input>:34:4"),
         "expected use-site snippet header, got: {rendered}"
+    );
+    assert!(
+        rendered.contains("the value is used here"),
+        "expected use-site snippet label, got: {rendered}"
     );
 
     // And we want the secondary anchor context rendered as a custom message + a bare snippet
@@ -273,8 +277,12 @@ fn validation_error_shows_longer_garde_path_for_nested_structures() {
 
     // Primary use-site snippet.
     assert!(
-        rendered.contains(" --> the value is used here:36:8"),
+        rendered.contains(" --> <input>:36:8"),
         "expected use-site snippet header, got: {rendered}"
+    );
+    assert!(
+        rendered.contains("the value is used here"),
+        "expected use-site snippet label, got: {rendered}"
     );
 
     // Anchor context line should include the definition coordinates.
@@ -658,8 +666,12 @@ fn multidoc_validation_anchor_origin_renders_defined_here() {
 
     let rendered = err.to_string();
     assert!(
-        rendered.contains("the value is used here:5:4"),
+        rendered.contains("--> <input>:5:4"),
         "expected alias use-site from second document, got: {rendered}"
+    );
+    assert!(
+        rendered.contains("the value is used here"),
+        "expected alias use-site label, got: {rendered}"
     );
     assert!(
         rendered.contains("This value comes indirectly from the anchor at line 4 column 7:"),
