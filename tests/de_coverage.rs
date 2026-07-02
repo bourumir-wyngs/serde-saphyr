@@ -237,6 +237,23 @@ fn deserialize_any_special_float_as_string(#[case] yaml: &str, #[case] expected:
     assert_eq!(v, serde_json::Value::String(expected.to_string()));
 }
 
+#[rstest]
+#[case::nan("nan\n", "nan")]
+#[case::capital_nan("NaN\n", "NaN")]
+#[case::inf("inf\n", "inf")]
+#[case::plus_inf("+inf\n", "+inf")]
+#[case::minus_inf("-inf\n", "-inf")]
+#[case::infinity("Infinity\n", "Infinity")]
+#[case::plus_infinity("+Infinity\n", "+Infinity")]
+#[case::minus_infinity("-Infinity\n", "-Infinity")]
+fn deserialize_any_non_yaml_nonfinite_float_spellings_stay_strings(
+    #[case] yaml: &str,
+    #[case] expected: &str,
+) {
+    let v: serde_json::Value = serde_saphyr::from_str(yaml).unwrap();
+    assert_eq!(v, serde_json::Value::String(expected.to_string()));
+}
+
 /// deserialize_any with empty document → null/unit.
 #[test]
 fn deserialize_any_empty_document() {

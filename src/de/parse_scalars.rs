@@ -258,6 +258,27 @@ fn radix_and_digits(legacy_octal: bool, rest: &str) -> (u32, &str) {
     (radix, digits)
 }
 
+#[cfg(feature = "deserialize")]
+fn parse_yaml12_finite_float_fallback<T>(t: &str, location: Location) -> Result<T, Error>
+where
+    T: FromStr,
+    T: num_traits::Float,
+{
+    let value = t.parse::<T>().map_err(|_| Error::InvalidScalar {
+        ty: "floating point",
+        location,
+    })?;
+
+    if value.is_finite() {
+        Ok(value)
+    } else {
+        Err(Error::InvalidScalar {
+            ty: "floating point",
+            location,
+        })
+    }
+}
+
 #[cfg(all(feature = "deserialize", feature = "robotics"))]
 pub(crate) fn parse_yaml12_float<T>(
     s: &str,
@@ -278,10 +299,7 @@ where
         ".nan" | "+.nan" | "-.nan" => Ok(T::nan()),
         ".inf" | "+.inf" => Ok(T::infinity()),
         "-.inf" => Ok(T::neg_infinity()),
-        _ => t.parse::<T>().map_err(|_| Error::InvalidScalar {
-            ty: "floating point",
-            location,
-        }),
+        _ => parse_yaml12_finite_float_fallback(t, location),
     }
 }
 
@@ -302,10 +320,7 @@ where
         ".nan" | "+.nan" | "-.nan" => Ok(T::nan()),
         ".inf" | "+.inf" => Ok(T::infinity()),
         "-.inf" => Ok(T::neg_infinity()),
-        _ => t.parse::<T>().map_err(|_| Error::InvalidScalar {
-            ty: "floating point",
-            location,
-        }),
+        _ => parse_yaml12_finite_float_fallback(t, location),
     }
 }
 
@@ -397,6 +412,7 @@ pub(crate) fn leading_zero_decimal(t: &str) -> bool {
 #[cfg(all(test, feature = "deserialize"))]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     fn sample_location() -> Location {
         Location {
@@ -488,6 +504,19 @@ mod tests {
 
         let neg_inf: f64 = parse_yaml12_float("-.Inf", loc, SfTag::None, false).unwrap();
         assert!(neg_inf.is_infinite() && neg_inf.is_sign_negative());
+    }
+
+    #[rstest]
+    #[case::nan("nan")]
+    #[case::capital_nan("NaN")]
+    #[case::inf("inf")]
+    #[case::plus_inf("+inf")]
+    #[case::minus_inf("-inf")]
+    #[case::infinity("Infinity")]
+    #[case::plus_infinity("+Infinity")]
+    #[case::minus_infinity("-Infinity")]
+    fn parse_yaml12_float_rejects_rust_nonfinite_spellings(#[case] input: &str) {
+        assert!(parse_yaml12_float::<f64>(input, loc(), SfTag::None, false).is_err());
     }
 
     fn loc() -> Location {

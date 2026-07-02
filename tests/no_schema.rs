@@ -27,6 +27,26 @@ fn no_schema_on_rejects_plain_numeric_into_string() {
 }
 
 #[test]
+fn no_schema_on_allows_non_yaml_nonfinite_float_spellings_into_string() {
+    for input in [
+        "nan",
+        "NaN",
+        "inf",
+        "+inf",
+        "-inf",
+        "Infinity",
+        "+Infinity",
+        "-Infinity",
+    ] {
+        let y = format!("s: {input}\n");
+        let opts = serde_saphyr::options! { no_schema: true };
+        let v: AsString = from_str_with_options(&y, opts)
+            .expect("non-YAML non-finite float spelling should remain a string");
+        assert_eq!(v.s, input);
+    }
+}
+
+#[test]
 fn no_schema_on_accepts_quoted_numeric_into_string() {
     let y = "s: '123'\n";
     let opts = serde_saphyr::options! { no_schema: true };
