@@ -118,6 +118,10 @@ where
             "--plain" => plain = true,
             "--include" => {
                 include_path = match args.next() {
+                    Some(path) if path.as_ref().starts_with('-') => {
+                        let _ = writeln!(stderr, "Missing path for --include\n\n{}", usage());
+                        return 1;
+                    }
                     Some(path) => Some(path.as_ref().to_owned()),
                     None => {
                         let _ = writeln!(stderr, "Missing path for --include\n\n{}", usage());

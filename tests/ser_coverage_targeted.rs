@@ -5,7 +5,7 @@ use serde::Serialize;
 use serde_saphyr::{
     ArcAnchor, ArcRecursion, ArcRecursive, ArcWeakAnchor, Commented, FlowMap, FlowSeq, FoldStr,
     FoldString, LitStr, LitString, RcAnchor, RcRecursion, RcRecursive, RcWeakAnchor, SpaceAfter,
-    to_string, to_string_with_options,
+    from_str, to_string, to_string_with_options,
 };
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -898,6 +898,22 @@ fn write_quoted_named_escapes_in_value() {
     let s = "x\\\u{FEFF}y";
     let yaml = to_string_with_options(&s, opts).unwrap();
     assert!(yaml.contains("\\uFEFF"), "expected \\uFEFF for BOM: {yaml}");
+}
+
+#[test]
+fn write_quoted_named_escapes_in_map_keys() {
+    let mut m = BTreeMap::new();
+    m.insert("line\u{2028}sep".to_string(), 1);
+    m.insert("paragraph\u{2029}sep".to_string(), 2);
+    m.insert("bom\u{FEFF}mark".to_string(), 3);
+
+    let yaml = to_string(&m).unwrap();
+    assert!(yaml.contains("\\L"), "expected \\L for LS: {yaml}");
+    assert!(yaml.contains("\\P"), "expected \\P for PS: {yaml}");
+    assert!(yaml.contains("\\uFEFF"), "expected \\uFEFF for BOM: {yaml}");
+
+    let back: BTreeMap<String, i32> = from_str(&yaml).unwrap();
+    assert_eq!(back, m);
 }
 
 // ── write_quoted: various escape sequences ────────────────────────────────────

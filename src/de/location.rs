@@ -214,11 +214,17 @@ impl Location {
     /// - `column`: 1-indexed column.
     #[cfg(feature = "deserialize")]
     pub(crate) const fn new(line: usize, column: usize) -> Self {
-        // 4 Gb is larger than any YAML document I can imagine, and also this is
-        // error reporting only.
         Self {
-            line: line as u32,
-            column: column as u32,
+            line: if line > u32::MAX as usize {
+                u32::MAX
+            } else {
+                line as u32
+            },
+            column: if column > u32::MAX as usize {
+                u32::MAX
+            } else {
+                column as u32
+            },
             span: Span::UNKNOWN,
             source_id: 0,
         }
@@ -401,6 +407,14 @@ mod tests {
         assert_eq!(loc_with_span.line(), 5);
         assert_eq!(loc_with_span.column(), 10);
         assert_eq!(loc_with_span.span(), span);
+    }
+
+    #[test]
+    fn location_new_saturates_line_and_column() {
+        let loc = Location::new(usize::MAX, usize::MAX);
+
+        assert_eq!(loc.line(), u64::from(u32::MAX));
+        assert_eq!(loc.column(), u64::from(u32::MAX));
     }
 
     #[test]

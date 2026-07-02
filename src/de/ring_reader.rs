@@ -324,6 +324,9 @@ impl<R> RingReader<R> {
             if n == 0 {
                 break; // EOF
             }
+            if n > want {
+                return Ok(total);
+            }
 
             // Absolute offset of the first newly read byte.
             let abs_start = self.next_inner_offset();
@@ -619,6 +622,17 @@ mod tests {
         }
     }
 
+    struct OverreportingReader;
+
+    impl Read for OverreportingReader {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if !buf.is_empty() {
+                buf[0] = b'x';
+            }
+            Ok(buf.len().saturating_add(1))
+        }
+    }
+
     fn make_ascii_data(len: usize) -> Vec<u8> {
         (0..len).map(|i| b'a' + (i % 26) as u8).collect()
     }
@@ -645,6 +659,17 @@ mod tests {
         assert_eq!(rr.offset(), 0);
         assert_eq!(rr.read_ahead_len(), 0);
         assert_eq!(rr.inner().bytes_read(), 0);
+    }
+
+    #[test]
+    fn get_recent_defends_against_overreporting_reader() {
+        let mut rr = RingReader::new(OverreportingReader);
+
+        let snap = rr.get_recent().unwrap();
+        assert_snapshot_offsets_consistent(&snap);
+        assert!(snap.bytes.is_empty());
+        assert_eq!(rr.offset(), 0);
+        assert_eq!(rr.read_ahead_len(), 0);
     }
 
     #[test]

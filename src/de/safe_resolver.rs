@@ -191,6 +191,7 @@ impl SafeFileResolver {
             }))
         })?;
         self.ensure_inside_root(&canonical_target, req.spec)?;
+        validate_include_extension(&canonical_target, req.spec)?;
 
         let metadata = fs::metadata(&canonical_target)?;
         if !metadata.is_file() {
@@ -462,16 +463,7 @@ fn validate_relative_include_spec(
         )));
     }
 
-    if let Some(filename) = spec_path.file_name().and_then(|n| n.to_str())
-        && !filename.ends_with(".yml")
-        && !filename.ends_with(".yaml")
-    {
-        return Err(IncludeResolveError::FileInclude(Box::new(
-            ResolveProblem::InvalidExtension {
-                spec: raw_spec.to_string(),
-            },
-        )));
-    }
+    validate_include_extension(spec_path, raw_spec)?;
 
     if spec_path.is_absolute() {
         return Err(IncludeResolveError::FileInclude(Box::new(
@@ -487,6 +479,22 @@ fn validate_relative_include_spec(
     {
         return Err(IncludeResolveError::FileInclude(Box::new(
             ResolveProblem::AbsolutePathNotAllowed {
+                spec: raw_spec.to_string(),
+            },
+        )));
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "include")]
+fn validate_include_extension(path: &Path, raw_spec: &str) -> Result<(), IncludeResolveError> {
+    if let Some(filename) = path.file_name().and_then(|n| n.to_str())
+        && !filename.ends_with(".yml")
+        && !filename.ends_with(".yaml")
+    {
+        return Err(IncludeResolveError::FileInclude(Box::new(
+            ResolveProblem::InvalidExtension {
                 spec: raw_spec.to_string(),
             },
         )));

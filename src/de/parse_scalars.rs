@@ -196,8 +196,12 @@ where
 
     let mag = parse_digits_u128(digits, radix).ok_or_else(invalid)?;
     let val_i128: i128 = if neg {
-        let mag_i128: i128 = mag.try_into().map_err(|_| invalid())?;
-        mag_i128.checked_neg().ok_or_else(invalid)?
+        if mag == (i128::MAX as u128) + 1 {
+            i128::MIN
+        } else {
+            let mag_i128: i128 = mag.try_into().map_err(|_| invalid())?;
+            mag_i128.checked_neg().ok_or_else(invalid)?
+        }
     } else {
         mag.try_into().map_err(|_| invalid())?
     };
@@ -460,6 +464,22 @@ mod tests {
 
         let value: i32 = parse_int_signed("0b1010_1010", "i32", loc, false).unwrap();
         assert_eq!(value, 0b1010_1010);
+    }
+
+    #[test]
+    fn parse_int_signed_supports_i128_min_in_alternate_radices() {
+        let loc = sample_location();
+        let hex: i128 =
+            parse_int_signed("-0x80000000000000000000000000000000", "i128", loc, false).unwrap();
+        let binary_min = format!("-0b1{}", "0".repeat(127));
+        let binary: i128 = parse_int_signed(&binary_min, "i128", loc, false).unwrap();
+
+        assert_eq!(hex, i128::MIN);
+        assert_eq!(binary, i128::MIN);
+        assert!(
+            parse_int_signed::<i128>("0x80000000000000000000000000000000", "i128", loc, false)
+                .is_err()
+        );
     }
 
     #[test]

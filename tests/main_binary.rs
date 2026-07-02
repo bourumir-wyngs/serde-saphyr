@@ -168,3 +168,13 @@ fn missing_include_path_prints_error_and_exits_one() {
         "stderr: {stderr}"
     );
 }
+
+#[test]
+fn include_option_rejects_option_as_missing_path() {
+    let (_stdout, stderr, code) = run_binary(&["--include", "--plain", "file.yaml"]);
+    assert_eq!(code, 1);
+    assert!(
+        stderr.contains("Missing path for --include"),
+        "stderr: {stderr}"
+    );
+}

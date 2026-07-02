@@ -165,6 +165,9 @@ impl<R: Read> Iterator for ChunkedChars<R> {
                     }
                     Ok(n) => read += n,
                     Err(e) => {
+                        if e.kind() == io::ErrorKind::Interrupted {
+                            continue;
+                        }
                         self.err.replace(Some(e));
                         return None;
                     }
@@ -241,10 +244,48 @@ pub fn buffered_input_from_reader_with_limit_shared<'a, R: Read + 'a>(
 
 #[cfg(test)]
 mod tests {
+    use crate::buffered_input::ChunkedChars;
     use crate::buffered_input::ReaderInput;
     use crate::buffered_input::buffered_input_from_reader_with_limit;
     use granit_parser::{Event, Parser};
+    use std::cell::{Cell, RefCell};
     use std::io::{Cursor, Read};
+    use std::rc::Rc;
+
+    struct InterruptOnceReader {
+        bytes: Vec<u8>,
+        pos: usize,
+        interrupted: bool,
+    }
+
+    impl InterruptOnceReader {
+        fn new(bytes: Vec<u8>) -> Self {
+            Self {
+                bytes,
+                pos: 0,
+                interrupted: false,
+            }
+        }
+    }
+
+    impl Read for InterruptOnceReader {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.pos == 1 && !self.interrupted {
+                self.interrupted = true;
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Interrupted,
+                    "interrupted once",
+                ));
+            }
+            if buf.is_empty() || self.pos >= self.bytes.len() {
+                return Ok(0);
+            }
+
+            buf[0] = self.bytes[self.pos];
+            self.pos += 1;
+            Ok(1)
+        }
+    }
 
     pub fn buffered_input_from_reader<'a, R: Read + 'a>(reader: R) -> ReaderInput<'a> {
         buffered_input_from_reader_with_limit(reader, None).0
@@ -344,5 +385,16 @@ mod tests {
                 scalars
             );
         }
+    }
+
+    #[test]
+    fn chunked_chars_retries_interrupted_continuation_reads() {
+        let err = Rc::new(RefCell::new(None));
+        let bytes_read = Rc::new(Cell::new(0));
+        let reader = InterruptOnceReader::new("é".as_bytes().to_vec());
+        let mut chars = ChunkedChars::new(reader, None, Rc::clone(&err), bytes_read);
+
+        assert_eq!(chars.next(), Some('é'));
+        assert!(err.borrow().is_none());
     }
 }

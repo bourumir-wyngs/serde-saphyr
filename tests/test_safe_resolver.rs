@@ -481,6 +481,32 @@ fn safe_file_resolver_symlink_policy_follow_within_root() {
 
 #[cfg(unix)]
 #[test]
+fn safe_file_resolver_follow_within_root_checks_canonical_extension() {
+    use std::os::unix::fs::symlink;
+
+    let temp = TempDir::new().unwrap();
+    let allow_root = temp.path().join("allowed");
+    fs::create_dir_all(&allow_root).unwrap();
+    let target = allow_root.join("secret.txt");
+    write_text(&target, "bar_value\n");
+    symlink(&target, allow_root.join("config.yaml")).unwrap();
+
+    let resolver = SafeFileResolver::new(&allow_root)
+        .unwrap()
+        .with_symlink_policy(SymlinkPolicy::FollowWithinRoot);
+    let err = resolver
+        .resolve(request("config.yaml", "", None))
+        .unwrap_err();
+    let msg = include_error_message(err);
+    assert!(
+        msg.contains("does not have a valid YAML extension"),
+        "{}",
+        msg
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn safe_file_resolver_no_git() {
     use std::os::unix::fs::symlink;
 

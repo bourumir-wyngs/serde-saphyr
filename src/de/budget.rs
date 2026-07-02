@@ -662,7 +662,10 @@ impl BudgetEnforcer {
             && self.report.aliases >= self.budget.alias_anchor_min_aliases
             && (self.report.anchors == 0
                 || self.report.aliases
-                    > self.budget.alias_anchor_ratio_multiplier * self.report.anchors)
+                    > self
+                        .budget
+                        .alias_anchor_ratio_multiplier
+                        .saturating_mul(self.report.anchors))
         {
             self.report.breached = Some(BudgetBreach::AliasAnchorRatio {
                 aliases: self.report.aliases,
@@ -875,6 +878,26 @@ e: *A
         assert!(report.breached.is_none());
         assert_eq!(report.aliases, 3);
         assert_eq!(report.anchors, 1);
+    }
+
+    #[test]
+    fn alias_anchor_ratio_multiplier_overflow_does_not_panic() {
+        let budget = Budget {
+            alias_anchor_min_aliases: 1,
+            alias_anchor_ratio_multiplier: usize::MAX,
+            ..Default::default()
+        };
+        let mut enforcer =
+            BudgetEnforcer::new(budget, EnforcingPolicy::AllContent, MergeKeyPolicy::Merge);
+        enforcer.report.aliases = usize::MAX;
+        enforcer.defined_anchors.insert(1);
+        enforcer.defined_anchors.insert(2);
+
+        let report = enforcer.finalize();
+
+        assert!(report.breached.is_none());
+        assert_eq!(report.aliases, usize::MAX);
+        assert_eq!(report.anchors, 2);
     }
 
     #[test]

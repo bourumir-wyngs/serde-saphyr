@@ -566,6 +566,10 @@ impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
                     '\n' => self.s.push_str("\\n"),
                     '\r' => self.s.push_str("\\r"),
                     '\t' => self.s.push_str("\\t"),
+                    '\u{0085}' => self.s.push_str("\\N"),
+                    '\u{2028}' => self.s.push_str("\\L"),
+                    '\u{2029}' => self.s.push_str("\\P"),
+                    '\u{FEFF}' => self.s.push_str("\\uFEFF"),
                     c if c.is_control() => {
                         use std::fmt::Write as _;
                         // Writing into a String cannot fail; ignore the Result to avoid unwrap.

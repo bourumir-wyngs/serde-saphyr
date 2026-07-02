@@ -17,6 +17,7 @@ use std::rc::Rc;
     feature = "serde_derived_types",
     derive(serde::Serialize, serde::Deserialize)
 )]
+#[cfg_attr(feature = "serde_derived_types", serde(rename_all = "snake_case"))]
 pub enum DuplicateKeyPolicy {
     /// Error out on encountering a duplicate key.
     Error,
@@ -612,6 +613,20 @@ mod tests {
             assert!(opts.property_map.is_none());
             assert_eq!(opts.property_syntax, PropertySyntax::Braced);
         }
+    }
+
+    #[cfg(feature = "serde_derived_types")]
+    #[test]
+    fn duplicate_key_policy_serde_uses_snake_case() {
+        assert_eq!(
+            serde_json::to_string(&DuplicateKeyPolicy::FirstWins).unwrap(),
+            "\"first_wins\""
+        );
+        assert!(matches!(
+            serde_json::from_str::<DuplicateKeyPolicy>("\"last_wins\"").unwrap(),
+            DuplicateKeyPolicy::LastWins
+        ));
+        assert!(serde_json::from_str::<DuplicateKeyPolicy>("\"FirstWins\"").is_err());
     }
 
     #[test]
