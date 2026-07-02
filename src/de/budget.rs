@@ -486,6 +486,7 @@ impl BudgetEnforcer {
             Event::DocumentStart(..) => {
                 if self.policy == EnforcingPolicy::PerDocument {
                     self.report.reset();
+                    self.defined_anchors.clear();
                 } else {
                     self.report.documents += 1;
                     if self.report.documents > self.budget.max_documents {
