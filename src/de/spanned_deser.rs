@@ -220,10 +220,11 @@ impl<'de> de::Deserializer<'de> for LocationDeser {
 /// 1) `line`
 /// 2) `column`
 /// 3) `span`
+/// 4) `source_id`
 struct LocationMapAccess {
     /// Location being projected.
     location: Location,
-    /// 0..=3 field state cursor.
+    /// 0..=4 field state cursor.
     state: u8,
 }
 
@@ -238,6 +239,7 @@ impl<'de> de::MapAccess<'de> for LocationMapAccess {
             0 => "line",
             1 => "column",
             2 => "span",
+            3 => "source_id",
             _ => return Ok(None),
         };
         self.state += 1;
@@ -254,6 +256,7 @@ impl<'de> de::MapAccess<'de> for LocationMapAccess {
             3 => seed.deserialize(SpanDeser {
                 span: self.location.span,
             }),
+            4 => seed.deserialize(self.location.source_id.into_deserializer()),
             _ => Err(Error::msg("invalid Location internal state")),
         }
     }

@@ -351,6 +351,37 @@ fn spanned_deser_from_reader_alias() {
     assert_ne!(s.b.referenced, s.b.defined);
 }
 
+#[cfg(feature = "include")]
+#[test]
+fn spanned_deser_included_value_preserves_source_id() {
+    #[derive(Debug, Deserialize)]
+    struct S {
+        v: Spanned<String>,
+    }
+
+    let options = serde_saphyr::options! {}.with_include_resolver(
+        |req: serde_saphyr::IncludeRequest| -> Result<
+            serde_saphyr::ResolvedInclude,
+            serde_saphyr::IncludeResolveError,
+        > {
+            assert_eq!(req.spec, "child.yaml");
+            Ok(serde_saphyr::ResolvedInclude {
+                id: "child.yaml".to_string(),
+                name: "child.yaml".to_string(),
+                source: serde_saphyr::InputSource::from_string("included\n".to_string()),
+            })
+        },
+    );
+
+    let s: S = serde_saphyr::from_str_with_options("v: !include child.yaml\n", options).unwrap();
+
+    assert_eq!(s.v.value, "included");
+    assert_ne!(s.v.referenced.source_id(), 0);
+    assert_eq!(s.v.defined.source_id(), s.v.referenced.source_id());
+    assert_eq!(s.v.referenced.line(), 1);
+    assert_eq!(s.v.referenced.column(), 1);
+}
+
 // ---------------------------------------------------------------------------
 // Spanned<T> column tracking — verifies column numbers are 1-based.
 // ---------------------------------------------------------------------------
