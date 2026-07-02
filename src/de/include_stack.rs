@@ -547,13 +547,25 @@ fn collect_anchor_events(
         if event_cursor >= events.len() {
             break;
         }
-        let start = event_cursor;
-        let mut end = start;
-        let mut depth = anchored_event_initial_depth(&events[start].0);
+
+        let mut node_start = event_cursor;
+        while node_start < events.len() && !events[node_start].0.is_node() {
+            node_start += 1;
+        }
+        if node_start >= events.len() {
+            break;
+        }
+
+        let start = events[event_cursor..node_start]
+            .iter()
+            .position(|(event, _)| matches!(event, Event::Comment(_, _)))
+            .map_or(node_start, |comment_offset| event_cursor + comment_offset);
+        let mut end = node_start;
+        let mut depth = anchored_event_initial_depth(&events[node_start].0);
         if depth == 0 {
-            end = start;
+            end = node_start;
         } else {
-            for (idx, (event, _)) in events.iter().enumerate().skip(start + 1) {
+            for (idx, (event, _)) in events.iter().enumerate().skip(node_start + 1) {
                 match event {
                     Event::SequenceStart(_, _, _) | Event::MappingStart(_, _, _) => depth += 1,
                     Event::SequenceEnd | Event::MappingEnd => {
@@ -574,7 +586,7 @@ fn collect_anchor_events(
             }
         }
         anchor_nodes_by_name.insert(name.clone(), start..=end);
-        event_cursor = start + 1;
+        event_cursor = node_start + 1;
     }
 
     let target_events = anchor_nodes_by_name
@@ -746,6 +758,33 @@ mod tests {
                 .iter()
                 .any(|(event, _)| matches!(event, Event::Alias(_))),
             "expanded event stream should not retain unresolved aliases"
+        );
+    }
+
+    #[test]
+    fn collect_anchor_events_skips_comment_between_anchor_and_node() {
+        let collected = collect_anchor_events(
+            "selected: &selected # note\n  user: Alice\n",
+            "selected",
+            0,
+            &crate::Budget::default(),
+        )
+        .expect("anchor collection should select the mapping after the comment");
+
+        let first_node = collected.events.iter().find(|(event, _)| event.is_node());
+        assert!(
+            matches!(first_node, Some((Event::MappingStart(_, _, _), _))),
+            "target anchor's first node should be the mapping, got: {first_node:?}"
+        );
+        assert!(
+            collected.events.iter().any(
+                |(event, _)| matches!(event, Event::Scalar(value, _, _, _) if value.as_ref() == "user"),
+            ),
+            "target mapping key should be preserved"
+        );
+        assert!(
+            !matches!(collected.events.as_slice(), [(Event::Comment(_, _), _)]),
+            "comment must not be the only collected anchor event"
         );
     }
 
