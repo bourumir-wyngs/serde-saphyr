@@ -204,14 +204,23 @@ fn build_diagnostic(
                 build_diagnostic(error.without_snippet(), src, formatter, snippet_regions);
 
             let mut used_regions = std::collections::HashSet::new();
+            if let Some(locs) = error.locations() {
+                insert_selected_region_key(
+                    &mut used_regions,
+                    snippet_regions,
+                    &locs.reference_location,
+                );
+                insert_selected_region_key(
+                    &mut used_regions,
+                    snippet_regions,
+                    &locs.defined_location,
+                );
+            } else if let Some(location) = error.location() {
+                insert_selected_region_key(&mut used_regions, snippet_regions, &location);
+            }
 
             for region in snippet_regions {
-                let key = (
-                    region.source_name.as_str(),
-                    region.location.source_id(),
-                    region.start_line,
-                    region.end_line,
-                );
+                let key = region_key(region);
 
                 if used_regions.insert(key) {
                     let (synthetic_src, span) =
@@ -269,6 +278,25 @@ fn build_diagnostic(
                 related: Vec::new(),
             }
         }
+    }
+}
+
+fn region_key(region: &CroppedRegion) -> (&str, u32, usize, usize) {
+    (
+        region.source_name.as_str(),
+        region.location.source_id(),
+        region.start_line,
+        region.end_line,
+    )
+}
+
+fn insert_selected_region_key<'a>(
+    used_regions: &mut std::collections::HashSet<(&'a str, u32, usize, usize)>,
+    regions: &'a [CroppedRegion],
+    location: &Location,
+) {
+    if let Some(region) = select_region_for_location(regions, location) {
+        used_regions.insert(region_key(region));
     }
 }
 
@@ -360,18 +388,17 @@ fn build_dual_location_labels(
     (primary_src, labels)
 }
 
-fn get_source_and_span(
-    src: &Arc<NamedSource<String>>,
+fn select_region_for_location<'a>(
+    regions: &'a [CroppedRegion],
     location: &Location,
-    regions: &[CroppedRegion],
-) -> (Arc<NamedSource<String>>, Option<SourceSpan>) {
+) -> Option<&'a CroppedRegion> {
     if *location == Location::UNKNOWN {
-        return (Arc::clone(src), None);
+        return None;
     }
 
     let line = location.line as usize;
     let location_source_id = location.source_id();
-    let region = regions
+    regions
         .iter()
         .find(|r| {
             location_source_id != 0
@@ -388,7 +415,19 @@ fn get_source_and_span(
                         || r.location.source_id() == location_source_id)
             })
         })
-        .or_else(|| regions.first());
+        .or_else(|| regions.first())
+}
+
+fn get_source_and_span(
+    src: &Arc<NamedSource<String>>,
+    location: &Location,
+    regions: &[CroppedRegion],
+) -> (Arc<NamedSource<String>>, Option<SourceSpan>) {
+    if *location == Location::UNKNOWN {
+        return (Arc::clone(src), None);
+    }
+
+    let region = select_region_for_location(regions, location);
 
     if let Some(region) = region {
         let start_line = region.start_line.saturating_sub(1);
@@ -687,7 +726,50 @@ mod tests {
     }
 
     #[test]
-    fn with_snippet_keeps_related_entries_for_same_name_different_sources() {
+    fn with_snippet_skips_primary_region_from_related_entries() {
+        let src: Arc<NamedSource<String>> =
+            Arc::new(NamedSource::new("input.yaml", "bad: value\n".to_owned()));
+
+        let err = Error::WithSnippet {
+            error: Box::new(Error::Message {
+                msg: "invalid value".to_owned(),
+                location: Location {
+                    line: 1,
+                    column: 6,
+                    span: crate::Span::new(5, 5),
+                    source_id: 1,
+                },
+            }),
+            crop_radius: 2,
+            regions: vec![CroppedRegion {
+                text: "bad: value\n".to_string(),
+                source_name: "input.yaml".to_string(),
+                start_line: 1,
+                end_line: 1,
+                location: Location {
+                    line: 1,
+                    column: 6,
+                    span: crate::Span::UNKNOWN,
+                    source_id: 1,
+                },
+            }],
+        };
+
+        let diag = build_diagnostic(
+            &err,
+            Arc::clone(&src),
+            RenderOptions::default().formatter,
+            &[],
+        );
+
+        assert!(
+            diag.related.is_empty(),
+            "primary snippet region should not be repeated as included-from-here"
+        );
+    }
+
+    #[test]
+    fn with_snippet_keeps_non_primary_related_entry_for_same_name_different_sources() {
         let src: Arc<NamedSource<String>> =
             Arc::new(NamedSource::new("input.yaml", "root: 1\n".to_owned()));
 
@@ -736,14 +818,16 @@ mod tests {
             RenderOptions::default().formatter,
             &[],
         );
-        assert_eq!(diag.related.len(), 2);
+        assert!(diag.src.inner().contains("child_value"));
+        assert_eq!(diag.related.len(), 1);
         assert!(
             diag.related
                 .iter()
                 .any(|d| d.src.inner().contains("parent_value"))
         );
         assert!(
-            diag.related
+            !diag
+                .related
                 .iter()
                 .any(|d| d.src.inner().contains("child_value"))
         );
