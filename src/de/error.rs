@@ -1,6 +1,8 @@
 use crate::Location;
 use crate::budget::BudgetBreach;
-use crate::de_snippet::fmt_snippet_window_offset_or_fallback;
+use crate::de_snippet::{
+    fmt_snippet_window_offset_or_fallback, snippet_window_frame_prefix_offset,
+};
 use crate::input_source::IncludeResolveError;
 use crate::localizer::{DEFAULT_ENGLISH_LOCALIZER, ExternalMessageSource, Localizer};
 use crate::location::Locations;
@@ -1675,6 +1677,27 @@ fn pick_cropped_region<'a>(
         .or_else(|| regions.first())
 }
 
+fn writeln_anchor_intro(
+    f: &mut fmt::Formatter<'_>,
+    l10n: &dyn Localizer,
+    def_loc: Location,
+    def_region: &CroppedRegion,
+) -> fmt::Result {
+    let line = l10n.value_comes_from_the_anchor(def_loc);
+    let Some(prefix) = snippet_window_frame_prefix_offset(
+        def_region.text.as_str(),
+        def_region.start_line,
+        &def_loc,
+    ) else {
+        return writeln!(f, "{line}");
+    };
+
+    match line.strip_prefix("  |") {
+        Some(rest) => writeln!(f, "{prefix}{rest}"),
+        None => writeln!(f, "{line}"),
+    }
+}
+
 fn fmt_error_rendered(
     f: &mut fmt::Formatter<'_>,
     err: &Error,
@@ -1862,7 +1885,7 @@ fn fmt_error_rendered(
 
                 let def_region = pick_cropped_region(regions, &def_loc).unwrap_or(region);
                 writeln!(f)?;
-                writeln!(f, "{}", l10n.value_comes_from_the_anchor(def_loc))?;
+                writeln_anchor_intro(f, l10n, def_loc, def_region)?;
                 fmt_snippet_window_offset_or_fallback(
                     f,
                     l10n,
@@ -2015,8 +2038,8 @@ fn fmt_validation_error_with_snippets_offset(
                     fmt_with_location(f, l10n, &invalid_here, &r)?;
                 }
                 writeln!(f)?;
-                writeln!(f, "{}", l10n.value_comes_from_the_anchor(d))?;
                 if let Some(region) = pick_cropped_region(regions, &d) {
+                    writeln_anchor_intro(f, l10n, d, region)?;
                     rendered_regions.push(region as *const _);
                     crate::de_snippet::fmt_snippet_window_offset_or_fallback(
                         f,
@@ -2028,6 +2051,7 @@ fn fmt_validation_error_with_snippets_offset(
                         crop_radius,
                     )?;
                 } else {
+                    writeln!(f, "{}", l10n.value_comes_from_the_anchor(d))?;
                     fmt_with_location(f, l10n, l10n.defined_window().as_ref(), &d)?;
                 }
             }

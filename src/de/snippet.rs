@@ -254,6 +254,29 @@ pub(crate) fn crop_source_window(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::localizer::DefaultEnglishLocalizer;
+    use std::fmt;
+
+    struct SecondarySnippet<'a> {
+        text: &'a str,
+        location: Location,
+        start_line: usize,
+        msg: &'a str,
+    }
+
+    impl fmt::Display for SecondarySnippet<'_> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            fmt_snippet_window_offset_or_fallback(
+                f,
+                &DefaultEnglishLocalizer,
+                &self.location,
+                self.text,
+                self.start_line,
+                self.msg,
+                80,
+            )
+        }
+    }
 
     #[test]
     fn crop_source_window_truncates_huge_error_line_on_the_right_only() {
@@ -348,6 +371,46 @@ mod tests {
         assert_eq!(cropped.len(), text.len());
         assert!(!cropped.contains("\x1B]0;"));
         assert!(!cropped.contains('\x07'));
+    }
+
+    #[test]
+    fn secondary_snippet_caret_aligns_with_two_digit_line_gutter() {
+        let mut text = String::new();
+        for line in 1..=12 {
+            if line == 10 {
+                text.push_str("key: value\n");
+            } else {
+                text.push_str("ctx\n");
+            }
+        }
+
+        let rendered = SecondarySnippet {
+            text: &text,
+            location: Location::new(10, 6),
+            start_line: 1,
+            msg: "defined here",
+        }
+        .to_string();
+
+        let source_line = rendered
+            .lines()
+            .find(|line| line.starts_with("10 | "))
+            .expect("line 10 should be rendered");
+        let caret_line = rendered
+            .lines()
+            .find(|line| line.contains('^'))
+            .expect("caret line should be rendered");
+
+        let value_index = source_line
+            .find('v')
+            .expect("source line should contain value");
+        let caret_index = caret_line
+            .find('^')
+            .expect("caret line should contain caret");
+        assert_eq!(
+            caret_index, value_index,
+            "caret should align with the referenced column:\n{rendered}"
+        );
     }
 }
 
@@ -470,6 +533,25 @@ pub(crate) fn fmt_snippet_window_offset_or_fallback(
     )
 }
 
+pub(crate) fn snippet_window_frame_prefix_offset(
+    text: &str,
+    start_line: usize,
+    location: &Location,
+) -> Option<String> {
+    if location == &Location::UNKNOWN {
+        return None;
+    }
+
+    let rows = resolve_window_rows(text, location, LineMapping::Offset { start_line }).ok()?;
+    Some(snippet_window_frame_prefix(
+        rows.max_display_row().to_string().len(),
+    ))
+}
+
+fn snippet_window_frame_prefix(gutter_width: usize) -> String {
+    format!("{:>gutter_width$} |", "")
+}
+
 fn fmt_snippet_window_with_mapping_or_fallback(
     f: &mut fmt::Formatter<'_>,
     _l10n: &dyn Localizer,
@@ -499,7 +581,8 @@ fn fmt_snippet_window_with_mapping_or_fallback(
     );
 
     let gutter_width = window.rows.max_display_row().to_string().len();
-    writeln!(f, "  |")?;
+    let empty_gutter = snippet_window_frame_prefix(gutter_width);
+    writeln!(f, "{empty_gutter}")?;
 
     let mut cur_row = window.rows.window_start_row;
     for line in window_text.split_inclusive('\n') {
@@ -525,9 +608,14 @@ fn fmt_snippet_window_with_mapping_or_fallback(
                 .unwrap_or(0);
             let caret_chars = window_text[line_byte_start..local_start].chars().count();
             if msg.is_empty() {
-                writeln!(f, "  | {space:>caret_chars$}^", space = "")?;
+                writeln!(f, "{empty_gutter} {space:>caret_chars$}^", space = "")?;
             } else {
-                writeln!(f, "  | {space:>caret_chars$}^ {msg}", space = "", msg = msg)?;
+                writeln!(
+                    f,
+                    "{empty_gutter} {space:>caret_chars$}^ {msg}",
+                    space = "",
+                    msg = msg
+                )?;
             }
         }
 
@@ -555,14 +643,19 @@ fn fmt_snippet_window_with_mapping_or_fallback(
                 .unwrap_or(0);
             let caret_chars = window_text[line_byte_start..local_start].chars().count();
             if msg.is_empty() {
-                writeln!(f, "  | {space:>caret_chars$}^", space = "")?;
+                writeln!(f, "{empty_gutter} {space:>caret_chars$}^", space = "")?;
             } else {
-                writeln!(f, "  | {space:>caret_chars$}^ {msg}", space = "", msg = msg)?;
+                writeln!(
+                    f,
+                    "{empty_gutter} {space:>caret_chars$}^ {msg}",
+                    space = "",
+                    msg = msg
+                )?;
             }
         }
     }
 
-    writeln!(f, "  |")
+    writeln!(f, "{empty_gutter}")
 }
 
 /// Print a message optionally suffixed with a localized location suffix.
