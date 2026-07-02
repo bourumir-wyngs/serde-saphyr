@@ -489,8 +489,8 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         }
 
         // For non-binary, ensure the tag allows string deserialization.
-        if !tag.can_parse_into_string()
-            && !(self.cfg.ignore_binary_tag_for_string && tag == SfTag::Binary)
+        if !(tag.can_parse_into_string()
+            || self.cfg.ignore_binary_tag_for_string && tag == SfTag::Binary)
         {
             return Err(Error::TaggedScalarCannotDeserializeIntoString { location });
         }
@@ -706,8 +706,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 if tag == SfTag::Binary && !self.cfg.ignore_binary_tag_for_string {
                     return visitor.visit_string(self.take_string_scalar()?);
                 }
-                if !tag.can_parse_into_string()
-                    && !(self.cfg.ignore_binary_tag_for_string && tag == SfTag::Binary)
+                if !(tag.can_parse_into_string()
+                    || self.cfg.ignore_binary_tag_for_string && tag == SfTag::Binary)
                 {
                     return Err(Error::TaggedScalarCannotDeserializeIntoString { location });
                 }
@@ -990,8 +990,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         Err(err) => Err(err),
                     };
                 }
-                if !view.tag.can_parse_into_string()
-                    && !(self.cfg.ignore_binary_tag_for_string && view.tag == SfTag::Binary)
+                if !(view.tag.can_parse_into_string()
+                    || self.cfg.ignore_binary_tag_for_string && view.tag == SfTag::Binary)
                 {
                     return Err(Error::TaggedScalarCannotDeserializeIntoString {
                         location: view.location,
@@ -1065,8 +1065,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             if view.tag == SfTag::Binary && !self.cfg.ignore_binary_tag_for_string {
                 return visitor.visit_string(self.take_string_scalar()?);
             }
-            if !view.tag.can_parse_into_string()
-                && !(self.cfg.ignore_binary_tag_for_string && view.tag == SfTag::Binary)
+            if !(view.tag.can_parse_into_string()
+                || self.cfg.ignore_binary_tag_for_string && view.tag == SfTag::Binary)
             {
                 return Err(Error::TaggedScalarCannotDeserializeIntoString {
                     location: view.location,

@@ -444,16 +444,13 @@ fn collect_anchor_events(
     let mut scanner = Scanner::new(StrInput::new(text));
     for token in &mut scanner {
         let marker_offset = token.0.start.index();
-        match token.1 {
-            TokenType::Anchor(name) => {
-                anchor_defs.push((name.into_owned(), marker_offset));
-                if anchor_defs.len() > budget.max_anchors {
-                    return Err(CollectAnchorEventsError::Budget(BudgetBreach::Anchors {
-                        anchors: anchor_defs.len(),
-                    }));
-                }
+        if let TokenType::Anchor(name) = token.1 {
+            anchor_defs.push((name.into_owned(), marker_offset));
+            if anchor_defs.len() > budget.max_anchors {
+                return Err(CollectAnchorEventsError::Budget(BudgetBreach::Anchors {
+                    anchors: anchor_defs.len(),
+                }));
             }
-            _ => {}
         }
     }
     if let Some(err) = scanner.get_error() {
