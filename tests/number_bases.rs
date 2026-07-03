@@ -104,6 +104,53 @@ neg_zero_i: -009
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
+struct LegacyPrefixUnderscores {
+    legacy_octal: i32,
+    plus_legacy_octal: i32,
+    neg_legacy_octal: i32,
+    hex: i32,
+    octal: i32,
+    binary: i32,
+}
+
+#[test]
+fn parse_legacy_prefix_underscores() {
+    let y = r#"
+legacy_octal: 0_10
+plus_legacy_octal: +0_10
+neg_legacy_octal: -0_10
+hex: 0x_10
+octal: 0o_10
+binary: 0b_10
+"#;
+    let opts = serde_saphyr::options! { legacy_octal_numbers: true };
+    let v: LegacyPrefixUnderscores =
+        serde_saphyr::from_str_with_options(y, opts).expect("parse failed");
+
+    assert_eq!(v.legacy_octal, 0o10);
+    assert_eq!(v.plus_legacy_octal, 0o10);
+    assert_eq!(v.neg_legacy_octal, -0o10);
+    assert_eq!(v.hex, 0x10);
+    assert_eq!(v.octal, 0o10);
+    assert_eq!(v.binary, 0b10);
+}
+
+#[test]
+fn prefix_underscores_stay_invalid_by_default() {
+    let y = r#"
+legacy_octal: 0_10
+plus_legacy_octal: +0_10
+neg_legacy_octal: -0_10
+hex: 0x_10
+octal: 0o_10
+binary: 0b_10
+"#;
+
+    serde_saphyr::from_str::<LegacyPrefixUnderscores>(y)
+        .expect_err("prefix underscores are legacy-only");
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
 struct UnderscoreNumbers {
     decimal_i64: i64,
     decimal_u64: u64,

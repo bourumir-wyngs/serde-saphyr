@@ -244,22 +244,31 @@ where
 fn radix_and_digits(legacy_octal: bool, rest: &str) -> (u32, &str) {
     let (radix, digits) =
         if let Some(r) = rest.strip_prefix("0x").or_else(|| rest.strip_prefix("0X")) {
-            (16u32, r)
+            (16u32, normalize_prefixed_digits(legacy_octal, r))
         } else if let Some(r) = rest.strip_prefix("0o").or_else(|| rest.strip_prefix("0O")) {
-            (8u32, r)
+            (8u32, normalize_prefixed_digits(legacy_octal, r))
         } else if let Some(r) = rest.strip_prefix("0b").or_else(|| rest.strip_prefix("0B")) {
-            (2u32, r)
+            (2u32, normalize_prefixed_digits(legacy_octal, r))
         } else if legacy_octal && rest.starts_with("0") {
             if rest == "0" {
                 // 0 is 0 and not empty string
                 (8u32, "0")
             } else {
-                (8u32, &rest[1..])
+                (8u32, normalize_prefixed_digits(legacy_octal, &rest[1..]))
             }
         } else {
             (10u32, rest)
         };
     (radix, digits)
+}
+
+#[cfg(feature = "deserialize")]
+fn normalize_prefixed_digits(legacy_octal: bool, digits: &str) -> &str {
+    if legacy_octal {
+        digits.strip_prefix('_').unwrap_or(digits)
+    } else {
+        digits
+    }
 }
 
 #[cfg(feature = "deserialize")]
@@ -503,6 +512,33 @@ mod tests {
     }
 
     #[test]
+    fn parse_int_signed_honors_legacy_prefix_underscores() {
+        let loc = sample_location();
+
+        let octal: i32 = parse_int_signed("0_10", "i32", loc, true).unwrap();
+        let plus_octal: i32 = parse_int_signed("+0_10", "i32", loc, true).unwrap();
+        let negative_octal: i32 = parse_int_signed("-0_10", "i32", loc, true).unwrap();
+        let hex: i32 = parse_int_signed("0x_10", "i32", loc, true).unwrap();
+        let explicit_octal: i32 = parse_int_signed("0o_10", "i32", loc, true).unwrap();
+        let binary: i32 = parse_int_signed("0b_10", "i32", loc, true).unwrap();
+
+        assert_eq!(octal, 0o10);
+        assert_eq!(plus_octal, 0o10);
+        assert_eq!(negative_octal, -0o10);
+        assert_eq!(hex, 0x10);
+        assert_eq!(explicit_octal, 0o10);
+        assert_eq!(binary, 0b10);
+    }
+
+    #[test]
+    fn parse_int_signed_keeps_prefix_underscores_opt_in() {
+        let loc = sample_location();
+
+        assert!(parse_int_signed::<i32>("0_10", "i32", loc, false).is_err());
+        assert!(parse_int_signed::<i32>("0x_10", "i32", loc, false).is_err());
+    }
+
+    #[test]
     fn parse_int_signed_preserves_error_location() {
         let loc = sample_location();
         let err = parse_int_signed::<i64>("0x8000000000000000", "i64", loc, false).unwrap_err();
@@ -520,6 +556,23 @@ mod tests {
             Error::InvalidScalar { location, .. } => assert_eq!(location, loc),
             other => panic!("unexpected error variant: {:?}", other),
         }
+    }
+
+    #[test]
+    fn parse_int_unsigned_honors_legacy_prefix_underscores() {
+        let loc = sample_location();
+
+        let octal: u32 = parse_int_unsigned("0_10", "u32", loc, true).unwrap();
+        let plus_octal: u32 = parse_int_unsigned("+0_10", "u32", loc, true).unwrap();
+        let hex: u32 = parse_int_unsigned("0x_10", "u32", loc, true).unwrap();
+        let explicit_octal: u32 = parse_int_unsigned("0o_10", "u32", loc, true).unwrap();
+        let binary: u32 = parse_int_unsigned("0b_10", "u32", loc, true).unwrap();
+
+        assert_eq!(octal, 0o10);
+        assert_eq!(plus_octal, 0o10);
+        assert_eq!(hex, 0x10);
+        assert_eq!(explicit_octal, 0o10);
+        assert_eq!(binary, 0b10);
     }
 
     #[test]
