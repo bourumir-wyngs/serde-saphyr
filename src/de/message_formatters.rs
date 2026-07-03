@@ -39,7 +39,7 @@ fn format_validation_issues(
             .unwrap_or_else(|| l10n.root_path_label().into_owned());
 
         let (locs, resolved_leaf) = locations
-            .search(path_key)
+            .search_with_ancestor_fallback(path_key)
             .unwrap_or((Locations::UNKNOWN, original_leaf));
 
         let loc = if locs.reference_location != Location::UNKNOWN {

@@ -232,6 +232,30 @@ impl PathMap {
             .or_else(|| self.find_unique_by(path, segments_equal_key_to_index_fallback))
     }
 
+    pub(crate) fn search_with_ancestor_fallback(
+        &self,
+        path: &PathKey,
+    ) -> Option<(Locations, String)> {
+        // Validation crates may report a path below the shape that deserialization recorded,
+        // for example after custom deserialization reshapes a YAML subtree. In that case, use
+        // the nearest recorded ancestor for locations, but keep the original leaf name for
+        // user-facing path text.
+        if let Some(found) = self.search(path) {
+            return Some(found);
+        }
+
+        let original_leaf = path.leaf_string();
+        let mut p = path.parent();
+        while let Some(cur) = p {
+            if let Some((locs, resolved_leaf)) = self.search(&cur) {
+                return Some((locs, original_leaf.unwrap_or(resolved_leaf)));
+            }
+            p = cur.parent();
+        }
+
+        None
+    }
+
     fn find_unique_by(
         &self,
         target: &PathKey,

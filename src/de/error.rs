@@ -329,7 +329,7 @@ fn push_validation_issue_regions(
 ) {
     for issue in issues {
         let (locs, _) = locations
-            .search(&issue.path)
+            .search_with_ancestor_fallback(&issue.path)
             .unwrap_or((Locations::UNKNOWN, String::new()));
         push_regions_for_locations(regions, text, source_name, locs, mapping, crop_radius);
     }
@@ -1448,7 +1448,7 @@ impl Error {
             Error::WithSnippet { error, .. } => error.location(),
             #[cfg(feature = "garde")]
             Error::ValidationError { issues, locations } => issues.first().and_then(|issue| {
-                let (locs, _) = locations.search(&issue.path)?;
+                let (locs, _) = locations.search_with_ancestor_fallback(&issue.path)?;
                 let loc = if locs.reference_location != Location::UNKNOWN {
                     locs.reference_location
                 } else {
@@ -1464,7 +1464,7 @@ impl Error {
             Error::ValidationErrors { errors } => errors.iter().find_map(|e| e.location()),
             #[cfg(feature = "validator")]
             Error::ValidatorError { issues, locations } => issues.first().and_then(|issue| {
-                let (locs, _) = locations.search(&issue.path)?;
+                let (locs, _) = locations.search_with_ancestor_fallback(&issue.path)?;
                 let loc = if locs.reference_location != Location::UNKNOWN {
                     locs.reference_location
                 } else {
@@ -1556,13 +1556,15 @@ impl Error {
             #[cfg(feature = "garde")]
             Error::ValidationError { issues, locations } => issues
                 .first()
-                .and_then(|issue| search_locations_with_ancestor_fallback(locations, &issue.path)),
+                .and_then(|issue| locations.search_with_ancestor_fallback(&issue.path))
+                .map(|(locs, _)| locs),
             #[cfg(feature = "garde")]
             Error::ValidationErrors { errors } => errors.first().and_then(Error::locations),
             #[cfg(feature = "validator")]
             Error::ValidatorError { issues, locations } => issues
                 .first()
-                .and_then(|issue| locations.search(&issue.path).map(|(locs, _)| locs)),
+                .and_then(|issue| locations.search_with_ancestor_fallback(&issue.path))
+                .map(|(locs, _)| locs),
             #[cfg(feature = "validator")]
             Error::ValidatorErrors { errors } => errors.first().and_then(Error::locations),
         }
@@ -1934,26 +1936,6 @@ fn fmt_error_rendered(
     }
 }
 
-#[cfg(any(feature = "garde", feature = "validator"))]
-fn search_locations_with_ancestor_fallback(
-    locations: &PathMap,
-    path: &PathKey,
-) -> Option<Locations> {
-    if let Some((locs, _)) = locations.search(path) {
-        return Some(locs);
-    }
-
-    let mut p = path.parent();
-    while let Some(cur) = p {
-        if let Some((locs, _)) = locations.search(&cur) {
-            return Some(locs);
-        }
-        p = cur.parent();
-    }
-
-    None
-}
-
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_error_rendered(f, self, RenderOptions::default())
@@ -1983,7 +1965,7 @@ fn fmt_validation_error_with_snippets_offset(
             .unwrap_or_else(|| l10n.root_path_label().into_owned());
 
         let (locs, resolved_leaf) = locations
-            .search(&issue.path)
+            .search_with_ancestor_fallback(&issue.path)
             .unwrap_or((Locations::UNKNOWN, original_leaf));
 
         let ref_loc = locs.reference_location;
@@ -2543,6 +2525,60 @@ mod tests {
                 reference_location: referenced_loc,
                 defined_location: defined_loc,
             })
+        );
+    }
+
+    #[cfg(feature = "validator")]
+    #[test]
+    fn validator_error_uses_ancestor_path_location_fallback() {
+        let yaml = "parent:\n  child: bad\n";
+        let referenced_loc = Location::new(1, 1);
+        let defined_loc = Location::new(1, 1);
+
+        let mut locations = PathMap::new();
+        locations.insert(
+            PathKey::empty().join("parent"),
+            Locations {
+                reference_location: referenced_loc,
+                defined_location: defined_loc,
+            },
+        );
+
+        let err = Error::ValidatorError {
+            issues: vec![ValidationIssue {
+                path: PathKey::empty().join("parent").join("child").join("value"),
+                code: "custom".to_owned(),
+                message: Some("custom validation failed".to_owned()),
+                params: Vec::new(),
+            }],
+            locations,
+        };
+
+        assert_eq!(err.location(), Some(referenced_loc));
+        assert_eq!(
+            err.locations(),
+            Some(Locations {
+                reference_location: referenced_loc,
+                defined_location: defined_loc,
+            })
+        );
+
+        let rendered = err.with_snippet(yaml, 20).render();
+        assert!(
+            rendered.contains("custom validation failed"),
+            "expected validation message, got: {rendered}"
+        );
+        assert!(
+            rendered.contains("for `parent.child.value`"),
+            "expected original validation path, got: {rendered}"
+        );
+        assert!(
+            rendered.contains("line 1 column 1"),
+            "expected ancestor location, got: {rendered}"
+        );
+        assert!(
+            rendered.contains("1 | parent:"),
+            "expected snippet around ancestor path, got: {rendered}"
         );
     }
 
