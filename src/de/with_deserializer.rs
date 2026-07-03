@@ -1,32 +1,32 @@
 use crate::budget::EnforcingPolicy;
 use crate::live_events::LiveEvents;
 
+use super::api::{ReaderSnippetContext, StrSnippetContext};
 use super::{Cfg, Error, Events, Options, YamlDeserializer};
 
-fn normalize_str_input(input: &str) -> &str {
+pub(crate) fn normalize_str_input(input: &str) -> &str {
     // Normalize: ignore a single leading UTF-8 BOM if present.
     input.strip_prefix('\u{FEFF}').unwrap_or(input)
 }
 
-fn deserialize_with_scope<'de, R, F, W>(
+pub(crate) fn run_with_document_scope<'de, R, F, W, P>(
     src: &mut LiveEvents<'de>,
-    cfg: Cfg,
     f: F,
     wrap_err: W,
+    synthesized_null_should_be_eof: P,
 ) -> Result<R, Error>
 where
-    for<'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<R, Error>,
+    F: FnOnce(&mut LiveEvents<'de>) -> Result<R, Error>,
     W: Fn(Error, &LiveEvents<'de>) -> Error,
+    P: Fn(&Error) -> bool,
 {
     let value_res = crate::anchor_store::with_document_scope(|| {
-        crate::properties_redaction::with_interp_redaction_scope(|| {
-            super::with_root_redaction(YamlDeserializer::new(src, cfg), f)
-        })
+        crate::properties_redaction::with_interp_redaction_scope(|| f(src))
     });
     match value_res {
         Ok(v) => Ok(v),
         Err(e) => {
-            if src.synthesized_null_emitted() {
+            if src.synthesized_null_emitted() && synthesized_null_should_be_eof(&e) {
                 // If the only thing in the input was an empty document (synthetic null),
                 // surface this as an EOF error to preserve expected error semantics
                 // for incompatible target types (e.g., bool).
@@ -41,7 +41,40 @@ where
     }
 }
 
-fn enforce_single_document_and_finish<'de, W>(
+pub(crate) fn deserialize_with_scope_and_null_policy<'de, R, F, W, P>(
+    src: &mut LiveEvents<'de>,
+    cfg: Cfg,
+    f: F,
+    wrap_err: W,
+    synthesized_null_should_be_eof: P,
+) -> Result<R, Error>
+where
+    for<'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<R, Error>,
+    W: Fn(Error, &LiveEvents<'de>) -> Error,
+    P: Fn(&Error) -> bool,
+{
+    run_with_document_scope(
+        src,
+        |src| super::with_root_redaction(YamlDeserializer::new(src, cfg), f),
+        wrap_err,
+        synthesized_null_should_be_eof,
+    )
+}
+
+pub(crate) fn deserialize_with_scope<'de, R, F, W>(
+    src: &mut LiveEvents<'de>,
+    cfg: Cfg,
+    f: F,
+    wrap_err: W,
+) -> Result<R, Error>
+where
+    for<'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<R, Error>,
+    W: Fn(Error, &LiveEvents<'de>) -> Error,
+{
+    deserialize_with_scope_and_null_policy(src, cfg, f, wrap_err, |_| true)
+}
+
+pub(crate) fn enforce_single_document_and_finish<'de, W>(
     src: &mut LiveEvents<'de>,
     multiple_docs_hint: &'static str,
     wrap_err: W,
@@ -97,10 +130,9 @@ where
     let cfg = Cfg::from_options(&options);
     // Do not stop at DocumentEnd; we'll probe for trailing content/errors explicitly.
     let mut src = LiveEvents::from_str(input, options);
+    let snippet_ctx = StrSnippetContext::new(input, with_snippet, crop_radius);
 
-    let wrap_err = |e, src: &LiveEvents<'de>| {
-        crate::maybe_with_snippet_from_events(e, input, src, with_snippet, crop_radius)
-    };
+    let wrap_err = |e, src: &LiveEvents<'de>| snippet_ctx.attach_snippet(e, src);
 
     let value = deserialize_with_scope(&mut src, cfg, f, wrap_err)?;
     enforce_single_document_and_finish(
@@ -173,34 +205,10 @@ where
     let with_snippet = options.with_snippet;
     let crop_radius = options.crop_radius;
     let cfg = Cfg::from_options(&options);
-    let shared_ring = crate::ring_reader::SharedRingReader::new(reader);
-    let ring_handle = crate::ring_reader::SharedRingReaderHandle::new(&shared_ring);
+    let (snippet_ctx, ring_handle) = ReaderSnippetContext::new(reader, with_snippet, crop_radius);
     let mut src = LiveEvents::from_reader(ring_handle, options, EnforcingPolicy::AllContent);
 
-    let wrap_err = |e, src: &LiveEvents<'_>| {
-        if !with_snippet || crop_radius == 0 {
-            return e;
-        }
-        match shared_ring.get_recent() {
-            Ok(snapshot) => {
-                let text = String::from_utf8_lossy(&snapshot.bytes);
-                let root = crate::RootFragment {
-                    text: text.as_ref(),
-                    start_line: snapshot.start_line,
-                    source_name: "input",
-                };
-                crate::maybe_with_snippet_from_events_and_root_fragment(
-                    e,
-                    Some(&root),
-                    text.as_ref(),
-                    src,
-                    with_snippet,
-                    crop_radius,
-                )
-            }
-            Err(_) => e,
-        }
-    };
+    let wrap_err = |e, src: &LiveEvents<'_>| snippet_ctx.attach_snippet(e, src);
 
     let value = deserialize_with_scope(&mut src, cfg, f, wrap_err)?;
     enforce_single_document_and_finish(

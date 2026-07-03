@@ -1,4 +1,7 @@
-use crate::ReaderSnippetContext;
+use super::api::{ReaderSnippetContext, StrSnippetContext};
+use super::with_deserializer::{
+    enforce_single_document_and_finish, normalize_str_input, run_with_document_scope,
+};
 use crate::budget::EnforcingPolicy;
 use crate::de::{Error, Ev, Events, Options};
 #[cfg(feature = "garde")]
@@ -7,10 +10,8 @@ use crate::de_error::collect_garde_issues;
 use crate::de_error::collect_validator_issues;
 use crate::de_error::redact_issue;
 use crate::live_events::LiveEvents;
-use crate::maybe_with_snippet_from_events;
 use crate::parse_scalars::scalar_document_is_empty_or_null;
 use crate::path_map::PathMap;
-use crate::properties_redaction::with_interp_redaction_scope;
 use serde_core::de::DeserializeOwned;
 use std::io::Read;
 
@@ -57,84 +58,39 @@ fn from_str_with_options_and_path_recorder_validated<'de, T, F>(
     input: &'de str,
     options: Options,
     validate: F,
-) -> Result<(T, LiveEvents<'de>), Error>
+) -> Result<T, Error>
 where
     T: DeserializeOwned,
     F: FnOnce(&T, &PathMap) -> Result<(), Error>,
 {
-    let input = if let Some(rest) = input.strip_prefix('\u{FEFF}') {
-        rest
-    } else {
-        input
-    };
-
-    let with_snippet = options.with_snippet;
-    let crop_radius = options.crop_radius;
+    let input = normalize_str_input(input);
+    let snippet_ctx = StrSnippetContext::new(input, options.with_snippet, options.crop_radius);
     let cfg = crate::de::Cfg::from_options(&options);
     let mut src = LiveEvents::from_str(input, options);
     let mut recorder = crate::path_map::PathRecorder::new();
+    let wrap_err = |e, src: &LiveEvents<'_>| snippet_ctx.attach_snippet(e, src);
 
-    let value_res = crate::anchor_store::with_document_scope(|| {
-        with_interp_redaction_scope(|| {
+    let value = run_with_document_scope(
+        &mut src,
+        |src| {
             let value = crate::de::with_root_redaction(
-                crate::de::YamlDeserializer::new_with_path_recorder(&mut src, cfg, &mut recorder),
+                crate::de::YamlDeserializer::new_with_path_recorder(src, cfg, &mut recorder),
                 |de| T::deserialize(de),
             )?;
             validate(&value, &recorder.map)?;
             Ok(value)
-        })
-    });
-    let value = match value_res {
-        Ok(v) => v,
-        Err(e) => {
-            if src.synthesized_null_emitted() && synthesized_null_error_should_be_eof(&e) {
-                let err = Error::eof().with_location(src.last_location());
-                return Err(maybe_with_snippet_from_events(
-                    err,
-                    input,
-                    &src,
-                    with_snippet,
-                    crop_radius,
-                ));
-            } else {
-                return Err(maybe_with_snippet_from_events(
-                    e,
-                    input,
-                    &src,
-                    with_snippet,
-                    crop_radius,
-                ));
-            }
-        }
-    };
+        },
+        wrap_err,
+        synthesized_null_error_should_be_eof,
+    )?;
 
-    match src.peek() {
-        Ok(Some(_)) => {
-            let err = Error::multiple_documents("use from_multiple or from_multiple_with_options")
-                .with_location(src.last_location());
-            return Err(maybe_with_snippet_from_events(
-                err,
-                input,
-                &src,
-                with_snippet,
-                crop_radius,
-            ));
-        }
-        Ok(None) => {}
-        Err(e) => {
-            if !src.seen_doc_end() {
-                return Err(maybe_with_snippet_from_events(
-                    e,
-                    input,
-                    &src,
-                    with_snippet,
-                    crop_radius,
-                ));
-            }
-        }
-    }
+    enforce_single_document_and_finish(
+        &mut src,
+        "use from_multiple or from_multiple_with_options",
+        wrap_err,
+    )?;
 
-    Ok((value, src))
+    Ok(value)
 }
 
 /// Deserialize a single YAML document from a YAML string and validate it with `garde`.
@@ -158,25 +114,9 @@ where
     T: DeserializeOwned + garde::Validate,
     <T as garde::Validate>::Context: Default,
 {
-    let with_snippet = options.with_snippet;
-    let crop_radius = options.crop_radius;
-    let (v, mut src) = from_str_with_options_and_path_recorder_validated::<T, _>(
-        input,
-        options,
-        |value, locs| {
-            Validate::validate(value).map_err(|report| garde_validation_error(report, locs))
-        },
-    )?;
-    if let Err(e) = src.finish() {
-        return Err(maybe_with_snippet_from_events(
-            e,
-            input,
-            &src,
-            with_snippet,
-            crop_radius,
-        ));
-    }
-    Ok(v)
+    from_str_with_options_and_path_recorder_validated::<T, _>(input, options, |value, locs| {
+        Validate::validate(value).map_err(|report| garde_validation_error(report, locs))
+    })
 }
 
 /// Deserialize a single YAML document with configurable [`Options`] and validate it with `garde` in context [`<T as garde::Validate>::Context`].
@@ -191,26 +131,10 @@ pub fn from_str_with_options_context_valid<T>(
 where
     T: DeserializeOwned + garde::Validate,
 {
-    let with_snippet = options.with_snippet;
-    let crop_radius = options.crop_radius;
-    let (v, mut src) = from_str_with_options_and_path_recorder_validated::<T, _>(
-        input,
-        options,
-        |value, locs| {
-            Validate::validate_with(value, context)
-                .map_err(|report| garde_validation_error(report, locs))
-        },
-    )?;
-    if let Err(e) = src.finish() {
-        return Err(maybe_with_snippet_from_events(
-            e,
-            input,
-            &src,
-            with_snippet,
-            crop_radius,
-        ));
-    }
-    Ok(v)
+    from_str_with_options_and_path_recorder_validated::<T, _>(input, options, |value, locs| {
+        Validate::validate_with(value, context)
+            .map_err(|report| garde_validation_error(report, locs))
+    })
 }
 
 /// Deserialize multiple YAML documents from a YAML string and validate each with `garde`.
@@ -237,16 +161,21 @@ where
     T: DeserializeOwned,
     F: Fn(&T, &PathMap) -> Result<(), Error>,
 {
-    let with_snippet = options.with_snippet;
-    let crop_radius = options.crop_radius;
-
+    let input = normalize_str_input(input);
+    let snippet_ctx = StrSnippetContext::new(input, options.with_snippet, options.crop_radius);
     let cfg = crate::de::Cfg::from_options(&options);
     let mut src = LiveEvents::from_str(input, options);
     let mut values = Vec::new();
     let mut validation_errors: Vec<Error> = Vec::new();
+    let wrap_err = |e, src: &LiveEvents<'_>| snippet_ctx.attach_snippet(e, src);
 
     loop {
-        match src.peek()? {
+        let peeked = match src.peek() {
+            Ok(peeked) => peeked,
+            Err(e) => return Err(wrap_err(e, &src)),
+        };
+
+        match peeked {
             // Skip documents that are explicit null-like scalars ("", "~", or "null").
             Some(Ev::Scalar {
                 value: s,
@@ -259,11 +188,12 @@ where
             }
             Some(_) => {
                 let mut recorder = crate::path_map::PathRecorder::new();
-                let value_res: Result<T, Error> = crate::anchor_store::with_document_scope(|| {
-                    with_interp_redaction_scope(|| {
+                let value_res: Result<T, Error> = run_with_document_scope(
+                    &mut src,
+                    |src| {
                         let value = crate::de::with_root_redaction(
                             crate::de::YamlDeserializer::new_with_path_recorder(
-                                &mut src,
+                                src,
                                 cfg,
                                 &mut recorder,
                             ),
@@ -271,28 +201,18 @@ where
                         )?;
                         validate(&value, &recorder.map)?;
                         Ok(value)
-                    })
-                });
+                    },
+                    |e, _| e,
+                    |_| false,
+                );
                 let value = match value_res {
                     Ok(v) => v,
                     Err(e) if e.is_validation_error() => {
-                        validation_errors.push(maybe_with_snippet_from_events(
-                            e,
-                            input,
-                            &src,
-                            with_snippet,
-                            crop_radius,
-                        ));
+                        validation_errors.push(wrap_err(e, &src));
                         continue;
                     }
                     Err(e) => {
-                        return Err(maybe_with_snippet_from_events(
-                            e,
-                            input,
-                            &src,
-                            with_snippet,
-                            crop_radius,
-                        ));
+                        return Err(wrap_err(e, &src));
                     }
                 };
 
@@ -303,13 +223,7 @@ where
     }
 
     if let Err(e) = src.finish() {
-        return Err(maybe_with_snippet_from_events(
-            e,
-            input,
-            &src,
-            with_snippet,
-            crop_radius,
-        ));
+        return Err(wrap_err(e, &src));
     }
 
     if validation_errors.is_empty() {
@@ -406,56 +320,23 @@ where
     let mut src = LiveEvents::from_reader(ring_handle, options, EnforcingPolicy::AllContent);
 
     let mut recorder = crate::path_map::PathRecorder::new();
+    let wrap_err = |e, src: &LiveEvents<'_>| snippet_ctx.attach_snippet(e, src);
 
-    let value_res = crate::anchor_store::with_document_scope(|| {
-        with_interp_redaction_scope(|| {
+    let value = run_with_document_scope(
+        &mut src,
+        |src| {
             let value = crate::de::with_root_redaction(
-                crate::de::YamlDeserializer::new_with_path_recorder(&mut src, cfg, &mut recorder),
+                crate::de::YamlDeserializer::new_with_path_recorder(src, cfg, &mut recorder),
                 |de| T::deserialize(de),
             )?;
             validate(&value, &recorder.map)?;
             Ok(value)
-        })
-    });
-    let value = match value_res {
-        Ok(v) => v,
-        Err(e) => {
-            if src.synthesized_null_emitted() && synthesized_null_error_should_be_eof(&e) {
-                // If the only thing in the input was an empty document (synthetic null),
-                // surface this as an EOF error to preserve expected error semantics
-                // for incompatible target types (e.g., bool).
-                return Err(snippet_ctx
-                    .attach_snippet(Error::eof().with_location(src.last_location()), &src));
-            } else {
-                return Err(snippet_ctx.attach_snippet(e, &src));
-            }
-        }
-    };
+        },
+        wrap_err,
+        synthesized_null_error_should_be_eof,
+    )?;
 
-    // After finishing first document, peek ahead to detect either another document/content
-    // or trailing garbage. If a scan error occurs but we have seen a DocumentEnd ("..."),
-    // ignore the trailing garbage. Otherwise, surface the error.
-    match src.peek() {
-        Ok(Some(_)) => {
-            return Err(snippet_ctx.attach_snippet(
-                Error::multiple_documents(multiple_documents_hint)
-                    .with_location(src.last_location()),
-                &src,
-            ));
-        }
-        Ok(None) => {}
-        Err(e) => {
-            if src.seen_doc_end() {
-                // Trailing garbage after a proper document end marker is ignored.
-            } else {
-                return Err(snippet_ctx.attach_snippet(e, &src));
-            }
-        }
-    }
-
-    if let Err(e) = src.finish() {
-        return Err(snippet_ctx.attach_snippet(e, &src));
-    }
+    enforce_single_document_and_finish(&mut src, multiple_documents_hint, wrap_err)?;
     Ok(value)
 }
 
@@ -538,11 +419,12 @@ where
                     Ok(Some(_)) => {
                         let mut recorder = crate::path_map::PathRecorder::new();
                         let validate = &self.validate;
-                        let value_res = crate::anchor_store::with_document_scope(|| {
-                            with_interp_redaction_scope(|| {
+                        let value_res = run_with_document_scope(
+                            &mut self.src,
+                            |src| {
                                 let value = crate::de::with_root_redaction(
                                     crate::de::YamlDeserializer::new_with_path_recorder(
-                                        &mut self.src,
+                                        src,
                                         self.cfg,
                                         &mut recorder,
                                     ),
@@ -550,18 +432,19 @@ where
                                 )?;
                                 validate(&value, &recorder.map)?;
                                 Ok(value)
-                            })
-                        });
+                            },
+                            |e, src| self.snippet_ctx.attach_snippet(e, src),
+                            |_| false,
+                        );
                         let value = match value_res {
                             Ok(v) => v,
                             Err(e) => {
-                                let err = self.snippet_ctx.attach_snippet(e, &self.src);
                                 // After a deserialization error, skip remaining events in the
                                 // current document and try to recover at the next document boundary.
                                 if !self.src.skip_to_next_document() {
                                     self.finished = true;
                                 }
-                                return Some(Err(err));
+                                return Some(Err(e));
                             }
                         };
 
@@ -637,26 +520,10 @@ pub fn from_str_with_options_validate<T>(input: &str, options: Options) -> Resul
 where
     T: DeserializeOwned + ValidatorValidate,
 {
-    let with_snippet = options.with_snippet;
-    let crop_radius = options.crop_radius;
-    let (v, mut src) = from_str_with_options_and_path_recorder_validated::<T, _>(
-        input,
-        options,
-        |value, locs| {
-            ValidatorValidate::validate(value)
-                .map_err(|errors| validator_validation_error(errors, locs))
-        },
-    )?;
-    if let Err(e) = src.finish() {
-        return Err(maybe_with_snippet_from_events(
-            e,
-            input,
-            &src,
-            with_snippet,
-            crop_radius,
-        ));
-    }
-    Ok(v)
+    from_str_with_options_and_path_recorder_validated::<T, _>(input, options, |value, locs| {
+        ValidatorValidate::validate(value)
+            .map_err(|errors| validator_validation_error(errors, locs))
+    })
 }
 
 /// Deserialize multiple YAML documents from a YAML string and validate each with `validator`.

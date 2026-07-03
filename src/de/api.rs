@@ -2,11 +2,11 @@ use std::io::Read;
 
 use serde_core::de::DeserializeOwned;
 
+use super::with_deserializer::{deserialize_with_scope_and_null_policy, normalize_str_input};
 use super::{Error, Ev, Events, Options, ring_reader};
 use crate::budget::EnforcingPolicy;
 use crate::live_events::LiveEvents;
 use crate::parse_scalars::scalar_document_is_empty_or_null;
-use crate::properties_redaction::with_interp_redaction_scope;
 
 #[cfg(all(feature = "deserialize", feature = "include"))]
 pub(crate) fn resolver_from_options<'a>(
@@ -94,87 +94,9 @@ fn from_str_with_options_impl<'de, T>(input: &'de str, options: Options) -> Resu
 where
     T: serde_core::de::Deserialize<'de>,
 {
-    // Normalize: ignore a single leading UTF-8 BOM if present.
-    let input = if let Some(rest) = input.strip_prefix('\u{FEFF}') {
-        rest
-    } else {
-        input
-    };
-
-    let with_snippet = options.with_snippet;
-    let crop_radius = options.crop_radius;
-
-    let cfg = crate::de::Cfg::from_options(&options);
-    // Do not stop at DocumentEnd; we'll probe for trailing content/errors explicitly.
-    let mut src = LiveEvents::from_str(input, options);
-    let value_res = crate::anchor_store::with_document_scope(|| {
-        with_interp_redaction_scope(|| {
-            crate::de::with_root_redaction(crate::de::YamlDeserializer::new(&mut src, cfg), |de| {
-                T::deserialize(de)
-            })
-        })
-    });
-    let value = match value_res {
-        Ok(v) => v,
-        Err(e) => {
-            if src.synthesized_null_emitted() {
-                let err = Error::eof().with_location(src.last_location());
-                return Err(maybe_with_snippet_from_events(
-                    err,
-                    input,
-                    &src,
-                    with_snippet,
-                    crop_radius,
-                ));
-            }
-            return Err(maybe_with_snippet_from_events(
-                e,
-                input,
-                &src,
-                with_snippet,
-                crop_radius,
-            ));
-        }
-    };
-
-    match src.peek() {
-        Ok(Some(_)) => {
-            let err = Error::multiple_documents("use from_multiple or from_multiple_with_options")
-                .with_location(src.last_location());
-            return Err(maybe_with_snippet_from_events(
-                err,
-                input,
-                &src,
-                with_snippet,
-                crop_radius,
-            ));
-        }
-        Ok(None) => {}
-        Err(e) => {
-            if src.seen_doc_end() {
-                // Trailing garbage after a proper document end marker is ignored.
-            } else {
-                return Err(maybe_with_snippet_from_events(
-                    e,
-                    input,
-                    &src,
-                    with_snippet,
-                    crop_radius,
-                ));
-            }
-        }
-    }
-
-    if let Err(e) = src.finish() {
-        return Err(maybe_with_snippet_from_events(
-            e,
-            input,
-            &src,
-            with_snippet,
-            crop_radius,
-        ));
-    }
-    Ok(value)
+    super::with_deserializer::with_deserializer_from_str_with_options(input, options, |de| {
+        T::deserialize(de)
+    })
 }
 
 /// Deserialize a single YAML document with configurable [`Options`].
@@ -239,6 +161,28 @@ pub(crate) struct RootFragment<'a> {
     pub text: &'a str,
     pub start_line: usize,
     pub source_name: &'a str,
+}
+
+#[cfg(feature = "deserialize")]
+pub(crate) struct StrSnippetContext<'a> {
+    input: &'a str,
+    with_snippet: bool,
+    crop_radius: usize,
+}
+
+#[cfg(feature = "deserialize")]
+impl<'a> StrSnippetContext<'a> {
+    pub(crate) fn new(input: &'a str, with_snippet: bool, crop_radius: usize) -> Self {
+        Self {
+            input,
+            with_snippet,
+            crop_radius,
+        }
+    }
+
+    pub(crate) fn attach_snippet(&self, err: Error, src: &LiveEvents<'_>) -> Error {
+        maybe_with_snippet_from_events(err, self.input, src, self.with_snippet, self.crop_radius)
+    }
 }
 
 #[cfg(feature = "deserialize")]
@@ -509,18 +453,12 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
     input: &str,
     options: Options,
 ) -> Result<Vec<T>, Error> {
-    // Normalize: ignore a single leading UTF-8 BOM if present.
-    let input = if let Some(rest) = input.strip_prefix('\u{FEFF}') {
-        rest
-    } else {
-        input
-    };
-    let with_snippet = options.with_snippet;
-    let crop_radius = options.crop_radius;
-
+    let input = normalize_str_input(input);
+    let snippet_ctx = StrSnippetContext::new(input, options.with_snippet, options.crop_radius);
     let cfg = crate::de::Cfg::from_options(&options);
     let mut src = LiveEvents::from_str(input, options);
     let mut values = Vec::new();
+    let wrap_err = |e, src: &LiveEvents<'_>| snippet_ctx.attach_snippet(e, src);
 
     loop {
         match src.peek() {
@@ -536,49 +474,24 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
                 continue;
             }
             Ok(Some(_)) => {
-                let value_res = crate::anchor_store::with_document_scope(|| {
-                    with_interp_redaction_scope(|| {
-                        crate::de::with_root_redaction(
-                            crate::de::YamlDeserializer::new(&mut src, cfg),
-                            |de| T::deserialize(de),
-                        )
-                    })
-                });
-                let value = match value_res {
-                    Ok(v) => v,
-                    Err(e) => {
-                        return Err(maybe_with_snippet_from_events(
-                            e,
-                            input,
-                            &src,
-                            with_snippet,
-                            crop_radius,
-                        ));
-                    }
-                };
+                let value = deserialize_with_scope_and_null_policy(
+                    &mut src,
+                    cfg,
+                    |de| T::deserialize(de),
+                    wrap_err,
+                    |_| false,
+                )?;
                 values.push(value);
             }
             Ok(None) => break,
             Err(e) => {
-                return Err(maybe_with_snippet_from_events(
-                    e,
-                    input,
-                    &src,
-                    with_snippet,
-                    crop_radius,
-                ));
+                return Err(wrap_err(e, &src));
             }
         }
     }
 
     if let Err(e) = src.finish() {
-        return Err(maybe_with_snippet_from_events(
-            e,
-            input,
-            &src,
-            with_snippet,
-            crop_radius,
-        ));
+        return Err(wrap_err(e, &src));
     }
     Ok(values)
 }
@@ -836,58 +749,9 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
     reader: R,
     options: Options,
 ) -> Result<T, Error> {
-    let cfg = crate::de::Cfg::from_options(&options);
-    let (snippet_ctx, ring_handle) =
-        ReaderSnippetContext::new(reader, options.with_snippet, options.crop_radius);
-
-    let mut src = LiveEvents::from_reader(ring_handle, options, EnforcingPolicy::AllContent);
-
-    let value_res = crate::anchor_store::with_document_scope(|| {
-        with_interp_redaction_scope(|| {
-            crate::de::with_root_redaction(crate::de::YamlDeserializer::new(&mut src, cfg), |de| {
-                T::deserialize(de)
-            })
-        })
-    });
-    let value = match value_res {
-        Ok(v) => v,
-        Err(e) => {
-            if src.synthesized_null_emitted() {
-                // If the only thing in the input was an empty document (synthetic null),
-                // surface this as an EOF error to preserve expected error semantics
-                // for incompatible target types (e.g., bool).
-                return Err(snippet_ctx
-                    .attach_snippet(Error::eof().with_location(src.last_location()), &src));
-            }
-            return Err(snippet_ctx.attach_snippet(e, &src));
-        }
-    };
-
-    // After finishing first document, peek ahead to detect either another document/content
-    // or trailing garbage. If a scan error occurs but we have seen a DocumentEnd ("..."),
-    // ignore the trailing garbage. Otherwise, surface the error.
-    match src.peek() {
-        Ok(Some(_)) => {
-            return Err(snippet_ctx.attach_snippet(
-                Error::multiple_documents("use read or read_with_options to obtain the iterator")
-                    .with_location(src.last_location()),
-                &src,
-            ));
-        }
-        Ok(None) => {}
-        Err(e) => {
-            if src.seen_doc_end() {
-                // Trailing garbage after a proper document end marker is ignored.
-            } else {
-                return Err(snippet_ctx.attach_snippet(e, &src));
-            }
-        }
-    }
-
-    if let Err(e) = src.finish() {
-        return Err(snippet_ctx.attach_snippet(e, &src));
-    }
-    Ok(value)
+    super::with_deserializer::with_deserializer_from_reader_with_options(reader, options, |de| {
+        T::deserialize(de)
+    })
 }
 
 /// Create an iterator over YAML documents from any `std::io::Read` using default options.
@@ -1080,14 +944,13 @@ where
                         continue;
                     }
                     Ok(Some(_)) => {
-                        let res = crate::anchor_store::with_document_scope(|| {
-                            with_interp_redaction_scope(|| {
-                                crate::de::with_root_redaction(
-                                    crate::de::YamlDeserializer::new(&mut self.src, self.cfg),
-                                    |de| T::deserialize(de),
-                                )
-                            })
-                        });
+                        let res = deserialize_with_scope_and_null_policy(
+                            &mut self.src,
+                            self.cfg,
+                            |de| T::deserialize(de),
+                            |e, _| e,
+                            |_| false,
+                        );
                         if res.is_err() {
                             // After a deserialization error, skip remaining events in the
                             // current document and try to recover at the next document boundary.

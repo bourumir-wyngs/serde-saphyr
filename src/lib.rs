@@ -63,14 +63,8 @@ pub use wrappers::{
     Commented, DoubleQuoted, FlowMap, FlowSeq, NullableTilde, SingleQuoted, SpaceAfter,
 };
 
-#[cfg(any(feature = "garde", feature = "validator"))]
-pub(crate) use self::de::api::ReaderSnippetContext;
 #[cfg(all(feature = "deserialize", feature = "include"))]
 pub(crate) use self::de::api::resolver_from_options;
-#[cfg(feature = "deserialize")]
-pub(crate) use self::de::api::{
-    RootFragment, maybe_with_snippet_from_events, maybe_with_snippet_from_events_and_root_fragment,
-};
 #[cfg(feature = "deserialize")]
 pub use self::de::api::{
     from_multiple, from_multiple_with_options, from_reader, from_reader_with_options, from_slice,
@@ -118,7 +112,7 @@ use de::lib_validate;
 #[cfg(feature = "deserialize")]
 pub(crate) use de::{
     buffered_input, error as de_error, include, indentation, input_source, live_events,
-    message_formatters, properties_redaction, ring_reader, snippet as de_snippet, tags,
+    message_formatters, properties_redaction, snippet as de_snippet, tags,
 };
 
 #[cfg(feature = "deserialize")]
