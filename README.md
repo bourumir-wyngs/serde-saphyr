@@ -43,6 +43,10 @@ See [release history](https://github.com/bourumir-wyngs/serde-saphyr/releases) o
 - Correct handling for JSON-style Unicode surrogate pairs.
 - **robotic extensions** to support YAML dialect common in robotics (see below).
 
+`serde-saphyr` is compatible with WebAssembly. The CI flow includes builds for both `wasm32-unknown-unknown` (browser / JS) and `wasm32-wasip1` (WASI runtimes) with the full test suite running and passing. We also wrote [yva](https://github.com/bourumir-wyngs/yva) in [dioxus](https://dioxuslabs.com/) to deploy `serde-saphyr` on the web.
+
+The test suite currently includes over 2000 passing tests, including the fully converted [yaml-test-suite](https://github.com/yaml/yaml-test-suite), with *ALL* tests from there passing with no exceptions. To pass the last few remaining cases, we use [`granit-parser`](https://crates.io/crates/granit-parser), a fork of Saphyr's parser. Some additional cases are taken from the original serde-yaml tests.
+
 ### Project relationship
 
 `serde-saphyr` is not a fork of the older [`serde-yaml`](https://crates.io/crates/serde_yaml) crate and shares no code with it (apart from some reused tests). It is also not part of the [`saphyr`](https://crates.io/crates/saphyr) project. The name was historically chosen to reflect the use of [saphyr parser](https://crates.io/crates/saphyr-parser) at a time when the Saphyr project did not provide its own Serde integration. [granit-parser](https://crates.io/crates/granit-parser) it's currently using is the fork of Saphyr parser.
@@ -901,43 +905,6 @@ let v: RoboFloats = from_str_with_options(yaml, options).expect("parse robotics 
 ```
 
 Safety hardening measures with this feature enabled include limits on maximal expression depth, maximal number of digits, strict underscore placement, and fraction parsing limits to the precision-relevant digit.
-
-## Platforms, quality, and comparison
-
-### WebAssembly
-
-`serde-saphyr` is compatible with WebAssembly. The CI flow includes builds for both `wasm32-unknown-unknown` (browser / JS) and `wasm32-wasip1` (WASI runtimes) with the full test suite running and passing. We also wrote [yva](https://github.com/bourumir-wyngs/yva) in [dioxus](https://dioxuslabs.com/) to deploy `serde-saphyr` on the web.
-
-### Testing
-
-The test suite currently includes over 2000 passing tests, including the fully converted [yaml-test-suite](https://github.com/yaml/yaml-test-suite), with *ALL* tests from there passing with no exceptions. To pass the last few remaining cases, we use [`granit-parser`](https://crates.io/crates/granit-parser), a fork of Saphyr's parser. Some additional cases are taken from the original serde-yaml tests.
-
-### Benchmarking
-
-In our [benchmarking project](https://github.com/bourumir-wyngs/serde-saphyr-benchmark), we tested the following crates:
-
-
-|                                                   Crate | Version             | Merge Keys | Nested Enums | Duplicate key rejection |                                           Validation                                           | Error snippet | Borrowed deserialization | Notes                                                                    |
-| ------------------------------------------------------: |:--------------------| :--------- | :----------- | :---------------------- | :---------------------------------------------------------------------------------------------: | :-----------: | :----------------------: |:-------------------------------------------------------------------------|
-|   [serde-saphyr](https://crates.io/crates/serde-saphyr) | latest              | ✅      Configurable   | ✅           | ✅ Configurable         | ✅[`garde`](https://crates.io/crates/garde) / [`validator`](https://crates.io/crates/validator) |      ✅      |           ✅            | No `unsafe`, no [unsafe-libyaml](https://crates.io/crates/unsafe-libyaml) |
-| [serde-yaml-bw](https://crates.io/crates/serde-yaml_bw) | 2.4.1               | ✅         | ✅           | ✅ Configurable         |                                               ❌                                               |      ❌      |           ❌            | Slow due to Saphyr performing a budget check upfront of libyaml              |
-| [serde-yaml-ng](https://crates.io/crates/serde-yaml-ng) | 0.10.0              | ⚠️       | ❌           | ❌                      |                                               ❌                                               |      ❌      |           ✅            |                                                                          |
-|       [serde-yaml](https://crates.io/crates/serde-yaml) | 0.9.34 + deprecated | ⚠️       | ❌           | ❌                      |                                               ❌                                               |      ❌      |           ✅            | Original, deprecated, repo archived                                      |
-|   [serde-norway](https://crates.io/crates/serde-norway) | 0.9.42              | ⚠️       | ❌           | ❌                      |                                               ❌                                               |      ❌      |           ✅            |                                                                          |
-|         [serde-yml](https://crates.io/crates/serde-yml) | 0.0.12              | ⚠️       | ❌           | ❌                      |                                               ❌                                               |      ❌      |           ✅            | Repo archived                                                            |
-|   [yaml-spanned](https://crates.io/crates/yaml-spanned) | 0.0.3               | ⚠️       | ❌           | ✅                      |                                               ❌                                               |      ❌      |           ❌            | Uses [libyaml-safer](https://crates.io/crates/libyaml-safer)             |
-
-⚠️ - partial support. Serde-yaml forks do not support merge keys natively, but instead provide an [apply_merge](https://docs.rs/serde_yaml/0.9.34+deprecated/serde_yaml/enum.Value.html#method.apply_merge) function that must be called manually. Crates marked ✅ offer native and transparent support.
-
-Benchmarking was done with [Criterion](https://crates.io/crates/criterion), giving the following results (lower is better):
-
-<p align="center">
-<img src="https://github.com/bourumir-wyngs/serde-saphyr-benchmark/blob/master/figures/yaml_parse/relative_vs_baseline.png?raw=true"
-alt="Relative median time vs baseline"
-width="70%">
-</p>
-
-As you can see, serde-saphyr outperforms the others, even with the budget check enabled.
 
 ## Limitations
 
