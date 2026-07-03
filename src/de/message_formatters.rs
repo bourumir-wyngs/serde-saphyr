@@ -373,33 +373,22 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
             }
         }
 
-        #[cfg(feature = "garde")]
-        Error::ValidationError { issues, locations } => {
+        #[cfg(any(feature = "garde", feature = "validator"))]
+        Error::ValidationError {
+            source,
+            issues,
+            locations,
+        } => {
             let l10n = formatter.localizer();
             Cow::Owned(format_validation_issues(
                 l10n,
-                ExternalMessageSource::Garde,
+                source.external_message_source(),
                 issues,
                 locations,
             ))
         }
-        #[cfg(feature = "garde")]
-        Error::ValidationErrors { errors } => Cow::Owned(format!(
-            "validation failed for {} document(s)",
-            errors.len()
-        )),
-        #[cfg(feature = "validator")]
-        Error::ValidatorError { issues, locations } => {
-            let l10n = formatter.localizer();
-            Cow::Owned(format_validation_issues(
-                l10n,
-                ExternalMessageSource::Validator,
-                issues,
-                locations,
-            ))
-        }
-        #[cfg(feature = "validator")]
-        Error::ValidatorErrors { errors } => Cow::Owned(format!(
+        #[cfg(any(feature = "garde", feature = "validator"))]
+        Error::ValidationErrors { errors, .. } => Cow::Owned(format!(
             "validation failed for {} document(s)",
             errors.len()
         )),

@@ -9,6 +9,8 @@ compile_error!(
 
 #[cfg(all(feature = "deserialize", feature = "properties"))]
 pub use self::de::PropertySyntax;
+#[cfg(all(feature = "deserialize", any(feature = "garde", feature = "validator")))]
+pub use self::de_error::ValidationSource;
 #[cfg(feature = "serialize")]
 pub use self::ser::{
     error as ser_error,

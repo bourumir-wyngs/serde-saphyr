@@ -98,8 +98,10 @@ fn build_diagnostic(
     regions: &[CroppedRegion],
 ) -> ErrorDiagnostic {
     match err {
-        #[cfg(feature = "garde")]
-        Error::ValidationError { issues, locations } => {
+        #[cfg(any(feature = "garde", feature = "validator"))]
+        Error::ValidationError {
+            issues, locations, ..
+        } => {
             let mut related = Vec::new();
             for issue in issues {
                 related.push(build_validation_entry_diagnostic(
@@ -126,57 +128,8 @@ fn build_diagnostic(
             }
         }
 
-        #[cfg(feature = "garde")]
-        Error::ValidationErrors { errors } => {
-            let mut related = Vec::new();
-            for e in errors {
-                related.push(build_diagnostic(
-                    e.without_snippet(),
-                    Arc::clone(&src),
-                    formatter,
-                    regions,
-                ));
-            }
-
-            ErrorDiagnostic {
-                message: format!("validation failed for {} document(s)", errors.len()),
-                src,
-                labels: Vec::new(),
-                related,
-            }
-        }
-
-        #[cfg(feature = "validator")]
-        Error::ValidatorError { issues, locations } => {
-            let mut related = Vec::new();
-
-            for issue in issues {
-                related.push(build_validation_entry_diagnostic(
-                    &src,
-                    &issue.path,
-                    &issue.display_entry(),
-                    locations,
-                    regions,
-                ));
-            }
-
-            ErrorDiagnostic {
-                message: format!(
-                    "validation failed{}",
-                    if related.len() == 1 {
-                        ""
-                    } else {
-                        " (multiple errors)"
-                    }
-                ),
-                src,
-                labels: Vec::new(),
-                related,
-            }
-        }
-
-        #[cfg(feature = "validator")]
-        Error::ValidatorErrors { errors } => {
+        #[cfg(any(feature = "garde", feature = "validator"))]
+        Error::ValidationErrors { errors, .. } => {
             let mut related = Vec::new();
             for e in errors {
                 related.push(build_diagnostic(
@@ -1096,7 +1049,8 @@ mod tests {
             },
         );
 
-        let err = Error::ValidatorError {
+        let err = Error::ValidationError {
+            source: crate::de_error::ValidationSource::Validator,
             issues: crate::de_error::collect_validator_issues(&errors),
             locations,
         };
@@ -1177,6 +1131,7 @@ mod tests {
         );
 
         let err = Error::ValidationError {
+            source: crate::de_error::ValidationSource::Garde,
             issues: crate::de_error::collect_garde_issues(&report),
             locations,
         };

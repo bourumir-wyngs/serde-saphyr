@@ -1,6 +1,6 @@
 use garde::Validate;
 use serde::Deserialize;
-use serde_saphyr::Error;
+use serde_saphyr::{Error, ValidationSource};
 
 #[cfg(feature = "include")]
 use std::{cell::RefCell, rc::Rc};
@@ -258,7 +258,11 @@ fn from_multiple_with_options_valid_returns_all_validation_errors() {
     let err = serde_saphyr::from_multiple_with_options_valid::<Root>(yaml, Default::default())
         .expect_err("must fail validation");
 
-    let Error::ValidationErrors { errors } = &err else {
+    let Error::ValidationErrors {
+        source: ValidationSource::Garde,
+        errors,
+    } = &err
+    else {
         panic!("expected ValidationErrors, got: {err:?}");
     };
     assert_eq!(errors.len(), 2);
@@ -699,7 +703,11 @@ fn garde_multidoc_validation_in_included_file_renders_included_snippet() {
     let err = serde_saphyr::from_multiple_with_options_valid::<Root>(yaml, options)
         .expect_err("included value in second document must fail garde rule");
 
-    let Error::ValidationErrors { errors } = &err else {
+    let Error::ValidationErrors {
+        source: ValidationSource::Garde,
+        errors,
+    } = &err
+    else {
         panic!("expected ValidationErrors, got: {err:?}");
     };
     assert_eq!(
@@ -737,7 +745,11 @@ fn multidoc_validation_anchor_origin_renders_defined_here() {
         serde_saphyr::from_multiple_with_options_valid::<AnchorRoot>(yaml, Default::default())
             .expect_err("anchored value in second document must fail garde rule");
 
-    let Error::ValidationErrors { errors } = &err else {
+    let Error::ValidationErrors {
+        source: ValidationSource::Garde,
+        errors,
+    } = &err
+    else {
         panic!("expected ValidationErrors, got: {err:?}");
     };
     assert_eq!(

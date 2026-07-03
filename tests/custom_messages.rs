@@ -4,7 +4,7 @@ use serde_saphyr::from_slice;
 use serde_saphyr::{Error, from_str};
 
 #[cfg(any(feature = "garde", feature = "validator"))]
-use serde_saphyr::{CroppedRegion, MessageFormatter};
+use serde_saphyr::{CroppedRegion, MessageFormatter, ValidationSource};
 
 #[cfg(any(feature = "garde", feature = "validator"))]
 use std::borrow::Cow;
@@ -91,6 +91,7 @@ fn custom_formatter_is_used_for_nested_validation_errors_with_snippets() {
         }],
         crop_radius: 2,
         error: Box::new(Error::ValidationErrors {
+            source: ValidationSource::Garde,
             errors: vec![nested],
         }),
     };
@@ -108,7 +109,10 @@ fn custom_formatter_is_used_for_nested_validator_errors_with_snippets() {
             match err {
                 Error::UnknownAnchor { .. } => Cow::Borrowed("custom unknown anchor"),
                 // Keep the header empty so the assertion only targets nested errors.
-                Error::ValidatorErrors { .. } => Cow::Borrowed(""),
+                Error::ValidationErrors {
+                    source: ValidationSource::Validator,
+                    ..
+                } => Cow::Borrowed(""),
                 _ => UserMessageFormatter.format_message(err),
             }
         }
@@ -127,7 +131,8 @@ fn custom_formatter_is_used_for_nested_validator_errors_with_snippets() {
             location: serde_saphyr::Location::UNKNOWN,
         }],
         crop_radius: 2,
-        error: Box::new(Error::ValidatorErrors {
+        error: Box::new(Error::ValidationErrors {
+            source: ValidationSource::Validator,
             errors: vec![nested],
         }),
     };

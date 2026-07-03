@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use serde_saphyr::Error;
+use serde_saphyr::{Error, ValidationSource};
 use validator::Validate;
 
 #[cfg(feature = "include")]
@@ -51,11 +51,7 @@ impl Validate for NullableTopLevel {
 }
 
 fn assert_empty_document_validation_error(err: Error) {
-    match &err {
-        Error::ValidatorError { .. } => {}
-        Error::WithSnippet { error, .. } if matches!(**error, Error::ValidatorError { .. }) => {}
-        other => panic!("expected ValidatorError, got: {other:?}"),
-    }
+    assert_validator_validation_error_shape(&err);
 
     let rendered = err.to_string();
     assert!(
@@ -66,6 +62,24 @@ fn assert_empty_document_validation_error(err: Error) {
         !rendered.contains("unexpected end of file"),
         "validation error was rewritten to EOF: {rendered}"
     );
+}
+
+fn assert_validator_validation_error_shape(err: &Error) {
+    match err {
+        Error::ValidationError {
+            source: ValidationSource::Validator,
+            ..
+        } => {}
+        Error::WithSnippet { error, .. }
+            if matches!(
+                **error,
+                Error::ValidationError {
+                    source: ValidationSource::Validator,
+                    ..
+                }
+            ) => {}
+        other => panic!("expected validator ValidationError, got: {other:?}"),
+    }
 }
 
 #[test]
@@ -165,8 +179,12 @@ fn from_multiple_with_options_validate_returns_all_validation_errors() {
     let err = serde_saphyr::from_multiple_with_options_validate::<Root>(yaml, Default::default())
         .expect_err("must fail validation");
 
-    let Error::ValidatorErrors { errors } = &err else {
-        panic!("expected ValidatorErrors, got: {err:?}");
+    let Error::ValidationErrors {
+        source: ValidationSource::Validator,
+        errors,
+    } = &err
+    else {
+        panic!("expected validator ValidationErrors, got: {err:?}");
     };
     assert_eq!(errors.len(), 2);
 
@@ -194,11 +212,7 @@ fn reader_validation_root_snapshot_out_of_range_has_no_incorrect_snippet() {
         serde_saphyr::from_reader_with_options_validate::<_, Root>(reader, Default::default())
             .expect_err("must fail validation");
 
-    match &err {
-        Error::ValidatorError { .. } => {}
-        Error::WithSnippet { error, .. } if matches!(**error, Error::ValidatorError { .. }) => {}
-        other => panic!("expected ValidatorError, got: {other:?}"),
-    }
+    assert_validator_validation_error_shape(&err);
 
     let rendered = err.to_string();
     assert!(
@@ -237,11 +251,7 @@ fn read_with_options_validate_validates_each_document_in_iterator() {
         .next()
         .expect("must yield second document")
         .expect_err("second document must fail validation");
-    match &err {
-        Error::ValidatorError { .. } => {}
-        Error::WithSnippet { error, .. } if matches!(**error, Error::ValidatorError { .. }) => {}
-        other => panic!("expected ValidatorError, got: {other:?}"),
-    }
+    assert_validator_validation_error_shape(&err);
 
     let rendered = err.to_string();
     assert!(
@@ -285,11 +295,7 @@ fn reader_validator_validation_in_text_include_has_snippet() {
 
     let err = serde_saphyr::from_reader_with_options_validate::<_, Root>(reader, options)
         .expect_err("included value must fail validator rule");
-    match &err {
-        Error::ValidatorError { .. } => {}
-        Error::WithSnippet { error, .. } if matches!(**error, Error::ValidatorError { .. }) => {}
-        other => panic!("expected ValidatorError, got: {other:?}"),
-    }
+    assert_validator_validation_error_shape(&err);
 
     let location = err
         .location()
@@ -327,11 +333,7 @@ fn from_str_with_options_validate_reports_validator_error_from_included_input() 
 
     let err = serde_saphyr::from_str_with_options_validate::<Root>(yaml, options)
         .expect_err("included value must fail validator rule");
-    match &err {
-        Error::ValidatorError { .. } => {}
-        Error::WithSnippet { error, .. } if matches!(**error, Error::ValidatorError { .. }) => {}
-        other => panic!("expected ValidatorError, got: {other:?}"),
-    }
+    assert_validator_validation_error_shape(&err);
     let location = err
         .location()
         .expect("validator error should expose a location");
@@ -369,8 +371,12 @@ fn validator_multidoc_validation_in_included_file_renders_included_snippet() {
         serde_saphyr::from_multiple_with_options_validate::<IncludeValidationRoot>(yaml, options)
             .expect_err("included value in second document must fail validator rule");
 
-    let Error::ValidatorErrors { errors } = &err else {
-        panic!("expected ValidatorErrors, got: {err:?}");
+    let Error::ValidationErrors {
+        source: ValidationSource::Validator,
+        errors,
+    } = &err
+    else {
+        panic!("expected validator ValidationErrors, got: {err:?}");
     };
     assert_eq!(
         errors.len(),

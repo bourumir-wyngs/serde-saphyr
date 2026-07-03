@@ -346,20 +346,11 @@ fn collect_snippet_regions(
 
     // Validation errors may contain multiple independent issue locations; pre-crop
     // one region per issue so we can later pick the region that covers the issue.
-    #[cfg(feature = "garde")]
-    if let Error::ValidationError { issues, locations } = inner {
-        push_validation_issue_regions(
-            &mut regions,
-            issues,
-            locations,
-            text,
-            source_name,
-            mapping,
-            crop_radius,
-        );
-    }
-    #[cfg(feature = "validator")]
-    if let Error::ValidatorError { issues, locations } = inner {
+    #[cfg(any(feature = "garde", feature = "validator"))]
+    if let Error::ValidationError {
+        issues, locations, ..
+    } = inner
+    {
         push_validation_issue_regions(
             &mut regions,
             issues,
@@ -391,6 +382,23 @@ pub struct ValidationIssue {
     pub code: String,
     pub message: Option<String>,
     pub params: Vec<(String, String)>,
+}
+
+#[cfg(any(feature = "garde", feature = "validator"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValidationSource {
+    Garde,
+    Validator,
+}
+
+#[cfg(any(feature = "garde", feature = "validator"))]
+impl ValidationSource {
+    pub(crate) fn external_message_source(self) -> ExternalMessageSource {
+        match self {
+            ValidationSource::Garde => ExternalMessageSource::Garde,
+            ValidationSource::Validator => ExternalMessageSource::Validator,
+        }
+    }
 }
 
 #[cfg(any(feature = "garde", feature = "validator"))]
@@ -947,29 +955,18 @@ pub enum Error {
         error: Box<Error>,
     },
 
-    /// Garde validation failure.
-    #[cfg(feature = "garde")]
+    /// Validation failure.
+    #[cfg(any(feature = "garde", feature = "validator"))]
     ValidationError {
+        source: ValidationSource,
         issues: Vec<ValidationIssue>,
         locations: PathMap,
     },
 
-    /// Garde validation failures (multiple, if multiple validations fail)
-    #[cfg(feature = "garde")]
+    /// Validation failures (multiple, if multiple validations fail)
+    #[cfg(any(feature = "garde", feature = "validator"))]
     ValidationErrors {
-        errors: Vec<Error>,
-    },
-
-    /// Validator validation failure.
-    #[cfg(feature = "validator")]
-    ValidatorError {
-        issues: Vec<ValidationIssue>,
-        locations: PathMap,
-    },
-
-    /// Validator validation failures (multiple, if multiple validations fail)
-    #[cfg(feature = "validator")]
-    ValidatorErrors {
+        source: ValidationSource,
         errors: Vec<Error>,
     },
 }
@@ -1241,6 +1238,29 @@ impl Error {
         }
     }
 
+    #[cfg(any(feature = "garde", feature = "validator"))]
+    pub(crate) fn validation_error(
+        source: ValidationSource,
+        issues: Vec<ValidationIssue>,
+        locations: PathMap,
+    ) -> Self {
+        Error::ValidationError {
+            source,
+            issues,
+            locations,
+        }
+    }
+
+    #[cfg(any(feature = "garde", feature = "validator"))]
+    pub(crate) fn validation_errors(source: ValidationSource, errors: Vec<Error>) -> Self {
+        Error::ValidationErrors { source, errors }
+    }
+
+    #[cfg(any(feature = "garde", feature = "validator"))]
+    pub(crate) fn is_validation_error(&self) -> bool {
+        matches!(self, Error::ValidationError { .. })
+    }
+
     /// Construct an `UnknownAnchor` error (unknown location).
     ///
     /// Called by:
@@ -1349,20 +1369,12 @@ impl Error {
                 let inner = *std::mem::replace(error, Box::new(Error::eof()));
                 **error = inner.with_location(set_location);
             }
-            #[cfg(feature = "garde")]
+            #[cfg(any(feature = "garde", feature = "validator"))]
             Error::ValidationError { .. } => {
                 // Validation errors carry their own per-path locations.
             }
-            #[cfg(feature = "garde")]
+            #[cfg(any(feature = "garde", feature = "validator"))]
             Error::ValidationErrors { .. } => {
-                // Aggregate validation errors carry their own per-entry locations.
-            }
-            #[cfg(feature = "validator")]
-            Error::ValidatorError { .. } => {
-                // Validation errors carry their own per-path locations.
-            }
-            #[cfg(feature = "validator")]
-            Error::ValidatorErrors { .. } => {
                 // Aggregate validation errors carry their own per-entry locations.
             }
         }
@@ -1446,8 +1458,10 @@ impl Error {
             Error::IOError { cause: _ } => None,
             Error::AliasError { locations, .. } => Locations::primary_location(*locations),
             Error::WithSnippet { error, .. } => error.location(),
-            #[cfg(feature = "garde")]
-            Error::ValidationError { issues, locations } => issues.first().and_then(|issue| {
+            #[cfg(any(feature = "garde", feature = "validator"))]
+            Error::ValidationError {
+                issues, locations, ..
+            } => issues.first().and_then(|issue| {
                 let (locs, _) = locations.search_with_ancestor_fallback(&issue.path)?;
                 let loc = if locs.reference_location != Location::UNKNOWN {
                     locs.reference_location
@@ -1460,24 +1474,8 @@ impl Error {
                     None
                 }
             }),
-            #[cfg(feature = "garde")]
-            Error::ValidationErrors { errors } => errors.iter().find_map(|e| e.location()),
-            #[cfg(feature = "validator")]
-            Error::ValidatorError { issues, locations } => issues.first().and_then(|issue| {
-                let (locs, _) = locations.search_with_ancestor_fallback(&issue.path)?;
-                let loc = if locs.reference_location != Location::UNKNOWN {
-                    locs.reference_location
-                } else {
-                    locs.defined_location
-                };
-                if loc != Location::UNKNOWN {
-                    Some(loc)
-                } else {
-                    None
-                }
-            }),
-            #[cfg(feature = "validator")]
-            Error::ValidatorErrors { errors } => errors.iter().find_map(|e| e.location()),
+            #[cfg(any(feature = "garde", feature = "validator"))]
+            Error::ValidationErrors { errors, .. } => errors.iter().find_map(|e| e.location()),
         }
     }
     /// Return a pair of locations associated with this error.
@@ -1553,20 +1551,15 @@ impl Error {
             Error::IOError { .. } => None,
             Error::AliasError { locations, .. } => Some(*locations),
             Error::WithSnippet { error, .. } => error.locations(),
-            #[cfg(feature = "garde")]
-            Error::ValidationError { issues, locations } => issues
+            #[cfg(any(feature = "garde", feature = "validator"))]
+            Error::ValidationError {
+                issues, locations, ..
+            } => issues
                 .first()
                 .and_then(|issue| locations.search_with_ancestor_fallback(&issue.path))
                 .map(|(locs, _)| locs),
-            #[cfg(feature = "garde")]
-            Error::ValidationErrors { errors } => errors.first().and_then(Error::locations),
-            #[cfg(feature = "validator")]
-            Error::ValidatorError { issues, locations } => issues
-                .first()
-                .and_then(|issue| locations.search_with_ancestor_fallback(&issue.path))
-                .map(|(locs, _)| locs),
-            #[cfg(feature = "validator")]
-            Error::ValidatorErrors { errors } => errors.first().and_then(Error::locations),
+            #[cfg(any(feature = "garde", feature = "validator"))]
+            Error::ValidationErrors { errors, .. } => errors.first().and_then(Error::locations),
         }
     }
 
@@ -1615,12 +1608,8 @@ fn fmt_error_plain_with_formatter(
     // Validation errors embed per-issue locations in their formatted message (potentially
     // multiple distinct locations). Do not attach a single top-level location suffix here,
     // or we'd duplicate location wording.
-    #[cfg(feature = "garde")]
+    #[cfg(any(feature = "garde", feature = "validator"))]
     if matches!(err, Error::ValidationError { .. }) {
-        return write!(f, "{msg}");
-    }
-    #[cfg(feature = "validator")]
-    if matches!(err, Error::ValidatorError { .. }) {
         return write!(f, "{msg}");
     }
 
@@ -1630,17 +1619,8 @@ fn fmt_error_plain_with_formatter(
         write!(f, "{msg}")?;
     }
 
-    #[cfg(feature = "garde")]
-    if let Error::ValidationErrors { errors } = err {
-        for err in errors {
-            writeln!(f)?;
-            writeln!(f)?;
-            fmt_error_plain_with_formatter(f, err, formatter)?;
-        }
-    }
-
-    #[cfg(feature = "validator")]
-    if let Error::ValidatorErrors { errors } = err {
+    #[cfg(any(feature = "garde", feature = "validator"))]
+    if let Error::ValidationErrors { errors, .. } = err {
         for err in errors {
             writeln!(f)?;
             writeln!(f)?;
@@ -1710,26 +1690,8 @@ fn fmt_error_rendered(
     }
 
     match err {
-        #[cfg(feature = "garde")]
-        Error::ValidationErrors { errors } => {
-            let msg = options.formatter.format_message(err);
-            if !msg.is_empty() {
-                writeln!(f, "{}", msg)?;
-            }
-            let mut first = true;
-            for err in errors {
-                if !first {
-                    writeln!(f)?;
-                    writeln!(f)?;
-                }
-                first = false;
-                fmt_error_rendered(f, err, options)?;
-            }
-            Ok(())
-        }
-
-        #[cfg(feature = "validator")]
-        Error::ValidatorErrors { errors } => {
+        #[cfg(any(feature = "garde", feature = "validator"))]
+        Error::ValidationErrors { errors, .. } => {
             let msg = options.formatter.format_message(err);
             if !msg.is_empty() {
                 writeln!(f, "{}", msg)?;
@@ -1762,56 +1724,25 @@ fn fmt_error_rendered(
 
             // Validation errors have custom snippet formatting (paths, alias context, and
             // messages without location duplication).
-            #[cfg(feature = "garde")]
-            if let Error::ValidationError { issues, locations } = error.as_ref() {
+            #[cfg(any(feature = "garde", feature = "validator"))]
+            if let Error::ValidationError {
+                source,
+                issues,
+                locations,
+            } = error.as_ref()
+            {
                 return fmt_validation_error_with_snippets_offset(
                     f,
                     options.formatter.localizer(),
-                    ExternalMessageSource::Garde,
+                    source.external_message_source(),
                     issues,
                     locations,
                     regions,
                     *crop_radius,
                 );
             }
-            #[cfg(feature = "garde")]
-            if let Error::ValidationErrors { errors } = error.as_ref() {
-                let msg = options.formatter.format_message(error);
-                if !msg.is_empty() {
-                    writeln!(f, "{}", msg)?;
-                }
-                let mut first = true;
-                for err in errors {
-                    if !first {
-                        writeln!(f)?;
-                        writeln!(f)?;
-                    }
-                    first = false;
-                    fmt_error_with_snippets_offset(
-                        f,
-                        err,
-                        regions,
-                        *crop_radius,
-                        options.formatter,
-                    )?;
-                }
-                return Ok(());
-            }
-
-            #[cfg(feature = "validator")]
-            if let Error::ValidatorError { issues, locations } = error.as_ref() {
-                return fmt_validation_error_with_snippets_offset(
-                    f,
-                    options.formatter.localizer(),
-                    ExternalMessageSource::Validator,
-                    issues,
-                    locations,
-                    regions,
-                    *crop_radius,
-                );
-            }
-            #[cfg(feature = "validator")]
-            if let Error::ValidatorErrors { errors } = error.as_ref() {
+            #[cfg(any(feature = "garde", feature = "validator"))]
+            if let Error::ValidationErrors { errors, .. } = error.as_ref() {
                 let msg = options.formatter.format_message(error);
                 if !msg.is_empty() {
                     writeln!(f, "{}", msg)?;
@@ -2088,25 +2019,17 @@ fn fmt_error_with_snippets_offset(
         return fmt_error_rendered(f, err, RenderOptions::new(formatter));
     }
 
-    #[cfg(feature = "garde")]
-    if let Error::ValidationError { issues, locations } = err {
+    #[cfg(any(feature = "garde", feature = "validator"))]
+    if let Error::ValidationError {
+        source,
+        issues,
+        locations,
+    } = err
+    {
         return fmt_validation_error_with_snippets_offset(
             f,
             formatter.localizer(),
-            ExternalMessageSource::Garde,
-            issues,
-            locations,
-            regions,
-            crop_radius,
-        );
-    }
-
-    #[cfg(feature = "validator")]
-    if let Error::ValidatorError { issues, locations } = err {
-        return fmt_validation_error_with_snippets_offset(
-            f,
-            formatter.localizer(),
-            ExternalMessageSource::Validator,
+            source.external_message_source(),
             issues,
             locations,
             regions,
@@ -2515,7 +2438,8 @@ mod tests {
             },
         );
 
-        let err = Error::ValidatorError {
+        let err = Error::ValidationError {
+            source: ValidationSource::Validator,
             issues: crate::de_error::collect_validator_issues(&errors),
             locations,
         };
@@ -2544,7 +2468,8 @@ mod tests {
             },
         );
 
-        let err = Error::ValidatorError {
+        let err = Error::ValidationError {
+            source: ValidationSource::Validator,
             issues: vec![ValidationIssue {
                 path: PathKey::empty().join("parent").join("child").join("value"),
                 code: "custom".to_owned(),
