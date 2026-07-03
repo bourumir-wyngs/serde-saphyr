@@ -32,3 +32,28 @@ fn block_string_wrappers_can_be_unwrapped() {
     assert_eq!(lit.into_inner(), "x");
     assert_eq!(fold.into_inner(), "y");
 }
+#[test]
+fn lit_string_eq_string() {
+    let ls = LitString::from("hello".to_string());
+    let s = "hello".to_string();
+    assert!(ls == s);
+}
+
+#[test]
+fn fold_string_eq_string() {
+    let fs = FoldString::from("hello".to_string());
+    let s = "hello".to_string();
+    assert!(fs == s);
+}
+
+#[test]
+fn lit_string_eq_str() {
+    let ls = LitString::from("hello".to_string());
+    assert!(ls == *"hello");
+}
+
+#[test]
+fn fold_string_eq_str() {
+    let fs = FoldString::from("hello".to_string());
+    assert!(fs == *"hello");
+}

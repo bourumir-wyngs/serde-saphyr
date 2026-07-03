@@ -184,3 +184,23 @@ fn multiple_documents_enum_variants() {
         ],
     );
 }
+#[test]
+fn from_str_multiple_documents_error() {
+    let yaml = "---\nhello\n---\nworld\n";
+    let result: Result<String, _> = serde_saphyr::from_str(yaml);
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("multiple") || err.contains("iterator"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn read_multiple_documents() {
+    let yaml = "---\nhello\n---\nworld\n";
+    let docs: Vec<String> = serde_saphyr::from_multiple(yaml).unwrap();
+    assert_eq!(docs.len(), 2);
+    assert_eq!(docs[0], "hello");
+    assert_eq!(docs[1], "world");
+}

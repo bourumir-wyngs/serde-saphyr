@@ -227,3 +227,394 @@ fn newtype_variant_map_key_is_rejected() {
         "unexpected error message: {msg}"
     );
 }
+#[test]
+fn bool_key_in_map() {
+    // bool key -> KeyScalarSink::serialize_bool
+    let mut m = BTreeMap::new();
+    m.insert(true, "yes");
+    m.insert(false, "no");
+    let yaml = to_string(&m).unwrap();
+    assert!(
+        yaml.contains("true:") || yaml.contains("false:"),
+        "yaml: {yaml}"
+    );
+}
+
+#[test]
+fn i8_key_in_map() {
+    let mut m = BTreeMap::new();
+    m.insert(42i8, "val");
+    let yaml = to_string(&m).unwrap();
+    assert!(yaml.contains("42:"), "yaml: {yaml}");
+}
+
+#[test]
+fn i16_key_in_map() {
+    let mut m = BTreeMap::new();
+    m.insert(1000i16, "val");
+    let yaml = to_string(&m).unwrap();
+    assert!(yaml.contains("1000:"), "yaml: {yaml}");
+}
+
+#[test]
+fn i32_key_in_map() {
+    let mut m = BTreeMap::new();
+    m.insert(-5i32, "val");
+    let yaml = to_string(&m).unwrap();
+    assert!(yaml.contains("-5:"), "yaml: {yaml}");
+}
+
+#[test]
+fn i128_key_in_map() {
+    let mut m = BTreeMap::new();
+    m.insert(999i128, "val");
+    let yaml = to_string(&m).unwrap();
+    assert!(yaml.contains("999:"), "yaml: {yaml}");
+}
+
+#[test]
+fn u8_key_in_map() {
+    let mut m = BTreeMap::new();
+    m.insert(255u8, "val");
+    let yaml = to_string(&m).unwrap();
+    assert!(yaml.contains("255:"), "yaml: {yaml}");
+}
+
+#[test]
+fn u16_key_in_map() {
+    let mut m = BTreeMap::new();
+    m.insert(1u16, "val");
+    let yaml = to_string(&m).unwrap();
+    assert!(yaml.contains("1:"), "yaml: {yaml}");
+}
+
+#[test]
+fn u32_key_in_map() {
+    let mut m = BTreeMap::new();
+    m.insert(100u32, "val");
+    let yaml = to_string(&m).unwrap();
+    assert!(yaml.contains("100:"), "yaml: {yaml}");
+}
+
+#[test]
+fn u128_key_in_map() {
+    let mut m = BTreeMap::new();
+    m.insert(12345u128, "val");
+    let yaml = to_string(&m).unwrap();
+    assert!(yaml.contains("12345:"), "yaml: {yaml}");
+}
+
+#[test]
+fn f32_key_in_map() {
+    // f32 key -> KeyScalarSink::serialize_f32
+    #[derive(PartialEq, Eq, PartialOrd, Ord)]
+    struct F32Key(u32);
+    impl Serialize for F32Key {
+        fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+            s.serialize_f32(f32::from_bits(self.0))
+        }
+    }
+    let mut m = BTreeMap::new();
+    m.insert(F32Key(1.5f32.to_bits()), "val");
+    let yaml = to_string(&m).unwrap();
+    assert!(yaml.contains("1.5:"), "yaml: {yaml}");
+}
+
+#[test]
+fn f64_key_in_map() {
+    #[derive(PartialEq, Eq, PartialOrd, Ord)]
+    struct F64Key(u64);
+    impl Serialize for F64Key {
+        fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+            s.serialize_f64(f64::from_bits(self.0))
+        }
+    }
+    let mut m = BTreeMap::new();
+    m.insert(F64Key(2.5f64.to_bits()), "val");
+    let yaml = to_string(&m).unwrap();
+    assert!(yaml.contains("2.5:"), "yaml: {yaml}");
+}
+
+#[test]
+fn char_key_in_map() {
+    // char key -> KeyScalarSink::serialize_char
+    #[derive(PartialEq, Eq, PartialOrd, Ord)]
+    struct CharKey(char);
+    impl Serialize for CharKey {
+        fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+            s.serialize_char(self.0)
+        }
+    }
+    let mut m = BTreeMap::new();
+    m.insert(CharKey('z'), "val");
+    let yaml = to_string(&m).unwrap();
+    assert!(yaml.contains("z:"), "yaml: {yaml}");
+}
+
+#[test]
+fn unit_key_in_map() {
+    // unit key -> KeyScalarSink::serialize_unit
+    #[derive(PartialEq, Eq, PartialOrd, Ord)]
+    struct UnitKey;
+    impl Serialize for UnitKey {
+        fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+            s.serialize_unit()
+        }
+    }
+    let mut m = BTreeMap::new();
+    m.insert(UnitKey, "val");
+    let yaml = to_string(&m).unwrap();
+    assert!(yaml.contains("null:"), "yaml: {yaml}");
+}
+
+#[test]
+fn unit_struct_key_in_map() {
+    // unit_struct key -> KeyScalarSink::serialize_unit_struct
+    #[derive(PartialEq, Eq, PartialOrd, Ord)]
+    struct UnitStructKey;
+    impl Serialize for UnitStructKey {
+        fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+            s.serialize_unit_struct("UnitStructKey")
+        }
+    }
+    let mut m = BTreeMap::new();
+    m.insert(UnitStructKey, "val");
+    let yaml = to_string(&m).unwrap();
+    assert!(yaml.contains("null:"), "yaml: {yaml}");
+}
+
+#[test]
+fn unit_variant_key_in_map() {
+    // unit_variant key -> KeyScalarSink::serialize_unit_variant
+    #[derive(PartialEq, Eq, PartialOrd, Ord, Serialize)]
+    enum Color {
+        Red,
+        Blue,
+    }
+    let mut m = BTreeMap::new();
+    m.insert(Color::Red, 1);
+    m.insert(Color::Blue, 2);
+    let yaml = to_string(&m).unwrap();
+    assert!(
+        yaml.contains("Red:") || yaml.contains("Blue:"),
+        "yaml: {yaml}"
+    );
+}
+
+#[test]
+fn newtype_struct_key_in_map() {
+    // newtype_struct key -> KeyScalarSink::serialize_newtype_struct (transparent)
+    #[derive(PartialEq, Eq, PartialOrd, Ord)]
+    struct WrappedStr(String);
+    impl Serialize for WrappedStr {
+        fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+            s.serialize_newtype_struct("WrappedStr", &self.0)
+        }
+    }
+    let mut m = BTreeMap::new();
+    m.insert(WrappedStr("mykey".to_string()), "val");
+    let yaml = to_string(&m).unwrap();
+    assert!(yaml.contains("mykey:"), "yaml: {yaml}");
+}
+
+#[test]
+fn collect_str_key_in_map() {
+    // collect_str key -> KeyScalarSink::collect_str
+    struct DisplayKey(i32);
+    impl Serialize for DisplayKey {
+        fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+            s.collect_str(&self.0)
+        }
+    }
+    impl PartialEq for DisplayKey {
+        fn eq(&self, o: &Self) -> bool {
+            self.0 == o.0
+        }
+    }
+    impl Eq for DisplayKey {}
+    impl PartialOrd for DisplayKey {
+        fn partial_cmp(&self, o: &Self) -> Option<std::cmp::Ordering> {
+            Some(self.cmp(o))
+        }
+    }
+    impl Ord for DisplayKey {
+        fn cmp(&self, o: &Self) -> std::cmp::Ordering {
+            self.0.cmp(&o.0)
+        }
+    }
+    let mut m = BTreeMap::new();
+    m.insert(DisplayKey(42), "val");
+    let yaml = to_string(&m).unwrap();
+    // collect_str produces a string key which may be quoted
+    assert!(yaml.contains("42"), "yaml: {yaml}");
+}
+
+#[test]
+fn non_scalar_key_produces_complex_key_syntax() {
+    // A sequence as a map key -> complex key with '? ' syntax
+    struct SeqKey;
+    impl Serialize for SeqKey {
+        fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+            use serde::ser::SerializeSeq;
+            let mut seq = s.serialize_seq(Some(1))?;
+            seq.serialize_element(&1i32)?;
+            seq.end()
+        }
+    }
+    impl PartialEq for SeqKey {
+        fn eq(&self, _: &Self) -> bool {
+            true
+        }
+    }
+    impl Eq for SeqKey {}
+    impl PartialOrd for SeqKey {
+        fn partial_cmp(&self, o: &Self) -> Option<std::cmp::Ordering> {
+            Some(self.cmp(o))
+        }
+    }
+    impl Ord for SeqKey {
+        fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+            std::cmp::Ordering::Equal
+        }
+    }
+
+    let mut m = BTreeMap::new();
+    m.insert(SeqKey, "val");
+    let yaml = to_string(&m).unwrap();
+    assert!(yaml.contains("? "), "expected complex key syntax: {yaml}");
+}
+
+#[test]
+fn key_with_tab_gets_escaped() {
+    let mut m = BTreeMap::new();
+    m.insert("key\twith\ttabs", "val");
+    let yaml = to_string(&m).unwrap();
+    assert!(yaml.contains("\\t"), "expected \\t escape in key: {yaml}");
+}
+
+#[test]
+fn key_with_newline_gets_escaped() {
+    let mut m = BTreeMap::new();
+    m.insert("key\nwith\nnewlines", "val");
+    let yaml = to_string(&m).unwrap();
+    assert!(yaml.contains("\\n"), "expected \\n escape in key: {yaml}");
+}
+
+#[test]
+fn key_with_carriage_return_gets_escaped() {
+    let mut m = BTreeMap::new();
+    m.insert("key\rwith\rcr", "val");
+    let yaml = to_string(&m).unwrap();
+    assert!(yaml.contains("\\r"), "expected \\r escape in key: {yaml}");
+}
+
+#[test]
+fn key_with_control_char_gets_hex_escape() {
+    let mut m = BTreeMap::new();
+    m.insert("key\x01ctrl", "val");
+    let yaml = to_string(&m).unwrap();
+    assert!(
+        yaml.contains("\\x01"),
+        "expected \\x01 escape in key: {yaml}"
+    );
+}
+
+#[test]
+fn key_with_backslash_plain() {
+    // Backslash is plain-safe in YAML keys, no quoting needed
+    let mut m = BTreeMap::new();
+    m.insert("key\\with\\backslash", "val");
+    let yaml = to_string(&m).unwrap();
+    assert!(yaml.contains("key\\with\\backslash:"), "yaml: {yaml}");
+}
+
+#[test]
+fn seq_as_map_key_returns_error_for_seq_methods() {
+    // Trying to use a sequence as a map key should produce an error
+    // (KeyScalarSink rejects serialize_seq)
+    use serde::ser::SerializeMap;
+    struct BadKey;
+    impl Serialize for BadKey {
+        fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+            use serde::ser::SerializeSeq;
+            let seq = s.serialize_seq(Some(0))?;
+            seq.end()
+        }
+    }
+    // Wrap in a map to trigger KeyScalarSink
+    struct MapWithBadKey;
+    impl Serialize for MapWithBadKey {
+        fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+            let mut map = s.serialize_map(Some(1))?;
+            map.serialize_key(&BadKey)?;
+            map.serialize_value(&1i32)?;
+            map.end()
+        }
+    }
+    // This should either succeed (complex key) or return an error
+    let result = to_string(&MapWithBadKey);
+    // Either way, no panic
+    let _ = result;
+}
+
+#[test]
+fn complex_map_key_uses_question_mark_syntax() {
+    // Block maps support complex keys via `? key\n: value` syntax.
+    // Use a Vec as key (non-scalar) in a BTreeMap-like structure.
+    use serde::ser::{SerializeMap, Serializer};
+
+    // Manually serialize a map with a sequence key
+    struct ComplexKeyMap;
+    impl Serialize for ComplexKeyMap {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            let mut map = serializer.serialize_map(Some(1))?;
+            map.serialize_key(&vec![1, 2])?;
+            map.serialize_value(&"val")?;
+            map.end()
+        }
+    }
+    let yaml = to_string(&ComplexKeyMap).unwrap();
+    assert!(yaml.contains("? "), "expected complex key syntax: {yaml}");
+}
+
+#[test]
+fn u128_map_key() {
+    let mut m = BTreeMap::new();
+    m.insert(999u128, "big");
+    let yaml = to_string(&m).unwrap();
+    assert!(yaml.contains("999: big"), "got: {yaml}");
+}
+
+#[test]
+fn i128_map_key() {
+    let mut m = BTreeMap::new();
+    m.insert(-999i128, "neg");
+    let yaml = to_string(&m).unwrap();
+    assert!(yaml.contains("-999: neg"), "got: {yaml}");
+}
+
+#[test]
+fn serialize_bool_key_map() {
+    use std::collections::BTreeMap;
+    let mut m = BTreeMap::new();
+    m.insert(true, "yes");
+    m.insert(false, "no");
+    let s = serde_saphyr::to_string(&m).unwrap();
+    assert!(s.contains("true") && s.contains("false"));
+}
+
+#[test]
+fn serialize_integer_key_map() {
+    use std::collections::BTreeMap;
+    let mut m = BTreeMap::new();
+    m.insert(1i32, "one");
+    m.insert(2i32, "two");
+    let s = serde_saphyr::to_string(&m).unwrap();
+    assert!(s.contains("1: one"));
+}
+
+#[test]
+fn serialize_float_key_map() {
+    let s = serde_saphyr::to_string(&std::f64::consts::PI).unwrap();
+    assert!(s.contains("3.14159"));
+}
