@@ -1,6 +1,4 @@
-#[path = "compound.rs"]
 mod compound;
-#[path = "helpers.rs"]
 mod helpers;
 
 pub use self::compound::{MapSer, SeqSer, StructVariantSer, TupleSer};
