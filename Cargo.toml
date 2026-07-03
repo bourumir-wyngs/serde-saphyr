@@ -52,7 +52,7 @@ default = ["serialize", "deserialize"]
 serialize = ["dep:base64", "dep:num-traits", "dep:zmij", "dep:nohash-hasher"]
 
 # Enables YAML deserialization APIs.
-deserialize = ["dep:base64", "dep:num-traits", "dep:annotate-snippets", "dep:granit-parser", "dep:smallvec", "dep:encoding_rs_io", "dep:ahash"]
+deserialize = ["dep:num-traits", "dep:annotate-snippets", "dep:granit-parser", "dep:smallvec", "dep:encoding_rs_io", "dep:ahash"]
 
 # Enables Serde Serialize/Deserialize impls for serde-saphyr's own configuration,
 # budget, and report types. Disabled by default to avoid compiling serde_derive.
