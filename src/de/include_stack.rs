@@ -19,13 +19,9 @@ type InnerStack<'input> =
 pub(crate) struct SnippetFrame {
     pub(crate) name: String,
     pub(crate) text: Rc<str>,
-    #[allow(dead_code)]
-    pub(crate) include_location: crate::Location,
 }
 #[derive(Clone, Debug)]
 pub(crate) struct RecordedSource {
-    #[allow(dead_code)]
-    pub(crate) source_id: u32,
     pub(crate) parent_source_id: Option<u32>,
     pub(crate) name: String,
     pub(crate) text: Option<Rc<str>>,
@@ -43,7 +39,6 @@ pub struct ParserStack<'input> {
     reader_bytes_read: ReaderInputBytesRead,
     budget: crate::Budget,
     active_ids: Vec<(usize, String)>,
-    snippet_frames: Vec<Option<SnippetFrame>>,
     next_source_id: u32,
     active_source_ids: Vec<u32>,
     pub(crate) resolved_sources: HashMap<u32, RecordedSource>,
@@ -62,7 +57,6 @@ impl<'input> ParserStack<'input> {
             reader_bytes_read,
             budget: budget.clone(),
             active_ids: Vec::new(),
-            snippet_frames: Vec::new(),
             next_source_id: 1,
             active_source_ids: Vec::new(),
             resolved_sources: HashMap::new(),
@@ -80,97 +74,81 @@ impl<'input> ParserStack<'input> {
     pub fn has_resolver(&self) -> bool {
         self.include_resolver.is_some()
     }
-    #[allow(dead_code)]
-    pub fn push_str_parser(&mut self, parser: Parser<'input, StrInput<'input>>, name: String) {
-        self.push_str_parser_with_snippet(parser, name, None);
-    }
     pub fn push_stream_parser(
         &mut self,
         parser: Parser<'input, ReaderInput<'input>>,
         name: String,
     ) {
-        self.push_stream_parser_with_snippet(parser, name, None);
+        self.push_stream_parser_with_snippet(parser, name, None, crate::Location::UNKNOWN);
     }
     pub(crate) fn push_str_parser_with_snippet(
         &mut self,
         parser: Parser<'input, StrInput<'input>>,
         name: String,
         snippet: Option<SnippetFrame>,
+        include_location: crate::Location,
     ) {
         let source_id = self.next_source_id;
         self.next_source_id += 1;
         let parent_source_id = self.active_source_ids.last().copied();
         self.active_source_ids.push(source_id);
         let recorded = RecordedSource {
-            source_id,
             parent_source_id,
             name: snippet
                 .as_ref()
                 .map(|s| s.name.clone())
                 .unwrap_or_else(|| name.clone()),
             text: snippet.as_ref().map(|s| s.text.clone()),
-            include_location: snippet
-                .as_ref()
-                .map(|s| s.include_location)
-                .unwrap_or(crate::Location::UNKNOWN),
+            include_location,
         };
         self.resolved_sources.insert(source_id, recorded);
         self.inner.push_str_parser(parser, name);
-        self.snippet_frames.push(snippet);
     }
     fn push_stream_parser_with_snippet(
         &mut self,
         parser: Parser<'input, ReaderInput<'input>>,
         name: String,
         snippet: Option<SnippetFrame>,
+        include_location: crate::Location,
     ) {
         let source_id = self.next_source_id;
         self.next_source_id += 1;
         let parent_source_id = self.active_source_ids.last().copied();
         self.active_source_ids.push(source_id);
         let recorded = RecordedSource {
-            source_id,
             parent_source_id,
             name: snippet
                 .as_ref()
                 .map(|s| s.name.clone())
                 .unwrap_or_else(|| name.clone()),
             text: snippet.as_ref().map(|s| s.text.clone()),
-            include_location: snippet
-                .as_ref()
-                .map(|s| s.include_location)
-                .unwrap_or(crate::Location::UNKNOWN),
+            include_location,
         };
         self.resolved_sources.insert(source_id, recorded);
         self.inner.push_custom_parser(parser, name);
-        self.snippet_frames.push(snippet);
     }
     fn push_replay_parser_with_snippet(
         &mut self,
         parser: granit_parser::parser_stack::ReplayParser<'input>,
         name: String,
         snippet: Option<SnippetFrame>,
+        include_location: crate::Location,
     ) {
         let source_id = self.next_source_id;
         self.next_source_id += 1;
         let parent_source_id = self.active_source_ids.last().copied();
         self.active_source_ids.push(source_id);
         let recorded = RecordedSource {
-            source_id,
             parent_source_id,
             name: snippet
                 .as_ref()
                 .map(|s| s.name.clone())
                 .unwrap_or_else(|| name.clone()),
             text: snippet.as_ref().map(|s| s.text.clone()),
-            include_location: snippet
-                .as_ref()
-                .map(|s| s.include_location)
-                .unwrap_or(crate::Location::UNKNOWN),
+            include_location,
         };
         self.resolved_sources.insert(source_id, recorded);
         self.inner.push_replay_parser(parser, name);
-        self.snippet_frames.push(snippet);
     }
     pub fn current_source_id(&self) -> u32 {
         self.active_source_ids.last().copied().unwrap_or(0)
@@ -188,37 +166,12 @@ impl<'input> ParserStack<'input> {
     }
     fn sync_source_tracking(&mut self, current_len: usize) {
         self.active_ids.retain(|(depth, _)| *depth <= current_len);
-        self.snippet_frames.truncate(current_len);
         self.active_source_ids.truncate(current_len);
     }
     pub(crate) fn prune_resolved_sources(&mut self) {
         let active_source_ids: HashSet<u32> = self.active_source_ids.iter().copied().collect();
         self.resolved_sources
             .retain(|id, _| active_source_ids.contains(id));
-    }
-    #[allow(dead_code)]
-    pub fn active_include_snippet_source(&self) -> Option<(&str, &str)> {
-        if self.inner.stack().len() <= 1 {
-            return None;
-        }
-        self.snippet_frames
-            .last()
-            .and_then(|frame| frame.as_ref())
-            .map(|frame| (frame.name.as_str(), frame.text.as_ref()))
-    }
-    #[allow(dead_code)]
-    pub fn include_stack_snippets(&self) -> Vec<(&str, &str, crate::Location)> {
-        self.snippet_frames
-            .iter()
-            .filter_map(|frame| frame.as_ref())
-            .map(|frame| {
-                (
-                    frame.name.as_str(),
-                    frame.text.as_ref(),
-                    frame.include_location,
-                )
-            })
-            .collect()
     }
     pub fn resolve(
         &mut self,
@@ -292,7 +245,6 @@ impl<'input> ParserStack<'input> {
                 let snippet = SnippetFrame {
                     name: name.clone(),
                     text: Rc::from(s),
-                    include_location: location,
                 };
                 let cursor = Cursor::new(snippet.text.as_ref().as_bytes().to_vec());
                 let input = buffered_input_from_reader_with_limit_shared(
@@ -302,7 +254,7 @@ impl<'input> ParserStack<'input> {
                     self.reader_bytes_read.clone(),
                 );
                 let parser = Parser::new(input);
-                self.push_stream_parser_with_snippet(parser, name, Some(snippet));
+                self.push_stream_parser_with_snippet(parser, name, Some(snippet), location);
             }
             InputSource::Reader(r) => {
                 let input = buffered_input_from_reader_with_limit_shared(
@@ -312,7 +264,7 @@ impl<'input> ParserStack<'input> {
                     self.reader_bytes_read.clone(),
                 );
                 let parser = Parser::new(input);
-                self.push_stream_parser_with_snippet(parser, name, None);
+                self.push_stream_parser_with_snippet(parser, name, None, crate::Location::UNKNOWN);
             }
             InputSource::AnchoredText { mut text, anchor } => {
                 let text_len = text.len();
@@ -338,7 +290,6 @@ impl<'input> ParserStack<'input> {
                 let snippet = SnippetFrame {
                     name: name.clone(),
                     text: Rc::from(text.as_str()),
-                    include_location: location,
                 };
                 let events = collect_anchor_events(
                     &text,
@@ -366,6 +317,7 @@ impl<'input> ParserStack<'input> {
                     ),
                     name,
                     Some(snippet),
+                    location,
                 );
             }
         }
@@ -709,6 +661,19 @@ mod tests {
         }
     }
 
+    fn push_test_str_parser<'input>(
+        stack: &mut ParserStack<'input>,
+        parser: Parser<'input, StrInput<'input>>,
+        name: &str,
+    ) {
+        stack.push_str_parser_with_snippet(
+            parser,
+            name.to_string(),
+            None,
+            crate::Location::UNKNOWN,
+        );
+    }
+
     #[test]
     fn collect_anchor_events_expands_aliases_defined_outside_target_anchor() {
         let mut scanner = Scanner::new(StrInput::new(
@@ -986,7 +951,7 @@ selected: &selected
                 },
             })
         });
-        stack.push_str_parser(Parser::new_from_str("root: 1\n"), "root.yaml".to_string());
+        push_test_str_parser(&mut stack, Parser::new_from_str("root: 1\n"), "root.yaml");
 
         let error = stack
             .resolve("f.yml#selected", crate::Location::UNKNOWN)
@@ -1022,45 +987,14 @@ selected: &selected
     }
 
     #[test]
-    fn test_unused_methods() {
-        let io_error = Rc::new(RefCell::new(None));
-        let reader_bytes_read = Rc::new(Cell::new(0));
-        let mut stack = ParserStack::new(io_error, reader_bytes_read, &crate::Budget::default());
-
-        let parser = Parser::new_from_str("foo: bar");
-        stack.push_str_parser(parser, "test.yaml".to_string());
-
-        // At depth 1, active_include_snippet_source is None
-        assert_eq!(stack.active_include_snippet_source(), None);
-
-        stack.push_str_parser_with_snippet(
-            Parser::new_from_str("baz"),
-            "test2.yaml".to_string(),
-            Some(SnippetFrame {
-                name: "test2.yaml".to_string(),
-                text: Rc::from("baz"),
-                include_location: crate::Location::UNKNOWN,
-            }),
-        );
-
-        // At depth > 1, active_include_snippet_source returns the top snippet
-        let src = stack.active_include_snippet_source().unwrap();
-        assert_eq!(src.0, "test2.yaml");
-        assert_eq!(src.1, "baz");
-        let snippets = stack.include_stack_snippets();
-        assert_eq!(snippets.len(), 1);
-        assert_eq!(snippets[0].0, "test2.yaml");
-        assert_eq!(snippets[0].1, "baz");
-    }
-    #[test]
     fn source_ids_start_from_one_and_zero_stays_unknown() {
         let io_error = Rc::new(RefCell::new(None));
         let reader_bytes_read = Rc::new(Cell::new(0));
         let mut stack = ParserStack::new(io_error, reader_bytes_read, &crate::Budget::default());
         assert_eq!(stack.current_source_id(), 0);
-        stack.push_str_parser(Parser::new_from_str("root: 1"), "root.yaml".to_string());
+        push_test_str_parser(&mut stack, Parser::new_from_str("root: 1"), "root.yaml");
         assert_eq!(stack.current_source_id(), 1);
-        stack.push_str_parser(Parser::new_from_str("child: 2"), "child.yaml".to_string());
+        push_test_str_parser(&mut stack, Parser::new_from_str("child: 2"), "child.yaml");
         assert_eq!(stack.current_source_id(), 2);
     }
     #[test]
@@ -1076,7 +1010,7 @@ selected: &selected
                 source: InputSource::Text("child: 1\n".to_string()),
             })
         });
-        stack.push_str_parser(Parser::new_from_str("root: 1\n"), "root.yaml".to_string());
+        push_test_str_parser(&mut stack, Parser::new_from_str("root: 1\n"), "root.yaml");
         assert_eq!(stack.resolved_sources.len(), 1);
         stack
             .resolve("child.yaml", crate::Location::UNKNOWN)
@@ -1098,16 +1032,16 @@ selected: &selected
         let reader_bytes_read = Rc::new(Cell::new(0));
         let mut stack = ParserStack::new(io_error, reader_bytes_read, &crate::Budget::default());
         // A stream with two documents
-        stack.push_str_parser(
+        push_test_str_parser(
+            &mut stack,
             Parser::new_from_str("first: 1\n---\nsecond: 2\n"),
-            "multi.yaml".to_string(),
+            "multi.yaml",
         );
 
         // Push a dummy child source ID to simulate an include during the first document
         stack.resolved_sources.insert(
             999,
             RecordedSource {
-                source_id: 999,
                 parent_source_id: Some(1),
                 name: "dummy.yaml".to_string(),
                 text: None,
@@ -1147,7 +1081,7 @@ selected: &selected
                 source: InputSource::Text("child: 1\n".to_string()),
             })
         });
-        stack.push_str_parser(Parser::new_from_str("root: 1\n"), "root.yaml".to_string());
+        push_test_str_parser(&mut stack, Parser::new_from_str("root: 1\n"), "root.yaml");
 
         let err = stack
             .resolve("child.yaml", crate::Location::UNKNOWN)
@@ -1184,7 +1118,7 @@ selected: &selected
             }),
             other => panic!("unexpected include request: {other}"),
         });
-        stack.push_str_parser(Parser::new_from_str("root: 1\n"), "root.yaml".to_string());
+        push_test_str_parser(&mut stack, Parser::new_from_str("root: 1\n"), "root.yaml");
 
         stack
             .resolve("child.yaml", crate::Location::UNKNOWN)
@@ -1218,7 +1152,7 @@ selected: &selected
             }),
             other => panic!("unexpected include request: {other}"),
         });
-        stack.push_str_parser(Parser::new_from_str("root: 1\n"), "root.yaml".to_string());
+        push_test_str_parser(&mut stack, Parser::new_from_str("root: 1\n"), "root.yaml");
 
         stack
             .resolve("child.yaml", crate::Location::UNKNOWN)

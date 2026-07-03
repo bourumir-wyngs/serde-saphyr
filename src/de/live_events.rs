@@ -157,15 +157,6 @@ impl<'input> GranitParser<'input> {
             0
         }
     }
-
-    #[cfg(feature = "include")]
-    #[allow(dead_code)]
-    fn include_stack_snippets(&self) -> Vec<(&str, &str, crate::Location)> {
-        match self {
-            GranitParser::StringParser(parser) => parser.include_stack_snippets(),
-            GranitParser::StreamParser(parser) => parser.include_stack_snippets(),
-        }
-    }
 }
 
 /// Live event source that wraps `granit_parser::Parser` and:
@@ -1226,12 +1217,6 @@ impl<'a> LiveEvents<'a> {
         source_id: u32,
     ) -> Vec<&crate::include_stack::RecordedSource> {
         self.parser.recorded_source_chain(source_id)
-    }
-
-    #[cfg(feature = "include")]
-    #[allow(dead_code)]
-    pub(crate) fn include_stack_snippets(&self) -> Vec<(&str, &str, crate::Location)> {
-        self.parser.include_stack_snippets()
     }
 
     /// Skip events until the next document boundary or EOF.

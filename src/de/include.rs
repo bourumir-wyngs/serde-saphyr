@@ -58,8 +58,8 @@ pub(crate) fn create_parser_from_str<'a>(
         Some(crate::include_stack::SnippetFrame {
             name: "<input>".to_string(),
             text: Rc::from(input),
-            include_location: crate::Location::UNKNOWN,
         }),
+        crate::Location::UNKNOWN,
     );
     stack
 }
@@ -92,11 +92,5 @@ mod tests {
             .expect("root source recorded");
         let text = root.text.as_ref().expect("root text recorded");
         assert_eq!(text.as_ref(), input);
-        let stack_frame = stack
-            .include_stack_snippets()
-            .into_iter()
-            .next()
-            .expect("root snippet frame recorded");
-        assert_eq!(stack_frame.1, input);
     }
 }

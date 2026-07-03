@@ -133,11 +133,12 @@ impl<'a, const N: usize> ExactSizeIterator for FixedRingBufferIter<'a, N> {}
 ///
 /// Offsets are absolute byte offsets from the start of the underlying stream.
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Fields used in tests
 pub(crate) struct RecentSnapshot {
     /// Absolute byte offset of `bytes[0]`.
+    #[cfg(test)]
     pub start_offset: u64,
     /// Absolute byte offset one-past-the-end of `bytes`.
+    #[cfg(test)]
     pub end_offset: u64,
     /// 1-based line number at `bytes[0]}`.
     pub start_line: usize,
@@ -199,30 +200,20 @@ impl<R> RingReader<R> {
     }
 
     /// Absolute offset after bytes already returned to the consumer.
-    #[allow(dead_code)] // Used in tests
+    #[cfg(test)]
     pub(crate) fn offset(&self) -> u64 {
         self.returned_total
     }
 
     /// How many bytes are currently read-ahead (not yet returned to the consumer).
-    #[allow(dead_code)] // Used in tests
+    #[cfg(test)]
     pub(crate) fn read_ahead_len(&self) -> usize {
         self.stash.len()
     }
 
-    #[allow(dead_code)] // Used in tests
+    #[cfg(test)]
     pub(crate) fn inner(&self) -> &R {
         &self.inner
-    }
-
-    #[allow(dead_code)] // Used in tests
-    pub(crate) fn inner_mut(&mut self) -> &mut R {
-        &mut self.inner
-    }
-
-    #[allow(dead_code)] // Used in tests
-    pub(crate) fn into_inner(self) -> R {
-        self.inner
     }
 
     /// Get a snapshot of the most recently retained bytes and their absolute offset range.
@@ -248,16 +239,19 @@ impl<R> RingReader<R> {
             let _ = self.read_ahead_at_most(can_read_more)?;
         }
 
-        let (mut start_offset, mut start_line, mut bytes) = self.ring_snapshot();
+        let (mut _start_offset, mut start_line, mut bytes) = self.ring_snapshot();
         if !bytes.is_empty() {
-            (start_offset, start_line, bytes) =
-                trim_to_utf8_boundaries_with_line(bytes, start_offset, start_line);
+            (_start_offset, start_line, bytes) =
+                trim_to_utf8_boundaries_with_line(bytes, _start_offset, start_line);
         }
 
-        let end_offset = start_offset.saturating_add(bytes.len() as u64);
+        #[cfg(test)]
+        let end_offset = _start_offset.saturating_add(bytes.len() as u64);
 
         Ok(RecentSnapshot {
-            start_offset,
+            #[cfg(test)]
+            start_offset: _start_offset,
+            #[cfg(test)]
             end_offset,
             start_line,
             bytes,
