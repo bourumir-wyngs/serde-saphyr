@@ -12,4 +12,5 @@ fn serializer_options_indent_step_range_is_enforced_for_literals() {
     t.compile_fail("tests/ui/indent_step_zero.rs");
     t.compile_fail("tests/ui/indent_step_too_large.rs");
     t.compile_fail("tests/ui/indent_step_huge.rs");
+    t.compile_fail("tests/ui/require_indent_divisible_zero.rs");
 }

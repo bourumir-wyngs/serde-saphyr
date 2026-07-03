@@ -48,7 +48,16 @@ macro_rules! __serde_saphyr_options_apply {
     ($opt:ident) => {};
 
     // Compile-time rejection of `Divisible(0)` when written as a literal.
-    ($opt:ident, require_indent : $crate::RequireIndent::Divisible(0) $(, $($rest:tt)*)? ) => {{
+    ($opt:ident, require_indent : $ty:ident :: Divisible(0) $(, $($rest:tt)*)? ) => {{
+        compile_error!("`Divisible` indentation must be non-zero");
+    }};
+    ($opt:ident, require_indent : $krate:ident :: $ty:ident :: Divisible(0) $(, $($rest:tt)*)? ) => {{
+        compile_error!("`Divisible` indentation must be non-zero");
+    }};
+    ($opt:ident, require_indent : :: $krate:ident :: $ty:ident :: Divisible(0) $(, $($rest:tt)*)? ) => {{
+        compile_error!("`Divisible` indentation must be non-zero");
+    }};
+    ($opt:ident, require_indent : $a:ident :: $b:ident :: $ty:ident :: Divisible(0) $(, $($rest:tt)*)? ) => {{
         compile_error!("`Divisible` indentation must be non-zero");
     }};
 
@@ -212,6 +221,7 @@ macro_rules! alias_limits {
 /// };
 /// # }
 /// ```
+#[cfg(feature = "deserialize")]
 #[macro_export]
 macro_rules! render_options {
     ( $( $field:ident : $value:expr ),* $(,)? ) => {{
@@ -223,6 +233,14 @@ macro_rules! render_options {
         )*
         opt
     }};
+}
+
+#[cfg(not(feature = "deserialize"))]
+#[macro_export]
+macro_rules! render_options {
+    ( $( $tt:tt )* ) => {
+        compile_error!("serde-saphyr `render_options!` requires feature `deserialize`");
+    };
 }
 
 /// Implementation detail for [`ser_options!`].
