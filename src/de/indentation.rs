@@ -110,6 +110,13 @@ pub enum RequireIndent {
 }
 
 impl RequireIndent {
+    pub(crate) fn validate(&self) -> Result<(), crate::de_error::Error> {
+        if let RequireIndent::Divisible(0) = self {
+            return Err(divisible_zero_error());
+        }
+        Ok(())
+    }
+
     /// Checks whether the given indentation `n` is valid with respect to this requirement.
     ///
     /// For [`Uniform`](RequireIndent::Uniform), the first non-zero indentation encountered is
@@ -121,6 +128,7 @@ impl RequireIndent {
     pub fn is_valid(&mut self, n: usize) -> Result<(), crate::de_error::Error> {
         let ok = match self {
             RequireIndent::Unchecked => true,
+            RequireIndent::Divisible(0) => return Err(divisible_zero_error()),
             RequireIndent::Divisible(d) => n.is_multiple_of(*d),
             RequireIndent::Even => n.is_multiple_of(2),
             RequireIndent::Uniform(remembered) => {
@@ -146,6 +154,13 @@ impl RequireIndent {
             })
         }
     }
+}
+
+fn divisible_zero_error() -> crate::de_error::Error {
+    crate::de_error::Error::msg(
+        "invalid deserialization options: require_indent Divisible(0) is not allowed; \
+         indentation divisor must be non-zero",
+    )
 }
 
 impl std::fmt::Display for RequireIndent {

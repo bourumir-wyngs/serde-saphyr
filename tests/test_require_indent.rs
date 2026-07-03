@@ -32,6 +32,16 @@ fn rejects_invalid_indentation(#[case] require: RequireIndent, #[case] yaml: &st
     assert!(err.contains("indentation"), "{err}");
 }
 
+#[test]
+fn divisible_zero_indent_returns_error() {
+    let options = serde_saphyr::options! {
+        require_indent: RequireIndent::Divisible(0),
+    };
+    let err = serde_saphyr::from_str_with_options::<Value>("value\n", options).unwrap_err();
+    assert!(err.to_string().contains("Divisible(0)"), "{err}");
+    assert!(err.to_string().contains("non-zero"), "{err}");
+}
+
 #[rstest]
 #[case::literal("|")]
 #[case::folded(">")]

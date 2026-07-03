@@ -47,35 +47,6 @@ macro_rules! __serde_saphyr_options_apply {
     ($opt:ident,) => {};
     ($opt:ident) => {};
 
-    // Compile-time rejection of `Divisible(0)` when written as a literal.
-    ($opt:ident, require_indent : $ty:ident :: Divisible(0) $(, $($rest:tt)*)? ) => {{
-        compile_error!("`Divisible` indentation must be non-zero");
-    }};
-    ($opt:ident, require_indent : $krate:ident :: $ty:ident :: Divisible(0) $(, $($rest:tt)*)? ) => {{
-        compile_error!("`Divisible` indentation must be non-zero");
-    }};
-    ($opt:ident, require_indent : :: $krate:ident :: $ty:ident :: Divisible(0) $(, $($rest:tt)*)? ) => {{
-        compile_error!("`Divisible` indentation must be non-zero");
-    }};
-    ($opt:ident, require_indent : $a:ident :: $b:ident :: $ty:ident :: Divisible(0) $(, $($rest:tt)*)? ) => {{
-        compile_error!("`Divisible` indentation must be non-zero");
-    }};
-
-    // Special-case `require_indent` to enforce `Divisible` is non-zero at runtime.
-    ($opt:ident, require_indent : $value:expr $(, $($rest:tt)*)? ) => {{
-        {
-            let val = $value;
-            if let $crate::RequireIndent::Divisible(n) = &val {
-                assert!(*n != 0, "`Divisible` indentation must be non-zero");
-            }
-            #[allow(deprecated)]
-            {
-                $opt.require_indent = val;
-            }
-        }
-        $( $crate::__serde_saphyr_options_apply!($opt, $($rest)*); )?
-    }};
-
     // Generic field assignment.
     ($opt:ident, $field:ident : $value:expr $(, $($rest:tt)*)? ) => {{
         #[allow(deprecated)]

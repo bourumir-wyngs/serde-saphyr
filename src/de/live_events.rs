@@ -222,6 +222,8 @@ pub(crate) struct LiveEvents<'a> {
 
     /// Error reference that is checked at the end of parsing.
     error: Rc<RefCell<Option<std::io::Error>>>,
+    /// Invalid options are reported through the same stream error channel as parse errors.
+    pending_error: Option<Error>,
 
     /// Indentation requirement to validate against parser-reported indentation hints.
     ///
@@ -280,6 +282,7 @@ impl<'a> LiveEvents<'a> {
         let budget_report_cb = options.budget_report_cb.take();
         let alias_limits = options.alias_limits;
         let merge_keys = options.merge_keys;
+        let pending_error = options.validate().err();
         let require_indent = options.require_indent;
         #[cfg(feature = "properties")]
         let property_map = options.property_map.clone();
@@ -340,6 +343,7 @@ impl<'a> LiveEvents<'a> {
             seen_doc_end: false,
 
             error,
+            pending_error,
 
             require_indent,
             #[cfg(feature = "include")]
@@ -364,6 +368,7 @@ impl<'a> LiveEvents<'a> {
         let budget_report_cb = options.budget_report_cb.take();
         let alias_limits = options.alias_limits;
         let merge_keys = options.merge_keys;
+        let pending_error = options.validate().err();
         let require_indent = options.require_indent;
         #[cfg(feature = "properties")]
         let property_map = options.property_map.clone();
@@ -435,6 +440,7 @@ impl<'a> LiveEvents<'a> {
                     Rc::new(RefCell::new(None))
                 }
             },
+            pending_error,
 
             require_indent,
             #[cfg(feature = "include")]
@@ -1086,6 +1092,9 @@ impl<'a> LiveEvents<'a> {
     /// budget enforcement errors with the last known location.
     #[cold]
     pub(crate) fn finish(&mut self) -> Result<(), Error> {
+        if let Some(err) = self.pending_error.take() {
+            return Err(err);
+        }
         self.io_error()?;
         if let Some(budget) = self.budget.take() {
             let report = budget.finalize();
@@ -1117,6 +1126,9 @@ impl<'de> Events<'de> for LiveEvents<'de> {
     /// Get the next event, using a single-item lookahead buffer if present.
     /// Updates last_location to the yielded event's location.
     fn next(&mut self) -> Result<Option<Ev<'de>>, Error> {
+        if let Some(err) = self.pending_error.take() {
+            return Err(err);
+        }
         self.io_error()?;
 
         if let Some(ev) = self.look.take() {
@@ -1134,6 +1146,9 @@ impl<'de> Events<'de> for LiveEvents<'de> {
     }
     /// Peek at the next event without consuming it, filling the lookahead buffer if empty.
     fn peek(&mut self) -> Result<Option<&Ev<'de>>, Error> {
+        if let Some(err) = self.pending_error.take() {
+            return Err(err);
+        }
         self.io_error()?;
 
         if self.look.is_none() {

@@ -311,6 +311,11 @@ pub type BudgetReportCallback =
     Rc<std::cell::RefCell<dyn FnMut(crate::budget::BudgetReport) + 'static>>;
 
 impl Options {
+    #[allow(deprecated)]
+    pub(crate) fn validate(&self) -> Result<(), crate::de_error::Error> {
+        self.require_indent.validate()
+    }
+
     /// Registers a budget-report callback. Any closure can be used,  including ones that
     /// capture state from the surrounding scope.
     ///
