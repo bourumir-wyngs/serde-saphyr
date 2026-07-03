@@ -76,12 +76,39 @@ impl<'de, 'e> de::SeqAccess<'de> for CommentedSeqAccess<'de, 'e> {
             0 => {
                 self.state = 1;
                 let value = {
-                    let mut de = Deserializer::new(&mut *self.de.ev, self.de.cfg);
-                    if self.defer_value_comments {
-                        de.pending_value_comments =
-                            std::mem::take(&mut self.de.pending_value_comments);
+                    #[cfg(any(feature = "garde", feature = "validator"))]
+                    {
+                        if let Some(garde_ref) = self.de.garde.as_mut() {
+                            let recorder: &mut super::path_map::PathRecorder = garde_ref;
+                            let mut de = Deserializer::new_with_path_recorder(
+                                &mut *self.de.ev,
+                                self.de.cfg,
+                                recorder,
+                            );
+                            if self.defer_value_comments {
+                                de.pending_value_comments =
+                                    std::mem::take(&mut self.de.pending_value_comments);
+                            }
+                            seed.deserialize(de)?
+                        } else {
+                            let mut de = Deserializer::new(&mut *self.de.ev, self.de.cfg);
+                            if self.defer_value_comments {
+                                de.pending_value_comments =
+                                    std::mem::take(&mut self.de.pending_value_comments);
+                            }
+                            seed.deserialize(de)?
+                        }
                     }
-                    seed.deserialize(de)?
+
+                    #[cfg(not(any(feature = "garde", feature = "validator")))]
+                    {
+                        let mut de = Deserializer::new(&mut *self.de.ev, self.de.cfg);
+                        if self.defer_value_comments {
+                            de.pending_value_comments =
+                                std::mem::take(&mut self.de.pending_value_comments);
+                        }
+                        seed.deserialize(de)?
+                    }
                 };
                 self.comments
                     .extend(self.de.ev.take_trailing_comments_after_node()?);

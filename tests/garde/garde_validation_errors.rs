@@ -11,6 +11,18 @@ struct Root {
     a: String,
 }
 
+#[derive(Debug, Deserialize, Validate)]
+struct CommentedRoot {
+    #[garde(dive)]
+    item: serde_saphyr::Commented<CommentedLeaf>,
+}
+
+#[derive(Debug, Deserialize, Validate)]
+struct CommentedLeaf {
+    #[garde(length(min = 1))]
+    value: String,
+}
+
 fn reject_empty_document(value: &Option<String>, _ctx: &()) -> garde::Result {
     if value.is_none() {
         Err(garde::Error::new("empty document is not valid"))
@@ -38,6 +50,26 @@ fn assert_empty_document_validation_error(err: Error) {
     assert!(
         !rendered.contains("unexpected end of file"),
         "validation error was rewritten to EOF: {rendered}"
+    );
+}
+
+#[test]
+fn validation_error_inside_commented_subtree_uses_child_location() {
+    let yaml = "item:\n  value: \"\"\n";
+
+    let err = serde_saphyr::from_str_with_options_valid::<CommentedRoot>(yaml, Default::default())
+        .expect_err("must fail validation");
+
+    let location = err
+        .location()
+        .expect("garde error inside Commented<T> should expose a location");
+    assert_eq!(location.line(), 2);
+    assert_eq!(location.column(), 10);
+
+    let rendered = err.to_string();
+    assert!(
+        rendered.contains("for `item.value`"),
+        "expected nested commented path in output, got: {rendered}"
     );
 }
 

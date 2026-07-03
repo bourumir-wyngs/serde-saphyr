@@ -192,6 +192,36 @@ pub struct NullableTilde<T>(pub Option<T>);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Commented<T>(pub T, pub String);
 
+#[cfg(feature = "garde")]
+impl<T: garde::Validate> garde::Validate for Commented<T> {
+    type Context = T::Context;
+
+    fn validate_into(
+        &self,
+        ctx: &Self::Context,
+        parent: &mut dyn FnMut() -> garde::Path,
+        report: &mut garde::Report,
+    ) {
+        self.0.validate_into(ctx, parent, report);
+    }
+}
+
+#[cfg(feature = "validator")]
+impl<T: validator::Validate> validator::Validate for Commented<T> {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        self.0.validate()
+    }
+}
+
+#[cfg(feature = "validator")]
+impl<'v_a, T: validator::ValidateArgs<'v_a>> validator::ValidateArgs<'v_a> for Commented<T> {
+    type Args = T::Args;
+
+    fn validate_with_args(&self, args: Self::Args) -> Result<(), validator::ValidationErrors> {
+        self.0.validate_with_args(args)
+    }
+}
+
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for FlowSeq<T> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
         T::deserialize(deserializer).map(FlowSeq)

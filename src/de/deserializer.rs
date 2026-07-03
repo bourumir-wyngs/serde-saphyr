@@ -220,7 +220,7 @@ pub struct YamlDeserializer<'de, 'e> {
     pub(super) pending_value_comments: Vec<Cow<'de, str>>,
 
     #[cfg(any(feature = "garde", feature = "validator"))]
-    garde: Option<&'e mut PathRecorder>,
+    pub(super) garde: Option<&'e mut PathRecorder>,
 }
 
 #[derive(Clone)]

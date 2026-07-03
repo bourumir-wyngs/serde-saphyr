@@ -22,6 +22,18 @@ struct Root {
     a: String,
 }
 
+#[derive(Debug, Deserialize, Validate)]
+struct CommentedRoot {
+    #[validate(nested)]
+    item: serde_saphyr::Commented<CommentedLeaf>,
+}
+
+#[derive(Debug, Deserialize, Validate)]
+struct CommentedLeaf {
+    #[validate(length(min = 1))]
+    value: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 struct NullableTopLevel(Option<String>);
@@ -75,6 +87,27 @@ fn from_str_with_options_validate_runs_validator_validation() {
     assert!(
         rendered.contains("line 1 column 4"),
         "expected location in output, got: {rendered}"
+    );
+}
+
+#[test]
+fn validator_error_inside_commented_subtree_uses_child_location() {
+    let yaml = "item:\n  value: \"\"\n";
+
+    let err =
+        serde_saphyr::from_str_with_options_validate::<CommentedRoot>(yaml, Default::default())
+            .expect_err("must fail validation");
+
+    let location = err
+        .location()
+        .expect("validator error inside Commented<T> should expose a location");
+    assert_eq!(location.line(), 2);
+    assert_eq!(location.column(), 10);
+
+    let rendered = err.to_string();
+    assert!(
+        rendered.contains("for `item.value`"),
+        "expected nested commented path in output, got: {rendered}"
     );
 }
 
