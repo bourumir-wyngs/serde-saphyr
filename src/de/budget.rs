@@ -4,7 +4,7 @@
 //! avoid pathological inputs
 
 use crate::options::MergeKeyPolicy;
-use ahash::HashSetExt;
+use ahash::RandomState;
 use granit_parser::{Event, Parser, ScalarStyle, ScanError, Tag};
 use smallvec::SmallVec;
 use std::collections::HashSet;
@@ -365,14 +365,12 @@ pub enum EnforcingPolicy {
 }
 
 /// Stateful helper that enforces a [`Budget`] while consuming a stream of [`Event`]s.
-type FastHashSet<T> = HashSet<T, ahash::RandomState>;
-
 #[derive(Debug)]
 pub(crate) struct BudgetEnforcer {
     budget: Budget,
     report: BudgetReport,
     depth: usize,
-    defined_anchors: FastHashSet<usize>,
+    defined_anchors: HashSet<usize, RandomState>,
     containers: SmallVec<[ContainerState; 64]>,
     policy: EnforcingPolicy,
     merge_keys: MergeKeyPolicy,
@@ -389,6 +387,12 @@ enum ContainerState {
     },
 }
 
+#[derive(Clone, Copy)]
+enum ContainerKind {
+    Sequence,
+    Mapping,
+}
+
 fn tag_display_len(tag: Option<&Tag>) -> usize {
     tag.map_or(0, |tag| {
         let (handle, suffix) = tag.parts();
@@ -403,7 +407,7 @@ impl BudgetEnforcer {
             budget,
             report: BudgetReport::default(),
             depth: 0,
-            defined_anchors: FastHashSet::with_capacity(256),
+            defined_anchors: HashSet::with_capacity_and_hasher(256, RandomState::default()),
             containers: SmallVec::new(),
             policy,
             merge_keys,
@@ -433,56 +437,23 @@ impl BudgetEnforcer {
                 self.handle_scalar(value, style, tag_opt.is_some())?;
             }
             Event::MappingStart(_style, anchor_id, tag_opt) => {
-                self.bump_nodes()?;
-                self.depth = self.depth.saturating_add(1);
-                if self.depth > self.report.max_depth {
-                    self.report.max_depth = self.depth;
-                }
-                if self.report.max_depth > self.budget.max_depth {
-                    return Err(BudgetBreach::Depth {
-                        depth: self.report.max_depth,
-                    });
-                }
-                self.bump_total_scalar_bytes(tag_display_len(tag_opt.as_deref()))?;
-                let from_mapping_value = self.entering_container();
-                self.containers.push(ContainerState::Mapping {
-                    expecting_key: true,
-                    from_mapping_value,
-                });
-                self.record_anchor(*anchor_id)?;
+                self.enter_container(*anchor_id, tag_opt.as_deref(), |from_mapping_value| {
+                    ContainerState::Mapping {
+                        expecting_key: true,
+                        from_mapping_value,
+                    }
+                })?;
             }
             Event::MappingEnd => {
-                if let Some(new_depth) = self.depth.checked_sub(1) {
-                    self.depth = new_depth;
-                } else {
-                    return Err(BudgetBreach::SequenceUnbalanced);
-                }
-                self.leave_mapping()?;
+                self.leave_container(ContainerKind::Mapping)?;
             }
             Event::SequenceStart(_style, anchor_id, tag_opt) => {
-                self.bump_nodes()?;
-                self.depth = self.depth.saturating_add(1);
-                if self.depth > self.report.max_depth {
-                    self.report.max_depth = self.depth;
-                }
-                if self.report.max_depth > self.budget.max_depth {
-                    return Err(BudgetBreach::Depth {
-                        depth: self.report.max_depth,
-                    });
-                }
-                self.bump_total_scalar_bytes(tag_display_len(tag_opt.as_deref()))?;
-                let from_mapping_value = self.entering_container();
-                self.containers
-                    .push(ContainerState::Sequence { from_mapping_value });
-                self.record_anchor(*anchor_id)?;
+                self.enter_container(*anchor_id, tag_opt.as_deref(), |from_mapping_value| {
+                    ContainerState::Sequence { from_mapping_value }
+                })?;
             }
             Event::SequenceEnd => {
-                if let Some(new_depth) = self.depth.checked_sub(1) {
-                    self.depth = new_depth;
-                } else {
-                    return Err(BudgetBreach::SequenceUnbalanced);
-                }
-                self.leave_sequence()?;
+                self.leave_container(ContainerKind::Sequence)?;
             }
             Event::Alias(_anchor_id) => {
                 self.observe_alias_event(true)?;
@@ -565,6 +536,35 @@ impl BudgetEnforcer {
         Ok(())
     }
 
+    // Track structural nesting before a mapping or sequence is pushed.
+    fn enter_depth(&mut self) -> Result<(), BudgetBreach> {
+        self.depth = self.depth.saturating_add(1);
+        if self.depth > self.report.max_depth {
+            self.report.max_depth = self.depth;
+        }
+        if self.report.max_depth > self.budget.max_depth {
+            return Err(BudgetBreach::Depth {
+                depth: self.report.max_depth,
+            });
+        }
+        Ok(())
+    }
+
+    // Apply all shared accounting for a mapping or sequence start event.
+    fn enter_container(
+        &mut self,
+        anchor_id: usize,
+        tag: Option<&Tag>,
+        container: impl FnOnce(bool) -> ContainerState,
+    ) -> Result<(), BudgetBreach> {
+        self.bump_nodes()?;
+        self.enter_depth()?;
+        self.bump_total_scalar_bytes(tag_display_len(tag))?;
+        let from_mapping_value = self.entering_container();
+        self.containers.push(container(from_mapping_value));
+        self.record_anchor(anchor_id)
+    }
+
     fn record_anchor(&mut self, anchor_id: usize) -> Result<(), BudgetBreach> {
         if anchor_id != 0 && self.defined_anchors.insert(anchor_id) {
             let count = self.defined_anchors.len();
@@ -628,30 +628,28 @@ impl BudgetEnforcer {
         }
     }
 
-    fn leave_sequence(&mut self) -> Result<(), BudgetBreach> {
-        match self.containers.pop() {
-            Some(ContainerState::Sequence { from_mapping_value }) => {
-                if from_mapping_value {
-                    self.finish_value();
-                }
-                Ok(())
-            }
-            _ => Err(BudgetBreach::SequenceUnbalanced),
-        }
-    }
+    // Pop the expected container and complete its parent mapping value if needed.
+    fn leave_container(&mut self, expected: ContainerKind) -> Result<(), BudgetBreach> {
+        self.depth = self
+            .depth
+            .checked_sub(1)
+            .ok_or(BudgetBreach::SequenceUnbalanced)?;
 
-    fn leave_mapping(&mut self) -> Result<(), BudgetBreach> {
-        match self.containers.pop() {
-            Some(ContainerState::Mapping {
-                from_mapping_value, ..
-            }) => {
-                if from_mapping_value {
-                    self.finish_value();
-                }
-                Ok(())
-            }
-            _ => Err(BudgetBreach::SequenceUnbalanced),
+        let from_mapping_value = match (expected, self.containers.pop()) {
+            (ContainerKind::Sequence, Some(ContainerState::Sequence { from_mapping_value }))
+            | (
+                ContainerKind::Mapping,
+                Some(ContainerState::Mapping {
+                    from_mapping_value, ..
+                }),
+            ) => from_mapping_value,
+            _ => return Err(BudgetBreach::SequenceUnbalanced),
+        };
+
+        if from_mapping_value {
+            self.finish_value();
         }
+        Ok(())
     }
 
     fn finish_value(&mut self) {
@@ -738,6 +736,9 @@ pub fn check_yaml_budget(
 /// - `Ok(true)` if a budget was exceeded (reject).
 /// - `Ok(false)` if within budget.
 /// - `Err(ScanError)` on parser error.
+///
+/// Despite the (historical) name, this function only scans the event stream and reports
+/// whether a budget was exceeded; it does not deserialize a YAML value.
 pub fn parse_yaml(input: &str, budget: Budget) -> Result<bool, ScanError> {
     let report = check_yaml_budget(input, budget, EnforcingPolicy::AllContent)?;
     Ok(report.breached.is_some())
