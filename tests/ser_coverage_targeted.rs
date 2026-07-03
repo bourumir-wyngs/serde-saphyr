@@ -850,10 +850,7 @@ fn write_quoted_null_escape() {
     let mut m = BTreeMap::new();
     m.insert("key\x00null", "val");
     let yaml = to_string(&m).unwrap();
-    assert!(
-        yaml.contains("\\0") || yaml.contains("\\u0000"),
-        "expected NUL escape: {yaml}"
-    );
+    assert!(yaml.contains("\\0"), "expected NUL escape: {yaml}");
 }
 
 #[test]
@@ -920,25 +917,20 @@ fn write_quoted_named_escapes_in_map_keys() {
 
 #[test]
 fn write_quoted_control_char_escapes() {
-    // Control chars in keys force double-quoting; verify \x hex escapes are used
-    // (the serializer uses \xHH for chars 0x01-0x1F range via \u{:04X} or \x{:02X})
+    // Control chars in keys force double-quoting and use the same named escapes as values.
     let cases: Vec<(&str, &str)> = vec![
-        ("\x07", "07"), // BEL -> \u0007 or \x07
-        ("\x08", "08"), // BS
-        ("\x0b", "0B"), // VT
-        ("\x0c", "0C"), // FF
-        ("\x1b", "1B"), // ESC
+        ("\x07", "\\a"),
+        ("\x08", "\\b"),
+        ("\x0b", "\\v"),
+        ("\x0c", "\\f"),
+        ("\x1b", "\\e"),
     ];
-    for (input, hex) in cases {
+    for (input, expected) in cases {
         let mut m = BTreeMap::new();
         m.insert(input, "val");
         let yaml = to_string(&m).unwrap();
-        // The key should be quoted and contain some escape
         assert!(
-            yaml.contains('"')
-                || yaml.contains("\\u")
-                || yaml.contains("\\x")
-                || yaml.contains(hex),
+            yaml.contains(expected),
             "expected escape for {:?}: {yaml}",
             input
         );
@@ -965,7 +957,7 @@ fn map_inside_flow_uses_flow_style() {
     assert!(yaml.contains('{'), "expected flow map: {yaml}");
 }
 
-// ── KeyScalarSink: keys with control chars (tab, newline, carriage return) ────
+// ── KeyScalarSink: keys with control chars ────────────────────────────────────
 
 #[test]
 fn key_with_tab_gets_escaped() {
@@ -992,11 +984,14 @@ fn key_with_carriage_return_gets_escaped() {
 }
 
 #[test]
-fn key_with_control_char_gets_unicode_escaped() {
+fn key_with_control_char_gets_hex_escape() {
     let mut m = BTreeMap::new();
     m.insert("key\x01ctrl", "val");
     let yaml = to_string(&m).unwrap();
-    assert!(yaml.contains("\\u"), "expected \\u escape in key: {yaml}");
+    assert!(
+        yaml.contains("\\x01"),
+        "expected \\x01 escape in key: {yaml}"
+    );
 }
 
 #[test]

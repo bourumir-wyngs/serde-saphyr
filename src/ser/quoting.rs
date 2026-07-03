@@ -1,4 +1,5 @@
 use crate::parse_scalars::parse_yaml11_bool;
+use std::fmt::{self, Write};
 
 #[inline]
 // Match a broad set of YAML numeric tokens (integer / float) even if they would overflow
@@ -402,6 +403,43 @@ pub(crate) fn is_auto_block_scalar_readable(s: &str) -> bool {
 #[inline]
 pub(crate) fn is_controll_which_needs_escaping(ch: char) -> bool {
     ch.is_control() || matches!(ch, '\u{FEFF}' | '\u{2028}' | '\u{2029}')
+}
+
+/// Write the contents of a YAML double-quoted scalar, without surrounding quotes.
+pub(crate) fn escape_double_quoted(s: &str, out: &mut impl Write) -> fmt::Result {
+    for ch in s.chars() {
+        match ch {
+            '\\' => out.write_str("\\\\")?,
+            '"' => out.write_str("\\\"")?,
+            // YAML named escapes for common control characters.
+            '\0' => out.write_str("\\0")?,
+            '\u{7}' => out.write_str("\\a")?,
+            '\u{8}' => out.write_str("\\b")?,
+            '\t' => out.write_str("\\t")?,
+            '\n' => out.write_str("\\n")?,
+            '\u{b}' => out.write_str("\\v")?,
+            '\u{c}' => out.write_str("\\f")?,
+            '\r' => out.write_str("\\r")?,
+            '\u{1b}' => out.write_str("\\e")?,
+            // Unicode BOM should use the standard \u escape rather than Rust's \u{...}.
+            '\u{FEFF}' => out.write_str("\\uFEFF")?,
+            // YAML named escapes for Unicode separators.
+            '\u{0085}' => out.write_str("\\N")?,
+            '\u{2028}' => out.write_str("\\L")?,
+            '\u{2029}' => out.write_str("\\P")?,
+            c if (c as u32) <= 0xFF && (c.is_control() || (0x7F..=0x9F).contains(&(c as u32))) => {
+                write!(out, "\\x{:02X}", c as u32)?
+            }
+            c if (c as u32) <= 0xFFFF
+                && (c.is_control() || (0x7F..=0x9F).contains(&(c as u32))) =>
+            {
+                write!(out, "\\u{:04X}", c as u32)?
+            }
+            c => out.write_char(c)?,
+        }
+    }
+
+    Ok(())
 }
 
 fn contains_any_or_is_control(string: &str, values: &[char]) -> bool {

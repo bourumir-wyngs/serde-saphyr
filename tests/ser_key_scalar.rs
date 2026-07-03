@@ -128,7 +128,7 @@ fn map_keys_support_many_scalar_types_and_escape_when_needed() {
         "missing escaped newline key: {yaml}"
     );
     assert!(
-        yaml.contains("\"\\u0001\": 4\n"),
+        yaml.contains("\"\\x01\": 4\n"),
         "missing escaped control-char key: {yaml}"
     );
 }

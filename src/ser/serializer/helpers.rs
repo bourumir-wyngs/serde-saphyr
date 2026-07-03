@@ -1,7 +1,7 @@
 use serde_core::ser::{self, Serialize, Serializer};
 use std::fmt::{self, Write};
 
-use super::super::quoting::{is_plain_safe, is_plain_value_safe};
+use super::super::quoting::{escape_double_quoted, is_plain_safe, is_plain_value_safe};
 use super::super::zmij_format;
 use super::super::{Error, NAME_NULLABLE_TILDE, Result};
 
@@ -559,25 +559,8 @@ impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
             self.s.push_str(v);
         } else {
             self.s.push('"');
-            for ch in v.chars() {
-                match ch {
-                    '\\' => self.s.push_str("\\\\"),
-                    '"' => self.s.push_str("\\\""),
-                    '\n' => self.s.push_str("\\n"),
-                    '\r' => self.s.push_str("\\r"),
-                    '\t' => self.s.push_str("\\t"),
-                    '\u{0085}' => self.s.push_str("\\N"),
-                    '\u{2028}' => self.s.push_str("\\L"),
-                    '\u{2029}' => self.s.push_str("\\P"),
-                    '\u{FEFF}' => self.s.push_str("\\uFEFF"),
-                    c if c.is_control() => {
-                        use std::fmt::Write as _;
-                        // Writing into a String cannot fail; ignore the Result to avoid unwrap.
-                        let _ = write!(self.s, "\\u{:04X}", c as u32);
-                    }
-                    c => self.s.push(c),
-                }
-            }
+            // Writing into a String cannot fail.
+            let _ = escape_double_quoted(v, self.s);
             self.s.push('"');
         }
         Ok(())

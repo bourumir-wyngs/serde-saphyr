@@ -15,8 +15,8 @@ use crate::long_strings::{NAME_FOLD_STR, NAME_LIT_STR};
 
 use super::options::{CommentPosition, FOLDED_WRAP_CHARS, MIN_FOLD_CHARS, SerializerOptions};
 use super::quoting::{
-    is_auto_block_scalar_readable, is_block_scalar_content_safe, is_controll_which_needs_escaping,
-    is_plain_value_safe,
+    escape_double_quoted, is_auto_block_scalar_readable, is_block_scalar_content_safe,
+    is_controll_which_needs_escaping, is_plain_value_safe,
 };
 use super::{
     Error, NAME_DOUBLE_QUOTED, NAME_FLOW_MAP, NAME_FLOW_SEQ, NAME_NULLABLE_TILDE,
@@ -411,39 +411,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Write a double-quoted string with necessary escapes.
     fn write_quoted(&mut self, s: &str) -> Result<()> {
         self.out.write_char('"')?;
-        for ch in s.chars() {
-            match ch {
-                '\\' => self.out.write_str("\\\\")?,
-                '"' => self.out.write_str("\\\"")?,
-                // YAML named escapes for common control characters
-                '\0' => self.out.write_str("\\0")?,
-                '\u{7}' => self.out.write_str("\\a")?,
-                '\u{8}' => self.out.write_str("\\b")?,
-                '\t' => self.out.write_str("\\t")?,
-                '\n' => self.out.write_str("\\n")?,
-                '\u{b}' => self.out.write_str("\\v")?,
-                '\u{c}' => self.out.write_str("\\f")?,
-                '\r' => self.out.write_str("\\r")?,
-                '\u{1b}' => self.out.write_str("\\e")?,
-                // Unicode BOM should use the standard \u escape rather than Rust's \u{...}
-                '\u{FEFF}' => self.out.write_str("\\uFEFF")?,
-                // YAML named escapes for Unicode separators
-                '\u{0085}' => self.out.write_str("\\N")?,
-                '\u{2028}' => self.out.write_str("\\L")?,
-                '\u{2029}' => self.out.write_str("\\P")?,
-                c if (c as u32) <= 0xFF
-                    && (c.is_control() || (0x7F..=0x9F).contains(&(c as u32))) =>
-                {
-                    write!(self.out, "\\x{:02X}", c as u32)?
-                }
-                c if (c as u32) <= 0xFFFF
-                    && (c.is_control() || (0x7F..=0x9F).contains(&(c as u32))) =>
-                {
-                    write!(self.out, "\\u{:04X}", c as u32)?
-                }
-                c => self.out.write_char(c)?,
-            }
-        }
+        escape_double_quoted(s, self.out)?;
         self.out.write_char('"')?;
         Ok(())
     }
