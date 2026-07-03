@@ -496,7 +496,11 @@ fn to_source_span(src: &NamedSource<String>, location: &Location) -> Option<Sour
             let start_byte = if char_offset == 0 {
                 0
             } else {
-                s.char_indices().nth(char_offset).map(|(i, _)| i)?
+                match s.char_indices().nth(char_offset) {
+                    Some((i, _)) => i,
+                    None if char_offset == s.chars().count() => s.len(),
+                    None => return None,
+                }
             };
 
             // End in characters (exclusive)
@@ -978,6 +982,35 @@ mod tests {
         assert_eq!(labels[0].inner().offset(), start_byte);
         // Clamped to end of string
         assert_eq!(labels[0].inner().len(), yaml.len() - start_byte);
+    }
+
+    #[test]
+    fn span_at_source_end_keeps_zero_length_label() {
+        let yaml = "αβ\n";
+        let src: Arc<NamedSource<String>> =
+            Arc::new(NamedSource::new("input.yaml", yaml.to_owned()));
+        let end_char = yaml.chars().count();
+
+        let err = Error::Eof {
+            location: Location {
+                line: 2,
+                column: 1,
+                span: crate::Span::new(end_char as u64, 0),
+                source_id: 0,
+            },
+        };
+
+        let diag = build_diagnostic(
+            &err,
+            Arc::clone(&src),
+            RenderOptions::default().formatter,
+            &[],
+        );
+        let labels: Vec<_> = diag.labels().unwrap().collect();
+
+        assert_eq!(labels.len(), 1);
+        assert_eq!(labels[0].inner().offset(), yaml.len());
+        assert_eq!(labels[0].inner().len(), 0);
     }
 
     #[test]
