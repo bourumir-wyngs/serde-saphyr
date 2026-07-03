@@ -5,7 +5,7 @@ mod helpers;
 
 pub use self::compound::{MapSer, SeqSer, StructVariantSer, TupleSer};
 
-use self::helpers::StrCapture;
+use self::helpers::{StrCapture, scalar_key_to_string};
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use nohash_hasher::BuildNoHashHasher;
 use serde_core::ser::Error as _;
@@ -18,7 +18,7 @@ use crate::long_strings::{NAME_FOLD_STR, NAME_LIT_STR};
 use super::options::{CommentPosition, FOLDED_WRAP_CHARS, MIN_FOLD_CHARS, SerializerOptions};
 use super::quoting::{
     is_auto_block_scalar_readable, is_block_scalar_content_safe, is_controll_which_needs_escaping,
-    is_plain_safe, is_plain_value_safe,
+    is_plain_value_safe,
 };
 use super::{
     Error, NAME_DOUBLE_QUOTED, NAME_FLOW_MAP, NAME_FLOW_SEQ, NAME_NULLABLE_TILDE,
@@ -399,22 +399,15 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         Ok(())
     }
 
-    /// Write a scalar either as plain or as double-quoted with minimal escapes.
-    /// Called by most `serialize_*` primitive methods.
-    fn write_plain_or_quoted(&mut self, s: &str) -> Result<()> {
-        if self.quote_all {
-            // In quote_all mode: prefer single quotes, use double quotes when needed
-            if Self::needs_double_quotes(s) {
-                self.write_quoted(s)
-            } else {
-                self.write_single_quoted(s)
-            }
-        } else if is_plain_safe(s) {
-            self.out.write_str(s)?;
-            Ok(())
-        } else {
-            self.write_quoted(s)
-        }
+    /// Write a scalar in mapping-key position.
+    ///
+    /// Externally tagged enum variants are emitted as YAML mapping keys
+    /// (`Variant: ...`), so they need the same ambiguity checks as regular
+    /// map and struct keys.
+    fn write_key_scalar(&mut self, s: &str) -> Result<()> {
+        let text = scalar_key_to_string(&s, self.yaml_12)?;
+        self.out.write_str(&text)?;
+        Ok(())
     }
 
     /// Write a double-quoted string with necessary escapes.
@@ -1129,7 +1122,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             // not the serializer's current depth (which may still be the outer level).
             let base = self.current_map_depth.unwrap_or(self.depth);
             self.write_indent(base + 1)?;
-            self.write_plain_or_quoted(variant)?;
+            self.write_key_scalar(variant)?;
             // Write ':' without trailing space, then mark that a space may be needed
             // if the following value is a scalar.
             self.out.write_str(":")?;
@@ -1154,7 +1147,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             };
             self.write_indent(depth)?;
         }
-        self.write_plain_or_quoted(variant)?;
+        self.write_key_scalar(variant)?;
         // Write ':' without a space and defer spacing/newline to the value serializer.
         self.out.write_str(":")?;
         self.pending_space_after_colon = true;
@@ -1319,7 +1312,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             }
             let base = self.current_map_depth.unwrap_or(self.depth) + 1;
             self.write_indent(base)?;
-            self.write_plain_or_quoted(variant)?;
+            self.write_key_scalar(variant)?;
             self.out.write_str(":\n")?;
             self.at_line_start = true;
             self.pending_inline_map = false;
@@ -1340,7 +1333,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             };
             self.write_indent(depth)?;
         }
-        self.write_plain_or_quoted(variant)?;
+        self.write_key_scalar(variant)?;
         self.out.write_str(":\n")?;
         self.at_line_start = true;
         let mut depth_next = self.depth + 1;
@@ -1490,7 +1483,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             // Indent the variant name one level under the parent mapping.
             let base = self.current_map_depth.unwrap_or(self.depth) + 1;
             self.write_indent(base)?;
-            self.write_plain_or_quoted(variant)?;
+            self.write_key_scalar(variant)?;
             self.out.write_str(":\n")?;
             self.at_line_start = true;
             // A complex key stages an inline hint for its value; clear it before the fields.
@@ -1511,7 +1504,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             };
             self.write_indent(depth)?;
         }
-        self.write_plain_or_quoted(variant)?;
+        self.write_key_scalar(variant)?;
         self.out.write_str(":\n")?;
         self.at_line_start = true;
         // Default indentation for fields under a plain variant line.

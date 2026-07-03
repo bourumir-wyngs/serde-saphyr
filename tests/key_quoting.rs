@@ -9,6 +9,16 @@ enum TupleVariant {
     Pair(BTreeMap<String, i64>, Option<i64>),
 }
 
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
+enum BoolishVariant {
+    #[serde(rename = "yes")]
+    Newtype(i32),
+    #[serde(rename = "no")]
+    Tuple(i32, i32),
+    #[serde(rename = "on")]
+    Struct { value: i32 },
+}
+
 /// Round-trips every printable ASCII single-character key (32..=126)
 /// through serde_saphyr using the same pattern as the provided snippet.
 /// This ensures that characters like comma `,` are serialized in a way
@@ -89,6 +99,62 @@ fn over_long_key_with_tuple_variant_value() {
     let back: BTreeMap<String, TupleVariant> = from_str(&yaml)
         .unwrap_or_else(|e| panic!("explicit-key tuple value failed to parse back: {e}\n{yaml}"));
     assert_eq!(back, m);
+}
+
+#[test]
+fn enum_variant_mapping_keys_quote_yaml11_boolean_spellings() {
+    let cases = [
+        (
+            BoolishVariant::Newtype(1),
+            "\"yes\": 1\n",
+            "newtype variant",
+        ),
+        (
+            BoolishVariant::Tuple(1, 2),
+            "\"no\":\n  - 1\n  - 2\n",
+            "tuple variant",
+        ),
+        (
+            BoolishVariant::Struct { value: 1 },
+            "\"on\":\n  value: 1\n",
+            "struct variant",
+        ),
+    ];
+
+    for (value, expected, label) in cases {
+        let yaml = to_string(&value).unwrap_or_else(|err| panic!("serialize {label}: {err}"));
+        assert_eq!(yaml, expected, "{label} output changed");
+
+        let back: BoolishVariant =
+            from_str(&yaml).unwrap_or_else(|err| panic!("deserialize {label}: {err}\n{yaml}"));
+        assert_eq!(back, value, "{label} did not round-trip");
+    }
+}
+
+#[test]
+fn yaml12_enum_variant_mapping_keys_leave_yaml11_only_bools_plain() {
+    let yaml = serde_saphyr::to_string_with_options(
+        &BoolishVariant::Newtype(1),
+        serde_saphyr::ser_options! { yaml_12: true },
+    )
+    .expect("serialize yaml 1.2 newtype variant");
+
+    assert!(
+        yaml.starts_with("%YAML 1.2\n---\n"),
+        "missing YAML 1.2 directive: {yaml}"
+    );
+    assert!(
+        yaml.contains("\nyes: 1\n"),
+        "YAML 1.1-only bool spelling should stay plain in YAML 1.2 mode: {yaml}"
+    );
+    assert!(
+        !yaml.contains("\"yes\""),
+        "YAML 1.2 mode should not quote yes variant key: {yaml}"
+    );
+
+    let back: BoolishVariant =
+        from_str(&yaml).unwrap_or_else(|err| panic!("deserialize yaml 1.2 variant: {err}\n{yaml}"));
+    assert_eq!(back, BoolishVariant::Newtype(1));
 }
 
 #[test]
