@@ -79,7 +79,6 @@ pub use self::ser::api::{
 };
 
 #[cfg(feature = "deserialize")]
-#[path = "de/anchor_store.rs"]
 mod anchor_store;
 mod anchors;
 #[cfg(all(
@@ -91,15 +90,12 @@ mod anchors;
 #[doc(hidden)]
 pub mod cli;
 #[cfg(feature = "deserialize")]
-#[path = "de/mod.rs"]
 mod de;
+mod location;
 mod long_strings;
-#[path = "de/parse_scalars.rs"]
 mod parse_scalars;
 #[cfg(feature = "serialize")]
-#[path = "ser/mod.rs"]
 pub mod ser;
-#[path = "de/span.rs"]
 mod span;
 mod spanned;
 #[cfg(any(feature = "serialize", feature = "deserialize"))]
@@ -129,6 +125,4 @@ pub use de::{
     with_deserializer_from_str, with_deserializer_from_str_with_options,
 };
 
-#[path = "de/location.rs"]
-mod location;
 mod macros;
