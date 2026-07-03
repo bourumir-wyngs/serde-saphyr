@@ -54,8 +54,8 @@ fn validator_validation_error(errors: validator::ValidationErrors, locations: &P
 /// Deserialize a single YAML document with configurable [`Options`], and also
 /// return a map from validation paths to source [`Location`]s.
 #[allow(deprecated)]
-fn from_str_with_options_and_path_recorder_validated<'de, T, F>(
-    input: &'de str,
+fn from_str_with_options_and_path_recorder_validated<T, F>(
+    input: &str,
     options: Options,
     validate: F,
 ) -> Result<T, Error>
