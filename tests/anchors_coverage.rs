@@ -4,6 +4,7 @@
 //! Debug, Default, wrapping constructors, weak helpers, and Deserialize
 //! error paths for all anchor types.
 
+use std::cell::RefCell;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -691,6 +692,100 @@ fn rc_recursion_with_dangling() {
         RcRecursion::from(&r)
     };
     assert_eq!(rec.with(|v| v.x), None);
+}
+
+#[test]
+fn rc_recursion_with_uninitialized_placeholder_returns_none() {
+    let r = RcRecursive::<Val>(Rc::new(RefCell::new(None)));
+    let rec = RcRecursion::from(&r);
+
+    assert!(r.try_borrow_initialized().is_none());
+    assert_eq!(rec.with(|v| v.x), None);
+
+    *r.0.borrow_mut() = Some(Val { x: 12 });
+    assert_eq!(r.try_borrow_initialized().unwrap().x, 12);
+    assert_eq!(rec.with(|v| v.x), Some(12));
+}
+
+#[test]
+fn rc_recursion_with_during_deserialize_returns_none_until_root_is_initialized() {
+    use serde::de::{self, MapAccess, Visitor};
+    use std::fmt;
+
+    struct Node {
+        val: i32,
+        next: RcRecursion<Node>,
+        next_was_uninitialized_while_deserializing: bool,
+    }
+
+    impl<'de> Deserialize<'de> for Node {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            struct NodeVisitor;
+
+            impl<'de> Visitor<'de> for NodeVisitor {
+                type Value = Node;
+
+                fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                    f.write_str("a recursive node")
+                }
+
+                fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+                where
+                    A: MapAccess<'de>,
+                {
+                    let mut val = None;
+                    let mut next = None;
+                    let mut next_was_uninitialized = None;
+
+                    while let Some(key) = map.next_key::<String>()? {
+                        match key.as_str() {
+                            "val" => val = Some(map.next_value()?),
+                            "next" => {
+                                let rec: RcRecursion<Node> = map.next_value()?;
+                                next_was_uninitialized = Some(rec.with(|node| node.val).is_none());
+                                next = Some(rec);
+                            }
+                            _ => {
+                                let _ = map.next_value::<de::IgnoredAny>()?;
+                            }
+                        }
+                    }
+
+                    let val = val.ok_or_else(|| de::Error::missing_field("val"))?;
+                    let next = next.ok_or_else(|| de::Error::missing_field("next"))?;
+                    let next_was_uninitialized_while_deserializing =
+                        next_was_uninitialized.ok_or_else(|| de::Error::missing_field("next"))?;
+
+                    Ok(Node {
+                        val,
+                        next,
+                        next_was_uninitialized_while_deserializing,
+                    })
+                }
+            }
+
+            deserializer.deserialize_struct("Node", &["val", "next"], NodeVisitor)
+        }
+    }
+
+    #[derive(Deserialize)]
+    struct Doc {
+        root: RcRecursive<Node>,
+    }
+
+    let y = indoc! {r#"
+        root: &r
+          val: 7
+          next: *r
+    "#};
+    let doc: Doc = serde_saphyr::from_str(y).expect("recursive node should deserialize");
+    let root = doc.root.borrow();
+
+    assert!(root.next_was_uninitialized_while_deserializing);
+    assert_eq!(root.next.with(|node| node.val), Some(7));
 }
 
 #[test]

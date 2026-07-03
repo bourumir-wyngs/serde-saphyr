@@ -415,12 +415,25 @@ impl<T> RcRecursive<T> {
         RcRecursive(Rc::new(RefCell::new(Some(x))))
     }
 
-    /// Borrow the inner value
+    /// Try to borrow the inner value if the recursive placeholder has been initialized.
+    ///
+    /// Returns [`None`] while a recursive anchor is still being deserialized.
+    pub fn try_borrow_initialized(&self) -> Option<std::cell::Ref<'_, T>> {
+        let borrowed = self.0.as_ref().try_borrow().ok()?;
+        std::cell::Ref::filter_map(borrowed, Option::as_ref).ok()
+    }
+
+    /// Borrow the inner value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called while a recursive anchor placeholder is still uninitialized.
+    /// Use [`try_borrow_initialized`](Self::try_borrow_initialized) when early access is possible.
     pub fn borrow(&self) -> std::cell::Ref<'_, T> {
         let borrowed = self.0.as_ref().borrow();
-        std::cell::Ref::map(borrowed, |opt: &Option<T>| {
-            opt.as_ref().expect("recursive Rc anchor not initialized")
-        })
+        std::cell::Ref::filter_map(borrowed, Option::as_ref)
+            .ok()
+            .expect("recursive Rc anchor not initialized")
     }
 }
 
@@ -463,7 +476,7 @@ impl<T> RcRecursion<T> {
     #[inline]
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
         let upgraded = self.upgrade()?;
-        let borrowed = upgraded.borrow();
+        let borrowed = upgraded.try_borrow_initialized()?;
         Some(f(&borrowed))
     }
 
