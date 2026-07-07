@@ -778,6 +778,17 @@ pub enum Error {
         location: Location,
     },
 
+    /// In a typeless position (e.g. `deserialize_any` targeting `serde_json::Value`), a
+    /// scalar resolved to a non-finite float — NaN, ±Inf, or a decimal literal that
+    /// overflows `f64` to infinity (e.g. `1e999`) — and
+    /// [`Options::error_on_non_finite_float`](crate::options::Options::error_on_non_finite_float)
+    /// was set to reject it instead of converting it to a canonical string.
+    NonFiniteFloat {
+        /// The offending scalar text as it appeared in the source (e.g. `.nan`, `1e999`).
+        value: String,
+        location: Location,
+    },
+
     /// Serde-generated: invalid type.
     SerdeInvalidType {
         unexpected: String,
@@ -1334,6 +1345,7 @@ impl Error {
             | Error::InternalRecursionStackEmpty { location }
             | Error::RecursiveReferencesRequireWeakTypes { location }
             | Error::InvalidScalar { location, .. }
+            | Error::NonFiniteFloat { location, .. }
             | Error::SerdeInvalidType { location, .. }
             | Error::SerdeInvalidValue { location, .. }
             | Error::SerdeUnknownVariant { location, .. }
@@ -1424,6 +1436,7 @@ impl Error {
             | Error::InternalRecursionStackEmpty { location }
             | Error::RecursiveReferencesRequireWeakTypes { location }
             | Error::InvalidScalar { location, .. }
+            | Error::NonFiniteFloat { location, .. }
             | Error::SerdeInvalidType { location, .. }
             | Error::SerdeInvalidValue { location, .. }
             | Error::SerdeUnknownVariant { location, .. }
@@ -1523,6 +1536,7 @@ impl Error {
             | Error::InternalRecursionStackEmpty { location }
             | Error::RecursiveReferencesRequireWeakTypes { location }
             | Error::InvalidScalar { location, .. }
+            | Error::NonFiniteFloat { location, .. }
             | Error::SerdeInvalidType { location, .. }
             | Error::SerdeInvalidValue { location, .. }
             | Error::SerdeUnknownVariant { location, .. }

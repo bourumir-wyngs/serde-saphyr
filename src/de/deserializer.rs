@@ -34,6 +34,7 @@ use crate::location::Locations;
 use crate::parse_scalars::{
     leading_zero_decimal, maybe_not_string, parse_int_signed, parse_int_unsigned,
     parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish, scalar_is_nullish_for_option,
+    try_parse_float_incl_overflow,
 };
 
 type FastHashSet<T> = HashSet<T, RandomState>;
@@ -757,15 +758,21 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 }
             }
 
-            // Try float per YAML 1.2 forms.
-            if let Ok(v) = parse_yaml12_float::<f64>(&s, location, tag, self.cfg.angle_conversions)
+            // Try float per YAML 1.2 forms, treating an f64-overflowing literal (e.g.
+            // `1e999`) as non-finite too, so both shapes are handled consistently below.
+            if let Some(v) =
+                try_parse_float_incl_overflow(&s, location, tag, self.cfg.angle_conversions)
             {
                 // serde_json::Value (and possibly other typeless consumers) cannot represent
-                // non-finite floats. In `deserialize_any`, prefer returning a canonical string
-                // for NaN/±Inf so that these values round-trip as strings rather than becoming
-                // null or erroring. Concrete f32/f64 entry points still yield the float values.
+                // non-finite floats. In `deserialize_any`, by default we return a canonical
+                // string for NaN/±Inf so that these values round-trip as strings rather than
+                // becoming null or erroring. Concrete f32/f64 entry points still yield the
+                // float values. If `error_on_non_finite_float` is set, reject instead.
                 if v.is_finite() {
                     return visitor.visit_f64(v);
+                }
+                if self.cfg.error_on_non_finite_float {
+                    return Err(Error::NonFiniteFloat { value: s, location });
                 }
                 let canon = if v.is_nan() {
                     ".nan".to_string()

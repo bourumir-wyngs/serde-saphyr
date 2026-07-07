@@ -158,6 +158,7 @@ fn cfg_and_replay_events_follow_options_and_reference_overrides() {
         angle_conversions: true,
         ignore_binary_tag_for_string: true,
         no_schema: true,
+        error_on_non_finite_float: true,
         ..Options::default()
     };
 
@@ -169,6 +170,7 @@ fn cfg_and_replay_events_follow_options_and_reference_overrides() {
     assert!(cfg.angle_conversions);
     assert!(cfg.ignore_binary_tag_for_string);
     assert!(cfg.no_schema);
+    assert!(cfg.error_on_non_finite_float);
 
     assert_eq!(Ev::default().location(), Location::UNKNOWN);
 

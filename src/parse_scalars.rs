@@ -338,6 +338,44 @@ where
 }
 
 #[cfg(feature = "deserialize")]
+/// Like [`parse_yaml12_float`], but a decimal/exponential literal that overflows `f64` to
+/// infinity (e.g. `1e999`, `9e400`) is treated as a successful non-finite parse instead of
+/// an error.
+///
+/// This is used only by `deserialize_any`'s typeless path (e.g. `serde_json::Value`), where
+/// non-finite floats are represented as canonical strings — or, when
+/// `error_on_non_finite_float` is set, rejected — rather than causing an "invalid floating
+/// point" parse error. Elsewhere, overflowing literals continue to be rejected as invalid
+/// floats via [`parse_yaml12_float`], so this function must not replace it as the general
+/// entry point.
+///
+/// Deliberately narrower than a bare `str::parse::<f64>()`: Rust's parser also accepts
+/// alphabetic spellings (`inf`, `infinity`, `nan`) that YAML/serde-saphyr correctly keep as
+/// plain strings, so only numeral-shaped literals (optional sign, then a leading digit) are
+/// considered here.
+pub(crate) fn try_parse_float_incl_overflow(
+    s: &str,
+    location: Location,
+    tag: SfTag,
+    angle_conversions: bool,
+) -> Option<f64> {
+    if let Ok(v) = parse_yaml12_float::<f64>(s, location, tag, angle_conversions) {
+        return Some(v);
+    }
+
+    let t = s.trim();
+    let unsigned = t.strip_prefix(['+', '-']).unwrap_or(t);
+    if !unsigned.as_bytes().first().is_some_and(u8::is_ascii_digit) {
+        return None;
+    }
+
+    match t.parse::<f64>() {
+        Ok(v) if v.is_infinite() => Some(v),
+        _ => None,
+    }
+}
+
+#[cfg(feature = "deserialize")]
 /// If we are not using Rust struct as schema, check if we should not be quoting the value.
 pub(crate) fn maybe_not_string(s: &str, style: &ScalarStyle, strict_booleans: bool) -> bool {
     let location = Location::UNKNOWN;

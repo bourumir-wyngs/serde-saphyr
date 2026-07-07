@@ -241,6 +241,17 @@ pub struct Options {
     )]
     pub no_schema: bool,
 
+    /// If true, `deserialize_any` (typeless targets like `serde_json::Value`) errors on a
+    /// non-finite float (NaN, ±Inf, or a decimal literal that overflows `f64` to infinity,
+    /// e.g. `1e999`) instead of converting it to a string. Concrete `f32`/`f64` targets are
+    /// unaffected by this flag; they continue to receive the real float value either way.
+    /// Default: false (round-trip non-finite floats as canonical strings: `.nan`, `.inf`,
+    /// `-.inf`).
+    #[deprecated(
+        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
+    )]
+    pub error_on_non_finite_float: bool,
+
     /// If true (default), public APIs that have access to the original YAML input
     /// will wrap returned errors with a snippet wrapper, enabling rustc-like snippet
     /// rendering when a location is available.
@@ -498,6 +509,7 @@ impl Default for Options {
             angle_conversions: false,
             ignore_binary_tag_for_string: false,
             no_schema: false,
+            error_on_non_finite_float: false,
             with_snippet: true,
             crop_radius: 64,
             require_indent: RequireIndent::Unchecked,
@@ -537,6 +549,10 @@ impl std::fmt::Debug for Options {
             )
             .field("angle_conversions", &self.angle_conversions)
             .field("no_schema", &self.no_schema)
+            .field(
+                "error_on_non_finite_float",
+                &self.error_on_non_finite_float,
+            )
             .field("with_snippet", &self.with_snippet)
             .field("crop_radius", &self.crop_radius)
             .field("require_indent", &self.require_indent)
@@ -607,6 +623,7 @@ mod tests {
         assert!(!opts.ignore_binary_tag_for_string);
         assert!(!opts.angle_conversions);
         assert!(!opts.no_schema);
+        assert!(!opts.error_on_non_finite_float);
         assert!(opts.with_snippet);
         assert_eq!(opts.crop_radius, 64);
         assert_eq!(opts.require_indent, RequireIndent::Unchecked);

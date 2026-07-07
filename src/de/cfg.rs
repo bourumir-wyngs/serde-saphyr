@@ -19,6 +19,9 @@ pub(crate) struct Cfg {
     pub(crate) ignore_binary_tag_for_string: bool,
     /// Do not take into String type that looks like number or boolean (require quoting)
     pub(crate) no_schema: bool,
+    /// If true, `deserialize_any` errors on a non-finite float instead of converting it to a
+    /// canonical string.
+    pub(crate) error_on_non_finite_float: bool,
     /// Maximum container depth from the configured budget. `None` means budget enforcement
     /// is disabled for deserializer recursion.
     pub(crate) max_depth: Option<usize>,
@@ -38,6 +41,7 @@ impl Cfg {
             angle_conversions: options.angle_conversions,
             ignore_binary_tag_for_string: options.ignore_binary_tag_for_string,
             no_schema: options.no_schema,
+            error_on_non_finite_float: options.error_on_non_finite_float,
             max_depth: options.budget.as_ref().map(|budget| budget.max_depth),
             depth: 0,
         }
