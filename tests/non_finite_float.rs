@@ -43,8 +43,8 @@ fn error_on_non_finite_float_leaves_finite_numbers_and_strings_alone() {
         error_on_non_finite_float: true,
     };
 
-    let v: Value = serde_saphyr::from_str_with_options("3.14", opts.clone()).expect("finite ok");
-    assert_eq!(v, Value::from(3.14));
+    let v: Value = serde_saphyr::from_str_with_options("2.5", opts.clone()).expect("finite ok");
+    assert_eq!(v, Value::from(2.5));
 
     // A hostname-shaped string must not be mistaken for an overflowing numeral, since it
     // doesn't start with a digit (or sign followed by a digit).
