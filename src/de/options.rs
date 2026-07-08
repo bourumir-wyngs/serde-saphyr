@@ -254,6 +254,7 @@ pub struct Options {
     ///
     /// Default: false (round-trip non-finite floats as canonical strings: `.nan`, `.inf`,
     /// `-.inf`).
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
     #[deprecated(
         note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
     )]

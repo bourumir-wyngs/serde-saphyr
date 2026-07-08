@@ -1,4 +1,4 @@
-#![cfg(all(feature = "serialize", feature = "deserialize"))]
+#![cfg(feature = "deserialize")]
 use serde_json::Value;
 #[cfg(feature = "properties")]
 use std::collections::HashMap;
