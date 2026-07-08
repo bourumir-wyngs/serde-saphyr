@@ -1,5 +1,6 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 use rstest::rstest;
+use serde_saphyr::Error;
 
 #[rstest]
 #[case::plain_null("null")]
@@ -8,11 +9,10 @@ use rstest::rstest;
 fn string_from_null_errors(#[case] yaml: &str) {
     let err =
         serde_saphyr::from_str::<String>(yaml).expect_err("expected error for null -> String");
-    let msg = format!("{}", err);
-    assert!(
-        msg.contains("cannot deserialize null into string"),
-        "unexpected error message: {msg}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        Error::NullIntoString { .. }
+    ));
 }
 
 #[test]

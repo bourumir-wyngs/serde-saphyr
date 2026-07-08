@@ -3,8 +3,8 @@
 
 use serde::Deserialize;
 use serde_saphyr::{
-    Error, IncludeRequest, IncludeResolveError, InputSource, Location, SafeFileReadMode,
-    SafeFileResolver, SymlinkPolicy, from_str_with_options,
+    Error, IncludeRequest, IncludeResolveError, InputSource, Location, ResolveProblem,
+    SafeFileReadMode, SafeFileResolver, SymlinkPolicy, from_str_with_options,
 };
 use std::fs;
 use std::path::Path;
@@ -54,95 +54,20 @@ fn request<'a>(spec: &'a str, from_name: &'a str, from_id: Option<&'a str>) -> I
     }
 }
 
-fn include_error_message(err: serde_saphyr::IncludeResolveError) -> String {
+fn resolver_problem(err: &Error) -> &ResolveProblem {
+    match err.without_snippet() {
+        Error::ResolverError {
+            error: IncludeResolveError::FileInclude(problem),
+            ..
+        } => problem,
+        other => panic!("expected file resolver error, got {other:?}"),
+    }
+}
+
+fn include_problem(err: &IncludeResolveError) -> &ResolveProblem {
     match err {
-        serde_saphyr::IncludeResolveError::Message(msg) => msg,
-        serde_saphyr::IncludeResolveError::Io(e) => e.to_string(),
-        serde_saphyr::IncludeResolveError::SizeLimitExceeded(size, limit) => {
-            format!("include size {size} bytes exceeds remaining size limit {limit} bytes")
-        }
-        serde_saphyr::IncludeResolveError::FileInclude(problem) => match &*problem {
-            serde_saphyr::ResolveProblem::ResolveFailed {
-                spec,
-                base_dir,
-                err,
-            } => {
-                format!(
-                    "failed to resolve include '{}' from '{}': {}",
-                    spec, base_dir, err
-                )
-            }
-            serde_saphyr::ResolveProblem::TargetNotRegularFile { target } => {
-                format!("include target '{}' is not a regular file", target)
-            }
-            serde_saphyr::ResolveProblem::TargetIsRootFile { spec } => {
-                format!(
-                    "include target '{}' resolves to the configured root file itself",
-                    spec
-                )
-            }
-            serde_saphyr::ResolveProblem::ParentIdNotAbsoluteCanonical { parent_id } => {
-                format!(
-                    "SafeFileResolver expected parent include id to be an absolute canonical path, got '{}'",
-                    parent_id
-                )
-            }
-            serde_saphyr::ResolveProblem::ParentResolveFailed {
-                parent_id,
-                from_name,
-                err,
-            } => {
-                format!(
-                    "failed to resolve parent include source '{}' (from '{}'): {}",
-                    parent_id, from_name, err
-                )
-            }
-            serde_saphyr::ResolveProblem::ParentNotRegularFile { parent } => {
-                format!("include parent '{}' is not a regular file", parent)
-            }
-            serde_saphyr::ResolveProblem::ParentHasNoDirectory { parent } => {
-                format!(
-                    "include parent '{}' does not have a parent directory",
-                    parent
-                )
-            }
-            serde_saphyr::ResolveProblem::ResolvesOutsideRoot { spec, root } => {
-                format!(
-                    "include '{}' resolves outside the configured root '{}'",
-                    spec, root
-                )
-            }
-            serde_saphyr::ResolveProblem::TraversesSymlink { spec } => {
-                format!(
-                    "include '{}' traverses a symlink, which is disabled by policy",
-                    spec
-                )
-            }
-            serde_saphyr::ResolveProblem::AbsolutePathNotAllowed { spec } => {
-                format!("absolute include paths are not allowed: {}", spec)
-            }
-            serde_saphyr::ResolveProblem::EmptyPath => "include path must not be empty".to_string(),
-            serde_saphyr::ResolveProblem::InvalidExtension { spec } => {
-                format!(
-                    "include target '{}' does not have a valid YAML extension (.yml or .yaml)",
-                    spec
-                )
-            }
-            serde_saphyr::ResolveProblem::HiddenFile { spec } => {
-                format!(
-                    "include target '{}' is a hidden file, which is not allowed",
-                    spec
-                )
-            }
-            serde_saphyr::ResolveProblem::EmptyFragment => {
-                "include fragment must not be empty".to_string()
-            }
-            serde_saphyr::ResolveProblem::FragmentContainsHash { spec } => {
-                format!("include fragment must not contain '#': {}", spec)
-            }
-            _ => "unknown resolve problem".to_string(),
-        },
-        _ => "unknown error".to_string(),
+        IncludeResolveError::FileInclude(problem) => problem,
+        other => panic!("expected file resolver error, got {other:?}"),
     }
 }
 
@@ -175,15 +100,10 @@ fn safe_file_resolver_rejects_invalid_extension() {
 
     let err =
         from_str_with_options::<ScalarConfig>("foo: !include value.txt\n", options).unwrap_err();
-    let inner_err = match err {
-        serde_saphyr::Error::WithSnippet { error, .. } => *error,
-        e => e,
-    };
-    let msg = include_error_message(match inner_err {
-        serde_saphyr::Error::ResolverError { error, .. } => error,
-        e => panic!("expected ResolverError, got {:?}", e),
-    });
-    assert!(msg.contains("does not have a valid YAML extension"));
+    assert!(matches!(
+        resolver_problem(&err),
+        ResolveProblem::InvalidExtension { spec } if spec == "value.txt"
+    ));
 }
 
 #[test]
@@ -196,15 +116,10 @@ fn safe_file_resolver_rejects_hidden_files() {
 
     let err =
         from_str_with_options::<ScalarConfig>("foo: !include .hidden.yml\n", options).unwrap_err();
-    let inner_err = match err {
-        serde_saphyr::Error::WithSnippet { error, .. } => *error,
-        e => e,
-    };
-    let msg = include_error_message(match inner_err {
-        serde_saphyr::Error::ResolverError { error, .. } => error,
-        e => panic!("expected ResolverError, got {:?}", e),
-    });
-    assert!(msg.contains("is a hidden file, which is not allowed"));
+    assert!(matches!(
+        resolver_problem(&err),
+        ResolveProblem::HiddenFile { spec } if spec == ".hidden.yml"
+    ));
 }
 
 #[test]
@@ -217,15 +132,10 @@ fn safe_file_resolver_rejects_files_inside_hidden_directories() {
 
     let err = from_str_with_options::<ScalarConfig>("foo: !include .hidden/value.yaml\n", options)
         .unwrap_err();
-    let inner_err = match err {
-        serde_saphyr::Error::WithSnippet { error, .. } => *error,
-        e => e,
-    };
-    let msg = include_error_message(match inner_err {
-        serde_saphyr::Error::ResolverError { error, .. } => error,
-        e => panic!("expected ResolverError, got {:?}", e),
-    });
-    assert!(msg.contains("is a hidden file, which is not allowed"));
+    assert!(matches!(
+        resolver_problem(&err),
+        ResolveProblem::HiddenFile { spec } if spec == ".hidden/value.yaml"
+    ));
 }
 
 #[test]
@@ -363,8 +273,10 @@ fn safe_file_resolver_rejects_escape() {
     let err = resolver
         .resolve(request("../outside.yaml", "", None))
         .unwrap_err();
-    let msg = include_error_message(err);
-    assert!(msg.contains("outside the configured root"), "{}", msg);
+    assert!(matches!(
+        include_problem(&err),
+        ResolveProblem::ResolvesOutsideRoot { spec, .. } if spec == "../outside.yaml"
+    ));
 }
 
 #[test]
@@ -413,8 +325,10 @@ fn safe_file_resolver_rejects_self_include() {
     let err = resolver
         .resolve(request("root.yaml", "", None))
         .unwrap_err();
-    let msg = include_error_message(err);
-    assert!(msg.contains("configured root file itself"), "{}", msg);
+    assert!(matches!(
+        include_problem(&err),
+        ResolveProblem::TargetIsRootFile { spec } if spec == "root.yaml"
+    ));
 }
 
 #[test]
@@ -461,8 +375,10 @@ fn safe_file_resolver_default_symlink_policy_is_reject() {
     let err = resolver
         .resolve(request("link.yaml", "", None))
         .unwrap_err();
-    let msg = include_error_message(err);
-    assert!(msg.contains("traverses a symlink"), "{}", msg);
+    assert!(matches!(
+        include_problem(&err),
+        ResolveProblem::TraversesSymlink { spec } if spec == "link.yaml"
+    ));
 }
 
 #[cfg(unix)]
@@ -502,12 +418,10 @@ fn safe_file_resolver_follow_within_root_checks_canonical_extension() {
     let err = resolver
         .resolve(request("config.yaml", "", None))
         .unwrap_err();
-    let msg = include_error_message(err);
-    assert!(
-        msg.contains("does not have a valid YAML extension"),
-        "{}",
-        msg
-    );
+    assert!(matches!(
+        include_problem(&err),
+        ResolveProblem::InvalidExtension { .. }
+    ));
 }
 
 #[cfg(unix)]
@@ -564,8 +478,10 @@ fn safe_file_resolver_rejects_symlink_escape_even_when_following_symlinks() {
     let err = resolver
         .resolve(request("link.yaml", "", None))
         .unwrap_err();
-    let msg = include_error_message(err);
-    assert!(msg.contains("outside the configured root"), "{}", msg);
+    assert!(matches!(
+        include_problem(&err),
+        ResolveProblem::ResolvesOutsideRoot { spec, .. } if spec == "link.yaml"
+    ));
 }
 
 #[cfg(unix)]
@@ -584,6 +500,8 @@ fn safe_file_resolver_symlink_policy_reject() {
     let err = resolver
         .resolve(request("link.yaml", "", None))
         .unwrap_err();
-    let msg = include_error_message(err);
-    assert!(msg.contains("traverses a symlink"), "{}", msg);
+    assert!(matches!(
+        include_problem(&err),
+        ResolveProblem::TraversesSymlink { spec } if spec == "link.yaml"
+    ));
 }

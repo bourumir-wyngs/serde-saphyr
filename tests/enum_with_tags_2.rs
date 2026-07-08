@@ -55,10 +55,11 @@ value: !Pair
 fn test_tagged_pair_wrong_shape_scalar_should_error() {
     // arity>1 should *not* accept scalar
     let err = serde_saphyr::from_str::<Context>(r#"value: !Pair "a""#).unwrap_err();
+    let err = err.without_snippet();
     assert!(matches!(
-        err.without_snippet(),
+        err,
         serde_saphyr::Error::Unexpected {
-            expected: "sequence",
+            expected: "sequence start",
             ..
         }
     ));

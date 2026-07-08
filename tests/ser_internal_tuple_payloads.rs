@@ -84,7 +84,6 @@ fn internal_yaml_commented_payload_requires_string_comment() {
 
     assert!(matches!(
         err,
-        serde_saphyr::ser_error::Error::Unexpected { msg }
-            if msg == "missing string" || msg == "unexpected"
+        serde_saphyr::ser_error::Error::Unexpected { msg } if msg == "str expected"
     ));
 }

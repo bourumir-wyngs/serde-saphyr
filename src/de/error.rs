@@ -590,6 +590,12 @@ pub enum Error {
         location: Location,
     },
 
+    /// Invalid deserializer options were provided.
+    InvalidOptions {
+        msg: String,
+        location: Location,
+    },
+
     /// Text primarily produced by a dependency (parser / validators).
     ///
     /// Renderers should call [`Localizer::override_external_message`] to allow callers
@@ -1176,6 +1182,16 @@ impl Error {
         }
     }
 
+    /// Construct an `InvalidOptions` error with no known source location.
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn invalid_options<S: Into<String>>(s: S) -> Self {
+        Error::InvalidOptions {
+            msg: s.into(),
+            location: Location::UNKNOWN,
+        }
+    }
+
     /// Construct a `QuotingRequired` error with no known location.
     /// Called by:
     /// - Deserializer, when deserializing into string if no_schema set to true.
@@ -1301,6 +1317,7 @@ impl Error {
     pub(crate) fn with_location(mut self, set_location: Location) -> Self {
         match &mut self {
             Error::Message { location, .. }
+            | Error::InvalidOptions { location, .. }
             | Error::ExternalMessage { location, .. }
             | Error::Eof { location }
             | Error::MultipleDocuments { location, .. }
@@ -1391,6 +1408,7 @@ impl Error {
     pub fn location(&self) -> Option<Location> {
         match self {
             Error::Message { location, .. }
+            | Error::InvalidOptions { location, .. }
             | Error::ExternalMessage { location, .. }
             | Error::Eof { location }
             | Error::MultipleDocuments { location, .. }
@@ -1490,6 +1508,7 @@ impl Error {
     pub fn locations(&self) -> Option<Locations> {
         match self {
             Error::Message { location, .. }
+            | Error::InvalidOptions { location, .. }
             | Error::ExternalMessage { location, .. }
             | Error::Eof { location }
             | Error::MultipleDocuments { location, .. }
@@ -1582,6 +1601,13 @@ impl Error {
         // Note: the parser message usually contains an anchor *name*. We intentionally do not
         // attempt to parse or store it, to keep this variant free of best-effort identifiers.
         let info = err.info();
+        if info.starts_with("multiple documents not supported here") {
+            return Error::MultipleDocuments {
+                hint: "only one document is supported in this context",
+                location,
+            };
+        }
+
         if info.to_ascii_lowercase().contains("unknown anchor") {
             return Error::UnknownAnchor { location };
         }
