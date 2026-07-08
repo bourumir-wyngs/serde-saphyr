@@ -59,14 +59,26 @@ fn error_on_non_finite_float_leaves_finite_numbers_and_strings_alone() {
 
 #[test]
 fn error_on_non_finite_float_does_not_affect_concrete_float_targets() {
-    // Concrete f32/f64 targets should still receive the actual non-finite value rather
-    // than erroring, regardless of `error_on_non_finite_float` (which only governs the
-    // typeless `deserialize_any` path).
+    // Concrete f32/f64 targets still receive YAML non-finite spellings as actual
+    // non-finite values. Overflowing decimal literals remain invalid for concrete
+    // float targets.
     let opts = serde_saphyr::options! {
         error_on_non_finite_float: true,
     };
     let v: f64 = serde_saphyr::from_str_with_options(".inf", opts).expect("concrete f64 ok");
     assert!(v.is_infinite() && v.is_sign_positive());
+}
+
+#[test]
+fn error_on_non_finite_float_does_not_accept_concrete_float_overflow() {
+    let opts = serde_saphyr::options! {
+        error_on_non_finite_float: true,
+    };
+    let err = serde_saphyr::from_str_with_options::<f64>("1e999", opts)
+        .expect_err("overflowing decimal literals remain invalid for concrete float targets");
+
+    let msg = err.to_string();
+    assert!(msg.contains("invalid floating point"), "unexpected error: {msg}");
 }
 
 #[test]

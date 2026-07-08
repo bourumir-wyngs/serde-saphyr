@@ -243,8 +243,15 @@ pub struct Options {
 
     /// If true, `deserialize_any` (typeless targets like `serde_json::Value`) errors on a
     /// non-finite float (NaN, ±Inf, or a decimal literal that overflows `f64` to infinity,
-    /// e.g. `1e999`) instead of converting it to a string. Concrete `f32`/`f64` targets are
-    /// unaffected by this flag; they continue to receive the real float value either way.
+    /// e.g. `1e999`) instead of converting it to a string.
+    ///
+    /// Concrete `f32`/`f64` targets are unaffected by this flag for YAML non-finite
+    /// spellings such as `.nan`, `.inf`, and `-.inf`; those spellings continue to
+    /// deserialize as non-finite floats.
+    ///
+    /// Decimal/exponential literals that overflow `f64`, such as `1e999`, remain
+    /// invalid for concrete `f32`/`f64` targets.
+    ///
     /// Default: false (round-trip non-finite floats as canonical strings: `.nan`, `.inf`,
     /// `-.inf`).
     #[deprecated(

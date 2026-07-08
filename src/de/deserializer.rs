@@ -770,11 +770,10 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 view.tag,
                 self.cfg.angle_conversions,
             ) {
-                // serde_json::Value (and possibly other typeless consumers) cannot represent
-                // non-finite floats. In `deserialize_any`, by default we return a canonical
-                // string for NaN/±Inf so that these values round-trip as strings rather than
-                // becoming null or erroring. Concrete f32/f64 entry points still yield the
-                // float values. If `error_on_non_finite_float` is set, reject instead.
+                // Typeless consumers such as serde_json::Value cannot represent non-finite
+                // floats. By default, deserialize_any returns a canonical string for these
+                // values so they do not become null or fail later. When configured, reject
+                // the scalar here instead.
                 if v.is_finite() {
                     return visitor.visit_f64(v);
                 }
