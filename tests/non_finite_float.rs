@@ -1,5 +1,7 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde_json::Value;
+#[cfg(feature = "properties")]
+use std::collections::HashMap;
 
 #[test]
 fn default_round_trips_non_finite_floats_as_strings() {
@@ -31,9 +33,11 @@ fn error_on_non_finite_float_rejects_nan_inf_and_overflow() {
         error_on_non_finite_float: true,
     };
     for src in ["x: .nan", "x: .inf", "x: -.inf", "x: 1e999", "x: 9e400"] {
-        let r: Result<Value, _> =
-            serde_saphyr::from_str_with_options(src, opts.clone());
-        assert!(r.is_err(), "{src:?} must error under error_on_non_finite_float");
+        let r: Result<Value, _> = serde_saphyr::from_str_with_options(src, opts.clone());
+        assert!(
+            r.is_err(),
+            "{src:?} must error under error_on_non_finite_float"
+        );
     }
 }
 
@@ -74,4 +78,23 @@ fn error_on_non_finite_float_message_mentions_the_offending_value() {
         .expect_err("overflowing literal should error");
     let msg = err.to_string();
     assert!(msg.contains("1e999"), "unexpected error: {msg}");
+}
+
+#[cfg(feature = "properties")]
+#[test]
+fn error_on_non_finite_float_reports_raw_interpolated_scalar() {
+    let mut props = HashMap::new();
+    props.insert("TIMEOUT".to_string(), "1e999".to_string());
+
+    let opts = serde_saphyr::options! {
+        error_on_non_finite_float: true,
+    }
+    .with_properties(props);
+
+    let err = serde_saphyr::from_str_with_options::<Value>("${TIMEOUT}\n", opts)
+        .expect_err("resolved overflowing literal should error");
+
+    let msg = err.to_string();
+    assert!(msg.contains("${TIMEOUT}"), "raw scalar missing: {msg}");
+    assert!(!msg.contains("1e999"), "resolved value leaked: {msg}");
 }
