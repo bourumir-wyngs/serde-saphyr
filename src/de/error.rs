@@ -778,6 +778,17 @@ pub enum Error {
         location: Location,
     },
 
+    /// In a typeless position (e.g. `deserialize_any` targeting `serde_json::Value`), a
+    /// scalar resolved to a non-finite float — NaN, ±Inf, or a decimal literal that
+    /// overflows `f64` to infinity (e.g. `1e999`) — and
+    /// [`Options::reject_non_finite_typeless_float`](crate::options::Options::reject_non_finite_typeless_float)
+    /// is enabled, rejecting it instead of converting it to a canonical string.
+    NonFiniteFloat {
+        /// The offending scalar text as it appeared in the source (e.g. `.nan`, `1e999`).
+        value: String,
+        location: Location,
+    },
+
     /// Serde-generated: invalid type.
     SerdeInvalidType {
         unexpected: String,
@@ -1334,6 +1345,7 @@ impl Error {
             | Error::InternalRecursionStackEmpty { location }
             | Error::RecursiveReferencesRequireWeakTypes { location }
             | Error::InvalidScalar { location, .. }
+            | Error::NonFiniteFloat { location, .. }
             | Error::SerdeInvalidType { location, .. }
             | Error::SerdeInvalidValue { location, .. }
             | Error::SerdeUnknownVariant { location, .. }
@@ -1424,6 +1436,7 @@ impl Error {
             | Error::InternalRecursionStackEmpty { location }
             | Error::RecursiveReferencesRequireWeakTypes { location }
             | Error::InvalidScalar { location, .. }
+            | Error::NonFiniteFloat { location, .. }
             | Error::SerdeInvalidType { location, .. }
             | Error::SerdeInvalidValue { location, .. }
             | Error::SerdeUnknownVariant { location, .. }
@@ -1523,6 +1536,7 @@ impl Error {
             | Error::InternalRecursionStackEmpty { location }
             | Error::RecursiveReferencesRequireWeakTypes { location }
             | Error::InvalidScalar { location, .. }
+            | Error::NonFiniteFloat { location, .. }
             | Error::SerdeInvalidType { location, .. }
             | Error::SerdeInvalidValue { location, .. }
             | Error::SerdeUnknownVariant { location, .. }
@@ -2289,6 +2303,27 @@ mod tests {
     fn merge_key_not_allowed_location_helpers() {
         let l = Location::new(4, 2);
         let err = Error::MergeKeyNotAllowed { location: l };
+        assert_eq!(err.location(), Some(l));
+        assert_eq!(
+            err.locations(),
+            Some(Locations {
+                reference_location: l,
+                defined_location: l,
+            })
+        );
+
+        let updated = err.with_location(Location::new(5, 9));
+        assert_eq!(updated.location(), Some(Location::new(5, 9)));
+    }
+
+    #[test]
+    fn serde_invalid_type_location_helpers() {
+        let l = Location::new(4, 2);
+        let err = Error::SerdeInvalidType {
+            unexpected: "string".to_owned(),
+            expected: "an integer".to_owned(),
+            location: l,
+        };
         assert_eq!(err.location(), Some(l));
         assert_eq!(
             err.locations(),

@@ -34,6 +34,7 @@ use crate::location::Locations;
 use crate::parse_scalars::{
     leading_zero_decimal, maybe_not_string, parse_int_signed, parse_int_unsigned,
     parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish, scalar_is_nullish_for_option,
+    try_parse_float_incl_overflow,
 };
 
 type FastHashSet<T> = HashSet<T, RandomState>;
@@ -720,23 +721,27 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             }
 
             // Consume the scalar and attempt typed parses in order: bool -> int -> float.
-            let (s, tag, location) = self.take_scalar_event()?;
+            // Parse the effective value, but keep the raw source text for diagnostics.
+            let view = self.take_scalar_view()?;
+            let raw = view.raw.into_owned();
+            let effective = view.effective.into_owned();
+            let location = view.location;
 
             // Try booleans.
             if self.cfg.strict_booleans {
-                let tt = s.trim();
+                let tt = effective.trim();
                 if tt.eq_ignore_ascii_case("true") {
                     return visitor.visit_bool(true);
                 } else if tt.eq_ignore_ascii_case("false") {
                     return visitor.visit_bool(false);
                 }
                 // otherwise not a bool in strict mode; continue to numbers/float/string
-            } else if let Ok(b) = parse_yaml11_bool(&s) {
+            } else if let Ok(b) = parse_yaml11_bool(&effective) {
                 return visitor.visit_bool(b);
             }
 
             // Try integers: prefer signed if leading '-', else unsigned. Fallbacks use 64-bit.
-            let t = s.trim();
+            let t = effective.trim();
             if t.starts_with('-') && !leading_zero_decimal(t) {
                 if let Ok(v) =
                     parse_int_signed::<i64>(t, "i64", location, self.cfg.legacy_octal_numbers)
@@ -757,15 +762,26 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 }
             }
 
-            // Try float per YAML 1.2 forms.
-            if let Ok(v) = parse_yaml12_float::<f64>(&s, location, tag, self.cfg.angle_conversions)
-            {
-                // serde_json::Value (and possibly other typeless consumers) cannot represent
-                // non-finite floats. In `deserialize_any`, prefer returning a canonical string
-                // for NaN/±Inf so that these values round-trip as strings rather than becoming
-                // null or erroring. Concrete f32/f64 entry points still yield the float values.
+            // Try float per YAML 1.2 forms, treating an f64-overflowing literal (e.g.
+            // `1e999`) as non-finite too, so both shapes are handled consistently below.
+            if let Some(v) = try_parse_float_incl_overflow(
+                &effective,
+                location,
+                view.tag,
+                self.cfg.angle_conversions,
+            ) {
+                // Typeless consumers such as serde_json::Value cannot represent non-finite
+                // floats. By default, reject these scalars. When rejection is disabled,
+                // deserialize_any returns a canonical string so these values do not become
+                // null or fail later.
                 if v.is_finite() {
                     return visitor.visit_f64(v);
+                }
+                if self.cfg.reject_non_finite_typeless_float {
+                    return Err(Error::NonFiniteFloat {
+                        value: raw,
+                        location,
+                    });
                 }
                 let canon = if v.is_nan() {
                     ".nan".to_string()
@@ -778,7 +794,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             }
 
             // Fallback: treat as string as-is.
-            return visitor.visit_string(s);
+            return visitor.visit_string(effective);
         }
 
         match self.ev.peek()? {

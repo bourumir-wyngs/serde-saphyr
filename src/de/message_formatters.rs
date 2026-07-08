@@ -186,6 +186,9 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
             Cow::Borrowed("recursive references require weak recursion types")
         }
         Error::InvalidScalar { ty, .. } => Cow::Owned(format!("invalid {ty}")),
+        Error::NonFiniteFloat { value, .. } => Cow::Owned(format!(
+            "non-finite float `{value}` rejected by reject_non_finite_typeless_float"
+        )),
         Error::SerdeInvalidType {
             unexpected,
             expected,
@@ -511,6 +514,9 @@ fn user_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) -> 
         } => Cow::Owned(format!(
             "incorrect indentation: expected {required}, found {actual} spaces"
         )),
+        Error::NonFiniteFloat { value, .. } => {
+            Cow::Owned(format!("value `{value}` is not a finite number"))
+        }
 
         // All cases when the standard message is good enough.
         _ => default_format_message(formatter, err),
@@ -795,6 +801,10 @@ mod tests {
     #[case::invalid_boolean_strict(
         Error::InvalidBooleanStrict { location: loc() },
         "invalid boolean (true or false expected)"
+    )]
+    #[case::non_finite_float(
+        Error::NonFiniteFloat { value: ".inf".to_owned(), location: loc() },
+        "value `.inf` is not a finite number"
     )]
     #[case::null_into_string(
         Error::NullIntoString { location: loc() },

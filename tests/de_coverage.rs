@@ -227,14 +227,32 @@ fn enum_from_seq_error() {
 // deserialize_any edge cases
 // ---------------------------------------------------------------------------
 
-/// deserialize_any with NaN/±inf -> returns the literal as a string.
+const OVERFLOWING_INTEGER_SCALAR: &str = concat!(
+    "9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999",
+    "9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999",
+    "9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999",
+    "9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999",
+);
+
+/// deserialize_any rejects non-finite floats and overflowed numeric scalars by default.
 #[rstest]
-#[case::nan(".nan\n", ".nan")]
-#[case::inf(".inf\n", ".inf")]
-#[case::neg_inf("-.inf\n", "-.inf")]
-fn deserialize_any_special_float_as_string(#[case] yaml: &str, #[case] expected: &str) {
-    let v: serde_json::Value = serde_saphyr::from_str(yaml).unwrap();
-    assert_eq!(v, serde_json::Value::String(expected.to_string()));
+#[case::nan(".nan", ".nan")]
+#[case::inf(".inf", ".inf")]
+#[case::neg_inf("-.inf", "-.inf")]
+#[case::float_overflow("1e999", "1e999")]
+#[case::neg_float_overflow("-1e999", "-1e999")]
+#[case::integer_overflow(OVERFLOWING_INTEGER_SCALAR, OVERFLOWING_INTEGER_SCALAR)]
+fn deserialize_any_rejects_non_finite_float_by_default(
+    #[case] yaml: &str,
+    #[case] expected_value: &str,
+) {
+    let err = serde_saphyr::from_str::<serde_json::Value>(yaml).unwrap_err();
+    match err.without_snippet() {
+        serde_saphyr::Error::NonFiniteFloat { value, .. } => {
+            assert_eq!(value, expected_value);
+        }
+        _ => panic!("unexpected error for {yaml:?}: {err:?}"),
+    }
 }
 
 #[rstest]

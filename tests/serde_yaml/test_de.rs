@@ -404,8 +404,11 @@ fn test_numbers() {
         (".NAN", ".nan"),
         ("0.1", "0.1"),
     ];
+    let options = serde_saphyr::options! {
+        reject_non_finite_typeless_float: false,
+    };
     for &(yaml, expected) in &cases {
-        let value = serde_saphyr::from_str::<Value>(yaml).unwrap();
+        let value = serde_saphyr::from_str_with_options::<Value>(yaml, options.clone()).unwrap();
         assert_eq!(
             value.to_string().trim_matches('"'),
             expected,

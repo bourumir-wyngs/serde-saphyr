@@ -37,7 +37,7 @@ See [release history](https://github.com/bourumir-wyngs/serde-saphyr/releases) o
 - **Serializer supports emitting anchors** (Rc, Arc, Weak) if they are properly wrapped (see below).
 - **Declarative validation with optional [`validator`](https://crates.io/crates/validator) ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/validator_validate.rs))** or **[`garde`](https://crates.io/crates/garde)** ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/garde_validate.rs)).
 - **Optional [`miette`](https://crates.io/crates/miette)** ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/miette.rs)) integration for more advanced error reporting.
-- **serde_json::Value** is supported when parsing without target structure defined.
+- **serde_json::Value** is supported when parsing without target structure defined (non-finite values are rejected for floats).
 - **[Serializer](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Serializer.html)** and **[Deserializer](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Deserializer.html)** are public (due to how it's implemented, Deserializer is available in the closure only).
 - Serialized floats are official YAML floats.
 - Correct handling for JSON-style Unicode surrogate pairs.
