@@ -157,7 +157,7 @@ impl RequireIndent {
 }
 
 fn divisible_zero_error() -> crate::de_error::Error {
-    crate::de_error::Error::msg(
+    crate::de_error::Error::invalid_options(
         "invalid deserialization options: require_indent Divisible(0) is not allowed; \
          indentation divisor must be non-zero",
     )

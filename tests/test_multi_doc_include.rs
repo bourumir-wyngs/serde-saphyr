@@ -22,9 +22,8 @@ fn test_multi_doc_include() {
     let err = serde_saphyr::from_str_with_options::<Root>(yaml, options)
         .expect_err("multi-document include must fail for single-document API");
 
-    let rendered = err.to_string();
-    assert!(
-        rendered.contains("multiple documents") || rendered.contains("More than one YAML document"),
-        "expected multiple-documents failure mode, got: {rendered}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        serde_saphyr::Error::MultipleDocuments { .. }
+    ));
 }

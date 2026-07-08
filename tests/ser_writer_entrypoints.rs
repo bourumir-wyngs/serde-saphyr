@@ -123,7 +123,11 @@ fn to_io_writer_propagates_serializer_error_when_writer_succeeds() {
 
     let mut buf = Vec::new();
     let err = serde_saphyr::to_io_writer(&mut buf, &Fails).unwrap_err();
-    assert!(err.to_string().contains("intentional serializer failure"));
+    assert!(matches!(
+        err,
+        serde_saphyr::ser_error::Error::Message { msg }
+            if msg == "intentional serializer failure"
+    ));
 }
 
 #[test]

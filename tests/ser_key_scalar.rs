@@ -192,11 +192,10 @@ fn non_scalar_map_key_is_rejected() {
 
     // Block mappings support complex keys (`? ...`), so force flow style where keys must be scalars.
     let err = to_string(&FlowMap(m)).expect_err("expected error for non-scalar key in flow map");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("non-scalar key"),
-        "unexpected error message: {msg}"
-    );
+    assert!(matches!(
+        err,
+        serde_saphyr::ser_error::Error::Unexpected { msg } if msg == "non-scalar key"
+    ));
 }
 
 #[test]
@@ -206,11 +205,10 @@ fn bytes_map_key_is_rejected() {
 
     // Block mappings support complex keys (`? ...`), so force flow style where keys must be scalars.
     let err = to_string(&FlowMap(m)).expect_err("expected error for bytes key in flow map");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("non-scalar key"),
-        "unexpected error message: {msg}"
-    );
+    assert!(matches!(
+        err,
+        serde_saphyr::ser_error::Error::Unexpected { msg } if msg == "non-scalar key"
+    ));
 }
 
 #[test]
@@ -221,11 +219,10 @@ fn newtype_variant_map_key_is_rejected() {
     // Block mappings support complex keys (`? ...`), so force flow style where keys must be scalars.
     let err =
         to_string(&FlowMap(m)).expect_err("expected error for newtype variant key in flow map");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("non-scalar key"),
-        "unexpected error message: {msg}"
-    );
+    assert!(matches!(
+        err,
+        serde_saphyr::ser_error::Error::Unexpected { msg } if msg == "non-scalar key"
+    ));
 }
 #[test]
 fn bool_key_in_map() {

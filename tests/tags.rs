@@ -1,5 +1,6 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde_saphyr as yaml;
+use serde_saphyr::Error;
 
 #[test]
 fn binary_tag_to_string_when_utf8() {
@@ -11,33 +12,27 @@ fn binary_tag_to_string_when_utf8() {
 fn binary_tag_invalid_utf8_errors_for_string() {
     // 0xFF is invalid in UTF-8
     let err = yaml::from_str::<String>("!!binary /w==").expect_err("invalid UTF-8 should error");
-    let msg = format!("{}", err);
-    assert!(
-        msg.contains("!!binary scalar is not valid UTF-8"),
-        "unexpected error: {msg}"
-    );
+    assert!(matches!(err.without_snippet(), Error::BinaryNotUtf8 { .. }));
 }
 
 #[test]
 fn tagged_int_cannot_parse_into_string() {
     let err =
         yaml::from_str::<String>("!!int 42").expect_err("!!int should not deserialize into String");
-    let msg = format!("{}", err);
-    assert!(
-        msg.contains("cannot deserialize tagged scalar"),
-        "unexpected error: {msg}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        Error::TaggedScalarCannotDeserializeIntoString { .. }
+    ));
 }
 
 #[test]
 fn tagged_bool_cannot_parse_into_string() {
     let err = yaml::from_str::<String>("!!bool false")
         .expect_err("!!int should not deserialize into String");
-    let msg = format!("{}", err);
-    assert!(
-        msg.contains("cannot deserialize tagged scalar"),
-        "unexpected error: {msg}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        Error::TaggedScalarCannotDeserializeIntoString { .. }
+    ));
 }
 
 #[test]

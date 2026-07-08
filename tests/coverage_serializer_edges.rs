@@ -66,42 +66,49 @@ struct BlockSiblingCollections {
     third: BTreeMap<&'static str, i32>,
 }
 
-fn assert_error_contains<T: Serialize>(value: &T, expected: &str) {
+fn assert_unexpected_error<T: Serialize>(value: &T, expected: &str) {
     let err = to_string(value).expect_err("serialization should fail");
-    let message = err.to_string();
-    assert!(
-        message.contains(expected),
-        "expected {expected:?} in error message, got: {message}"
-    );
+    assert!(matches!(
+        err,
+        serde_saphyr::ser_error::Error::Unexpected { msg } if msg == expected
+    ));
+}
+
+fn assert_message_error<T: Serialize>(value: &T, expected: &str) {
+    let err = to_string(value).expect_err("serialization should fail");
+    assert!(matches!(
+        err,
+        serde_saphyr::ser_error::Error::Message { msg } if msg == expected
+    ));
 }
 
 #[test]
 fn internal_tuple_payloads_reject_extra_fields() {
-    assert_error_contains(
+    assert_unexpected_error(
         &AnchorPayloadWithExtra(1, "value", "extra"),
-        "__yaml_anchor",
+        "unexpected field in __yaml_anchor",
     );
-    assert_error_contains(
+    assert_unexpected_error(
         &WeakAnchorPayloadWithExtra(1, true, "value", "extra"),
-        "__yaml_weak_anchor",
+        "unexpected field in __yaml_weak_anchor",
     );
-    assert_error_contains(
+    assert_unexpected_error(
         &CommentedPayloadWithExtra("comment", "value", "extra"),
-        "__yaml_commented",
+        "unexpected field in __yaml_commented",
     );
 }
 
 #[test]
 fn internal_tuple_payload_captures_reject_bytes_in_scalar_slots() {
-    assert_error_contains(
+    assert_unexpected_error(
         &AnchorPayloadWithBytes(serde_bytes::Bytes::new(b"ptr"), "value"),
         "ptr expects number",
     );
-    assert_error_contains(
+    assert_unexpected_error(
         &WeakAnchorPayloadWithBytes(1, serde_bytes::ByteBuf::from(b"present".to_vec()), "value"),
         "bool expected",
     );
-    assert_error_contains(
+    assert_unexpected_error(
         &CommentedPayloadWithBytes(serde_bytes::ByteBuf::from(b"comment".to_vec()), "value"),
         "str expected",
     );
@@ -136,7 +143,7 @@ fn scalar_key_errors_are_propagated() {
     let mut map = BTreeMap::new();
     map.insert(FailingKey, 1);
 
-    assert_error_contains(&map, "synthetic key failure");
+    assert_message_error(&map, "synthetic key failure");
 }
 
 #[test]

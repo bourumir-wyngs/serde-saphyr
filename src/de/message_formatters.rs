@@ -79,6 +79,7 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
             .unwrap_or(Cow::Borrowed(msg.as_str()))
         }
         Error::Message { msg, .. }
+        | Error::InvalidOptions { msg, .. }
         | Error::HookError { msg, .. }
         | Error::SerdeVariantId { msg, .. } => Cow::Borrowed(msg.as_str()),
         Error::UnresolvedProperty { name, .. } => Cow::Owned(format!("missing property `{name}`")),

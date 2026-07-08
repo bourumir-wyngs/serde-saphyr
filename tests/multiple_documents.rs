@@ -188,12 +188,11 @@ fn multiple_documents_enum_variants() {
 fn from_str_multiple_documents_error() {
     let yaml = "---\nhello\n---\nworld\n";
     let result: Result<String, _> = serde_saphyr::from_str(yaml);
-    assert!(result.is_err());
-    let err = result.unwrap_err().to_string();
-    assert!(
-        err.contains("multiple") || err.contains("iterator"),
-        "unexpected error: {err}"
-    );
+    let err = result.unwrap_err();
+    assert!(matches!(
+        err.without_snippet(),
+        serde_saphyr::Error::MultipleDocuments { .. }
+    ));
 }
 
 #[test]

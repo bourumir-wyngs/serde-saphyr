@@ -208,8 +208,11 @@ fn char_ok_cases(#[case] yaml: &str, #[case] expected: char) {
 #[case::empty_scalar("c:\n")]
 fn char_error_cases(#[case] yaml: &str) {
     let err = serde_saphyr::from_str::<HasChar>(yaml).unwrap_err();
-    let msg = format!("{err}");
-    assert!(msg.contains("invalid char"));
+    assert!(matches!(
+        err.without_snippet(),
+        serde_saphyr::Error::InvalidCharNotSingleScalar { .. }
+            | serde_saphyr::Error::InvalidCharNull { .. }
+    ));
 }
 
 #[test]

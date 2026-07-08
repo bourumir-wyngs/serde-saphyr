@@ -41,11 +41,10 @@ mod with_deserializer_tests {
         let bytes: &[u8] = &[0xFF, 0xFE, 0x00];
         let err = serde_saphyr::with_deserializer_from_slice(bytes, |de| Simple::deserialize(de))
             .unwrap_err();
-        let s = err.to_string();
-        assert!(
-            s.contains("UTF-8") || s.contains("utf8") || s.contains("utf-8"),
-            "expected UTF-8 error, got: {s}"
-        );
+        assert!(matches!(
+            err.without_snippet(),
+            serde_saphyr::Error::InvalidUtf8Input
+        ));
     }
 
     #[test]
@@ -63,11 +62,10 @@ mod with_deserializer_tests {
         let input = "x: 1\n---\nx: 2";
         let err = serde_saphyr::with_deserializer_from_str(input, |de| Simple::deserialize(de))
             .unwrap_err();
-        let s = err.to_string();
-        assert!(
-            s.contains("multiple") || s.contains("document"),
-            "expected multiple documents error, got: {s}"
-        );
+        assert!(matches!(
+            err.without_snippet(),
+            serde_saphyr::Error::MultipleDocuments { .. }
+        ));
     }
 
     #[test]
@@ -75,11 +73,10 @@ mod with_deserializer_tests {
         // Empty input into bool should give EOF error
         let err =
             serde_saphyr::with_deserializer_from_str("", |de| bool::deserialize(de)).unwrap_err();
-        let s = err.to_string();
-        assert!(
-            s.contains("end") || s.contains("EOF") || s.contains("eof"),
-            "expected EOF error, got: {s}"
-        );
+        assert!(matches!(
+            err.without_snippet(),
+            serde_saphyr::Error::Eof { .. }
+        ));
     }
 
     #[test]
@@ -126,11 +123,10 @@ mod with_deserializer_tests {
             bool::deserialize(de)
         })
         .unwrap_err();
-        let s = err.to_string();
-        assert!(
-            s.contains("end") || s.contains("EOF") || s.contains("eof"),
-            "expected EOF error, got: {s}"
-        );
+        assert!(matches!(
+            err.without_snippet(),
+            serde_saphyr::Error::Eof { .. }
+        ));
     }
 
     #[test]
@@ -138,11 +134,10 @@ mod with_deserializer_tests {
         let cursor = std::io::Cursor::new(b"x: 1\n---\nx: 2\n");
         let err = serde_saphyr::with_deserializer_from_reader(cursor, |de| Simple::deserialize(de))
             .unwrap_err();
-        let s = err.to_string();
-        assert!(
-            s.contains("multiple") || s.contains("document"),
-            "expected multiple documents error, got: {s}"
-        );
+        assert!(matches!(
+            err.without_snippet(),
+            serde_saphyr::Error::MultipleDocuments { .. }
+        ));
     }
 
     #[test]

@@ -160,8 +160,11 @@ fn unit_fields_reject_quoted_empty_strings() {
     for yaml in ["unit: \"\"", "unit: ''"] {
         let err = serde_saphyr::from_str::<UnitHolder>(yaml).unwrap_err();
         assert!(
-            err.to_string().contains("unexpected value for unit"),
-            "yaml: {yaml}, err: {err}"
+            matches!(
+                err.without_snippet(),
+                serde_saphyr::Error::UnexpectedValueForUnit { .. }
+            ),
+            "yaml: {yaml}, err: {err:?}"
         );
     }
 }
@@ -171,8 +174,11 @@ fn unit_struct_fields_reject_quoted_empty_strings() {
     for yaml in ["unit: \"\"", "unit: ''"] {
         let err = serde_saphyr::from_str::<UnitStructHolder>(yaml).unwrap_err();
         assert!(
-            err.to_string().contains("unexpected value for unit"),
-            "yaml: {yaml}, err: {err}"
+            matches!(
+                err.without_snippet(),
+                serde_saphyr::Error::UnexpectedValueForUnit { .. }
+            ),
+            "yaml: {yaml}, err: {err:?}"
         );
     }
 }

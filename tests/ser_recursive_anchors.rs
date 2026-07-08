@@ -333,7 +333,11 @@ fn rc_recursive_not_initialized_errors() {
     let inner: Rc<RefCell<Option<i32>>> = Rc::new(RefCell::new(None));
     let anchor = RcRecursive(inner);
     let err = to_string(&anchor).unwrap_err();
-    assert!(err.to_string().contains("not initialized"), "got: {err}");
+    assert!(matches!(
+        err,
+        serde_saphyr::ser_error::Error::Message { msg }
+            if msg == "recursive Rc anchor not initialized"
+    ));
 }
 
 #[test]
@@ -341,7 +345,11 @@ fn arc_recursive_not_initialized_errors() {
     let inner: Arc<Mutex<Option<i32>>> = Arc::new(Mutex::new(None));
     let anchor = ArcRecursive(inner);
     let err = to_string(&anchor).unwrap_err();
-    assert!(err.to_string().contains("not initialized"), "got: {err}");
+    assert!(matches!(
+        err,
+        serde_saphyr::ser_error::Error::Message { msg }
+            if msg == "recursive Arc anchor not initialized"
+    ));
 }
 
 #[test]

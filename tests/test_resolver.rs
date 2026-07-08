@@ -2,7 +2,7 @@
 #[cfg(feature = "include")]
 use serde::Deserialize;
 #[cfg(feature = "include")]
-use serde_saphyr::{IncludeResolveError, InputSource, ResolvedInclude};
+use serde_saphyr::{Error, IncludeResolveError, InputSource, ResolvedInclude};
 #[cfg(feature = "include")]
 use std::cell::RefCell;
 #[cfg(feature = "include")]
@@ -140,13 +140,11 @@ fn test_nested_reader_budget() {
         serde_saphyr::from_reader_with_options(cursor, options);
 
     // It should fail due to ExceededReaderInputLimit
-    assert!(config_res.is_err());
-    let err_msg = config_res.unwrap_err().to_string();
-    assert!(
-        err_msg.contains("size limit"),
-        "Expected budget error, got: {}",
-        err_msg
-    );
+    let err = config_res.unwrap_err();
+    assert!(matches!(
+        err.without_snippet(),
+        Error::IOError { cause } if cause.kind() == std::io::ErrorKind::FileTooLarge
+    ));
 }
 
 #[cfg(feature = "include")]
@@ -167,9 +165,11 @@ root: !include self.yaml
     let options = serde_saphyr::options! {}.with_include_resolver(resolver);
     let result: Result<serde::de::IgnoredAny, _> =
         serde_saphyr::from_str_with_options(input, options);
-    assert!(result.is_err());
-    let err_msg = result.unwrap_err().to_string();
-    assert!(err_msg.contains("cyclic include detected"), "{}", err_msg);
+    let err = result.unwrap_err();
+    assert!(matches!(
+        err.without_snippet(),
+        Error::CyclicInclude { id, .. } if id == "self.yaml"
+    ));
 }
 
 #[cfg(feature = "include")]
@@ -205,9 +205,11 @@ root: !include aliases/first.yaml
     let result: Result<serde::de::IgnoredAny, _> =
         serde_saphyr::from_str_with_options(input, options);
 
-    assert!(result.is_err());
-    let err_msg = result.unwrap_err().to_string();
-    assert!(err_msg.contains("cyclic include detected"), "{}", err_msg);
+    let err = result.unwrap_err();
+    assert!(matches!(
+        err.without_snippet(),
+        Error::CyclicInclude { id, .. } if id == "/canonical/shared.yaml"
+    ));
 }
 
 #[cfg(feature = "include")]
@@ -317,13 +319,11 @@ foo: !include { \"path\": \"file_b.yml\", \"extension\": \"txt\" }
     };
     let options = serde_saphyr::options! {}.with_include_resolver(resolver);
     let result: Result<Config, _> = serde_saphyr::from_str_with_options(input, options);
-    assert!(result.is_err());
-    let err_msg = result.unwrap_err().to_string();
-    assert!(
-        err_msg.contains("currently only supports the scalar form"),
-        "Expected unsupported include form error, got: {}",
-        err_msg
-    );
+    let err = result.unwrap_err();
+    assert!(matches!(
+        err.without_snippet(),
+        Error::UnsupportedIncludeForm { .. }
+    ));
 }
 
 #[cfg(feature = "include")]
@@ -396,13 +396,12 @@ fn test_include_fragment_tag_and_fragment_in_spec_is_rejected() {
     );
 
     let result: Result<Config, _> = serde_saphyr::from_str_with_options(yaml, options);
-    assert!(result.is_err());
-    let err = result.unwrap_err().to_string();
-    assert!(
-        err.contains("must not contain '#'"),
-        "Expected include fragment form validation error, got: {}",
-        err
-    );
+    let err = result.unwrap_err();
+    assert!(matches!(
+        err.without_snippet(),
+        Error::Message { msg, .. }
+            if msg == "include spec must not contain '#' when using !include#fragment tag form"
+    ));
 }
 
 #[cfg(feature = "include")]

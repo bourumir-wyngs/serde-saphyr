@@ -28,6 +28,15 @@ struct OuterSeq {
     items: Vec<AlwaysFails>,
 }
 
+fn assert_custom_message(err: &serde_saphyr::Error, expected: &str) {
+    match err.without_snippet() {
+        serde_saphyr::Error::Message { msg, .. } | serde_saphyr::Error::AliasError { msg, .. } => {
+            assert_eq!(msg, expected)
+        }
+        other => panic!("expected custom message error, got {other:?}"),
+    }
+}
+
 /// Custom deserializer errors in struct fields should include YAML location.
 #[test]
 fn custom_deserializer_error_in_struct_field_has_location() {
@@ -41,12 +50,7 @@ value: "doesn't matter"
     // Column points to the start of the value (column 1 is the key start)
     assert!(location.column() >= 1, "error should have a valid column");
 
-    // Verify the error message contains the custom message
-    let msg = err.to_string();
-    assert!(
-        msg.contains("oh noes"),
-        "error message should contain 'oh noes'"
-    );
+    assert_custom_message(&err, "oh noes");
 }
 
 /// Custom deserializer errors in sequence elements should include YAML location.
@@ -67,11 +71,7 @@ items:
         "error should point to line 3 (first element)"
     );
 
-    let msg = err.to_string();
-    assert!(
-        msg.contains("oh noes"),
-        "error message should contain 'oh noes'"
-    );
+    assert_custom_message(&err, "oh noes");
 }
 
 /// Custom deserializer errors on aliased values should report both locations.
@@ -109,14 +109,10 @@ value: *a
         "defined location should be line 2"
     );
 
-    // The error message should contain the custom message
-    let msg = err.to_string();
-    assert!(
-        msg.contains("oh noes"),
-        "error message should contain 'oh noes'"
-    );
+    assert_custom_message(&err, "oh noes");
 
     // The display should mention both locations
+    let msg = err.to_string();
     assert!(msg.contains("line 3"), "error should mention use-site line");
     assert!(
         msg.contains("line 2"),
@@ -141,11 +137,7 @@ Wrapper: "will fail"
     // The error should point to the value (line 2)
     assert_eq!(location.line(), 2, "error should point to line 2");
 
-    let msg = err.to_string();
-    assert!(
-        msg.contains("oh noes"),
-        "error message should contain 'oh noes'"
-    );
+    assert_custom_message(&err, "oh noes");
 }
 
 /// A key type whose deserialization always fails with a custom error.
@@ -177,9 +169,5 @@ fn custom_deserializer_error_in_map_key_has_location() {
     // The error should point to the first key (line 2)
     assert_eq!(location.line(), 2, "error should point to line 2");
 
-    let msg = err.to_string();
-    assert!(
-        msg.contains("key error"),
-        "error message should contain 'key error'"
-    );
+    assert_custom_message(&err, "key error");
 }

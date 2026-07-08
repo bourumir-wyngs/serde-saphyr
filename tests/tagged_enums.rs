@@ -26,10 +26,14 @@ enum Shape {
 fn tagged_enum_with_wrong_type_errors() {
     let yaml = "!!Color GREEN";
     let err = serde_saphyr::from_str::<Shape>(yaml).expect_err("expected a type mismatch");
-    assert!(
-        err.to_string()
-            .contains("tagged enum `Color` does not match target enum `Shape`")
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        serde_saphyr::Error::TaggedEnumMismatch {
+            tagged,
+            target: "Shape",
+            ..
+        } if tagged == "Color"
+    ));
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]

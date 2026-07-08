@@ -2,6 +2,7 @@
 /// Targeted tests to increase coverage of src/de.rs.
 use rstest::rstest;
 use serde::Deserialize;
+use serde_saphyr::Error;
 
 // ---------------------------------------------------------------------------
 // Bytes deserialization
@@ -33,11 +34,10 @@ fn bytes_from_binary_tag() {
 fn bytes_from_plain_scalar_error() {
     let y = "data: hello\n";
     let err = serde_saphyr::from_str::<WithBytes>(y).unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("binary") || msg.contains("!!binary") || msg.contains("sequence"),
-        "unexpected error: {msg}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        Error::BytesNotSupportedMissingBinaryTag { .. }
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -60,33 +60,30 @@ fn char_single() {
 #[test]
 fn char_multi_error() {
     let err = serde_saphyr::from_str::<WithChar>("c: AB\n").unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("char") || msg.contains("single") || msg.contains("scalar"),
-        "unexpected error: {msg}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        Error::InvalidCharNotSingleScalar { .. }
+    ));
 }
 
 /// Null scalar for char → error.
 #[test]
 fn char_null_error() {
     let err = serde_saphyr::from_str::<WithChar>("c: ~\n").unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("null") || msg.contains("char") || msg.contains("null"),
-        "unexpected error: {msg}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        Error::InvalidCharNull { .. }
+    ));
 }
 
 /// Empty scalar for char → error.
 #[test]
 fn char_empty_error() {
     let err = serde_saphyr::from_str::<WithChar>("c: \n").unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("char") || msg.contains("null") || msg.contains("scalar"),
-        "unexpected error: {msg}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        Error::InvalidCharNull { .. }
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -114,11 +111,10 @@ fn unit_struct_from_null() {
 #[test]
 fn unit_struct_from_non_empty_map_error() {
     let err = serde_saphyr::from_str::<UnitStruct>("{a: 1}\n").unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("unit") || msg.contains("empty") || msg.contains("unexpected"),
-        "unexpected error: {msg}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        Error::ExpectedEmptyMappingForUnitStruct { .. }
+    ));
 }
 
 /// Plain unit `()` from null.
@@ -132,11 +128,10 @@ fn unit_from_null() {
 #[test]
 fn unit_from_non_null_error() {
     let err = serde_saphyr::from_str::<()>("hello\n").unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("unit") || msg.contains("unexpected"),
-        "unexpected error: {msg}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        Error::UnexpectedValueForUnit { .. }
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -213,13 +208,12 @@ fn enum_struct_variant() {
 #[test]
 fn enum_from_seq_error() {
     let err = serde_saphyr::from_str::<MyEnum>("[1, 2]\n").unwrap_err();
-    let msg = err.to_string();
     assert!(
-        msg.contains("enum")
-            || msg.contains("scalar")
-            || msg.contains("mapping")
-            || msg.contains("sequence"),
-        "unexpected error: {msg}"
+        matches!(
+            err.without_snippet(),
+            Error::ExternallyTaggedEnumExpectedScalarOrMapping { .. }
+        ),
+        "unexpected error: {err:?}"
     );
 }
 
@@ -301,11 +295,10 @@ fn bool_strict_true() {
 fn bool_strict_yes_rejected() {
     let opts = serde_saphyr::options! { strict_booleans: true };
     let err = serde_saphyr::from_str_with_options::<WithBool>("b: yes\n", opts).unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("boolean") || msg.contains("strict") || msg.contains("invalid"),
-        "unexpected error: {msg}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        Error::InvalidBooleanStrict { .. }
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -346,11 +339,10 @@ fn string_from_binary_tag_decoded() {
 fn no_schema_plain_int_for_string_error() {
     let opts = serde_saphyr::options! { no_schema: true };
     let err = serde_saphyr::from_str_with_options::<WithString>("s: 42\n", opts).unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("quot") || msg.contains("schema") || msg.contains("string"),
-        "unexpected error: {msg}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        Error::QuotingRequired { value, .. } if value == "42"
+    ));
 }
 
 /// no_schema: quoted string is fine.
@@ -374,11 +366,13 @@ fn duplicate_key_error_policy() {
         opts,
     )
     .unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("duplicate") || msg.contains("key"),
-        "unexpected error: {msg}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        Error::DuplicateMappingKey {
+            key: Some(key),
+            ..
+        } if key == "a"
+    ));
 }
 
 /// Duplicate key with FirstWins policy → first value kept.
@@ -635,21 +629,19 @@ struct WithStr {
 #[test]
 fn string_from_null_error() {
     let err = serde_saphyr::from_str::<WithStr>("s: ~\n").unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("null") || msg.contains("string") || msg.contains("Option"),
-        "unexpected error: {msg}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        Error::NullIntoString { .. }
+    ));
 }
 
 #[test]
 fn string_from_empty_scalar_error() {
     let err = serde_saphyr::from_str::<WithStr>("s: \n").unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("null") || msg.contains("string") || msg.contains("Option"),
-        "unexpected error: {msg}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        Error::NullIntoString { .. }
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -659,10 +651,12 @@ fn string_from_empty_scalar_error() {
 #[test]
 fn str_from_seq_error() {
     let err = serde_saphyr::from_str::<WithStr>("s: [1, 2]\n").unwrap_err();
-    let msg = err.to_string();
     assert!(
-        msg.contains("string") || msg.contains("scalar") || msg.contains("unexpected"),
-        "unexpected error: {msg}"
+        matches!(
+            err.without_snippet(),
+            Error::Unexpected { .. } | Error::SerdeInvalidType { .. }
+        ),
+        "unexpected error: {err:?}"
     );
 }
 
@@ -673,11 +667,10 @@ fn str_from_seq_error() {
 #[test]
 fn string_from_int_tag_error() {
     let err = serde_saphyr::from_str::<WithStr>("s: !!int 42\n").unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("tag") || msg.contains("string") || msg.contains("int"),
-        "unexpected error: {msg}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        Error::TaggedScalarCannotDeserializeIntoString { .. }
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -688,11 +681,10 @@ fn string_from_int_tag_error() {
 fn char_no_schema_plain_int_error() {
     let opts = serde_saphyr::options! { no_schema: true };
     let err = serde_saphyr::from_str_with_options::<WithChar>("c: 5\n", opts).unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("quot") || msg.contains("schema") || msg.contains("string"),
-        "unexpected error: {msg}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        Error::QuotingRequired { value, .. } if value == "5"
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -744,11 +736,10 @@ fn merge_key_invalid_scalar_error() {
         merged: Merged,
     }
     let err = serde_saphyr::from_str::<Outer>(y).unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("merge") || msg.contains("map") || msg.contains("sequence"),
-        "unexpected error: {msg}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        Error::MergeValueNotMapOrSeqOfMaps { .. }
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -789,10 +780,9 @@ fn map_skip_unknown_nested_fields() {
 #[test]
 fn seq_from_scalar_error() {
     let err = serde_saphyr::from_str::<Vec<i32>>("hello\n").unwrap_err();
-    let msg = err.to_string();
     assert!(
-        msg.contains("sequence") || msg.contains("scalar") || msg.contains("unexpected"),
-        "unexpected error: {msg}"
+        matches!(err.without_snippet(), Error::Unexpected { .. }),
+        "unexpected error: {err:?}"
     );
 }
 
@@ -804,10 +794,9 @@ fn seq_from_scalar_error() {
 fn map_from_scalar_error() {
     let err =
         serde_saphyr::from_str::<std::collections::HashMap<String, i32>>("hello\n").unwrap_err();
-    let msg = err.to_string();
     assert!(
-        msg.contains("mapping") || msg.contains("scalar") || msg.contains("unexpected"),
-        "unexpected error: {msg}"
+        matches!(err.without_snippet(), Error::Unexpected { .. }),
+        "unexpected error: {err:?}"
     );
 }
 
@@ -818,10 +807,9 @@ fn map_from_scalar_error() {
 #[test]
 fn bool_from_seq_error() {
     let err = serde_saphyr::from_str::<WithBool>("b: [1, 2]\n").unwrap_err();
-    let msg = err.to_string();
     assert!(
-        msg.contains("bool") || msg.contains("scalar") || msg.contains("unexpected"),
-        "unexpected error: {msg}"
+        matches!(err.without_snippet(), Error::Unexpected { .. }),
+        "unexpected error: {err:?}"
     );
 }
 
@@ -886,11 +874,10 @@ fn enum_no_schema_map_key_quoting_error() {
     let opts = serde_saphyr::options! { no_schema: true };
     // Map key is an unquoted integer, which requires quoting in no_schema mode
     let err = serde_saphyr::from_str_with_options::<MyEnum>("42: value\n", opts).unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("quot") || msg.contains("schema") || msg.contains("string"),
-        "unexpected error: {msg}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        Error::QuotingRequired { value, .. } if value == "42"
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -901,13 +888,12 @@ fn enum_no_schema_map_key_quoting_error() {
 fn enum_non_string_map_key_error() {
     // A map with a sequence as key is not valid for externally tagged enum
     let err = serde_saphyr::from_str::<MyEnum>("? [1, 2]\n: value\n").unwrap_err();
-    let msg = err.to_string();
     assert!(
-        msg.contains("string")
-            || msg.contains("key")
-            || msg.contains("enum")
-            || msg.contains("scalar"),
-        "unexpected error: {msg}"
+        matches!(
+            err.without_snippet(),
+            Error::ExpectedStringKeyForExternallyTaggedEnum { .. }
+        ),
+        "unexpected error: {err:?}"
     );
 }
 
@@ -957,11 +943,10 @@ fn deserialize_any_str_tag() {
 #[test]
 fn deserialize_any_int_tag_error() {
     let err = serde_saphyr::from_str::<serde_json::Value>("!!int 42\n").unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("tag") || msg.contains("int") || msg.contains("string"),
-        "unexpected error: {msg}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        Error::TaggedScalarCannotDeserializeIntoString { .. }
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -991,10 +976,12 @@ fn enum_map_mode_unit_variant_empty() {
 fn bytes_from_map_error() {
     let y = "data: {a: 1}\n";
     let err = serde_saphyr::from_str::<WithBytes>(y).unwrap_err();
-    let msg = err.to_string();
     assert!(
-        msg.contains("binary") || msg.contains("sequence") || msg.contains("unexpected"),
-        "unexpected error: {msg}"
+        matches!(
+            err.without_snippet(),
+            Error::Unexpected { .. } | Error::BytesNotSupportedMissingBinaryTag { .. }
+        ),
+        "unexpected error: {err:?}"
     );
 }
 
@@ -1049,10 +1036,12 @@ fn seq_from_null_is_empty() {
 #[test]
 fn enum_map_mode_unit_variant_non_null_error() {
     let err = serde_saphyr::from_str::<MyEnum>("{Unit: 42}\n").unwrap_err();
-    let msg = err.to_string();
     assert!(
-        msg.contains("unit") || msg.contains("unexpected") || msg.contains("variant"),
-        "unexpected error: {msg}"
+        matches!(
+            err.without_snippet(),
+            Error::UnexpectedValueForUnitEnumVariant { .. }
+        ),
+        "unexpected error: {err:?}"
     );
 }
 
@@ -1063,11 +1052,10 @@ fn enum_map_mode_unit_variant_non_null_error() {
 #[test]
 fn str_from_null_tag_error() {
     let err = serde_saphyr::from_str::<WithStr>("s: !!null foo\n").unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("null") || msg.contains("string"),
-        "unexpected error: {msg}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        Error::NullIntoString { .. }
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -1078,11 +1066,10 @@ fn str_from_null_tag_error() {
 fn string_no_schema_plain_bool_error() {
     let opts = serde_saphyr::options! { no_schema: true };
     let err = serde_saphyr::from_str_with_options::<WithStr>("s: true\n", opts).unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("quot") || msg.contains("schema") || msg.contains("string"),
-        "unexpected error: {msg}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        Error::QuotingRequired { value, .. } if value == "true"
+    ));
 }
 
 // ---------------------------------------------------------------------------
