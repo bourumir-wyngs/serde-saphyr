@@ -252,13 +252,13 @@ pub struct Options {
     /// Decimal/exponential literals that overflow `f64`, such as `1e999`, remain
     /// invalid for concrete `f32`/`f64` targets.
     ///
-    /// Default: false (round-trip non-finite floats as canonical strings: `.nan`, `.inf`,
-    /// `-.inf`).
+    /// Default: true (reject non-finite floats in typeless positions). Set this to false
+    /// to round-trip non-finite floats as canonical strings: `.nan`, `.inf`, `-.inf`.
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     #[deprecated(
         note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
     )]
-    pub error_on_non_finite_float: bool,
+    pub reject_non_finite_typeless_float: bool,
 
     /// If true (default), public APIs that have access to the original YAML input
     /// will wrap returned errors with a snippet wrapper, enabling rustc-like snippet
@@ -517,7 +517,7 @@ impl Default for Options {
             angle_conversions: false,
             ignore_binary_tag_for_string: false,
             no_schema: false,
-            error_on_non_finite_float: false,
+            reject_non_finite_typeless_float: true,
             with_snippet: true,
             crop_radius: 64,
             require_indent: RequireIndent::Unchecked,
@@ -558,8 +558,8 @@ impl std::fmt::Debug for Options {
             .field("angle_conversions", &self.angle_conversions)
             .field("no_schema", &self.no_schema)
             .field(
-                "error_on_non_finite_float",
-                &self.error_on_non_finite_float,
+                "reject_non_finite_typeless_float",
+                &self.reject_non_finite_typeless_float,
             )
             .field("with_snippet", &self.with_snippet)
             .field("crop_radius", &self.crop_radius)
@@ -631,7 +631,7 @@ mod tests {
         assert!(!opts.ignore_binary_tag_for_string);
         assert!(!opts.angle_conversions);
         assert!(!opts.no_schema);
-        assert!(!opts.error_on_non_finite_float);
+        assert!(opts.reject_non_finite_typeless_float);
         assert!(opts.with_snippet);
         assert_eq!(opts.crop_radius, 64);
         assert_eq!(opts.require_indent, RequireIndent::Unchecked);

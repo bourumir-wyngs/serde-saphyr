@@ -343,8 +343,8 @@ where
 /// an error.
 ///
 /// This is used only by `deserialize_any`'s typeless path (e.g. `serde_json::Value`), where
-/// non-finite floats are represented as canonical strings — or, when
-/// `error_on_non_finite_float` is set, rejected — rather than causing an "invalid floating
+/// non-finite floats are rejected by default, or represented as canonical strings when
+/// `reject_non_finite_typeless_float` is disabled, rather than causing an "invalid floating
 /// point" parse error. Elsewhere, overflowing literals continue to be rejected as invalid
 /// floats via [`parse_yaml12_float`], so this function must not replace it as the general
 /// entry point.

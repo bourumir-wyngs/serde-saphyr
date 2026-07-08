@@ -781,8 +781,8 @@ pub enum Error {
     /// In a typeless position (e.g. `deserialize_any` targeting `serde_json::Value`), a
     /// scalar resolved to a non-finite float — NaN, ±Inf, or a decimal literal that
     /// overflows `f64` to infinity (e.g. `1e999`) — and
-    /// [`Options::error_on_non_finite_float`](crate::options::Options::error_on_non_finite_float)
-    /// was set to reject it instead of converting it to a canonical string.
+    /// [`Options::reject_non_finite_typeless_float`](crate::options::Options::reject_non_finite_typeless_float)
+    /// is enabled, rejecting it instead of converting it to a canonical string.
     NonFiniteFloat {
         /// The offending scalar text as it appeared in the source (e.g. `.nan`, `1e999`).
         value: String,

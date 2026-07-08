@@ -187,7 +187,7 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
         }
         Error::InvalidScalar { ty, .. } => Cow::Owned(format!("invalid {ty}")),
         Error::NonFiniteFloat { value, .. } => Cow::Owned(format!(
-            "non-finite float `{value}` rejected by error_on_non_finite_float"
+            "non-finite float `{value}` rejected by reject_non_finite_typeless_float"
         )),
         Error::SerdeInvalidType {
             unexpected,
