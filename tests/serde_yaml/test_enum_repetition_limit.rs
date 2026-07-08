@@ -28,8 +28,8 @@ fn test_enum_billion_laughs_with_tags() {
         "
     };
     let parsed: Result<Value, Error> = serde_saphyr::from_str_with_options(yaml, adapt_to_miri());
-    assert!(parsed.is_err());
-    assert!(format!("{}", parsed.unwrap_err()).contains("budget breached"));
+    let err = parsed.unwrap_err();
+    assert!(matches!(err.without_snippet(), Error::Budget { .. }));
 }
 
 #[test]
@@ -48,8 +48,8 @@ fn test_enum_billion_laughs() {
         "
     };
     let parsed: Result<Value, Error> = serde_saphyr::from_str_with_options(yaml, adapt_to_miri());
-    assert!(parsed.is_err());
-    assert!(format!("{}", parsed.unwrap_err()).contains("budget breached"));
+    let err = parsed.unwrap_err();
+    assert!(matches!(err.without_snippet(), Error::Budget { .. }));
 }
 
 #[test]

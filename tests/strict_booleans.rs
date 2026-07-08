@@ -20,12 +20,10 @@ fn strict_rejects_yaml11_bool_literals() {
     let opts = serde_saphyr::options! { strict_booleans: true };
     let err =
         serde_saphyr::from_str_with_options::<Flag>(y, opts).expect_err("strict should reject yes");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("invalid boolean") || msg.contains("strict"),
-        "unexpected error: {}",
-        msg
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        serde_saphyr::Error::InvalidBooleanStrict { .. }
+    ));
 }
 
 #[test]

@@ -82,9 +82,9 @@ fn internal_yaml_commented_payload_requires_string_comment() {
     let err = to_string(&YamlCommentedNonString(true, "x"))
         .expect_err("expected error when comment isn't a string");
 
-    let msg = err.to_string();
-    assert!(
-        msg.contains("missing string") || msg.contains("unexpected"),
-        "unexpected error message: {msg}"
-    );
+    assert!(matches!(
+        err,
+        serde_saphyr::ser_error::Error::Unexpected { msg }
+            if msg == "missing string" || msg == "unexpected"
+    ));
 }

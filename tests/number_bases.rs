@@ -180,6 +180,11 @@ hex_u32: 0xABCDG
 bin_u8: 0b1021
 "#;
     let err = serde_saphyr::from_str::<UnderscoreNumbers>(y).unwrap_err();
-    let msg = format!("{err}");
-    assert!(msg.contains("invalid u32") || msg.contains("invalid u8"));
+    assert!(matches!(
+        err.without_snippet(),
+        serde_saphyr::Error::InvalidScalar {
+            ty: "u32" | "u8",
+            ..
+        }
+    ));
 }

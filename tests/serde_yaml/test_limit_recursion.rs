@@ -1,4 +1,6 @@
 use serde_json::Value;
+use serde_saphyr::{Error, ExternalMessageSource};
+
 #[test]
 fn test_recursion_limit_exceeded() {
     let depth = 1_000;
@@ -10,9 +12,12 @@ fn test_recursion_limit_exceeded() {
     };
 
     let err = serde_saphyr::from_str_with_options::<Value>(&yaml, options).unwrap_err();
-    assert!(
-        err.to_string().contains("recursion limit exceeded"),
-        "unexpected error: {}",
-        err
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        Error::ExternalMessage {
+            source: ExternalMessageSource::Parser,
+            msg,
+            ..
+        } if msg == "recursion limit exceeded"
+    ));
 }

@@ -2,7 +2,9 @@
 #![cfg(feature = "include")]
 
 use serde::Deserialize;
-use serde_saphyr::{IncludeResolveError, InputSource, ResolvedInclude, from_reader_with_options};
+use serde_saphyr::{
+    Error, IncludeResolveError, InputSource, ResolvedInclude, from_reader_with_options,
+};
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct Root {
@@ -51,12 +53,14 @@ i2: !include "f.yml#f"
         result.is_err(),
         "Expected parsing to fail due to budget exhaustion"
     );
-    let err_msg = result.unwrap_err().to_string();
-    assert!(
-        err_msg.contains("exceed"),
-        "Error should mention exceeding limit, got: {}",
-        err_msg
-    );
+    let err = result.unwrap_err();
+    assert!(matches!(
+        err.without_snippet(),
+        Error::ResolverError {
+            error: IncludeResolveError::Message(message),
+            ..
+        } if message.starts_with("input byte limit ")
+    ));
 }
 
 #[test]
@@ -143,5 +147,11 @@ fn test_same_anchored_include_parses_with_different_limits() {
 
     let err = from_reader_with_options::<_, Root>(std::io::Cursor::new(yaml), options_err)
         .expect_err("same anchored input should fail when the combined budget is too small");
-    assert!(err.to_string().contains("exceed"));
+    assert!(matches!(
+        err.without_snippet(),
+        Error::ResolverError {
+            error: IncludeResolveError::Message(message),
+            ..
+        } if message.starts_with("input byte limit ")
+    ));
 }

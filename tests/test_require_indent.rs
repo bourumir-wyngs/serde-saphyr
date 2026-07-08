@@ -1,7 +1,7 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 use rstest::rstest;
 use serde_json::Value;
-use serde_saphyr::RequireIndent;
+use serde_saphyr::{Error, RequireIndent};
 
 fn parse(require: RequireIndent, yaml: &str) -> Result<Value, String> {
     let options = serde_saphyr::options! { require_indent: require };
@@ -38,8 +38,11 @@ fn divisible_zero_indent_returns_error() {
         require_indent: RequireIndent::Divisible(0),
     };
     let err = serde_saphyr::from_str_with_options::<Value>("value\n", options).unwrap_err();
-    assert!(err.to_string().contains("Divisible(0)"), "{err}");
-    assert!(err.to_string().contains("non-zero"), "{err}");
+    assert!(matches!(
+        err.without_snippet(),
+        Error::Message { msg, .. }
+            if msg == "invalid deserialization options: require_indent Divisible(0) is not allowed; indentation divisor must be non-zero"
+    ));
 }
 
 #[rstest]

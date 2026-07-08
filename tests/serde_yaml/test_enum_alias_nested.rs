@@ -100,12 +100,11 @@ fn test_nested_enum_alias_error() {
         "
     };
     let result: Result<Outer, Error> = serde_saphyr::from_str(yaml);
-    let msg = result.unwrap_err().to_string();
-    assert!(
-        msg.contains("unknown variant"),
-        "unexpected message: {}",
-        msg
-    );
+    let err = result.unwrap_err();
+    assert!(matches!(
+        err.without_snippet(),
+        Error::SerdeUnknownVariant { .. }
+    ));
 }
 
 #[derive(Deserialize, Debug)]

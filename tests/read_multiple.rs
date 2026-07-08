@@ -49,11 +49,10 @@ fn read_with_options_iterator_works_the_same() {
 fn from_reader_reports_empty_input_as_eof_for_non_null_target() {
     let err = serde_saphyr::from_reader::<_, bool>(std::io::Cursor::new(Vec::<u8>::new()))
         .expect_err("empty reader should not deserialize into bool");
-    let message = err.to_string();
-    assert!(
-        message.contains("end") || message.contains("EOF") || message.contains("eof"),
-        "expected EOF-like error, got: {message}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        serde_saphyr::Error::Eof { .. }
+    ));
 }
 
 #[test]
@@ -74,11 +73,10 @@ fn from_reader_rejects_multiple_documents() {
     let yaml = b"id: 1\n---\nid: 2\n";
     let err = serde_saphyr::from_reader::<_, Simple>(std::io::Cursor::new(&yaml[..]))
         .expect_err("single-document reader API should reject multi-document input");
-    let message = err.to_string();
-    assert!(
-        message.contains("multiple") || message.contains("document"),
-        "expected multiple-document error, got: {message}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        serde_saphyr::Error::MultipleDocuments { .. }
+    ));
 }
 
 #[test]

@@ -3,8 +3,8 @@
 
 use serde::Deserialize;
 use serde_saphyr::{
-    IncludeRequest, InputSource, Location, SafeFileReadMode, SafeFileResolver, SymlinkPolicy,
-    from_str_with_options,
+    Error, IncludeRequest, IncludeResolveError, InputSource, Location, SafeFileReadMode,
+    SafeFileResolver, SymlinkPolicy, from_str_with_options,
 };
 use std::fs;
 use std::path::Path;
@@ -391,8 +391,13 @@ fn safe_file_resolver_reports_missing_fragment() {
         .unwrap();
     let err = from_str_with_options::<ScalarConfig>("foo: !include value.yaml#section\n", options)
         .unwrap_err();
-    let msg = err.to_string();
-    assert!(msg.contains("fragment 'section' was not found"), "{}", msg);
+    assert!(matches!(
+        err.without_snippet(),
+        Error::ResolverError {
+            error: IncludeResolveError::Message(message),
+            ..
+        } if message == "include fragment 'section' was not found"
+    ));
 }
 
 #[test]

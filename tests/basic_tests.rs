@@ -209,16 +209,26 @@ plain
     fn duplicate_keys_error_policy() {
         let y = "a: 1\na: 2\n";
         let err = from_str::<HashMap<String, i32>>(y).unwrap_err();
-        let msg = format!("{err}");
-        assert!(msg.contains("duplicate mapping key: a"));
+        assert!(matches!(
+            unwrap_snippet(&err),
+            Error::DuplicateMappingKey {
+                key: Some(key),
+                ..
+            } if key == "a"
+        ));
     }
 
     #[test]
     fn duplicate_keys_error_policy_custom_tagged_string_key() {
         let y = "a: 1\n!foo a: 2\n";
         let err = from_str::<HashMap<String, i32>>(y).unwrap_err();
-        let msg = format!("{err}");
-        assert!(msg.contains("duplicate mapping key: a"));
+        assert!(matches!(
+            unwrap_snippet(&err),
+            Error::DuplicateMappingKey {
+                key: Some(key),
+                ..
+            } if key == "a"
+        ));
     }
 
     #[test]
@@ -311,8 +321,13 @@ plain
             duplicate_keys: DuplicateKeyPolicy::Error,
         };
         let err = from_str_with_options::<Background>(y, opt).unwrap_err();
-        let msg = format!("{err}");
-        assert!(msg.contains("duplicate mapping key: color"));
+        assert!(matches!(
+            unwrap_snippet(&err),
+            Error::DuplicateMappingKey {
+                key: Some(key),
+                ..
+            } if key == "color"
+        ));
     }
 
     #[test]
@@ -406,8 +421,13 @@ target:
             duplicate_keys: DuplicateKeyPolicy::Error,
         };
         let err = from_str_with_options::<BackgroundRoot>(y, opt).unwrap_err();
-        let msg = format!("{err}");
-        assert!(msg.contains("duplicate mapping key: color"));
+        assert!(matches!(
+            unwrap_snippet(&err),
+            Error::DuplicateMappingKey {
+                key: Some(key),
+                ..
+            } if key == "color"
+        ));
     }
 
     #[test]
@@ -416,8 +436,10 @@ target:
 
         // Error policy should reject duplicate sequence keys.
         let err = from_str::<HashMap<Vec<i32>, String>>(y).unwrap_err();
-        let msg = format!("{err}");
-        assert!(msg.contains("duplicate mapping key"));
+        assert!(matches!(
+            unwrap_snippet(&err),
+            Error::DuplicateMappingKey { key: None, .. }
+        ));
 
         let opt_first = serde_saphyr::options! {
             duplicate_keys: DuplicateKeyPolicy::FirstWins,
@@ -445,8 +467,10 @@ target:
         let y = "?\n  a: 1\n  b: foo\n: 7\n?\n  a: 1\n  b: foo\n: 9\n";
 
         let err = from_str::<HashMap<StructKey, i32>>(y).unwrap_err();
-        let msg = format!("{err}");
-        assert!(msg.contains("duplicate mapping key"));
+        assert!(matches!(
+            unwrap_snippet(&err),
+            Error::DuplicateMappingKey { key: None, .. }
+        ));
 
         let opt_first = serde_saphyr::options! {
             duplicate_keys: DuplicateKeyPolicy::FirstWins,
@@ -510,11 +534,10 @@ target:
             };
             let err = from_str_with_options::<HashMap<String, HashMap<String, String>>>(y, opt)
                 .unwrap_err();
-            let msg = format!("{err}");
-            assert!(
-                msg.contains("alias expansion limit exceeded"),
-                "unexpected error: {msg}"
-            );
+            assert!(matches!(
+                unwrap_snippet(&err),
+                Error::AliasExpansionLimitExceeded { .. }
+            ));
         }
 
         // ---------- Alias-bomb hardening: total replayed events cap ----------
@@ -538,10 +561,14 @@ target:
                 },
             };
             let err = from_str_with_options::<Data>(y, opt).unwrap_err();
-            let msg = format!("{err}");
+            let err = unwrap_snippet(&err);
             assert!(
-                msg.contains("alias replay limit exceeded"),
-                "unexpected error: {msg}"
+                matches!(err, Error::AliasReplayLimitExceeded { .. })
+                    || matches!(
+                        err,
+                        Error::AliasError { msg, .. }
+                            if msg.starts_with("alias replay limit exceeded")
+                    )
             );
         }
 
@@ -560,11 +587,10 @@ target:
                 },
             };
             let err = from_str_with_options::<HashMap<String, Vec<u32>>>(y, opt).unwrap_err();
-            let msg = format!("{err}");
-            assert!(
-                msg.contains("alias replay stack depth exceeded"),
-                "unexpected error: {msg}"
-            );
+            assert!(matches!(
+                unwrap_snippet(&err),
+                Error::AliasReplayStackDepthExceeded { .. }
+            ));
         }
 
         // Place the anchor *inside* the mapping so the document root is a mapping
@@ -588,7 +614,14 @@ target:
                 ";
             let err =
                 from_str_with_options::<HashMap<String, Vec<Vec<u32>>>>(y, options).unwrap_err();
-            assert!(format!("{err}").contains("budget"));
+            let err = unwrap_snippet(&err);
+            assert!(
+                matches!(err, Error::Budget { .. })
+                    || matches!(
+                        err,
+                        Error::AliasError { msg, .. } if msg.starts_with("budget breached")
+                    )
+            );
         }
 
         #[test]

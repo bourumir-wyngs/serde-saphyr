@@ -89,9 +89,8 @@ fn binary_tag_rejects_padding_inside_quad() {
         Err(err) => err,
     };
 
-    let message = err.to_string();
-    assert!(
-        message.contains("base64") || message.contains("binary"),
-        "expected base64 error, got: {message}"
-    );
+    assert!(matches!(
+        err.without_snippet(),
+        serde_saphyr::Error::InvalidBinaryBase64 { .. }
+    ));
 }
