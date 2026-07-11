@@ -460,6 +460,7 @@ impl BudgetEnforcer {
             }
             Event::DocumentStart(..) => {
                 if self.policy == EnforcingPolicy::PerDocument {
+                    self.finalize_document()?;
                     self.report.reset();
                     self.defined_anchors.clear();
                 } else {
@@ -666,8 +667,18 @@ impl BudgetEnforcer {
         self.report
     }
 
-    /// Finalize the enforcement, performing post-scan heuristics (like alias/anchor ratio).
-    pub fn finalize(mut self) -> BudgetReport {
+    /// Finalize the current document when limits are enforced per document.
+    ///
+    /// Unlike [`BudgetEnforcer::finalize`], this keeps the enforcer alive so it
+    /// can be reset and reused for the next document in a stream.
+    pub(crate) fn finalize_document(&mut self) -> Result<(), BudgetBreach> {
+        if self.policy == EnforcingPolicy::PerDocument {
+            self.check_post_scan_heuristics()?;
+        }
+        Ok(())
+    }
+
+    fn check_post_scan_heuristics(&mut self) -> Result<(), BudgetBreach> {
         self.report.anchors = self.defined_anchors.len();
 
         if self.budget.enforce_alias_anchor_ratio
@@ -679,12 +690,20 @@ impl BudgetEnforcer {
                         .alias_anchor_ratio_multiplier
                         .saturating_mul(self.report.anchors))
         {
-            self.report.breached = Some(BudgetBreach::AliasAnchorRatio {
+            let breach = BudgetBreach::AliasAnchorRatio {
                 aliases: self.report.aliases,
                 anchors: self.report.anchors,
-            });
+            };
+            self.report.breached = Some(breach.clone());
+            return Err(breach);
         }
 
+        Ok(())
+    }
+
+    /// Finalize the enforcement, performing post-scan heuristics (like alias/anchor ratio).
+    pub fn finalize(mut self) -> BudgetReport {
+        let _ = self.check_post_scan_heuristics();
         self.report
     }
 }
@@ -877,6 +896,34 @@ e: *A
         ));
         assert_eq!(report.aliases, 3);
         assert_eq!(report.anchors, 1);
+    }
+
+    #[test]
+    fn per_document_alias_anchor_ratio_is_checked_before_reset() {
+        let yaml = concat!(
+            "---\n",
+            "root: &A [1]\n",
+            "a: *A\n",
+            "b: *A\n",
+            "c: *A\n",
+            "---\n",
+            "root: &B [2]\n",
+        );
+        let budget = Budget {
+            alias_anchor_min_aliases: 1,
+            alias_anchor_ratio_multiplier: 2,
+            ..Default::default()
+        };
+
+        let report = check_yaml_budget(yaml, budget, EnforcingPolicy::PerDocument).unwrap();
+
+        assert!(matches!(
+            report.breached,
+            Some(BudgetBreach::AliasAnchorRatio {
+                aliases: 3,
+                anchors: 1
+            })
+        ));
     }
 
     #[test]

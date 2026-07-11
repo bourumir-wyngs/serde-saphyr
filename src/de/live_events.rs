@@ -1086,6 +1086,18 @@ impl<'a> LiveEvents<'a> {
         Ok(())
     }
 
+    /// Run deferred budget checks for the current document without consuming
+    /// the enforcer, so a streaming iterator can reuse it for later documents.
+    #[cold]
+    pub(crate) fn finalize_document_budget(&mut self) -> Result<(), Error> {
+        if let Some(budget) = self.budget.as_mut() {
+            budget
+                .finalize_document()
+                .map_err(|breach| budget_error(breach).with_location(self.last_location))?;
+        }
+        Ok(())
+    }
+
     /// Finalize the stream: flush and report budget breaches, if any.
     ///
     /// Should be called after parsing completes to surface any delayed

@@ -156,6 +156,29 @@ fn read_still_rejects_oversized_scalars_when_reader_byte_cap_is_disabled() {
 }
 
 #[test]
+fn read_checks_alias_anchor_ratio_before_yielding_each_document() {
+    let aliases = std::iter::repeat_n("*a", 101)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let yaml = format!("---\nbase: &a 1\nrefs: [{aliases}]\n---\nbase: &b 2\nrefs: []\n");
+    let mut reader = std::io::Cursor::new(yaml.as_bytes());
+    let mut iter =
+        read_with_options::<_, serde_json::Value>(&mut reader, serde_saphyr::Options::default());
+
+    match iter.next().expect("budget error expected") {
+        Err(Error::Budget {
+            breach: BudgetBreach::AliasAnchorRatio { aliases, anchors },
+            ..
+        }) => {
+            assert_eq!(aliases, 101);
+            assert_eq!(anchors, 1);
+        }
+        other => panic!("Unexpected result: {other:?}"),
+    }
+    assert!(iter.next().is_none());
+}
+
+#[test]
 fn read_limits_are_per_document() {
     let (opts, yaml) = yaml_and_options();
     let mut reader = std::io::Cursor::new(yaml.as_bytes());

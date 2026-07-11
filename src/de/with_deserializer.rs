@@ -24,7 +24,11 @@ where
         crate::properties_redaction::with_interp_redaction_scope(|| f(src))
     });
     match value_res {
-        Ok(v) => Ok(v),
+        Ok(v) => {
+            src.finalize_document_budget()
+                .map_err(|e| wrap_err(e, src))?;
+            Ok(v)
+        }
         Err(e) => {
             if src.synthesized_null_emitted() && synthesized_null_should_be_eof(&e) {
                 // If the only thing in the input was an empty document (synthetic null),
