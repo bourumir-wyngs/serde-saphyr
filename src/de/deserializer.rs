@@ -283,6 +283,21 @@ pub(crate) fn with_root_redaction<'de, 'e, T>(
     f(de)
 }
 
+/// Reject an explicit YAML core tag that does not match a typed Serde scalar request.
+///
+/// Untagged values and application-specific tags retain their existing parsing behavior.
+fn validate_core_scalar_tag(
+    tag: SfTag,
+    expected: SfTag,
+    ty: &'static str,
+    location: Location,
+) -> Result<(), Error> {
+    if tag.is_core() && tag != expected {
+        return Err(Error::InvalidScalar { ty, location });
+    }
+    Ok(())
+}
+
 struct EnumScalarId<'de> {
     raw: Cow<'de, str>,
     effective: Cow<'de, str>,
@@ -828,7 +843,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     /// Caller: Serde when target expects `bool`.
     /// Flow: scalar text → `Visitor::visit_bool`.
     fn deserialize_bool<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_cow_event()?;
+        let (s, tag, location) = self.take_scalar_cow_event()?;
+        validate_core_scalar_tag(tag, SfTag::Bool, "boolean", location)?;
         let s = s.as_ref();
         let t = s.trim();
         let b: bool = if self.cfg.strict_booleans {
@@ -850,31 +866,36 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
     /// Parse a signed 8-bit integer.
     fn deserialize_i8<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_cow_event()?;
+        let (s, tag, location) = self.take_scalar_cow_event()?;
+        validate_core_scalar_tag(tag, SfTag::Int, "i8", location)?;
         let v: i8 = parse_int_signed(s.as_ref(), "i8", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i8(v)
     }
     /// Parse a signed 16-bit integer.
     fn deserialize_i16<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_cow_event()?;
+        let (s, tag, location) = self.take_scalar_cow_event()?;
+        validate_core_scalar_tag(tag, SfTag::Int, "i16", location)?;
         let v: i16 = parse_int_signed(s.as_ref(), "i16", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i16(v)
     }
     /// Parse a signed 32-bit integer.
     fn deserialize_i32<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_cow_event()?;
+        let (s, tag, location) = self.take_scalar_cow_event()?;
+        validate_core_scalar_tag(tag, SfTag::Int, "i32", location)?;
         let v: i32 = parse_int_signed(s.as_ref(), "i32", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i32(v)
     }
     /// Parse a signed 64-bit integer.
     fn deserialize_i64<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_cow_event()?;
+        let (s, tag, location) = self.take_scalar_cow_event()?;
+        validate_core_scalar_tag(tag, SfTag::Int, "i64", location)?;
         let v: i64 = parse_int_signed(s.as_ref(), "i64", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i64(v)
     }
     /// Parse a signed 128-bit integer.
     fn deserialize_i128<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_cow_event()?;
+        let (s, tag, location) = self.take_scalar_cow_event()?;
+        validate_core_scalar_tag(tag, SfTag::Int, "i128", location)?;
         let v: i128 =
             parse_int_signed(s.as_ref(), "i128", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i128(v)
@@ -882,34 +903,39 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
 
     /// Parse an unsigned 8-bit integer.
     fn deserialize_u8<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_cow_event()?;
+        let (s, tag, location) = self.take_scalar_cow_event()?;
+        validate_core_scalar_tag(tag, SfTag::Int, "u8", location)?;
         let v: u8 = parse_int_unsigned(s.as_ref(), "u8", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u8(v)
     }
     /// Parse an unsigned 16-bit integer.
     fn deserialize_u16<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_cow_event()?;
+        let (s, tag, location) = self.take_scalar_cow_event()?;
+        validate_core_scalar_tag(tag, SfTag::Int, "u16", location)?;
         let v: u16 =
             parse_int_unsigned(s.as_ref(), "u16", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u16(v)
     }
     /// Parse an unsigned 32-bit integer.
     fn deserialize_u32<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_cow_event()?;
+        let (s, tag, location) = self.take_scalar_cow_event()?;
+        validate_core_scalar_tag(tag, SfTag::Int, "u32", location)?;
         let v: u32 =
             parse_int_unsigned(s.as_ref(), "u32", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u32(v)
     }
     /// Parse an unsigned 64-bit integer.
     fn deserialize_u64<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_cow_event()?;
+        let (s, tag, location) = self.take_scalar_cow_event()?;
+        validate_core_scalar_tag(tag, SfTag::Int, "u64", location)?;
         let v: u64 =
             parse_int_unsigned(s.as_ref(), "u64", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u64(v)
     }
     /// Parse an unsigned 128-bit integer.
     fn deserialize_u128<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        let (s, _tag, location) = self.take_scalar_cow_event()?;
+        let (s, tag, location) = self.take_scalar_cow_event()?;
+        validate_core_scalar_tag(tag, SfTag::Int, "u128", location)?;
         let v: u128 =
             parse_int_unsigned(s.as_ref(), "u128", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u128(v)

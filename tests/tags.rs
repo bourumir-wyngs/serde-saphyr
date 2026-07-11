@@ -1,6 +1,7 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde_saphyr as yaml;
 use serde_saphyr::Error;
+use std::fmt::Debug;
 
 #[test]
 fn binary_tag_to_string_when_utf8() {
@@ -36,9 +37,36 @@ fn tagged_bool_cannot_parse_into_string() {
 }
 
 #[test]
-fn tagged_bool_cannot_parse_into_int() {
-    let _err =
-        yaml::from_str::<i32>("!!bool false").expect_err("!!bool should not deserialize into int");
+fn tagged_int_cannot_parse_into_boolean() {
+    let err = yaml::from_str::<bool>("!!int true")
+        .expect_err("!!int should not deserialize into bool even when its text is boolean");
+    assert!(matches!(
+        err.without_snippet(),
+        Error::InvalidScalar { ty: "boolean", .. }
+    ));
+}
+
+fn assert_tagged_string_cannot_parse_into_integer<T>()
+where
+    T: serde::de::DeserializeOwned + Debug,
+{
+    let err = yaml::from_str::<T>("!!str 42")
+        .expect_err("!!str should not deserialize into an integer even when its text is numeric");
+    assert!(matches!(err.without_snippet(), Error::InvalidScalar { .. }));
+}
+
+#[test]
+fn tagged_string_cannot_parse_into_any_integer_type() {
+    assert_tagged_string_cannot_parse_into_integer::<i8>();
+    assert_tagged_string_cannot_parse_into_integer::<i16>();
+    assert_tagged_string_cannot_parse_into_integer::<i32>();
+    assert_tagged_string_cannot_parse_into_integer::<i64>();
+    assert_tagged_string_cannot_parse_into_integer::<i128>();
+    assert_tagged_string_cannot_parse_into_integer::<u8>();
+    assert_tagged_string_cannot_parse_into_integer::<u16>();
+    assert_tagged_string_cannot_parse_into_integer::<u32>();
+    assert_tagged_string_cannot_parse_into_integer::<u64>();
+    assert_tagged_string_cannot_parse_into_integer::<u128>();
 }
 
 #[test]

@@ -216,6 +216,20 @@ impl SfTag {
             | SfTag::Radians => false,
         }
     }
+
+    /// Whether this is one of the explicit tags defined by the YAML core schema.
+    pub(crate) fn is_core(&self) -> bool {
+        matches!(
+            self,
+            SfTag::Int
+                | SfTag::Float
+                | SfTag::Bool
+                | SfTag::Null
+                | SfTag::Seq
+                | SfTag::Map
+                | SfTag::String
+        )
+    }
 }
 
 #[cfg(test)]
