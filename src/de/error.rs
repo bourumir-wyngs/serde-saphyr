@@ -21,7 +21,7 @@ use crate::{
     path_map::{PathKey, PathMap, format_path_with_resolved_leaf},
 };
 use annotate_snippets::Level;
-use granit_parser::{ScalarStyle, ScanError};
+use granit_parser::{ErrorKind, ScalarStyle, ScanError};
 use serde_core::de::{self};
 use std::borrow::Cow;
 use std::cell::Cell;
@@ -601,7 +601,10 @@ pub enum Error {
     /// Renderers should call [`Localizer::override_external_message`] to allow callers
     /// to replace or translate this text.
     ExternalMessage {
-        source: ExternalMessageSource,
+        /// Dependency that produced the message and any structured source error.
+        ///
+        /// This is boxed to keep [`Error`] below Clippy's large-error threshold.
+        source: Box<ExternalMessageSource>,
         msg: String,
         /// Stable-ish identifier when available (e.g. validator error code).
         code: Option<String>,
@@ -1607,28 +1610,21 @@ impl Error {
         let location = Location::new(mark.line(), mark.col() + 1)
             .with_span(crate::Span::new(mark.index() as u64, 1));
 
-        // `granit_parser` reports missing aliases/anchors as a `ScanError` with a textual
-        // message (e.g. "unknown anchor"). To keep our formatter overrides working for the
-        // common real-world case (`*missing`), detect this and convert to our structured
-        // `Error::UnknownAnchor`.
-        //
-        // Note: the parser message usually contains an anchor *name*. We intentionally do not
-        // attempt to parse or store it, to keep this variant free of best-effort identifiers.
-        let info = err.info();
-        if info.starts_with("multiple documents not supported here") {
-            return Error::MultipleDocuments {
-                hint: "only one document is supported in this context",
-                location,
-            };
+        match err.kind() {
+            ErrorKind::MultipleDocumentsUnsupported => {
+                return Error::MultipleDocuments {
+                    hint: "only one document is supported in this context",
+                    location,
+                };
+            }
+            ErrorKind::UnknownAnchor => return Error::UnknownAnchor { location },
+            _ => {}
         }
 
-        if info.to_ascii_lowercase().contains("unknown anchor") {
-            return Error::UnknownAnchor { location };
-        }
-
+        let message = err.info();
         Error::ExternalMessage {
-            source: ExternalMessageSource::Parser,
-            msg: info.to_owned(),
+            source: Box::new(ExternalMessageSource::Parser(err)),
+            msg: message,
             code: None,
             params: Vec::new(),
             location,
@@ -1943,7 +1939,7 @@ fn fmt_validation_error_with_snippets_offset(
         let def_loc = locs.defined_location;
 
         let resolved_path = format_path_with_resolved_leaf(&issue.path, &resolved_leaf);
-        let entry = issue.display_entry_overridden(l10n, source);
+        let entry = issue.display_entry_overridden(l10n, source.clone());
         let base_msg = l10n.validation_base_message(&entry, &resolved_path);
 
         let mut rendered_regions = Vec::new();
@@ -2286,6 +2282,25 @@ pub(crate) fn budget_error(breach: BudgetBreach) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[rstest::rstest]
+    #[case::unknown_anchor("while parsing node, found unknown anchor")]
+    #[case::multiple_documents("multiple documents not supported here")]
+    fn custom_scan_error_messages_are_not_reclassified_as_builtin_kinds(#[case] message: &str) {
+        let scan_error = ScanError::new(granit_parser::Marker::new(0, 1, 0), message);
+        let mapped = Error::from_scan_error(scan_error);
+
+        assert!(matches!(
+            mapped,
+            Error::ExternalMessage {
+                ref source,
+                ref msg,
+                ..
+            } if msg == message
+                && matches!(source.as_ref(), ExternalMessageSource::Parser(error)
+                    if matches!(error.kind(), ErrorKind::Custom(_)))
+        ));
+    }
 
     #[test]
     fn sanitize_snippet_source_name_replaces_control_chars() {

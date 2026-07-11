@@ -611,18 +611,12 @@ fn own_event(event: Event<'_>) -> Event<'static> {
 impl<'input> Iterator for ParserStack<'input> {
     type Item = Result<(Event<'input>, Span), ScanError>;
     fn next(&mut self) -> Option<Self::Item> {
-        let pre_stack = self.inner.stack();
         match self.inner.next() {
             Some(Err(e)) => {
                 // Do not sync source tracking yet on error. The caller (like `LiveEvents`)
                 // needs `current_source_id()` to map the error location correctly.
                 // If they continue iterating, the next `Ok` event will sync it.
-                if pre_stack.len() > 1 {
-                    let msg = format!("{}\nwhile parsing {}", e.info(), pre_stack.join(" -> "));
-                    Some(Err(ScanError::new(*e.marker(), msg)))
-                } else {
-                    Some(Err(e))
-                }
+                Some(Err(e))
             }
             Some(Ok((Event::DocumentStart(explicit, version), span))) => {
                 self.sync_source_tracking(self.inner.stack().len());

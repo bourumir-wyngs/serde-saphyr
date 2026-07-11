@@ -7,6 +7,7 @@
 //! 2. [`Localizer`] for message pieces that are composed *outside* `format_message`, such as:
 //!    - location suffixes (the "… at line X, column Y" part)
 //!    - validation issue lines (and validation snippet labels when snippets are enabled)
+//!    - messages originating in the parser
 //!
 //! The built-in formatters ([`UserMessageFormatter`] and [`DefaultMessageFormatter`]) can also be
 //! reused while swapping their wording glue via `.with_localizer(...)`.
@@ -25,7 +26,8 @@
 
 use serde::Deserialize;
 use serde_saphyr::{
-    Error, Localizer, Location, MessageFormatter, SingleQuoted, UserMessageFormatter, ser_error,
+    Error, ExternalMessage, ExternalMessageSource, Localizer, Location, MessageFormatter,
+    SingleQuoted, UserMessageFormatter, granit_parser::ErrorKind, ser_error,
 };
 use std::borrow::Cow;
 
@@ -37,6 +39,19 @@ use std::borrow::Cow;
 struct PirateLocalizer;
 
 impl Localizer for PirateLocalizer {
+    fn override_external_message<'a>(&self, msg: ExternalMessage<'a>) -> Option<Cow<'a, str>> {
+        match msg.source {
+            ExternalMessageSource::Parser(error) => match error.kind() {
+                ErrorKind::MismatchedFlowCollectionEnd { .. } => {
+                    Some(Cow::Borrowed("Hey, more ships in than out!"))
+                }
+                ErrorKind::InvalidIndentation => Some(Cow::Borrowed("Ye've berthed her wrong!")),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     fn attach_location<'a>(&self, base: Cow<'a, str>, loc: serde_saphyr::Location) -> Cow<'a, str> {
         if loc == serde_saphyr::Location::UNKNOWN {
             return base;
@@ -187,7 +202,22 @@ fn main() {
         );
     }
 
-    // Example 2: EOF
+    // Example 2: Mismatched flow collection delimiters
+    let yaml_mismatched_collection = "[sloop, schooner}\n";
+    println!("\n\n--- Attempting to parse ships with mismatched delimiters ---");
+    println!("{}", yaml_mismatched_collection.trim());
+
+    let result: Result<Vec<String>, _> = serde_saphyr::from_str(yaml_mismatched_collection);
+
+    if let Err(e) = result {
+        println!("\n[Developer Error]:\n{}", e.render());
+        println!(
+            "\n[Pirate Error]:\n{}",
+            e.render_with_formatter(&PirateFormatter)
+        );
+    }
+
+    // Example 3: EOF
     let yaml_eof = "";
     println!("\n\n--- Attempting to parse empty YAML into String ---");
 
@@ -210,7 +240,7 @@ fn main() {
         }
     }
 
-    // Example 3: Triggered when deserializing to `&str` but the scalar needs transformation (e.g. escapes).
+    // Example 4: Triggered when deserializing to `&str` but the scalar needs transformation (e.g. escapes).
     let yaml_transformed_str = "\"hello\\nworld\"\n";
     println!("\n\n--- Attempting to parse a transformed scalar into &str ---");
     println!("{}", yaml_transformed_str.trim());
@@ -229,7 +259,7 @@ fn main() {
         );
     }
 
-    // Example 4: Serialization error customization. Serialization uses `ser_error::Error`,
+    // Example 5: Serialization error customization. Serialization uses `ser_error::Error`,
     // so customize it by matching typed serializer variants directly.
     let single_quoted = SingleQuoted("line\nbreak");
     println!("\n\n--- Attempting to serialize a value that cannot use SingleQuoted safely ---");
@@ -242,7 +272,7 @@ fn main() {
         );
     }
 
-    // Example 5: Validation with dual-snippet (anchor + alias)
+    // Example 6: Validation with dual-snippet (anchor + alias)
     // The invalid value is defined with an anchor and referenced via alias,
     // so the error shows both where the alias is used and where the anchor defined the value.
     #[cfg(feature = "garde")]
@@ -312,6 +342,33 @@ fn main() {
         println!(
             "\n[Pirate Error]:\n{}",
             err.render_with_formatter(&PirateFormatter)
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mismatched_flow_collection_uses_pirate_parser_message() {
+        let error = serde_saphyr::from_str::<Vec<String>>("[sloop, schooner}")
+            .expect_err("mismatched flow collection should fail");
+
+        assert_eq!(
+            PirateFormatter.format_message(error.without_snippet()),
+            "Hey, more ships in than out!"
+        );
+    }
+
+    #[test]
+    fn invalid_indentation_uses_pirate_parser_message() {
+        let error = serde_saphyr::from_str::<serde_json::Value>("a:\n  [\nfoo]\n")
+            .expect_err("invalid indentation should fail");
+
+        assert_eq!(
+            PirateFormatter.format_message(error.without_snippet()),
+            "Ye've berthed her wrong!"
         );
     }
 }

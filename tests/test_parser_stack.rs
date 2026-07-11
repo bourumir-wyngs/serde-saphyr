@@ -1,8 +1,8 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 #[cfg(feature = "include")]
-use granit_parser::Parser;
-#[cfg(feature = "include")]
 use granit_parser::parser_stack::ParserStack;
+#[cfg(feature = "include")]
+use granit_parser::{ErrorKind, Parser};
 
 #[cfg(feature = "include")]
 #[test]
@@ -24,5 +24,8 @@ fn test_parser_stack_eof_error() {
         }
     }
     assert_eq!(errors.len(), 1);
-    assert!(format!("{:?}", errors[0]).contains("unclosed bracket"));
+    assert!(matches!(
+        errors[0].kind(),
+        ErrorKind::UnclosedFlowCollection { open: '[' }
+    ));
 }

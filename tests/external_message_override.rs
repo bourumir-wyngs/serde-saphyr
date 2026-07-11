@@ -1,6 +1,7 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 #[cfg(any(feature = "garde", feature = "validator"))]
 use serde::Deserialize;
+use serde_saphyr::granit_parser::ErrorKind;
 use serde_saphyr::localizer::{ExternalMessage, ExternalMessageSource, Localizer};
 use serde_saphyr::{DefaultMessageFormatter, Error, Location};
 use std::borrow::Cow;
@@ -10,7 +11,15 @@ struct OverrideAllExternal;
 impl Localizer for OverrideAllExternal {
     fn override_external_message<'a>(&self, msg: ExternalMessage<'a>) -> Option<Cow<'a, str>> {
         match msg.source {
-            ExternalMessageSource::Parser => Some(Cow::Borrowed("OVERRIDDEN_PARSER")),
+            ExternalMessageSource::Parser(error)
+                if matches!(
+                    error.kind(),
+                    ErrorKind::UnclosedFlowCollection { open: '[' }
+                ) =>
+            {
+                Some(Cow::Borrowed("OVERRIDDEN_PARSER"))
+            }
+            ExternalMessageSource::Parser(_) => None,
             ExternalMessageSource::Garde => Some(Cow::Borrowed("OVERRIDDEN_GARDE")),
             ExternalMessageSource::Validator => Some(Cow::Borrowed("OVERRIDDEN_VALIDATOR")),
             _ => None,
@@ -24,10 +33,9 @@ impl Localizer for OverrideAllExternal {
 }
 
 #[test]
-fn scan_error_text_can_be_overridden() {
+fn scan_error_kind_can_be_overridden() {
     // Trigger a parser scan error.
-    let err = serde_saphyr::from_str::<Vec<String>>(" [1, 2\n 3, 4 aaaaaa")
-        .expect_err("scan error expected");
+    let err = serde_saphyr::from_str::<Vec<String>>("[one, two").expect_err("scan error expected");
 
     let fmt = DefaultMessageFormatter.with_localizer(&OverrideAllExternal);
     let rendered = err.render_with_formatter(&fmt);
@@ -93,7 +101,12 @@ fn garde_issue_text_can_be_overridden() {
 #[test]
 fn external_message_variant_is_public() {
     let err = Error::ExternalMessage {
-        source: ExternalMessageSource::Parser,
+        source: Box::new(ExternalMessageSource::Parser(
+            serde_saphyr::granit_parser::ScanError::new(
+                serde_saphyr::granit_parser::Marker::new(0, 1, 0),
+                "x",
+            ),
+        )),
         msg: "x".to_owned(),
         code: None,
         params: Vec::new(),

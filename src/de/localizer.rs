@@ -43,16 +43,17 @@
 //! ```
 
 use crate::Location;
+use granit_parser::ScanError;
 use std::borrow::Cow;
 
 /// Where an “external” message comes from.
 ///
 /// External messages are those primarily produced by dependencies (parser / validators).
 #[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExternalMessageSource {
-    /// Text produced by the immediate YAML parser (e.g. scanning errors).
-    Parser,
+    /// Text produced by the immediate YAML parser, with its structured error.
+    Parser(ScanError),
     /// Text produced by `garde` validation rules.
     Garde,
     /// Text produced by `validator` validation rules.

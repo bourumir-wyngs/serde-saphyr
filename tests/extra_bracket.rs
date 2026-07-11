@@ -1,4 +1,5 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
+use serde_saphyr::granit_parser::ErrorKind;
 use serde_saphyr::{Error, ExternalMessageSource};
 
 // granit-parser 0.0.6 does not emit closing event.
@@ -9,9 +10,12 @@ fn extra_bracket_should_err() {
     assert!(matches!(
         result.without_snippet(),
         Error::ExternalMessage {
-            source: ExternalMessageSource::Parser,
-            msg,
+            source,
             ..
-        } if msg.contains("bracket")
+        } if matches!(
+            source.as_ref(),
+            ExternalMessageSource::Parser(error)
+                if error.kind() == ErrorKind::MisplacedFlowCollectionEnd
+        )
     ));
 }

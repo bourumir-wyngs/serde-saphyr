@@ -32,7 +32,7 @@ fn format_validation_issues(
 ) -> String {
     let mut lines = Vec::with_capacity(issues.len());
     for issue in issues {
-        let entry = issue.display_entry_overridden(l10n, source);
+        let entry = issue.display_entry_overridden(l10n, source.clone());
         let path_key = &issue.path;
         let original_leaf = path_key
             .leaf_string()
@@ -71,7 +71,7 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
         } => {
             let l10n = formatter.localizer();
             l10n.override_external_message(ExternalMessage {
-                source: *source,
+                source: source.as_ref().clone(),
                 original: msg.as_str(),
                 code: code.as_deref(),
                 params,

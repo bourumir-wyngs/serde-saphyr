@@ -1,4 +1,5 @@
 use serde_json::Value;
+use serde_saphyr::granit_parser::ErrorKind;
 use serde_saphyr::{Error, ExternalMessageSource};
 
 #[test]
@@ -15,9 +16,12 @@ fn test_recursion_limit_exceeded() {
     assert!(matches!(
         err.without_snippet(),
         Error::ExternalMessage {
-            source: ExternalMessageSource::Parser,
-            msg,
+            source,
             ..
-        } if msg == "recursion limit exceeded"
+        } if matches!(
+            source.as_ref(),
+            ExternalMessageSource::Parser(error)
+                if error.kind() == ErrorKind::RecursionLimitExceeded
+        )
     ));
 }

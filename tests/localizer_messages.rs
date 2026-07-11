@@ -87,7 +87,10 @@ mod localizer_tests {
     #[test]
     fn override_external_message_default_none() {
         let msg = ExternalMessage {
-            source: ExternalMessageSource::Parser,
+            source: ExternalMessageSource::Parser(serde_saphyr::granit_parser::ScanError::new(
+                serde_saphyr::granit_parser::Marker::new(0, 1, 0),
+                "scan error",
+            )),
             original: "scan error",
             code: None,
             params: &[],
