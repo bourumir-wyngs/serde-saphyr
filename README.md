@@ -107,10 +107,11 @@ The optional `huge_documents` feature switches span storage from `u32` indices t
 
 serde-saphyr comes with a simple executable (CLI) that can be used to check the budget of a given YAML file, and can also be used as a YAML validator, printing the YAML error line, column numbers, and excerpt.
 
-To run it (no Rust knowledge required):
+The CLI includes filesystem-backed `!include` support, so it must be built with the
+`include_fs` feature. To install and run it (no Rust knowledge required):
 
 ```bash
-cargo install serde-saphyr
+cargo install serde-saphyr --features include_fs
 
 # binary name is the package name by default
 serde-saphyr path/to/file.yaml
@@ -120,10 +121,10 @@ To enable **fancy error reporting** (graphical diagnostics) via the optional `mi
 
 ```bash
 # install with miette enabled
-cargo install serde-saphyr --features miette
+cargo install serde-saphyr --features miette,include_fs
 
 # or run from a git checkout
-cargo run --features miette -- path/to/file.yaml
+cargo run --features miette,include_fs -- path/to/file.yaml
 ```
 
 If you want to keep the previous plain-text error output even when built with `miette`, pass `--plain`:
@@ -916,6 +917,5 @@ Safety hardening measures with this feature enabled include limits on maximal ex
 - Borrowing works for any scalar whose parsed value exists **verbatim** in the input. This includes plain scalars and simple quoted strings without escape sequences (e.g., `"hello world"` can be borrowed, but `"hello\nworld"` cannot because `\n` is transformed to a newline). For maximum flexibility, use `Cow<'a, str>` which borrows when possible and owns when transformation is required.
 - Reader-based entry points (`from_reader`) require `DeserializeOwned` and cannot return borrowed values.
 - `serde-saphyr` does not capture freestanding comments, not obviously attached to any node (separated by multiple empty lines, or at the end of the document). Use [`granit-parser`](https://crates.io/crates/granit-parser) directly to capture such comments (serde-saphyr re-exports it). 
-
 
 
