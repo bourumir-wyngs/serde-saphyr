@@ -858,6 +858,14 @@ mod tests {
         },
         "Only single string with no escape sequences is allowed here"
     )]
+    #[case::indentation_error(
+        Error::IndentationError {
+            required: crate::indentation::RequireIndent::Divisible(4),
+            actual: 6,
+            location: loc(),
+        },
+        "incorrect indentation: expected divisible by 4, found 6 spaces"
+    )]
     fn user_exact_messages(#[case] err: Error, #[case] expected: &str) {
         let formatter = UserMessageFormatter;
         assert_eq!(formatter.format_message(&err), expected);
@@ -932,6 +940,7 @@ mod tests {
         let formatter = UserMessageFormatter.with_localizer(&localizer);
         let err = Error::Eof { location: loc() };
         assert_eq!(formatter.format_message(&err), "unexpected end of file");
+        assert_eq!(formatter.localizer().root_path_label(), "<root>");
     }
 
     // -----------------------------------------------------------------------
@@ -945,5 +954,38 @@ mod tests {
         let formatter = DefaultMessageFormatter.with_localizer(&localizer);
         let err = Error::Eof { location: loc() };
         assert_eq!(formatter.format_message(&err), "unexpected end of input");
+        assert_eq!(formatter.localizer().root_path_label(), "<root>");
+    }
+
+    #[cfg(any(feature = "garde", feature = "validator"))]
+    #[test]
+    fn validation_message_prefers_reference_location() {
+        use crate::de_error::{ValidationIssue, ValidationSource};
+        use crate::path_map::{PathKey, PathMap};
+
+        let path = PathKey::empty().join("name");
+        let mut locations = PathMap::new();
+        locations.insert(
+            path.clone(),
+            Locations {
+                reference_location: Location::new(7, 8),
+                defined_location: Location::new(2, 3),
+            },
+        );
+        let error = Error::ValidationError {
+            source: ValidationSource::Validator,
+            issues: vec![ValidationIssue {
+                path,
+                code: "length".to_owned(),
+                message: Some("too short".to_owned()),
+                params: Vec::new(),
+            }],
+            locations,
+        };
+
+        assert_eq!(
+            DefaultMessageFormatter.format_message(&error),
+            "validation error at name: too short at line 7, column 8"
+        );
     }
 }
