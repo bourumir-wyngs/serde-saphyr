@@ -443,6 +443,7 @@ where
                                 // current document and try to recover at the next document boundary.
                                 if !self.src.skip_to_next_document() {
                                     self.finished = true;
+                                    let _ = self.src.finish();
                                 }
                                 return Some(Err(e));
                             }

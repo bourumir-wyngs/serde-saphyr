@@ -418,6 +418,15 @@ impl BudgetEnforcer {
     ///
     /// Returns `Err(BudgetBreach)` as soon as a limit is exceeded.
     pub fn observe(&mut self, ev: &Event) -> Result<(), BudgetBreach> {
+        if let Some(breach) = self.report.breached.as_ref() {
+            return Err(breach.clone());
+        }
+        let result = self.observe_inner(ev);
+        self.remember_breach(&result);
+        result
+    }
+
+    fn observe_inner(&mut self, ev: &Event) -> Result<(), BudgetBreach> {
         self.report.events += 1;
         if self.report.events > self.budget.max_events {
             return Err(BudgetBreach::Events {
@@ -495,6 +504,15 @@ impl BudgetEnforcer {
     /// This is used by `LiveEvents`, where alias references are immediately
     /// expanded into replayed events that already advance mapping state.
     pub(crate) fn observe_alias_reference(&mut self) -> Result<(), BudgetBreach> {
+        if let Some(breach) = self.report.breached.as_ref() {
+            return Err(breach.clone());
+        }
+        let result = self.observe_alias_reference_inner();
+        self.remember_breach(&result);
+        result
+    }
+
+    fn observe_alias_reference_inner(&mut self) -> Result<(), BudgetBreach> {
         self.report.events += 1;
         if self.report.events > self.budget.max_events {
             return Err(BudgetBreach::Events {
@@ -502,6 +520,14 @@ impl BudgetEnforcer {
             });
         }
         self.observe_alias_event(false)
+    }
+
+    fn remember_breach<T>(&mut self, result: &Result<T, BudgetBreach>) {
+        if self.report.breached.is_none()
+            && let Err(breach) = result
+        {
+            self.report.breached = Some(breach.clone());
+        }
     }
 
     fn observe_alias_event(&mut self, advance_mapping_state: bool) -> Result<(), BudgetBreach> {
@@ -672,6 +698,9 @@ impl BudgetEnforcer {
     /// Unlike [`BudgetEnforcer::finalize`], this keeps the enforcer alive so it
     /// can be reset and reused for the next document in a stream.
     pub(crate) fn finalize_document(&mut self) -> Result<(), BudgetBreach> {
+        if let Some(breach) = self.report.breached.as_ref() {
+            return Err(breach.clone());
+        }
         if self.policy == EnforcingPolicy::PerDocument {
             self.check_post_scan_heuristics()?;
         }
@@ -703,7 +732,9 @@ impl BudgetEnforcer {
 
     /// Finalize the enforcement, performing post-scan heuristics (like alias/anchor ratio).
     pub fn finalize(mut self) -> BudgetReport {
-        let _ = self.check_post_scan_heuristics();
+        if self.report.breached.is_none() {
+            let _ = self.check_post_scan_heuristics();
+        }
         self.report
     }
 }
@@ -735,10 +766,8 @@ pub fn check_yaml_budget(
 
     for item in parser {
         let (ev, _span) = item?;
-        if let Err(breach) = enforcer.observe(&ev) {
-            let mut report = enforcer.into_report();
-            report.breached = Some(breach);
-            return Ok(report);
+        if enforcer.observe(&ev).is_err() {
+            return Ok(enforcer.into_report());
         }
     }
 
@@ -795,6 +824,26 @@ e: *A
 
         let rep = check_yaml_budget(y, b, EnforcingPolicy::AllContent).unwrap();
         assert!(matches!(rep.breached, Some(BudgetBreach::Aliases { .. })));
+    }
+
+    #[test]
+    fn finalization_preserves_an_immediate_breach() {
+        let budget = Budget {
+            max_aliases: 0,
+            alias_anchor_min_aliases: 1,
+            ..Default::default()
+        };
+        let mut enforcer =
+            BudgetEnforcer::new(budget, EnforcingPolicy::AllContent, MergeKeyPolicy::Merge);
+
+        let breach = enforcer.observe_alias_reference().unwrap_err();
+        assert!(matches!(breach, BudgetBreach::Aliases { aliases: 1 }));
+
+        let report = enforcer.finalize();
+        assert!(matches!(
+            report.breached,
+            Some(BudgetBreach::Aliases { aliases: 1 })
+        ));
     }
 
     #[test]

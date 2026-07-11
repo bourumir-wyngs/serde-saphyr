@@ -1104,24 +1104,37 @@ impl<'a> LiveEvents<'a> {
     /// budget enforcement errors with the last known location.
     #[cold]
     pub(crate) fn finish(&mut self) -> Result<(), Error> {
-        if let Some(err) = self.pending_error.take() {
+        let pending_error = self.pending_error.take();
+        let io_error = self.io_error().err();
+        let budget_breach = self.deliver_budget_report();
+
+        if let Some(err) = pending_error {
             return Err(err);
         }
-        self.io_error()?;
+        if let Some(err) = io_error {
+            return Err(err);
+        }
+        if let Some(breach) = budget_breach {
+            return Err(budget_error(breach).with_location(self.last_location));
+        }
+        Ok(())
+    }
+
+    /// Finalize and deliver the budget report, taking its state so callbacks run once.
+    #[cold]
+    fn deliver_budget_report(&mut self) -> Option<crate::budget::BudgetBreach> {
         if let Some(budget) = self.budget.take() {
             let report = budget.finalize();
-            if let Some(callback) = self.budget_report {
+            if let Some(callback) = self.budget_report.take() {
                 callback(&report);
             }
             let breached = report.breached.clone();
-            if let Some(callback) = &self.budget_report_cb {
+            if let Some(callback) = self.budget_report_cb.take() {
                 callback.borrow_mut()(report);
             }
-            if let Some(breach) = breached {
-                return Err(budget_error(breach).with_location(self.last_location));
-            }
+            return breached;
         }
-        Ok(())
+        None
     }
 
     #[cold]
@@ -1130,6 +1143,14 @@ impl<'a> LiveEvents<'a> {
             Err(Error::IOError { cause: error })
         } else {
             Ok(())
+        }
+    }
+}
+
+impl Drop for LiveEvents<'_> {
+    fn drop(&mut self) {
+        if !std::thread::panicking() {
+            let _ = self.deliver_budget_report();
         }
     }
 }

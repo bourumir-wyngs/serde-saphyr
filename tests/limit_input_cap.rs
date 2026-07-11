@@ -1,10 +1,12 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde::Deserialize;
-use serde_saphyr::budget::BudgetBreach;
+use serde_saphyr::budget::{BudgetBreach, BudgetReport};
 use serde_saphyr::{
     Error, from_multiple_with_options, from_reader, from_reader_with_options, read_with_options,
 };
+use std::cell::RefCell;
 use std::io::ErrorKind;
+use std::rc::Rc;
 
 fn unwrap_snippet(err: &Error) -> &Error {
     match err {
@@ -176,6 +178,38 @@ fn read_checks_alias_anchor_ratio_before_yielding_each_document() {
         other => panic!("Unexpected result: {other:?}"),
     }
     assert!(iter.next().is_none());
+}
+
+#[test]
+fn read_delivers_report_when_deferred_breach_terminates_iterator() {
+    let aliases = std::iter::repeat_n("*a", 101)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let yaml = format!("---\nbase: &a 1\nrefs: [{aliases}]\n");
+    let reports = Rc::new(RefCell::new(Vec::<BudgetReport>::new()));
+    let callback_reports = Rc::clone(&reports);
+    let options = serde_saphyr::Options::default()
+        .with_budget_report(move |report| callback_reports.borrow_mut().push(report));
+    let mut reader = std::io::Cursor::new(yaml.as_bytes());
+    let mut iter = read_with_options::<_, serde_json::Value>(&mut reader, options);
+
+    assert!(matches!(
+        iter.next(),
+        Some(Err(Error::Budget {
+            breach: BudgetBreach::AliasAnchorRatio { .. },
+            ..
+        }))
+    ));
+    assert_eq!(reports.borrow().len(), 1);
+    assert!(iter.next().is_none());
+
+    drop(iter);
+    let reports = reports.borrow();
+    assert_eq!(reports.len(), 1);
+    assert!(matches!(
+        reports[0].breached.as_ref(),
+        Some(BudgetBreach::AliasAnchorRatio { .. })
+    ));
 }
 
 #[test]

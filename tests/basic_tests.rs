@@ -1,12 +1,14 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 mod tests {
     use serde::Deserialize;
-    use serde_saphyr::budget::BudgetBreach;
+    use serde_saphyr::budget::{BudgetBreach, BudgetReport};
     use serde_saphyr::{DuplicateKeyPolicy, Error, from_reader};
     use serde_saphyr::{
         from_multiple, from_multiple_with_options, from_str, from_str_with_options,
     };
+    use std::cell::RefCell;
     use std::collections::HashMap;
+    use std::rc::Rc;
 
     fn unwrap_snippet(err: &Error) -> &Error {
         match err {
@@ -123,6 +125,49 @@ plain
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn immediate_budget_violation_delivers_report_once() {
+        let reports = Rc::new(RefCell::new(Vec::<BudgetReport>::new()));
+        let callback_reports = Rc::clone(&reports);
+        let options = serde_saphyr::options! {
+            budget: serde_saphyr::budget! {
+                max_nodes: 1,
+            },
+        }
+        .with_budget_report(move |report| callback_reports.borrow_mut().push(report));
+
+        let err = from_str_with_options::<HashMap<String, String>>("a: 1\n", options).unwrap_err();
+        assert!(matches!(
+            unwrap_snippet(&err),
+            Error::Budget {
+                breach: BudgetBreach::Nodes { .. },
+                ..
+            }
+        ));
+
+        let reports = reports.borrow();
+        assert_eq!(reports.len(), 1);
+        assert!(matches!(
+            reports[0].breached.as_ref(),
+            Some(BudgetBreach::Nodes { nodes }) if *nodes == 2
+        ));
+    }
+
+    #[test]
+    fn successful_parse_delivers_budget_report_once() {
+        let reports = Rc::new(RefCell::new(Vec::<BudgetReport>::new()));
+        let callback_reports = Rc::clone(&reports);
+        let options = serde_saphyr::options! {}
+            .with_budget_report(move |report| callback_reports.borrow_mut().push(report));
+
+        let value = from_str_with_options::<HashMap<String, String>>("a: 1\n", options).unwrap();
+        assert_eq!(value.get("a").map(String::as_str), Some("1"));
+
+        let reports = reports.borrow();
+        assert_eq!(reports.len(), 1);
+        assert!(reports[0].breached.is_none());
     }
 
     #[test]

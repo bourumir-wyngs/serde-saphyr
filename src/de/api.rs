@@ -957,6 +957,7 @@ where
                             // If no next document is found, mark as finished.
                             if !self.src.skip_to_next_document() {
                                 self.finished = true;
+                                let _ = self.src.finish();
                             }
                         }
                         return Some(res);
