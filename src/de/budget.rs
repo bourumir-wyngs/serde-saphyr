@@ -4,7 +4,6 @@
 //! avoid pathological inputs
 
 use crate::options::MergeKeyPolicy;
-use ahash::RandomState;
 use granit_parser::{Event, Parser, ScalarStyle, ScanError, Tag};
 use smallvec::SmallVec;
 use std::collections::HashSet;
@@ -370,7 +369,7 @@ pub(crate) struct BudgetEnforcer {
     budget: Budget,
     report: BudgetReport,
     depth: usize,
-    defined_anchors: HashSet<usize, RandomState>,
+    defined_anchors: HashSet<usize>,
     containers: SmallVec<[ContainerState; 64]>,
     policy: EnforcingPolicy,
     merge_keys: MergeKeyPolicy,
@@ -407,7 +406,7 @@ impl BudgetEnforcer {
             budget,
             report: BudgetReport::default(),
             depth: 0,
-            defined_anchors: HashSet::with_capacity_and_hasher(256, RandomState::default()),
+            defined_anchors: HashSet::with_capacity(256),
             containers: SmallVec::new(),
             policy,
             merge_keys,

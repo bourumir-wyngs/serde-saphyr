@@ -1,7 +1,6 @@
 use std::collections::{HashSet, VecDeque};
 use std::{borrow::Cow, fmt};
 
-use ahash::{HashSetExt, RandomState};
 use granit_parser::ScalarStyle;
 use serde_core::de::{self, Deserializer as _, IntoDeserializer, Visitor};
 
@@ -36,8 +35,6 @@ use crate::parse_scalars::{
     parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish, scalar_is_nullish_for_option,
     try_parse_float_incl_overflow,
 };
-
-type FastHashSet<T> = HashSet<T, RandomState>;
 
 struct TupleLenExpected {
     len: usize,
@@ -1722,7 +1719,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 duplicate_keys,
                 merge_keys,
             )?;
-            let mut seen = FastHashSet::with_capacity(explicit_entries.len());
+            let mut seen = HashSet::with_capacity(explicit_entries.len());
             for entry in &explicit_entries {
                 seen.insert(entry.key.fingerprint().into_owned());
             }
@@ -1758,7 +1755,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             pending_path_segment: Option<String>,
 
             // For duplicate-key detection for arbitrary keys.
-            seen: FastHashSet<KeyFingerprint>,
+            seen: HashSet<KeyFingerprint>,
             pending: VecDeque<PendingEntry<'de>>,
             merge_stack: VecDeque<Vec<PendingEntry<'de>>>,
             flushing_merges: bool,
@@ -2344,7 +2341,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             #[cfg(any(feature = "garde", feature = "validator"))]
             pending_path_segment: None,
 
-            seen: FastHashSet::with_capacity(8),
+            seen: HashSet::with_capacity(8),
             pending,
             merge_stack: VecDeque::new(),
             flushing_merges: false,

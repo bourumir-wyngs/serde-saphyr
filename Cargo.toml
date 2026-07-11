@@ -31,19 +31,12 @@ base64 = { version = ">=0.21.0, <=0.22.1", optional = true }
 zmij = { version = "1.0", optional = true }
 nohash-hasher = { version = "0.2", optional = true }
 encoding_rs_io = { version = "0.1", optional = true }
-ahash = { version = "0.8", optional = true }
 annotate-snippets = { version = "0.12", optional = true }
 figment = { version = "0.10", optional = true }
 figment2 = { version = "0.11", optional = true }
 garde = { version = ">= 0.19.0, < 0.24", optional = true, features = ["derive"] }
 miette = { version = "7", optional = true, features = ["fancy"] }
 validator = { version = ">= 0.11, < 0.21", optional = true, features = ["derive"] }
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-# Some dependency stacks pull in `getrandom` (often via `ahash`). For `wasm32-unknown-unknown`,
-# `getrandom` needs the JS backend enabled. Adding it here ensures feature unification even when
-# `getrandom` is only a transitive dependency. ahash currently needs getrandom 0.3.
-getrandom = { version = "0.3", features = ["wasm_js"] }
 
 [features]
 default = ["serialize", "deserialize"]
@@ -52,7 +45,7 @@ default = ["serialize", "deserialize"]
 serialize = ["dep:base64", "dep:num-traits", "dep:zmij", "dep:nohash-hasher"]
 
 # Enables YAML deserialization APIs.
-deserialize = ["dep:num-traits", "dep:annotate-snippets", "dep:granit-parser", "dep:smallvec", "dep:encoding_rs_io", "dep:ahash"]
+deserialize = ["dep:num-traits", "dep:annotate-snippets", "dep:granit-parser", "dep:smallvec", "dep:encoding_rs_io"]
 
 # Enables Serde Serialize/Deserialize impls for serde-saphyr's own configuration,
 # budget, and report types. Disabled by default to avoid compiling serde_derive.
