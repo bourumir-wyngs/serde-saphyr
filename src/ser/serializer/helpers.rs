@@ -505,37 +505,37 @@ impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
         Ok(())
     }
     fn serialize_i64(self, v: i64) -> Result<()> {
-        let _ = write!(self.s, "{}", v);
+        let _ = write!(self.s, "{v}");
         Ok(())
     }
     fn serialize_i32(self, v: i32) -> Result<()> {
-        self.serialize_i64(v as i64)
+        self.serialize_i64(i64::from(v))
     }
     fn serialize_i16(self, v: i16) -> Result<()> {
-        self.serialize_i64(v as i64)
+        self.serialize_i64(i64::from(v))
     }
     fn serialize_i8(self, v: i8) -> Result<()> {
-        self.serialize_i64(v as i64)
+        self.serialize_i64(i64::from(v))
     }
     fn serialize_i128(self, v: i128) -> Result<()> {
-        let _ = write!(self.s, "{}", v);
+        let _ = write!(self.s, "{v}");
         Ok(())
     }
     fn serialize_u64(self, v: u64) -> Result<()> {
-        let _ = write!(self.s, "{}", v);
+        let _ = write!(self.s, "{v}");
         Ok(())
     }
     fn serialize_u32(self, v: u32) -> Result<()> {
-        self.serialize_u64(v as u64)
+        self.serialize_u64(u64::from(v))
     }
     fn serialize_u16(self, v: u16) -> Result<()> {
-        self.serialize_u64(v as u64)
+        self.serialize_u64(u64::from(v))
     }
     fn serialize_u8(self, v: u8) -> Result<()> {
-        self.serialize_u64(v as u64)
+        self.serialize_u64(u64::from(v))
     }
     fn serialize_u128(self, v: u128) -> Result<()> {
-        let _ = write!(self.s, "{}", v);
+        let _ = write!(self.s, "{v}");
         Ok(())
     }
     fn serialize_f32(self, v: f32) -> Result<()> {

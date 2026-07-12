@@ -8,7 +8,7 @@ const ASSUMED_LINE_LENGTH: usize = 512;
 
 /// How many most-recent bytes to retain for diagnostics/snippet rendering.
 ///
-/// Pick this >> MAX_READ_AHEAD so read-ahead doesn't evict all "history".
+/// Pick this >> `MAX_READ_AHEAD` so read-ahead doesn't evict all "history".
 pub(crate) const RING_BUFFER_SIZE: usize = 6 * ASSUMED_LINE_LENGTH;
 
 /// Maximum number of bytes we are allowed to read-ahead beyond what the consumer has read.
@@ -106,7 +106,7 @@ struct FixedRingBufferIter<'a, const N: usize> {
     pos: usize,
 }
 
-impl<'a, const N: usize> Iterator for FixedRingBufferIter<'a, N> {
+impl<const N: usize> Iterator for FixedRingBufferIter<'_, N> {
     type Item = u8;
 
     #[inline]
@@ -127,7 +127,7 @@ impl<'a, const N: usize> Iterator for FixedRingBufferIter<'a, N> {
     }
 }
 
-impl<'a, const N: usize> ExactSizeIterator for FixedRingBufferIter<'a, N> {}
+impl<const N: usize> ExactSizeIterator for FixedRingBufferIter<'_, N> {}
 
 /// A snapshot of bytes currently retained by the reader wrapper.
 ///
@@ -263,7 +263,7 @@ impl<R> RingReader<R> {
         self.returned_total.saturating_add(self.stash.len() as u64)
     }
 
-    /// Returns (start_offset, start_line, bytes).
+    /// Returns (`start_offset`, `start_line`, bytes).
     fn ring_snapshot(&self) -> (u64, usize, Vec<u8>) {
         if self.ring.is_empty() {
             // No bytes retained; represent an empty range at the current consumer offset.
@@ -470,7 +470,7 @@ fn utf8_expected_len(lead: u8) -> Option<usize> {
 }
 
 /// Trim to "reasonable UTF-8 boundaries" and also track line numbers:
-/// - drop leading continuation bytes (and adjust start_offset and start_line accordingly)
+/// - drop leading continuation bytes (and adjust `start_offset` and `start_line` accordingly)
 /// - drop a trailing incomplete UTF-8 sequence (if snapshot ends mid-codepoint)
 fn trim_to_utf8_boundaries_with_line(
     mut bytes: Vec<u8>,
@@ -503,7 +503,7 @@ fn trim_to_utf8_boundaries_with_line(
 }
 
 /// Trim to "reasonable UTF-8 boundaries" without panicking and without mutating interior bytes:
-/// - drop leading continuation bytes (and adjust start_offset accordingly)
+/// - drop leading continuation bytes (and adjust `start_offset` accordingly)
 /// - drop a trailing incomplete UTF-8 sequence (if snapshot ends mid-codepoint)
 fn trim_incomplete_utf8_tail(bytes: &mut Vec<u8>) {
     loop {

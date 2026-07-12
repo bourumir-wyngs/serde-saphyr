@@ -111,12 +111,12 @@ pub fn write_folded_block<W: Write>(
 
             // Track space-runs.
             if ch == ' ' {
-                if !in_space_run {
+                if in_space_run {
+                    run_len += 1;
+                } else {
                     in_space_run = true;
                     run_start = i;
                     run_len = 1;
-                } else {
-                    run_len += 1;
                 }
             }
 

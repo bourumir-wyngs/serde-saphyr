@@ -28,7 +28,7 @@ impl<'a> ReaderInput<'a> {
     }
 }
 
-impl<'a> Input for ReaderInput<'a> {
+impl Input for ReaderInput<'_> {
     #[inline]
     fn lookahead(&mut self, count: usize) {
         self.0.lookahead(count);
@@ -205,7 +205,7 @@ impl<R: Read> Iterator for ChunkedChars<R> {
 }
 
 /// Creates buffered input and returns both input and reference to the variable
-/// holding the possible error. We cannot otherwise later reach our ChunkedChars.
+/// holding the possible error. We cannot otherwise later reach our `ChunkedChars`.
 pub fn buffered_input_from_reader_with_limit<'a, R: Read + 'a>(
     reader: R,
     max_bytes: Option<usize>,

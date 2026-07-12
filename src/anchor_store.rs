@@ -246,7 +246,7 @@ pub(crate) fn get_rc<T: Any>(id: usize) -> Result<Option<Rc<T>>, String> {
             let cloned = existing.clone();
             match cloned.downcast::<T>() {
                 Ok(rc_t) => Ok(Some(rc_t)),
-                Err(_) => Err(format!("anchor id {} reused with incompatible Rc type", id)),
+                Err(_) => Err(format!("anchor id {id} reused with incompatible Rc type")),
             }
         } else {
             Ok(None)
@@ -262,8 +262,7 @@ pub(crate) fn get_arc<T: Any + Send + Sync>(id: usize) -> Result<Option<Arc<T>>,
             match cloned.downcast::<T>() {
                 Ok(arc_t) => Ok(Some(arc_t)),
                 Err(_) => Err(format!(
-                    "anchor id {} reused with incompatible Arc type",
-                    id
+                    "anchor id {id} reused with incompatible Arc type"
                 )),
             }
         } else {
@@ -280,8 +279,7 @@ pub(crate) fn get_rc_recursive<T: Any>(id: usize) -> Result<Option<Rc<T>>, Strin
             match cloned.downcast::<T>() {
                 Ok(rc_t) => Ok(Some(rc_t)),
                 Err(_) => Err(format!(
-                    "recursive anchor id {} reused with incompatible Rc type",
-                    id
+                    "recursive anchor id {id} reused with incompatible Rc type"
                 )),
             }
         } else {
@@ -298,8 +296,7 @@ pub(crate) fn get_arc_recursive<T: Any + Send + Sync>(id: usize) -> Result<Optio
             match cloned.downcast::<T>() {
                 Ok(arc_t) => Ok(Some(arc_t)),
                 Err(_) => Err(format!(
-                    "recursive anchor id {} reused with incompatible Arc type",
-                    id
+                    "recursive anchor id {id} reused with incompatible Arc type"
                 )),
             }
         } else {

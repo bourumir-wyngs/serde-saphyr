@@ -155,7 +155,7 @@ pub struct RenderOptions<'a> {
     pub snippets: SnippetMode,
 }
 
-impl<'a> Default for RenderOptions<'a> {
+impl Default for RenderOptions<'_> {
     #[inline]
     fn default() -> Self {
         // Keep the default formatter reference valid even if `RenderOptions` is stored.
@@ -938,7 +938,7 @@ pub enum Error {
         cause: std::io::Error,
     },
     /// The value is targeted to the string field but can be interpreted as a number or boolean.
-    /// This error can only happen if no_schema set true.
+    /// This error can only happen if `no_schema` set true.
     QuotingRequired {
         value: String, // sanitized (checked) value that must be quoted
         location: Location,
@@ -1137,6 +1137,7 @@ impl Error {
     }
 
     /// Provide "no snippet" version for cases when snippet rendering is not  desired.
+    #[must_use]
     pub fn without_snippet(&self) -> &Self {
         match self {
             Error::WithSnippet { error, .. } => error,
@@ -1149,6 +1150,7 @@ impl Error {
     /// This is the deferred-rendering entrypoint. It is equivalent to `Display`/`to_string()`
     /// output, but also allows callers to choose a custom [`MessageFormatter`] via
     /// [`Error::render_with_options`].
+    #[must_use]
     pub fn render(&self) -> String {
         self.render_with_options(RenderOptions::default())
     }
@@ -1162,6 +1164,7 @@ impl Error {
     }
 
     /// Render this error using the provided options.
+    #[must_use]
     pub fn render_with_options(&self, options: RenderOptions<'_>) -> String {
         struct RenderDisplay<'a> {
             err: &'a Error,
@@ -1208,7 +1211,7 @@ impl Error {
 
     /// Construct a `QuotingRequired` error with no known location.
     /// Called by:
-    /// - Deserializer, when deserializing into string if no_schema set to true.
+    /// - Deserializer, when deserializing into string if `no_schema` set to true.
     #[cold]
     #[inline(never)]
     pub(crate) fn quoting_required(value: &str, interpolated: bool) -> Self {
@@ -1309,6 +1312,7 @@ impl Error {
     /// was transformed during parsing and cannot be borrowed from the input.
     #[cold]
     #[inline(never)]
+    #[must_use]
     pub fn cannot_borrow_transformed(reason: TransformReason) -> Self {
         Error::CannotBorrowTransformedString {
             reason,
@@ -1648,7 +1652,7 @@ fn fmt_error_rendered(
         Error::ValidationErrors { errors, .. } => {
             let msg = options.formatter.format_message(err);
             if !msg.is_empty() {
-                writeln!(f, "{}", msg)?;
+                writeln!(f, "{msg}")?;
             }
             let mut first = true;
             for err in errors {
@@ -1699,7 +1703,7 @@ fn fmt_error_rendered(
             if let Error::ValidationErrors { errors, .. } = error.as_ref() {
                 let msg = options.formatter.format_message(error);
                 if !msg.is_empty() {
-                    writeln!(f, "{}", msg)?;
+                    writeln!(f, "{msg}")?;
                 }
                 let mut first = true;
                 for err in errors {
@@ -1869,7 +1873,7 @@ fn fmt_validation_error_with_snippets_offset(
             (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
                 let label = l10n.defined();
                 if let Some(region) = pick_cropped_region(regions, &r) {
-                    rendered_regions.push(region as *const _);
+                    rendered_regions.push(std::ptr::from_ref(region));
                     let ctx = crate::de_snippet::Snippet::new(
                         region.text.as_str(),
                         label.as_ref(),
@@ -1884,7 +1888,7 @@ fn fmt_validation_error_with_snippets_offset(
             (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
                 let label = l10n.defined_here();
                 if let Some(region) = pick_cropped_region(regions, &d) {
-                    rendered_regions.push(region as *const _);
+                    rendered_regions.push(std::ptr::from_ref(region));
                     let ctx = crate::de_snippet::Snippet::new(
                         region.text.as_str(),
                         label.as_ref(),
@@ -1900,7 +1904,7 @@ fn fmt_validation_error_with_snippets_offset(
                 let label = l10n.value_used_here();
                 let invalid_here = l10n.invalid_here(&base_msg);
                 if let Some(region) = pick_cropped_region(regions, &r) {
-                    rendered_regions.push(region as *const _);
+                    rendered_regions.push(std::ptr::from_ref(region));
                     let ctx = crate::de_snippet::Snippet::new(
                         region.text.as_str(),
                         region.source_name.as_str(),
@@ -1921,7 +1925,7 @@ fn fmt_validation_error_with_snippets_offset(
                 writeln!(f)?;
                 if let Some(region) = pick_cropped_region(regions, &d) {
                     writeln_anchor_intro(f, l10n, d, region)?;
-                    rendered_regions.push(region as *const _);
+                    rendered_regions.push(std::ptr::from_ref(region));
                     crate::de_snippet::fmt_snippet_window_offset_or_fallback(
                         f,
                         l10n,
@@ -1939,7 +1943,7 @@ fn fmt_validation_error_with_snippets_offset(
         }
 
         for extra_region in regions {
-            if rendered_regions.contains(&(extra_region as *const _)) {
+            if rendered_regions.contains(&std::ptr::from_ref(extra_region)) {
                 continue;
             }
             writeln!(f)?;
@@ -2044,7 +2048,7 @@ fn collect_validator_issues_inner(
                     out.push(ValidationIssue {
                         path: field_path.clone(),
                         code: entry.code.to_string(),
-                        message: entry.message.as_ref().map(|m| m.to_string()),
+                        message: entry.message.as_ref().map(std::string::ToString::to_string),
                         params,
                     });
                 }
@@ -2081,7 +2085,7 @@ impl std::error::Error for Error {}
 #[cold]
 #[inline(never)]
 fn maybe_attach_fallback_location(mut err: Error) -> Error {
-    let loc = MISSING_FIELD_FALLBACK.with(|c| c.get());
+    let loc = MISSING_FIELD_FALLBACK.with(std::cell::Cell::get);
     if let Some(loc) = loc
         && loc != Location::UNKNOWN
     {

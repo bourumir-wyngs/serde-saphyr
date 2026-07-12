@@ -45,10 +45,10 @@ pub(super) fn attach_alias_locations_if_missing(
         err
     } else {
         // Fall back to single location (prefer reference, then defined)
-        let loc = if reference_location != Location::UNKNOWN {
-            reference_location
-        } else {
+        let loc = if reference_location == Location::UNKNOWN {
             defined_location
+        } else {
+            reference_location
         };
         err.with_location(loc)
     }
@@ -119,7 +119,7 @@ impl Ev<'_> {
     }
 }
 
-/// from_slice_multiple location-free representation of events for duplicate-key comparison.
+/// `from_slice_multiple` location-free representation of events for duplicate-key comparison.
 /// Source of events with lookahead and alias-injection.
 pub(crate) trait Events<'de> {
     /// Pull the next event from the stream.
@@ -246,7 +246,7 @@ pub(super) fn eof_with_loc(events: &dyn Events<'_>) -> Error {
 /// around separately by the map/sequence access code.
 pub(super) struct ReplayEvents<'a> {
     buf: Vec<Ev<'a>>,
-    /// Index of the next event to yield (0..=buf.len()).
+    /// Index of the next event to yield (`0..=buf.len()`).
     idx: usize,
     /// Optional override for the reference location (use-site) of the next node.
     /// When we replay a captured subtree (e.g. an anchored mapping) we often want to
@@ -343,8 +343,7 @@ impl<'a> Events<'a> for ReplayEvents<'a> {
         let last = self.idx.saturating_sub(1);
         self.buf
             .get(last)
-            .map(|e| e.location())
-            .unwrap_or(Location::UNKNOWN)
+            .map_or(Location::UNKNOWN, Ev::location)
     }
 
     fn reference_location(&self) -> Location {
@@ -352,9 +351,7 @@ impl<'a> Events<'a> for ReplayEvents<'a> {
             return loc;
         }
         self.buf
-            .get(self.idx)
-            .map(|e| e.location())
-            .unwrap_or_else(|| self.last_location())
+            .get(self.idx).map_or_else(|| self.last_location(), Ev::location)
     }
 
     #[cfg(feature = "properties")]

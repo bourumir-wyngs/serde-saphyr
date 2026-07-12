@@ -210,6 +210,7 @@ pub type IncludeResolver<'a> =
 
 impl InputSource {
     #[inline]
+    #[must_use]
     pub fn from_string(s: String) -> Self {
         Self::Text(s)
     }

@@ -59,7 +59,7 @@ pub enum SymlinkPolicy {
 /// - **Extension Allowlist**: Only files ending in `.yml` or `.yaml` are accepted.
 /// - **Hidden File Rejection**: Files and folders starting with a dot (`.`), whether reached directly or through a symlink, are explicitly rejected.
 /// - **Cycle Detection**: Self-inclusion and recursive inclusion cycles are prevented.
-/// - **Budget Enforcement**: When using `Reader` mode, parser size limits apply natively to prevent DoS via massive files.
+/// - **Budget Enforcement**: When using `Reader` mode, parser size limits apply natively to prevent `DoS` via massive files.
 ///
 /// Typical usage is to configure a resolver once and hand it to the deserializer for every
 /// `!include` lookup:
@@ -156,12 +156,14 @@ impl SafeFileResolver {
     }
 
     /// Choose whether files should be loaded as text or streamed as readers.
+    #[must_use]
     pub fn with_read_mode(mut self, read_mode: SafeFileReadMode) -> Self {
         self.read_mode = read_mode;
         self
     }
 
     /// Choose how symlinks should be handled.
+    #[must_use]
     pub fn with_symlink_policy(mut self, symlink_policy: SymlinkPolicy) -> Self {
         self.symlink_policy = symlink_policy;
         self

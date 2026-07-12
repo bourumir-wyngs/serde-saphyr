@@ -211,9 +211,9 @@ where
             }
         }
 
-        /// Visitor that handles both the normal YAML path (visit_map with synthesized
+        /// Visitor that handles both the normal YAML path (`visit_map` with synthesized
         /// {value, referenced, defined} fields) and the flattened/content path where
-        /// serde's ContentDeserializer calls visit_* with a plain or map value.
+        /// serde's `ContentDeserializer` calls visit_* with a plain or map value.
         struct ReprOrPlainVisitor<T>(std::marker::PhantomData<T>);
 
         impl<'de, T> de::Visitor<'de> for ReprOrPlainVisitor<T>
@@ -274,7 +274,7 @@ where
                     {
                         struct FieldVisitor;
 
-                        impl<'a> de::Visitor<'a> for FieldVisitor {
+                        impl de::Visitor<'_> for FieldVisitor {
                             type Value = Field;
 
                             fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {

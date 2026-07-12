@@ -38,6 +38,7 @@ use crate::{
 /// - `serde-saphyr::Error` intentionally does not retain the full input text.
 ///   This helper owns a copy of `source` to build a standalone `miette::Report`.
 /// - If the error has no known location/span, the report will not include labels.
+#[must_use]
 pub fn to_miette_report(err: &Error, source: &str, file: &str) -> miette::Report {
     to_miette_report_with_formatter(err, source, file, RenderOptions::default().formatter)
 }
@@ -295,19 +296,19 @@ fn build_dual_location_labels(
 ) -> (Arc<NamedSource<String>>, Vec<LabeledSpan>) {
     let mut labels = Vec::new();
 
-    let primary_loc = if ref_loc != Location::UNKNOWN {
-        ref_loc
-    } else {
+    let primary_loc = if ref_loc == Location::UNKNOWN {
         def_loc
+    } else {
+        ref_loc
     };
     let (primary_src, span) = get_source_and_span(src, &primary_loc, regions);
 
     if let Some(span) = span {
         labels.push(LabeledSpan::new_with_span(
-            Some(if ref_loc != Location::UNKNOWN {
-                "the value is used here".to_owned()
-            } else {
+            Some(if ref_loc == Location::UNKNOWN {
                 "defined here".to_owned()
+            } else {
+                "the value is used here".to_owned()
             }),
             span,
         ));
@@ -392,8 +393,7 @@ fn get_source_and_span(
                 let line_byte_off = line
                     .char_indices()
                     .nth(char_off)
-                    .map(|(idx, _)| idx)
-                    .unwrap_or(line.len());
+                    .map_or(line.len(), |(idx, _)| idx);
                 byte_off += line_byte_off;
                 found = true;
                 break;
@@ -414,8 +414,7 @@ fn get_source_and_span(
             let byte_len = remainder
                 .char_indices()
                 .nth(char_len)
-                .map(|(idx, _)| idx)
-                .unwrap_or(remainder.len())
+                .map_or(remainder.len(), |(idx, _)| idx)
                 .max(1);
             let clamped_len = byte_len.min(src_len.saturating_sub(byte_off));
             return (

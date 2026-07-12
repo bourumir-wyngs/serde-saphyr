@@ -15,8 +15,8 @@ use crate::{
 /// Default developer-oriented message formatter.
 ///
 /// This formatter at places produces recommendations on how to adjust settings and API
-/// calls for the parsing to work, so normally should not be user-facing. Use UserMessageFormatter
-/// for user-facing content, or implement custom MessageFormatter for full control over output.
+/// calls for the parsing to work, so normally should not be user-facing. Use `UserMessageFormatter`
+/// for user-facing content, or implement custom `MessageFormatter` for full control over output.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DefaultMessageFormatter;
 
@@ -42,10 +42,10 @@ fn format_validation_issues(
             .search_with_ancestor_fallback(path_key)
             .unwrap_or((Locations::UNKNOWN, original_leaf));
 
-        let loc = if locs.reference_location != Location::UNKNOWN {
-            locs.reference_location
-        } else {
+        let loc = if locs.reference_location == Location::UNKNOWN {
             locs.defined_location
+        } else {
+            locs.reference_location
         };
 
         let resolved_path = format_path_with_resolved_leaf(path_key, &resolved_leaf);
@@ -269,25 +269,22 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
                             err,
                         } => {
                             format!(
-                                "failed to resolve include '{}' from '{}': {}",
-                                spec, base_dir, err
+                                "failed to resolve include '{spec}' from '{base_dir}': {err}"
                             )
                         }
                         crate::input_source::ResolveProblem::TargetNotRegularFile { target } => {
-                            format!("include target '{}' is not a regular file", target)
+                            format!("include target '{target}' is not a regular file")
                         }
                         crate::input_source::ResolveProblem::TargetIsRootFile { spec } => {
                             format!(
-                                "include target '{}' resolves to the configured root file itself",
-                                spec
+                                "include target '{spec}' resolves to the configured root file itself"
                             )
                         }
                         crate::input_source::ResolveProblem::ParentIdNotAbsoluteCanonical {
                             parent_id,
                         } => {
                             format!(
-                                "SafeFileResolver expected parent include id to be an absolute canonical path, got '{}'",
-                                parent_id
+                                "SafeFileResolver expected parent include id to be an absolute canonical path, got '{parent_id}'"
                             )
                         }
                         crate::input_source::ResolveProblem::ParentResolveFailed {
@@ -296,54 +293,48 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
                             err,
                         } => {
                             format!(
-                                "failed to resolve parent include source '{}' (from '{}'): {}",
-                                parent_id, from_name, err
+                                "failed to resolve parent include source '{parent_id}' (from '{from_name}'): {err}"
                             )
                         }
                         crate::input_source::ResolveProblem::ParentNotRegularFile { parent } => {
-                            format!("include parent '{}' is not a regular file", parent)
+                            format!("include parent '{parent}' is not a regular file")
                         }
                         crate::input_source::ResolveProblem::ParentHasNoDirectory { parent } => {
                             format!(
-                                "include parent '{}' does not have a parent directory",
-                                parent
+                                "include parent '{parent}' does not have a parent directory"
                             )
                         }
                         crate::input_source::ResolveProblem::ResolvesOutsideRoot { spec, root } => {
                             format!(
-                                "include '{}' resolves outside the configured root '{}'",
-                                spec, root
+                                "include '{spec}' resolves outside the configured root '{root}'"
                             )
                         }
                         crate::input_source::ResolveProblem::TraversesSymlink { spec } => {
                             format!(
-                                "include '{}' traverses a symlink, which is disabled by policy",
-                                spec
+                                "include '{spec}' traverses a symlink, which is disabled by policy"
                             )
                         }
                         crate::input_source::ResolveProblem::AbsolutePathNotAllowed { spec } => {
-                            format!("absolute include paths are not allowed: {}", spec)
+                            format!("absolute include paths are not allowed: {spec}")
                         }
                         crate::input_source::ResolveProblem::EmptyPath => {
                             "include path must not be empty".to_string()
                         }
                         crate::input_source::ResolveProblem::InvalidExtension { spec } => {
                             format!(
-                                "include target '{}' does not have a valid YAML extension (.yml or .yaml)",
-                                spec
+                                "include target '{spec}' does not have a valid YAML extension (.yml or .yaml)"
                             )
                         }
                         crate::input_source::ResolveProblem::HiddenFile { spec } => {
                             format!(
-                                "include target '{}' is a hidden file, which is not allowed",
-                                spec
+                                "include target '{spec}' is a hidden file, which is not allowed"
                             )
                         }
                         crate::input_source::ResolveProblem::EmptyFragment => {
                             "include fragment must not be empty".to_string()
                         }
                         crate::input_source::ResolveProblem::FragmentContainsHash { spec } => {
-                            format!("include fragment must not contain '#': {}", spec)
+                            format!("include fragment must not contain '#': {spec}")
                         }
                     }
                 }

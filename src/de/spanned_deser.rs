@@ -69,7 +69,7 @@ struct SpannedDeser<'de, 'e> {
     state: u8,
 }
 
-impl<'de, 'e> de::Deserializer<'de> for SpannedDeser<'de, 'e> {
+impl<'de> de::Deserializer<'de> for SpannedDeser<'de, '_> {
     type Error = Error;
 
     fn deserialize_any<Vv: Visitor<'de>>(self, visitor: Vv) -> Result<Vv::Value, Self::Error> {
@@ -123,7 +123,7 @@ struct SpannedMapAccess<'de, 'e> {
     state: u8,
 }
 
-impl<'de, 'e> de::MapAccess<'de> for SpannedMapAccess<'de, 'e> {
+impl<'de> de::MapAccess<'de> for SpannedMapAccess<'de, '_> {
     type Error = Error;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Error>

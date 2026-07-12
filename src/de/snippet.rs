@@ -144,7 +144,7 @@ fn resolve_render_window<'a>(
     // - usually one character
     // - for EOL (pointing at '\n') or EOF, use an empty span (caret-like).
     let end = match text.as_bytes().get(start) {
-        Some(b'\n') | Some(b'\r') => start,
+        Some(b'\n' | b'\r') => start,
         _ => next_char_boundary(text, start).unwrap_or(start),
     };
 
@@ -502,7 +502,7 @@ impl<'a> Snippet<'a> {
         let loc_prefix = l10n.snippet_location_prefix(*location);
 
         let report = &[level
-            .primary_title(format!("{}: {msg}", loc_prefix))
+            .primary_title(format!("{loc_prefix}: {msg}"))
             .element(
                 AnnotateSnippet::source(&window_text)
                     .line_start(window.rows.window_start_absolute_row)
@@ -616,8 +616,7 @@ fn fmt_snippet_window_with_mapping_or_fallback(
         if cur_row == window.rows.relative_row {
             let line_byte_start = window_text[..local_start]
                 .rfind('\n')
-                .map(|i| i + 1)
-                .unwrap_or(0);
+                .map_or(0, |i| i + 1);
             let caret_chars = window_text[line_byte_start..local_start].chars().count();
             if msg.is_empty() {
                 writeln!(f, "{empty_gutter} {space:>caret_chars$}^", space = "")?;
@@ -651,8 +650,7 @@ fn fmt_snippet_window_with_mapping_or_fallback(
         if cur_row == window.rows.relative_row {
             let line_byte_start = window_text[..local_start]
                 .rfind('\n')
-                .map(|i| i + 1)
-                .unwrap_or(0);
+                .map_or(0, |i| i + 1);
             let caret_chars = window_text[line_byte_start..local_start].chars().count();
             if msg.is_empty() {
                 writeln!(f, "{empty_gutter} {space:>caret_chars$}^", space = "")?;

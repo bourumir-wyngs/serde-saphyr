@@ -1,8 +1,8 @@
 //! Live events: a streaming view over the YAML input.
 //!
-//! This module implements LiveEvents, an Events source that pulls items directly
-//! from the underlying granit_parser::Parser as it scans the input string.
-//! Unlike ReplayEvents, which iterates over a pre-recorded buffer, live events
+//! This module implements `LiveEvents`, an Events source that pulls items directly
+//! from the underlying `granit_parser::Parser` as it scans the input string.
+//! Unlike `ReplayEvents`, which iterates over a pre-recorded buffer, live events
 //! are produced on demand and reflect the current position of the parser.
 //!
 //! Responsibilities and behavior:
@@ -11,13 +11,13 @@
 //! - Track and record anchors for both scalars and containers. When an alias is
 //!   encountered later, the previously recorded sequence of events for that
 //!   anchor is injected (replayed) back into the stream.
-//! - Enforce alias-bomb hardening via AliasLimits and account replayed events
-//!   per anchor and in total. BudgetEnforcer can also be attached to limit raw
+//! - Enforce alias-bomb hardening via `AliasLimits` and account replayed events
+//!   per anchor and in total. `BudgetEnforcer` can also be attached to limit raw
 //!   event production.
-//! - Maintain a single-item lookahead buffer to implement peek(), and keep
-//!   last_location to improve error reporting.
+//! - Maintain a single-item lookahead buffer to implement `peek()`, and keep
+//!   `last_location` to improve error reporting.
 //!
-//! LiveEvents is single-pass and does not support rewinding. Aliases expand by
+//! `LiveEvents` is single-pass and does not support rewinding. Aliases expand by
 //! injecting previously recorded buffers; normal parsing continues after the
 //! injection is exhausted.
 
@@ -58,13 +58,13 @@ type StreamParser<'a> = granit_parser::Parser<'a, ReaderInput<'a>>;
 const SMALLVECT_INLINE: usize = 8;
 
 /// A frame that records events for an anchored container until its end.
-/// Uses SmallVec to avoid heap allocations for small anchors.
+/// Uses `SmallVec` to avoid heap allocations for small anchors.
 #[derive(Clone, Debug)]
 struct RecFrame<'a> {
     id: usize,
     /// counts nested container starts/ends
     depth: usize,
-    /// inline up to SMALLVECT_INLINE events; spills to heap beyond
+    /// inline up to `SMALLVECT_INLINE` events; spills to heap beyond
     buf: SmallVec<[Ev<'a>; SMALLVECT_INLINE]>,
 }
 
@@ -186,9 +186,9 @@ pub(crate) struct LiveEvents<'a> {
     produced_leading_comments: Vec<Cow<'a, str>>,
     /// For alias replay: a stack of injected buffers; we always read from the top first.
     inject: Vec<InjectFrame>,
-    /// Recorded buffers for anchors (index = anchor_id).
+    /// Recorded buffers for anchors (index = `anchor_id`).
     /// `None` means the id is not recorded (e.g., never anchored or cleared).
-    /// Saphyr's parser anchor_id is the sequential counter.
+    /// Saphyr's parser `anchor_id` is the sequential counter.
     anchors: Vec<Option<Box<[Ev<'a>]>>>,
     /// Recording frames for currently-open anchored containers.
     rec_stack: Vec<RecFrame<'a>>,
@@ -217,7 +217,7 @@ pub(crate) struct LiveEvents<'a> {
     property_syntax: PropertySyntax,
     /// Per-anchor replay expansion counters, indexed by anchor id (dense ids).
     per_anchor_expansions: Vec<usize>,
-    /// Indicates whether a DocumentEnd was seen for the last parsed document.
+    /// Indicates whether a `DocumentEnd` was seen for the last parsed document.
     seen_doc_end: bool,
 
     /// Error reference that is checked at the end of parsing.
@@ -475,9 +475,7 @@ impl<'a> LiveEvents<'a> {
 
     fn consumed_comment_location(&self, ev: &Ev<'_>) -> Location {
         self.inject
-            .last()
-            .map(|frame| frame.reference_location)
-            .unwrap_or_else(|| ev.location())
+            .last().map_or_else(|| ev.location(), |frame| frame.reference_location)
     }
 
     fn remember_consumed_event(&mut self, ev: &Ev<'_>) {
@@ -556,7 +554,7 @@ impl<'a> LiveEvents<'a> {
     /// During parsing it:
     /// - Tracks and records anchors for scalars and containers.
     /// - Injects recorded buffers on aliases, enforcing alias-bomb hardening limits and budget.
-    /// - Maintains last_location for better error messages.
+    /// - Maintains `last_location` for better error messages.
     ///
     /// Returns Some(event) when an event is produced, or Ok(None) on true EOF.
     fn next_impl(&mut self) -> Result<Option<Ev<'a>>, Error> {
@@ -994,7 +992,7 @@ impl<'a> LiveEvents<'a> {
     /// Observe the configured budget for a replayed (injected) event.
     ///
     /// Reconstructs a parser Event equivalent to the Ev and passes it to the
-    /// BudgetEnforcer, attaching the event's location on error.
+    /// `BudgetEnforcer`, attaching the event's location on error.
     fn observe_budget_for_replay(&mut self, ev: &Ev) -> Result<(), Error> {
         let Some(budget) = self.budget.as_mut() else {
             return Ok(());
@@ -1157,7 +1155,7 @@ impl Drop for LiveEvents<'_> {
 
 impl<'de> Events<'de> for LiveEvents<'de> {
     /// Get the next event, using a single-item lookahead buffer if present.
-    /// Updates last_location to the yielded event's location.
+    /// Updates `last_location` to the yielded event's location.
     fn next(&mut self) -> Result<Option<Ev<'de>>, Error> {
         if let Some(err) = self.pending_error.take() {
             return Err(err);
@@ -1190,7 +1188,7 @@ impl<'de> Events<'de> for LiveEvents<'de> {
         }
         if let Some(ev) = self.look.as_ref() {
             self.last_location = ev.location();
-        };
+        }
 
         Ok((&self.look).into())
     }
@@ -1204,8 +1202,7 @@ impl<'de> Events<'de> for LiveEvents<'de> {
         }
         self.look
             .as_ref()
-            .map(|e| e.location())
-            .unwrap_or(self.last_location)
+            .map_or(self.last_location, super::events::Ev::location)
     }
 
     fn take_leading_comments_for_next_node(&mut self) -> Result<Vec<Cow<'de, str>>, Error> {
@@ -1251,7 +1248,7 @@ impl<'de> Events<'de> for LiveEvents<'de> {
     }
 }
 
-impl<'a> LiveEvents<'a> {
+impl LiveEvents<'_> {
     pub(crate) fn seen_doc_end(&self) -> bool {
         self.seen_doc_end
     }

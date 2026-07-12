@@ -41,7 +41,7 @@ pub struct SeqSer<'a, 'b, W: Write> {
     pub(super) first: bool,
 }
 
-impl<'a, 'b, W: Write> SerializeTuple for SeqSer<'a, 'b, W> {
+impl<W: Write> SerializeTuple for SeqSer<'_, '_, W> {
     type Ok = ();
     type Error = Error;
 
@@ -54,7 +54,7 @@ impl<'a, 'b, W: Write> SerializeTuple for SeqSer<'a, 'b, W> {
 }
 
 // Re-implement SerializeSeq for SeqSer with correct end.
-impl<'a, 'b, W: Write> SerializeSeq for SeqSer<'a, 'b, W> {
+impl<W: Write> SerializeSeq for SeqSer<'_, '_, W> {
     type Ok = ();
     type Error = Error;
 
@@ -215,7 +215,7 @@ impl<'a, 'b, W: Write> SpecialTupleSer<'a, 'b, W> {
     }
 }
 
-impl<'a, 'b, W: Write> SerializeTupleStruct for TupleSer<'a, 'b, W> {
+impl<W: Write> SerializeTupleStruct for TupleSer<'_, '_, W> {
     type Ok = ();
     type Error = Error;
 
@@ -234,7 +234,7 @@ impl<'a, 'b, W: Write> SerializeTupleStruct for TupleSer<'a, 'b, W> {
     }
 }
 
-impl<'a, 'b, W: Write> SpecialTupleSer<'a, 'b, W> {
+impl<W: Write> SpecialTupleSer<'_, '_, W> {
     fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<()> {
         match self.kind {
             TupleKind::AnchorStrong => {
@@ -276,16 +276,7 @@ impl<'a, 'b, W: Write> SpecialTupleSer<'a, 'b, W> {
                         let mut bc = BoolCapture::default();
                         value.serialize(&mut bc)?;
                         self.weak_present = bc.finish()?;
-                        if !self.weak_present {
-                            // present == false: emit null and skip field #3
-                            if self.ser.at_line_start {
-                                self.ser.write_indent(self.ser.depth)?;
-                            }
-                            self.ser.out.write_str("null")?;
-                            // Use shared end-of-scalar so pending inline comments (if any) are appended
-                            self.ser.write_end_of_scalar()?;
-                            self.skip_third = true;
-                        } else {
+                        if self.weak_present {
                             let ptr = self.weak_anchor_ptr;
                             let (id, fresh) = self.ser.alloc_anchor_for(ptr);
                             if fresh {
@@ -294,6 +285,15 @@ impl<'a, 'b, W: Write> SpecialTupleSer<'a, 'b, W> {
                             } else {
                                 self.weak_alias_id = Some(id); // alias in field #3
                             }
+                        } else {
+                            // present == false: emit null and skip field #3
+                            if self.ser.at_line_start {
+                                self.ser.write_indent(self.ser.depth)?;
+                            }
+                            self.ser.out.write_str("null")?;
+                            // Use shared end-of-scalar so pending inline comments (if any) are appended
+                            self.ser.write_end_of_scalar()?;
+                            self.skip_third = true;
                         }
                     }
                     2 => {
@@ -361,7 +361,7 @@ impl<'a, 'b, W: Write> SpecialTupleSer<'a, 'b, W> {
 // `serialize_tuple_variant` writes the variant name and colon, then hands the
 // fields to a `SeqSer`: the body is just a block sequence, so it reuses the same
 // dash/indentation logic as `serialize_seq`.
-impl<'a, 'b, W: Write> SerializeTupleVariant for SeqSer<'a, 'b, W> {
+impl<W: Write> SerializeTupleVariant for SeqSer<'_, '_, W> {
     type Ok = ();
     type Error = Error;
 
@@ -400,7 +400,7 @@ pub struct MapSer<'a, 'b, W: Write> {
     pub(super) inline_value_start: bool,
 }
 
-impl<'a, 'b, W: Write> MapSer<'a, 'b, W> {
+impl<W: Write> MapSer<'_, '_, W> {
     /// Emit a scalar key inline as `key:`.
     fn write_simple_key(&mut self, text: &str) -> Result<()> {
         // Indent continuation lines. If this map started inline after a dash,
@@ -470,7 +470,7 @@ impl<'a, 'b, W: Write> MapSer<'a, 'b, W> {
     }
 }
 
-impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
+impl<W: Write> SerializeMap for MapSer<'_, '_, W> {
     type Ok = ();
     type Error = Error;
 
@@ -605,7 +605,7 @@ impl<'a, 'b, W: Write> SerializeMap for MapSer<'a, 'b, W> {
         Ok(())
     }
 }
-impl<'a, 'b, W: Write> SerializeStruct for MapSer<'a, 'b, W> {
+impl<W: Write> SerializeStruct for MapSer<'_, '_, W> {
     type Ok = ();
     type Error = Error;
 
@@ -632,7 +632,7 @@ pub struct StructVariantSer<'a, 'b, W: Write> {
     /// Target indentation depth for the fields.
     pub(super) depth: usize,
 }
-impl<'a, 'b, W: Write> SerializeStructVariant for StructVariantSer<'a, 'b, W> {
+impl<W: Write> SerializeStructVariant for StructVariantSer<'_, '_, W> {
     type Ok = ();
     type Error = Error;
 

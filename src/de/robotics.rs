@@ -79,19 +79,19 @@ where
     }
 
     // Tag-based conversion only if no unitized constructs were used.
-    if !used_unit {
-        match tag {
-            SfTag::Degrees => value *= DEG2RAD,
-            SfTag::Radians => { /* already radians */ }
-            _ => { /* ignore other tags for floats */ }
-        }
-    } else {
+    if used_unit {
         // Safety: prevent ambiguous mixing under Degrees tag.
         if matches!(tag, SfTag::Degrees) && saw_plain {
             return Err(p.err(
                 "ambiguous mix of unitized values and Degrees tag: \
                  wrap bare terms with deg(...) or rad(...), or remove the tag",
             ));
+        }
+    } else {
+        match tag {
+            SfTag::Degrees => value *= DEG2RAD,
+            SfTag::Radians => { /* already radians */ }
+            _ => { /* ignore other tags for floats */ }
         }
     }
 
@@ -517,7 +517,7 @@ impl<'a> Parser<'a> {
                 return Err(self.err("seconds out of range in sexagesimal literal"));
             }
             total_digits += d3;
-            secs = secs_u as f64;
+            secs = f64::from(secs_u);
 
             if let Some(b'.') = self.peek() {
                 self.bump();
@@ -537,25 +537,25 @@ impl<'a> Parser<'a> {
         // - Top-level with Degrees/Radians tag -> treat as angle and produce radians directly
         if self.sexagesimal_is_time {
             if matches!(self.tag, SfTag::Degrees | SfTag::Radians) {
-                let degrees = deg_whole + (mins_u as f64) / 60.0 + secs / 3600.0;
+                let degrees = deg_whole + f64::from(mins_u) / 60.0 + secs / 3600.0;
                 Ok(Some((degrees * DEG2RAD, true, false)))
             } else {
                 // Time mode: hh:mm[:ss[.frac]] → total seconds
-                let total_seconds = deg_whole * 3600.0 + (mins_u as f64) * 60.0 + secs;
+                let total_seconds = deg_whole * 3600.0 + f64::from(mins_u) * 60.0 + secs;
                 Ok(Some((total_seconds, true, false)))
             }
         } else if matches!(self.tag, SfTag::TimeStamp) {
             // Explicit time tag forces time semantics even inside functions (unlikely combo)
-            let total_seconds = deg_whole * 3600.0 + (mins_u as f64) * 60.0 + secs;
+            let total_seconds = deg_whole * 3600.0 + f64::from(mins_u) * 60.0 + secs;
             Ok(Some((total_seconds, true, false)))
         } else {
             // Angle mode (inside unit functions): interpret as degrees numeric; conversion is handled by the wrapping unit (deg()/rad()).
-            let degrees = deg_whole + (mins_u as f64) / 60.0 + secs / 3600.0;
+            let degrees = deg_whole + f64::from(mins_u) / 60.0 + secs / 3600.0;
             Ok(Some((degrees, true, false)))
         }
     }
 
-    /// Read unsigned integer with underscores to f64. Returns (value, digit_count).
+    /// Read unsigned integer with underscores to f64. Returns (value, `digit_count`).
     fn read_uint_unders_to_f64(&mut self) -> Result<(f64, usize), Error> {
         let mut v: f64 = 0.0;
         let mut digits: usize = 0;
@@ -563,7 +563,7 @@ impl<'a> Parser<'a> {
         let mut prev_is_digit = false;
         while let Some(c) = self.peek() {
             if c.is_ascii_digit() {
-                v = v * 10.0 + (c - b'0') as f64;
+                v = v * 10.0 + f64::from(c - b'0');
                 self.i += 1;
                 digits += 1;
                 prev_is_digit = true;
@@ -588,16 +588,16 @@ impl<'a> Parser<'a> {
         Ok((v, digits))
     }
 
-    /// Read unsigned integer with underscores to u32. Returns (value, digit_count).
+    /// Read unsigned integer with underscores to u32. Returns (value, `digit_count`).
     fn read_uint_unders_to_u32(&mut self) -> Result<(u32, usize), Error> {
         let (v_f, d) = self.read_uint_unders_to_f64()?;
-        if v_f > u32::MAX as f64 {
+        if v_f > f64::from(u32::MAX) {
             return Err(self.err("numeric field too large"));
         }
         Ok((v_f as u32, d))
     }
 
-    /// Read fractional digits with underscores after '.' → (fraction_value, digit_count).
+    /// Read fractional digits with underscores after '.' → (`fraction_value`, `digit_count`).
     fn read_frac_part_unders(&mut self) -> Result<(f64, usize), Error> {
         let mut num: f64 = 0.0;
         let mut scale: f64 = 1.0;
@@ -607,7 +607,7 @@ impl<'a> Parser<'a> {
         while let Some(c) = self.peek() {
             if c.is_ascii_digit() {
                 if digits < MAX_FRAC_DIGITS {
-                    num = num * 10.0 + (c - b'0') as f64;
+                    num = num * 10.0 + f64::from(c - b'0');
                     scale *= 10.0;
                 }
                 self.i += 1;

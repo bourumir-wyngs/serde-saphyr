@@ -147,12 +147,9 @@ where
         }
     }
 
-    let path = match path {
-        Some(path) => path,
-        None => {
-            let _ = writeln!(stderr, "{}", usage());
-            return 1;
-        }
+    let path = if let Some(path) = path { path } else {
+        let _ = writeln!(stderr, "{}", usage());
+        return 1;
     };
 
     let content = match std::fs::read_to_string(&path) {

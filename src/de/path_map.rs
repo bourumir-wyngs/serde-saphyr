@@ -266,7 +266,7 @@ impl PathMap {
         }
 
         let mut found: Option<(Locations, String)> = None;
-        for (candidate, loc) in self.map.iter() {
+        for (candidate, loc) in &self.map {
             if matches(target, candidate) {
                 if found.is_some() {
                     return None; // ambiguous
@@ -325,7 +325,7 @@ fn collapse_non_alnum_ascii_lower(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     out.extend(
         s.chars()
-            .filter(|c| c.is_ascii_alphanumeric())
+            .filter(char::is_ascii_alphanumeric)
             .map(|c| c.to_ascii_lowercase()),
     );
     out
@@ -411,7 +411,7 @@ fn tokenize_segment(s: &str) -> Vec<String> {
                 if start < i {
                     let tok: String = chars[start..i]
                         .iter()
-                        .map(|c| c.to_ascii_lowercase())
+                        .map(char::to_ascii_lowercase)
                         .collect();
                     if !tok.is_empty() {
                         tokens.push(tok);
@@ -424,7 +424,7 @@ fn tokenize_segment(s: &str) -> Vec<String> {
         if start < chars.len() {
             let tok: String = chars[start..]
                 .iter()
-                .map(|c| c.to_ascii_lowercase())
+                .map(char::to_ascii_lowercase)
                 .collect();
             if !tok.is_empty() {
                 tokens.push(tok);

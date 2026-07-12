@@ -90,7 +90,7 @@ fn parse_braced_reference(
     };
     let body = &input[body_start..close];
     let Some((name, rest)) = parse_name(body) else {
-        return Err(input[start..close + 1].to_owned());
+        return Err(input[start..=close].to_owned());
     };
 
     let op = if rest.is_empty() {
@@ -108,7 +108,7 @@ fn parse_braced_reference(
     } else if let Some(text) = rest.strip_prefix('?') {
         BraceOp::ErrorIfUnset(text)
     } else {
-        return Err(input[start..close + 1].to_owned());
+        return Err(input[start..=close].to_owned());
     };
 
     Ok(Some((BraceRef { name, op }, close + 1)))
@@ -234,11 +234,11 @@ pub(crate) fn interpolate_compose_style<'s>(
 
         if bytes[next] == b'$' {
             // $$ = escaped, so skip and treat as literal
-            if !changed {
+            if changed {
+                out.push_str(&input_str[last..i]);
+            } else {
                 out.push_str(&input_str[..i]);
                 changed = true;
-            } else {
-                out.push_str(&input_str[last..i]);
             }
             out.push('$');
             i += 2;
@@ -257,11 +257,11 @@ pub(crate) fn interpolate_compose_style<'s>(
 
             let value = resolve_brace(&brace, vars)?;
 
-            if !changed {
+            if changed {
+                out.push_str(&input_str[last..i]);
+            } else {
                 out.push_str(&input_str[..i]);
                 changed = true;
-            } else {
-                out.push_str(&input_str[last..i]);
             }
             out.push_str(value.as_ref());
 
@@ -283,11 +283,11 @@ pub(crate) fn interpolate_compose_style<'s>(
                 .map(String::as_str)
                 .ok_or_else(|| PropertyError::Unresolved(name.to_owned()))?;
 
-            if !changed {
+            if changed {
+                out.push_str(&input_str[last..i]);
+            } else {
                 out.push_str(&input_str[..i]);
                 changed = true;
-            } else {
-                out.push_str(&input_str[last..i]);
             }
             out.push_str(value);
 

@@ -65,7 +65,7 @@ struct CommentedSeqAccess<'de, 'e> {
     state: u8,
 }
 
-impl<'de, 'e> de::SeqAccess<'de> for CommentedSeqAccess<'de, 'e> {
+impl<'de> de::SeqAccess<'de> for CommentedSeqAccess<'de, '_> {
     type Error = Error;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Error>

@@ -187,7 +187,7 @@ pub trait Localizer {
 
     /// Compose the base validation message used in snippet rendering.
     ///
-    /// Default: `"validation error: {entry} for `{resolved_path}`"`.
+    /// Default: `"validation error: {entry} for `{`resolved_path`}`"`.
     fn validation_base_message(&self, entry: &str, resolved_path: &str) -> String {
         format!("validation error: {entry} for `{resolved_path}`")
     }

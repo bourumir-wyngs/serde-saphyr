@@ -38,8 +38,8 @@ pub(crate) fn decode_base64_yaml(s: &str) -> Result<Vec<u8>, Error> {
                 location: Location::UNKNOWN,
             });
         }
-        let a = decode_val(chunk[0])? as u32;
-        let b = decode_val(chunk[1])? as u32;
+        let a = u32::from(decode_val(chunk[0])?);
+        let b = u32::from(decode_val(chunk[1])?);
 
         let c = match chunk[2] {
             b'=' => {
@@ -50,7 +50,7 @@ pub(crate) fn decode_base64_yaml(s: &str) -> Result<Vec<u8>, Error> {
                 }
                 0
             }
-            byte => decode_val(byte)? as u32,
+            byte => u32::from(decode_val(byte)?),
         };
 
         let d = match chunk[3] {
@@ -62,7 +62,7 @@ pub(crate) fn decode_base64_yaml(s: &str) -> Result<Vec<u8>, Error> {
                 }
                 0
             }
-            byte => decode_val(byte)? as u32,
+            byte => u32::from(decode_val(byte)?),
         };
 
         if pad == 2 && (b & 0x0F) != 0 {

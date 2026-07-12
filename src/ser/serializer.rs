@@ -100,7 +100,7 @@ pub struct YamlSerializer<'a, W: Write> {
     in_flow: usize,
     /// Pending block-string style hint (literal `|` or folded `>`).
     pending_str_style: Option<StrStyle>,
-    /// Whether the pending block-string style was selected automatically (prefer_block_scalars)
+    /// Whether the pending block-string style was selected automatically (`prefer_block_scalars`)
     /// as opposed to being requested explicitly by wrapper types (LitStr/FoldStr variants).
     pending_str_from_auto: bool,
     /// Pending inline comment to be appended after the next scalar (block style only).
@@ -331,10 +331,10 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
                 self.out.write_str(name)?;
             } else {
                 // Fallback if generator vector is out of sync
-                write!(self.out, "a{}", id)?;
+                write!(self.out, "a{id}")?;
             }
         } else {
-            write!(self.out, "a{}", id)?;
+            write!(self.out, "a{id}")?;
         }
         Ok(())
     }
@@ -594,13 +594,13 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     }
 
     fn serialize_i8(self, v: i8) -> Result<()> {
-        self.serialize_i64(v as i64)
+        self.serialize_i64(i64::from(v))
     }
     fn serialize_i16(self, v: i16) -> Result<()> {
-        self.serialize_i64(v as i64)
+        self.serialize_i64(i64::from(v))
     }
     fn serialize_i32(self, v: i32) -> Result<()> {
-        self.serialize_i64(v as i64)
+        self.serialize_i64(i64::from(v))
     }
     fn serialize_i64(self, v: i64) -> Result<()> {
         self.write_space_if_pending()?;
@@ -608,7 +608,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         if self.at_line_start {
             self.write_indent(self.depth)?;
         }
-        write!(self.out, "{}", v)?;
+        write!(self.out, "{v}")?;
         self.write_end_of_scalar()?;
         Ok(())
     }
@@ -619,19 +619,19 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         if self.at_line_start {
             self.write_indent(self.depth)?;
         }
-        write!(self.out, "{}", v)?;
+        write!(self.out, "{v}")?;
         self.write_end_of_scalar()?;
         Ok(())
     }
 
     fn serialize_u8(self, v: u8) -> Result<()> {
-        self.serialize_u64(v as u64)
+        self.serialize_u64(u64::from(v))
     }
     fn serialize_u16(self, v: u16) -> Result<()> {
-        self.serialize_u64(v as u64)
+        self.serialize_u64(u64::from(v))
     }
     fn serialize_u32(self, v: u32) -> Result<()> {
-        self.serialize_u64(v as u64)
+        self.serialize_u64(u64::from(v))
     }
     fn serialize_u64(self, v: u64) -> Result<()> {
         self.write_space_if_pending()?;
@@ -639,7 +639,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         if self.at_line_start {
             self.write_indent(self.depth)?;
         }
-        write!(self.out, "{}", v)?;
+        write!(self.out, "{v}")?;
         self.write_end_of_scalar()?;
         Ok(())
     }
@@ -650,7 +650,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         if self.at_line_start {
             self.write_indent(self.depth)?;
         }
-        write!(self.out, "{}", v)?;
+        write!(self.out, "{v}")?;
         self.write_end_of_scalar()?;
         Ok(())
     }

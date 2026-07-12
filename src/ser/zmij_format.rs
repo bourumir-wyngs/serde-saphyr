@@ -27,12 +27,12 @@ pub(crate) fn push_float_string<F: Float + FloatCore>(
         // - a sign (+ or -) in the exponent (when exponent is present)
         if let Some(exp_pos) = s.find('e').or_else(|| s.find('E')) {
             // 1) Write mantissa, ensuring it has a decimal point.
-            if !s[..exp_pos].contains('.') {
+            if s[..exp_pos].contains('.') {
+                target.push_str(&s[..exp_pos]);
+            } else {
                 // "4e-6" -> "4.0e-6"
                 target.push_str(&s[..exp_pos]);
                 target.push_str(".0");
-            } else {
-                target.push_str(&s[..exp_pos]);
             }
 
             // 2) Write exponent marker.
@@ -77,12 +77,12 @@ pub(crate) fn write_float_string<F: Float + FloatCore, W: Write>(
         // - a sign (+ or -) in the exponent (when exponent is present)
         if let Some(exp_pos) = s.find('e').or_else(|| s.find('E')) {
             // 1) Write mantissa, ensuring it has a decimal point.
-            if !s[..exp_pos].contains('.') {
+            if s[..exp_pos].contains('.') {
+                target.write_str(&s[..exp_pos])?;
+            } else {
                 // "4e-6" -> "4.0e-6"
                 target.write_str(&s[..exp_pos])?;
                 target.write_str(".0")?;
-            } else {
-                target.write_str(&s[..exp_pos])?;
             }
 
             // 2) Write exponent marker.

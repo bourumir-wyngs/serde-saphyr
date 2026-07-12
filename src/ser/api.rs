@@ -113,7 +113,7 @@ pub fn to_io_writer_with_options<W: std::io::Write, T: serde_core::Serialize>(
         output: &'a mut W,
         last_err: Option<std::io::Error>,
     }
-    impl<'a, W: std::io::Write> std::fmt::Write for Adapter<'a, W> {
+    impl<W: std::io::Write> std::fmt::Write for Adapter<'_, W> {
         fn write_str(&mut self, s: &str) -> std::fmt::Result {
             if let Err(e) = self.output.write_all(s.as_bytes()) {
                 self.last_err = Some(e);

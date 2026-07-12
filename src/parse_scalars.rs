@@ -30,7 +30,7 @@ pub(crate) fn parse_yaml11_bool(s: &str) -> Result<bool, String> {
     {
         Ok(false)
     } else {
-        Err(format!("invalid YAML 1.1 bool: `{}`", s))
+        Err(format!("invalid YAML 1.1 bool: `{s}`"))
     }
 }
 
@@ -50,30 +50,30 @@ fn parse_digits_u128(digits: &str, radix: u32) -> Option<u128> {
                 continue;
             }
             b'0'..=b'9' => {
-                let d = (b - b'0') as u32;
+                let d = u32::from(b - b'0');
                 if d >= radix {
                     return None;
                 }
-                val = val.checked_mul(radix as u128)?;
-                val = val.checked_add(d as u128)?;
+                val = val.checked_mul(u128::from(radix))?;
+                val = val.checked_add(u128::from(d))?;
                 saw = true;
             }
             b'a'..=b'f' if radix > 10 => {
-                let d = 10 + (b - b'a') as u32;
+                let d = 10 + u32::from(b - b'a');
                 if d >= radix {
                     return None;
                 }
-                val = val.checked_mul(radix as u128)?;
-                val = val.checked_add(d as u128)?;
+                val = val.checked_mul(u128::from(radix))?;
+                val = val.checked_add(u128::from(d))?;
                 saw = true;
             }
             b'A'..=b'F' if radix > 10 => {
-                let d = 10 + (b - b'A') as u32;
+                let d = 10 + u32::from(b - b'A');
                 if d >= radix {
                     return None;
                 }
-                val = val.checked_mul(radix as u128)?;
-                val = val.checked_add(d as u128)?;
+                val = val.checked_mul(u128::from(radix))?;
+                val = val.checked_add(u128::from(d))?;
                 saw = true;
             }
             _ => return None,
@@ -98,7 +98,7 @@ fn parse_decimal_unsigned_u128(digits: &str) -> Option<u128> {
                 continue;
             }
             b'0'..=b'9' => {
-                let d = (b - b'0') as u128;
+                let d = u128::from(b - b'0');
                 val = val.checked_mul(10)?;
                 val = val.checked_add(d)?;
                 saw = true;
@@ -127,7 +127,7 @@ fn parse_decimal_signed_i128(digits: &str, neg: bool) -> Option<i128> {
                     continue;
                 }
                 b'0'..=b'9' => {
-                    let d = (b - b'0') as i128;
+                    let d = i128::from(b - b'0');
                     val = val.checked_mul(10)?;
                     val = val.checked_sub(d)?;
                     saw = true;
@@ -151,7 +151,7 @@ fn parse_decimal_signed_i128(digits: &str, neg: bool) -> Option<i128> {
                     continue;
                 }
                 b'0'..=b'9' => {
-                    let d = (b - b'0') as i128;
+                    let d = i128::from(b - b'0');
                     val = val.checked_mul(10)?;
                     val = val.checked_add(d)?;
                     saw = true;
@@ -187,7 +187,7 @@ where
     let (radix, digits) = radix_and_digits(legacy_octal, rest);
     if radix == 10 {
         // Yaml 1.2 forbids decimal integer literals starting with zero.
-        if digits.starts_with("0") && digits != "0" {
+        if digits.starts_with('0') && digits != "0" {
             return Err(invalid());
         }
         let val_i128 = parse_decimal_signed_i128(digits, neg).ok_or_else(invalid)?;
@@ -229,7 +229,7 @@ where
 
     if radix == 10 {
         // Yaml 1.2 forbids decimal integer literals starting with zero.
-        if digits.starts_with("0") && digits != "0" {
+        if digits.starts_with('0') && digits != "0" {
             return Err(invalid());
         }
         let val_u128 = parse_decimal_unsigned_u128(digits).ok_or_else(invalid)?;
@@ -249,7 +249,7 @@ fn radix_and_digits(legacy_octal: bool, rest: &str) -> (u32, &str) {
             (8u32, normalize_prefixed_digits(legacy_octal, r))
         } else if let Some(r) = rest.strip_prefix("0b").or_else(|| rest.strip_prefix("0B")) {
             (2u32, normalize_prefixed_digits(legacy_octal, r))
-        } else if legacy_octal && rest.starts_with("0") {
+        } else if legacy_octal && rest.starts_with('0') {
             if rest == "0" {
                 // 0 is 0 and not empty string
                 (8u32, "0")

@@ -155,7 +155,7 @@ impl<'de> serde_core::Deserialize<'de> for Span {
             {
                 struct FieldVisitor;
 
-                impl<'a> Visitor<'a> for FieldVisitor {
+                impl Visitor<'_> for FieldVisitor {
                     type Value = Field;
 
                     fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -250,6 +250,7 @@ impl Span {
     /// Construct a span from character-based offset and length.
     ///
     /// Values that exceed the active non-sentinel storage range are saturated.
+    #[must_use]
     pub const fn new(offset: u64, len: u64) -> Self {
         Self {
             offset: span_index_from_u64_saturating(offset),
@@ -261,6 +262,7 @@ impl Span {
     /// Attach byte-based offset and length information to the span.
     ///
     /// Values that exceed the active non-sentinel storage range are saturated.
+    #[must_use]
     pub const fn with_byte_info(mut self, byte_offset: u64, byte_len: u64) -> Self {
         self.byte_info = (
             span_index_from_u64_saturating(byte_offset),
@@ -271,12 +273,14 @@ impl Span {
 
     /// Returns the character offset within the source YAML document.
     #[inline]
+    #[must_use]
     pub fn offset(&self) -> u64 {
         span_index_to_u64(self.offset)
     }
 
     /// Returns the character length within the source YAML document.
     #[inline]
+    #[must_use]
     pub fn len(&self) -> u64 {
         span_index_to_u64(self.len)
     }
@@ -284,6 +288,7 @@ impl Span {
     /// Returns the byte offset within the source YAML document.
     /// Returns `None` if byte info is unavailable.
     #[inline]
+    #[must_use]
     pub fn byte_offset(&self) -> Option<u64> {
         if self.byte_info == BYTE_INFO_UNAVAILABLE {
             None
@@ -295,6 +300,7 @@ impl Span {
     /// Returns the byte length within the source YAML document.
     /// Returns `None` if byte info is unavailable.
     #[inline]
+    #[must_use]
     pub fn byte_len(&self) -> Option<u64> {
         if self.byte_info == BYTE_INFO_UNAVAILABLE {
             None
@@ -304,6 +310,7 @@ impl Span {
     }
 
     #[inline]
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }

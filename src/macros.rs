@@ -88,7 +88,7 @@ macro_rules! ser_options {
     };
 }
 
-/// Construct `Some([`crate::Budget`])` from `Default` and a list of field assignments.
+/// Construct `Some([``crate::Budget``])` from `Default` and a list of field assignments.
 ///
 /// This macro returns `Some(Budget)` (instead of just `Budget`) so it can be embedded
 /// directly inside [`crate::options!`] as the value for `Options::budget`.

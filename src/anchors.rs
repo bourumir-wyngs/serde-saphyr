@@ -455,12 +455,14 @@ impl<T> RcWeakAnchor<T> {
     /// Try to upgrade the weak reference to [`Rc<T>`].
     /// Returns [`None`] if the value has been dropped.
     #[inline]
+    #[must_use]
     pub fn upgrade(&self) -> Option<Rc<T>> {
         self.0.upgrade()
     }
 
     /// Returns `true` if the underlying value has been dropped (no strong refs remain).
     #[inline]
+    #[must_use]
     pub fn is_dangling(&self) -> bool {
         self.0.strong_count() == 0
     }
@@ -482,6 +484,7 @@ impl<T> RcRecursion<T> {
 
     /// Returns `true` if the underlying value has been dropped (no strong refs remain).
     #[inline]
+    #[must_use]
     pub fn is_dangling(&self) -> bool {
         self.0.strong_count() == 0
     }
@@ -504,6 +507,7 @@ impl<T> ArcRecursion<T> {
 
     /// Returns `true` if the underlying value has been dropped (no strong refs remain).
     #[inline]
+    #[must_use]
     pub fn is_dangling(&self) -> bool {
         self.0.strong_count() == 0
     }
@@ -512,12 +516,14 @@ impl<T> ArcWeakAnchor<T> {
     /// Try to upgrade the weak reference to [`Arc<T>`].
     /// Returns [`None`] if the value has been dropped.
     #[inline]
+    #[must_use]
     pub fn upgrade(&self) -> Option<Arc<T>> {
         self.0.upgrade()
     }
 
     /// Returns `true` if the underlying value has been dropped (no strong refs remain).
     #[inline]
+    #[must_use]
     pub fn is_dangling(&self) -> bool {
         self.0.strong_count() == 0
     }

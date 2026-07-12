@@ -428,12 +428,12 @@ pub(crate) fn escape_double_quoted(s: &str, out: &mut impl Write) -> fmt::Result
             '\u{2028}' => out.write_str("\\L")?,
             '\u{2029}' => out.write_str("\\P")?,
             c if (c as u32) <= 0xFF && (c.is_control() || (0x7F..=0x9F).contains(&(c as u32))) => {
-                write!(out, "\\x{:02X}", c as u32)?
+                write!(out, "\\x{:02X}", c as u32)?;
             }
             c if (c as u32) <= 0xFFFF
                 && (c.is_control() || (0x7F..=0x9F).contains(&(c as u32))) =>
             {
-                write!(out, "\\u{:04X}", c as u32)?
+                write!(out, "\\u{:04X}", c as u32)?;
             }
             c => out.write_char(c)?,
         }

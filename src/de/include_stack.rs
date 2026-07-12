@@ -177,8 +177,7 @@ impl<'input> ParserStack<'input> {
             .active_source_ids
             .last()
             .and_then(|source_id| self.resolved_sources.get(source_id))
-            .map(|source| source.name.as_str())
-            .unwrap_or("");
+            .map_or("", |source| source.name.as_str());
         let from_id = self.active_ids.last().map(|(_, id)| id.as_str());
 
         let request = crate::input_source::IncludeRequest {
@@ -253,8 +252,7 @@ impl<'input> ParserStack<'input> {
                         return Err(crate::de_error::Error::ResolverError {
                             target: include_str.to_string(),
                             error: crate::IncludeResolveError::Message(format!(
-                                "input byte limit {} exceeded by {} included bytes",
-                                limit, text_len
+                                "input byte limit {limit} exceeded by {text_len} included bytes"
                             )),
                             stack: self.inner.stack().into_iter().collect(),
                             location,
@@ -386,8 +384,7 @@ fn collect_anchor_events(
     }
     if let Some(err) = scanner.get_error() {
         return Err(CollectAnchorEventsError::Message(format!(
-            "failed to scan include fragment '{}': {}",
-            target_anchor, err
+            "failed to scan include fragment '{target_anchor}': {err}"
         )));
     }
     let mut parser = Parser::new_from_str(text);
@@ -399,16 +396,14 @@ fn collect_anchor_events(
     while let Some(event) = parser.next_event() {
         let (event, span) = event.map_err(|err| {
             CollectAnchorEventsError::Message(format!(
-                "failed to parse include fragment '{}': {}",
-                target_anchor, err
+                "failed to parse include fragment '{target_anchor}': {err}"
             ))
         })?;
         if matches!(event, Event::DocumentStart(..)) {
             document_count += 1;
             if document_count > 1 {
                 return Err(CollectAnchorEventsError::Message(format!(
-                    "include fragment '{}' must come from a single YAML document",
-                    target_anchor
+                    "include fragment '{target_anchor}' must come from a single YAML document"
                 )));
             }
         }
@@ -489,8 +484,7 @@ fn collect_anchor_events(
                     Event::SequenceEnd | Event::MappingEnd => {
                         if depth == 0 {
                             return Err(CollectAnchorEventsError::Message(format!(
-                                "include fragment '{}' became unbalanced while replaying events",
-                                target_anchor
+                                "include fragment '{target_anchor}' became unbalanced while replaying events"
                             )));
                         }
                         depth -= 1;
@@ -516,8 +510,7 @@ fn collect_anchor_events(
         .cloned()
         .ok_or_else(|| {
             CollectAnchorEventsError::Message(format!(
-                "include fragment '{}' was not found",
-                target_anchor
+                "include fragment '{target_anchor}' was not found"
             ))
         })?;
 

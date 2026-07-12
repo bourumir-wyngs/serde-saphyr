@@ -106,14 +106,14 @@ pub struct SerializerOptions {
         note = "Direct construction of `SerializerOptions` will be disabled from 1.0.0, use macro `ser_options!`"
     )]
     pub anchor_generator: Option<fn(usize) -> String>,
-    /// Threshold for block-string wrappers ([crate::LitStr]/[crate::FoldStr] and owned variants
-    /// [crate::LitString]/[crate::FoldString]).
+    /// Threshold for block-string wrappers ([`crate::LitStr`]/[`crate::FoldStr`] and owned variants
+    /// [`crate::LitString`]/[`crate::FoldString`]).
     ///
     /// If the string contains a newline, block style is always used. Otherwise, when the
     /// string is single-line and its length is strictly less than this threshold, the
     /// serializer emits a normal YAML scalar (no block style). Longer strings use block
     /// styles `|` or `>` depending on the wrapper. See the type docs for
-    /// [crate::LitStr], [crate::FoldStr], [crate::LitString] and [crate::FoldString] for
+    /// [`crate::LitStr`], [`crate::FoldStr`], [`crate::LitString`] and [`crate::FoldString`] for
     /// examples.
     #[deprecated(
         note = "Direct construction of `SerializerOptions` will be disabled from 1.0.0, use macro `ser_options!`"

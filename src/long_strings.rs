@@ -13,10 +13,10 @@ pub(crate) const NAME_FOLD_STR: &str = "__yaml_fold_str";
 /// as written. Each line is indented one level deeper than the surrounding
 /// indentation where the value appears.
 ///
-/// In short: use [LitStr] (|) to preserve line breaks exactly; use [FoldStr] (>) when you want
+/// In short: use [`LitStr`] (|) to preserve line breaks exactly; use [`FoldStr`] (>) when you want
 /// readers to display line breaks as spaces (soft-wrapped paragraphs).
 ///
-/// See also: [FoldStr], [LitString], [FoldString].
+/// See also: [`FoldStr`], [`LitString`], [`FoldString`].
 ///
 /// Behavior
 /// - Uses YAML's literal block style: a leading `|` followed by newline.
@@ -51,12 +51,12 @@ pub(crate) const NAME_FOLD_STR: &str = "__yaml_fold_str";
 #[derive(Clone, Copy)]
 pub struct LitStr<'a>(pub &'a str);
 
-/// Owned-string variant of [LitStr] that forces a YAML block literal string using the `|` style.
+/// Owned-string variant of [`LitStr`] that forces a YAML block literal string using the `|` style.
 ///
-/// This works the same as [LitStr] but takes ownership of a String. Useful when you already
+/// This works the same as [`LitStr`] but takes ownership of a String. Useful when you already
 /// have an owned String and want to avoid borrowing lifetimes.
 ///
-/// See also: [FoldStr], [FoldString].
+/// See also: [`FoldStr`], [`FoldString`].
 ///
 /// Example
 /// ```rust
@@ -76,10 +76,10 @@ pub struct LitString(pub String);
 /// breaks). The serializer writes each line on its own; the folding behavior is
 /// applied by consumers of the YAML, not during serialization.
 ///
-/// In short: use [FoldStr] (>) for human-readable paragraphs that may soft-wrap; use
-/// [LitStr] (|) when you need to preserve line breaks exactly as written.
+/// In short: use [`FoldStr`] (>) for human-readable paragraphs that may soft-wrap; use
+/// [`LitStr`] (|) when you need to preserve line breaks exactly as written.
 ///
-/// See also: [LitStr], [LitString], [FoldString].
+/// See also: [`LitStr`], [`LitString`], [`FoldString`].
 ///
 /// Behavior
 /// - Uses YAML's folded block style: a leading `>` followed by newline.
@@ -113,11 +113,11 @@ pub struct LitString(pub String);
 #[derive(Clone, Copy)]
 pub struct FoldStr<'a>(pub &'a str);
 
-/// Owned-string variant of [FoldStr] that forces a YAML folded block string using the `>` style.
+/// Owned-string variant of [`FoldStr`] that forces a YAML folded block string using the `>` style.
 ///
-/// Same behavior as [FoldStr] but owns a String.
+/// Same behavior as [`FoldStr`] but owns a String.
 ///
-/// See also: [LitStr], [LitString].
+/// See also: [`LitStr`], [`LitString`].
 ///
 /// Example
 /// ```rust
@@ -130,7 +130,7 @@ pub struct FoldStr<'a>(pub &'a str);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FoldString(pub String);
 
-impl<'a> Serialize for LitStr<'a> {
+impl Serialize for LitStr<'_> {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
         // Always delegate decision to the YAML serializer so it can apply options.
         s.serialize_newtype_struct(NAME_LIT_STR, &self.0)
@@ -141,7 +141,7 @@ impl Serialize for LitString {
         s.serialize_newtype_struct(NAME_LIT_STR, &self.0)
     }
 }
-impl<'a> Serialize for FoldStr<'a> {
+impl Serialize for FoldStr<'_> {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
         s.serialize_newtype_struct(NAME_FOLD_STR, &self.0)
     }
@@ -206,14 +206,14 @@ impl Deref for FoldString {
     }
 }
 
-impl<'a> Deref for LitStr<'a> {
+impl Deref for LitStr<'_> {
     type Target = str;
     fn deref(&self) -> &Self::Target {
         self.0
     }
 }
 
-impl<'a> Deref for FoldStr<'a> {
+impl Deref for FoldStr<'_> {
     type Target = str;
     fn deref(&self) -> &Self::Target {
         self.0
@@ -221,12 +221,14 @@ impl<'a> Deref for FoldStr<'a> {
 }
 
 impl LitString {
+    #[must_use]
     pub fn into_inner(self) -> String {
         self.0
     }
 }
 
 impl FoldString {
+    #[must_use]
     pub fn into_inner(self) -> String {
         self.0
     }

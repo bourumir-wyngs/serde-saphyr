@@ -116,7 +116,7 @@ impl KeyFingerprint {
     }
 }
 
-/// from_slice_multiple captured YAML node used to buffer keys/values and process merge keys.
+/// `from_slice_multiple` captured YAML node used to buffer keys/values and process merge keys.
 ///
 /// Fields:
 /// - `fingerprint`: canonical representation for duplicate detection.
@@ -184,7 +184,7 @@ impl<'a> KeyNode<'a> {
     }
 }
 
-/// from_slice_multiple pending key/value pair to be injected into the current mapping.
+/// `from_slice_multiple` pending key/value pair to be injected into the current mapping.
 ///
 /// Produced by:
 /// - Merge (`<<`) processing and by scanning the current mapping fields.
@@ -208,9 +208,9 @@ pub(super) struct PendingEntry<'a> {
 }
 
 /// Return the span lengths of key and value for a one-entry map encoded in `events`.
-/// The expected layout is: MapStart, <key node>, <value node>, MapEnd.
-/// On success returns (key_start, key_end, val_start, val_end) as indices into events.
-pub(super) fn one_entry_map_spans<'a>(events: &[Ev<'a>]) -> Option<(usize, usize, usize, usize)> {
+/// The expected layout is: `MapStart`, <key node>, <value node>, `MapEnd`.
+/// On success returns (`key_start`, `key_end`, `val_start`, `val_end`) as indices into events.
+pub(super) fn one_entry_map_spans(events: &[Ev<'_>]) -> Option<(usize, usize, usize, usize)> {
     if events.len() < 4 {
         return None;
     }
@@ -238,7 +238,7 @@ pub(super) fn one_entry_map_spans<'a>(events: &[Ev<'a>]) -> Option<(usize, usize
 
 /// Skip one complete node in `events` starting at index `i`, returning the number of
 /// events consumed. Returns None if the slice is malformed.
-pub(super) fn skip_one_node_len<'a>(events: &[Ev<'a>], mut i: usize) -> Option<usize> {
+pub(super) fn skip_one_node_len(events: &[Ev<'_>], mut i: usize) -> Option<usize> {
     match events.get(i)? {
         Ev::Scalar { .. } => Some(1),
         Ev::SeqStart { .. } => {
@@ -439,7 +439,7 @@ pub(super) fn simple_tagged_node_name(event: &Ev<'_>) -> Option<(String, Locatio
 }
 
 /// Remove the YAML tag from the payload node after it has been promoted to a map key.
-pub(super) fn strip_root_tag_for_externally_tagged_payload<'a>(events: &mut [Ev<'a>]) {
+pub(super) fn strip_root_tag_for_externally_tagged_payload(events: &mut [Ev<'_>]) {
     match events.first_mut() {
         Some(Ev::Scalar { tag, raw_tag, .. }) => {
             *tag = SfTag::None;
@@ -462,15 +462,14 @@ pub(super) fn strip_root_tag_for_externally_tagged_payload<'a>(events: &mut [Ev<
 ///
 /// Returns:
 /// - A synthetic one-entry mapping equivalent to `{ Variant: payload }`.
-pub(super) fn externally_tagged_payload_as_map_events<'a>(
+pub(super) fn externally_tagged_payload_as_map_events(
     variant: String,
     tag_location: Location,
-    mut payload_events: Vec<Ev<'a>>,
-) -> Vec<Ev<'a>> {
+    mut payload_events: Vec<Ev<'_>>,
+) -> Vec<Ev<'_>> {
     let end_location = payload_events
         .last()
-        .map(Ev::location)
-        .unwrap_or(tag_location);
+        .map_or(tag_location, Ev::location);
 
     let mut events = Vec::with_capacity(payload_events.len() + 3);
     events.push(Ev::MapStart {
@@ -540,7 +539,7 @@ pub(super) fn is_merge_key_event(event: &Ev<'_>) -> bool {
 
 pub(super) fn validate_no_merge_keys_in_node_events(events: &[Ev<'_>]) -> Result<(), Error> {
     fn eof_location(events: &[Ev<'_>]) -> Location {
-        events.last().map(Ev::location).unwrap_or(Location::UNKNOWN)
+        events.last().map_or(Location::UNKNOWN, Ev::location)
     }
 
     fn visit_node(events: &[Ev<'_>], mut index: usize) -> Result<usize, Error> {
@@ -658,15 +657,15 @@ pub(super) fn apply_duplicate_key_policy_to_entries(
 ///
 /// Called by:
 /// - Mapping deserialization when encountering `<<: value`.
-pub(super) fn pending_entries_from_events<'a>(
-    events: Vec<Ev<'a>>,
+pub(super) fn pending_entries_from_events(
+    events: Vec<Ev<'_>>,
     location: Location,
     reference_location: Location,
     merge_keys: MergeKeyPolicy,
     duplicate_keys: DuplicateKeyPolicy,
     #[cfg(feature = "properties")] property_map: Option<Rc<HashMap<String, String>>>,
     #[cfg(feature = "properties")] property_syntax: PropertySyntax,
-) -> Result<Vec<PendingEntry<'a>>, Error> {
+) -> Result<Vec<PendingEntry<'_>>, Error> {
     let mut replay = ReplayEvents::with_reference(
         events,
         reference_location,

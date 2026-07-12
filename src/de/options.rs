@@ -379,6 +379,7 @@ impl Options {
     /// # }
     /// ```
     #[cfg(feature = "properties")]
+    #[must_use]
     pub fn with_properties(mut self, properties: HashMap<String, String>) -> Self {
         self.property_map = Some(Rc::new(properties));
         self

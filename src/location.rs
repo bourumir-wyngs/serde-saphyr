@@ -75,7 +75,7 @@ impl<'de> serde_core::Deserialize<'de> for Location {
             {
                 struct FieldVisitor;
 
-                impl<'a> Visitor<'a> for FieldVisitor {
+                impl Visitor<'_> for FieldVisitor {
                     type Value = Field;
 
                     fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -172,25 +172,29 @@ impl<'de> serde_core::Deserialize<'de> for Location {
 impl Location {
     /// serde_yaml-compatible line information.
     #[inline]
+    #[must_use]
     pub fn line(&self) -> u64 {
-        self.line as u64
+        u64::from(self.line)
     }
 
     /// serde_yaml-compatible column information.
     #[inline]
+    #[must_use]
     pub fn column(&self) -> u64 {
-        self.column as u64
+        u64::from(self.column)
     }
 
     /// Character-based span within the source document.
     /// For string source, it also can provide byte offsets.
     #[inline]
+    #[must_use]
     pub fn span(&self) -> Span {
         self.span
     }
 
     /// Numeric id of the source.
     #[inline]
+    #[must_use]
     pub fn source_id(&self) -> u32 {
         self.source_id
     }
@@ -308,6 +312,7 @@ impl Locations {
     }
 
     #[inline]
+    #[must_use]
     pub fn primary_location(self) -> Option<Location> {
         if self.reference_location != Location::UNKNOWN {
             Some(self.reference_location)
