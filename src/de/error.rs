@@ -1421,96 +1421,14 @@ impl Error {
     /// Used by:
     /// - Callers that want to surface precise positions to users.
     pub fn location(&self) -> Option<Location> {
-        match self {
-            Error::Message { location, .. }
-            | Error::InvalidOptions { location, .. }
-            | Error::ExternalMessage { location, .. }
-            | Error::Eof { location }
-            | Error::MultipleDocuments { location, .. }
-            | Error::Unexpected { location, .. }
-            | Error::MergeValueNotMapOrSeqOfMaps { location }
-            | Error::MergeKeyNotAllowed { location }
-            | Error::InvalidBinaryBase64 { location }
-            | Error::BinaryNotUtf8 { location }
-            | Error::TaggedScalarCannotDeserializeIntoString { location }
-            | Error::UnexpectedSequenceEnd { location }
-            | Error::UnexpectedMappingEnd { location }
-            | Error::InvalidBooleanStrict { location }
-            | Error::InvalidCharNull { location }
-            | Error::InvalidCharNotSingleScalar { location }
-            | Error::NullIntoString { location }
-            | Error::BytesNotSupportedMissingBinaryTag { location }
-            | Error::UnexpectedValueForUnit { location }
-            | Error::ExpectedEmptyMappingForUnitStruct { location }
-            | Error::UnexpectedContainerEndWhileSkippingNode { location }
-            | Error::InternalSeedReusedForMapKey { location }
-            | Error::ValueRequestedBeforeKey { location }
-            | Error::ExpectedStringKeyForExternallyTaggedEnum { location }
-            | Error::ExternallyTaggedEnumExpectedScalarOrMapping { location }
-            | Error::UnexpectedValueForUnitEnumVariant { location }
-            | Error::AliasReplayCounterOverflow { location }
-            | Error::AliasReplayLimitExceeded { location, .. }
-            | Error::AliasExpansionLimitExceeded { location, .. }
-            | Error::AliasReplayStackDepthExceeded { location, .. }
-            | Error::FoldedBlockScalarMustIndentContent { location }
-            | Error::InternalDepthUnderflow { location }
-            | Error::InternalRecursionStackEmpty { location }
-            | Error::RecursiveReferencesRequireWeakTypes { location }
-            | Error::InvalidScalar { location, .. }
-            | Error::NonFiniteFloat { location, .. }
-            | Error::SerdeInvalidType { location, .. }
-            | Error::SerdeInvalidValue { location, .. }
-            | Error::SerdeUnknownVariant { location, .. }
-            | Error::SerdeUnknownField { location, .. }
-            | Error::SerdeMissingField { location, .. }
-            | Error::UnexpectedContainerEndWhileReadingKeyNode { location }
-            | Error::DuplicateMappingKey { location, .. }
-            | Error::TaggedEnumMismatch { location, .. }
-            | Error::SerdeVariantId { location, .. }
-            | Error::ExpectedMappingEndAfterEnumVariantValue { location }
-            | Error::HookError { location, .. }
-            | Error::UnresolvedProperty { location, .. }
-            | Error::InvalidPropertyName { location, .. }
-            | Error::PropertyRequiredButUnset { location, .. }
-            | Error::PropertyRequiredButEmpty { location, .. }
-            | Error::ContainerEndMismatch { location, .. }
-            | Error::UnknownAnchor { location, .. }
-            | Error::CyclicInclude { location, .. }
-            | Error::UnsupportedIncludeForm { location, .. }
-            | Error::ResolverError { location, .. }
-            | Error::QuotingRequired { location, .. }
-            | Error::Budget { location, .. }
-            | Error::CannotBorrowTransformedString { location, .. }
-            | Error::IndentationError { location, .. } => {
-                if location != &Location::UNKNOWN {
-                    Some(*location)
-                } else {
-                    None
-                }
-            }
-            Error::InvalidUtf8Input => None,
-            Error::IOError { cause: _ } => None,
-            Error::AliasError { locations, .. } => Locations::primary_location(*locations),
-            Error::WithSnippet { error, .. } => error.location(),
-            #[cfg(any(feature = "garde", feature = "validator"))]
-            Error::ValidationError {
-                issues, locations, ..
-            } => issues.first().and_then(|issue| {
-                let (locs, _) = locations.search_with_ancestor_fallback(&issue.path)?;
-                let loc = if locs.reference_location != Location::UNKNOWN {
-                    locs.reference_location
-                } else {
-                    locs.defined_location
-                };
-                if loc != Location::UNKNOWN {
-                    Some(loc)
-                } else {
-                    None
-                }
-            }),
-            #[cfg(any(feature = "garde", feature = "validator"))]
-            Error::ValidationErrors { errors, .. } => errors.iter().find_map(|e| e.location()),
+        #[cfg(any(feature = "garde", feature = "validator"))]
+        if let Error::ValidationErrors { errors, .. } = self {
+            // Preserve aggregate behavior: use the first child that has a location,
+            // rather than requiring the first child itself to have one.
+            return errors.iter().find_map(Error::location);
         }
+
+        self.locations().and_then(Locations::primary_location)
     }
     /// Return a pair of locations associated with this error.
     ///

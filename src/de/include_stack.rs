@@ -81,11 +81,10 @@ impl<'input> ParserStack<'input> {
     ) {
         self.push_stream_parser_with_snippet(parser, name, None, crate::Location::UNKNOWN);
     }
-    pub(crate) fn push_str_parser_with_snippet(
+    fn register_source(
         &mut self,
-        parser: Parser<'input, StrInput<'input>>,
-        name: String,
-        snippet: Option<SnippetFrame>,
+        name: &str,
+        snippet: Option<&SnippetFrame>,
         include_location: crate::Location,
     ) {
         let source_id = self.next_source_id;
@@ -94,14 +93,20 @@ impl<'input> ParserStack<'input> {
         self.active_source_ids.push(source_id);
         let recorded = RecordedSource {
             parent_source_id,
-            name: snippet
-                .as_ref()
-                .map(|s| s.name.clone())
-                .unwrap_or_else(|| name.clone()),
-            text: snippet.as_ref().map(|s| s.text.clone()),
+            name: snippet.map_or_else(|| name.to_owned(), |snippet| snippet.name.clone()),
+            text: snippet.map(|snippet| Rc::clone(&snippet.text)),
             include_location,
         };
         self.resolved_sources.insert(source_id, recorded);
+    }
+    pub(crate) fn push_str_parser_with_snippet(
+        &mut self,
+        parser: Parser<'input, StrInput<'input>>,
+        name: String,
+        snippet: Option<SnippetFrame>,
+        include_location: crate::Location,
+    ) {
+        self.register_source(&name, snippet.as_ref(), include_location);
         self.inner.push_str_parser(parser, name);
     }
     fn push_stream_parser_with_snippet(
@@ -111,20 +116,7 @@ impl<'input> ParserStack<'input> {
         snippet: Option<SnippetFrame>,
         include_location: crate::Location,
     ) {
-        let source_id = self.next_source_id;
-        self.next_source_id += 1;
-        let parent_source_id = self.active_source_ids.last().copied();
-        self.active_source_ids.push(source_id);
-        let recorded = RecordedSource {
-            parent_source_id,
-            name: snippet
-                .as_ref()
-                .map(|s| s.name.clone())
-                .unwrap_or_else(|| name.clone()),
-            text: snippet.as_ref().map(|s| s.text.clone()),
-            include_location,
-        };
-        self.resolved_sources.insert(source_id, recorded);
+        self.register_source(&name, snippet.as_ref(), include_location);
         self.inner.push_custom_parser(parser, name);
     }
     fn push_replay_parser_with_snippet(
@@ -134,20 +126,7 @@ impl<'input> ParserStack<'input> {
         snippet: Option<SnippetFrame>,
         include_location: crate::Location,
     ) {
-        let source_id = self.next_source_id;
-        self.next_source_id += 1;
-        let parent_source_id = self.active_source_ids.last().copied();
-        self.active_source_ids.push(source_id);
-        let recorded = RecordedSource {
-            parent_source_id,
-            name: snippet
-                .as_ref()
-                .map(|s| s.name.clone())
-                .unwrap_or_else(|| name.clone()),
-            text: snippet.as_ref().map(|s| s.text.clone()),
-            include_location,
-        };
-        self.resolved_sources.insert(source_id, recorded);
+        self.register_source(&name, snippet.as_ref(), include_location);
         self.inner.push_replay_parser(parser, name);
     }
     pub fn current_source_id(&self) -> u32 {
