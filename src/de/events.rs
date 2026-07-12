@@ -341,9 +341,7 @@ impl<'a> Events<'a> for ReplayEvents<'a> {
 
     fn last_location(&self) -> Location {
         let last = self.idx.saturating_sub(1);
-        self.buf
-            .get(last)
-            .map_or(Location::UNKNOWN, Ev::location)
+        self.buf.get(last).map_or(Location::UNKNOWN, Ev::location)
     }
 
     fn reference_location(&self) -> Location {
@@ -351,7 +349,8 @@ impl<'a> Events<'a> for ReplayEvents<'a> {
             return loc;
         }
         self.buf
-            .get(self.idx).map_or_else(|| self.last_location(), Ev::location)
+            .get(self.idx)
+            .map_or_else(|| self.last_location(), Ev::location)
     }
 
     #[cfg(feature = "properties")]

@@ -467,9 +467,7 @@ pub(super) fn externally_tagged_payload_as_map_events(
     tag_location: Location,
     mut payload_events: Vec<Ev<'_>>,
 ) -> Vec<Ev<'_>> {
-    let end_location = payload_events
-        .last()
-        .map_or(tag_location, Ev::location);
+    let end_location = payload_events.last().map_or(tag_location, Ev::location);
 
     let mut events = Vec::with_capacity(payload_events.len() + 3);
     events.push(Ev::MapStart {

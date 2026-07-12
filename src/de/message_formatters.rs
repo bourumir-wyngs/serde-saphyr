@@ -268,9 +268,7 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
                             base_dir,
                             err,
                         } => {
-                            format!(
-                                "failed to resolve include '{spec}' from '{base_dir}': {err}"
-                            )
+                            format!("failed to resolve include '{spec}' from '{base_dir}': {err}")
                         }
                         crate::input_source::ResolveProblem::TargetNotRegularFile { target } => {
                             format!("include target '{target}' is not a regular file")
@@ -300,9 +298,7 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
                             format!("include parent '{parent}' is not a regular file")
                         }
                         crate::input_source::ResolveProblem::ParentHasNoDirectory { parent } => {
-                            format!(
-                                "include parent '{parent}' does not have a parent directory"
-                            )
+                            format!("include parent '{parent}' does not have a parent directory")
                         }
                         crate::input_source::ResolveProblem::ResolvesOutsideRoot { spec, root } => {
                             format!(

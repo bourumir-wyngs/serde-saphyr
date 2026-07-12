@@ -501,19 +501,17 @@ impl<'a> Snippet<'a> {
 
         let loc_prefix = l10n.snippet_location_prefix(*location);
 
-        let report = &[level
-            .primary_title(format!("{loc_prefix}: {msg}"))
-            .element(
-                AnnotateSnippet::source(&window_text)
-                    .line_start(window.rows.window_start_absolute_row)
-                    .path(self.source.path)
-                    .fold(false)
-                    .annotation(
-                        AnnotationKind::Primary
-                            .span(local_start..local_end)
-                            .label(label),
-                    ),
-            )];
+        let report = &[level.primary_title(format!("{loc_prefix}: {msg}")).element(
+            AnnotateSnippet::source(&window_text)
+                .line_start(window.rows.window_start_absolute_row)
+                .path(self.source.path)
+                .fold(false)
+                .annotation(
+                    AnnotationKind::Primary
+                        .span(local_start..local_end)
+                        .label(label),
+                ),
+        )];
 
         // Prefer rustc-like caret markers and avoid ANSI colors in `Display` output.
         // This keeps error strings stable (e.g. for tests) and avoids emitting escape
@@ -614,9 +612,7 @@ fn fmt_snippet_window_with_mapping_or_fallback(
         writeln!(f, "{display_row:>gutter_width$} | {line}")?;
 
         if cur_row == window.rows.relative_row {
-            let line_byte_start = window_text[..local_start]
-                .rfind('\n')
-                .map_or(0, |i| i + 1);
+            let line_byte_start = window_text[..local_start].rfind('\n').map_or(0, |i| i + 1);
             let caret_chars = window_text[line_byte_start..local_start].chars().count();
             if msg.is_empty() {
                 writeln!(f, "{empty_gutter} {space:>caret_chars$}^", space = "")?;
@@ -648,9 +644,7 @@ fn fmt_snippet_window_with_mapping_or_fallback(
         writeln!(f, "{display_row:>gutter_width$} |")?;
 
         if cur_row == window.rows.relative_row {
-            let line_byte_start = window_text[..local_start]
-                .rfind('\n')
-                .map_or(0, |i| i + 1);
+            let line_byte_start = window_text[..local_start].rfind('\n').map_or(0, |i| i + 1);
             let caret_chars = window_text[line_byte_start..local_start].chars().count();
             if msg.is_empty() {
                 writeln!(f, "{empty_gutter} {space:>caret_chars$}^", space = "")?;

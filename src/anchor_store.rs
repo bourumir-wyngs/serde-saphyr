@@ -261,9 +261,7 @@ pub(crate) fn get_arc<T: Any + Send + Sync>(id: usize) -> Result<Option<Arc<T>>,
             let cloned = existing.clone();
             match cloned.downcast::<T>() {
                 Ok(arc_t) => Ok(Some(arc_t)),
-                Err(_) => Err(format!(
-                    "anchor id {id} reused with incompatible Arc type"
-                )),
+                Err(_) => Err(format!("anchor id {id} reused with incompatible Arc type")),
             }
         } else {
             Ok(None)
