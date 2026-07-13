@@ -1755,7 +1755,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             pending_path_segment: Option<String>,
 
             // For duplicate-key detection for arbitrary keys.
-            seen: HashSet<KeyFingerprint>,
+            seen: HashSet<KeyFingerprint<'de>>,
             pending: VecDeque<PendingEntry<'de>>,
             merge_stack: VecDeque<Vec<PendingEntry<'de>>>,
             flushing_merges: bool,
