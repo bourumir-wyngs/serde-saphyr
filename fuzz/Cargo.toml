@@ -43,6 +43,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "raw_deserialize"
+path = "fuzz_targets/raw_deserialize.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "serialize"
 path = "fuzz_targets/serialize.rs"
 test = false
