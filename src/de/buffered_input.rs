@@ -7,9 +7,11 @@
 //! (BOM-aware), then buffering via `BufReader`.
 
 use encoding_rs_io::DecodeReaderBytesBuilder;
-use granit_parser::{BorrowedInput, BufferedInput, Input};
-use std::cell::{Cell, RefCell};
-use std::io::{self, BufReader, Error, Read};
+use granit_parser::{
+    BorrowedInput, ErrorKind as ParserErrorKind, FallibleBufferedInput, Input, InputIoError,
+};
+use std::cell::Cell;
+use std::io::{self, BufReader, Read};
 use std::rc::Rc;
 
 type DynReader<'a> = Box<dyn Read + 'a>;
@@ -19,11 +21,11 @@ type DynBufReader<'a> = BufReader<DynReader<'a>>;
 ///
 /// This does **not** support zero-copy borrowing of scalar slices, so
 /// [`BorrowedInput::slice_borrowed`] always returns `None`.
-pub struct ReaderInput<'a>(BufferedInput<ChunkedChars<DynBufReader<'a>>>);
+pub struct ReaderInput<'a>(FallibleBufferedInput<ChunkedChars<DynBufReader<'a>>>);
 
 impl<'a> ReaderInput<'a> {
     #[inline]
-    pub fn new(inner: BufferedInput<ChunkedChars<DynBufReader<'a>>>) -> Self {
+    pub fn new(inner: FallibleBufferedInput<ChunkedChars<DynBufReader<'a>>>) -> Self {
         Self(inner)
     }
 }
@@ -73,6 +75,16 @@ impl Input for ReaderInput<'_> {
     fn peek_nth(&self, n: usize) -> char {
         self.0.peek_nth(n)
     }
+
+    #[inline]
+    fn next_is_z(&self) -> bool {
+        self.0.next_is_z()
+    }
+
+    #[inline]
+    fn take_source_error(&mut self) -> Option<ParserErrorKind> {
+        self.0.take_source_error()
+    }
 }
 
 impl<'a> BorrowedInput<'a> for ReaderInput<'a> {
@@ -82,7 +94,6 @@ impl<'a> BorrowedInput<'a> for ReaderInput<'a> {
     }
 }
 
-pub(crate) type ReaderInputError = Rc<RefCell<Option<Error>>>;
 pub(crate) type ReaderInputBytesRead = Rc<Cell<usize>>;
 
 pub struct ChunkedChars<R: Read> {
@@ -93,47 +104,43 @@ pub struct ChunkedChars<R: Read> {
     /// The underlying reader that already yields UTF-8 bytes (typically a
     /// `BufReader<DecodeReaderBytes<...>>`). It is read incrementally.
     reader: R,
-    /// Remember IO error, if any, here to report it later. This must be shared,
-    /// as otherwise we cannot later reach it with the granit-parser API
-    pub(crate) err: Rc<RefCell<Option<Error>>>,
+    /// Prevent the source from being polled after EOF or its first error.
+    finished: bool,
 }
 
 impl<R: Read> ChunkedChars<R> {
-    pub fn new(
-        reader: R,
-        max_bytes: Option<usize>,
-        err: Rc<RefCell<Option<Error>>>,
-        bytes_read: ReaderInputBytesRead,
-    ) -> Self {
+    pub fn new(reader: R, max_bytes: Option<usize>, bytes_read: ReaderInputBytesRead) -> Self {
         Self {
             max_bytes,
             bytes_read,
             reader,
-            err,
+            finished: false,
         }
     }
 }
 
 impl<R: Read> Iterator for ChunkedChars<R> {
-    type Item = char;
+    type Item = Result<char, ParserErrorKind>;
 
-    /// Returns the next Unicode scalar value from the stream, or `None` on EOF.
-    /// If error occurs, sets the error field that is a shared reference to the
-    /// error value, so that the parser can later pick this up.
-    fn next(&mut self) -> Option<char> {
+    /// Returns the next Unicode scalar value, a terminal source error, or `None` on clean EOF.
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.finished {
+            return None;
+        }
+
         // Read exactly one UTF-8 codepoint (1..=4 bytes) from the underlying reader.
         // No internal buffering: rely on the outer BufReader and decoder.
         let mut buf = [0u8; 4];
-        // Read first byte
         if let Err(e) = self.reader.read_exact(&mut buf[..1]) {
-            match e.kind() {
-                io::ErrorKind::UnexpectedEof => return None, // true EOF
-                _ => {
-                    self.err.replace(Some(e));
-                    return None;
-                }
+            self.finished = true;
+            if e.kind() == io::ErrorKind::UnexpectedEof {
+                return None;
             }
+            return Some(Err(ParserErrorKind::InputIo {
+                error: InputIoError::from(e),
+            }));
         }
+
         let first = buf[0];
         let needed = if first < 0x80 {
             1
@@ -144,12 +151,10 @@ impl<R: Read> Iterator for ChunkedChars<R> {
         } else if first & 0b1111_1000 == 0b1111_0000 {
             4
         } else {
-            // Invalid leading byte
-            self.err.replace(Some(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "invalid UTF-8 leading byte",
-            )));
-            return None;
+            self.finished = true;
+            return Some(Err(ParserErrorKind::InputDecoding {
+                message: "invalid UTF-8 leading byte".to_owned(),
+            }));
         };
 
         if needed > 1 {
@@ -157,78 +162,70 @@ impl<R: Read> Iterator for ChunkedChars<R> {
             while read < needed - 1 {
                 match self.reader.read(&mut buf[1 + read..needed]) {
                     Ok(0) => {
-                        self.err.replace(Some(io::Error::new(
-                            io::ErrorKind::UnexpectedEof,
-                            "unexpected EOF in middle of UTF-8 codepoint",
-                        )));
-                        return None;
+                        self.finished = true;
+                        return Some(Err(ParserErrorKind::InputDecoding {
+                            message: "unexpected EOF in middle of UTF-8 codepoint".to_owned(),
+                        }));
                     }
                     Ok(n) => read += n,
                     Err(e) => {
                         if e.kind() == io::ErrorKind::Interrupted {
                             continue;
                         }
-                        self.err.replace(Some(e));
-                        return None;
+                        self.finished = true;
+                        return Some(Err(ParserErrorKind::InputIo {
+                            error: InputIoError::from(e),
+                        }));
                     }
                 }
             }
         }
 
-        // Enforce byte limit if configured
-        let add = needed;
-        let total_bytes = self.bytes_read.get();
-        if let Some(limit) = self.max_bytes {
-            let new_total = total_bytes.saturating_add(add);
-            if new_total > limit {
-                self.err.replace(Some(io::Error::new(
-                    io::ErrorKind::FileTooLarge,
-                    format!("input size limit of {limit} bytes exceeded"),
-                )));
-                return None;
+        let ch = match std::str::from_utf8(&buf[..needed]) {
+            Ok(s) => match s.chars().next() {
+                Some(ch) => ch,
+                None => {
+                    self.finished = true;
+                    return Some(Err(ParserErrorKind::InputDecoding {
+                        message: "decoded UTF-8 codepoint was empty".to_owned(),
+                    }));
+                }
+            },
+            Err(error) => {
+                self.finished = true;
+                return Some(Err(ParserErrorKind::InputDecoding {
+                    message: error.to_string(),
+                }));
             }
-            self.bytes_read.set(new_total);
-        } else {
-            self.bytes_read.set(total_bytes.saturating_add(add));
-        }
+        };
 
-        // Validate assembled bytes as UTF-8 and extract the char
-        match std::str::from_utf8(&buf[..needed]) {
-            Ok(s) => s.chars().next(),
-            Err(e) => {
-                self.err
-                    .replace(Some(io::Error::new(io::ErrorKind::InvalidData, e)));
-                None
-            }
+        let total_bytes = self.bytes_read.get();
+        if let Some(limit) = self.max_bytes
+            && needed > limit.saturating_sub(total_bytes)
+        {
+            self.finished = true;
+            return Some(Err(ParserErrorKind::InputByteLimitExceeded { limit }));
         }
+        self.bytes_read.set(total_bytes.saturating_add(needed));
+
+        Some(Ok(ch))
     }
 }
 
-/// Creates buffered input and returns both input and reference to the variable
-/// holding the possible error. We cannot otherwise later reach our `ChunkedChars`.
+/// Creates fallible buffered input and its shared byte counter.
 pub fn buffered_input_from_reader_with_limit<'a, R: Read + 'a>(
     reader: R,
     max_bytes: Option<usize>,
-) -> (ReaderInput<'a>, ReaderInputError, ReaderInputBytesRead) {
-    let error: ReaderInputError = Rc::new(RefCell::new(None));
+) -> (ReaderInput<'a>, ReaderInputBytesRead) {
     let bytes_read: ReaderInputBytesRead = Rc::new(Cell::new(0));
-    let input = buffered_input_from_reader_with_limit_shared(
-        reader,
-        max_bytes,
-        error.clone(),
-        bytes_read.clone(),
-    );
-    (input, error, bytes_read)
+    let input = buffered_input_from_reader_with_limit_shared(reader, max_bytes, bytes_read.clone());
+    (input, bytes_read)
 }
 
-/// Like [`buffered_input_from_reader_with_limit`] but uses an existing shared error cell.
-///
-/// This is used to ensure IO errors from nested include readers are observable by the
-/// top-level consumer.
+/// Like [`buffered_input_from_reader_with_limit`] but uses an existing shared byte counter.
 pub fn buffered_input_from_reader_with_limit_shared<'a, R: Read + 'a>(
     reader: R,
     max_bytes: Option<usize>,
-    error: ReaderInputError,
     bytes_read: ReaderInputBytesRead,
 ) -> ReaderInput<'a> {
     // Auto-detect encoding (BOM or guess), decode to UTF-8 on the fly.
@@ -238,8 +235,8 @@ pub fn buffered_input_from_reader_with_limit_shared<'a, R: Read + 'a>(
         .build(reader);
 
     let br = BufReader::new(Box::new(decoder) as DynReader<'a>);
-    let char_iter = ChunkedChars::new(br, max_bytes, error, bytes_read);
-    ReaderInput::new(BufferedInput::new(char_iter))
+    let char_iter = ChunkedChars::new(br, max_bytes, bytes_read);
+    ReaderInput::new(FallibleBufferedInput::new(char_iter))
 }
 
 #[cfg(test)]
@@ -248,7 +245,7 @@ mod tests {
     use crate::buffered_input::ReaderInput;
     use crate::buffered_input::buffered_input_from_reader_with_limit;
     use granit_parser::{Event, Parser};
-    use std::cell::{Cell, RefCell};
+    use std::cell::Cell;
     use std::io::{Cursor, Read};
     use std::rc::Rc;
 
@@ -389,12 +386,10 @@ mod tests {
 
     #[test]
     fn chunked_chars_retries_interrupted_continuation_reads() {
-        let err = Rc::new(RefCell::new(None));
         let bytes_read = Rc::new(Cell::new(0));
         let reader = InterruptOnceReader::new("é".as_bytes().to_vec());
-        let mut chars = ChunkedChars::new(reader, None, Rc::clone(&err), bytes_read);
+        let mut chars = ChunkedChars::new(reader, None, bytes_read);
 
-        assert_eq!(chars.next(), Some('é'));
-        assert!(err.borrow().is_none());
+        assert_eq!(chars.next(), Some(Ok('é')));
     }
 }

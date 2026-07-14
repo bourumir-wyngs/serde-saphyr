@@ -12,7 +12,7 @@ use crate::include_stack::ParserStack;
 use crate::input_source::IncludeResolver;
 
 #[cfg(feature = "include")]
-use crate::buffered_input::{ReaderInput, ReaderInputBytesRead, ReaderInputError};
+use crate::buffered_input::{ReaderInput, ReaderInputBytesRead};
 
 #[cfg(feature = "include")]
 pub(crate) type BaseParser<'a> = ParserStack<'a>;
@@ -24,12 +24,11 @@ pub(crate) type BaseParser<'a, I> = Parser<'a, I>;
 #[inline]
 pub(crate) fn create_parser_from_reader_input<'input>(
     input: ReaderInput<'input>,
-    io_error: ReaderInputError,
     reader_bytes_read: ReaderInputBytesRead,
     budget: &crate::Budget,
     resolver: Option<Box<IncludeResolver<'input>>>,
 ) -> ParserStack<'input> {
-    let mut stack = ParserStack::new(io_error, reader_bytes_read, budget);
+    let mut stack = ParserStack::new(reader_bytes_read, budget);
     if let Some(r) = resolver {
         stack.set_resolver(r);
     }
@@ -43,12 +42,11 @@ pub(crate) fn create_parser_from_reader_input<'input>(
 #[inline]
 pub(crate) fn create_parser_from_str<'a>(
     input: &'a str,
-    io_error: ReaderInputError,
     reader_bytes_read: ReaderInputBytesRead,
     budget: &crate::Budget,
     resolver: Option<Box<IncludeResolver<'a>>>,
 ) -> ParserStack<'a> {
-    let mut stack = ParserStack::new(io_error, reader_bytes_read, budget);
+    let mut stack = ParserStack::new(reader_bytes_read, budget);
     if let Some(r) = resolver {
         stack.set_resolver(r);
     }
@@ -77,10 +75,8 @@ mod tests {
     #[test]
     fn create_parser_from_str_borrows_root_text_for_snippets() {
         let input = "root: 1";
-        let io_error = std::rc::Rc::new(std::cell::RefCell::new(None));
         let stack = create_parser_from_str(
             input,
-            io_error,
             std::rc::Rc::new(std::cell::Cell::new(0)),
             &crate::Budget::default(),
             None,

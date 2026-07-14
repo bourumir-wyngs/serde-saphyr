@@ -14,12 +14,13 @@ exclude = ["Cargo.lock", ".github/**", ".idea/**"]
 [dependencies]
 # granit-parser = { version = "0.0.8", optional = true }
 # granit-parser = { path = "/home/audrius/rust/granit-parser", optional = true }
-granit-parser = { git = "https://github.com/bourumir-wyngs/granit-parser", optional = true }
-#granit-parser = {
-#    git = "https://github.com/bourumir-wyngs/granit-parser",
-#    branch = "master",
-#    optional = true
-#}
+#granit-parser = { git = "https://github.com/bourumir-wyngs/granit-parser", optional = true }
+granit-parser = {
+    git = "https://github.com/bourumir-wyngs/granit-parser",
+    branch = "bw/fallable",
+    features = ["std"],
+    optional = true
+}
 
 # Normal builds use core only, to allow building serde-saphyr in parallel with serde.
 # Complete serde is only used when serde_derived_types is enabled (off by default)

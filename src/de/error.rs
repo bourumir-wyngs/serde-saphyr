@@ -1533,6 +1533,27 @@ impl Error {
             .with_span(crate::Span::new(mark.index() as u64, 1));
 
         match err.kind() {
+            ErrorKind::InputIo { error } => {
+                let kind = error
+                    .io_error()
+                    .map_or(std::io::ErrorKind::Other, std::io::Error::kind);
+                return Error::IOError {
+                    cause: std::io::Error::new(kind, error.clone()),
+                };
+            }
+            ErrorKind::InputDecoding { message } => {
+                return Error::IOError {
+                    cause: std::io::Error::new(std::io::ErrorKind::InvalidData, message.clone()),
+                };
+            }
+            ErrorKind::InputByteLimitExceeded { limit } => {
+                return Error::IOError {
+                    cause: std::io::Error::new(
+                        std::io::ErrorKind::FileTooLarge,
+                        format!("input size limit of {limit} bytes exceeded"),
+                    ),
+                };
+            }
             ErrorKind::MultipleDocumentsUnsupported => {
                 return Error::MultipleDocuments {
                     hint: "only one document is supported in this context",

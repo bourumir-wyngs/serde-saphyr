@@ -34,6 +34,19 @@ struct QuotaConfig {
 }
 
 #[cfg(feature = "include")]
+struct FailingIncludeReader;
+
+#[cfg(feature = "include")]
+impl std::io::Read for FailingIncludeReader {
+    fn read(&mut self, _output: &mut [u8]) -> std::io::Result<usize> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::BrokenPipe,
+            "injected include reader failure",
+        ))
+    }
+}
+
+#[cfg(feature = "include")]
 #[test]
 fn test_reader_resolver() {
     let yaml = "foo: !include bar.yaml\n";
@@ -455,6 +468,36 @@ fn test_successful_reader_resolver() {
 
     let config: Config = serde_saphyr::from_reader_with_options(cursor, options).unwrap();
     assert_eq!(config.foo, "bar_value");
+}
+
+#[cfg(feature = "include")]
+#[test]
+fn test_reader_include_io_error() {
+    let yaml = "foo: !include broken.yaml\n";
+    let options = serde_saphyr::options! {}.with_include_resolver(
+        |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
+            Ok(ResolvedInclude {
+                id: req.spec.to_string(),
+                name: req.spec.to_string(),
+                source: InputSource::from_reader(FailingIncludeReader),
+            })
+        },
+    );
+
+    let error = serde_saphyr::from_str_with_options::<Config>(yaml, options)
+        .expect_err("include reader failure must be returned");
+
+    match error.without_snippet() {
+        Error::IOError { cause } => {
+            assert_eq!(cause.kind(), std::io::ErrorKind::BrokenPipe);
+            assert!(
+                cause
+                    .to_string()
+                    .contains("injected include reader failure")
+            );
+        }
+        other => panic!("expected include reader I/O error, got {other:?}"),
+    }
 }
 
 #[cfg(feature = "include")]
