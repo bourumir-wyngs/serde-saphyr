@@ -131,17 +131,23 @@ impl<R: Read> Iterator for ChunkedChars<R> {
         // Read exactly one UTF-8 codepoint (1..=4 bytes) from the underlying reader.
         // No internal buffering: rely on the outer BufReader and decoder.
         let mut buf = [0u8; 4];
-        if let Err(e) = self.reader.read_exact(&mut buf[..1]) {
-            self.finished = true;
-            if e.kind() == io::ErrorKind::UnexpectedEof {
-                return None;
+        let first = loop {
+            match self.reader.read(&mut buf[..1]) {
+                Ok(0) => {
+                    self.finished = true;
+                    return None;
+                }
+                Ok(_) => break buf[0],
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error) => {
+                    self.finished = true;
+                    return Some(Err(ParserErrorKind::InputIo {
+                        error: InputIoError::from(error),
+                    }));
+                }
             }
-            return Some(Err(ParserErrorKind::InputIo {
-                error: InputIoError::from(e),
-            }));
-        }
+        };
 
-        let first = buf[0];
         let needed = if first < 0x80 {
             1
         } else if first & 0b1110_0000 == 0b1100_0000 {
@@ -252,14 +258,16 @@ mod tests {
     struct InterruptOnceReader {
         bytes: Vec<u8>,
         pos: usize,
+        interrupt_at: usize,
         interrupted: bool,
     }
 
     impl InterruptOnceReader {
-        fn new(bytes: Vec<u8>) -> Self {
+        fn new(bytes: Vec<u8>, interrupt_at: usize) -> Self {
             Self {
                 bytes,
                 pos: 0,
+                interrupt_at,
                 interrupted: false,
             }
         }
@@ -267,7 +275,7 @@ mod tests {
 
     impl Read for InterruptOnceReader {
         fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-            if self.pos == 1 && !self.interrupted {
+            if self.pos == self.interrupt_at && !self.interrupted {
                 self.interrupted = true;
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::Interrupted,
@@ -385,9 +393,18 @@ mod tests {
     }
 
     #[test]
+    fn chunked_chars_retries_interrupted_first_byte_reads() {
+        let bytes_read = Rc::new(Cell::new(0));
+        let reader = InterruptOnceReader::new(b"a".to_vec(), 0);
+        let mut chars = ChunkedChars::new(reader, None, bytes_read);
+
+        assert_eq!(chars.next(), Some(Ok('a')));
+    }
+
+    #[test]
     fn chunked_chars_retries_interrupted_continuation_reads() {
         let bytes_read = Rc::new(Cell::new(0));
-        let reader = InterruptOnceReader::new("é".as_bytes().to_vec());
+        let reader = InterruptOnceReader::new("é".as_bytes().to_vec(), 1);
         let mut chars = ChunkedChars::new(reader, None, bytes_read);
 
         assert_eq!(chars.next(), Some(Ok('é')));
