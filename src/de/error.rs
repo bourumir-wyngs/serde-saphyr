@@ -1528,19 +1528,27 @@ impl Error {
     #[cold]
     #[inline(never)]
     pub(crate) fn from_scan_error(err: ScanError) -> Self {
+        let err = match err.try_into_input_io_error() {
+            Ok(error) => {
+                let cause = match error.try_into_io_error() {
+                    Ok(error) => error,
+                    Err(error) => {
+                        let kind = error
+                            .io_error()
+                            .map_or(std::io::ErrorKind::Other, std::io::Error::kind);
+                        std::io::Error::new(kind, error)
+                    }
+                };
+                return Error::IOError { cause };
+            }
+            Err(err) => err,
+        };
+
         let mark = err.marker();
         let location = Location::new(mark.line(), mark.col() + 1)
             .with_span(crate::Span::new(mark.index() as u64, 1));
 
         match err.kind() {
-            ErrorKind::InputIo { error } => {
-                let kind = error
-                    .io_error()
-                    .map_or(std::io::ErrorKind::Other, std::io::Error::kind);
-                return Error::IOError {
-                    cause: std::io::Error::new(kind, error.clone()),
-                };
-            }
             ErrorKind::InputDecoding { message } => {
                 return Error::IOError {
                     cause: std::io::Error::new(std::io::ErrorKind::InvalidData, message.clone()),
@@ -2225,6 +2233,25 @@ pub(crate) fn budget_error(breach: BudgetBreach) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn message_only_input_io_scan_error_uses_portable_fallback() {
+        let input = core::iter::once(Err::<char, _>(ErrorKind::InputIo {
+            error: granit_parser::InputIoError::from_message("portable reader failure"),
+        }));
+        let scan_error = granit_parser::Parser::new_from_fallible_iter(input)
+            .find_map(Result::err)
+            .expect("the source error should be reported");
+        let error = Error::from_scan_error(scan_error);
+
+        match error {
+            Error::IOError { cause } => {
+                assert_eq!(cause.kind(), std::io::ErrorKind::Other);
+                assert_eq!(cause.to_string(), "portable reader failure");
+            }
+            other => panic!("expected reader I/O error, got {other:?}"),
+        }
+    }
 
     #[rstest::rstest]
     #[case::unknown_anchor("while parsing node, found unknown anchor")]

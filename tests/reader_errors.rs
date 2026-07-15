@@ -7,17 +7,15 @@ use std::io::{self, Read};
 struct ErrorAfterPrefix {
     prefix: &'static [u8],
     position: usize,
-    error_kind: io::ErrorKind,
-    emitted_error: bool,
+    error: Option<io::Error>,
 }
 
 impl ErrorAfterPrefix {
-    fn new(prefix: &'static [u8], error_kind: io::ErrorKind) -> Self {
+    fn new(prefix: &'static [u8], error: io::Error) -> Self {
         Self {
             prefix,
             position: 0,
-            error_kind,
-            emitted_error: false,
+            error: Some(error),
         }
     }
 }
@@ -36,13 +34,16 @@ impl Read for ErrorAfterPrefix {
             return Ok(count);
         }
 
-        if !self.emitted_error {
-            self.emitted_error = true;
-            return Err(io::Error::new(self.error_kind, "injected reader failure"));
+        if let Some(error) = self.error.take() {
+            return Err(error);
         }
 
         Ok(0)
     }
+}
+
+fn injected_error(kind: io::ErrorKind) -> io::Error {
+    io::Error::new(kind, "injected reader failure")
 }
 
 fn assert_injected_io_error(error: &Error, expected_kind: io::ErrorKind) {
@@ -59,7 +60,7 @@ fn assert_injected_io_error(error: &Error, expected_kind: io::ErrorKind) {
 fn from_reader_propagates_io_error() {
     let error = serde_saphyr::from_reader::<_, serde::de::IgnoredAny>(ErrorAfterPrefix::new(
         b"",
-        io::ErrorKind::ConnectionReset,
+        injected_error(io::ErrorKind::ConnectionReset),
     ))
     .expect_err("reader failure must be returned");
 
@@ -76,7 +77,7 @@ struct Simple {
 fn from_reader_does_not_swallow_io_error_after_document_end() {
     let error = serde_saphyr::from_reader::<_, Simple>(ErrorAfterPrefix::new(
         b"id: 7\n...\n",
-        io::ErrorKind::ConnectionReset,
+        injected_error(io::ErrorKind::ConnectionReset),
     ))
     .expect_err("late reader failure must be returned");
 
@@ -87,9 +88,60 @@ fn from_reader_does_not_swallow_io_error_after_document_end() {
 fn from_reader_does_not_treat_reader_unexpected_eof_as_clean_eof() {
     let error = serde_saphyr::from_reader::<_, Simple>(ErrorAfterPrefix::new(
         b"id: 7\n...\n",
-        io::ErrorKind::UnexpectedEof,
+        injected_error(io::ErrorKind::UnexpectedEof),
     ))
     .expect_err("reader-generated UnexpectedEof must be returned");
 
     assert_injected_io_error(&error, io::ErrorKind::UnexpectedEof);
+}
+
+#[test]
+fn from_reader_preserves_raw_os_error() {
+    const RAW_OS_ERROR: i32 = 12_345;
+
+    let error = serde_saphyr::from_reader::<_, Simple>(ErrorAfterPrefix::new(
+        b"id: 7\n...\n",
+        io::Error::from_raw_os_error(RAW_OS_ERROR),
+    ))
+    .expect_err("late reader failure must be returned");
+
+    match error.without_snippet() {
+        Error::IOError { cause } => assert_eq!(cause.raw_os_error(), Some(RAW_OS_ERROR)),
+        other => panic!("expected reader I/O error, got {other:?}"),
+    }
+}
+
+#[derive(Debug)]
+struct InjectedCause {
+    marker: &'static str,
+}
+
+impl std::fmt::Display for InjectedCause {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.marker)
+    }
+}
+
+impl std::error::Error for InjectedCause {}
+
+#[test]
+fn from_reader_preserves_custom_io_error_cause() {
+    let error = serde_saphyr::from_reader::<_, Simple>(ErrorAfterPrefix::new(
+        b"id: 7\n...\n",
+        io::Error::other(InjectedCause {
+            marker: "custom injected cause",
+        }),
+    ))
+    .expect_err("late reader failure must be returned");
+
+    match error.without_snippet() {
+        Error::IOError { cause } => {
+            let inner = cause
+                .get_ref()
+                .and_then(|error| error.downcast_ref::<InjectedCause>())
+                .expect("the original custom error must remain directly inspectable");
+            assert_eq!(inner.marker, "custom injected cause");
+        }
+        other => panic!("expected reader I/O error, got {other:?}"),
+    }
 }
