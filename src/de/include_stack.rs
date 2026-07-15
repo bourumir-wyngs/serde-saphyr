@@ -1,7 +1,6 @@
 use crate::budget::BudgetBreach;
 use crate::buffered_input::{
-    ReaderInput, ReaderInputBytesRead, ReaderInputError,
-    buffered_input_from_reader_with_limit_shared,
+    ReaderInput, ReaderInputBytesRead, buffered_input_from_reader_with_limit_shared,
 };
 use crate::input_source::{IncludeResolveError, IncludeResolver, InputSource, ResolvedInclude};
 use granit_parser::{Event, Parser, ScanError, Scanner, Span, StrInput, TokenType};
@@ -35,7 +34,6 @@ pub(crate) struct RecordedSource {
 pub struct ParserStack<'input> {
     inner: InnerStack<'input>,
     include_resolver: Option<Box<IncludeResolver<'input>>>,
-    io_error: ReaderInputError,
     reader_bytes_read: ReaderInputBytesRead,
     budget: crate::Budget,
     active_ids: Vec<(usize, String)>,
@@ -45,15 +43,10 @@ pub struct ParserStack<'input> {
 }
 impl<'input> ParserStack<'input> {
     #[must_use]
-    pub fn new(
-        io_error: ReaderInputError,
-        reader_bytes_read: ReaderInputBytesRead,
-        budget: &crate::Budget,
-    ) -> Self {
+    pub fn new(reader_bytes_read: ReaderInputBytesRead, budget: &crate::Budget) -> Self {
         Self {
             inner: InnerStack::new(),
             include_resolver: None,
-            io_error,
             reader_bytes_read,
             budget: budget.clone(),
             active_ids: Vec::new(),
@@ -228,7 +221,6 @@ impl<'input> ParserStack<'input> {
                 let input = buffered_input_from_reader_with_limit_shared(
                     cursor,
                     self.budget.max_reader_input_bytes,
-                    self.io_error.clone(),
                     self.reader_bytes_read.clone(),
                 );
                 let parser = Parser::new(input);
@@ -238,7 +230,6 @@ impl<'input> ParserStack<'input> {
                 let input = buffered_input_from_reader_with_limit_shared(
                     r,
                     self.budget.max_reader_input_bytes,
-                    self.io_error.clone(),
                     self.reader_bytes_read.clone(),
                 );
                 let parser = Parser::new(input);
@@ -607,7 +598,7 @@ impl<'input> Iterator for ParserStack<'input> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::{Cell, RefCell};
+    use std::cell::Cell;
 
     fn expect_budget_breach(error: CollectAnchorEventsError) -> BudgetBreach {
         match error {
@@ -891,13 +882,12 @@ selected: &selected
 
     #[test]
     fn anchored_text_expanded_scalar_budget_surfaces_as_budget_error() {
-        let io_error = Rc::new(RefCell::new(None));
         let reader_bytes_read = Rc::new(Cell::new(0));
         let budget = crate::Budget {
             max_total_scalar_bytes: 25,
             ..crate::Budget::default()
         };
-        let mut stack = ParserStack::new(io_error, reader_bytes_read, &budget);
+        let mut stack = ParserStack::new(reader_bytes_read, &budget);
         let anchored_text = "\
 base: &base abcdefghij
 selected: &selected
@@ -954,9 +944,8 @@ selected: &selected
 
     #[test]
     fn source_ids_start_from_one_and_zero_stays_unknown() {
-        let io_error = Rc::new(RefCell::new(None));
         let reader_bytes_read = Rc::new(Cell::new(0));
-        let mut stack = ParserStack::new(io_error, reader_bytes_read, &crate::Budget::default());
+        let mut stack = ParserStack::new(reader_bytes_read, &crate::Budget::default());
         assert_eq!(stack.current_source_id(), 0);
         push_test_str_parser(&mut stack, Parser::new_from_str("root: 1"), "root.yaml");
         assert_eq!(stack.current_source_id(), 1);
@@ -965,9 +954,8 @@ selected: &selected
     }
     #[test]
     fn resolved_sources_retained_after_included_parser_pops() {
-        let io_error = Rc::new(RefCell::new(None));
         let reader_bytes_read = Rc::new(Cell::new(0));
-        let mut stack = ParserStack::new(io_error, reader_bytes_read, &crate::Budget::default());
+        let mut stack = ParserStack::new(reader_bytes_read, &crate::Budget::default());
         stack.set_resolver(|req| {
             assert_eq!(req.spec, "child.yaml");
             Ok(ResolvedInclude {
@@ -994,9 +982,8 @@ selected: &selected
     }
     #[test]
     fn resolved_sources_pruned_on_next_document_start() {
-        let io_error = Rc::new(RefCell::new(None));
         let reader_bytes_read = Rc::new(Cell::new(0));
-        let mut stack = ParserStack::new(io_error, reader_bytes_read, &crate::Budget::default());
+        let mut stack = ParserStack::new(reader_bytes_read, &crate::Budget::default());
         // A stream with two documents
         push_test_str_parser(
             &mut stack,
@@ -1033,13 +1020,12 @@ selected: &selected
 
     #[test]
     fn max_inclusion_depth_zero_disables_includes() {
-        let io_error = Rc::new(RefCell::new(None));
         let reader_bytes_read = Rc::new(Cell::new(0));
         let budget = crate::Budget {
             max_inclusion_depth: 0,
             ..crate::Budget::default()
         };
-        let mut stack = ParserStack::new(io_error, reader_bytes_read, &budget);
+        let mut stack = ParserStack::new(reader_bytes_read, &budget);
         stack.set_resolver(|_| {
             Ok(ResolvedInclude {
                 id: "child.yaml".to_string(),
@@ -1064,13 +1050,12 @@ selected: &selected
 
     #[test]
     fn max_inclusion_depth_allows_nested_includes_up_to_limit() {
-        let io_error = Rc::new(RefCell::new(None));
         let reader_bytes_read = Rc::new(Cell::new(0));
         let budget = crate::Budget {
             max_inclusion_depth: 2,
             ..crate::Budget::default()
         };
-        let mut stack = ParserStack::new(io_error, reader_bytes_read, &budget);
+        let mut stack = ParserStack::new(reader_bytes_read, &budget);
         stack.set_resolver(|req| match req.spec {
             "child.yaml" => Ok(ResolvedInclude {
                 id: "child.yaml".to_string(),
@@ -1098,13 +1083,12 @@ selected: &selected
 
     #[test]
     fn max_inclusion_depth_rejects_nested_include_beyond_limit() {
-        let io_error = Rc::new(RefCell::new(None));
         let reader_bytes_read = Rc::new(Cell::new(0));
         let budget = crate::Budget {
             max_inclusion_depth: 1,
             ..crate::Budget::default()
         };
-        let mut stack = ParserStack::new(io_error, reader_bytes_read, &budget);
+        let mut stack = ParserStack::new(reader_bytes_read, &budget);
         stack.set_resolver(|req| match req.spec {
             "child.yaml" => Ok(ResolvedInclude {
                 id: "child.yaml".to_string(),

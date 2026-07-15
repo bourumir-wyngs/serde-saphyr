@@ -87,8 +87,8 @@ where
     W: Fn(Error, &LiveEvents<'de>) -> Error,
 {
     // After finishing first document, peek ahead to detect either another document/content
-    // or trailing garbage. If a scan error occurs but we have seen a DocumentEnd ("..."),
-    // ignore the trailing garbage. Otherwise, surface the error.
+    // or trailing garbage. Preserve the compatibility behavior that ignores malformed YAML
+    // after "...", but never suppress a reader or reader-limit failure.
     match src.peek() {
         Ok(Some(_)) => {
             return Err(wrap_err(
@@ -98,7 +98,7 @@ where
         }
         Ok(None) => {}
         Err(e) => {
-            if src.seen_doc_end() {
+            if src.seen_doc_end() && !matches!(&e, Error::IOError { .. }) {
                 // Trailing garbage after a proper document end marker is ignored.
             } else {
                 return Err(wrap_err(e, src));
