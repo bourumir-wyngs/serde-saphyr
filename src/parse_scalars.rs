@@ -95,7 +95,6 @@ fn parse_decimal_unsigned_u128(digits: &str) -> Option<u128> {
                 if !prev_ok || !next_ok {
                     return None;
                 }
-                continue;
             }
             b'0'..=b'9' => {
                 let d = u128::from(b - b'0');
@@ -124,7 +123,6 @@ fn parse_decimal_signed_i128(digits: &str, neg: bool) -> Option<i128> {
                     if !prev_ok || !next_ok {
                         return None;
                     }
-                    continue;
                 }
                 b'0'..=b'9' => {
                     let d = i128::from(b - b'0');
@@ -148,7 +146,6 @@ fn parse_decimal_signed_i128(digits: &str, neg: bool) -> Option<i128> {
                     if !prev_ok || !next_ok {
                         return None;
                     }
-                    continue;
                 }
                 b'0'..=b'9' => {
                     let d = i128::from(b - b'0');
