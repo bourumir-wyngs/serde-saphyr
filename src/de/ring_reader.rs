@@ -239,18 +239,21 @@ impl<R> RingReader<R> {
             let _ = self.read_ahead_at_most(can_read_more)?;
         }
 
-        let (mut _start_offset, mut start_line, mut bytes) = self.ring_snapshot();
+        let (mut start_offset, mut start_line, mut bytes) = self.ring_snapshot();
         if !bytes.is_empty() {
-            (_start_offset, start_line, bytes) =
-                trim_to_utf8_boundaries_with_line(bytes, _start_offset, start_line);
+            (start_offset, start_line, bytes) =
+                trim_to_utf8_boundaries_with_line(bytes, start_offset, start_line);
         }
 
+        #[cfg(not(test))]
+        let _ = start_offset;
+
         #[cfg(test)]
-        let end_offset = _start_offset.saturating_add(bytes.len() as u64);
+        let end_offset = start_offset.saturating_add(bytes.len() as u64);
 
         Ok(RecentSnapshot {
             #[cfg(test)]
-            start_offset: _start_offset,
+            start_offset,
             #[cfg(test)]
             end_offset,
             start_line,

@@ -745,13 +745,16 @@ impl<'a> LiveEvents<'a> {
                     return Ok(Some(ev));
                 }
 
-                Event::MappingStart(_style, anchor_id, _tag) => {
+                Event::MappingStart(_style, anchor_id, tag) => {
+                    #[cfg(not(feature = "include"))]
+                    let _ = tag;
+
                     #[cfg(feature = "include")]
                     let mut anchor_id = anchor_id;
                     #[cfg(feature = "include")]
                     if self.parser.has_resolver()
                         && !matches!(
-                            crate::tags::parse_include_tag(&_tag),
+                            crate::tags::parse_include_tag(&tag),
                             crate::tags::IncludeTag::NotInclude
                         )
                     {

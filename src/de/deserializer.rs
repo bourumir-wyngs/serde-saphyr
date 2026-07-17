@@ -2374,8 +2374,8 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     /// name, and a `VariantAccess` (`VA`) that reads the payload (unit/newtype/tuple/struct).
     fn deserialize_enum<V: Visitor<'de>>(
         mut self,
-        _name: &'static str,
-        _variants: &'static [&'static str],
+        name: &'static str,
+        variants: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
         enum Mode<'de, 'a> {
@@ -2413,7 +2413,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 // If the tag matches a variant name, use tag as variant selector
                 // and the scalar value as newtype payload.
                 if let Some((ref tag_name, tag_loc)) = tagged_enum {
-                    if _variants.contains(&tag_name.as_str()) {
+                    if variants.contains(&tag_name.as_str()) {
                         let variant_name = EnumScalarId {
                             raw: Cow::Owned(tag_name.clone()),
                             effective: Cow::Owned(tag_name.clone()),
@@ -2486,7 +2486,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 ..
             }) => {
                 if let Some(tag_name) = simple_tagged_enum_name(&raw_tag, &tag)
-                    && _variants.contains(&tag_name.as_str())
+                    && variants.contains(&tag_name.as_str())
                 {
                     // Consume the SeqStart, collect all events until SeqEnd, replay as untagged sequence
                     let Some(seq_start) = self.ev.next()? else {
@@ -2564,11 +2564,11 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         };
 
         if let Some((tag_name, location)) = tagged_enum
-            && tag_name != _name
+            && tag_name != name
         {
             return Err(Error::TaggedEnumMismatch {
                 tagged: tag_name,
-                target: _name,
+                target: name,
                 location,
             });
         }

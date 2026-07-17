@@ -79,8 +79,8 @@ fn valid_yaml_file_exits_zero() {
     writeln!(tmp, "key: value").unwrap();
     let path = tmp.path().to_str().unwrap();
 
-    let (stdout, _stderr, code) = run_binary(&[path]);
-    assert_eq!(code, 0, "stderr: {_stderr}");
+    let (stdout, stderr, code) = run_binary(&[path]);
+    assert_eq!(code, 0, "stderr: {stderr}");
     assert!(stdout.contains("Budget report"), "stdout: {stdout}");
 }
 
@@ -90,8 +90,8 @@ fn valid_yaml_file_plain_mode_exits_zero() {
     writeln!(tmp, "a: 1").unwrap();
     let path = tmp.path().to_str().unwrap();
 
-    let (stdout, _stderr, code) = run_binary(&["--plain", path]);
-    assert_eq!(code, 0, "stderr: {_stderr}");
+    let (stdout, stderr, code) = run_binary(&["--plain", path]);
+    assert_eq!(code, 0, "stderr: {stderr}");
     assert!(stdout.contains("Budget report"), "stdout: {stdout}");
 }
 
