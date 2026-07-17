@@ -86,7 +86,7 @@ impl<'de> Deserialize<'de> for AnyChecked {
     {
         struct V;
 
-        impl<'de> serde::de::Visitor<'de> for V {
+        impl serde::de::Visitor<'_> for V {
             type Value = AnyChecked;
 
             fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

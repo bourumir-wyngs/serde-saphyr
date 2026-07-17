@@ -209,7 +209,7 @@ struct ByteVec(Vec<u8>);
 impl<'de> Deserialize<'de> for ByteVec {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct V;
-        impl<'de> Visitor<'de> for V {
+        impl Visitor<'_> for V {
             type Value = ByteVec;
             fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
                 f.write_str("bytes")

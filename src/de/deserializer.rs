@@ -115,7 +115,7 @@ where
     }
 }
 
-fn skip_one_node_from_events<'de>(ev: &mut dyn Events<'de>) -> Result<(), Error> {
+fn skip_one_node_from_events(ev: &mut dyn Events<'_>) -> Result<(), Error> {
     let mut depth;
     match ev.next()? {
         Some(Ev::Scalar { .. }) => return Ok(()),
@@ -144,7 +144,7 @@ fn skip_one_node_from_events<'de>(ev: &mut dyn Events<'de>) -> Result<(), Error>
     Ok(())
 }
 
-fn drain_remaining_sequence<'de>(ev: &mut dyn Events<'de>) -> Result<(), Error> {
+fn drain_remaining_sequence(ev: &mut dyn Events<'_>) -> Result<(), Error> {
     loop {
         match ev.peek()? {
             Some(Ev::SeqEnd { .. }) => {
@@ -233,7 +233,7 @@ struct ScalarView<'de> {
 
 type EffectiveScalar<'de> = (Cow<'de, str>, SfTag, ScalarStyle, Location);
 
-impl<'de> ScalarView<'de> {
+impl ScalarView<'_> {
     fn redaction_ctx(&self) -> Option<ScalarRedactionCtx> {
         self.interpolated.then(|| ScalarRedactionCtx {
             raw: self.raw.as_ref().to_owned(),
@@ -646,7 +646,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
     }
 }
 
-impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
+impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     type Error = Error;
 
     /// Fallback entry point when the caller's type has no specific expectation.
@@ -1457,7 +1457,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             #[cfg(any(feature = "garde", feature = "validator"))]
             idx: usize,
         }
-        impl<'de, 'e> de::SeqAccess<'de> for SA<'de, 'e> {
+        impl<'de> de::SeqAccess<'de> for SA<'de, '_> {
             type Error = Error;
             /// Produce the next element by recursively deserializing from the same event source.
             fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Error>
@@ -1767,7 +1767,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             pending_first_key_comments: Vec<Cow<'de, str>>,
         }
 
-        impl<'de, 'e> MA<'de, 'e> {
+        impl<'de> MA<'de, '_> {
             /// Skip exactly one YAML node (scalar/sequence/mapping) in the live stream.
             ///
             /// Used by:
@@ -1879,7 +1879,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             }
         }
 
-        impl<'de, 'e> de::MapAccess<'de> for MA<'de, 'e> {
+        impl<'de> de::MapAccess<'de> for MA<'de, '_> {
             type Error = Error;
 
             /// Produce the next key for the visitor, honoring duplicate policy and merges.
@@ -2612,7 +2612,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             map_mode: bool,
         }
 
-        impl<'de, 'e> VA<'de, 'e> {
+        impl VA<'_, '_> {
             /// In map mode (`{ Variant: ... }`) ensure the closing `}` is present.
             fn expect_map_end(&mut self) -> Result<(), Error> {
                 match self.ev.next()? {
@@ -2625,7 +2625,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             }
         }
 
-        impl<'de, 'e> de::VariantAccess<'de> for VA<'de, 'e> {
+        impl<'de> de::VariantAccess<'de> for VA<'de, '_> {
             type Error = Error;
 
             /// Handle unit variants: `Variant` or `{ Variant: null/~ }`.

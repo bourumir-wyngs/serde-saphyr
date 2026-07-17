@@ -603,11 +603,11 @@ pub(super) fn validate_no_merge_keys_in_node_events(events: &[Ev<'_>]) -> Result
     }
 }
 
-pub(super) fn apply_duplicate_key_policy_to_entries<'a>(
-    mut entries: Vec<PendingEntry<'a>>,
+pub(super) fn apply_duplicate_key_policy_to_entries(
+    mut entries: Vec<PendingEntry<'_>>,
     duplicate_keys: DuplicateKeyPolicy,
     merge_keys: MergeKeyPolicy,
-) -> Result<Vec<PendingEntry<'a>>, Error> {
+) -> Result<Vec<PendingEntry<'_>>, Error> {
     let last_wins = matches!(duplicate_keys, DuplicateKeyPolicy::LastWins);
     if last_wins {
         entries.reverse();
