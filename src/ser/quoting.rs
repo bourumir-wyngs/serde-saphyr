@@ -77,27 +77,27 @@ fn is_numeric_looking(s: &str) -> bool {
     if len.saturating_sub(p) >= 3 && bytes[p] == b'0' {
         match bytes[p + 1] {
             b'b' | b'B' => {
-                let (end, saw_digit) =
-                    match consume_digit_run(bytes, p + 2, |b| matches!(b, b'0' | b'1')) {
-                        Ok(run) => run,
-                        Err(()) => return false,
-                    };
+                let Ok((end, saw_digit)) =
+                    consume_digit_run(bytes, p + 2, |b| matches!(b, b'0' | b'1'))
+                else {
+                    return false;
+                };
                 return saw_digit && end == len;
             }
             b'o' | b'O' => {
-                let (end, saw_digit) =
-                    match consume_digit_run(bytes, p + 2, |b| (b'0'..=b'7').contains(&b)) {
-                        Ok(run) => run,
-                        Err(()) => return false,
-                    };
+                let Ok((end, saw_digit)) =
+                    consume_digit_run(bytes, p + 2, |b| (b'0'..=b'7').contains(&b))
+                else {
+                    return false;
+                };
                 return saw_digit && end == len;
             }
             b'x' | b'X' => {
-                let (end, saw_digit) =
-                    match consume_digit_run(bytes, p + 2, |b| b.is_ascii_hexdigit()) {
-                        Ok(run) => run,
-                        Err(()) => return false,
-                    };
+                let Ok((end, saw_digit)) =
+                    consume_digit_run(bytes, p + 2, |b| b.is_ascii_hexdigit())
+                else {
+                    return false;
+                };
                 return saw_digit && end == len;
             }
             _ => {}
@@ -107,9 +107,8 @@ fn is_numeric_looking(s: &str) -> bool {
     // Dot-leading float: .5, +.5, -.5
     if bytes[p] == b'.' {
         p += 1;
-        let (end, saw_digit) = match consume_digit_run(bytes, p, |b| b.is_ascii_digit()) {
-            Ok(run) => run,
-            Err(()) => return false,
+        let Ok((end, saw_digit)) = consume_digit_run(bytes, p, |b| b.is_ascii_digit()) else {
+            return false;
         };
         p = end;
 
@@ -128,9 +127,8 @@ fn is_numeric_looking(s: &str) -> bool {
         return false;
     }
 
-    let (end, saw_digit) = match consume_digit_run(bytes, p, |b| b.is_ascii_digit()) {
-        Ok(run) => run,
-        Err(()) => return false,
+    let Ok((end, saw_digit)) = consume_digit_run(bytes, p, |b| b.is_ascii_digit()) else {
+        return false;
     };
     p = end;
 
@@ -142,9 +140,8 @@ fn is_numeric_looking(s: &str) -> bool {
 
     if bytes[p] == b'.' {
         p += 1;
-        let (end, _) = match consume_digit_run(bytes, p, |b| b.is_ascii_digit()) {
-            Ok(run) => run,
-            Err(()) => return false,
+        let Ok((end, _)) = consume_digit_run(bytes, p, |b| b.is_ascii_digit()) else {
+            return false;
         };
         p = end;
 

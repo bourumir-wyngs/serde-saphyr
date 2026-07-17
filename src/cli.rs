@@ -147,9 +147,7 @@ where
         }
     }
 
-    let path = if let Some(path) = path {
-        path
-    } else {
+    let Some(path) = path else {
         let _ = writeln!(stderr, "{}", usage());
         return 1;
     };

@@ -1966,11 +1966,8 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             events = vec![start, end];
                             kemn = true;
                         }
-                        let key_seed = match seed.take() {
-                            Some(s) => s,
-                            None => {
-                                return Err(Error::InternalSeedReusedForMapKey { location });
-                            }
+                        let Some(key_seed) = seed.take() else {
+                            return Err(Error::InternalSeedReusedForMapKey { location });
                         };
 
                         // Set the fallback location to the key span *before* deserializing the key.
@@ -2124,11 +2121,8 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             let fingerprint = fingerprint.into_owned();
                             let location = key_node.location();
                             let events = key_node.take_events();
-                            let key_seed = match seed.take() {
-                                Some(s) => s,
-                                None => {
-                                    return Err(Error::InternalSeedReusedForMapKey { location });
-                                }
+                            let Some(key_seed) = seed.take() else {
+                                return Err(Error::InternalSeedReusedForMapKey { location });
                             };
 
                             // Same reasoning as the buffered path above: set key-span fallback

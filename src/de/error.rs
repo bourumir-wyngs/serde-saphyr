@@ -1817,9 +1817,8 @@ fn fmt_error_rendered(
 
             let l10n = options.formatter.localizer();
 
-            let region = match pick_cropped_region(regions, &location) {
-                Some(r) => r,
-                None => return fmt_error_plain_with_formatter(f, error, options.formatter),
+            let Some(region) = pick_cropped_region(regions, &location) else {
+                return fmt_error_plain_with_formatter(f, error, options.formatter);
             };
 
             // Dual-location rendering: show both the reference and the definition window.

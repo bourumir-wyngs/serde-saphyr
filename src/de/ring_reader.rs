@@ -345,9 +345,8 @@ impl<R> RingReader<R> {
         let mut n = 0usize;
 
         while n < out.len() {
-            let b = match self.stash.pop_front() {
-                Some(x) => x,
-                None => break,
+            let Some(b) = self.stash.pop_front() else {
+                break;
             };
             out[n] = b;
             n = n.saturating_add(1);
@@ -376,9 +375,8 @@ impl<R: Read> Read for RingReader<R> {
             return Ok(0);
         }
 
-        let chunk = match buf.get(..n) {
-            Some(s) => s,
-            None => return Ok(0), // defensive: should be impossible
+        let Some(chunk) = buf.get(..n) else {
+            return Ok(0); // defensive: should be impossible
         };
 
         let abs_start = self.returned_total; // stash empty => next_inner_offset == returned_total
@@ -533,13 +531,10 @@ fn trim_incomplete_utf8_tail(bytes: &mut Vec<u8>) {
         let lead_idx = i - 1;
         let lead = bytes[lead_idx];
 
-        let expected = match utf8_expected_len(lead) {
-            Some(n) => n,
-            None => {
-                // Not a valid lead byte => we won't try to "fix" it here.
-                // Consider it "reasonable enough" (caller can decode lossy).
-                return;
-            }
+        let Some(expected) = utf8_expected_len(lead) else {
+            // Not a valid lead byte => we won't try to "fix" it here.
+            // Consider it "reasonable enough" (caller can decode lossy).
+            return;
         };
 
         let actual = bytes.len().saturating_sub(lead_idx);

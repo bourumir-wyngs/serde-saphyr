@@ -84,9 +84,8 @@ fn binary_tag_rejects_padding_inside_quad() {
         name: Vec<u8>,
     }
 
-    let err = match serde_saphyr::from_str::<SupportsBinary>("name: !!binary AA=A\n") {
-        Ok(_) => panic!("padding is only valid at the end of a base64 quantum"),
-        Err(err) => err,
+    let Err(err) = serde_saphyr::from_str::<SupportsBinary>("name: !!binary AA=A\n") else {
+        panic!("padding is only valid at the end of a base64 quantum");
     };
 
     assert!(matches!(

@@ -759,14 +759,13 @@ mod tests {
             ..crate::Budget::default()
         };
 
-        let error = match collect_anchor_events(
+        let Err(error) = collect_anchor_events(
             "first: 1\nsecond: 2\nselected: &selected 3\n",
             "selected",
             0,
             &budget,
-        ) {
-            Ok(_) => panic!("raw event collection should stop once the budget is exceeded"),
-            Err(error) => error,
+        ) else {
+            panic!("raw event collection should stop once the budget is exceeded");
         };
 
         assert!(matches!(

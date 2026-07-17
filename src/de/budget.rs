@@ -624,6 +624,10 @@ impl BudgetEnforcer {
             .checked_sub(1)
             .ok_or(BudgetBreach::SequenceUnbalanced)?;
 
+        #[expect(
+            clippy::manual_let_else,
+            reason = "the equivalent or-pattern is harder to read"
+        )]
         let from_mapping_value = match (expected, self.containers.pop()) {
             (ContainerKind::Sequence, Some(ContainerState::Sequence { from_mapping_value }))
             | (

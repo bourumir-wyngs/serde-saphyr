@@ -479,9 +479,8 @@ impl<'a> Snippet<'a> {
             return write!(f, "{msg}");
         }
 
-        let window = match resolve_render_window(self.source.text, location, self.mapping) {
-            Ok(window) => window,
-            Err(_) => return fmt_with_location(f, l10n, msg, location),
+        let Ok(window) = resolve_render_window(self.source.text, location, self.mapping) else {
+            return fmt_with_location(f, l10n, msg, location);
         };
 
         // Horizontal cropping (by character columns) for very long lines.
@@ -575,9 +574,8 @@ fn fmt_snippet_window_with_mapping_or_fallback(
         return Ok(());
     }
 
-    let window = match resolve_render_window(text, location, mapping) {
-        Ok(window) => window,
-        Err(_) => return Ok(()),
+    let Ok(window) = resolve_render_window(text, location, mapping) else {
+        return Ok(());
     };
 
     let (window_text, local_start, _local_end) = crop_window_text(
