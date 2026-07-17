@@ -209,3 +209,7 @@ required-features = ["serialize", "deserialize"]
 
 [lints.rust]
 unsafe_code = "forbid"
+
+[lints.clippy]
+# "that::function applies to this variable" needs more mental effort than variable.function()
+redundant_closure_for_method_calls = "allow"
