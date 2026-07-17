@@ -504,6 +504,7 @@ impl<'a> LiveEvents<'a> {
                 kind: self.trailing_comment_kind(location),
             }),
             Placement::Free | Placement::Last => {}
+            _ => {}
         }
     }
 
@@ -901,7 +902,11 @@ impl<'a> LiveEvents<'a> {
                     continue;
                 }
 
-                Event::Nothing => continue,
+                _ => {
+                    return Err(
+                        Error::msg("unsupported event from granit-parser").with_location(location)
+                    );
+                }
             }
         }
 

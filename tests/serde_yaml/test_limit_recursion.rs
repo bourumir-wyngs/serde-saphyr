@@ -21,7 +21,7 @@ fn test_recursion_limit_exceeded() {
         } if matches!(
             source.as_ref(),
             ExternalMessageSource::Parser(error)
-                if error.kind() == ErrorKind::RecursionLimitExceeded
+                if *error.kind() == ErrorKind::RecursionLimitExceeded
         )
     ));
 }

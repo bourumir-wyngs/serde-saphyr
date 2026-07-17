@@ -3,7 +3,10 @@ use crate::buffered_input::{
     ReaderInput, ReaderInputBytesRead, buffered_input_from_reader_with_limit_shared,
 };
 use crate::input_source::{IncludeResolveError, IncludeResolver, InputSource, ResolvedInclude};
-use granit_parser::{Event, Parser, ScanError, Scanner, Span, StrInput, TokenType};
+use granit_parser::{
+    Event, Parser, ParserStack as GranitParserStack, ReplayParser, ScanError, Scanner, Span,
+    StrInput, TokenType,
+};
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
@@ -12,8 +15,7 @@ use std::{
     rc::Rc,
 };
 
-type InnerStack<'input> =
-    granit_parser::parser_stack::ParserStack<'input, core::iter::Empty<char>, ReaderInput<'input>>;
+type InnerStack<'input> = GranitParserStack<'input, core::iter::Empty<char>, ReaderInput<'input>>;
 #[derive(Clone, Debug)]
 pub(crate) struct SnippetFrame {
     pub(crate) name: String,
@@ -28,9 +30,8 @@ pub(crate) struct RecordedSource {
 }
 /// A parser stack that supports serde-saphyr includes.
 ///
-/// This delegates all anchor handling to `granit_parser::parser_stack::ParserStack` (which has
-/// access to the parser's internal anchor-offset APIs), while allowing our include resolver to
-/// return either owned text or an owned reader.
+/// This delegates all anchor handling to [`granit_parser::ParserStack`], while allowing our
+/// include resolver to return either owned text or an owned reader.
 pub struct ParserStack<'input> {
     inner: InnerStack<'input>,
     include_resolver: Option<Box<IncludeResolver<'input>>>,
@@ -114,7 +115,7 @@ impl<'input> ParserStack<'input> {
     }
     fn push_replay_parser_with_snippet(
         &mut self,
-        parser: granit_parser::parser_stack::ReplayParser<'input>,
+        parser: ReplayParser<'input>,
         name: String,
         snippet: Option<SnippetFrame>,
         include_location: crate::Location,
@@ -279,10 +280,7 @@ impl<'input> ParserStack<'input> {
                     }
                 })?;
                 self.push_replay_parser_with_snippet(
-                    granit_parser::parser_stack::ReplayParser::new(
-                        events.events,
-                        events.anchor_offset,
-                    ),
+                    ReplayParser::new(events.events, events.anchor_offset),
                     name,
                     Some(snippet),
                     location,
@@ -361,10 +359,16 @@ fn collect_anchor_events(
 ) -> Result<CollectedAnchorEvents, CollectAnchorEventsError> {
     let mut document_count = 0usize;
     let mut anchor_defs: Vec<(String, usize)> = Vec::new();
-    let mut scanner = Scanner::new(StrInput::new(text));
-    for token in &mut scanner {
-        let marker_offset = token.0.start.index();
-        if let TokenType::Anchor(name) = token.1 {
+    let scanner = Scanner::new(StrInput::new(text));
+    for token in scanner {
+        let token = token.map_err(|err| {
+            CollectAnchorEventsError::Message(format!(
+                "failed to scan include fragment '{target_anchor}': {err}"
+            ))
+        })?;
+        let (span, token_type) = token.into_parts();
+        let marker_offset = span.start.index();
+        if let TokenType::Anchor(name) = token_type {
             anchor_defs.push((name.into_owned(), marker_offset));
             if anchor_defs.len() > budget.max_anchors {
                 return Err(CollectAnchorEventsError::Budget(BudgetBreach::Anchors {
@@ -372,11 +376,6 @@ fn collect_anchor_events(
                 }));
             }
         }
-    }
-    if let Some(err) = scanner.get_error() {
-        return Err(CollectAnchorEventsError::Message(format!(
-            "failed to scan include fragment '{target_anchor}': {err}"
-        )));
     }
     let mut parser = Parser::new_from_str(text);
     parser.set_anchor_offset(anchor_offset.max(1));
@@ -430,7 +429,7 @@ fn collect_anchor_events(
                 ));
             }
         }
-        events.push((own_event(event), span));
+        events.push((own_event(event)?, span));
         if events.len() > budget.max_events {
             return Err(CollectAnchorEventsError::Budget(BudgetBreach::Events {
                 events: events.len(),
@@ -539,12 +538,11 @@ fn collect_anchor_events(
 
     Ok(CollectedAnchorEvents {
         events: expanded_events,
-        anchor_offset: parser.get_anchor_offset(),
+        anchor_offset: parser.anchor_offset(),
     })
 }
-fn own_event(event: Event<'_>) -> Event<'static> {
-    match event {
-        Event::Nothing => Event::Nothing,
+fn own_event(event: Event<'_>) -> Result<Event<'static>, CollectAnchorEventsError> {
+    let event = match event {
         Event::StreamStart => Event::StreamStart,
         Event::StreamEnd => Event::StreamEnd,
         Event::DocumentStart(explicit, version) => Event::DocumentStart(explicit, version),
@@ -569,7 +567,13 @@ fn own_event(event: Event<'_>) -> Event<'static> {
         ),
         Event::MappingEnd => Event::MappingEnd,
         Event::Comment(text, placement) => Event::Comment(Cow::Owned(text.into_owned()), placement),
-    }
+        _ => {
+            return Err(CollectAnchorEventsError::Message(
+                "include fragment produced an unsupported parser event".to_owned(),
+            ));
+        }
+    };
+    Ok(event)
 }
 impl<'input> Iterator for ParserStack<'input> {
     type Item = Result<(Event<'input>, Span), ScanError>;
@@ -633,12 +637,13 @@ mod tests {
 
     #[test]
     fn collect_anchor_events_expands_aliases_defined_outside_target_anchor() {
-        let mut scanner = Scanner::new(StrInput::new(
+        let scanner = Scanner::new(StrInput::new(
             "base: &base\n  name: Alice\n\nselected: &selected\n  user: *base\n",
         ));
         let mut scanned = Vec::new();
-        for token in &mut scanner {
-            if let TokenType::Anchor(name) = token.1 {
+        for token in scanner {
+            let (_, token_type) = token.expect("anchor fixture should scan").into_parts();
+            if let TokenType::Anchor(name) = token_type {
                 scanned.push(name.into_owned());
             }
         }

@@ -413,8 +413,8 @@ checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
 name = "granit-parser"
-version = "0.0.8"
-source = "git+https://github.com/bourumir-wyngs/granit-parser?branch=bw%2Ffallable#b806e113ccf78c4c740a78191382aa0462ded0bd"
+version = "1.0.0"
+source = "git+https://github.com/bourumir-wyngs/granit-parser#e4818ba1c20a3f4e6a4fadecdf12f1f16e458e61"
 dependencies = [
  "arraydeque",
  "smallvec",
@@ -942,7 +942,7 @@ dependencies = [
 
 [[package]]
 name = "serde-saphyr"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "annotate-snippets",
  "anyhow",

@@ -1,6 +1,6 @@
 [package]
 name = "serde-saphyr"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "YAML (de)serializer for Serde, emphasizing panic-free parsing, fast builds and good error reporting. Supports properties, comments, include"
@@ -14,7 +14,7 @@ exclude = ["Cargo.lock", ".github/**", ".idea/**"]
 [dependencies]
 # granit-parser = { version = "0.0.8", optional = true }
 # granit-parser = { path = "/home/audrius/rust/granit-parser", optional = true }
-#granit-parser = { git = "https://github.com/bourumir-wyngs/granit-parser", optional = true }
+granit-parser = { git = "https://github.com/bourumir-wyngs/granit-parser", optional = true, features = ["std"] }
 # Normal builds use core only, to allow building serde-saphyr in parallel with serde.
 # Complete serde is only used when serde_derived_types is enabled (off by default)
 serde_core = "1"
@@ -31,12 +31,6 @@ figment2 = { version = "0.11", optional = true }
 garde = { version = ">= 0.19.0, < 0.24", optional = true, features = ["derive"] }
 miette = { version = "7", optional = true, features = ["fancy"] }
 validator = { version = ">= 0.11, < 0.21", optional = true, features = ["derive"] }
-
-[dependencies.granit-parser]
-git = "https://github.com/bourumir-wyngs/granit-parser"
-branch = "bw/fallable"
-features = ["std"]
-optional = true
 
 [features]
 default = ["serialize", "deserialize"]

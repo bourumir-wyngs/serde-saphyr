@@ -453,8 +453,8 @@ impl BudgetEnforcer {
                     });
                 }
             }
-            Event::Nothing => {}
             Event::StreamStart | Event::StreamEnd => {}
+            _ => {}
         }
 
         Ok(())
