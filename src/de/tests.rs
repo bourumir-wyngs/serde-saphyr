@@ -427,7 +427,7 @@ fn capture_node_captures_nested_fingerprints_and_rejects_invalid_streams() {
                 ])
             );
         }
-        _ => panic!("expected fingerprinted node"),
+        KeyNode::Scalar { .. } => panic!("expected fingerprinted node"),
     }
 
     let mut unexpected_end = replay_events(vec![map_end(loc(16, 1))]);

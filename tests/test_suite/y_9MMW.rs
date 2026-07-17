@@ -25,11 +25,11 @@ fn yaml_9mmw_single_pair_implicit_entries() {
 
     match &v[0][0] {
         OnePairMap::Str(m) => assert_eq!(m.get("YAML").map(String::as_str), Some("separate")),
-        _ => panic!("expected string key for first entry"),
+        OnePairMap::Struct(_) => panic!("expected string key for first entry"),
     }
     match &v[1][0] {
         OnePairMap::Str(m) => assert_eq!(m.get("JSON like").map(String::as_str), Some("adjacent")),
-        _ => panic!("expected string key for second entry"),
+        OnePairMap::Struct(_) => panic!("expected string key for second entry"),
     }
     match &v[2][0] {
         OnePairMap::Struct(m) => {
@@ -38,6 +38,6 @@ fn yaml_9mmw_single_pair_implicit_entries() {
             };
             assert_eq!(m.get(&key).map(String::as_str), Some("adjacent"));
         }
-        _ => panic!("expected struct key for third entry"),
+        OnePairMap::Str(_) => panic!("expected struct key for third entry"),
     }
 }

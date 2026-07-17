@@ -16,14 +16,14 @@ fn yaml_735y_block_node_types() {
     assert_eq!(v.len(), 3);
     match &v[0] {
         Item::S(s) => assert_eq!(s, "flow in block"),
-        _ => panic!("expected string"),
+        Item::M(_) => panic!("expected string"),
     }
     match &v[1] {
         Item::S(s) => assert_eq!(s, "Block scalar\n"),
-        _ => panic!("expected folded scalar as string"),
+        Item::M(_) => panic!("expected folded scalar as string"),
     }
     match &v[2] {
         Item::M(m) => assert_eq!(m.get("foo").map(String::as_str), Some("bar")),
-        _ => panic!("expected mapping"),
+        Item::S(_) => panic!("expected mapping"),
     }
 }

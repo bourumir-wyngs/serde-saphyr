@@ -21,10 +21,10 @@ fn yaml_6jwb_tags_for_block_objects() {
     assert_eq!(d.foo.len(), 2);
     match &d.foo[0] {
         Entry::S(s) => assert_eq!(s, "a"),
-        _ => panic!("expected first entry to be string"),
+        Entry::M(_) => panic!("expected first entry to be string"),
     }
     match &d.foo[1] {
         Entry::M(m) => assert_eq!(m.get("key").map(String::as_str), Some("value")),
-        _ => panic!("expected second entry to be mapping"),
+        Entry::S(_) => panic!("expected second entry to be mapping"),
     }
 }

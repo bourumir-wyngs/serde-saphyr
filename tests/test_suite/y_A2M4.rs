@@ -17,10 +17,10 @@ fn yaml_a2m4_indentation_indicators() {
     assert_eq!(v.len(), 2);
     match &v[0] {
         Elem::S(s) => assert_eq!(s, "b"),
-        _ => panic!("first should be string 'b'"),
+        Elem::L(_) => panic!("first should be string 'b'"),
     }
     match &v[1] {
         Elem::L(inner) => assert_eq!(inner, &vec!["c".to_string(), "d".to_string()]),
-        _ => panic!("second should be a list [c, d]"),
+        Elem::S(_) => panic!("second should be a list [c, d]"),
     }
 }

@@ -16,10 +16,10 @@ fn yaml_6bct_separation_spaces() {
     assert_eq!(v.len(), 2);
     match &v[0] {
         Item::Map(m) => assert_eq!(m.get("foo").map(String::as_str), Some("bar")),
-        _ => panic!("expected first element to be a mapping"),
+        Item::Seq(_) => panic!("expected first element to be a mapping"),
     }
     match &v[1] {
         Item::Seq(s) => assert_eq!(s, &vec!["baz".to_string(), "baz".to_string()]),
-        _ => panic!("expected second element to be a sequence"),
+        Item::Map(_) => panic!("expected second element to be a sequence"),
     }
 }

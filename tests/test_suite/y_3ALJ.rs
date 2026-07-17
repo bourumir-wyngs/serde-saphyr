@@ -15,7 +15,7 @@ fn yaml_3alj_block_sequence_in_block_sequence() {
     assert_eq!(v.len(), 2);
     match &v[0] {
         Item::Seq(inner) => assert_eq!(inner, &vec!["s1_i1".to_string(), "s1_i2".to_string()]),
-        _ => panic!("first element should be a sequence"),
+        Item::Str(_) => panic!("first element should be a sequence"),
     }
     assert_eq!(v[1], Item::Str("s2".to_string()));
 }

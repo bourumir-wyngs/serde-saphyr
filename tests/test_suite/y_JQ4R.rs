@@ -25,13 +25,13 @@ fn yaml_jq4r_block_sequence() {
     assert_eq!(v.block_sequence.len(), 2);
     match &v.block_sequence[0] {
         Elem::S(s) => assert_eq!(s, "one"),
-        _ => panic!("first element should be a string 'one'"),
+        Elem::M(_) => panic!("first element should be a string 'one'"),
     }
     match &v.block_sequence[1] {
         Elem::M(m) => {
             assert_eq!(m.len(), 1);
             assert_eq!(m.get("two").map(String::as_str), Some("three"));
         }
-        _ => panic!("second element should be a mapping {{two: three}}"),
+        Elem::S(_) => panic!("second element should be a mapping {{two: three}}"),
     }
 }

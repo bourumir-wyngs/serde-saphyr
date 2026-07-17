@@ -27,7 +27,7 @@ fn yaml_lp6e_whitespace_after_scalars_in_flow() {
 
     match &v[0] {
         Elem::L(xs) => assert_eq!(xs, &vec!["a".to_string(), "b".to_string(), "c".to_string()]),
-        _ => panic!("first not list"),
+        Elem::M(_) => panic!("first not list"),
     }
     match &v[1] {
         Elem::M(m) => {
@@ -36,10 +36,10 @@ fn yaml_lp6e_whitespace_after_scalars_in_flow() {
             assert_eq!(m.get("c").map(String::as_str), Some("d"));
             assert_eq!(m.get("e").map(String::as_str), Some("f"));
         }
-        _ => panic!("second not map"),
+        Elem::L(_) => panic!("second not map"),
     }
     match &v[2] {
         Elem::L(xs) => assert!(xs.is_empty()),
-        _ => panic!("third not list"),
+        Elem::M(_) => panic!("third not list"),
     }
 }

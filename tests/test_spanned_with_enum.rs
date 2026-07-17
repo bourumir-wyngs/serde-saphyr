@@ -47,7 +47,9 @@ fn test_spanned_inside_untagged_enum_succeeds_with_unknown_location() {
             // Location is unavailable through untagged enum buffering.
             assert_eq!(message.referenced.line(), 0);
         }
-        other => panic!("Expected StringVariant, got {other:?}"),
+        other @ PayloadWithSpanned::IntVariant { .. } => {
+            panic!("Expected StringVariant, got {other:?}");
+        }
     }
 }
 
@@ -113,7 +115,9 @@ fn test_spanned_inside_internally_tagged_enum_succeeds_with_unknown_location() {
             // Location is unavailable through internally tagged enum buffering.
             assert_eq!(message.referenced.line(), 0);
         }
-        other => panic!("Expected StringVariant, got {other:?}"),
+        other @ InternallyTaggedPayload::IntVariant { .. } => {
+            panic!("Expected StringVariant, got {other:?}");
+        }
     }
 }
 
@@ -139,7 +143,7 @@ fn test_workaround_adjacently_tagged_enum() {
             assert_eq!(&message.value, "hello");
             assert_eq!(message.referenced.line(), 3);
         }
-        _ => panic!("Expected StringVariant"),
+        AdjacentlyTaggedPayload::IntVariant { .. } => panic!("Expected StringVariant"),
     }
 }
 
@@ -164,6 +168,6 @@ fn test_workaround_externally_tagged_enum() {
             assert_eq!(&message.value, "hello");
             assert_eq!(message.referenced.line(), 2);
         }
-        _ => panic!("Expected StringVariant"),
+        ExternallyTaggedPayload::IntVariant { .. } => panic!("Expected StringVariant"),
     }
 }

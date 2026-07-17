@@ -226,7 +226,9 @@ fn spanned_inside_untagged_enum_succeeds_with_unknown_location() {
                 "location unavailable in untagged enum"
             );
         }
-        other => panic!("expected StringVariant, got {other:?}"),
+        other @ PayloadWithSpanned::IntVariant { .. } => {
+            panic!("expected StringVariant, got {other:?}");
+        }
     }
 }
 
