@@ -431,7 +431,7 @@ value: 42
                 // fine
             }
             _ => unreachable!("Expected CannotBorrowTransformedString, got {:?}", err),
-        };
+        }
     }
 
     #[test]
