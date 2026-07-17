@@ -29,7 +29,7 @@ fn test_enum_billion_laughs_with_tags() {
     };
     let parsed: Result<Value, Error> = serde_saphyr::from_str_with_options(yaml, adapt_to_miri());
     let err = parsed.unwrap_err();
-    assert_budget_error(err);
+    assert_budget_error(&err);
 }
 
 #[test]
@@ -49,7 +49,7 @@ fn test_enum_billion_laughs() {
     };
     let parsed: Result<Value, Error> = serde_saphyr::from_str_with_options(yaml, adapt_to_miri());
     let err = parsed.unwrap_err();
-    assert_budget_error(err);
+    assert_budget_error(&err);
 }
 
 #[test]
@@ -78,7 +78,7 @@ fn test_smaller() {
     assert!(parsed.is_ok(), "{parsed:?}");
 }
 
-fn assert_budget_error(err: Error) {
+fn assert_budget_error(err: &Error) {
     match err.without_snippet() {
         Error::Budget { .. } => {}
         // Alias replay preserves dual locations by storing the inner error as text.

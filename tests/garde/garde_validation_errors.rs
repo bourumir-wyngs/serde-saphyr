@@ -36,8 +36,8 @@ fn reject_empty_document(value: &Option<String>, _ctx: &()) -> garde::Result {
 #[allow(dead_code)]
 struct NullableTopLevel(#[garde(custom(reject_empty_document))] Option<String>);
 
-fn assert_empty_document_validation_error(err: Error) {
-    match &err {
+fn assert_empty_document_validation_error(err: &Error) {
+    match err {
         Error::ValidationError { .. } => {}
         Error::WithSnippet { error, .. } if matches!(**error, Error::ValidationError { .. }) => {}
         other => panic!("expected ValidationError, got: {other:?}"),
@@ -176,7 +176,7 @@ fn from_str_with_options_valid_preserves_validation_error_after_synthetic_null()
     let err = serde_saphyr::from_str_with_options_valid::<NullableTopLevel>("", Options::default())
         .expect_err("empty document must fail validation");
 
-    assert_empty_document_validation_error(err);
+    assert_empty_document_validation_error(&err);
 }
 
 #[test]
@@ -188,7 +188,7 @@ fn from_reader_with_options_valid_preserves_validation_error_after_synthetic_nul
     )
     .expect_err("empty document must fail validation");
 
-    assert_empty_document_validation_error(err);
+    assert_empty_document_validation_error(&err);
 }
 
 #[test]

@@ -97,30 +97,30 @@ impl<'input> ParserStack<'input> {
         &mut self,
         parser: Parser<'input, StrInput<'input>>,
         name: String,
-        snippet: Option<SnippetFrame>,
+        snippet: Option<&SnippetFrame>,
         include_location: crate::Location,
     ) {
-        self.register_source(&name, snippet.as_ref(), include_location);
+        self.register_source(&name, snippet, include_location);
         self.inner.push_str_parser(parser, name);
     }
     fn push_stream_parser_with_snippet(
         &mut self,
         parser: Parser<'input, ReaderInput<'input>>,
         name: String,
-        snippet: Option<SnippetFrame>,
+        snippet: Option<&SnippetFrame>,
         include_location: crate::Location,
     ) {
-        self.register_source(&name, snippet.as_ref(), include_location);
+        self.register_source(&name, snippet, include_location);
         self.inner.push_custom_parser(parser, name);
     }
     fn push_replay_parser_with_snippet(
         &mut self,
         parser: ReplayParser<'input>,
         name: String,
-        snippet: Option<SnippetFrame>,
+        snippet: Option<&SnippetFrame>,
         include_location: crate::Location,
     ) {
-        self.register_source(&name, snippet.as_ref(), include_location);
+        self.register_source(&name, snippet, include_location);
         self.inner.push_replay_parser(parser, name);
     }
     pub fn current_source_id(&self) -> u32 {
@@ -225,7 +225,7 @@ impl<'input> ParserStack<'input> {
                     self.reader_bytes_read.clone(),
                 );
                 let parser = Parser::new(input);
-                self.push_stream_parser_with_snippet(parser, name, Some(snippet), location);
+                self.push_stream_parser_with_snippet(parser, name, Some(&snippet), location);
             }
             InputSource::Reader(r) => {
                 let input = buffered_input_from_reader_with_limit_shared(
@@ -282,7 +282,7 @@ impl<'input> ParserStack<'input> {
                 self.push_replay_parser_with_snippet(
                     ReplayParser::new(events.events, events.anchor_offset),
                     name,
-                    Some(snippet),
+                    Some(&snippet),
                     location,
                 );
             }

@@ -50,13 +50,14 @@ pub(crate) fn create_parser_from_str<'a>(
     if let Some(r) = resolver {
         stack.set_resolver(r);
     }
+    let snippet = crate::include_stack::SnippetFrame {
+        name: "<input>".to_string(),
+        text: Rc::from(input),
+    };
     stack.push_str_parser_with_snippet(
         Parser::new_from_str(input),
         "<input>".to_string(),
-        Some(crate::include_stack::SnippetFrame {
-            name: "<input>".to_string(),
-            text: Rc::from(input),
-        }),
+        Some(&snippet),
         crate::Location::UNKNOWN,
     );
     stack

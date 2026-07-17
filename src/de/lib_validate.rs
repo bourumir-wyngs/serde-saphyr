@@ -28,10 +28,10 @@ fn synthesized_null_error_should_be_eof(error: &Error) -> bool {
 }
 
 #[cfg(feature = "garde")]
-fn garde_validation_error(report: garde::Report, locations: &PathMap) -> Error {
+fn garde_validation_error(report: &garde::Report, locations: &PathMap) -> Error {
     Error::validation_error(
         ValidationSource::Garde,
-        collect_garde_issues(&report)
+        collect_garde_issues(report)
             .into_iter()
             .map(redact_issue)
             .collect(),
@@ -40,10 +40,10 @@ fn garde_validation_error(report: garde::Report, locations: &PathMap) -> Error {
 }
 
 #[cfg(feature = "validator")]
-fn validator_validation_error(errors: validator::ValidationErrors, locations: &PathMap) -> Error {
+fn validator_validation_error(errors: &validator::ValidationErrors, locations: &PathMap) -> Error {
     Error::validation_error(
         ValidationSource::Validator,
-        collect_validator_issues(&errors)
+        collect_validator_issues(errors)
             .into_iter()
             .map(redact_issue)
             .collect(),
@@ -114,7 +114,7 @@ where
     <T as garde::Validate>::Context: Default,
 {
     from_str_with_options_and_path_recorder_validated::<T, _>(input, options, |value, locs| {
-        Validate::validate(value).map_err(|report| garde_validation_error(report, locs))
+        Validate::validate(value).map_err(|report| garde_validation_error(&report, locs))
     })
 }
 
@@ -133,7 +133,7 @@ where
 {
     from_str_with_options_and_path_recorder_validated::<T, _>(input, options, |value, locs| {
         Validate::validate_with(value, context)
-            .map_err(|report| garde_validation_error(report, locs))
+            .map_err(|report| garde_validation_error(&report, locs))
     })
 }
 
@@ -242,7 +242,7 @@ where
     <T as garde::Validate>::Context: Default,
 {
     from_multiple_with_options_validated(input, options, ValidationSource::Garde, |value, locs| {
-        Validate::validate(value).map_err(|report| garde_validation_error(report, locs))
+        Validate::validate(value).map_err(|report| garde_validation_error(&report, locs))
     })
 }
 
@@ -353,7 +353,7 @@ where
         reader,
         options,
         |value, locs| {
-            Validate::validate(value).map_err(|report| garde_validation_error(report, locs))
+            Validate::validate(value).map_err(|report| garde_validation_error(&report, locs))
         },
         "use read_valid or read_with_options_valid to obtain the iterator",
     )
@@ -491,7 +491,7 @@ where
     <T as garde::Validate>::Context: Default,
 {
     read_with_options_validated(reader, options, |value, locs| {
-        Validate::validate(value).map_err(|report| garde_validation_error(report, locs))
+        Validate::validate(value).map_err(|report| garde_validation_error(&report, locs))
     })
 }
 
@@ -516,7 +516,7 @@ where
 {
     from_str_with_options_and_path_recorder_validated::<T, _>(input, options, |value, locs| {
         ValidatorValidate::validate(value)
-            .map_err(|errors| validator_validation_error(errors, locs))
+            .map_err(|errors| validator_validation_error(&errors, locs))
     })
 }
 
@@ -547,7 +547,7 @@ where
         ValidationSource::Validator,
         |value, locs| {
             ValidatorValidate::validate(value)
-                .map_err(|errors| validator_validation_error(errors, locs))
+                .map_err(|errors| validator_validation_error(&errors, locs))
         },
     )
 }
@@ -616,7 +616,7 @@ where
         options,
         |value, locs| {
             ValidatorValidate::validate(value)
-                .map_err(|errors| validator_validation_error(errors, locs))
+                .map_err(|errors| validator_validation_error(&errors, locs))
         },
         "use read_validate or read_with_options_validate to obtain the iterator",
     )
@@ -648,6 +648,6 @@ where
 {
     read_with_options_validated(reader, options, |value, locs| {
         ValidatorValidate::validate(value)
-            .map_err(|errors| validator_validation_error(errors, locs))
+            .map_err(|errors| validator_validation_error(&errors, locs))
     })
 }

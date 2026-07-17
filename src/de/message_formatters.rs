@@ -26,13 +26,13 @@ pub type DeveloperMessageFormatter = DefaultMessageFormatter;
 #[cfg(any(feature = "garde", feature = "validator"))]
 fn format_validation_issues(
     l10n: &dyn Localizer,
-    source: ExternalMessageSource,
+    source: &ExternalMessageSource,
     issues: &[ValidationIssue],
     locations: &PathMap,
 ) -> String {
     let mut lines = Vec::with_capacity(issues.len());
     for issue in issues {
-        let entry = issue.display_entry_overridden(l10n, source.clone());
+        let entry = issue.display_entry_overridden(l10n, (*source).clone());
         let path_key = &issue.path;
         let original_leaf = path_key
             .leaf_string()
@@ -373,7 +373,7 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
             let l10n = formatter.localizer();
             Cow::Owned(format_validation_issues(
                 l10n,
-                source.external_message_source(),
+                &source.external_message_source(),
                 issues,
                 locations,
             ))

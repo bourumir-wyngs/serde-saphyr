@@ -51,8 +51,8 @@ impl Validate for NullableTopLevel {
     }
 }
 
-fn assert_empty_document_validation_error(err: Error) {
-    assert_validator_validation_error_shape(&err);
+fn assert_empty_document_validation_error(err: &Error) {
+    assert_validator_validation_error_shape(err);
 
     let rendered = err.to_string();
     assert!(
@@ -132,7 +132,7 @@ fn from_str_with_options_validate_preserves_validation_error_after_synthetic_nul
         serde_saphyr::from_str_with_options_validate::<NullableTopLevel>("", Options::default())
             .expect_err("empty document must fail validation");
 
-    assert_empty_document_validation_error(err);
+    assert_empty_document_validation_error(&err);
 }
 
 #[test]
@@ -144,7 +144,7 @@ fn from_reader_with_options_validate_preserves_validation_error_after_synthetic_
     )
     .expect_err("empty document must fail validation");
 
-    assert_empty_document_validation_error(err);
+    assert_empty_document_validation_error(&err);
 }
 
 #[test]

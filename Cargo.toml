@@ -213,3 +213,5 @@ unsafe_code = "forbid"
 [lints.clippy]
 # "that::function applies to this variable" needs more mental effort than variable.function()
 redundant_closure_for_method_calls = "allow"
+# The explicit delimiter style is easier to scan in YAML fixtures.
+needless_raw_string_hashes = "allow"

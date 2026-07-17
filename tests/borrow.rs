@@ -425,7 +425,7 @@ value: 42
         assert_eq!(result.value, 42);
     }
 
-    fn assert_transform_error(err: Error) {
+    fn assert_transform_error(err: &Error) {
         match err.without_snippet() {
             Error::CannotBorrowTransformedString { .. } => {
                 // fine
@@ -439,7 +439,7 @@ value: 42
         // Double-quoted strings with escape processing cannot be borrowed into `&str`.
         let yaml = "name: \"hello\\nworld\"\nvalue: 42\n";
         let err = from_str::<BorrowedData>(yaml).unwrap_err();
-        assert_transform_error(err);
+        assert_transform_error(&err);
     }
 
     #[test]
@@ -450,7 +450,7 @@ value: 42
         // unrelated "it's" nearby.
         let yaml = "other: it's\nname: 'it''s'\nvalue: 42\n";
         let err = from_str::<BorrowedData>(yaml).unwrap_err();
-        assert_transform_error(err);
+        assert_transform_error(&err);
     }
 
     // ============================================================================

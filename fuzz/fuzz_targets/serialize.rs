@@ -83,7 +83,7 @@ impl<'a> Arbitrary<'a> for Node {
 fuzz_target!(|node: Node| {
     let opts = serde_saphyr::ser_options! {};
     // serialization is panic-free and from valid input, so may never return an `Err`
-    let text = serde_saphyr::to_string_with_options(&node, opts).unwrap();
+    let text = serde_saphyr::to_string_with_options(&node, opts.clone()).unwrap();
 
     // anything we emit must be parseable YAML for this model.
     let back: Node = match serde_saphyr::from_str(&text) {

@@ -287,7 +287,7 @@ impl<'a> LiveEvents<'a> {
         #[cfg(feature = "properties")]
         let property_syntax = options.property_syntax;
         #[cfg(feature = "include")]
-        let resolver = crate::resolver_from_options(options);
+        let resolver = crate::resolver_from_options(&options);
 
         // Build a streaming character iterator from the byte reader, honoring input byte cap if configured
         let max_bytes = budget.as_ref().and_then(|b| b.max_reader_input_bytes);
@@ -366,7 +366,7 @@ impl<'a> LiveEvents<'a> {
         #[cfg(feature = "properties")]
         let property_syntax = options.property_syntax;
         #[cfg(feature = "include")]
-        let resolver = crate::resolver_from_options(options);
+        let resolver = crate::resolver_from_options(&options);
 
         let input = input.strip_prefix('\u{FEFF}').unwrap_or(input);
         #[cfg(feature = "include")]

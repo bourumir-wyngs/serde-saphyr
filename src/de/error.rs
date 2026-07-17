@@ -1775,7 +1775,7 @@ fn fmt_error_rendered(
                 return fmt_validation_error_with_snippets_offset(
                     f,
                     options.formatter.localizer(),
-                    source.external_message_source(),
+                    &source.external_message_source(),
                     issues,
                     locations,
                     regions,
@@ -1917,7 +1917,7 @@ impl fmt::Display for Error {
 fn fmt_validation_error_with_snippets_offset(
     f: &mut fmt::Formatter<'_>,
     l10n: &dyn Localizer,
-    source: ExternalMessageSource,
+    source: &ExternalMessageSource,
     issues: &[ValidationIssue],
     locations: &PathMap,
     regions: &[CroppedRegion],
@@ -1943,7 +1943,7 @@ fn fmt_validation_error_with_snippets_offset(
         let def_loc = locs.defined_location;
 
         let resolved_path = format_path_with_resolved_leaf(&issue.path, &resolved_leaf);
-        let entry = issue.display_entry_overridden(l10n, source.clone());
+        let entry = issue.display_entry_overridden(l10n, (*source).clone());
         let base_msg = l10n.validation_base_message(&entry, &resolved_path);
 
         let mut rendered_regions = Vec::new();
@@ -2069,7 +2069,7 @@ fn fmt_error_with_snippets_offset(
         return fmt_validation_error_with_snippets_offset(
             f,
             formatter.localizer(),
-            source.external_message_source(),
+            &source.external_message_source(),
             issues,
             locations,
             regions,

@@ -49,7 +49,7 @@ fn rejects_invalid_indentation(
     #[case] expected_actual: usize,
 ) {
     let err = parse(require, yaml).unwrap_err();
-    assert_indentation_error(err, expected_required, expected_actual);
+    assert_indentation_error(&err, expected_required, expected_actual);
 }
 
 #[test]
@@ -72,7 +72,7 @@ fn rejects_invalid_non_empty_block_scalar_content_indentation(#[case] marker: &s
     let yaml = format!("root:\n  text: {marker}\n   body\n");
 
     let err = parse(RequireIndent::Even, &yaml).unwrap_err();
-    assert_indentation_error(err, RequireIndent::Even, 3);
+    assert_indentation_error(&err, RequireIndent::Even, 3);
 }
 
 #[rstest]
@@ -100,7 +100,7 @@ fn non_empty_block_scalar_content_sets_uniform_indentation_unit(#[case] marker: 
     let yaml = format!("text: {marker}\n   body\nnext:\n  value: ok\n");
 
     let err = parse(RequireIndent::Uniform(None), &yaml).unwrap_err();
-    assert_indentation_error(err, RequireIndent::Uniform(Some(3)), 2);
+    assert_indentation_error(&err, RequireIndent::Uniform(Some(3)), 2);
 }
 
 // Regression for https://github.com/bourumir-wyngs/serde-saphyr/issues/132.
@@ -111,7 +111,7 @@ fn non_empty_block_scalar_content_sets_uniform_indentation_unit(#[case] marker: 
 #[case::valid_first_then_off("x:\n  y:\n   z: 1\n", 3)]
 fn uniform_some_reports_configured_value(#[case] yaml: &str, #[case] found: usize) {
     let err = parse(RequireIndent::Uniform(Some(2)), yaml).unwrap_err();
-    assert_indentation_error(err, RequireIndent::Uniform(Some(2)), found);
+    assert_indentation_error(&err, RequireIndent::Uniform(Some(2)), found);
 }
 
 #[test]
@@ -133,7 +133,7 @@ x:
 "#,
     )
     .unwrap_err();
-    assert_indentation_error(err, RequireIndent::Uniform(Some(2)), 3);
+    assert_indentation_error(&err, RequireIndent::Uniform(Some(2)), 3);
 }
 
 #[test]
@@ -162,10 +162,10 @@ x:
 "#,
     )
     .unwrap_err();
-    assert_indentation_error(err, RequireIndent::Uniform(Some(2)), 3);
+    assert_indentation_error(&err, RequireIndent::Uniform(Some(2)), 3);
 }
 
-fn assert_indentation_error(err: Error, required: RequireIndent, actual: usize) {
+fn assert_indentation_error(err: &Error, required: RequireIndent, actual: usize) {
     match err.without_snippet() {
         Error::IndentationError {
             required: got_required,

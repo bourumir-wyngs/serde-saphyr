@@ -10,7 +10,7 @@ use crate::parse_scalars::scalar_document_is_empty_or_null;
 
 #[cfg(all(feature = "deserialize", feature = "include"))]
 pub(crate) fn resolver_from_options<'a>(
-    options: Options,
+    options: &Options,
 ) -> Option<Box<crate::input_source::IncludeResolver<'a>>> {
     options.include_resolver.clone().map(|rc_refcell| {
         Box::new(move |req: crate::input_source::IncludeRequest<'_>| rc_refcell.borrow_mut()(req))
