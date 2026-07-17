@@ -4,7 +4,7 @@ use serde::de::value::BorrowedStrDeserializer;
 use std::borrow::Cow;
 
 #[test]
-#[ignore]
+#[ignore = "Serde currently returns Cow::Owned for borrowed string input"]
 fn cow_str_should_borrow_when_deserializer_offers_borrowed_str() {
     let input = "hello";
     let de = BorrowedStrDeserializer::<serde::de::value::Error>::new(input);
