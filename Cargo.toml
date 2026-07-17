@@ -84,7 +84,7 @@ serde_bytes = "0.11"
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_repr = "0.1.20"
 anyhow = "1.0"
-chrono = "0.4"
+chrono = "0.4.45"
 trybuild = "1"
 regex = { version = ">= 1.5.5, < 2.0"}
 
