@@ -1232,11 +1232,8 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         }
 
         match self.ev.peek()? {
-            // End of input → None
-            None => visitor.visit_none(),
-
-            // In flow/edge cases a missing value can manifest as an immediate container end → None
-            Some(Ev::MapEnd { .. } | Ev::SeqEnd { .. }) => visitor.visit_none(),
+            // End of input or an immediate container end both represent a missing value.
+            None | Some(Ev::MapEnd { .. } | Ev::SeqEnd { .. }) => visitor.visit_none(),
 
             // Otherwise there is a value → Some(...)
             Some(_) => visitor.visit_some(self),
@@ -1259,10 +1256,8 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         }
 
         match self.ev.peek()? {
-            // Accept absence as unit
-            None => visitor.visit_unit(),
-            // End of a container where a value was expected: treat as unit in this subset
-            Some(Ev::MapEnd { .. } | Ev::SeqEnd { .. }) => visitor.visit_unit(),
+            // Treat absence or a container end where a value was expected as unit.
+            None | Some(Ev::MapEnd { .. } | Ev::SeqEnd { .. }) => visitor.visit_unit(),
             // Anything else isn't a unit value
             Some(other) => Err(Error::UnexpectedValueForUnit {
                 location: other.location(),
@@ -2509,19 +2504,11 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     let mut depth = 1usize;
                     while depth > 0 {
                         match self.ev.next()? {
-                            Some(ev @ Ev::SeqStart { .. }) => {
+                            Some(ev @ (Ev::SeqStart { .. } | Ev::MapStart { .. })) => {
                                 depth += 1;
                                 replay_events.push(ev);
                             }
-                            Some(ev @ Ev::SeqEnd { .. }) => {
-                                depth -= 1;
-                                replay_events.push(ev);
-                            }
-                            Some(ev @ Ev::MapStart { .. }) => {
-                                depth += 1;
-                                replay_events.push(ev);
-                            }
-                            Some(ev @ Ev::MapEnd { .. }) => {
+                            Some(ev @ (Ev::SeqEnd { .. } | Ev::MapEnd { .. })) => {
                                 depth -= 1;
                                 replay_events.push(ev);
                             }

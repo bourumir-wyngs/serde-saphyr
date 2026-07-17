@@ -19,7 +19,6 @@ impl Localizer for OverrideAllExternal {
             {
                 Some(Cow::Borrowed("OVERRIDDEN_PARSER"))
             }
-            ExternalMessageSource::Parser(_) => None,
             ExternalMessageSource::Garde => Some(Cow::Borrowed("OVERRIDDEN_GARDE")),
             ExternalMessageSource::Validator => Some(Cow::Borrowed("OVERRIDDEN_VALIDATOR")),
             _ => None,

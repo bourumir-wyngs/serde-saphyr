@@ -289,9 +289,8 @@ pub(crate) fn is_plain_safe(s: &str) -> bool {
             }
         }
         // ',' is a flow indicator and cannot start a plain scalar.
-        b',' => return false,
-        b':' | b'[' | b']' | b'{' | b'}' | b'#' | b'&' | b'*' | b'!' | b'|' | b'>' | b'\''
-        | b'"' | b'%' | b'@' | b'`' => return false,
+        b',' | b':' | b'[' | b']' | b'{' | b'}' | b'#' | b'&' | b'*' | b'!' | b'|' | b'>'
+        | b'\'' | b'"' | b'%' | b'@' | b'`' => return false,
         _ => {}
     }
 
@@ -326,10 +325,10 @@ pub(crate) fn is_plain_value_safe(s: &str, yaml_12: bool, in_flow: bool) -> bool
     }
 
     match bytes {
-        [b'-' | b'?'] => return false,
         [b'-' | b'?', b1, ..] if b1.is_ascii_whitespace() => return false,
         // ',' is a flow indicator and cannot start a plain scalar.
-        [
+        [b'-' | b'?']
+        | [
             b',' | b':' | b'[' | b']' | b'{' | b'}' | b'#' | b'&' | b'*' | b'!' | b'|' | b'>'
             | b'\'' | b'"' | b'%' | b'@' | b'`',
             ..,

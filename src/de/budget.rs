@@ -443,7 +443,6 @@ impl BudgetEnforcer {
                     }
                 }
             }
-            Event::DocumentEnd => {}
             Event::Comment(text, _) => {
                 self.report.total_comment_bytes =
                     self.report.total_comment_bytes.saturating_add(text.len());
@@ -453,7 +452,6 @@ impl BudgetEnforcer {
                     });
                 }
             }
-            Event::StreamStart | Event::StreamEnd => {}
             _ => {}
         }
 

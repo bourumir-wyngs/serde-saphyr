@@ -113,12 +113,12 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Error::Message { .. } => None,
-            Error::Unexpected { .. } => None,
             Error::Format { error } => Some(error),
             Error::IO { error } => Some(error),
-            Error::InvalidOptions(_) => None,
-            Error::SingleQuotedRequiresEscaping { .. } => None,
+            Error::Message { .. }
+            | Error::Unexpected { .. }
+            | Error::InvalidOptions(_)
+            | Error::SingleQuotedRequiresEscaping { .. } => None,
         }
     }
 }

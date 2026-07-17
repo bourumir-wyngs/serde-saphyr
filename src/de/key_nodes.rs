@@ -158,15 +158,15 @@ impl<'a> KeyNode<'a> {
 
     pub(super) fn events(&self) -> &[Ev<'a>] {
         match self {
-            KeyNode::Fingerprinted { events, .. } => events,
-            KeyNode::Scalar { events, .. } => events,
+            KeyNode::Fingerprinted { events, .. } | KeyNode::Scalar { events, .. } => events,
         }
     }
 
     pub(super) fn take_events(&mut self) -> Vec<Ev<'a>> {
         match self {
-            KeyNode::Fingerprinted { events, .. } => mem::take(events),
-            KeyNode::Scalar { events, .. } => mem::take(events),
+            KeyNode::Fingerprinted { events, .. } | KeyNode::Scalar { events, .. } => {
+                mem::take(events)
+            }
         }
     }
 
@@ -179,8 +179,7 @@ impl<'a> KeyNode<'a> {
 
     pub(super) fn location(&self) -> Location {
         let location = match self {
-            KeyNode::Fingerprinted { location, .. } => location,
-            KeyNode::Scalar { location, .. } => location,
+            KeyNode::Fingerprinted { location, .. } | KeyNode::Scalar { location, .. } => location,
         };
         *location
     }
@@ -249,14 +248,13 @@ pub(super) fn skip_one_node_len(events: &[Ev<'_>], mut i: usize) -> Option<usize
             i += 1;
             while i < events.len() {
                 match events.get(i)? {
-                    Ev::SeqStart { .. } => depth += 1,
+                    Ev::SeqStart { .. } | Ev::MapStart { .. } => depth += 1,
                     Ev::SeqEnd { .. } => {
                         depth -= 1;
                         if depth == 0 {
                             return Some(i - start + 1);
                         }
                     }
-                    Ev::MapStart { .. } => depth += 1,
                     Ev::MapEnd { .. } => {
                         depth -= 1;
                     }
@@ -273,14 +271,13 @@ pub(super) fn skip_one_node_len(events: &[Ev<'_>], mut i: usize) -> Option<usize
             i += 1;
             while i < events.len() {
                 match events.get(i)? {
-                    Ev::MapStart { .. } => depth += 1,
+                    Ev::MapStart { .. } | Ev::SeqStart { .. } => depth += 1,
                     Ev::MapEnd { .. } => {
                         depth -= 1;
                         if depth == 0 {
                             return Some(i - start + 1);
                         }
                     }
-                    Ev::SeqStart { .. } => depth += 1,
                     Ev::SeqEnd { .. } => {
                         depth -= 1;
                     }
@@ -291,8 +288,7 @@ pub(super) fn skip_one_node_len(events: &[Ev<'_>], mut i: usize) -> Option<usize
             }
             None
         }
-        Ev::SeqEnd { .. } | Ev::MapEnd { .. } => None,
-        Ev::Taken { .. } => None,
+        Ev::SeqEnd { .. } | Ev::MapEnd { .. } | Ev::Taken { .. } => None,
     }
 }
 
@@ -443,11 +439,7 @@ pub(super) fn simple_tagged_node_name(event: &Ev<'_>) -> Option<(String, Locatio
 /// Remove the YAML tag from the payload node after it has been promoted to a map key.
 pub(super) fn strip_root_tag_for_externally_tagged_payload(events: &mut [Ev<'_>]) {
     match events.first_mut() {
-        Some(Ev::Scalar { tag, raw_tag, .. }) => {
-            *tag = SfTag::None;
-            *raw_tag = None;
-        }
-        Some(Ev::SeqStart { tag, raw_tag, .. }) => {
+        Some(Ev::Scalar { tag, raw_tag, .. }) | Some(Ev::SeqStart { tag, raw_tag, .. }) => {
             *tag = SfTag::None;
             *raw_tag = None;
         }

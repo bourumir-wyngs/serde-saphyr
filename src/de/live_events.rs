@@ -503,7 +503,6 @@ impl<'a> LiveEvents<'a> {
                 text,
                 kind: self.trailing_comment_kind(location),
             }),
-            Placement::Free | Placement::Last => {}
             _ => {}
         }
     }
@@ -563,9 +562,11 @@ impl<'a> LiveEvents<'a> {
             // if it is exhausted.
 
             match ev {
-                Ev::SeqStart { .. } | Ev::MapStart { .. } => {}
-                Ev::SeqEnd { .. } | Ev::MapEnd { .. } => {}
-                Ev::Scalar { .. } => {}
+                Ev::SeqStart { .. }
+                | Ev::MapStart { .. }
+                | Ev::SeqEnd { .. }
+                | Ev::MapEnd { .. }
+                | Ev::Scalar { .. } => {}
                 Ev::Taken { location } => {
                     return Err(Error::unexpected("consumed event").with_location(location));
                 }
