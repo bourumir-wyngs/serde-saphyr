@@ -1,6 +1,7 @@
 mod compound;
 mod helpers;
 
+#[doc(hidden)]
 pub use self::compound::{MapSer, SeqSer, StructVariantSer, TupleSer};
 
 use self::helpers::{StrCapture, scalar_key_to_string};
@@ -144,8 +145,8 @@ pub struct YamlSerializer<'a, W: Write> {
 }
 
 impl<'a, W: Write> YamlSerializer<'a, W> {
-    /// Construct a `YamlSerializer` that writes to `out`.
-    /// Called by `to_fmt_writer`/`to_string` entry points.
+    /// Construct a [`Serializer`](crate::Serializer) that writes to `out`.
+    /// Uses the same defaults as `SerializerOptions::default()`.
     pub fn new(out: &'a mut W) -> Self {
         Self {
             out,
@@ -167,7 +168,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
             comment_position: CommentPosition::Inline,
             tagged_enums: false,
             empty_as_braces: true,
-            compact_list_indent: false,
+            compact_list_indent: true,
             prefer_block_scalars: true,
             pending_inline_map: false,
             pending_space_after_colon: false,
@@ -180,21 +181,25 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
             doc_started: false,
         }
     }
-    /// Construct a `YamlSerializer` with a specific indentation step.
-    /// Typically used internally by tests or convenience wrappers.
-    pub fn with_indent(out: &'a mut W, indent_step: usize) -> Self {
-        let mut s = Self::new(out);
-        s.indent_step = indent_step;
-        s
+    /// Construct a [`Serializer`](crate::Serializer) with a specific indentation step.
+    /// All other settings use `SerializerOptions::default()`. Returns an error if
+    /// `indent_step` is zero.
+    pub fn with_indent(out: &'a mut W, indent_step: usize) -> Result<Self> {
+        let options = SerializerOptions {
+            indent_step,
+            ..SerializerOptions::default()
+        };
+        Self::with_options(out, options)
     }
-    /// Construct a `YamlSerializer` from user-supplied [`SerializerOptions`].
+    /// Construct a [`Serializer`](crate::Serializer) from user-supplied [`SerializerOptions`].
     /// Used by `to_fmt_writer_with_options` and `to_io_writer_with_options`.
-    pub fn with_options(out: &'a mut W, options: &mut SerializerOptions) -> Self {
+    pub fn with_options(out: &'a mut W, options: SerializerOptions) -> Result<Self> {
+        options.consistent()?;
         let mut s = Self::new(out);
         s.indent_step = options.indent_step;
         s.min_fold_chars = options.min_fold_chars;
         s.folded_wrap_col = options.folded_wrap_chars;
-        s.anchor_gen = options.anchor_generator.take();
+        s.anchor_gen = options.anchor_generator;
         s.tagged_enums = options.tagged_enums;
         s.empty_as_braces = options.empty_as_braces;
         s.compact_list_indent = options.compact_list_indent;
@@ -202,7 +207,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         s.quote_all = options.quote_all;
         s.comment_position = options.comment_position;
         s.yaml_12 = options.yaml_12;
-        s
+        Ok(s)
     }
 
     // -------- helpers --------
@@ -1251,7 +1256,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             Ok(TupleSer::commented(self))
         } else {
             // Normal tuple-struct: emit as a block sequence.
-            Ok(TupleSer::Seq(self.serialize_seq(Some(len))?))
+            Ok(TupleSer::sequence(self.serialize_seq(Some(len))?))
         }
     }
 

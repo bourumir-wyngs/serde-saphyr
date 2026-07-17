@@ -820,19 +820,19 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
 /// loading it into RAM in advance, it does not emit each document exactly
 /// after `---`  is encountered.
 #[cfg(feature = "deserialize")]
-pub fn read<'a, R, T>(reader: &'a mut R) -> Box<dyn Iterator<Item = Result<T, Error>> + 'a>
+pub fn read<'a, R, T>(reader: &'a mut R) -> impl Iterator<Item = Result<T, Error>> + 'a
 where
     R: Read + 'a,
     T: DeserializeOwned + 'a,
 {
-    Box::new(read_with_options(
+    read_with_options(
         reader,
         crate::options! {
             budget: crate::budget! {
                 max_reader_input_bytes: None,
             },
         },
-    ))
+    )
 }
 
 /// Create an iterator over YAML documents from any `std::io::Read`, with configurable options.

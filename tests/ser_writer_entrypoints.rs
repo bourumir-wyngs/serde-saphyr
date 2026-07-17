@@ -15,7 +15,7 @@ fn with_indent_constructor_produces_correct_indentation() {
     }
     let mut out = String::new();
     {
-        let mut ser = serde_saphyr::Serializer::with_indent(&mut out, 4);
+        let mut ser = serde_saphyr::Serializer::with_indent(&mut out, 4).unwrap();
         Outer { a: Inner { x: 1 } }.serialize(&mut ser).unwrap();
     }
     // 4-space indent means "x" is indented by 4 spaces
@@ -42,10 +42,27 @@ fn to_fmt_writer_produces_yaml() {
 
 #[test]
 fn serializer_new_constructor() {
+    #[derive(Serialize)]
+    struct Doc {
+        items: Vec<i32>,
+    }
+
+    let value = Doc { items: vec![1, 2] };
+    let expected = serde_saphyr::to_string(&value).unwrap();
     let mut out = String::new();
     let mut ser = serde_saphyr::Serializer::new(&mut out);
-    42i32.serialize(&mut ser).unwrap();
-    assert!(out.contains("42"), "out: {out}");
+    value.serialize(&mut ser).unwrap();
+    assert_eq!(out, expected);
+}
+
+#[test]
+fn serializer_constructors_reject_invalid_options() {
+    let mut out = String::new();
+    assert!(serde_saphyr::Serializer::with_indent(&mut out, 0).is_err());
+
+    let zero = 0usize;
+    let invalid = serde_saphyr::ser_options! { indent_step: zero };
+    assert!(serde_saphyr::Serializer::with_options(&mut out, invalid).is_err());
 }
 
 #[test]

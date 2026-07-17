@@ -24,17 +24,17 @@ fn nested_include_options(bar_source: &'static str) -> Options {
         move |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
             let s = req.spec;
             if s == "foo.yaml" {
-                Ok(ResolvedInclude {
-                    id: s.to_string(),
-                    name: s.to_string(),
-                    source: InputSource::Text("bar: !include bar.yaml\n".to_string()),
-                })
+                Ok(ResolvedInclude::new(
+                    s,
+                    s,
+                    InputSource::Text("bar: !include bar.yaml\n".to_string()),
+                ))
             } else if s == "bar.yaml" {
-                Ok(ResolvedInclude {
-                    id: s.to_string(),
-                    name: s.to_string(),
-                    source: InputSource::Text(bar_source.to_string()),
-                })
+                Ok(ResolvedInclude::new(
+                    s,
+                    s,
+                    InputSource::Text(bar_source.to_string()),
+                ))
             } else {
                 Err(IncludeResolveError::Message("File not found".to_string()))
             }
@@ -48,17 +48,17 @@ fn nested_scalar_include_options(bar_source: &'static str) -> Options {
         move |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
             let s = req.spec;
             if s == "foo.yaml" {
-                Ok(ResolvedInclude {
-                    id: s.to_string(),
-                    name: s.to_string(),
-                    source: InputSource::Text("!include bar.yaml\n".to_string()),
-                })
+                Ok(ResolvedInclude::new(
+                    s,
+                    s,
+                    InputSource::Text("!include bar.yaml\n".to_string()),
+                ))
             } else if s == "bar.yaml" {
-                Ok(ResolvedInclude {
-                    id: s.to_string(),
-                    name: s.to_string(),
-                    source: InputSource::Text(bar_source.to_string()),
-                })
+                Ok(ResolvedInclude::new(
+                    s,
+                    s,
+                    InputSource::Text(bar_source.to_string()),
+                ))
             } else {
                 Err(IncludeResolveError::Message("File not found".to_string()))
             }

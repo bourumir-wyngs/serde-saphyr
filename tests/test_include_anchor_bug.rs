@@ -56,14 +56,14 @@ fn test_alias_resolution_for_anchor_defined_outside_selected_fragment() {
     let options = serde_saphyr::options! {}.with_include_resolver(|req: IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
         let s = req.spec;
         if s == "value.yaml#selected" {
-            Ok(ResolvedInclude {
-                id: s.to_string(),
-                name: s.to_string(),
-                source: InputSource::AnchoredText {
+            Ok(ResolvedInclude::new(
+                s,
+                s,
+                InputSource::AnchoredText {
                     text: "base: &base\n  name: Alice\n\nother: &other\n  name: Bob\n\ndummy: *other\n\nselected: &selected\n  user: *base\n".to_string(),
                     anchor: "selected".to_string(),
                 },
-            })
+            ))
         } else {
             Err(IncludeResolveError::Message("File not found".to_string()))
         }
@@ -83,14 +83,14 @@ fn test_fragment_anchor_with_same_line_comment_selects_mapping() {
         |req: IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
             let s = req.spec;
             if s == "value.yaml#selected" {
-                Ok(ResolvedInclude {
-                    id: s.to_string(),
-                    name: s.to_string(),
-                    source: InputSource::AnchoredText {
+                Ok(ResolvedInclude::new(
+                    s,
+                    s,
+                    InputSource::AnchoredText {
                         text: "selected: &selected # note\n  a: 1\n".to_string(),
                         anchor: "selected".to_string(),
                     },
-                })
+                ))
             } else {
                 Err(IncludeResolveError::Message("File not found".to_string()))
             }
@@ -111,14 +111,14 @@ fn test_fragment_alias_uses_preceding_shadowed_anchor_definition() {
         |req: IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
             let s = req.spec;
             if s == "value.yaml#selected" {
-                Ok(ResolvedInclude {
-                    id: s.to_string(),
-                    name: s.to_string(),
-                    source: InputSource::AnchoredText {
+                Ok(ResolvedInclude::new(
+                    s,
+                    s,
+                    InputSource::AnchoredText {
                         text: "x: &x 1\nselected: &selected\n  value: *x\nx: &x 2\n".to_string(),
                         anchor: "selected".to_string(),
                     },
-                })
+                ))
             } else {
                 Err(IncludeResolveError::Message("File not found".to_string()))
             }

@@ -273,7 +273,7 @@ impl<'a> LiveEvents<'a> {
     pub(crate) fn from_reader<R: std::io::Read + 'a>(
         inputs: R,
         mut options: Options,
-        policy: EnforcingPolicy,
+        scope: EnforcingPolicy,
     ) -> Self {
         let budget = options.budget.take();
         let budget_report = options.budget_report.take();
@@ -316,7 +316,7 @@ impl<'a> LiveEvents<'a> {
             inject: Vec::with_capacity(2),
             anchors: Vec::with_capacity(8),
             rec_stack: Vec::with_capacity(2),
-            budget: budget.map(|budget| BudgetEnforcer::new(budget, policy, merge_keys)),
+            budget: budget.map(|budget| BudgetEnforcer::new(budget, scope, merge_keys)),
 
             budget_report,
             budget_report_cb,

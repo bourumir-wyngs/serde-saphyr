@@ -185,6 +185,7 @@ impl<'a> RenderOptions<'a> {
 ///
 /// The window is described in terms of the original (absolute) 1-based line numbers.
 /// This allows selecting the best-matching region for a particular error location.
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CroppedRegion {
     /// Cropped source text used for snippet rendering.
@@ -200,6 +201,24 @@ pub struct CroppedRegion {
 }
 
 impl CroppedRegion {
+    /// Construct a cropped source region for deferred snippet rendering.
+    #[must_use]
+    pub fn new(
+        text: impl Into<String>,
+        source_name: impl Into<String>,
+        start_line: usize,
+        end_line: usize,
+        location: Location,
+    ) -> Self {
+        Self {
+            text: text.into(),
+            source_name: source_name.into(),
+            start_line,
+            end_line,
+            location,
+        }
+    }
+
     fn covers_exact_source(&self, location: &Location) -> bool {
         if location == &Location::UNKNOWN {
             return false;
@@ -376,15 +395,25 @@ fn collect_snippet_regions(
 }
 
 #[cfg(any(feature = "garde", feature = "validator"))]
+/// A structured issue reported by a validation library.
+///
+/// Use [`ValidationIssue::new`] to construct synthetic issues when testing custom
+/// formatters or localizers.
+#[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct ValidationIssue {
+    /// Path to the value that failed validation.
     pub path: PathKey,
+    /// Validation-library error code.
     pub code: String,
+    /// Human-readable validation message, when provided.
     pub message: Option<String>,
+    /// Structured parameters supplied by the validation library.
     pub params: Vec<(String, String)>,
 }
 
 #[cfg(any(feature = "garde", feature = "validator"))]
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValidationSource {
     Garde,
@@ -403,6 +432,31 @@ impl ValidationSource {
 
 #[cfg(any(feature = "garde", feature = "validator"))]
 impl ValidationIssue {
+    /// Construct a validation issue without a message or structured parameters.
+    #[must_use]
+    pub fn new(path: PathKey, code: impl Into<String>) -> Self {
+        Self {
+            path,
+            code: code.into(),
+            message: None,
+            params: Vec::new(),
+        }
+    }
+
+    /// Attach a human-readable validation message.
+    #[must_use]
+    pub fn with_message(mut self, message: impl Into<String>) -> Self {
+        self.message = Some(message.into());
+        self
+    }
+
+    /// Attach structured validation parameters.
+    #[must_use]
+    pub fn with_params(mut self, params: Vec<(String, String)>) -> Self {
+        self.params = params;
+        self
+    }
+
     pub(crate) fn display_entry(&self) -> String {
         if let Some(msg) = &self.message {
             return msg.clone();

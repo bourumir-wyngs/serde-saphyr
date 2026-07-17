@@ -10,7 +10,7 @@
 
 [![crates.io](https://img.shields.io/crates/l/serde-saphyr.svg)](https://crates.io/crates/serde-saphyr)
 [![crates.io](https://img.shields.io/crates/v/serde-saphyr.svg)](https://crates.io/crates/serde-saphyr)
-[![0.0.18 compatible (see API note)](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/api-compat.yml/badge.svg)](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/api-compat.yml)
+[![1.0 API compatibility](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/api-compat.yml/badge.svg)](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/api-compat.yml)
 [![Socket](https://socket.dev/api/badge/cargo/package/serde-saphyr)](https://socket.dev/cargo/package/serde-saphyr)
 [![crates.io](https://img.shields.io/crates/d/serde-saphyr.svg)](https://crates.io/crates/serde-saphyr)
 
@@ -88,20 +88,32 @@ let yaml_input = r#"
 
 ### Using serializer or deserializer specifically
 
-To speed up compilation, starting from version `0.0.23` you can link only the deserializer or only the serializer (along with their respective dependencies). For easier initial integration, both `serialize` and `deserialize` features are enabled by default.
+To speed up compilation, you can link only the deserializer or only the serializer (along with their respective dependencies). For easier initial integration, both `serialize` and `deserialize` features are enabled by default.
 
 If you only need one side, you can disable default features and enable only the API surface you use:
 
 ```toml
-serde-saphyr = { version = "0.0.27", default-features = false, features = ["deserialize"] }
+serde-saphyr = { version = "1", default-features = false, features = ["deserialize"] }
 ```
 or
 ```toml
-serde-saphyr = { version = "0.0.27", default-features = false, features = ["serialize"] }
+serde-saphyr = { version = "1", default-features = false, features = ["serialize"] }
 ```
 Disabling both will produce a "Invalid feature configuration" error (such configuration makes no sense).
 
 The optional `huge_documents` feature switches span storage from `u32` indices to a packed 48-bit internal representation so spans can cover YAML inputs far beyond 4 GiB without widening every coordinate to a full `u64`. Public getters still return `u64`, and values beyond the packed range saturate instead of wrapping.
+
+### Migrating from 0.0.x
+
+Version 1.0 removes the APIs that were deprecated during the 0.0.x series and makes a few intentional naming and extensibility changes:
+
+- Replace the removed `to_writer` and `to_writer_with_options` functions with `to_fmt_writer*` for `std::fmt::Write` targets or `to_io_writer*` for `std::io::Write` targets.
+- Construct configuration with `options!`, `budget!`, `ser_options!`, `alias_limits!`, and `render_options!`. Configuration and public request/result structs are non-exhaustive so fields can be added compatibly; use constructors such as `ResolvedInclude::new` when returning include content. Fields themselves are no longer deprecated.
+- `ExternalMessageSource::Parser` now carries the parser's `ScanError`, and the `source` field of `Error::ExternalMessage` is boxed. Prefer `..` when matching fields you do not need.
+- Create weak anchors from a borrowed strong pointer, for example `RcWeakAnchor::from(&rc)`; consuming a strong pointer no longer creates a weak anchor that immediately dangles.
+- The direct serializer's `with_indent` and `with_options` constructors validate settings and return `Result`; options are passed by value. `Serializer::new` follows `SerializerOptions::default`, including compact list indentation. `SerializerOptions` is `Clone`, but intentionally not `Copy`.
+- `read` now returns `impl Iterator`, matching the other streaming entry points and avoiding an allocation. Code that explicitly required a boxed iterator can wrap it with `Box::new`.
+- Concrete formatter wrappers such as `DefaultMessageFormatterWithLocalizer` and `UserMessageFormatterWithLocalizer` are no longer public, and serializer helper types such as `TupleSer` are now opaque implementation details. Use the returned `impl MessageFormatter` values or `serde::Serializer` associated types instead. When both serialization and deserialization are enabled, the new root aliases `SerializeError` and `DeserializeError` distinguish their error types.
 
 ### Executable
 
@@ -729,7 +741,7 @@ error: line 3 column 23: invalid here, validation error: length is lower than 2 
 4 |  
 ```
 
-The integration of garde is feature-gated and disabled by default. Use `serde-saphyr = { version = "0.0.17", features = ["garde"] }` (or `features = ["validator"]`) in `Cargo.toml` to enable it.
+The integration of garde is feature-gated and disabled by default. Use `serde-saphyr = { version = "1", features = ["garde"] }` (or `features = ["validator"]`) in `Cargo.toml` to enable it.
 
 If you prefer to validate without validation crates and want to ensure that location information is always available, use the heavier approach with [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html) wrapper instead.
 
@@ -917,4 +929,3 @@ Safety hardening measures with this feature enabled include limits on maximal ex
 - Borrowing works for any scalar whose parsed value exists **verbatim** in the input. This includes plain scalars and simple quoted strings without escape sequences (e.g., `"hello world"` can be borrowed, but `"hello\nworld"` cannot because `\n` is transformed to a newline). For maximum flexibility, use `Cow<'a, str>` which borrows when possible and owns when transformation is required.
 - Reader-based entry points (`from_reader`) require `DeserializeOwned` and cannot return borrowed values.
 - `serde-saphyr` does not capture freestanding comments, not obviously attached to any node (separated by multiple empty lines, or at the end of the document). Use [`granit-parser`](https://crates.io/crates/granit-parser) directly to capture such comments (serde-saphyr re-exports it). 
-

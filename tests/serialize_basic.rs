@@ -177,6 +177,9 @@ fn test_invalid_options() {
 
     let object = VecOfMaps { vec: vec![] };
 
-    assert!(serde_saphyr::to_io_writer_with_options(&mut ovec, &object, invalid_options).is_err());
+    assert!(
+        serde_saphyr::to_io_writer_with_options(&mut ovec, &object, invalid_options.clone())
+            .is_err()
+    );
     assert!(serde_saphyr::to_fmt_writer_with_options(&mut out, &object, invalid_options).is_err());
 }

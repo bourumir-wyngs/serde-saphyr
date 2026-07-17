@@ -118,7 +118,8 @@ where
     })
 }
 
-/// Deserialize a single YAML document with configurable [`Options`] and validate it with `garde` in context [`<T as garde::Validate>::Context`].
+/// Deserialize a single YAML document with configurable [`Options`] and validate it with
+/// `garde` using the context associated with `T`'s [`garde::Validate`] implementation.
 /// The error message will contain a snippet with exact location information, and if the
 /// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
 #[cfg(feature = "garde")]

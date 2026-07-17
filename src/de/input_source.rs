@@ -56,6 +56,7 @@ impl std::fmt::Debug for InputSource {
 }
 
 /// A resolved include containing the source identity and the content.
+#[non_exhaustive]
 #[derive(Debug)]
 pub struct ResolvedInclude {
     /// The canonical identity of the included source, used for cycle detection and absolute paths.
@@ -64,6 +65,18 @@ pub struct ResolvedInclude {
     pub name: String,
     /// The actual content to parse.
     pub source: InputSource,
+}
+
+impl ResolvedInclude {
+    /// Construct a resolved include returned by an [`IncludeResolver`].
+    #[must_use]
+    pub fn new(id: impl Into<String>, name: impl Into<String>, source: InputSource) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            source,
+        }
+    }
 }
 
 /// Specific problems encountered during file include resolution.
@@ -127,6 +140,8 @@ impl From<std::io::Error> for IncludeResolveError {
 }
 
 /// A request passed to the include resolver to resolve an include directive.
+#[non_exhaustive]
+#[derive(Debug)]
 pub struct IncludeRequest<'a> {
     /// The include specification (e.g. the path or URL).
     pub spec: &'a str,
@@ -140,6 +155,45 @@ pub struct IncludeRequest<'a> {
     pub size_remaining: Option<usize>,
     /// The location in the source file where the include was requested.
     pub location: crate::Location,
+}
+
+impl<'a> IncludeRequest<'a> {
+    /// Construct a root-level include request.
+    ///
+    /// This is primarily useful when testing a resolver directly. Parser-created requests
+    /// populate the same fields and may include parent-source and budget metadata.
+    #[must_use]
+    pub fn new(spec: &'a str, from_name: &'a str, location: crate::Location) -> Self {
+        Self {
+            spec,
+            from_name,
+            from_id: None,
+            stack: Vec::new(),
+            size_remaining: None,
+            location,
+        }
+    }
+
+    /// Set the canonical identity of the source containing the include.
+    #[must_use]
+    pub fn with_from_id(mut self, from_id: &'a str) -> Self {
+        self.from_id = Some(from_id);
+        self
+    }
+
+    /// Set the include chain leading to this request.
+    #[must_use]
+    pub fn with_stack(mut self, stack: Vec<String>) -> Self {
+        self.stack = stack;
+        self
+    }
+
+    /// Set the remaining reader-input byte budget.
+    #[must_use]
+    pub fn with_size_remaining(mut self, size_remaining: usize) -> Self {
+        self.size_remaining = Some(size_remaining);
+        self
+    }
 }
 
 /// Callback used to resolve `!include` directives during parsing.
@@ -190,11 +244,11 @@ pub struct IncludeRequest<'a> {
 ///     assert_eq!(req.from_name, "<input>");
 ///
 ///     if req.spec == "virtual://users.yaml" {
-///         Ok(ResolvedInclude {
-///             id: req.spec.to_owned(),
-///             name: "virtual users".to_owned(),
-///             source: InputSource::from_string(users_yaml.to_owned()),
-///         })
+///         Ok(ResolvedInclude::new(
+///             req.spec,
+///             "virtual users",
+///             InputSource::from_string(users_yaml.to_owned()),
+///         ))
 ///     } else {
 ///         Err(IncludeResolveError::Message(format!("unknown include: {}", req.spec)))
 ///     }

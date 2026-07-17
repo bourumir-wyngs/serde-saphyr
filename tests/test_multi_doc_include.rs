@@ -12,11 +12,11 @@ fn test_multi_doc_include() {
     let yaml = "foo: !include multi.yaml\n";
     let options = serde_saphyr::options! {};
     let options = options.with_include_resolver(|req| {
-        Ok(serde_saphyr::ResolvedInclude {
-            id: req.spec.to_string(),
-            name: req.spec.to_string(),
-            source: serde_saphyr::InputSource::from_string("doc1\n---\ndoc2\n".to_string()),
-        })
+        Ok(serde_saphyr::ResolvedInclude::new(
+            req.spec,
+            req.spec,
+            serde_saphyr::InputSource::from_string("doc1\n---\ndoc2\n".to_string()),
+        ))
     });
 
     let err = serde_saphyr::from_str_with_options::<Root>(yaml, options)

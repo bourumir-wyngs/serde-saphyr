@@ -73,27 +73,25 @@ pub fn to_io_writer<W: std::io::Write, T: serde_core::Serialize>(
 }
 
 /// Serialize a value as YAML into any [`std::fmt::Write`] target, with options.
-/// Options are consumed because anchor generator may be taken from them.
+/// Options are consumed to leave room for non-`Copy` settings.
 #[cfg(feature = "serialize")]
 pub fn to_fmt_writer_with_options<W: std::fmt::Write, T: serde_core::Serialize>(
     output: &mut W,
     value: &T,
-    mut options: SerializerOptions,
+    options: SerializerOptions,
 ) -> std::result::Result<(), crate::ser::Error> {
-    options.consistent()?;
-    let mut ser = crate::ser::YamlSerializer::with_options(output, &mut options);
+    let mut ser = crate::ser::YamlSerializer::with_options(output, options)?;
     value.serialize(&mut ser)
 }
 
 /// Serialize a value as YAML into any [`std::io::Write`] target, with options.
-/// Options are consumed because anchor generator may be taken from them.
+/// Options are consumed to leave room for non-`Copy` settings.
 #[cfg(feature = "serialize")]
 pub fn to_io_writer_with_options<W: std::io::Write, T: serde_core::Serialize>(
     output: &mut W,
     value: &T,
-    mut options: SerializerOptions,
+    options: SerializerOptions,
 ) -> std::result::Result<(), crate::ser::Error> {
-    options.consistent()?;
     struct Adapter<'a, W: std::io::Write> {
         output: &'a mut W,
         last_err: Option<std::io::Error>,
@@ -116,7 +114,7 @@ pub fn to_io_writer_with_options<W: std::io::Write, T: serde_core::Serialize>(
         output,
         last_err: None,
     };
-    let mut ser = crate::ser::YamlSerializer::with_options(&mut adapter, &mut options);
+    let mut ser = crate::ser::YamlSerializer::with_options(&mut adapter, options)?;
     match value.serialize(&mut ser) {
         Ok(()) => Ok(()),
         Err(e) => {
@@ -195,7 +193,7 @@ pub fn to_string_multiple_with_options<T: serde_core::Serialize>(
             }
         }
         first = false;
-        to_fmt_writer_with_options(&mut out, v, options)?;
+        to_fmt_writer_with_options(&mut out, v, options.clone())?;
     }
     Ok(out)
 }

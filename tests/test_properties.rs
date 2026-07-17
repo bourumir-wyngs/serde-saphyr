@@ -1069,11 +1069,11 @@ mod include_tests {
         let options = property_options_with_map(Some(properties)).with_include_resolver(
             |req: IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
                 if req.spec == "child.yaml" {
-                    Ok(ResolvedInclude {
-                        id: "child.yaml".to_string(),
-                        name: "child.yaml".to_string(),
-                        source: InputSource::from_string("value: ${INCLUDED}\n".to_string()),
-                    })
+                    Ok(ResolvedInclude::new(
+                        "child.yaml",
+                        "child.yaml",
+                        InputSource::from_string("value: ${INCLUDED}\n".to_string()),
+                    ))
                 } else {
                     Err(IncludeResolveError::Message(format!(
                         "file not found: {}",

@@ -392,7 +392,7 @@ impl MessageFormatter for DefaultMessageFormatter {
     }
 }
 
-pub struct DefaultMessageFormatterWithLocalizer<'a> {
+struct DefaultMessageFormatterWithLocalizer<'a> {
     localizer: &'a dyn Localizer,
 }
 
@@ -412,10 +412,8 @@ impl DefaultMessageFormatter {
     /// This allows reusing the built-in developer-oriented messages while customizing
     /// wording that is produced outside `format_message` (location suffixes, validation
     /// issue composition, snippet labels, etc.).
-    pub fn with_localizer<'a>(
-        &self,
-        localizer: &'a dyn Localizer,
-    ) -> DefaultMessageFormatterWithLocalizer<'a> {
+    #[must_use]
+    pub fn with_localizer<'a>(&self, localizer: &'a dyn Localizer) -> impl MessageFormatter + 'a {
         DefaultMessageFormatterWithLocalizer { localizer }
     }
 }
@@ -517,7 +515,7 @@ impl MessageFormatter for UserMessageFormatter {
     }
 }
 
-pub struct UserMessageFormatterWithLocalizer<'a> {
+struct UserMessageFormatterWithLocalizer<'a> {
     localizer: &'a dyn Localizer,
 }
 
@@ -537,10 +535,8 @@ impl UserMessageFormatter {
     /// This allows reusing the built-in user-facing messages while customizing wording
     /// that is produced outside `format_message` (location suffixes, validation issue
     /// composition, snippet labels, etc.).
-    pub fn with_localizer<'a>(
-        &self,
-        localizer: &'a dyn Localizer,
-    ) -> UserMessageFormatterWithLocalizer<'a> {
+    #[must_use]
+    pub fn with_localizer<'a>(&self, localizer: &'a dyn Localizer) -> impl MessageFormatter + 'a {
         UserMessageFormatterWithLocalizer { localizer }
     }
 }
@@ -950,7 +946,7 @@ mod tests {
         use crate::de_error::{ValidationIssue, ValidationSource};
         use crate::path_map::{PathKey, PathMap};
 
-        let path = PathKey::empty().join("name");
+        let path = PathKey::new().join_key("name");
         let mut locations = PathMap::new();
         locations.insert(
             path.clone(),
@@ -961,12 +957,7 @@ mod tests {
         );
         let error = Error::ValidationError {
             source: ValidationSource::Validator,
-            issues: vec![ValidationIssue {
-                path,
-                code: "length".to_owned(),
-                message: Some("too short".to_owned()),
-                params: Vec::new(),
-            }],
+            issues: vec![ValidationIssue::new(path, "length").with_message("too short")],
             locations,
         };
 

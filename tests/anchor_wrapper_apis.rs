@@ -40,7 +40,7 @@ mod anchors_tests {
     #[test]
     fn arc_weak_anchor_from_strong_anchor() {
         let strong = Arc::new("hi".to_string());
-        let weak1: ArcWeakAnchor<String> = strong.clone().into();
+        let weak1: ArcWeakAnchor<String> = (&strong).into();
         let anch = ArcAnchor::wrapping("hi".to_string());
         let weak3: ArcWeakAnchor<String> = (&anch).into();
         drop(strong);
@@ -54,7 +54,7 @@ mod anchors_tests {
     #[test]
     fn rc_weak_anchor_from_strong_anchor() {
         let strong = Rc::new("hi".to_string());
-        let weak1: RcWeakAnchor<String> = strong.clone().into();
+        let weak1: RcWeakAnchor<String> = (&strong).into();
         let anch = RcAnchor::wrapping("hi".to_string());
         let weak3: RcWeakAnchor<String> = (&anch).into();
         drop(strong);

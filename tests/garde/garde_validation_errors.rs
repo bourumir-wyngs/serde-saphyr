@@ -518,11 +518,11 @@ fn reader_garde_validation_in_text_include_has_snippet() {
     let options = serde_saphyr::options! {}.with_include_resolver(
         |req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
             if req.spec == "child.yaml" {
-                Ok(serde_saphyr::ResolvedInclude {
-                    id: req.spec.to_string(),
-                    name: req.spec.to_string(),
-                    source: serde_saphyr::InputSource::from_string("\"\"\n".to_string()),
-                })
+                Ok(serde_saphyr::ResolvedInclude::new(
+                    req.spec,
+                    req.spec,
+                    serde_saphyr::InputSource::from_string("\"\"\n".to_string()),
+                ))
             } else {
                 Err(serde_saphyr::IncludeResolveError::Message("not found".to_string()))
             }
@@ -560,11 +560,11 @@ fn from_str_with_options_valid_reports_garde_error_from_included_input() {
     let options = serde_saphyr::options! {}.with_include_resolver(
         |req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
             if req.spec == "child.yaml" {
-                Ok(serde_saphyr::ResolvedInclude {
-                    id: req.spec.to_string(),
-                    name: req.spec.to_string(),
-                    source: serde_saphyr::InputSource::from_string("\"\"\n".to_string()),
-                })
+                Ok(serde_saphyr::ResolvedInclude::new(
+                    req.spec,
+                    req.spec,
+                    serde_saphyr::InputSource::from_string("\"\"\n".to_string()),
+                ))
             } else {
                 Err(serde_saphyr::IncludeResolveError::Message("not found".to_string()))
             }
@@ -603,18 +603,18 @@ fn validation_does_not_replay_include_resolver() {
         move |req: serde_saphyr::IncludeRequest| {
             calls_for_resolver.borrow_mut().push(req.spec.to_string());
             match req.spec {
-                "child.yaml" => Ok(serde_saphyr::ResolvedInclude {
-                    id: req.spec.to_string(),
-                    name: req.spec.to_string(),
-                    source: serde_saphyr::InputSource::from_string(
+                "child.yaml" => Ok(serde_saphyr::ResolvedInclude::new(
+                    req.spec,
+                    req.spec,
+                    serde_saphyr::InputSource::from_string(
                         "value: !include grandchild.yaml\n".to_string(),
                     ),
-                }),
-                "grandchild.yaml" => Ok(serde_saphyr::ResolvedInclude {
-                    id: req.spec.to_string(),
-                    name: req.spec.to_string(),
-                    source: serde_saphyr::InputSource::from_string("\"\"\n".to_string()),
-                }),
+                )),
+                "grandchild.yaml" => Ok(serde_saphyr::ResolvedInclude::new(
+                    req.spec,
+                    req.spec,
+                    serde_saphyr::InputSource::from_string("\"\"\n".to_string()),
+                )),
                 other => Err(serde_saphyr::IncludeResolveError::Message(format!(
                     "unexpected include: {other}"
                 ))),
@@ -646,16 +646,16 @@ fn validation_include_chain_built_from_recorded_sources() {
     let options = serde_saphyr::options! {}.with_include_resolver(
         |req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
             match req.spec {
-                "child.yaml" => Ok(serde_saphyr::ResolvedInclude {
-                    id: req.spec.to_string(),
-                    name: req.spec.to_string(),
-                    source: serde_saphyr::InputSource::from_string("value: !include grandchild.yaml\n".to_string()),
-                }),
-                "grandchild.yaml" => Ok(serde_saphyr::ResolvedInclude {
-                    id: req.spec.to_string(),
-                    name: req.spec.to_string(),
-                    source: serde_saphyr::InputSource::from_string("\"\"\n".to_string()),
-                }),
+                "child.yaml" => Ok(serde_saphyr::ResolvedInclude::new(
+                    req.spec,
+                    req.spec,
+                    serde_saphyr::InputSource::from_string("value: !include grandchild.yaml\n".to_string()),
+                )),
+                "grandchild.yaml" => Ok(serde_saphyr::ResolvedInclude::new(
+                    req.spec,
+                    req.spec,
+                    serde_saphyr::InputSource::from_string("\"\"\n".to_string()),
+                )),
                 other => Err(serde_saphyr::IncludeResolveError::Message(format!("unexpected include: {other}"))),
             }
         },
@@ -690,11 +690,11 @@ fn garde_multidoc_validation_in_included_file_renders_included_snippet() {
     let options = serde_saphyr::options! {}.with_include_resolver(
         |req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
             match req.spec {
-                "child.yaml" => Ok(serde_saphyr::ResolvedInclude {
-                    id: req.spec.to_string(),
-                    name: req.spec.to_string(),
-                    source: serde_saphyr::InputSource::from_string("\"\"\n".to_string()),
-                }),
+                "child.yaml" => Ok(serde_saphyr::ResolvedInclude::new(
+                    req.spec,
+                    req.spec,
+                    serde_saphyr::InputSource::from_string("\"\"\n".to_string()),
+                )),
                 other => Err(serde_saphyr::IncludeResolveError::Message(format!("unexpected include: {other}"))),
             }
         },

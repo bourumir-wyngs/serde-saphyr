@@ -64,6 +64,7 @@ pub enum ExternalMessageSource {
 ///
 /// The crate should pass as much stable metadata as it has (e.g. `code` and `params` for
 /// `validator`) so the localizer can override *specific* messages without string matching.
+#[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct ExternalMessage<'a> {
     pub source: ExternalMessageSource,
@@ -73,6 +74,33 @@ pub struct ExternalMessage<'a> {
     pub code: Option<&'a str>,
     /// Optional structured parameters when available.
     pub params: &'a [(String, String)],
+}
+
+impl<'a> ExternalMessage<'a> {
+    /// Construct an external message with no code or structured parameters.
+    #[must_use]
+    pub fn new(source: ExternalMessageSource, original: &'a str) -> Self {
+        Self {
+            source,
+            original,
+            code: None,
+            params: &[],
+        }
+    }
+
+    /// Attach a dependency-provided message code.
+    #[must_use]
+    pub fn with_code(mut self, code: &'a str) -> Self {
+        self.code = Some(code);
+        self
+    }
+
+    /// Attach structured dependency-provided message parameters.
+    #[must_use]
+    pub fn with_params(mut self, params: &'a [(String, String)]) -> Self {
+        self.params = params;
+        self
+    }
 }
 
 /// All crate-authored wording customization points.

@@ -60,14 +60,14 @@ fn block_scalar_chomp_auto() {
         prefer_block_scalars: true,
     };
     let mut buf1 = String::new();
-    to_fmt_writer_with_options(&mut buf1, &input1, opts).unwrap();
+    to_fmt_writer_with_options(&mut buf1, &input1, opts.clone()).unwrap();
     let parsed1: String = serde_saphyr::from_str(&buf1).unwrap();
     assert_eq!(parsed1, input1);
 
     // One trailing newline -> clip
     let input2 = "line1\nline2\n";
     let mut buf2 = String::new();
-    to_fmt_writer_with_options(&mut buf2, &input2, opts).unwrap();
+    to_fmt_writer_with_options(&mut buf2, &input2, opts.clone()).unwrap();
     let parsed2: String = serde_saphyr::from_str(&buf2).unwrap();
     assert_eq!(parsed2, input2);
 

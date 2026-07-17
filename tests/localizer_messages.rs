@@ -86,20 +86,32 @@ mod localizer_tests {
 
     #[test]
     fn override_external_message_default_none() {
-        let msg = ExternalMessage {
-            source: ExternalMessageSource::Parser(serde_saphyr::granit_parser::ScanError::new(
+        let msg = ExternalMessage::new(
+            ExternalMessageSource::Parser(serde_saphyr::granit_parser::ScanError::new(
                 serde_saphyr::granit_parser::Marker::new(0, 1, 0),
                 "scan error",
             )),
-            original: "scan error",
-            code: None,
-            params: &[],
-        };
+            "scan error",
+        );
         assert!(
             DEFAULT_ENGLISH_LOCALIZER
                 .override_external_message(msg)
                 .is_none()
         );
+    }
+
+    #[test]
+    fn external_message_builder_sets_code() {
+        let msg = ExternalMessage::new(
+            ExternalMessageSource::Parser(serde_saphyr::granit_parser::ScanError::new(
+                serde_saphyr::granit_parser::Marker::new(0, 1, 0),
+                "scan error",
+            )),
+            "scan error",
+        )
+        .with_code("invalid_yaml");
+
+        assert_eq!(msg.code, Some("invalid_yaml"));
     }
 
     #[test]

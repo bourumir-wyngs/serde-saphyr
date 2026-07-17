@@ -2,7 +2,8 @@ use std::{fmt, io};
 
 /// Error type used by the YAML serializer.
 ///
-/// This type is re-exported as `serde_saphyr::ser::Error` and is returned by
+/// This type is re-exported as `serde_saphyr::SerializeError` and
+/// `serde_saphyr::ser::Error`, and is returned by
 /// the public serialization APIs (for example `serde_saphyr::to_string`).
 ///
 /// It implements `serde::ser::Error`, which allows user `Serialize` impls and

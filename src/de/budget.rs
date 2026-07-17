@@ -95,7 +95,7 @@ pub struct Budget {
     pub max_inclusion_depth: u32,
     /// Maximum number of YAML documents in the stream.
     ///
-    /// Default: 1,024. If enforcing policy is "per document", this is ignored.
+    /// Default: 1,024. If the budget scope is "per document", this is ignored.
     pub max_documents: usize,
     /// Maximum number of *nodes* (SequenceStart/MappingStart/Scalar).
     ///
@@ -259,6 +259,7 @@ pub enum BudgetBreach {
 }
 
 /// Summary of the scan (even if no breach).
+#[non_exhaustive]
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(
     feature = "serde_derived_types",
@@ -311,13 +312,17 @@ impl BudgetReport {
     }
 }
 
-/// Defines how budget limit policies are enforces (per document or for all content).
-/// Default is for all content, except when streaming from reader to iterator where
-/// it is per document as infinite may be required.
+/// Scope over which YAML budget counters are enforced.
+///
+/// Single-document and whole-input entry points use [`EnforcingPolicy::AllContent`].
+/// Streaming reader iterators use [`EnforcingPolicy::PerDocument`] so an arbitrarily long
+/// stream can be processed while each document remains bounded.
 #[non_exhaustive]
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EnforcingPolicy {
+    /// Apply one set of counters to the complete input stream.
     AllContent,
+    /// Reset applicable counters for every YAML document.
     PerDocument,
 }
 
@@ -329,7 +334,7 @@ pub(crate) struct BudgetEnforcer {
     depth: usize,
     defined_anchors: HashSet<usize>,
     containers: SmallVec<[ContainerState; 64]>,
-    policy: EnforcingPolicy,
+    scope: EnforcingPolicy,
     merge_keys: MergeKeyPolicy,
 }
 
@@ -359,14 +364,14 @@ fn tag_display_len(tag: Option<&Tag>) -> usize {
 
 impl BudgetEnforcer {
     /// Create a new enforcer for the provided `budget`.
-    pub(crate) fn new(budget: Budget, policy: EnforcingPolicy, merge_keys: MergeKeyPolicy) -> Self {
+    pub(crate) fn new(budget: Budget, scope: EnforcingPolicy, merge_keys: MergeKeyPolicy) -> Self {
         Self {
             budget,
             report: BudgetReport::default(),
             depth: 0,
             defined_anchors: HashSet::with_capacity(256),
             containers: SmallVec::new(),
-            policy,
+            scope,
             merge_keys,
         }
     }
@@ -425,7 +430,7 @@ impl BudgetEnforcer {
                 self.observe_alias_event(true)?;
             }
             Event::DocumentStart(..) => {
-                if self.policy == EnforcingPolicy::PerDocument {
+                if self.scope == EnforcingPolicy::PerDocument {
                     self.finalize_document()?;
                     self.report.reset();
                     self.defined_anchors.clear();
@@ -658,7 +663,7 @@ impl BudgetEnforcer {
         if let Some(breach) = self.report.breached.as_ref() {
             return Err(breach.clone());
         }
-        if self.policy == EnforcingPolicy::PerDocument {
+        if self.scope == EnforcingPolicy::PerDocument {
             self.check_post_scan_heuristics()?;
         }
         Ok(())
@@ -716,10 +721,10 @@ impl BudgetEnforcer {
 pub fn check_yaml_budget(
     input: &str,
     budget: Budget,
-    policy: EnforcingPolicy,
+    scope: EnforcingPolicy,
 ) -> Result<BudgetReport, ScanError> {
     let parser = Parser::new_from_str(input);
-    let mut enforcer = BudgetEnforcer::new(budget, policy, MergeKeyPolicy::Merge);
+    let mut enforcer = BudgetEnforcer::new(budget, scope, MergeKeyPolicy::Merge);
 
     for item in parser {
         let (ev, _span) = item?;
@@ -731,7 +736,7 @@ pub fn check_yaml_budget(
     Ok(enforcer.finalize())
 }
 
-/// Convenience wrapper that returns `true` if the YAML **exceeds** any budget.
+/// Return `true` if the YAML **exceeds** any budget.
 ///
 /// Parameters:
 /// - `input`: YAML text (UTF-8).
@@ -742,8 +747,7 @@ pub fn check_yaml_budget(
 /// - `Ok(false)` if within budget.
 /// - `Err(ScanError)` on parser error.
 ///
-/// Despite the (historical) name, this function only scans the event stream and reports
-/// whether a budget was exceeded; it does not deserialize a YAML value.
+/// This only scans the parser event stream; it does not deserialize a YAML value.
 pub fn parse_yaml(input: &str, budget: Budget) -> Result<bool, ScanError> {
     let report = check_yaml_budget(input, budget, EnforcingPolicy::AllContent)?;
     Ok(report.breached.is_some())

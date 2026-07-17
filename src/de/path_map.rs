@@ -76,16 +76,44 @@ impl From<usize> for PathSegment {
     }
 }
 
+/// A structured path to a value reported by a validation library.
+///
+/// The empty path refers to the root value. Use [`PathKey::join_key`] and
+/// [`PathKey::join_index`] to build paths to nested mapping and sequence values.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub struct PathKey {
     pub(crate) segments: Vec<PathSegment>,
 }
 
 impl PathKey {
+    /// Construct a path referring to the root value.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Return this path extended with a mapping key.
+    #[must_use]
+    pub fn join_key(mut self, key: impl Into<String>) -> Self {
+        self.segments.push(PathSegment {
+            kind: PathKind::Key,
+            name: key.into(),
+        });
+        self
+    }
+
+    /// Return this path extended with a sequence index.
+    #[must_use]
+    pub fn join_index(mut self, index: usize) -> Self {
+        self.segments.push(PathSegment {
+            kind: PathKind::Index,
+            name: index.to_string(),
+        });
+        self
+    }
+
     pub(crate) fn empty() -> Self {
-        Self {
-            segments: Vec::new(),
-        }
+        Self::new()
     }
 
     pub(crate) fn take(&mut self) -> Self {

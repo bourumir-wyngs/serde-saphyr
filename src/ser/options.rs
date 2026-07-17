@@ -63,7 +63,7 @@ pub enum CommentPosition {
 /// let yaml = to_string_with_options(&config, options).unwrap();
 /// ```
 #[non_exhaustive]
-#[derive(Clone, Copy)]
+#[derive(Clone, Debug)]
 pub struct SerializerOptions {
     /// If true, empty maps are emitted as braces {} and empty lists as [] (this is the default).
     /// This form is valid YAML, distinguishes empty collections from null, and may be easier

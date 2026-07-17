@@ -9,15 +9,18 @@ compile_error!(
 #[cfg(all(feature = "deserialize", feature = "properties"))]
 pub use self::de::PropertySyntax;
 #[cfg(all(feature = "deserialize", any(feature = "garde", feature = "validator")))]
-pub use self::de_error::ValidationSource;
+pub use self::de_error::{ValidationIssue, ValidationSource};
 #[cfg(feature = "serialize")]
 pub use self::ser::{
-    error as ser_error,
+    Error as SerializeError, error as ser_error,
     options::{CommentPosition, SerializerOptions},
 };
 #[cfg(feature = "deserialize")]
 pub use self::{
-    de::{Budget, DuplicateKeyPolicy, Error, MergeKeyPolicy, Options, budget, localizer, options},
+    de::{
+        Budget, DuplicateKeyPolicy, Error, Error as DeserializeError, MergeKeyPolicy, Options,
+        budget, localizer, options,
+    },
     de_error::{
         CroppedRegion, MessageFormatter, RenderOptions, SnippetMode, TransformReason,
         UserMessageFormatter,

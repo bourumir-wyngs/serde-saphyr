@@ -362,11 +362,11 @@ impl Options {
     ///     assert_eq!(req.from_name, "<input>");
     ///
     ///     if req.spec == "virtual://users.yaml" {
-    ///         Ok(ResolvedInclude {
-    ///             id: req.spec.to_owned(),
-    ///             name: "virtual users".to_owned(),
-    ///             source: InputSource::from_string(users_yaml.to_owned()),
-    ///         })
+    ///         Ok(ResolvedInclude::new(
+    ///             req.spec,
+    ///             "virtual users",
+    ///             InputSource::from_string(users_yaml.to_owned()),
+    ///         ))
     ///     } else {
     ///         Err(IncludeResolveError::Message(format!("unknown include: {}", req.spec)))
     ///     }

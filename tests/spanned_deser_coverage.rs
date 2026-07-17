@@ -365,11 +365,11 @@ fn spanned_deser_included_value_preserves_source_id() {
             serde_saphyr::IncludeResolveError,
         > {
             assert_eq!(req.spec, "child.yaml");
-            Ok(serde_saphyr::ResolvedInclude {
-                id: "child.yaml".to_string(),
-                name: "child.yaml".to_string(),
-                source: serde_saphyr::InputSource::from_string("included\n".to_string()),
-            })
+            Ok(serde_saphyr::ResolvedInclude::new(
+                "child.yaml",
+                "child.yaml",
+                serde_saphyr::InputSource::from_string("included\n".to_string()),
+            ))
         },
     );
 

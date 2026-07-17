@@ -95,7 +95,7 @@ seq:
             name: "".to_string(),
         });
 
-        let _anchor: RcWeakAnchor<Node> = nrc.into();
+        let _anchor: RcWeakAnchor<Node> = (&nrc).into();
     }
 
     #[test]
