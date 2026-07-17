@@ -165,7 +165,6 @@ where
     let buffered_output = Rc::new(RefCell::new(Vec::<String>::new()));
     let budget_output = Rc::clone(&buffered_output);
 
-    #[allow(deprecated)]
     let mut options = if plain {
         crate::options! {
             // Plain mode uses serde-saphyr's own snippet rendering.

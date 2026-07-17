@@ -107,7 +107,7 @@ mod zmij_format_tests {
         assert!(s.contains("-.inf"));
     }
 
-    /// Exercise the write_float_string path via to_writer (fmt::Write)
+    /// Exercise the write_float_string path via to_fmt_writer.
     #[test]
     fn write_path_nan() {
         #[derive(Serialize)]

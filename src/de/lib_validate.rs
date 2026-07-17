@@ -53,7 +53,6 @@ fn validator_validation_error(errors: validator::ValidationErrors, locations: &P
 
 /// Deserialize a single YAML document with configurable [`Options`], and also
 /// return a map from validation paths to source [`Location`]s.
-#[allow(deprecated)]
 fn from_str_with_options_and_path_recorder_validated<T, F>(
     input: &str,
     options: Options,
@@ -150,7 +149,6 @@ where
     from_multiple_with_options_valid(input, Options::default())
 }
 
-#[allow(deprecated)]
 fn from_multiple_with_options_validated<T, F>(
     input: &str,
     options: Options,
@@ -237,7 +235,6 @@ where
 /// The error message will contain a snippet with exact location information, and if the
 /// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
 #[cfg(feature = "garde")]
-#[allow(deprecated)]
 pub fn from_multiple_with_options_valid<T>(input: &str, options: Options) -> Result<Vec<T>, Error>
 where
     T: DeserializeOwned + garde::Validate,
@@ -302,7 +299,6 @@ where
     from_reader_with_options_valid(reader, Options::default())
 }
 
-#[allow(deprecated)]
 fn from_reader_with_options_validated<R, T, F>(
     reader: R,
     options: Options,
@@ -344,7 +340,6 @@ where
 /// Snippets are attached on a best-effort basis for streamed root input, are available for
 /// included text sources, and may be unavailable for included reader sources.
 #[cfg(feature = "garde")]
-#[allow(deprecated)]
 pub fn from_reader_with_options_valid<R: std::io::Read, T>(
     reader: R,
     options: Options,
@@ -376,7 +371,6 @@ where
     read_with_options_valid(reader, Default::default())
 }
 
-#[allow(deprecated)]
 fn read_with_options_validated<'a, R, T, F>(
     reader: &'a mut R,
     options: Options,
@@ -487,7 +481,6 @@ where
 /// Root streamed input gets snippets on a best-effort basis; included text sources retain full
 /// snippets, while included reader sources may not have snippet text available.
 #[cfg(feature = "garde")]
-#[allow(deprecated)]
 pub fn read_with_options_valid<'a, R, T>(
     reader: &'a mut R,
     options: Options,
@@ -541,7 +534,6 @@ pub fn from_multiple_validate<T: DeserializeOwned + ValidatorValidate>(
 /// The error message will contain a snippet with exact location information, and if the
 /// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
 #[cfg(feature = "validator")]
-#[allow(deprecated)]
 pub fn from_multiple_with_options_validate<T>(
     input: &str,
     options: Options,
@@ -612,7 +604,6 @@ where
 /// Snippets are attached on a best-effort basis for streamed root input, are available for
 /// included text sources, and may be unavailable for included reader sources.
 #[cfg(feature = "validator")]
-#[allow(deprecated)]
 pub fn from_reader_with_options_validate<R: std::io::Read, T>(
     reader: R,
     options: Options,
@@ -647,7 +638,6 @@ where
 /// Root streamed input gets snippets on a best-effort basis; included text sources retain full
 /// snippets, while included reader sources may not have snippet text available.
 #[cfg(feature = "validator")]
-#[allow(deprecated)]
 pub fn read_with_options_validate<'a, R, T>(
     reader: &'a mut R,
     options: Options,

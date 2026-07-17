@@ -145,7 +145,7 @@ serde-saphyr --include path/to/root path/to/file.yaml
 
 Serde-saphyr provides control over serialization and deserialization behavior. We generally welcome feature requests, but we also recognize that not every user wants every feature enabled by default.
 
-To support different use cases, most behavior can be enabled, disabled, or tuned via [Options](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html) (deserializers) and [SerializerOptions](https://docs.rs/serde-saphyr/latest/serde_saphyr/ser/options/struct.SerializerOptions.html) (serializers). Adding fields to the public API is a breaking change. To allow new options without breaking compatibility, Serde-saphyr uses a macro-driven approach based on the [`options!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.options.html), [`budget!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.budget.html), and [`ser_options!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.ser_options.html) macros.
+To support different use cases, most behavior can be enabled, disabled, or tuned via [Options](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html) (deserializers) and [SerializerOptions](https://docs.rs/serde-saphyr/latest/serde_saphyr/ser/options/struct.SerializerOptions.html) (serializers). Serde-saphyr uses a macro-driven approach based on the [`options!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.options.html), [`budget!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.budget.html), and [`ser_options!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.ser_options.html) macros.
 
 ```rust
 fn main() {
@@ -158,7 +158,7 @@ fn main() {
 }
 ```
 
-**API note:** `serde-saphyr` is moving away from [struct literals](https://doc.rust-lang.org/book/ch05-01-defining-structs.html) for its configuration structs (`Options`, `SerializerOptions`, `Budget`). Struct literals and direct field access will be deprecated soon. In the first `1.x` release, these types will become `#[non_exhaustive]` to prevent direct instantiation. During the migration period, semver checks temporarily allow adding fields to these structures, and the badge does not treat new fields as a breaking change (which is correct when using the macros).
+[Struct literals](https://doc.rust-lang.org/book/ch05-01-defining-structs.html) cannot be used because option structures are non-exhaustive (to allow new fields without an API-breaking change).
 
 ### Pathological inputs & budgets
 
@@ -917,5 +917,4 @@ Safety hardening measures with this feature enabled include limits on maximal ex
 - Borrowing works for any scalar whose parsed value exists **verbatim** in the input. This includes plain scalars and simple quoted strings without escape sequences (e.g., `"hello world"` can be borrowed, but `"hello\nworld"` cannot because `\n` is transformed to a newline). For maximum flexibility, use `Cow<'a, str>` which borrows when possible and owns when transformation is required.
 - Reader-based entry points (`from_reader`) require `DeserializeOwned` and cannot return borrowed values.
 - `serde-saphyr` does not capture freestanding comments, not obviously attached to any node (separated by multiple empty lines, or at the end of the document). Use [`granit-parser`](https://crates.io/crates/granit-parser) directly to capture such comments (serde-saphyr re-exports it). 
-
 

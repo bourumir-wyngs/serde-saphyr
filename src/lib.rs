@@ -1,5 +1,4 @@
 #![forbid(unsafe_code)]
-#![allow(deprecated)]
 
 #[cfg(not(any(feature = "serialize", feature = "deserialize")))]
 compile_error!(
@@ -74,8 +73,7 @@ pub use self::de::api::{
 #[cfg(feature = "serialize")]
 pub use self::ser::api::{
     to_fmt_writer, to_fmt_writer_with_options, to_io_writer, to_io_writer_with_options, to_string,
-    to_string_multiple, to_string_multiple_with_options, to_string_with_options, to_writer,
-    to_writer_with_options,
+    to_string_multiple, to_string_multiple_with_options, to_string_with_options,
 };
 
 #[cfg(feature = "deserialize")]

@@ -56,7 +56,6 @@ fn test_deeply_nested_structures() {
 
 #[test]
 fn deeply_nested_block_mapping_errors_without_abort() {
-    #[allow(deprecated)]
     let yaml = deeply_nested_block_mapping_yaml(serde_saphyr::Budget::default().max_depth + 1);
     let err = serde_saphyr::from_str::<serde_json::Value>(&yaml).unwrap_err();
     assert_budget_depth_error(&err);

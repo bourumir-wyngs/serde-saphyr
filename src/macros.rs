@@ -49,10 +49,7 @@ macro_rules! __serde_saphyr_options_apply {
 
     // Generic field assignment.
     ($opt:ident, $field:ident : $value:expr $(, $($rest:tt)*)? ) => {{
-        #[allow(deprecated)]
-        {
-            $opt.$field = $value;
-        }
+        $opt.$field = $value;
         $( $crate::__serde_saphyr_options_apply!($opt, $($rest)*); )?
     }};
 }
@@ -111,10 +108,7 @@ macro_rules! budget {
     ( $( $field:ident : $value:expr ),* $(,)? ) => {{
         let mut b = $crate::Budget::default();
         $(
-            #[allow(deprecated)]
-            {
-                b.$field = $value;
-            }
+            b.$field = $value;
         )*
         Some(b)
     }};
@@ -152,10 +146,7 @@ macro_rules! alias_limits {
     ( $( $field:ident : $value:expr ),* $(,)? ) => {{
         let mut limits = $crate::options::AliasLimits::default();
         $(
-            #[allow(deprecated)]
-            {
-                limits.$field = $value;
-            }
+            limits.$field = $value;
         )*
         limits
     }};
@@ -234,28 +225,19 @@ macro_rules! __serde_saphyr_serializer_options_apply {
                 panic!("`indent_step` must be in the range 1..=65535");
             }
         };
-        #[allow(deprecated)]
-        {
-            $opt.indent_step = $value;
-        }
+        $opt.indent_step = $value;
         $( $crate::__serde_saphyr_serializer_options_apply!($opt, $($rest)*); )?
     }};
 
     // indent_step for non-const expressions: allow compilation; runtime validation will apply.
     ($opt:ident, indent_step : $value:expr $(, $($rest:tt)*)? ) => {{
-        #[allow(deprecated)]
-        {
-            $opt.indent_step = $value;
-        }
+        $opt.indent_step = $value;
         $( $crate::__serde_saphyr_serializer_options_apply!($opt, $($rest)*); )?
     }};
 
     // Generic field assignment.
     ($opt:ident, $field:ident : $value:expr $(, $($rest:tt)*)? ) => {{
-        #[allow(deprecated)]
-        {
-            $opt.$field = $value;
-        }
+        $opt.$field = $value;
         $( $crate::__serde_saphyr_serializer_options_apply!($opt, $($rest)*); )?
     }};
 }

@@ -942,7 +942,7 @@ dependencies = [
 
 [[package]]
 name = "serde-saphyr"
-version = "0.0.29"
+version = "1.0.0"
 dependencies = [
  "annotate-snippets",
  "anyhow",

@@ -62,21 +62,16 @@ pub enum CommentPosition {
 ///
 /// let yaml = to_string_with_options(&config, options).unwrap();
 /// ```
+#[non_exhaustive]
 #[derive(Clone, Copy)]
 pub struct SerializerOptions {
     /// If true, empty maps are emitted as braces {} and empty lists as [] (this is the default).
     /// This form is valid YAML, distinguishes empty collections from null, and may be easier
     /// for a human to read.
-    #[deprecated(
-        note = "Direct construction of `SerializerOptions` will be disabled from 1.0.0, use macro `ser_options!`"
-    )]
     pub empty_as_braces: bool,
     /// Number of spaces to indent per nesting level when emitting block-style collections (2 by default).
     /// A value of 0 is invalid and will produce an error when serializing, because
     /// no indentation would otherwise produce invalid YAML.
-    #[deprecated(
-        note = "Direct construction of `SerializerOptions` will be disabled from 1.0.0, use macro `ser_options!`"
-    )]
     pub indent_step: usize,
     /// When enabled, emit list items with a more compact indentation style. On by default.
     /// ```yaml
@@ -94,17 +89,11 @@ pub struct SerializerOptions {
     ///             - name: METHOD
     ///               value: WATCH
     /// ```
-    #[deprecated(
-        note = "Direct construction of `SerializerOptions` will be disabled from 1.0.0, use macro `ser_options!`"
-    )]
     pub compact_list_indent: bool,
     /// Optional custom anchor-name generator.
     ///
     /// Receives a monotonically increasing `usize` id (starting at 1) and returns the
     /// anchor name to emit. If `None`, the built-in generator yields names like `a1`, `a2`, ...
-    #[deprecated(
-        note = "Direct construction of `SerializerOptions` will be disabled from 1.0.0, use macro `ser_options!`"
-    )]
     pub anchor_generator: Option<fn(usize) -> String>,
     /// Threshold for block-string wrappers ([`crate::LitStr`]/[`crate::FoldStr`] and owned variants
     /// [`crate::LitString`]/[`crate::FoldString`]).
@@ -115,9 +104,6 @@ pub struct SerializerOptions {
     /// styles `|` or `>` depending on the wrapper. See the type docs for
     /// [`crate::LitStr`], [`crate::FoldStr`], [`crate::LitString`] and [`crate::FoldString`] for
     /// examples.
-    #[deprecated(
-        note = "Direct construction of `SerializerOptions` will be disabled from 1.0.0, use macro `ser_options!`"
-    )]
     pub min_fold_chars: usize,
     /// Maximum width (in characters) for lines in folded block scalars (`>`).
     ///
@@ -126,25 +112,16 @@ pub struct SerializerOptions {
     /// within the limit (e.g., a single long token), the line is emitted unwrapped
     /// to preserve round-trip correctness: YAML folded scalars typically fold inserted
     /// newlines back as spaces when parsing. Default: 80.
-    #[deprecated(
-        note = "Direct construction of `SerializerOptions` will be disabled from 1.0.0, use macro `ser_options!`"
-    )]
     pub folded_wrap_chars: usize,
     /// When enabled, serialize simple enums that become a single scalar (unit variants)
     /// using YAML tags, e.g. `!!Enum Variant` instead of a plain scalar `Variant`.
     /// Deserializer does not need this setting as both cases will be understood. Off by default.
-    #[deprecated(
-        note = "Direct construction of `SerializerOptions` will be disabled from 1.0.0, use macro `ser_options!`"
-    )]
     pub tagged_enums: bool,
 
     /// When enabled, strings containing more than `folded_wrap_chars` (80 by default) are written
     /// in folded block scalar style (`>`), and strings containing newlines are written in
     /// literal block scalar style (`|`), selecting chomping based on the number of trailing empty lines.
     /// On by default.
-    #[deprecated(
-        note = "Direct construction of `SerializerOptions` will be disabled from 1.0.0, use macro `ser_options!`"
-    )]
     pub prefer_block_scalars: bool,
 
     /// When enabled, quote all string scalars. Uses single quotes by default,
@@ -152,9 +129,6 @@ pub struct SerializerOptions {
     /// (control characters like `\n`, `\t`, `\r`, backslash) or single quotes.
     /// Disables block scalar styles (`|` and `>`) for quoted strings when active.
     /// Off by default.
-    #[deprecated(
-        note = "Direct construction of `SerializerOptions` will be disabled from 1.0.0, use macro `ser_options!`"
-    )]
     pub quote_all: bool,
 
     /// Controls where [`crate::Commented`] comments are emitted in block style.
@@ -163,9 +137,6 @@ pub struct SerializerOptions {
     /// scalars and aliases. [`CommentPosition::Above`] emits the comment on its own line
     /// immediately before the wrapped value. Comments remain suppressed in flow-style
     /// collections in both modes.
-    #[deprecated(
-        note = "Direct construction of `SerializerOptions` will be disabled from 1.0.0, use macro `ser_options!`"
-    )]
     pub comment_position: CommentPosition,
 
     /// When enabled, emit `%YAML 1.2` and the required document start marker
@@ -176,9 +147,6 @@ pub struct SerializerOptions {
     /// will **not** be treated as booleans for the purpose of auto-quoting. In cases
     /// like multiple x, y coordinates quoting y may be very annoying.
     /// Default: false.
-    #[deprecated(
-        note = "Direct construction of `SerializerOptions` will be disabled from 1.0.0, use macro `ser_options!`"
-    )]
     pub yaml_12: bool,
 }
 
@@ -192,7 +160,6 @@ pub(crate) const MIN_FOLD_CHARS: usize = 32;
 pub(crate) const FOLDED_WRAP_CHARS: usize = 80;
 
 impl SerializerOptions {
-    #[allow(deprecated)]
     pub(crate) fn consistent(&self) -> Result<(), Error> {
         if self.indent_step == 0 {
             return Err(Error::InvalidOptions(
@@ -204,7 +171,6 @@ impl SerializerOptions {
 }
 
 impl Default for SerializerOptions {
-    #[allow(deprecated)]
     fn default() -> Self {
         // Defaults mirror internal constants used by the serializer.
         Self {

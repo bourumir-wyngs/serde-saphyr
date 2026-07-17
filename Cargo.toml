@@ -1,6 +1,6 @@
 [package]
 name = "serde-saphyr"
-version = "0.0.29"
+version = "1.0.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "YAML (de)serializer for Serde, emphasizing panic-free parsing, fast builds and good error reporting. Supports properties, comments, include"
@@ -216,9 +216,3 @@ required-features = ["serialize", "deserialize"]
 
 [lints.rust]
 unsafe_code = "forbid"
-
-# `serde-saphyr` is moving away from struct literals. During the migration period, semver checks temporarily allow
-# adding fields to these structures, and the badge does not treat new fields as a breaking change
-# (which is correct when using the macros).
-[package.metadata.cargo-semver-checks.lints]
-constructible_struct_adds_field = "allow"

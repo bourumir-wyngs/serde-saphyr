@@ -145,7 +145,7 @@ pub struct YamlSerializer<'a, W: Write> {
 
 impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Construct a `YamlSerializer` that writes to `out`.
-    /// Called by `to_writer`/`to_string` entry points.
+    /// Called by `to_fmt_writer`/`to_string` entry points.
     pub fn new(out: &'a mut W) -> Self {
         Self {
             out,
@@ -188,8 +188,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         s
     }
     /// Construct a `YamlSerializer` from user-supplied [`SerializerOptions`].
-    /// Used by `to_writer_with_options`.
-    #[allow(deprecated)]
+    /// Used by `to_fmt_writer_with_options` and `to_io_writer_with_options`.
     pub fn with_options(out: &'a mut W, options: &mut SerializerOptions) -> Self {
         let mut s = Self::new(out);
         s.indent_step = options.indent_step;

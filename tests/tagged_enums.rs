@@ -88,7 +88,6 @@ fn struct_with_enum() -> anyhow::Result<()> {
     assert_eq!(d, s);
     yaml.clear();
 
-    // Reconstruct instead of mutating a deprecated field directly.
     opts = serde_saphyr::ser_options! {
         tagged_enums: false,
     };

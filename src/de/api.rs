@@ -88,7 +88,6 @@ where
     from_str_with_options(input, Options::default())
 }
 
-#[allow(deprecated)]
 #[cfg(feature = "deserialize")]
 fn from_str_with_options_impl<'de, T>(input: &'de str, options: Options) -> Result<T, Error>
 where
@@ -133,7 +132,6 @@ where
 /// let cfg: Config = serde_saphyr::from_str_with_options(yaml, options).unwrap();
 /// assert_eq!(cfg.retries, 5);
 /// ```
-#[allow(deprecated)]
 #[cfg(feature = "deserialize")]
 pub fn from_str_with_options<'de, T>(input: &'de str, options: Options) -> Result<T, Error>
 where
@@ -447,7 +445,6 @@ pub fn from_multiple<T: DeserializeOwned>(input: &str) -> Result<Vec<T>, Error> 
 /// assert_eq!(cfgs.len(), 2);
 /// assert!(!cfgs[1].enabled);
 /// ```
-#[allow(deprecated)]
 #[cfg(feature = "deserialize")]
 pub fn from_multiple_with_options<T: DeserializeOwned>(
     input: &str,
@@ -743,7 +740,6 @@ pub fn from_reader<'a, R: std::io::Read + 'a, T: DeserializeOwned>(reader: R) ->
 /// - If the reader contains multiple documents, an error is returned suggesting the
 ///   `read`/`read_with_options` iterator APIs.
 /// - If `Options::budget` is set and a limit is exceeded, an error is returned early.
-#[allow(deprecated)]
 #[cfg(feature = "deserialize")]
 pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
     reader: R,
@@ -908,7 +904,6 @@ where
 /// - After a **syntax error** or **budget/alias limit exceeded**, the iterator ends because
 ///   the parser state may be unrecoverable.
 /// - Empty/null-like documents are skipped and produce no items.
-#[allow(deprecated)]
 #[cfg(feature = "deserialize")]
 pub fn read_with_options<'a, R, T>(
     reader: &'a mut R, // iterator must not outlive this borrow

@@ -71,23 +71,6 @@ fn with_indent_changes_indentation() {
 }
 
 #[test]
-#[allow(deprecated)]
-fn deprecated_to_writer() {
-    let mut buf = String::new();
-    serde_saphyr::to_writer(&mut buf, &42i32).unwrap();
-    assert_eq!(buf.trim(), "42");
-}
-
-#[test]
-#[allow(deprecated)]
-fn deprecated_to_writer_with_options() {
-    let mut buf = String::new();
-    serde_saphyr::to_writer_with_options(&mut buf, &"hello", serde_saphyr::ser_options! {})
-        .unwrap();
-    assert!(buf.contains("hello"));
-}
-
-#[test]
 fn to_io_writer_basic() {
     let mut buf = Vec::new();
     serde_saphyr::to_io_writer(&mut buf, &true).unwrap();

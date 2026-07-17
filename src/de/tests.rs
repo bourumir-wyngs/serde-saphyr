@@ -148,7 +148,6 @@ fn scalar_key_node(
 }
 
 #[test]
-#[allow(deprecated)]
 fn cfg_and_replay_events_follow_options_and_reference_overrides() {
     let options = Options {
         duplicate_keys: DuplicateKeyPolicy::LastWins,
