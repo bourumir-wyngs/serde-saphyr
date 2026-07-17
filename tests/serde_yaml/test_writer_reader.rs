@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::fmt::Write as _;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Point {
@@ -29,7 +30,7 @@ fn test_large_reader_input() {
     let mut yaml = String::new();
     let mut i = 0usize;
     while yaml.len() < 64 * 1024 {
-        yaml.push_str(&format!("k{0}: v{0}\n", i));
+        let _ = writeln!(yaml, "k{0}: v{0}", i);
         i += 1;
     }
 

@@ -5,6 +5,7 @@
 //! error messages include helpful code snippets showing the error location.
 
 use serde::Deserialize;
+use std::fmt::Write as _;
 use std::io::Cursor;
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -106,7 +107,7 @@ fn reader_large_input_error_at_end() {
     // Create a large valid YAML prefix followed by an error
     let mut yaml = String::new();
     for i in 0..1000 {
-        yaml.push_str(&format!("key{}: value{}\n", i, i));
+        let _ = writeln!(yaml, "key{}: value{}", i, i);
     }
     // Add an error at the end
     yaml.push_str("final: [unclosed\n");
@@ -212,7 +213,7 @@ fn reader_utf8_content() {
 fn reader_root_snippet_uses_snapshot_start_line() {
     let mut yaml = String::new();
     for i in 1..50 {
-        yaml.push_str(&format!("line{i}: ok\n"));
+        let _ = writeln!(yaml, "line{i}: ok");
     }
     yaml.push_str("broken: [unterminated\n");
 

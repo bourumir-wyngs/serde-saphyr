@@ -3,6 +3,7 @@
 
 use serde::Deserialize;
 use serde_saphyr::Error;
+use std::fmt::Write as _;
 use std::time::Instant;
 
 #[derive(Debug, Deserialize)]
@@ -49,9 +50,10 @@ fn build_large_yaml(target_size: usize) -> String {
         );
 
         for note_index in 0..20 {
-            entry.push_str(&format!(
-                "        - \"Note {note_index:02} for item {index:05}. This is repeated content to enlarge the YAML payload size considerably.\"\n"
-            ));
+            let _ = writeln!(
+                entry,
+                "        - \"Note {note_index:02} for item {index:05}. This is repeated content to enlarge the YAML payload size considerably.\""
+            );
         }
 
         yaml.push_str(&entry);

@@ -1,6 +1,7 @@
 use garde::Validate;
 use serde::Deserialize;
 use serde_saphyr::{Error, Options, ValidationSource};
+use std::fmt::Write as _;
 
 #[cfg(feature = "include")]
 use std::{cell::RefCell, rc::Rc};
@@ -432,7 +433,7 @@ fn from_multiple_with_options_valid_validates_each_document() {
 fn reader_validation_root_snapshot_out_of_range_has_no_incorrect_snippet() {
     let mut yaml = String::new();
     for i in 0..9000 {
-        yaml.push_str(&format!("skip_{i}: x\n"));
+        let _ = writeln!(yaml, "skip_{i}: x");
     }
     yaml.push_str("a: \"\"\n");
 

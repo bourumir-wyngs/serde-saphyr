@@ -756,6 +756,7 @@ pub fn parse_yaml(input: &str, budget: Budget) -> Result<bool, ScanError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fmt::Write as _;
 
     #[test]
     fn tiny_yaml_ok() {
@@ -847,7 +848,7 @@ e: *A
     fn merge_key_limit_trips() {
         let mut y = String::from("base: &B\n  k: 1\nitems:\n");
         for idx in 0..3 {
-            y.push_str(&format!("  item{idx}:\n    <<: *B\n    extra: {idx}\n"));
+            let _ = writeln!(y, "  item{idx}:\n    <<: *B\n    extra: {idx}");
         }
 
         let b = Budget {

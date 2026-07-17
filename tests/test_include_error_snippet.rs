@@ -7,6 +7,7 @@ use serde_saphyr::{
     from_str_with_options, with_deserializer_from_reader_with_options,
     with_deserializer_from_str_with_options,
 };
+use std::fmt::Write as _;
 use std::io::Cursor;
 
 #[derive(Deserialize, Debug)]
@@ -144,7 +145,7 @@ fn test_include_error_snippet_with_deserializer_helpers() {
 fn reader_root_include_site_snippet_uses_snapshot_start_line() {
     let mut main_yaml = String::new();
     for i in 1..50 {
-        main_yaml.push_str(&format!("pad{i}: ok\n"));
+        let _ = writeln!(main_yaml, "pad{i}: ok");
     }
     main_yaml.push_str("b: !include included.yaml\n");
 

@@ -5,6 +5,7 @@ use serde_saphyr::{
     Error, from_multiple_with_options, from_reader, from_reader_with_options, read_with_options,
 };
 use std::cell::RefCell;
+use std::fmt::Write as _;
 use std::io::ErrorKind;
 use std::rc::Rc;
 
@@ -23,7 +24,7 @@ struct Simple {
 fn big_valid_yaml(n: usize) -> String {
     let mut yaml = String::new();
     for i in 1..=n {
-        yaml.push_str(&format!("a{}: {}\n", i, i));
+        let _ = writeln!(yaml, "a{}: {}", i, i);
     }
     yaml
 }
