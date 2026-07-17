@@ -1,6 +1,6 @@
 use serde_saphyr::to_fmt_writer_with_options;
 
-/// Test that block_scalar_chomp: Strip forces `|-` and strips trailing newlines
+/// Test that `block_scalar_chomp`: Strip forces `|-` and strips trailing newlines
 #[test]
 fn block_scalar_chomp_strip() {
     let input = "line1\nline2\n"; // Has trailing newline
@@ -17,7 +17,7 @@ fn block_scalar_chomp_strip() {
     assert_eq!(parsed, input);
 }
 
-/// Test that block_scalar_chomp: Clip forces `|`
+/// Test that `block_scalar_chomp`: Clip forces `|`
 #[test]
 fn block_scalar_chomp_clip() {
     let input = "line1\nline2"; // No trailing newline
@@ -34,7 +34,7 @@ fn block_scalar_chomp_clip() {
     assert_eq!(parsed, input);
 }
 
-/// Test that block_scalar_chomp: Keep forces `|+`
+/// Test that `block_scalar_chomp`: Keep forces `|+`
 #[test]
 fn block_scalar_chomp_keep() {
     let input = "line1\nline2\n"; // Has one trailing newline

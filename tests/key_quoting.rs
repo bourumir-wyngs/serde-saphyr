@@ -20,9 +20,9 @@ enum BoolishVariant {
 }
 
 /// Round-trips every printable ASCII single-character key (32..=126)
-/// through serde_saphyr using the same pattern as the provided snippet.
+/// through `serde_saphyr` using the same pattern as the provided snippet.
 /// This ensures that characters like comma `,` are serialized in a way
-/// that can be parsed back into the same HashMap.
+/// that can be parsed back into the same `HashMap`.
 #[test]
 fn printable_ascii_single_char_keys_roundtrip() {
     for c in 32_u8..=126 {

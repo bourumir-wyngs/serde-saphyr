@@ -6,8 +6,8 @@ mod tests {
     use serde_saphyr::options::{DuplicateKeyPolicy, MergeKeyPolicy};
     use std::collections::BTreeMap;
 
-    /// Parse a YAML mapping into a BTreeMap<String, serde_json::Value>,
-    /// configuring the deserializer to use DuplicateKeyPolicy::FirstWins.
+    /// Parse a YAML mapping into a `BTreeMap<String, serde_json::Value>`,
+    /// configuring the deserializer to use `DuplicateKeyPolicy::FirstWins`.
     ///
     /// Params:
     /// - `yaml`: the YAML input as &str.

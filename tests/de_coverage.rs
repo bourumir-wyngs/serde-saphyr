@@ -228,7 +228,7 @@ const OVERFLOWING_INTEGER_SCALAR: &str = concat!(
     "9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999",
 );
 
-/// deserialize_any rejects non-finite floats and overflowed numeric scalars by default.
+/// `deserialize_any` rejects non-finite floats and overflowed numeric scalars by default.
 #[rstest]
 #[case::nan(".nan", ".nan")]
 #[case::inf(".inf", ".inf")]
@@ -266,7 +266,7 @@ fn deserialize_any_non_yaml_nonfinite_float_spellings_stay_strings(
     assert_eq!(v, serde_json::Value::String(expected.to_string()));
 }
 
-/// deserialize_any with empty document → null/unit.
+/// `deserialize_any` with empty document → null/unit.
 #[test]
 fn deserialize_any_empty_document() {
     let v: serde_json::Value = serde_saphyr::from_str("").unwrap();
@@ -310,7 +310,7 @@ struct WithString {
     s: String,
 }
 
-/// String from !!binary tag with ignore_binary_tag_for_string = true → raw base64 returned.
+/// String from !!binary tag with `ignore_binary_tag_for_string` = true → raw base64 returned.
 #[test]
 fn string_from_binary_tag_ignored() {
     let opts = serde_saphyr::options! { ignore_binary_tag_for_string: true };
@@ -334,7 +334,7 @@ fn string_from_binary_tag_decoded() {
 // no_schema mode: quoting required for ambiguous scalars
 // ---------------------------------------------------------------------------
 
-/// no_schema: plain integer for string field → error.
+/// `no_schema`: plain integer for string field → error.
 #[test]
 fn no_schema_plain_int_for_string_error() {
     let opts = serde_saphyr::options! { no_schema: true };
@@ -345,7 +345,7 @@ fn no_schema_plain_int_for_string_error() {
     ));
 }
 
-/// no_schema: quoted string is fine.
+/// `no_schema`: quoted string is fine.
 #[test]
 fn no_schema_quoted_string_ok() {
     let opts = serde_saphyr::options! { no_schema: true };
@@ -375,7 +375,7 @@ fn duplicate_key_error_policy() {
     ));
 }
 
-/// Duplicate key with FirstWins policy → first value kept.
+/// Duplicate key with `FirstWins` policy → first value kept.
 #[test]
 fn duplicate_key_first_wins() {
     let opts =
@@ -385,7 +385,7 @@ fn duplicate_key_first_wins() {
     assert_eq!(v["a"], 1);
 }
 
-/// Duplicate key with LastWins policy → last value kept.
+/// Duplicate key with `LastWins` policy → last value kept.
 #[test]
 fn duplicate_key_last_wins() {
     let opts =
@@ -761,7 +761,7 @@ fn deserialize_any_legacy_octal() {
 // deserialize_map: skip_one_node (MA::skip_one_node)
 // ---------------------------------------------------------------------------
 
-/// Deserializing into a struct skips unknown fields via skip_one_node.
+/// Deserializing into a struct skips unknown fields via `skip_one_node`.
 #[test]
 fn map_skip_unknown_nested_fields() {
     #[derive(Debug, Deserialize, PartialEq)]
@@ -923,7 +923,7 @@ fn deserialize_any_tagged_null() {
     assert_eq!(v, serde_json::Value::Null);
 }
 
-/// deserialize_any: !!binary scalar → decoded string
+/// `deserialize_any`: !!binary scalar → decoded string
 #[test]
 fn deserialize_any_binary_tag() {
     let v: serde_json::Value = serde_saphyr::from_str("!!binary SGVsbG8=\n").unwrap();
@@ -931,7 +931,7 @@ fn deserialize_any_binary_tag() {
     assert_eq!(v, serde_json::Value::String("Hello".to_string()));
 }
 
-/// deserialize_any: !!str tagged scalar → always string
+/// `deserialize_any`: !!str tagged scalar → always string
 #[test]
 fn deserialize_any_str_tag() {
     let v: serde_json::Value = serde_saphyr::from_str("!!str 42\n").unwrap();
@@ -939,7 +939,7 @@ fn deserialize_any_str_tag() {
     assert_eq!(v, serde_json::Value::String("42".to_string()));
 }
 
-/// deserialize_any: !!int tagged scalar → error (can't deserialize into string)
+/// `deserialize_any`: !!int tagged scalar → error (can't deserialize into string)
 #[test]
 fn deserialize_any_int_tag_error() {
     let err = serde_saphyr::from_str::<serde_json::Value>("!!int 42\n").unwrap_err();

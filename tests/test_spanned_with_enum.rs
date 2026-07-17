@@ -23,7 +23,7 @@ pub enum PayloadWithSpanned {
 }
 
 /// This test demonstrates that `Spanned<T>` inside untagged enum variants succeeds
-/// but loses location information (Location::UNKNOWN). Previously this would fail;
+/// but loses location information (`Location::UNKNOWN`). Previously this would fail;
 /// now the fallback plain-value path in `Spanned<T>::deserialize` allows it to succeed.
 #[test]
 fn test_spanned_inside_untagged_enum_succeeds_with_unknown_location() {
@@ -99,7 +99,7 @@ pub enum InternallyTaggedPayload {
 }
 
 /// This test demonstrates that internally tagged enums (`#[serde(tag = "...")]`)
-/// now succeed but lose location information (Location::UNKNOWN), same as untagged enums.
+/// now succeed but lose location information (`Location::UNKNOWN`), same as untagged enums.
 #[test]
 fn test_spanned_inside_internally_tagged_enum_succeeds_with_unknown_location() {
     let yaml = "type: StringVariant\nmessage: hello";

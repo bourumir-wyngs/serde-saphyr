@@ -1,4 +1,4 @@
-//! Tests for automatic line wrapping of long strings (matches Go's yaml.v3 SetWidth behavior)
+//! Tests for automatic line wrapping of long strings (matches Go's yaml.v3 `SetWidth` behavior)
 
 use serde::{Deserialize, Serialize};
 use serde_saphyr::{to_fmt_writer_with_options, to_string};

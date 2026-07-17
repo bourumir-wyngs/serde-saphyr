@@ -6,7 +6,7 @@
 use std::io::Write;
 use std::process::Command;
 
-/// Helper: run the CLI entrypoint in-process and return (stdout, stderr, exit_code).
+/// Helper: run the CLI entrypoint in-process and return (stdout, stderr, `exit_code`).
 fn run_binary(args: &[&str]) -> (String, String, i32) {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();

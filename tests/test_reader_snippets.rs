@@ -176,7 +176,7 @@ fn reader_correct_line_numbers() {
     );
 }
 
-/// Test that from_reader works correctly for valid input (no regression).
+/// Test that `from_reader` works correctly for valid input (no regression).
 #[test]
 fn reader_valid_input_works() {
     let yaml = "x: 10\ny: 20\n";

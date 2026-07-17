@@ -649,8 +649,8 @@ inner:
         items: Vec<String>,
     }
 
-    /// Note: ListCow with #[serde(borrow)] requires Deserialize<'de>, not DeserializeOwned.
-    /// This means it cannot be used with from_str() currently.
+    /// Note: `ListCow` with `#[serde(borrow)]` requires `Deserialize<'de>`, not `DeserializeOwned`.
+    /// This means it cannot be used with `from_str()` currently.
     /// The struct is kept here to document the limitation.
     #[derive(Debug, Deserialize, PartialEq)]
     struct ListCow<'a> {

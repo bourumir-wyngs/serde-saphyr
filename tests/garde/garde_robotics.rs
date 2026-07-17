@@ -66,7 +66,7 @@ struct Root {
     #[serde(default = "default_sign_corrections")]
     #[garde(length(min = 5, max = 6), inner(custom(sign_correction)))]
     pub opw_kinematics_joint_sign_corrections: Vec<i8>,
-    /// Optional; overrides opw_kinematics_geometric_parameters.dof if present
+    /// Optional; overrides `opw_kinematics_geometric_parameters.dof` if present
     #[serde(default)]
     #[garde(range(min = 5, max = 6))]
     pub dof: Option<i8>,

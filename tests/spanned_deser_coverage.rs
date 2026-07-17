@@ -1,5 +1,5 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
-/// Targeted tests to increase coverage of src/de/spanned_deser.rs.
+/// Targeted tests to increase coverage of `src/de/spanned_deser.rs`.
 ///
 /// Covers:
 /// - `deserialize_yaml_spanned` with `peek()` returning `None` (end-of-stream path, line 38)

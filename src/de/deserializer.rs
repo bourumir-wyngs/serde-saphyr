@@ -208,7 +208,7 @@ pub struct YamlDeserializer<'de, 'e> {
     /// Derived struct visitors reject repeated fields themselves, so `LastWins`
     /// needs duplicate fields collapsed before they reach Serde.
     struct_mode: bool,
-    /// True when the recorded key node was exactly an empty mapping (MapStart followed by MapEnd).
+    /// True when the recorded key node was exactly an empty mapping (`MapStart` followed by `MapEnd`).
     key_empty_map_node: bool,
     /// Comments that the parent mapping associated with this value.
     pub(super) pending_comments: Vec<Cow<'de, str>>,
@@ -659,7 +659,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     /// - Even for structs/enums, Serde may call `deserialize_any` for individual field values
     ///   when the driving logic cannot or does not specify a concrete numeric/bool/char method.
     ///
-    /// Can we force Serde to call the typed methods (deserialize_u8, deserialize_bool, ...)?
+    /// Can we force Serde to call the typed methods (`deserialize_u8`, `deserialize_bool`, ...)?
     /// - Not from within a format Deserializer. Serde chooses which method to call based on the
     ///   Rust type information it has via the caller’s `Deserialize`/`DeserializeSeed` logic.
     ///   Implementing the typed methods (which we do) ensures Serde will use them whenever it knows

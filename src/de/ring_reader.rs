@@ -564,7 +564,7 @@ mod tests {
     /// A deterministic reader for tests:
     /// - serves bytes from an internal buffer
     /// - counts how many bytes have been read from it
-    /// - can limit max chunk size per read() call (to force partial reads)
+    /// - can limit max chunk size per `read()` call (to force partial reads)
     #[derive(Debug)]
     struct CountingReader {
         data: Vec<u8>,
