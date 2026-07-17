@@ -409,7 +409,6 @@ where
                         value, style, tag, ..
                     })) if scalar_document_is_empty_or_null(tag, value, style) => {
                         let _ = self.src.next();
-                        continue;
                     }
                     Ok(Some(_)) => {
                         let mut recorder = crate::path_map::PathRecorder::new();

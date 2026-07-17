@@ -1276,8 +1276,7 @@ impl LiveEvents<'_> {
                     return false;
                 }
                 _ => {
-                    // Skip all other events (scalars, mappings, sequences, etc.)
-                    continue;
+                    // Skip all other events (scalars, mappings, sequences, etc. and continue)
                 }
             }
         }

@@ -138,7 +138,9 @@ impl<R: Read> Iterator for ChunkedChars<R> {
                     return None;
                 }
                 Ok(_) => break buf[0],
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+                    // Retry after interrupted reads.
+                }
                 Err(error) => {
                     self.finished = true;
                     return Some(Err(ParserErrorKind::InputIo {

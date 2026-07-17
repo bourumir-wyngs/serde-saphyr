@@ -47,7 +47,6 @@ fn parse_digits_u128(digits: &str, radix: u32) -> Option<u128> {
                 if !prev_ok || !next_ok {
                     return None;
                 }
-                continue;
             }
             b'0'..=b'9' => {
                 let d = u32::from(b - b'0');
