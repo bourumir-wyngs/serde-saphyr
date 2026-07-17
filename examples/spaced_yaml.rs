@@ -1,9 +1,9 @@
-//! Example demonstrating SpaceAfter wrapper for adding empty lines in YAML output.
+//! Example demonstrating `SpaceAfter` wrapper for adding empty lines in YAML output.
 //!
 //! This wrapper allows you to visually separate sections in your YAML
 //! configuration files by adding blank lines after values.
 //!
-//! Run with: cargo run --example spaced_yaml
+//! Run with: `cargo run --example spaced_yaml`
 
 use serde::{Deserialize, Serialize};
 use serde_saphyr::{Commented, SpaceAfter, to_string};
@@ -45,7 +45,7 @@ struct LoggingConfig {
     file: String,
 }
 
-/// Demonstrates combining SpaceAfter with other wrappers like Commented.
+/// Demonstrates combining `SpaceAfter` with other wrappers like `Commented`.
 #[derive(Debug, Serialize)]
 struct AnnotatedConfig {
     title: SpaceAfter<String>, // Blank line after title

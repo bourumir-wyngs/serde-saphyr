@@ -267,14 +267,16 @@ impl<T> From<Rc<T>> for RcAnchor<T> {
 }
 
 impl<T> RcAnchor<T> {
-    /// Create inner Rc (takes arbitrary value Rc can take)
+    /// Wrap a value in a new anchored [`Rc`].
+    #[must_use]
     pub fn wrapping(x: T) -> Self {
         RcAnchor(Rc::new(x))
     }
 }
 
 impl<T> ArcAnchor<T> {
-    /// Create inner Arc (takes arbitrary value Arc can take)
+    /// Wrap a value in a new anchored [`Arc`].
+    #[must_use]
     pub fn wrapping(x: T) -> Self {
         ArcAnchor(Arc::new(x))
     }
@@ -295,12 +297,6 @@ impl<T> From<&Rc<T>> for RcWeakAnchor<T> {
         RcWeakAnchor(Rc::downgrade(rc))
     }
 }
-impl<T> From<Rc<T>> for RcWeakAnchor<T> {
-    #[inline]
-    fn from(rc: Rc<T>) -> Self {
-        RcWeakAnchor(Rc::downgrade(&rc))
-    }
-}
 impl<T> From<&RcAnchor<T>> for RcWeakAnchor<T> {
     #[inline]
     fn from(rca: &RcAnchor<T>) -> Self {
@@ -311,12 +307,6 @@ impl<T> From<&Arc<T>> for ArcWeakAnchor<T> {
     #[inline]
     fn from(arc: &Arc<T>) -> Self {
         ArcWeakAnchor(Arc::downgrade(arc))
-    }
-}
-impl<T> From<Arc<T>> for ArcWeakAnchor<T> {
-    #[inline]
-    fn from(arc: Arc<T>) -> Self {
-        ArcWeakAnchor(Arc::downgrade(&arc))
     }
 }
 impl<T> From<&ArcAnchor<T>> for ArcWeakAnchor<T> {
@@ -411,6 +401,7 @@ impl<T> From<ArcAnchor<T>> for Arc<T> {
 
 impl<T> RcRecursive<T> {
     /// Create a new recursive anchor with an initialized value.
+    #[must_use]
     pub fn wrapping(x: T) -> Self {
         RcRecursive(Rc::new(RefCell::new(Some(x))))
     }
@@ -439,6 +430,7 @@ impl<T> RcRecursive<T> {
 
 impl<T> ArcRecursive<T> {
     /// Create a new recursive anchor with an initialized value.
+    #[must_use]
     pub fn wrapping(x: T) -> Self {
         ArcRecursive(Arc::new(Mutex::new(Some(x))))
     }

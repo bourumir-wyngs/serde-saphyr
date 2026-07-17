@@ -46,7 +46,7 @@ fn yaml_9dxl_stream_three_documents_no_directive() {
     match docs.last().unwrap() {
         Doc::MInt(m) => assert_eq!(m.get("matches %"), Some(&20)),
         Doc::MStr(m) => assert_eq!(m.get("matches %").map(String::as_str), Some("20")),
-        other => panic!(
+        other @ Doc::Null(_) => panic!(
             "expected last to be mapping with int or string value, got: {:?}",
             other
         ),

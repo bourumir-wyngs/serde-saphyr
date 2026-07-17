@@ -23,11 +23,11 @@ string
     let options = serde_saphyr::options! {}.with_include_resolver(
         |req: IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
             if req.spec == "included.yaml" {
-                Ok(ResolvedInclude {
-                    id: "included.yaml".to_string(),
-                    name: "included.yaml".to_string(),
-                    source: serde_saphyr::InputSource::from_string(included_yaml.to_string()),
-                })
+                Ok(ResolvedInclude::new(
+                    "included.yaml",
+                    "included.yaml",
+                    serde_saphyr::InputSource::from_string(included_yaml.to_string()),
+                ))
             } else {
                 Err(IncludeResolveError::Message(format!(
                     "file not found: {}",

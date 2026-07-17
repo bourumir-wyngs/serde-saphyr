@@ -1,5 +1,6 @@
 use serde::Deserialize;
-use serde_saphyr::{Error, ValidationSource};
+use serde_saphyr::{Error, Options, ValidationSource};
+use std::fmt::Write as _;
 use validator::Validate;
 
 #[cfg(feature = "include")]
@@ -50,8 +51,8 @@ impl Validate for NullableTopLevel {
     }
 }
 
-fn assert_empty_document_validation_error(err: Error) {
-    assert_validator_validation_error_shape(&err);
+fn assert_empty_document_validation_error(err: &Error) {
+    assert_validator_validation_error_shape(err);
 
     let rendered = err.to_string();
     assert!(
@@ -86,7 +87,7 @@ fn assert_validator_validation_error_shape(err: &Error) {
 fn from_str_with_options_validate_runs_validator_validation() {
     let yaml = "a: \"\"\n";
 
-    let err = serde_saphyr::from_str_with_options_validate::<Root>(yaml, Default::default())
+    let err = serde_saphyr::from_str_with_options_validate::<Root>(yaml, Options::default())
         .expect_err("must fail validation");
 
     let rendered = err.to_string();
@@ -109,7 +110,7 @@ fn validator_error_inside_commented_subtree_uses_child_location() {
     let yaml = "item:\n  value: \"\"\n";
 
     let err =
-        serde_saphyr::from_str_with_options_validate::<CommentedRoot>(yaml, Default::default())
+        serde_saphyr::from_str_with_options_validate::<CommentedRoot>(yaml, Options::default())
             .expect_err("must fail validation");
 
     let location = err
@@ -128,10 +129,10 @@ fn validator_error_inside_commented_subtree_uses_child_location() {
 #[test]
 fn from_str_with_options_validate_preserves_validation_error_after_synthetic_null() {
     let err =
-        serde_saphyr::from_str_with_options_validate::<NullableTopLevel>("", Default::default())
+        serde_saphyr::from_str_with_options_validate::<NullableTopLevel>("", Options::default())
             .expect_err("empty document must fail validation");
 
-    assert_empty_document_validation_error(err);
+    assert_empty_document_validation_error(&err);
 }
 
 #[test]
@@ -139,11 +140,11 @@ fn from_reader_with_options_validate_preserves_validation_error_after_synthetic_
     let reader = std::io::Cursor::new(Vec::<u8>::new());
     let err = serde_saphyr::from_reader_with_options_validate::<_, NullableTopLevel>(
         reader,
-        Default::default(),
+        Options::default(),
     )
     .expect_err("empty document must fail validation");
 
-    assert_empty_document_validation_error(err);
+    assert_empty_document_validation_error(&err);
 }
 
 #[test]
@@ -158,7 +159,7 @@ fn serde_rename() {
     let yaml = "myField: \"\"\n";
 
     let err =
-        serde_saphyr::from_str_with_options_validate::<StyleRenamedRoot>(yaml, Default::default())
+        serde_saphyr::from_str_with_options_validate::<StyleRenamedRoot>(yaml, Options::default())
             .expect_err("must fail validation");
     let rendered = err.to_string();
 
@@ -176,7 +177,7 @@ fn serde_rename() {
 fn from_multiple_with_options_validate_returns_all_validation_errors() {
     let yaml = "a: \"\"\n---\na: \"\"\n";
 
-    let err = serde_saphyr::from_multiple_with_options_validate::<Root>(yaml, Default::default())
+    let err = serde_saphyr::from_multiple_with_options_validate::<Root>(yaml, Options::default())
         .expect_err("must fail validation");
 
     let Error::ValidationErrors {
@@ -203,13 +204,13 @@ fn from_multiple_with_options_validate_returns_all_validation_errors() {
 fn reader_validation_root_snapshot_out_of_range_has_no_incorrect_snippet() {
     let mut yaml = String::new();
     for i in 0..9000 {
-        yaml.push_str(&format!("skip_{i}: x\n"));
+        let _ = writeln!(yaml, "skip_{i}: x");
     }
     yaml.push_str("a: \"\"\n");
     let reader = std::io::Cursor::new(yaml.into_bytes());
 
     let err =
-        serde_saphyr::from_reader_with_options_validate::<_, Root>(reader, Default::default())
+        serde_saphyr::from_reader_with_options_validate::<_, Root>(reader, Options::default())
             .expect_err("must fail validation");
 
     assert_validator_validation_error_shape(&err);
@@ -239,7 +240,7 @@ fn read_with_options_validate_validates_each_document_in_iterator() {
     let mut reader = std::io::Cursor::new(yaml.as_bytes());
 
     let mut it =
-        serde_saphyr::read_with_options_validate::<_, Root>(&mut reader, Default::default());
+        serde_saphyr::read_with_options_validate::<_, Root>(&mut reader, Options::default());
 
     let first = it
         .next()
@@ -282,11 +283,11 @@ fn reader_validator_validation_in_text_include_has_snippet() {
     let options = serde_saphyr::options! {}.with_include_resolver(
         |req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
             if req.spec == "child.yaml" {
-                Ok(serde_saphyr::ResolvedInclude {
-                    id: req.spec.to_string(),
-                    name: req.spec.to_string(),
-                    source: serde_saphyr::InputSource::from_string("\"\"\n".to_string()),
-                })
+                Ok(serde_saphyr::ResolvedInclude::new(
+                    req.spec,
+                    req.spec,
+                    serde_saphyr::InputSource::from_string("\"\"\n".to_string()),
+                ))
             } else {
                 Err(serde_saphyr::IncludeResolveError::Message("not found".to_string()))
             }
@@ -320,11 +321,11 @@ fn from_str_with_options_validate_reports_validator_error_from_included_input() 
     let options = serde_saphyr::options! {}.with_include_resolver(
         |req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
             if req.spec == "child.yaml" {
-                Ok(serde_saphyr::ResolvedInclude {
-                    id: req.spec.to_string(),
-                    name: req.spec.to_string(),
-                    source: serde_saphyr::InputSource::from_string("\"\"\n".to_string()),
-                })
+                Ok(serde_saphyr::ResolvedInclude::new(
+                    req.spec,
+                    req.spec,
+                    serde_saphyr::InputSource::from_string("\"\"\n".to_string()),
+                ))
             } else {
                 Err(serde_saphyr::IncludeResolveError::Message("not found".to_string()))
             }
@@ -357,11 +358,11 @@ fn validator_multidoc_validation_in_included_file_renders_included_snippet() {
     let options = serde_saphyr::options! {}.with_include_resolver(
         |req: serde_saphyr::IncludeRequest| -> Result<serde_saphyr::ResolvedInclude, serde_saphyr::IncludeResolveError> {
             match req.spec {
-                "child.yaml" => Ok(serde_saphyr::ResolvedInclude {
-                    id: req.spec.to_string(),
-                    name: req.spec.to_string(),
-                    source: serde_saphyr::InputSource::from_string("value: \"\"\n".to_string()),
-                }),
+                "child.yaml" => Ok(serde_saphyr::ResolvedInclude::new(
+                    req.spec,
+                    req.spec,
+                    serde_saphyr::InputSource::from_string("value: \"\"\n".to_string()),
+                )),
                 other => Err(serde_saphyr::IncludeResolveError::Message(format!("unexpected include: {other}"))),
             }
         },
@@ -421,7 +422,7 @@ fn from_slice_validate_runs_validator_validation() {
 
 #[test]
 fn from_slice_with_options_validate_rejects_invalid_utf8() {
-    let err = serde_saphyr::from_slice_with_options_validate::<Root>(&[0xff], Default::default())
+    let err = serde_saphyr::from_slice_with_options_validate::<Root>(&[0xff], Options::default())
         .expect_err("invalid UTF-8 must be rejected");
 
     assert!(matches!(err, Error::InvalidUtf8Input));

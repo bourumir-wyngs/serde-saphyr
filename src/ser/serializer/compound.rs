@@ -30,6 +30,7 @@ fn is_simple_key_text(text: &str) -> bool {
 ///
 /// Created by `YamlSerializer::serialize_seq`/`serialize_tuple`. Holds a mutable
 /// reference to the parent serializer and formatting state for the sequence.
+#[doc(hidden)]
 pub struct SeqSer<'a, 'b, W: Write> {
     /// Parent YAML serializer.
     pub(super) ser: &'a mut YamlSerializer<'b, W>,
@@ -148,15 +149,18 @@ impl<W: Write> SerializeSeq for SeqSer<'_, '_, W> {
 /// - Anchors:
 ///   - Internal strong-anchor payloads (`__yaml_anchor`),
 ///   - Internal weak-anchor payloads (`__yaml_weak_anchor`).
-pub enum TupleSer<'a, 'b, W: Write> {
-    /// Normal tuple-struct: a block sequence.
+#[doc(hidden)]
+pub struct TupleSer<'a, 'b, W: Write> {
+    inner: TupleSerInner<'a, 'b, W>,
+}
+
+enum TupleSerInner<'a, 'b, W: Write> {
     Seq(SeqSer<'a, 'b, W>),
-    /// Anchor/comment wrapper payload.
     Special(SpecialTupleSer<'a, 'b, W>),
 }
 
 /// State machine for the internal anchor/comment tuple wrappers.
-pub struct SpecialTupleSer<'a, 'b, W: Write> {
+struct SpecialTupleSer<'a, 'b, W: Write> {
     /// Parent YAML serializer.
     ser: &'a mut YamlSerializer<'b, W>,
     /// Variant describing how to interpret fields.
@@ -185,17 +189,29 @@ enum TupleKind {
     Commented,    // [comment, value]
 }
 impl<'a, 'b, W: Write> TupleSer<'a, 'b, W> {
+    pub(super) fn sequence(seq: SeqSer<'a, 'b, W>) -> Self {
+        Self {
+            inner: TupleSerInner::Seq(seq),
+        }
+    }
+
     /// Create a tuple serializer for internal strong-anchor payloads.
     pub(super) fn anchor_strong(ser: &'a mut YamlSerializer<'b, W>) -> Self {
-        TupleSer::Special(SpecialTupleSer::new(ser, TupleKind::AnchorStrong))
+        Self {
+            inner: TupleSerInner::Special(SpecialTupleSer::new(ser, TupleKind::AnchorStrong)),
+        }
     }
     /// Create a tuple serializer for internal weak-anchor payloads.
     pub(super) fn anchor_weak(ser: &'a mut YamlSerializer<'b, W>) -> Self {
-        TupleSer::Special(SpecialTupleSer::new(ser, TupleKind::AnchorWeak))
+        Self {
+            inner: TupleSerInner::Special(SpecialTupleSer::new(ser, TupleKind::AnchorWeak)),
+        }
     }
     /// Create a tuple serializer for internal commented wrapper.
     pub(super) fn commented(ser: &'a mut YamlSerializer<'b, W>) -> Self {
-        TupleSer::Special(SpecialTupleSer::new(ser, TupleKind::Commented))
+        Self {
+            inner: TupleSerInner::Special(SpecialTupleSer::new(ser, TupleKind::Commented)),
+        }
     }
 }
 
@@ -220,16 +236,16 @@ impl<W: Write> SerializeTupleStruct for TupleSer<'_, '_, W> {
     type Error = Error;
 
     fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<()> {
-        match self {
-            TupleSer::Seq(seq) => SerializeSeq::serialize_element(seq, value),
-            TupleSer::Special(s) => s.serialize_field(value),
+        match &mut self.inner {
+            TupleSerInner::Seq(seq) => SerializeSeq::serialize_element(seq, value),
+            TupleSerInner::Special(s) => s.serialize_field(value),
         }
     }
 
     fn end(self) -> Result<()> {
-        match self {
-            TupleSer::Seq(seq) => SerializeSeq::end(seq),
-            TupleSer::Special(s) => s.end(),
+        match self.inner {
+            TupleSerInner::Seq(seq) => SerializeSeq::end(seq),
+            TupleSerInner::Special(s) => s.end(),
         }
     }
 }
@@ -381,6 +397,7 @@ impl<W: Write> SerializeTupleVariant for SeqSer<'_, '_, W> {
 ///
 /// Created by `YamlSerializer::serialize_map`/`serialize_struct`. Manages indentation
 /// and flow/block style for key-value pairs.
+#[doc(hidden)]
 pub struct MapSer<'a, 'b, W: Write> {
     /// Parent YAML serializer.
     pub(super) ser: &'a mut YamlSerializer<'b, W>,
@@ -626,6 +643,7 @@ impl<W: Write> SerializeStruct for MapSer<'_, '_, W> {
 ///
 /// Created by `YamlSerializer::serialize_struct_variant` to emit the variant name
 /// followed by a block mapping of fields.
+#[doc(hidden)]
 pub struct StructVariantSer<'a, 'b, W: Write> {
     /// Parent YAML serializer.
     pub(super) ser: &'a mut YamlSerializer<'b, W>,

@@ -33,7 +33,9 @@ fn yaml_v9d5_compact_block_mappings() {
     // First element: { sun: yellow }
     let first = match &v[0] {
         Item::Simple(m) => m,
-        other => panic!("expected first element to be Simple map, got {:?}", other),
+        other @ Item::Complex(_) => {
+            panic!("expected first element to be Simple map, got {other:?}");
+        }
     };
     assert_eq!(first.len(), 1);
     assert_eq!(first.get("sun").map(String::as_str), Some("yellow"));
@@ -41,7 +43,9 @@ fn yaml_v9d5_compact_block_mappings() {
     // Second element: { { earth: blue }: { moon: white } }
     let second = match &v[1] {
         Item::Complex(m) => m,
-        other => panic!("expected second element to be Complex map, got {:?}", other),
+        other @ Item::Simple(_) => {
+            panic!("expected second element to be Complex map, got {other:?}");
+        }
     };
     assert_eq!(second.len(), 1);
 

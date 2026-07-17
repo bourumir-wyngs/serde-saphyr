@@ -1,6 +1,6 @@
 [package]
 name = "serde-saphyr"
-version = "0.0.29"
+version = "1.0.0-rc.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "YAML (de)serializer for Serde, emphasizing panic-free parsing, fast builds and good error reporting. Supports properties, comments, include"
@@ -12,15 +12,9 @@ keywords = ["yaml", "serde", "config", "ros", "wasm"]
 exclude = ["Cargo.lock", ".github/**", ".idea/**"]
 
 [dependencies]
-# granit-parser = { version = "0.0.8", optional = true }
+# granit-parser = { version = "1.0.0-rc.1", optional = true }
 # granit-parser = { path = "/home/audrius/rust/granit-parser", optional = true }
-granit-parser = { git = "https://github.com/bourumir-wyngs/granit-parser", optional = true }
-#granit-parser = {
-#    git = "https://github.com/bourumir-wyngs/granit-parser",
-#    branch = "master",
-#    optional = true
-#}
-
+granit-parser = { git = "https://github.com/bourumir-wyngs/granit-parser", optional = true, features = ["std"] }
 # Normal builds use core only, to allow building serde-saphyr in parallel with serde.
 # Complete serde is only used when serde_derived_types is enabled (off by default)
 serde_core = "1"
@@ -216,8 +210,8 @@ required-features = ["serialize", "deserialize"]
 [lints.rust]
 unsafe_code = "forbid"
 
-# `serde-saphyr` is moving away from struct literals. During the migration period, semver checks temporarily allow
-# adding fields to these structures, and the badge does not treat new fields as a breaking change
-# (which is correct when using the macros).
-[package.metadata.cargo-semver-checks.lints]
-constructible_struct_adds_field = "allow"
+[lints.clippy]
+# "that::function applies to this variable" needs more mental effort than variable.function()
+redundant_closure_for_method_calls = "allow"
+# The explicit delimiter style is easier to scan in YAML fixtures.
+needless_raw_string_hashes = "allow"

@@ -43,7 +43,7 @@ fn quote_all_single_quote_in_string_escaped() {
     let yaml = to_string_with_options(&"it's", opts).unwrap();
     // "it's" contains a single quote; in quote_all mode it may use double quotes
     assert!(
-        yaml.contains("it") && yaml.contains("s"),
+        yaml.contains("it") && yaml.contains('s'),
         "expected quoted string: {yaml}"
     );
 }
@@ -85,7 +85,7 @@ fn write_quoted_named_escapes_in_value() {
         ('\x1b', "\\e"),
     ] {
         let s = format!("x{}y", ch);
-        let yaml = to_string_with_options(&s.as_str(), opts).unwrap();
+        let yaml = to_string_with_options(&s.as_str(), opts.clone()).unwrap();
         assert!(
             yaml.contains(expected),
             "expected {expected} for char {:?}: {yaml}",
@@ -94,18 +94,18 @@ fn write_quoted_named_escapes_in_value() {
     }
     // NUL \x00 -> \0
     let s = "x\x00y";
-    let yaml = to_string_with_options(&s, opts).unwrap();
+    let yaml = to_string_with_options(&s, opts.clone()).unwrap();
     assert!(yaml.contains("\\0"), "expected \\0 for NUL: {yaml}");
     // NEL \u{0085} -> \N
     let s = "x\u{0085}y";
-    let yaml = to_string_with_options(&s, opts).unwrap();
+    let yaml = to_string_with_options(&s, opts.clone()).unwrap();
     assert!(yaml.contains("\\N"), "expected \\N for NEL: {yaml}");
     // LS \u{2028} -> \L, PS \u{2029} -> \P (combine with backslash to force double-quoting)
     let s = "x\\\u{2028}y";
-    let yaml = to_string_with_options(&s, opts).unwrap();
+    let yaml = to_string_with_options(&s, opts.clone()).unwrap();
     assert!(yaml.contains("\\L"), "expected \\L for LS: {yaml}");
     let s = "x\\\u{2029}y";
-    let yaml = to_string_with_options(&s, opts).unwrap();
+    let yaml = to_string_with_options(&s, opts.clone()).unwrap();
     assert!(yaml.contains("\\P"), "expected \\P for PS: {yaml}");
     // BOM \u{FEFF} -> \uFEFF (combine with backslash to force double-quoting)
     let s = "x\\\u{FEFF}y";

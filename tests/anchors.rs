@@ -87,15 +87,15 @@ seq:
     #[test]
     fn anchor_assign() {
         let _anchor: RcAnchor<Node> = Rc::new(Node {
-            name: "".to_string(),
+            name: String::new(),
         })
         .into();
 
         let nrc = Rc::new(Node {
-            name: "".to_string(),
+            name: String::new(),
         });
 
-        let _anchor: RcWeakAnchor<Node> = nrc.into();
+        let _anchor: RcWeakAnchor<Node> = (&nrc).into();
     }
 
     #[test]

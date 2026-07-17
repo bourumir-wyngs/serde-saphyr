@@ -122,9 +122,9 @@ impl RequireIndent {
     /// For [`Uniform`](RequireIndent::Uniform), the first non-zero indentation encountered is
     /// remembered, and subsequent calls compare against that stored value.
     ///
-    /// Returns `Ok(())` if valid, or an [`Error::IndentationError`](crate::de_error::Error::IndentationError)
-    /// with [`Location::UNKNOWN`](crate::Location) — the caller is expected to attach the
-    /// correct location later via [`Error::with_location`](crate::de_error::Error::with_location).
+    /// Returns `Ok(())` if valid, or an [`Error::IndentationError`](crate::Error::IndentationError)
+    /// with [`Location::UNKNOWN`](crate::Location). Deserialization entry points attach the
+    /// source location before returning this error.
     pub fn is_valid(&mut self, n: usize) -> Result<(), crate::de_error::Error> {
         let ok = match self {
             RequireIndent::Unchecked => true,

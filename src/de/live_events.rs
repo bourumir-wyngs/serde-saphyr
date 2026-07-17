@@ -43,9 +43,9 @@ use granit_parser::{Event, Placement, ScalarStyle, ScanError, Span, StructureSty
 use granit_parser::StrInput;
 use smallvec::SmallVec;
 use std::borrow::Cow;
-use std::cell::RefCell;
 #[cfg(feature = "properties")]
 use std::collections::HashMap;
+#[cfg(any(feature = "include", feature = "properties"))]
 use std::rc::Rc;
 
 #[cfg(feature = "include")]
@@ -220,8 +220,6 @@ pub(crate) struct LiveEvents<'a> {
     /// Indicates whether a `DocumentEnd` was seen for the last parsed document.
     seen_doc_end: bool,
 
-    /// Error reference that is checked at the end of parsing.
-    error: Rc<RefCell<Option<std::io::Error>>>,
     /// Invalid options are reported through the same stream error channel as parse errors.
     pending_error: Option<Error>,
 
@@ -275,7 +273,7 @@ impl<'a> LiveEvents<'a> {
     pub(crate) fn from_reader<R: std::io::Read + 'a>(
         inputs: R,
         mut options: Options,
-        policy: EnforcingPolicy,
+        scope: EnforcingPolicy,
     ) -> Self {
         let budget = options.budget.take();
         let budget_report = options.budget_report.take();
@@ -289,7 +287,7 @@ impl<'a> LiveEvents<'a> {
         #[cfg(feature = "properties")]
         let property_syntax = options.property_syntax;
         #[cfg(feature = "include")]
-        let resolver = crate::resolver_from_options(options);
+        let resolver = crate::resolver_from_options(&options);
 
         // Build a streaming character iterator from the byte reader, honoring input byte cap if configured
         let max_bytes = budget.as_ref().and_then(|b| b.max_reader_input_bytes);
@@ -297,18 +295,12 @@ impl<'a> LiveEvents<'a> {
         let default_budget = crate::Budget::default();
         #[cfg(feature = "include")]
         let resolved_budget = budget.as_ref().unwrap_or(&default_budget);
-        let (input, error, reader_bytes_read) =
-            buffered_input_from_reader_with_limit(inputs, max_bytes);
+        let (input, reader_bytes_read) = buffered_input_from_reader_with_limit(inputs, max_bytes);
         #[cfg(not(feature = "include"))]
         let _ = &reader_bytes_read;
         #[cfg(feature = "include")]
-        let parser = create_parser_from_reader_input(
-            input,
-            error.clone(),
-            reader_bytes_read,
-            resolved_budget,
-            resolver,
-        );
+        let parser =
+            create_parser_from_reader_input(input, reader_bytes_read, resolved_budget, resolver);
         #[cfg(not(feature = "include"))]
         let parser = granit_parser::Parser::new(input);
         Self {
@@ -324,7 +316,7 @@ impl<'a> LiveEvents<'a> {
             inject: Vec::with_capacity(2),
             anchors: Vec::with_capacity(8),
             rec_stack: Vec::with_capacity(2),
-            budget: budget.map(|budget| BudgetEnforcer::new(budget, policy, merge_keys)),
+            budget: budget.map(|budget| BudgetEnforcer::new(budget, scope, merge_keys)),
 
             budget_report,
             budget_report_cb,
@@ -342,7 +334,6 @@ impl<'a> LiveEvents<'a> {
             per_anchor_expansions: Vec::new(),
             seen_doc_end: false,
 
-            error,
             pending_error,
 
             require_indent,
@@ -375,7 +366,7 @@ impl<'a> LiveEvents<'a> {
         #[cfg(feature = "properties")]
         let property_syntax = options.property_syntax;
         #[cfg(feature = "include")]
-        let resolver = crate::resolver_from_options(options);
+        let resolver = crate::resolver_from_options(&options);
 
         let input = input.strip_prefix('\u{FEFF}').unwrap_or(input);
         #[cfg(feature = "include")]
@@ -383,18 +374,9 @@ impl<'a> LiveEvents<'a> {
         #[cfg(feature = "include")]
         let resolved_budget = budget.as_ref().unwrap_or(&default_budget);
         #[cfg(feature = "include")]
-        // Share the IO error cell with potential reader-based includes.
-        let error = Rc::new(RefCell::new(None));
-        #[cfg(feature = "include")]
         let reader_bytes_read = Rc::new(std::cell::Cell::new(0));
         #[cfg(feature = "include")]
-        let parser = create_parser_from_str(
-            input,
-            error.clone(),
-            reader_bytes_read,
-            resolved_budget,
-            resolver,
-        );
+        let parser = create_parser_from_str(input, reader_bytes_read, resolved_budget, resolver);
         #[cfg(not(feature = "include"))]
         let parser = create_parser_from_str(input);
         Self {
@@ -429,17 +411,6 @@ impl<'a> LiveEvents<'a> {
             per_anchor_expansions: Vec::new(),
             seen_doc_end: false,
 
-            // Used to surface IO errors from reader-based includes.
-            error: {
-                #[cfg(feature = "include")]
-                {
-                    error
-                }
-                #[cfg(not(feature = "include"))]
-                {
-                    Rc::new(RefCell::new(None))
-                }
-            },
             pending_error,
 
             require_indent,
@@ -532,7 +503,7 @@ impl<'a> LiveEvents<'a> {
                 text,
                 kind: self.trailing_comment_kind(location),
             }),
-            Placement::Free | Placement::Last => {}
+            _ => {}
         }
     }
 
@@ -591,9 +562,11 @@ impl<'a> LiveEvents<'a> {
             // if it is exhausted.
 
             match ev {
-                Ev::SeqStart { .. } | Ev::MapStart { .. } => {}
-                Ev::SeqEnd { .. } | Ev::MapEnd { .. } => {}
-                Ev::Scalar { .. } => {}
+                Ev::SeqStart { .. }
+                | Ev::MapStart { .. }
+                | Ev::SeqEnd { .. }
+                | Ev::MapEnd { .. }
+                | Ev::Scalar { .. } => {}
                 Ev::Taken { location } => {
                     return Err(Error::unexpected("consumed event").with_location(location));
                 }
@@ -773,13 +746,16 @@ impl<'a> LiveEvents<'a> {
                     return Ok(Some(ev));
                 }
 
-                Event::MappingStart(_style, anchor_id, _tag) => {
+                Event::MappingStart(_style, anchor_id, tag) => {
+                    #[cfg(not(feature = "include"))]
+                    let _ = tag;
+
                     #[cfg(feature = "include")]
                     let mut anchor_id = anchor_id;
                     #[cfg(feature = "include")]
                     if self.parser.has_resolver()
                         && !matches!(
-                            crate::tags::parse_include_tag(&_tag),
+                            crate::tags::parse_include_tag(&tag),
                             crate::tags::IncludeTag::NotInclude
                         )
                     {
@@ -930,7 +906,11 @@ impl<'a> LiveEvents<'a> {
                     continue;
                 }
 
-                Event::Nothing => continue,
+                _ => {
+                    return Err(
+                        Error::msg("unsupported event from granit-parser").with_location(location)
+                    );
+                }
             }
         }
 
@@ -1104,13 +1084,9 @@ impl<'a> LiveEvents<'a> {
     #[cold]
     pub(crate) fn finish(&mut self) -> Result<(), Error> {
         let pending_error = self.pending_error.take();
-        let io_error = self.io_error().err();
         let budget_breach = self.deliver_budget_report();
 
         if let Some(err) = pending_error {
-            return Err(err);
-        }
-        if let Some(err) = io_error {
             return Err(err);
         }
         if let Some(breach) = budget_breach {
@@ -1135,15 +1111,6 @@ impl<'a> LiveEvents<'a> {
         }
         None
     }
-
-    #[cold]
-    fn io_error(&self) -> Result<(), Error> {
-        if let Some(error) = self.error.take() {
-            Err(Error::IOError { cause: error })
-        } else {
-            Ok(())
-        }
-    }
 }
 
 impl Drop for LiveEvents<'_> {
@@ -1161,7 +1128,6 @@ impl<'de> Events<'de> for LiveEvents<'de> {
         if let Some(err) = self.pending_error.take() {
             return Err(err);
         }
-        self.io_error()?;
 
         if let Some(ev) = self.look.take() {
             self.clear_comments_for_consumed_event();
@@ -1181,7 +1147,6 @@ impl<'de> Events<'de> for LiveEvents<'de> {
         if let Some(err) = self.pending_error.take() {
             return Err(err);
         }
-        self.io_error()?;
 
         if self.look.is_none() {
             self.look = self.next_impl()?;
@@ -1315,8 +1280,7 @@ impl LiveEvents<'_> {
                     return false;
                 }
                 _ => {
-                    // Skip all other events (scalars, mappings, sequences, etc.)
-                    continue;
+                    // Skip all other events (scalars, mappings, sequences, etc. and continue)
                 }
             }
         }

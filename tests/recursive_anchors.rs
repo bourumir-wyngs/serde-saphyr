@@ -117,8 +117,8 @@ foo: &anchor
     let outer = serde_saphyr::from_str::<Outer>(yaml)?;
     assert_recursive_outer(&outer);
 
-    let _outer_arc = serde_saphyr::from_str::<OuterArc>(yaml)?;
-    assert_recursive_outer_arc(&_outer_arc);
+    let outer_arc = serde_saphyr::from_str::<OuterArc>(yaml)?;
+    assert_recursive_outer_arc(&outer_arc);
 
     Ok(())
 }

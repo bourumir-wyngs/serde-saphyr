@@ -4,10 +4,31 @@ use serde_saphyr::from_slice;
 use serde_saphyr::{Error, from_str};
 
 #[cfg(any(feature = "garde", feature = "validator"))]
-use serde_saphyr::{CroppedRegion, MessageFormatter, ValidationSource};
+use serde_saphyr::{
+    CroppedRegion, MessageFormatter, ValidationIssue, ValidationSource, path_map::PathKey,
+};
 
 #[cfg(any(feature = "garde", feature = "validator"))]
 use std::borrow::Cow;
+
+#[cfg(any(feature = "garde", feature = "validator"))]
+#[test]
+fn validation_issue_can_be_built_with_a_nested_path() {
+    let path = PathKey::new()
+        .join_key("items")
+        .join_index(2)
+        .join_key("name");
+    let params = vec![("min".to_owned(), "3".to_owned())];
+
+    let issue = ValidationIssue::new(path.clone(), "length")
+        .with_message("too short")
+        .with_params(params.clone());
+
+    assert_eq!(issue.path, path);
+    assert_eq!(issue.code, "length");
+    assert_eq!(issue.message.as_deref(), Some("too short"));
+    assert_eq!(issue.params, params);
+}
 
 #[test]
 fn test_user_formatter_eof() {
@@ -82,13 +103,13 @@ fn custom_formatter_is_used_for_nested_validation_errors_with_snippets() {
     let nested = Error::UnknownAnchor { location: loc };
 
     let err = Error::WithSnippet {
-        regions: vec![CroppedRegion {
-            text: yaml.to_string(),
-            start_line: 1,
-            end_line: 1,
-            source_name: "test.yaml".into(),
-            location: serde_saphyr::Location::UNKNOWN,
-        }],
+        regions: vec![CroppedRegion::new(
+            yaml,
+            "test.yaml",
+            1,
+            1,
+            serde_saphyr::Location::UNKNOWN,
+        )],
         crop_radius: 2,
         error: Box::new(Error::ValidationErrors {
             source: ValidationSource::Garde,
@@ -123,13 +144,13 @@ fn custom_formatter_is_used_for_nested_validator_errors_with_snippets() {
     let nested = Error::UnknownAnchor { location: loc };
 
     let err = Error::WithSnippet {
-        regions: vec![CroppedRegion {
-            text: yaml.to_string(),
-            start_line: 1,
-            end_line: 1,
-            source_name: "test.yaml".into(),
-            location: serde_saphyr::Location::UNKNOWN,
-        }],
+        regions: vec![CroppedRegion::new(
+            yaml,
+            "test.yaml",
+            1,
+            1,
+            serde_saphyr::Location::UNKNOWN,
+        )],
         crop_radius: 2,
         error: Box::new(Error::ValidationErrors {
             source: ValidationSource::Validator,

@@ -1,18 +1,18 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 #[test]
 fn serialize_small_float_scientific_notation() {
-    let value = 0.000004_f64;
+    let value = 0.000_004_f64;
     let yaml = serde_saphyr::to_string(&value).unwrap();
     assert_eq!(yaml.trim(), "4.0e-6");
 
-    let value = 4.5123456e-18_f64;
+    let value = 4.512_345_6e-18_f64;
     let yaml = serde_saphyr::to_string(&value).unwrap();
     assert_eq!(yaml.trim(), "4.5123456e-18");
 }
 
 #[test]
 fn serialize_large_float_scientific_notation() {
-    let value = 40000000000000000000.0_f64;
+    let value = 40_000_000_000_000_000_000.0_f64;
     let yaml = serde_saphyr::to_string(&value).unwrap();
     assert_eq!(yaml.trim(), "4.0e+19");
 }
@@ -42,8 +42,8 @@ use regex::Regex;
 /// - YAML 1.2.2 Core schema float tag resolution regexp
 ///
 /// Spec sources:
-/// - YAML 1.1 float tag repository: https://yaml.org/type/float.html
-/// - YAML 1.2.2 JSON/Core schema tag resolution: https://yaml.org/spec/1.2.2/
+/// - YAML 1.1 float tag repository: <https://yaml.org/type/float.html>
+/// - YAML 1.2.2 JSON/Core schema tag resolution: <https://yaml.org/spec/1.2.2/>
 fn assert_yaml11_and_yaml12_float_scalar(s: &str) {
     // YAML 1.1 `!!float` (base 10) regexp (as published in the YAML 1.1 type repo).
     // NOTE: The published regexp has a known issue allowing extra '.' characters,
@@ -80,22 +80,22 @@ fn serialize_small_float_scientific_notation_2() {
     // --------------------
     // f64 cases
     // --------------------
-    let value = 0.000004_f64;
+    let value = 0.000_004_f64;
     let yaml = serde_saphyr::to_string(&value).unwrap();
     assert_eq!(yaml.trim(), "4.0e-6");
     assert_yaml11_and_yaml12_float_scalar(yaml.trim());
 
-    let value = -0.000004_f64;
+    let value = -0.000_004_f64;
     let yaml = serde_saphyr::to_string(&value).unwrap();
     assert_eq!(yaml.trim(), "-4.0e-6");
     assert_yaml11_and_yaml12_float_scalar(yaml.trim());
 
-    let value = 4.5123456e-18_f64;
+    let value = 4.512_345_6e-18_f64;
     let yaml = serde_saphyr::to_string(&value).unwrap();
     assert_eq!(yaml.trim(), "4.5123456e-18");
     assert_yaml11_and_yaml12_float_scalar(yaml.trim());
 
-    let value = -4.5123456e-18_f64;
+    let value = -4.512_345_6e-18_f64;
     let yaml = serde_saphyr::to_string(&value).unwrap();
     assert_eq!(yaml.trim(), "-4.5123456e-18");
     assert_yaml11_and_yaml12_float_scalar(yaml.trim());
@@ -103,12 +103,12 @@ fn serialize_small_float_scientific_notation_2() {
     // --------------------
     // f32 cases
     // --------------------
-    let value = 0.000000004_f32;
+    let value = 0.000_000_004_f32;
     let yaml = serde_saphyr::to_string(&value).unwrap();
     assert_eq!(yaml.trim(), "4.0e-9");
     assert_yaml11_and_yaml12_float_scalar(yaml.trim());
 
-    let value = -0.000000004_f32;
+    let value = -0.000_000_004_f32;
     let yaml = serde_saphyr::to_string(&value).unwrap();
     assert_eq!(yaml.trim(), "-4.0e-9");
     assert_yaml11_and_yaml12_float_scalar(yaml.trim());
@@ -119,12 +119,12 @@ fn serialize_large_float_scientific_notation_2() {
     // --------------------
     // f64 cases
     // --------------------
-    let value = 40000000000000000000.0_f64;
+    let value = 40_000_000_000_000_000_000.0_f64;
     let yaml = serde_saphyr::to_string(&value).unwrap();
     assert_eq!(yaml.trim(), "4.0e+19");
     assert_yaml11_and_yaml12_float_scalar(yaml.trim());
 
-    let value = -40000000000000000000.0_f64;
+    let value = -40_000_000_000_000_000_000.0_f64;
     let yaml = serde_saphyr::to_string(&value).unwrap();
     assert_eq!(yaml.trim(), "-4.0e+19");
     assert_yaml11_and_yaml12_float_scalar(yaml.trim());
@@ -132,12 +132,12 @@ fn serialize_large_float_scientific_notation_2() {
     // --------------------
     // f32 cases
     // --------------------
-    let value = 40000000000000000000.0_f32;
+    let value = 40_000_000_000_000_000_000.0_f32;
     let yaml = serde_saphyr::to_string(&value).unwrap();
     assert_eq!(yaml.trim(), "4.0e+19");
     assert_yaml11_and_yaml12_float_scalar(yaml.trim());
 
-    let value = -40000000000000000000.0_f32;
+    let value = -40_000_000_000_000_000_000.0_f32;
     let yaml = serde_saphyr::to_string(&value).unwrap();
     assert_eq!(yaml.trim(), "-4.0e+19");
     assert_yaml11_and_yaml12_float_scalar(yaml.trim());

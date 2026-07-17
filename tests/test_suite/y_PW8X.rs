@@ -81,7 +81,9 @@ fn yaml_pw8x_anchors_on_empty_scalars() {
                     && m.get(&Some("b".to_string())).unwrap().is_none()
             );
         }
-        other => panic!("third element should be a map, got: {:?}", other),
+        other @ Item::Scalar(_) => {
+            panic!("third element should be a map, got: {other:?}");
+        }
     }
 
     // 4) fourth: map with null key -> null (alias to first null)
@@ -89,7 +91,9 @@ fn yaml_pw8x_anchors_on_empty_scalars() {
         Item::Map(m) => {
             assert!(m.get(&None).is_some() && m.get(&None).unwrap().is_none());
         }
-        other => panic!("fourth element should be a map, got: {:?}", other),
+        other @ Item::Scalar(_) => {
+            panic!("fourth element should be a map, got: {other:?}");
+        }
     }
 
     // 5) fifth: map with null key -> null
@@ -97,7 +101,9 @@ fn yaml_pw8x_anchors_on_empty_scalars() {
         Item::Map(m) => {
             assert!(m.get(&None).is_some() && m.get(&None).unwrap().is_none());
         }
-        other => panic!("fifth element should be a map, got: {:?}", other),
+        other @ Item::Scalar(_) => {
+            panic!("fifth element should be a map, got: {other:?}");
+        }
     }
 
     // 6) sixth: map with null key -> null (alias to first null)
@@ -105,6 +111,8 @@ fn yaml_pw8x_anchors_on_empty_scalars() {
         Item::Map(m) => {
             assert!(m.get(&None).is_some() && m.get(&None).unwrap().is_none());
         }
-        other => panic!("sixth element should be a map, got: {:?}", other),
+        other @ Item::Scalar(_) => {
+            panic!("sixth element should be a map, got: {other:?}");
+        }
     }
 }

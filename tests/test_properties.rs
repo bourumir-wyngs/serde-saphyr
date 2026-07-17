@@ -86,7 +86,7 @@ impl<'de> Deserialize<'de> for AnyChecked {
     {
         struct V;
 
-        impl<'de> serde::de::Visitor<'de> for V {
+        impl serde::de::Visitor<'_> for V {
             type Value = AnyChecked;
 
             fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -1009,7 +1009,7 @@ fn overlapping_resolved_values_redact_longest_first() {
 #[test]
 fn empty_resolved_value_does_not_expand_error_text() {
     let mut props = HashMap::new();
-    props.insert("EMPTY".to_string(), "".to_string());
+    props.insert("EMPTY".to_string(), String::new());
 
     let err = from_str_with_options::<CustomHexByte>(
         "${EMPTY}\n",
@@ -1069,11 +1069,11 @@ mod include_tests {
         let options = property_options_with_map(Some(properties)).with_include_resolver(
             |req: IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
                 if req.spec == "child.yaml" {
-                    Ok(ResolvedInclude {
-                        id: "child.yaml".to_string(),
-                        name: "child.yaml".to_string(),
-                        source: InputSource::from_string("value: ${INCLUDED}\n".to_string()),
-                    })
+                    Ok(ResolvedInclude::new(
+                        "child.yaml",
+                        "child.yaml",
+                        InputSource::from_string("value: ${INCLUDED}\n".to_string()),
+                    ))
                 } else {
                     Err(IncludeResolveError::Message(format!(
                         "file not found: {}",

@@ -28,10 +28,10 @@ fn synthesized_null_error_should_be_eof(error: &Error) -> bool {
 }
 
 #[cfg(feature = "garde")]
-fn garde_validation_error(report: garde::Report, locations: &PathMap) -> Error {
+fn garde_validation_error(report: &garde::Report, locations: &PathMap) -> Error {
     Error::validation_error(
         ValidationSource::Garde,
-        collect_garde_issues(&report)
+        collect_garde_issues(report)
             .into_iter()
             .map(redact_issue)
             .collect(),
@@ -40,10 +40,10 @@ fn garde_validation_error(report: garde::Report, locations: &PathMap) -> Error {
 }
 
 #[cfg(feature = "validator")]
-fn validator_validation_error(errors: validator::ValidationErrors, locations: &PathMap) -> Error {
+fn validator_validation_error(errors: &validator::ValidationErrors, locations: &PathMap) -> Error {
     Error::validation_error(
         ValidationSource::Validator,
-        collect_validator_issues(&errors)
+        collect_validator_issues(errors)
             .into_iter()
             .map(redact_issue)
             .collect(),
@@ -53,7 +53,6 @@ fn validator_validation_error(errors: validator::ValidationErrors, locations: &P
 
 /// Deserialize a single YAML document with configurable [`Options`], and also
 /// return a map from validation paths to source [`Location`]s.
-#[allow(deprecated)]
 fn from_str_with_options_and_path_recorder_validated<T, F>(
     input: &str,
     options: Options,
@@ -115,11 +114,12 @@ where
     <T as garde::Validate>::Context: Default,
 {
     from_str_with_options_and_path_recorder_validated::<T, _>(input, options, |value, locs| {
-        Validate::validate(value).map_err(|report| garde_validation_error(report, locs))
+        Validate::validate(value).map_err(|report| garde_validation_error(&report, locs))
     })
 }
 
-/// Deserialize a single YAML document with configurable [`Options`] and validate it with `garde` in context [`<T as garde::Validate>::Context`].
+/// Deserialize a single YAML document with configurable [`Options`] and validate it with
+/// `garde` using the context associated with `T`'s [`garde::Validate`] implementation.
 /// The error message will contain a snippet with exact location information, and if the
 /// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
 #[cfg(feature = "garde")]
@@ -133,7 +133,7 @@ where
 {
     from_str_with_options_and_path_recorder_validated::<T, _>(input, options, |value, locs| {
         Validate::validate_with(value, context)
-            .map_err(|report| garde_validation_error(report, locs))
+            .map_err(|report| garde_validation_error(&report, locs))
     })
 }
 
@@ -150,7 +150,6 @@ where
     from_multiple_with_options_valid(input, Options::default())
 }
 
-#[allow(deprecated)]
 fn from_multiple_with_options_validated<T, F>(
     input: &str,
     options: Options,
@@ -237,14 +236,13 @@ where
 /// The error message will contain a snippet with exact location information, and if the
 /// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
 #[cfg(feature = "garde")]
-#[allow(deprecated)]
 pub fn from_multiple_with_options_valid<T>(input: &str, options: Options) -> Result<Vec<T>, Error>
 where
     T: DeserializeOwned + garde::Validate,
     <T as garde::Validate>::Context: Default,
 {
     from_multiple_with_options_validated(input, options, ValidationSource::Garde, |value, locs| {
-        Validate::validate(value).map_err(|report| garde_validation_error(report, locs))
+        Validate::validate(value).map_err(|report| garde_validation_error(&report, locs))
     })
 }
 
@@ -302,7 +300,6 @@ where
     from_reader_with_options_valid(reader, Options::default())
 }
 
-#[allow(deprecated)]
 fn from_reader_with_options_validated<R, T, F>(
     reader: R,
     options: Options,
@@ -344,7 +341,6 @@ where
 /// Snippets are attached on a best-effort basis for streamed root input, are available for
 /// included text sources, and may be unavailable for included reader sources.
 #[cfg(feature = "garde")]
-#[allow(deprecated)]
 pub fn from_reader_with_options_valid<R: std::io::Read, T>(
     reader: R,
     options: Options,
@@ -357,7 +353,7 @@ where
         reader,
         options,
         |value, locs| {
-            Validate::validate(value).map_err(|report| garde_validation_error(report, locs))
+            Validate::validate(value).map_err(|report| garde_validation_error(&report, locs))
         },
         "use read_valid or read_with_options_valid to obtain the iterator",
     )
@@ -373,10 +369,9 @@ where
     T: DeserializeOwned + garde::Validate + 'a,
     <T as garde::Validate>::Context: Default,
 {
-    read_with_options_valid(reader, Default::default())
+    read_with_options_valid(reader, Options::default())
 }
 
-#[allow(deprecated)]
 fn read_with_options_validated<'a, R, T, F>(
     reader: &'a mut R,
     options: Options,
@@ -414,7 +409,6 @@ where
                         value, style, tag, ..
                     })) if scalar_document_is_empty_or_null(tag, value, style) => {
                         let _ = self.src.next();
-                        continue;
                     }
                     Ok(Some(_)) => {
                         let mut recorder = crate::path_map::PathRecorder::new();
@@ -487,7 +481,6 @@ where
 /// Root streamed input gets snippets on a best-effort basis; included text sources retain full
 /// snippets, while included reader sources may not have snippet text available.
 #[cfg(feature = "garde")]
-#[allow(deprecated)]
 pub fn read_with_options_valid<'a, R, T>(
     reader: &'a mut R,
     options: Options,
@@ -498,7 +491,7 @@ where
     <T as garde::Validate>::Context: Default,
 {
     read_with_options_validated(reader, options, |value, locs| {
-        Validate::validate(value).map_err(|report| garde_validation_error(report, locs))
+        Validate::validate(value).map_err(|report| garde_validation_error(&report, locs))
     })
 }
 
@@ -523,7 +516,7 @@ where
 {
     from_str_with_options_and_path_recorder_validated::<T, _>(input, options, |value, locs| {
         ValidatorValidate::validate(value)
-            .map_err(|errors| validator_validation_error(errors, locs))
+            .map_err(|errors| validator_validation_error(&errors, locs))
     })
 }
 
@@ -541,7 +534,6 @@ pub fn from_multiple_validate<T: DeserializeOwned + ValidatorValidate>(
 /// The error message will contain a snippet with exact location information, and if the
 /// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
 #[cfg(feature = "validator")]
-#[allow(deprecated)]
 pub fn from_multiple_with_options_validate<T>(
     input: &str,
     options: Options,
@@ -555,7 +547,7 @@ where
         ValidationSource::Validator,
         |value, locs| {
             ValidatorValidate::validate(value)
-                .map_err(|errors| validator_validation_error(errors, locs))
+                .map_err(|errors| validator_validation_error(&errors, locs))
         },
     )
 }
@@ -612,7 +604,6 @@ where
 /// Snippets are attached on a best-effort basis for streamed root input, are available for
 /// included text sources, and may be unavailable for included reader sources.
 #[cfg(feature = "validator")]
-#[allow(deprecated)]
 pub fn from_reader_with_options_validate<R: std::io::Read, T>(
     reader: R,
     options: Options,
@@ -625,7 +616,7 @@ where
         options,
         |value, locs| {
             ValidatorValidate::validate(value)
-                .map_err(|errors| validator_validation_error(errors, locs))
+                .map_err(|errors| validator_validation_error(&errors, locs))
         },
         "use read_validate or read_with_options_validate to obtain the iterator",
     )
@@ -640,14 +631,13 @@ where
     R: Read + 'a,
     T: DeserializeOwned + ValidatorValidate + 'a,
 {
-    read_with_options_validate(reader, Default::default())
+    read_with_options_validate(reader, Options::default())
 }
 
 /// Create an iterator over validated YAML documents from a reader with configurable options.
 /// Root streamed input gets snippets on a best-effort basis; included text sources retain full
 /// snippets, while included reader sources may not have snippet text available.
 #[cfg(feature = "validator")]
-#[allow(deprecated)]
 pub fn read_with_options_validate<'a, R, T>(
     reader: &'a mut R,
     options: Options,
@@ -658,6 +648,6 @@ where
 {
     read_with_options_validated(reader, options, |value, locs| {
         ValidatorValidate::validate(value)
-            .map_err(|errors| validator_validation_error(errors, locs))
+            .map_err(|errors| validator_validation_error(&errors, locs))
     })
 }

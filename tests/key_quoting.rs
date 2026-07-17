@@ -20,9 +20,9 @@ enum BoolishVariant {
 }
 
 /// Round-trips every printable ASCII single-character key (32..=126)
-/// through serde_saphyr using the same pattern as the provided snippet.
+/// through `serde_saphyr` using the same pattern as the provided snippet.
 /// This ensures that characters like comma `,` are serialized in a way
-/// that can be parsed back into the same HashMap.
+/// that can be parsed back into the same `HashMap`.
 #[test]
 fn printable_ascii_single_char_keys_roundtrip() {
     for c in 32_u8..=126 {
@@ -48,7 +48,7 @@ fn printable_ascii_single_char_keys_roundtrip() {
 fn specific_key_roundtrip() {
     let mut h = HashMap::new();
     h.insert(",".to_string(), ",".to_string());
-    h.insert("".to_string(), " ".to_string()); // empty key
+    h.insert(String::new(), " ".to_string()); // empty key
     h.insert("null".to_string(), " ".to_string()); // null key
 
     // Serialize with the same FlowSeq wrapper as in the original snippet.

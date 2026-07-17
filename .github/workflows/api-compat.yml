@@ -1,4 +1,4 @@
-name: 0.0.26 API compatibility
+name: API 1.0.0 compatibility
 
 on:
   push:
@@ -10,21 +10,41 @@ on:
 permissions:
   contents: read
 
+env:
+  BASELINE_REF: "1.0.0"
+
 jobs:
   semver:
-    name: cargo-semver-checks (vs 0.0.26)
+    name: cargo-semver-checks
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Locate API baseline
+        id: baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git rev-parse --quiet --verify "${BASELINE_REF}^{commit}" >/dev/null; then
+            echo "skip=false" >> "${GITHUB_OUTPUT}"
+            echo "rev=${BASELINE_REF}" >> "${GITHUB_OUTPUT}"
+            echo "Using API baseline ${BASELINE_REF}."
+          else
+            echo "skip=true" >> "${GITHUB_OUTPUT}"
+            echo "Baseline ${BASELINE_REF} does not exist yet; skipping API compatibility check."
+          fi
+
       - name: Install Rust
+        if: steps.baseline.outputs.skip == 'false'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Check public API compatibility
+        if: steps.baseline.outputs.skip == 'false'
         uses: obi1kenobi/cargo-semver-checks-action@v2
         with:
-          baseline-rev: 0.0.26
+          baseline-rev: ${{ steps.baseline.outputs.rev }}

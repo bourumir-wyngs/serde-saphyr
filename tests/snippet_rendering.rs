@@ -226,7 +226,9 @@ fn spanned_inside_untagged_enum_succeeds_with_unknown_location() {
                 "location unavailable in untagged enum"
             );
         }
-        other => panic!("expected StringVariant, got {other:?}"),
+        other @ PayloadWithSpanned::IntVariant { .. } => {
+            panic!("expected StringVariant, got {other:?}");
+        }
     }
 }
 
@@ -301,13 +303,13 @@ fn alias_error_in_include_uses_source_name_for_dual_snippet_header() {
             serde_saphyr::IncludeResolveError,
         > {
             assert_eq!(req.spec, "child.yaml");
-            Ok(serde_saphyr::ResolvedInclude {
-                id: "child.yaml".to_string(),
-                name: "child.yaml".to_string(),
-                source: serde_saphyr::InputSource::from_string(
+            Ok(serde_saphyr::ResolvedInclude::new(
+                "child.yaml",
+                "child.yaml",
+                serde_saphyr::InputSource::from_string(
                     "count: &val 42\nflag: *val\n".to_string(),
                 ),
-            })
+            ))
         },
     );
 

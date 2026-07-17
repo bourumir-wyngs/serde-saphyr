@@ -51,6 +51,7 @@ fn default_max_total_comment_bytes() -> usize {
 /// let cfg: Config = serde_saphyr::from_str_with_options(yaml, options).unwrap();
 /// assert_eq!(cfg.retries, 5);
 /// ```
+#[non_exhaustive]
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "serde_derived_types",
@@ -68,37 +69,22 @@ pub struct Budget {
     /// stream into iterator, where potentially infinite input may need to be supported.
     ///
     /// Default: 256 Mb
-    #[deprecated(
-        note = "Direct construction of `Budget` will be disabled from 1.0.0, use macro `budget!`"
-    )]
     pub max_reader_input_bytes: Option<usize>,
     /// Maximum total parser events (counting every event).
     ///
     /// Default: 1,000,000
-    #[deprecated(
-        note = "Direct construction of `Budget` will be disabled from 1.0.0, use macro `budget!`"
-    )]
     pub max_events: usize,
     /// Maximum number of alias (`*ref`) events allowed.
     ///
     /// Default: 50,000
-    #[deprecated(
-        note = "Direct construction of `Budget` will be disabled from 1.0.0, use macro `budget!`"
-    )]
     pub max_aliases: usize,
     /// Maximal total number of anchors (distinct `&anchor` definitions).
     ///
     /// Default: 50,000
-    #[deprecated(
-        note = "Direct construction of `Budget` will be disabled from 1.0.0, use macro `budget!`"
-    )]
     pub max_anchors: usize,
     /// Maximum structural nesting depth (sequences + mappings).
     ///
     /// Default: 64
-    #[deprecated(
-        note = "Direct construction of `Budget` will be disabled from 1.0.0, use macro `budget!`"
-    )]
     pub max_depth: usize,
     /// Maximum allowed `!include` nesting depth.
     ///
@@ -106,30 +92,18 @@ pub struct Budget {
     /// document at once. A value of `0` disables includes entirely.
     ///
     /// Default: 24
-    #[deprecated(
-        note = "Direct construction of `Budget` will be disabled from 1.0.0, use macro `budget!`"
-    )]
     pub max_inclusion_depth: u32,
     /// Maximum number of YAML documents in the stream.
     ///
-    /// Default: 1,024. If enforcing policy is "per document", this is ignored.
-    #[deprecated(
-        note = "Direct construction of `Budget` will be disabled from 1.0.0, use macro `budget!`"
-    )]
+    /// Default: 1,024. If the budget scope is "per document", this is ignored.
     pub max_documents: usize,
     /// Maximum number of *nodes* (SequenceStart/MappingStart/Scalar).
     ///
     /// Default: 250,000
-    #[deprecated(
-        note = "Direct construction of `Budget` will be disabled from 1.0.0, use macro `budget!`"
-    )]
     pub max_nodes: usize,
     /// Maximum total bytes of scalar contents plus explicit tag spellings.
     ///
     /// Default: 67,108,864 (64 MiB)
-    #[deprecated(
-        note = "Direct construction of `Budget` will be disabled from 1.0.0, use macro `budget!`"
-    )]
     pub max_total_scalar_bytes: usize,
     /// Maximum total bytes of comment contents.
     ///
@@ -137,9 +111,6 @@ pub struct Budget {
     /// limit is enforced before deserialization stores comment text.
     ///
     /// Default: 67,108,864 (64 MiB)
-    #[deprecated(
-        note = "Direct construction of `Budget` will be disabled from 1.0.0, use macro `budget!`"
-    )]
     #[cfg_attr(
         feature = "serde_derived_types",
         serde(default = "default_max_total_comment_bytes")
@@ -149,9 +120,6 @@ pub struct Budget {
     /// expansion is enabled.
     ///
     /// Default: 10,000
-    #[deprecated(
-        note = "Direct construction of `Budget` will be disabled from 1.0.0, use macro `budget!`"
-    )]
     pub max_merge_keys: usize,
     /// If `true`, enforce the alias/anchor heuristic.
     ///
@@ -159,31 +127,21 @@ pub struct Budget {
     /// relative to the number of defined anchors.
     ///
     /// Default: true
-    #[deprecated(
-        note = "Direct construction of `Budget` will be disabled from 1.0.0, use macro `budget!`"
-    )]
     pub enforce_alias_anchor_ratio: bool,
     /// Minimum number of aliases required before the alias/anchor ratio
     /// heuristic is evaluated. This avoids tiny-input false positives.
     ///
     /// Default: 100
-    #[deprecated(
-        note = "Direct construction of `Budget` will be disabled from 1.0.0, use macro `budget!`"
-    )]
     pub alias_anchor_min_aliases: usize,
     /// Multiplier used for the alias/anchor ratio heuristic. A breach occurs
     /// when `aliases > alias_anchor_ratio_multiplier * anchors` (after
     /// scanning), once [`Budget::alias_anchor_min_aliases`] is met.
     ///
     /// Default: 10
-    #[deprecated(
-        note = "Direct construction of `Budget` will be disabled from 1.0.0, use macro `budget!`"
-    )]
     pub alias_anchor_ratio_multiplier: usize,
 }
 
 impl Default for Budget {
-    #[allow(deprecated)]
     fn default() -> Self {
         Self {
             max_reader_input_bytes: Some(256 * 1024 * 1024), // 256 Mb
@@ -301,6 +259,7 @@ pub enum BudgetBreach {
 }
 
 /// Summary of the scan (even if no breach).
+#[non_exhaustive]
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(
     feature = "serde_derived_types",
@@ -353,13 +312,17 @@ impl BudgetReport {
     }
 }
 
-/// Defines how budget limit policies are enforces (per document or for all content).
-/// Default is for all content, except when streaming from reader to iterator where
-/// it is per document as infinite may be required.
+/// Scope over which YAML budget counters are enforced.
+///
+/// Single-document and whole-input entry points use [`EnforcingPolicy::AllContent`].
+/// Streaming reader iterators use [`EnforcingPolicy::PerDocument`] so an arbitrarily long
+/// stream can be processed while each document remains bounded.
 #[non_exhaustive]
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EnforcingPolicy {
+    /// Apply one set of counters to the complete input stream.
     AllContent,
+    /// Reset applicable counters for every YAML document.
     PerDocument,
 }
 
@@ -371,7 +334,7 @@ pub(crate) struct BudgetEnforcer {
     depth: usize,
     defined_anchors: HashSet<usize>,
     containers: SmallVec<[ContainerState; 64]>,
-    policy: EnforcingPolicy,
+    scope: EnforcingPolicy,
     merge_keys: MergeKeyPolicy,
 }
 
@@ -401,14 +364,14 @@ fn tag_display_len(tag: Option<&Tag>) -> usize {
 
 impl BudgetEnforcer {
     /// Create a new enforcer for the provided `budget`.
-    pub(crate) fn new(budget: Budget, policy: EnforcingPolicy, merge_keys: MergeKeyPolicy) -> Self {
+    pub(crate) fn new(budget: Budget, scope: EnforcingPolicy, merge_keys: MergeKeyPolicy) -> Self {
         Self {
             budget,
             report: BudgetReport::default(),
             depth: 0,
             defined_anchors: HashSet::with_capacity(256),
             containers: SmallVec::new(),
-            policy,
+            scope,
             merge_keys,
         }
     }
@@ -467,7 +430,7 @@ impl BudgetEnforcer {
                 self.observe_alias_event(true)?;
             }
             Event::DocumentStart(..) => {
-                if self.policy == EnforcingPolicy::PerDocument {
+                if self.scope == EnforcingPolicy::PerDocument {
                     self.finalize_document()?;
                     self.report.reset();
                     self.defined_anchors.clear();
@@ -480,7 +443,6 @@ impl BudgetEnforcer {
                     }
                 }
             }
-            Event::DocumentEnd => {}
             Event::Comment(text, _) => {
                 self.report.total_comment_bytes =
                     self.report.total_comment_bytes.saturating_add(text.len());
@@ -490,8 +452,7 @@ impl BudgetEnforcer {
                     });
                 }
             }
-            Event::Nothing => {}
-            Event::StreamStart | Event::StreamEnd => {}
+            _ => {}
         }
 
         Ok(())
@@ -661,6 +622,10 @@ impl BudgetEnforcer {
             .checked_sub(1)
             .ok_or(BudgetBreach::SequenceUnbalanced)?;
 
+        #[expect(
+            clippy::manual_let_else,
+            reason = "the equivalent or-pattern is harder to read"
+        )]
         let from_mapping_value = match (expected, self.containers.pop()) {
             (ContainerKind::Sequence, Some(ContainerState::Sequence { from_mapping_value }))
             | (
@@ -700,7 +665,7 @@ impl BudgetEnforcer {
         if let Some(breach) = self.report.breached.as_ref() {
             return Err(breach.clone());
         }
-        if self.policy == EnforcingPolicy::PerDocument {
+        if self.scope == EnforcingPolicy::PerDocument {
             self.check_post_scan_heuristics()?;
         }
         Ok(())
@@ -758,10 +723,10 @@ impl BudgetEnforcer {
 pub fn check_yaml_budget(
     input: &str,
     budget: Budget,
-    policy: EnforcingPolicy,
+    scope: EnforcingPolicy,
 ) -> Result<BudgetReport, ScanError> {
     let parser = Parser::new_from_str(input);
-    let mut enforcer = BudgetEnforcer::new(budget, policy, MergeKeyPolicy::Merge);
+    let mut enforcer = BudgetEnforcer::new(budget, scope, MergeKeyPolicy::Merge);
 
     for item in parser {
         let (ev, _span) = item?;
@@ -773,7 +738,7 @@ pub fn check_yaml_budget(
     Ok(enforcer.finalize())
 }
 
-/// Convenience wrapper that returns `true` if the YAML **exceeds** any budget.
+/// Return `true` if the YAML **exceeds** any budget.
 ///
 /// Parameters:
 /// - `input`: YAML text (UTF-8).
@@ -784,8 +749,7 @@ pub fn check_yaml_budget(
 /// - `Ok(false)` if within budget.
 /// - `Err(ScanError)` on parser error.
 ///
-/// Despite the (historical) name, this function only scans the event stream and reports
-/// whether a budget was exceeded; it does not deserialize a YAML value.
+/// This only scans the parser event stream; it does not deserialize a YAML value.
 pub fn parse_yaml(input: &str, budget: Budget) -> Result<bool, ScanError> {
     let report = check_yaml_budget(input, budget, EnforcingPolicy::AllContent)?;
     Ok(report.breached.is_some())
@@ -794,6 +758,7 @@ pub fn parse_yaml(input: &str, budget: Budget) -> Result<bool, ScanError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fmt::Write as _;
 
     #[test]
     fn tiny_yaml_ok() {
@@ -885,7 +850,7 @@ e: *A
     fn merge_key_limit_trips() {
         let mut y = String::from("base: &B\n  k: 1\nitems:\n");
         for idx in 0..3 {
-            y.push_str(&format!("  item{idx}:\n    <<: *B\n    extra: {idx}\n"));
+            let _ = writeln!(y, "  item{idx}:\n    <<: *B\n    extra: {idx}");
         }
 
         let b = Budget {

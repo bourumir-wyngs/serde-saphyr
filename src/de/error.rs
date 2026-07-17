@@ -185,6 +185,7 @@ impl<'a> RenderOptions<'a> {
 ///
 /// The window is described in terms of the original (absolute) 1-based line numbers.
 /// This allows selecting the best-matching region for a particular error location.
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CroppedRegion {
     /// Cropped source text used for snippet rendering.
@@ -200,6 +201,24 @@ pub struct CroppedRegion {
 }
 
 impl CroppedRegion {
+    /// Construct a cropped source region for deferred snippet rendering.
+    #[must_use]
+    pub fn new(
+        text: impl Into<String>,
+        source_name: impl Into<String>,
+        start_line: usize,
+        end_line: usize,
+        location: Location,
+    ) -> Self {
+        Self {
+            text: text.into(),
+            source_name: source_name.into(),
+            start_line,
+            end_line,
+            location,
+        }
+    }
+
     fn covers_exact_source(&self, location: &Location) -> bool {
         if location == &Location::UNKNOWN {
             return false;
@@ -376,15 +395,25 @@ fn collect_snippet_regions(
 }
 
 #[cfg(any(feature = "garde", feature = "validator"))]
+/// A structured issue reported by a validation library.
+///
+/// Use [`ValidationIssue::new`] to construct synthetic issues when testing custom
+/// formatters or localizers.
+#[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct ValidationIssue {
+    /// Path to the value that failed validation.
     pub path: PathKey,
+    /// Validation-library error code.
     pub code: String,
+    /// Human-readable validation message, when provided.
     pub message: Option<String>,
+    /// Structured parameters supplied by the validation library.
     pub params: Vec<(String, String)>,
 }
 
 #[cfg(any(feature = "garde", feature = "validator"))]
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValidationSource {
     Garde,
@@ -403,6 +432,31 @@ impl ValidationSource {
 
 #[cfg(any(feature = "garde", feature = "validator"))]
 impl ValidationIssue {
+    /// Construct a validation issue without a message or structured parameters.
+    #[must_use]
+    pub fn new(path: PathKey, code: impl Into<String>) -> Self {
+        Self {
+            path,
+            code: code.into(),
+            message: None,
+            params: Vec::new(),
+        }
+    }
+
+    /// Attach a human-readable validation message.
+    #[must_use]
+    pub fn with_message(mut self, message: impl Into<String>) -> Self {
+        self.message = Some(message.into());
+        self
+    }
+
+    /// Attach structured validation parameters.
+    #[must_use]
+    pub fn with_params(mut self, params: Vec<(String, String)>) -> Self {
+        self.params = params;
+        self
+    }
+
     pub(crate) fn display_entry(&self) -> String {
         if let Some(msg) = &self.message {
             return msg.clone();
@@ -1528,11 +1582,40 @@ impl Error {
     #[cold]
     #[inline(never)]
     pub(crate) fn from_scan_error(err: ScanError) -> Self {
+        let err = match err.try_into_input_io_error() {
+            Ok(error) => {
+                let cause = match error.try_into_io_error() {
+                    Ok(error) => error,
+                    Err(error) => {
+                        let kind = error
+                            .io_error()
+                            .map_or(std::io::ErrorKind::Other, std::io::Error::kind);
+                        std::io::Error::new(kind, error)
+                    }
+                };
+                return Error::IOError { cause };
+            }
+            Err(err) => err,
+        };
+
         let mark = err.marker();
         let location = Location::new(mark.line(), mark.col() + 1)
             .with_span(crate::Span::new(mark.index() as u64, 1));
 
         match err.kind() {
+            ErrorKind::InputDecoding { message } => {
+                return Error::IOError {
+                    cause: std::io::Error::new(std::io::ErrorKind::InvalidData, message.clone()),
+                };
+            }
+            ErrorKind::InputByteLimitExceeded { limit } => {
+                return Error::IOError {
+                    cause: std::io::Error::new(
+                        std::io::ErrorKind::FileTooLarge,
+                        format!("input size limit of {limit} bytes exceeded"),
+                    ),
+                };
+            }
             ErrorKind::MultipleDocumentsUnsupported => {
                 return Error::MultipleDocuments {
                     hint: "only one document is supported in this context",
@@ -1692,7 +1775,7 @@ fn fmt_error_rendered(
                 return fmt_validation_error_with_snippets_offset(
                     f,
                     options.formatter.localizer(),
-                    source.external_message_source(),
+                    &source.external_message_source(),
                     issues,
                     locations,
                     regions,
@@ -1734,9 +1817,8 @@ fn fmt_error_rendered(
 
             let l10n = options.formatter.localizer();
 
-            let region = match pick_cropped_region(regions, &location) {
-                Some(r) => r,
-                None => return fmt_error_plain_with_formatter(f, error, options.formatter),
+            let Some(region) = pick_cropped_region(regions, &location) else {
+                return fmt_error_plain_with_formatter(f, error, options.formatter);
             };
 
             // Dual-location rendering: show both the reference and the definition window.
@@ -1835,7 +1917,7 @@ impl fmt::Display for Error {
 fn fmt_validation_error_with_snippets_offset(
     f: &mut fmt::Formatter<'_>,
     l10n: &dyn Localizer,
-    source: ExternalMessageSource,
+    source: &ExternalMessageSource,
     issues: &[ValidationIssue],
     locations: &PathMap,
     regions: &[CroppedRegion],
@@ -1861,7 +1943,7 @@ fn fmt_validation_error_with_snippets_offset(
         let def_loc = locs.defined_location;
 
         let resolved_path = format_path_with_resolved_leaf(&issue.path, &resolved_leaf);
-        let entry = issue.display_entry_overridden(l10n, source.clone());
+        let entry = issue.display_entry_overridden(l10n, (*source).clone());
         let base_msg = l10n.validation_base_message(&entry, &resolved_path);
 
         let mut rendered_regions = Vec::new();
@@ -1987,7 +2069,7 @@ fn fmt_error_with_snippets_offset(
         return fmt_validation_error_with_snippets_offset(
             f,
             formatter.localizer(),
-            source.external_message_source(),
+            &source.external_message_source(),
             issues,
             locations,
             regions,
@@ -2204,6 +2286,25 @@ pub(crate) fn budget_error(breach: BudgetBreach) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn message_only_input_io_scan_error_uses_portable_fallback() {
+        let input = core::iter::once(Err::<char, _>(ErrorKind::InputIo {
+            error: granit_parser::InputIoError::from_message("portable reader failure"),
+        }));
+        let scan_error = granit_parser::Parser::new_from_fallible_iter(input)
+            .find_map(Result::err)
+            .expect("the source error should be reported");
+        let error = Error::from_scan_error(scan_error);
+
+        match error {
+            Error::IOError { cause } => {
+                assert_eq!(cause.kind(), std::io::ErrorKind::Other);
+                assert_eq!(cause.to_string(), "portable reader failure");
+            }
+            other => panic!("expected reader I/O error, got {other:?}"),
+        }
+    }
 
     #[rstest::rstest]
     #[case::unknown_anchor("while parsing node, found unknown anchor")]
@@ -2587,12 +2688,12 @@ mod tests {
         );
         // Should mention both line numbers in some form
         assert!(
-            rendered.contains("5") || rendered.contains("use_it"),
+            rendered.contains('5') || rendered.contains("use_it"),
             "rendered should reference line 5: {}",
             rendered
         );
         assert!(
-            rendered.contains("2") || rendered.contains("anchor"),
+            rendered.contains('2') || rendered.contains("anchor"),
             "rendered should reference line 2: {}",
             rendered
         );

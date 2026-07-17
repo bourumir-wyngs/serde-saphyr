@@ -50,7 +50,7 @@ impl Ord for OrderedF64 {
 }
 impl Hash for OrderedF64 {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.bits.hash(state)
+        self.bits.hash(state);
     }
 }
 
@@ -65,7 +65,7 @@ struct SeqKey(u8);
 
 impl Hash for SeqKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.hash(state)
+        self.0.hash(state);
     }
 }
 
@@ -83,7 +83,7 @@ struct BytesKey;
 
 impl Hash for BytesKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        0u8.hash(state)
+        0u8.hash(state);
     }
 }
 

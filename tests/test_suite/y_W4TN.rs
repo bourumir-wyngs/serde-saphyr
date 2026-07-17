@@ -26,7 +26,7 @@ fn yaml_w4tn_directives_documents() {
 
     match &docs[0] {
         Doc::S(s) => assert_eq!(s, "%!PS-Adobe-2.0\n"),
-        other => panic!("expected first doc to be a string, got: {:?}", other),
+        other @ Doc::Null(_) => panic!("expected first doc to be a string, got: {other:?}"),
     }
 
     if docs.len() == 2 {

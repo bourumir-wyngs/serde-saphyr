@@ -1,4 +1,4 @@
-//! Tests for automatic line wrapping of long strings (matches Go's yaml.v3 SetWidth behavior)
+//! Tests for automatic line wrapping of long strings (matches Go's yaml.v3 `SetWidth` behavior)
 
 use serde::{Deserialize, Serialize};
 use serde_saphyr::{to_fmt_writer_with_options, to_string};
@@ -143,7 +143,7 @@ fn line_width_preserves_multiline_strings() {
 
     // Should use literal block scalar for multiline
     assert!(
-        out.contains("|-") || out.contains("|"),
+        out.contains("|-") || out.contains('|'),
         "Expected literal block scalar for multiline, got:\n{}",
         out
     );
@@ -171,7 +171,7 @@ fn line_width_flow_style_not_wrapped() {
 
     // Flow style should not use block scalars
     assert!(
-        out.contains("["),
+        out.contains('['),
         "Expected flow style sequence, got:\n{}",
         out
     );

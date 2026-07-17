@@ -445,7 +445,7 @@ mod tests {
     )]
     #[case::error_if_unset_missing_empty_msg(
         "${MISSING?}",
-        PropertyError::RequiredButUnset { name: "MISSING".into(), message: "".into() }
+        PropertyError::RequiredButUnset { name: "MISSING".into(), message: String::new() }
     )]
     #[case::error_if_unset_or_empty_missing(
         "${MISSING:?nope}",
@@ -453,7 +453,7 @@ mod tests {
     )]
     #[case::error_if_unset_or_empty_missing_empty_msg(
         "${MISSING:?}",
-        PropertyError::RequiredButUnset { name: "MISSING".into(), message: "".into() }
+        PropertyError::RequiredButUnset { name: "MISSING".into(), message: String::new() }
     )]
     #[case::error_if_unset_or_empty_empty(
         "${EMPTY:?nope}",
@@ -461,7 +461,7 @@ mod tests {
     )]
     #[case::error_if_unset_or_empty_empty_empty_msg(
         "${EMPTY:?}",
-        PropertyError::RequiredButEmpty { name: "EMPTY".into(), message: "".into() }
+        PropertyError::RequiredButEmpty { name: "EMPTY".into(), message: String::new() }
     )]
     fn brace_op_errors(#[case] input: &str, #[case] expected: PropertyError) {
         let error =

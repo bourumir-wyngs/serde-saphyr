@@ -48,13 +48,13 @@ pub(super) fn simple_tagged_enum_name(
 
 /// Canonical fingerprint of a YAML node for duplicate-key detection.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
-pub(super) enum KeyFingerprint {
+pub(super) enum KeyFingerprint<'a> {
     /// Scalar fingerprint (value plus optional tag).
-    Scalar { value: String, tag: SfTag },
+    Scalar { value: Cow<'a, str>, tag: SfTag },
     /// Sequence fingerprint (ordered fingerprints of children).
-    Sequence(Vec<KeyFingerprint>),
+    Sequence(Vec<KeyFingerprint<'a>>),
     /// Mapping fingerprint (ordered list of `(key, value)` fingerprints).
-    Mapping(Vec<(KeyFingerprint, KeyFingerprint)>),
+    Mapping(Vec<(KeyFingerprint<'a>, KeyFingerprint<'a>)>),
     /// Should not be used, arises after taking the value away
     #[default]
     Default,
@@ -68,11 +68,11 @@ pub(super) fn canonical_scalar_key_tag(tag: SfTag) -> SfTag {
     }
 }
 
-pub(super) fn is_empty_mapping_key_fingerprint(fingerprint: &KeyFingerprint) -> bool {
+pub(super) fn is_empty_mapping_key_fingerprint(fingerprint: &KeyFingerprint<'_>) -> bool {
     matches!(fingerprint, KeyFingerprint::Mapping(pairs) if pairs.is_empty())
 }
 
-fn is_nullish_scalar_key_fingerprint(fingerprint: &KeyFingerprint) -> bool {
+fn is_nullish_scalar_key_fingerprint(fingerprint: &KeyFingerprint<'_>) -> bool {
     match fingerprint {
         KeyFingerprint::Scalar { value, tag } => {
             *tag == SfTag::Null
@@ -84,7 +84,9 @@ fn is_nullish_scalar_key_fingerprint(fingerprint: &KeyFingerprint) -> bool {
     }
 }
 
-pub(super) fn is_one_entry_nullish_mapping_key_fingerprint(fingerprint: &KeyFingerprint) -> bool {
+pub(super) fn is_one_entry_nullish_mapping_key_fingerprint(
+    fingerprint: &KeyFingerprint<'_>,
+) -> bool {
     match fingerprint {
         KeyFingerprint::Mapping(pairs) if pairs.len() == 1 => {
             is_nullish_scalar_key_fingerprint(&pairs[0].0)
@@ -93,7 +95,7 @@ pub(super) fn is_one_entry_nullish_mapping_key_fingerprint(fingerprint: &KeyFing
     }
 }
 
-impl KeyFingerprint {
+impl KeyFingerprint<'_> {
     /// If this fingerprint represents a string-like scalar, return its value.
     ///
     /// Returns:
@@ -106,7 +108,7 @@ impl KeyFingerprint {
         match self {
             KeyFingerprint::Scalar { value, tag } => {
                 if tag.can_parse_into_string() && tag != &SfTag::Binary {
-                    Some(value.as_str())
+                    Some(value.as_ref())
                 } else {
                     None
                 }
@@ -127,7 +129,7 @@ impl KeyFingerprint {
 /// replay it must capture any relevant comment metadata alongside the node.
 pub(super) enum KeyNode<'a> {
     Fingerprinted {
-        fingerprint: KeyFingerprint,
+        fingerprint: KeyFingerprint<'a>,
         events: Vec<Ev<'a>>,
         location: Location,
     },
@@ -138,14 +140,14 @@ pub(super) enum KeyNode<'a> {
 }
 
 impl<'a> KeyNode<'a> {
-    pub(super) fn fingerprint(&self) -> Cow<'_, KeyFingerprint> {
+    pub(super) fn fingerprint(&self) -> Cow<'_, KeyFingerprint<'a>> {
         match self {
             KeyNode::Fingerprinted { fingerprint, .. } => Cow::Borrowed(fingerprint),
             KeyNode::Scalar { events, .. } => {
                 if let Some(Ev::Scalar { tag, value, .. }) = events.first() {
                     Cow::Owned(KeyFingerprint::Scalar {
                         tag: canonical_scalar_key_tag(*tag),
-                        value: value.to_string(),
+                        value: value.clone(),
                     })
                 } else {
                     unreachable!()
@@ -156,19 +158,19 @@ impl<'a> KeyNode<'a> {
 
     pub(super) fn events(&self) -> &[Ev<'a>] {
         match self {
-            KeyNode::Fingerprinted { events, .. } => events,
-            KeyNode::Scalar { events, .. } => events,
+            KeyNode::Fingerprinted { events, .. } | KeyNode::Scalar { events, .. } => events,
         }
     }
 
     pub(super) fn take_events(&mut self) -> Vec<Ev<'a>> {
         match self {
-            KeyNode::Fingerprinted { events, .. } => mem::take(events),
-            KeyNode::Scalar { events, .. } => mem::take(events),
+            KeyNode::Fingerprinted { events, .. } | KeyNode::Scalar { events, .. } => {
+                mem::take(events)
+            }
         }
     }
 
-    pub(super) fn take_fingerprint(&mut self) -> KeyFingerprint {
+    pub(super) fn take_fingerprint(&mut self) -> KeyFingerprint<'a> {
         match self {
             KeyNode::Fingerprinted { fingerprint, .. } => mem::take(fingerprint),
             KeyNode::Scalar { .. } => self.fingerprint().into_owned(),
@@ -177,8 +179,7 @@ impl<'a> KeyNode<'a> {
 
     pub(super) fn location(&self) -> Location {
         let location = match self {
-            KeyNode::Fingerprinted { location, .. } => location,
-            KeyNode::Scalar { location, .. } => location,
+            KeyNode::Fingerprinted { location, .. } | KeyNode::Scalar { location, .. } => location,
         };
         *location
     }
@@ -247,14 +248,13 @@ pub(super) fn skip_one_node_len(events: &[Ev<'_>], mut i: usize) -> Option<usize
             i += 1;
             while i < events.len() {
                 match events.get(i)? {
-                    Ev::SeqStart { .. } => depth += 1,
+                    Ev::SeqStart { .. } | Ev::MapStart { .. } => depth += 1,
                     Ev::SeqEnd { .. } => {
                         depth -= 1;
                         if depth == 0 {
                             return Some(i - start + 1);
                         }
                     }
-                    Ev::MapStart { .. } => depth += 1,
                     Ev::MapEnd { .. } => {
                         depth -= 1;
                     }
@@ -271,14 +271,13 @@ pub(super) fn skip_one_node_len(events: &[Ev<'_>], mut i: usize) -> Option<usize
             i += 1;
             while i < events.len() {
                 match events.get(i)? {
-                    Ev::MapStart { .. } => depth += 1,
+                    Ev::MapStart { .. } | Ev::SeqStart { .. } => depth += 1,
                     Ev::MapEnd { .. } => {
                         depth -= 1;
                         if depth == 0 {
                             return Some(i - start + 1);
                         }
                     }
-                    Ev::SeqStart { .. } => depth += 1,
                     Ev::SeqEnd { .. } => {
                         depth -= 1;
                     }
@@ -289,8 +288,7 @@ pub(super) fn skip_one_node_len(events: &[Ev<'_>], mut i: usize) -> Option<usize
             }
             None
         }
-        Ev::SeqEnd { .. } | Ev::MapEnd { .. } => None,
-        Ev::Taken { .. } => None,
+        Ev::SeqEnd { .. } | Ev::MapEnd { .. } | Ev::Taken { .. } => None,
     }
 }
 
@@ -441,11 +439,7 @@ pub(super) fn simple_tagged_node_name(event: &Ev<'_>) -> Option<(String, Locatio
 /// Remove the YAML tag from the payload node after it has been promoted to a map key.
 pub(super) fn strip_root_tag_for_externally_tagged_payload(events: &mut [Ev<'_>]) {
     match events.first_mut() {
-        Some(Ev::Scalar { tag, raw_tag, .. }) => {
-            *tag = SfTag::None;
-            *raw_tag = None;
-        }
-        Some(Ev::SeqStart { tag, raw_tag, .. }) => {
+        Some(Ev::Scalar { tag, raw_tag, .. }) | Some(Ev::SeqStart { tag, raw_tag, .. }) => {
             *tag = SfTag::None;
             *raw_tag = None;
         }
@@ -602,10 +596,10 @@ pub(super) fn validate_no_merge_keys_in_node_events(events: &[Ev<'_>]) -> Result
 }
 
 pub(super) fn apply_duplicate_key_policy_to_entries(
-    mut entries: Vec<PendingEntry>,
+    mut entries: Vec<PendingEntry<'_>>,
     duplicate_keys: DuplicateKeyPolicy,
     merge_keys: MergeKeyPolicy,
-) -> Result<Vec<PendingEntry>, Error> {
+) -> Result<Vec<PendingEntry<'_>>, Error> {
     let last_wins = matches!(duplicate_keys, DuplicateKeyPolicy::LastWins);
     if last_wins {
         entries.reverse();

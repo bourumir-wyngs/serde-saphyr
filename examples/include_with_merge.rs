@@ -53,17 +53,17 @@ max_connections: 1000
     // Configure the resolver to serve `base_config.yaml`
     let resolver = move |req: IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
         if req.spec == "base_config.yaml" {
-            Ok(ResolvedInclude {
-                id: req.spec.to_string(),
-                name: req.spec.to_string(),
-                source: InputSource::Text(base_yaml.to_string()),
-            })
+            Ok(ResolvedInclude::new(
+                req.spec,
+                req.spec,
+                InputSource::Text(base_yaml.to_string()),
+            ))
         } else if req.spec == "versions.yaml" {
-            Ok(ResolvedInclude {
-                id: req.spec.to_string(),
-                name: req.spec.to_string(),
-                source: InputSource::Text("[1, 2, 3]".to_string()),
-            })
+            Ok(ResolvedInclude::new(
+                req.spec,
+                req.spec,
+                InputSource::Text("[1, 2, 3]".to_string()),
+            ))
         } else {
             Err(IncludeResolveError::Message(format!(
                 "File not found: {}",

@@ -239,18 +239,21 @@ impl<R> RingReader<R> {
             let _ = self.read_ahead_at_most(can_read_more)?;
         }
 
-        let (mut _start_offset, mut start_line, mut bytes) = self.ring_snapshot();
+        let (mut start_offset, mut start_line, mut bytes) = self.ring_snapshot();
         if !bytes.is_empty() {
-            (_start_offset, start_line, bytes) =
-                trim_to_utf8_boundaries_with_line(bytes, _start_offset, start_line);
+            (start_offset, start_line, bytes) =
+                trim_to_utf8_boundaries_with_line(bytes, start_offset, start_line);
         }
 
+        #[cfg(not(test))]
+        let _ = start_offset;
+
         #[cfg(test)]
-        let end_offset = _start_offset.saturating_add(bytes.len() as u64);
+        let end_offset = start_offset.saturating_add(bytes.len() as u64);
 
         Ok(RecentSnapshot {
             #[cfg(test)]
-            start_offset: _start_offset,
+            start_offset,
             #[cfg(test)]
             end_offset,
             start_line,
@@ -345,9 +348,8 @@ impl<R> RingReader<R> {
         let mut n = 0usize;
 
         while n < out.len() {
-            let b = match self.stash.pop_front() {
-                Some(x) => x,
-                None => break,
+            let Some(b) = self.stash.pop_front() else {
+                break;
             };
             out[n] = b;
             n = n.saturating_add(1);
@@ -376,9 +378,8 @@ impl<R: Read> Read for RingReader<R> {
             return Ok(0);
         }
 
-        let chunk = match buf.get(..n) {
-            Some(s) => s,
-            None => return Ok(0), // defensive: should be impossible
+        let Some(chunk) = buf.get(..n) else {
+            return Ok(0); // defensive: should be impossible
         };
 
         let abs_start = self.returned_total; // stash empty => next_inner_offset == returned_total
@@ -533,13 +534,10 @@ fn trim_incomplete_utf8_tail(bytes: &mut Vec<u8>) {
         let lead_idx = i - 1;
         let lead = bytes[lead_idx];
 
-        let expected = match utf8_expected_len(lead) {
-            Some(n) => n,
-            None => {
-                // Not a valid lead byte => we won't try to "fix" it here.
-                // Consider it "reasonable enough" (caller can decode lossy).
-                return;
-            }
+        let Some(expected) = utf8_expected_len(lead) else {
+            // Not a valid lead byte => we won't try to "fix" it here.
+            // Consider it "reasonable enough" (caller can decode lossy).
+            return;
         };
 
         let actual = bytes.len().saturating_sub(lead_idx);
@@ -564,7 +562,7 @@ mod tests {
     /// A deterministic reader for tests:
     /// - serves bytes from an internal buffer
     /// - counts how many bytes have been read from it
-    /// - can limit max chunk size per read() call (to force partial reads)
+    /// - can limit max chunk size per `read()` call (to force partial reads)
     #[derive(Debug)]
     struct CountingReader {
         data: Vec<u8>,

@@ -1,5 +1,6 @@
 use garde::Validate;
 use serde::Deserialize;
+use serde_saphyr::Options;
 
 #[derive(Default)]
 struct ValidationContext {
@@ -34,7 +35,7 @@ fn main() {
     };
 
     let err =
-        serde_saphyr::from_str_with_options_context_valid::<AB>(yaml, Default::default(), &context)
+        serde_saphyr::from_str_with_options_context_valid::<AB>(yaml, Options::default(), &context)
             .expect_err("must fail validation");
 
     // Field in error message in camelCase (as in YAML).

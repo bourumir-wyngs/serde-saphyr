@@ -148,7 +148,6 @@ fn scalar_key_node(
 }
 
 #[test]
-#[allow(deprecated)]
 fn cfg_and_replay_events_follow_options_and_reference_overrides() {
     let options = Options {
         duplicate_keys: DuplicateKeyPolicy::LastWins,
@@ -298,13 +297,13 @@ fn key_fingerprint_helpers_normalize_string_like_tags() {
     assert_eq!(canonical_scalar_key_tag(SfTag::Int), SfTag::Int);
 
     let stringy = KeyFingerprint::Scalar {
-        value: "hello".to_owned(),
+        value: Cow::Borrowed("hello"),
         tag: SfTag::Other,
     };
     assert_eq!(stringy.stringy_scalar_value(), Some("hello"));
 
     let binary = KeyFingerprint::Scalar {
-        value: "SGVsbG8=".to_owned(),
+        value: Cow::Borrowed("SGVsbG8="),
         tag: SfTag::Binary,
     };
     assert_eq!(binary.stringy_scalar_value(), None);
@@ -312,6 +311,19 @@ fn key_fingerprint_helpers_normalize_string_like_tags() {
         KeyFingerprint::Sequence(vec![]).stringy_scalar_value(),
         None
     );
+}
+
+#[test]
+fn scalar_key_fingerprint_borrows_event_value() {
+    let key = scalar_key_node("borrowed", SfTag::None, ScalarStyle::Plain, loc(9, 1));
+
+    assert!(matches!(
+        key.fingerprint().into_owned(),
+        KeyFingerprint::Scalar {
+            value: Cow::Borrowed("borrowed"),
+            tag: SfTag::String,
+        }
+    ));
 }
 
 #[test]
@@ -399,23 +411,23 @@ fn capture_node_captures_nested_fingerprints_and_rejects_invalid_streams() {
                 fingerprint,
                 KeyFingerprint::Sequence(vec![
                     KeyFingerprint::Scalar {
-                        value: "a".to_owned(),
+                        value: Cow::Borrowed("a"),
                         tag: SfTag::String,
                     },
                     KeyFingerprint::Mapping(vec![(
                         KeyFingerprint::Scalar {
-                            value: "b".to_owned(),
+                            value: Cow::Borrowed("b"),
                             tag: SfTag::String,
                         },
                         KeyFingerprint::Scalar {
-                            value: "c".to_owned(),
+                            value: Cow::Borrowed("c"),
                             tag: SfTag::String,
                         },
                     )]),
                 ])
             );
         }
-        _ => panic!("expected fingerprinted node"),
+        KeyNode::Scalar { .. } => panic!("expected fingerprinted node"),
     }
 
     let mut unexpected_end = replay_events(vec![map_end(loc(16, 1))]);

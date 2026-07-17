@@ -17,7 +17,7 @@ mod tests {
     }
 
     #[test]
-    fn from_sample_platter_json_to_yaml_without_options() {
+    fn from_sample_platter_json_to_yaml_with_default_options() {
         let json = r#"
             {
                 "rainbow": ["red", "orange", "yellow", "green", "blue", "purple"],
@@ -38,18 +38,18 @@ mod tests {
         assert_eq!(
             yaml,
             r#"rainbow:
-  - red
-  - orange
-  - yellow
-  - green
-  - blue
-  - purple
+- red
+- orange
+- yellow
+- green
+- blue
+- purple
 point:
   x: 12
   xy: -34
 bools:
-  - true
-  - false
+- true
+- false
 "#
         );
     }
@@ -81,12 +81,12 @@ bools:
         let mut json_deserializer = serde_json::Deserializer::from_str(json);
 
         let mut yaml = String::new();
-        let mut yaml_serializer_options = serde_saphyr::ser_options! {
+        let yaml_serializer_options = serde_saphyr::ser_options! {
             indent_step: 2,
             compact_list_indent: false,
         };
         let mut yaml_serializer =
-            serde_saphyr::Serializer::with_options(&mut yaml, &mut yaml_serializer_options);
+            serde_saphyr::Serializer::with_options(&mut yaml, yaml_serializer_options).unwrap();
         serde_transcode::transcode(&mut json_deserializer, &mut yaml_serializer).unwrap();
 
         assert_eq!(
@@ -132,11 +132,11 @@ bools:
         let mut json_deserializer = serde_json::Deserializer::from_str(json);
 
         let mut yaml = String::new();
-        let mut yaml_serializer_options = serde_saphyr::ser_options! {
+        let yaml_serializer_options = serde_saphyr::ser_options! {
             compact_list_indent: true,
         };
         let mut yaml_serializer =
-            serde_saphyr::Serializer::with_options(&mut yaml, &mut yaml_serializer_options);
+            serde_saphyr::Serializer::with_options(&mut yaml, yaml_serializer_options).unwrap();
         serde_transcode::transcode(&mut json_deserializer, &mut yaml_serializer).unwrap();
 
         assert_eq!(

@@ -38,14 +38,14 @@ i2: !include "f.yml#f"
     }
     .with_include_resolver(move |req| {
         assert_eq!(req.spec, "f.yml#f");
-        Ok(ResolvedInclude {
-            id: req.spec.to_string(),
-            name: req.spec.to_string(),
-            source: InputSource::AnchoredText {
+        Ok(ResolvedInclude::new(
+            req.spec,
+            req.spec,
+            InputSource::AnchoredText {
                 text: anchored_text.clone(),
                 anchor: "f".to_string(),
             },
-        })
+        ))
     });
 
     let result: Result<Root, _> = from_reader_with_options(yaml.as_bytes(), options);
@@ -72,14 +72,14 @@ fn test_anchored_include_succeeds_when_fragment_exactly_fits_remaining_budget() 
     let resolver =
         move |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
             assert_eq!(req.spec, "f.yml#f");
-            Ok(ResolvedInclude {
-                id: req.spec.to_string(),
-                name: req.spec.to_string(),
-                source: InputSource::AnchoredText {
+            Ok(ResolvedInclude::new(
+                req.spec,
+                req.spec,
+                InputSource::AnchoredText {
                     text: anchored_text.to_string(),
                     anchor: "f".to_string(),
                 },
-            })
+            ))
         };
     let options = serde_saphyr::options! {
         budget: serde_saphyr::budget! {
@@ -103,14 +103,14 @@ fn test_same_anchored_include_parses_with_different_limits() {
     let resolver_ok =
         move |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
             assert_eq!(req.spec, "f.yml#f");
-            Ok(ResolvedInclude {
-                id: req.spec.to_string(),
-                name: req.spec.to_string(),
-                source: InputSource::AnchoredText {
+            Ok(ResolvedInclude::new(
+                req.spec,
+                req.spec,
+                InputSource::AnchoredText {
                     text: anchored_text.clone(),
                     anchor: "f".to_string(),
                 },
-            })
+            ))
         };
     let options_ok = serde_saphyr::options! {
         budget: serde_saphyr::budget! {
@@ -129,14 +129,14 @@ fn test_same_anchored_include_parses_with_different_limits() {
     let resolver_err =
         move |req: serde_saphyr::IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
             assert_eq!(req.spec, "f.yml#f");
-            Ok(ResolvedInclude {
-                id: req.spec.to_string(),
-                name: req.spec.to_string(),
-                source: InputSource::AnchoredText {
+            Ok(ResolvedInclude::new(
+                req.spec,
+                req.spec,
+                InputSource::AnchoredText {
                     text: anchored_text.clone(),
                     anchor: "f".to_string(),
                 },
-            })
+            ))
         };
     let options_err = serde_saphyr::options! {
         budget: serde_saphyr::budget! {

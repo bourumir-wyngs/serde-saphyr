@@ -23,9 +23,9 @@ fn city(name: &str, population: usize) -> RcAnchor<City> {
 }
 
 fn main() -> anyhow::Result<()> {
-    let zurich = city("Zurich", 436000);
-    let bern = city("Bern", 134000);
-    let basel = city("Basel", 178000);
+    let zurich = city("Zurich", 436_000);
+    let bern = city("Bern", 134_000);
+    let basel = city("Basel", 178_000);
 
     let zurich_bern_shuttle = vec![zurich.clone(), bern.clone()];
     let three_city_express = vec![zurich.clone(), bern.clone(), basel.clone()];
@@ -49,7 +49,7 @@ fn main() -> anyhow::Result<()> {
 
     // Also assert the city data itself
     assert_eq!(zurich_first.name, "Zurich");
-    assert_eq!(zurich_first.population, 436000);
+    assert_eq!(zurich_first.population, 436_000);
 
     println!(
         "OK: {} trains, shared first city = {} (pop {})",

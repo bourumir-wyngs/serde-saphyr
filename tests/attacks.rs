@@ -1,4 +1,6 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
+use std::fmt::Write as _;
+
 use serde_saphyr::budget::{Budget, BudgetBreach, EnforcingPolicy, check_yaml_budget};
 
 fn billion_laughs_yaml(levels: usize, fan_out: usize) -> String {
@@ -8,16 +10,16 @@ fn billion_laughs_yaml(levels: usize, fan_out: usize) -> String {
     let mut yaml = String::new();
     yaml.push_str("l0: &L0 [\"LOL\", \"LOL\"]\n");
     for level in 1..=levels {
-        yaml.push_str(&format!("l{level}: &L{level} ["));
+        let _ = write!(yaml, "l{level}: &L{level} [");
         for idx in 0..fan_out {
             if idx > 0 {
                 yaml.push_str(", ");
             }
-            yaml.push_str(&format!("*L{}", level - 1));
+            let _ = write!(yaml, "*L{}", level - 1);
         }
         yaml.push_str("]\n");
     }
-    yaml.push_str(&format!("root: *L{levels}\n"));
+    let _ = writeln!(yaml, "root: *L{levels}");
     yaml
 }
 
@@ -25,7 +27,7 @@ fn document_storm_yaml(count: usize) -> String {
     let mut yaml = String::new();
     for idx in 0..count {
         yaml.push_str("--- \"");
-        yaml.push_str(&format!("doc{idx}"));
+        let _ = write!(yaml, "doc{idx}");
         yaml.push_str("\"\n");
     }
     yaml
@@ -48,7 +50,6 @@ fn billion_laughs_is_rejected() {
 
 #[test]
 fn excessive_document_storm_is_rejected() {
-    #[allow(deprecated)]
     let limit = Budget::default().max_documents;
     let yaml = document_storm_yaml(limit + 1);
     let report = check_yaml_budget(&yaml, Budget::default(), EnforcingPolicy::AllContent).unwrap();

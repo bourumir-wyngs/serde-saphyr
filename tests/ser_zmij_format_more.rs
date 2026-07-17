@@ -1,3 +1,5 @@
+#![cfg(feature = "serialize")]
+
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 use serde_saphyr::to_string;

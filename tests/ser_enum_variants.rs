@@ -60,7 +60,7 @@ fn newtype_variant_serialized() {
         Int(i32),
     }
     let yaml = to_string(&Wrapper::Int(7)).unwrap();
-    assert!(yaml.contains("7"), "yaml: {yaml}");
+    assert!(yaml.contains('7'), "yaml: {yaml}");
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn newtype_variant_tagged_enums() {
         tagged_enums: true,
     };
     let yaml = to_string_with_options(&Wrapper::Int(7), opts).unwrap();
-    assert!(yaml.contains("7"), "yaml: {yaml}");
+    assert!(yaml.contains('7'), "yaml: {yaml}");
 }
 
 #[test]
@@ -111,7 +111,7 @@ fn struct_variant_serializes_as_mapping() {
     assert!(yaml.contains("Point"), "expected variant name: {yaml}");
     assert!(yaml.contains("x: 1"), "expected x field: {yaml}");
     assert!(
-        yaml.contains("y") && yaml.contains(": 2"),
+        yaml.contains('y') && yaml.contains(": 2"),
         "expected y field: {yaml}"
     );
 }
@@ -148,7 +148,7 @@ fn newtype_variant_as_map_value() {
     let mut m = BTreeMap::new();
     m.insert("w", Wrap::Val(7));
     let yaml = to_string(&m).unwrap();
-    assert!(yaml.contains("Val") && yaml.contains("7"), "got: {yaml}");
+    assert!(yaml.contains("Val") && yaml.contains('7'), "got: {yaml}");
 }
 
 #[test]

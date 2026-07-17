@@ -210,7 +210,7 @@ plain
             "expected snippet location, got: {rendered}"
         );
         assert!(
-            rendered.contains("@"),
+            rendered.contains('@'),
             "expected offending input in snippet, got: {rendered}"
         );
     }

@@ -44,14 +44,21 @@ struct User {
 }
 
 fn request<'a>(spec: &'a str, from_name: &'a str, from_id: Option<&'a str>) -> IncludeRequest<'a> {
-    IncludeRequest {
-        spec,
-        from_name,
-        from_id,
-        stack: Vec::new(),
-        size_remaining: None,
-        location: Location::UNKNOWN,
+    let request = IncludeRequest::new(spec, from_name, Location::UNKNOWN);
+    match from_id {
+        Some(from_id) => request.with_from_id(from_id),
+        None => request,
     }
+}
+
+#[test]
+fn request_builders_set_optional_metadata() {
+    let request = IncludeRequest::new("child.yaml", "root.yaml", Location::UNKNOWN)
+        .with_from_id("root-id")
+        .with_size_remaining(1024);
+
+    assert_eq!(request.from_id, Some("root-id"));
+    assert_eq!(request.size_remaining, Some(1024));
 }
 
 fn resolver_problem(err: &Error) -> &ResolveProblem {

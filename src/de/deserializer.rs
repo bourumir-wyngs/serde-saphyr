@@ -115,7 +115,7 @@ where
     }
 }
 
-fn skip_one_node_from_events<'de>(ev: &mut dyn Events<'de>) -> Result<(), Error> {
+fn skip_one_node_from_events(ev: &mut dyn Events<'_>) -> Result<(), Error> {
     let mut depth;
     match ev.next()? {
         Some(Ev::Scalar { .. }) => return Ok(()),
@@ -144,7 +144,7 @@ fn skip_one_node_from_events<'de>(ev: &mut dyn Events<'de>) -> Result<(), Error>
     Ok(())
 }
 
-fn drain_remaining_sequence<'de>(ev: &mut dyn Events<'de>) -> Result<(), Error> {
+fn drain_remaining_sequence(ev: &mut dyn Events<'_>) -> Result<(), Error> {
     loop {
         match ev.peek()? {
             Some(Ev::SeqEnd { .. }) => {
@@ -208,7 +208,7 @@ pub struct YamlDeserializer<'de, 'e> {
     /// Derived struct visitors reject repeated fields themselves, so `LastWins`
     /// needs duplicate fields collapsed before they reach Serde.
     struct_mode: bool,
-    /// True when the recorded key node was exactly an empty mapping (MapStart followed by MapEnd).
+    /// True when the recorded key node was exactly an empty mapping (`MapStart` followed by `MapEnd`).
     key_empty_map_node: bool,
     /// Comments that the parent mapping associated with this value.
     pub(super) pending_comments: Vec<Cow<'de, str>>,
@@ -233,7 +233,7 @@ struct ScalarView<'de> {
 
 type EffectiveScalar<'de> = (Cow<'de, str>, SfTag, ScalarStyle, Location);
 
-impl<'de> ScalarView<'de> {
+impl ScalarView<'_> {
     fn redaction_ctx(&self) -> Option<ScalarRedactionCtx> {
         self.interpolated.then(|| ScalarRedactionCtx {
             raw: self.raw.as_ref().to_owned(),
@@ -646,7 +646,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
     }
 }
 
-impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
+impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     type Error = Error;
 
     /// Fallback entry point when the caller's type has no specific expectation.
@@ -659,7 +659,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     /// - Even for structs/enums, Serde may call `deserialize_any` for individual field values
     ///   when the driving logic cannot or does not specify a concrete numeric/bool/char method.
     ///
-    /// Can we force Serde to call the typed methods (deserialize_u8, deserialize_bool, ...)?
+    /// Can we force Serde to call the typed methods (`deserialize_u8`, `deserialize_bool`, ...)?
     /// - Not from within a format Deserializer. Serde chooses which method to call based on the
     ///   Rust type information it has via the caller’s `Deserialize`/`DeserializeSeed` logic.
     ///   Implementing the typed methods (which we do) ensures Serde will use them whenever it knows
@@ -1232,11 +1232,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
         }
 
         match self.ev.peek()? {
-            // End of input → None
-            None => visitor.visit_none(),
-
-            // In flow/edge cases a missing value can manifest as an immediate container end → None
-            Some(Ev::MapEnd { .. } | Ev::SeqEnd { .. }) => visitor.visit_none(),
+            // End of input or an immediate container end both represent a missing value.
+            None | Some(Ev::MapEnd { .. } | Ev::SeqEnd { .. }) => visitor.visit_none(),
 
             // Otherwise there is a value → Some(...)
             Some(_) => visitor.visit_some(self),
@@ -1259,10 +1256,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
         }
 
         match self.ev.peek()? {
-            // Accept absence as unit
-            None => visitor.visit_unit(),
-            // End of a container where a value was expected: treat as unit in this subset
-            Some(Ev::MapEnd { .. } | Ev::SeqEnd { .. }) => visitor.visit_unit(),
+            // Treat absence or a container end where a value was expected as unit.
+            None | Some(Ev::MapEnd { .. } | Ev::SeqEnd { .. }) => visitor.visit_unit(),
             // Anything else isn't a unit value
             Some(other) => Err(Error::UnexpectedValueForUnit {
                 location: other.location(),
@@ -1457,7 +1452,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             #[cfg(any(feature = "garde", feature = "validator"))]
             idx: usize,
         }
-        impl<'de, 'e> de::SeqAccess<'de> for SA<'de, 'e> {
+        impl<'de> de::SeqAccess<'de> for SA<'de, '_> {
             type Error = Error;
             /// Produce the next element by recursively deserializing from the same event source.
             fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Error>
@@ -1755,7 +1750,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             pending_path_segment: Option<String>,
 
             // For duplicate-key detection for arbitrary keys.
-            seen: HashSet<KeyFingerprint>,
+            seen: HashSet<KeyFingerprint<'de>>,
             pending: VecDeque<PendingEntry<'de>>,
             merge_stack: VecDeque<Vec<PendingEntry<'de>>>,
             flushing_merges: bool,
@@ -1767,7 +1762,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             pending_first_key_comments: Vec<Cow<'de, str>>,
         }
 
-        impl<'de, 'e> MA<'de, 'e> {
+        impl<'de> MA<'de, '_> {
             /// Skip exactly one YAML node (scalar/sequence/mapping) in the live stream.
             ///
             /// Used by:
@@ -1879,7 +1874,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             }
         }
 
-        impl<'de, 'e> de::MapAccess<'de> for MA<'de, 'e> {
+        impl<'de> de::MapAccess<'de> for MA<'de, '_> {
             type Error = Error;
 
             /// Produce the next key for the visitor, honoring duplicate policy and merges.
@@ -1966,11 +1961,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                             events = vec![start, end];
                             kemn = true;
                         }
-                        let key_seed = match seed.take() {
-                            Some(s) => s,
-                            None => {
-                                return Err(Error::InternalSeedReusedForMapKey { location });
-                            }
+                        let Some(key_seed) = seed.take() else {
+                            return Err(Error::InternalSeedReusedForMapKey { location });
                         };
 
                         // Set the fallback location to the key span *before* deserializing the key.
@@ -1980,7 +1972,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         match &mut self.fallback_guard {
                             Some(guard) => guard.replace_location(location),
                             None => {
-                                self.fallback_guard = Some(MissingFieldLocationGuard::new(location))
+                                self.fallback_guard =
+                                    Some(MissingFieldLocationGuard::new(location));
                             }
                         }
 
@@ -2123,11 +2116,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                             let fingerprint = fingerprint.into_owned();
                             let location = key_node.location();
                             let events = key_node.take_events();
-                            let key_seed = match seed.take() {
-                                Some(s) => s,
-                                None => {
-                                    return Err(Error::InternalSeedReusedForMapKey { location });
-                                }
+                            let Some(key_seed) = seed.take() else {
+                                return Err(Error::InternalSeedReusedForMapKey { location });
                             };
 
                             // Same reasoning as the buffered path above: set key-span fallback
@@ -2379,8 +2369,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
     /// name, and a `VariantAccess` (`VA`) that reads the payload (unit/newtype/tuple/struct).
     fn deserialize_enum<V: Visitor<'de>>(
         mut self,
-        _name: &'static str,
-        _variants: &'static [&'static str],
+        name: &'static str,
+        variants: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
         enum Mode<'de, 'a> {
@@ -2418,7 +2408,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 // If the tag matches a variant name, use tag as variant selector
                 // and the scalar value as newtype payload.
                 if let Some((ref tag_name, tag_loc)) = tagged_enum {
-                    if _variants.contains(&tag_name.as_str()) {
+                    if variants.contains(&tag_name.as_str()) {
                         let variant_name = EnumScalarId {
                             raw: Cow::Owned(tag_name.clone()),
                             effective: Cow::Owned(tag_name.clone()),
@@ -2491,7 +2481,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                 ..
             }) => {
                 if let Some(tag_name) = simple_tagged_enum_name(&raw_tag, &tag)
-                    && _variants.contains(&tag_name.as_str())
+                    && variants.contains(&tag_name.as_str())
                 {
                     // Consume the SeqStart, collect all events until SeqEnd, replay as untagged sequence
                     let Some(seq_start) = self.ev.next()? else {
@@ -2514,19 +2504,11 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                     let mut depth = 1usize;
                     while depth > 0 {
                         match self.ev.next()? {
-                            Some(ev @ Ev::SeqStart { .. }) => {
+                            Some(ev @ (Ev::SeqStart { .. } | Ev::MapStart { .. })) => {
                                 depth += 1;
                                 replay_events.push(ev);
                             }
-                            Some(ev @ Ev::SeqEnd { .. }) => {
-                                depth -= 1;
-                                replay_events.push(ev);
-                            }
-                            Some(ev @ Ev::MapStart { .. }) => {
-                                depth += 1;
-                                replay_events.push(ev);
-                            }
-                            Some(ev @ Ev::MapEnd { .. }) => {
+                            Some(ev @ (Ev::SeqEnd { .. } | Ev::MapEnd { .. })) => {
                                 depth -= 1;
                                 replay_events.push(ev);
                             }
@@ -2569,11 +2551,11 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
         };
 
         if let Some((tag_name, location)) = tagged_enum
-            && tag_name != _name
+            && tag_name != name
         {
             return Err(Error::TaggedEnumMismatch {
                 tagged: tag_name,
-                target: _name,
+                target: name,
                 location,
             });
         }
@@ -2611,7 +2593,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             map_mode: bool,
         }
 
-        impl<'de, 'e> VA<'de, 'e> {
+        impl VA<'_, '_> {
             /// In map mode (`{ Variant: ... }`) ensure the closing `}` is present.
             fn expect_map_end(&mut self) -> Result<(), Error> {
                 match self.ev.next()? {
@@ -2624,7 +2606,7 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
             }
         }
 
-        impl<'de, 'e> de::VariantAccess<'de> for VA<'de, 'e> {
+        impl<'de> de::VariantAccess<'de> for VA<'de, '_> {
             type Error = Error;
 
             /// Handle unit variants: `Variant` or `{ Variant: null/~ }`.

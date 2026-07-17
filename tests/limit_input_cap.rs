@@ -5,6 +5,7 @@ use serde_saphyr::{
     Error, from_multiple_with_options, from_reader, from_reader_with_options, read_with_options,
 };
 use std::cell::RefCell;
+use std::fmt::Write as _;
 use std::io::ErrorKind;
 use std::rc::Rc;
 
@@ -23,7 +24,7 @@ struct Simple {
 fn big_valid_yaml(n: usize) -> String {
     let mut yaml = String::new();
     for i in 1..=n {
-        yaml.push_str(&format!("a{}: {}\n", i, i));
+        let _ = writeln!(yaml, "a{}: {}", i, i);
     }
     yaml
 }
@@ -239,7 +240,7 @@ fn read_limits_are_per_document() {
         Err(error) => match unwrap_snippet(&error) {
             Error::Budget { breach, .. } => match breach {
                 BudgetBreach::Nodes { nodes } => {
-                    assert_eq!(nodes, &31)
+                    assert_eq!(nodes, &31);
                 }
                 _ => panic!("Unexpected kind of breach: {:?}", error),
             },
@@ -258,7 +259,7 @@ fn from_reader_limits_are_per_all_content() {
         Err(error) => match unwrap_snippet(&error) {
             Error::Budget { breach, .. } => match breach {
                 BudgetBreach::Nodes { nodes } => {
-                    assert_eq!(nodes, &3001)
+                    assert_eq!(nodes, &3001);
                 }
                 _ => panic!("Unexpected kind of breach: {:?}", error),
             },

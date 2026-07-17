@@ -1,3 +1,4 @@
+#[cfg(feature = "serialize")]
 use serde_saphyr::{DoubleQuoted, SingleQuoted};
 
 #[cfg(feature = "serialize")]
@@ -126,12 +127,14 @@ mod round_trip_tests {
 }
 
 #[test]
+#[cfg(feature = "serialize")]
 fn double_quoted_forces_double_quoted_top_level_scalar_output() {
     let yaml = serde_saphyr::to_string(&DoubleQuoted("plain")).unwrap();
     assert_eq!(yaml, "\"plain\"\n");
 }
 
 #[test]
+#[cfg(feature = "serialize")]
 fn single_quoted_forces_single_quoted_top_level_scalar_output() {
     let yaml = serde_saphyr::to_string(&SingleQuoted("plain")).unwrap();
     assert_eq!(yaml, "'plain'\n");

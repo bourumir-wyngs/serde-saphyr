@@ -15,7 +15,7 @@ fn extra_bracket_should_err() {
         } if matches!(
             source.as_ref(),
             ExternalMessageSource::Parser(error)
-                if error.kind() == ErrorKind::MisplacedFlowCollectionEnd
+                if *error.kind() == ErrorKind::MisplacedFlowCollectionEnd
         )
     ));
 }

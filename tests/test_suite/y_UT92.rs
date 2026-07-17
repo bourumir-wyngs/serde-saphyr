@@ -29,7 +29,7 @@ fn yaml_ut92_explicit_documents() {
     match &docs[0] {
         Doc::MapI(m) => assert_eq!(m.get("matches %"), Some(&20)),
         Doc::MapS(m) => assert_eq!(m.get("matches %").map(String::as_str), Some("20")),
-        other => panic!("expected first doc to be a mapping, got: {:?}", other),
+        other @ Doc::Null(_) => panic!("expected first doc to be a mapping, got: {other:?}"),
     }
 
     if docs.len() == 2 {

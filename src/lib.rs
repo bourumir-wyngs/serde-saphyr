@@ -1,5 +1,4 @@
 #![forbid(unsafe_code)]
-#![allow(deprecated)]
 
 #[cfg(not(any(feature = "serialize", feature = "deserialize")))]
 compile_error!(
@@ -10,15 +9,18 @@ compile_error!(
 #[cfg(all(feature = "deserialize", feature = "properties"))]
 pub use self::de::PropertySyntax;
 #[cfg(all(feature = "deserialize", any(feature = "garde", feature = "validator")))]
-pub use self::de_error::ValidationSource;
+pub use self::de_error::{ValidationIssue, ValidationSource};
 #[cfg(feature = "serialize")]
 pub use self::ser::{
-    error as ser_error,
+    Error as SerializeError, error as ser_error,
     options::{CommentPosition, SerializerOptions},
 };
 #[cfg(feature = "deserialize")]
 pub use self::{
-    de::{Budget, DuplicateKeyPolicy, Error, MergeKeyPolicy, Options, budget, localizer, options},
+    de::{
+        Budget, DuplicateKeyPolicy, Error, Error as DeserializeError, MergeKeyPolicy, Options,
+        budget, localizer, options,
+    },
     de_error::{
         CroppedRegion, MessageFormatter, RenderOptions, SnippetMode, TransformReason,
         UserMessageFormatter,
@@ -74,8 +76,7 @@ pub use self::de::api::{
 #[cfg(feature = "serialize")]
 pub use self::ser::api::{
     to_fmt_writer, to_fmt_writer_with_options, to_io_writer, to_io_writer_with_options, to_string,
-    to_string_multiple, to_string_multiple_with_options, to_string_with_options, to_writer,
-    to_writer_with_options,
+    to_string_multiple, to_string_multiple_with_options, to_string_with_options,
 };
 
 #[cfg(feature = "deserialize")]

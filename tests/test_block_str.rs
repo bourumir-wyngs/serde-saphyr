@@ -272,7 +272,7 @@ fn fold_string_does_not_wrap_on_tabs_roundtrips() {
 
     let out = to_string(&FoldString(s.clone())).unwrap();
     assert!(out.starts_with(">\n  "));
-    assert!(out.contains("\t"));
+    assert!(out.contains('\t'));
 
     let roundtrip: String = serde_saphyr::from_str(&out).unwrap();
     // FoldString uses plain '>' (clip chomping), which round-trips with a trailing newline.
@@ -366,7 +366,7 @@ fn verdanta_case_fold() -> anyhow::Result<()> {
             ))),
             children: vec![RcAnchor::wrapping(Node2 {
                 id: 0,
-                name: "".to_string(),
+                name: String::new(),
                 description: RcAnchor::wrapping(Some(FoldString(
                     "02This is very very very long description. \
         This is very very very long description. This is very very very long description."

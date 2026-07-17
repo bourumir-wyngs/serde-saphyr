@@ -2,7 +2,8 @@ use std::{fmt, io};
 
 /// Error type used by the YAML serializer.
 ///
-/// This type is re-exported as `serde_saphyr::ser::Error` and is returned by
+/// This type is re-exported as `serde_saphyr::SerializeError` and
+/// `serde_saphyr::ser::Error`, and is returned by
 /// the public serialization APIs (for example `serde_saphyr::to_string`).
 ///
 /// It implements `serde::ser::Error`, which allows user `Serialize` impls and
@@ -112,12 +113,12 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Error::Message { .. } => None,
-            Error::Unexpected { .. } => None,
             Error::Format { error } => Some(error),
             Error::IO { error } => Some(error),
-            Error::InvalidOptions(_) => None,
-            Error::SingleQuotedRequiresEscaping { .. } => None,
+            Error::Message { .. }
+            | Error::Unexpected { .. }
+            | Error::InvalidOptions(_)
+            | Error::SingleQuotedRequiresEscaping { .. } => None,
         }
     }
 }

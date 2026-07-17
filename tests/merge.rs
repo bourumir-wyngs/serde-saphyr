@@ -170,12 +170,11 @@ target:
         merge_keys: MergeKeyPolicy::Error,
     };
 
-    let err =
-        match from_str_with_options::<MergeDoc<BTreeMap<String, serde_json::Value>>>(yaml, options)
-        {
-            Ok(_) => panic!("merge key must be rejected"),
-            Err(err) => err,
-        };
+    let Err(err) =
+        from_str_with_options::<MergeDoc<BTreeMap<String, serde_json::Value>>>(yaml, options)
+    else {
+        panic!("merge key must be rejected");
+    };
     assert!(matches!(
         err.without_snippet(),
         serde_saphyr::Error::MergeKeyNotAllowed { .. }

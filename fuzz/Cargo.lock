@@ -99,8 +99,8 @@ dependencies = [
 
 [[package]]
 name = "granit-parser"
-version = "0.0.8"
-source = "git+https://github.com/bourumir-wyngs/granit-parser#f949f7e57a975d150519fbc77aea8d96f57631d7"
+version = "1.0.0-rc.1"
+source = "git+https://github.com/bourumir-wyngs/granit-parser#302830e68911ac77f6cd072e270f46707143fd36"
 dependencies = [
  "arraydeque",
  "smallvec",
@@ -189,7 +189,7 @@ dependencies = [
 
 [[package]]
 name = "serde-saphyr"
-version = "0.0.29"
+version = "1.0.0-rc.1"
 dependencies = [
  "annotate-snippets",
  "base64",

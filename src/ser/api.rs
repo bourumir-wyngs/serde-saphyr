@@ -54,21 +54,6 @@ pub fn to_string_with_options<T: serde_core::Serialize>(
     Ok(out)
 }
 
-/// Deprecated: use `to_fmt_writer` or `to_io_writer`
-/// Retained for backward compatibility.
-#[deprecated(
-    since = "0.0.7",
-    note = "Use `to_fmt_writer` for `fmt::Write` (String, fmt::Formatter) or `to_io_writer` for files/sockets."
-)]
-#[cfg(feature = "serialize")]
-pub fn to_writer<W: std::fmt::Write, T: serde_core::Serialize>(
-    output: &mut W,
-    value: &T,
-) -> std::result::Result<(), crate::ser::Error> {
-    let mut ser = crate::ser::YamlSerializer::new(output);
-    value.serialize(&mut ser)
-}
-
 /// Serialize a value as YAML into any [`std::fmt::Write`] target.
 #[cfg(feature = "serialize")]
 pub fn to_fmt_writer<W: std::fmt::Write, T: serde_core::Serialize>(
@@ -88,27 +73,25 @@ pub fn to_io_writer<W: std::io::Write, T: serde_core::Serialize>(
 }
 
 /// Serialize a value as YAML into any [`std::fmt::Write`] target, with options.
-/// Options are consumed because anchor generator may be taken from them.
+/// Options are consumed to leave room for non-`Copy` settings.
 #[cfg(feature = "serialize")]
 pub fn to_fmt_writer_with_options<W: std::fmt::Write, T: serde_core::Serialize>(
     output: &mut W,
     value: &T,
-    mut options: SerializerOptions,
+    options: SerializerOptions,
 ) -> std::result::Result<(), crate::ser::Error> {
-    options.consistent()?;
-    let mut ser = crate::ser::YamlSerializer::with_options(output, &mut options);
+    let mut ser = crate::ser::YamlSerializer::with_options(output, options)?;
     value.serialize(&mut ser)
 }
 
 /// Serialize a value as YAML into any [`std::io::Write`] target, with options.
-/// Options are consumed because anchor generator may be taken from them.
+/// Options are consumed to leave room for non-`Copy` settings.
 #[cfg(feature = "serialize")]
 pub fn to_io_writer_with_options<W: std::io::Write, T: serde_core::Serialize>(
     output: &mut W,
     value: &T,
-    mut options: SerializerOptions,
+    options: SerializerOptions,
 ) -> std::result::Result<(), crate::ser::Error> {
-    options.consistent()?;
     struct Adapter<'a, W: std::io::Write> {
         output: &'a mut W,
         last_err: Option<std::io::Error>,
@@ -131,7 +114,7 @@ pub fn to_io_writer_with_options<W: std::io::Write, T: serde_core::Serialize>(
         output,
         last_err: None,
     };
-    let mut ser = crate::ser::YamlSerializer::with_options(&mut adapter, &mut options);
+    let mut ser = crate::ser::YamlSerializer::with_options(&mut adapter, options)?;
     match value.serialize(&mut ser) {
         Ok(()) => Ok(()),
         Err(e) => {
@@ -141,20 +124,6 @@ pub fn to_io_writer_with_options<W: std::io::Write, T: serde_core::Serialize>(
             Err(e)
         }
     }
-}
-
-/// Deprecated: use `to_fmt_writer_with_options` for `fmt::Write` or `to_io_writer_with_options` for `io::Write`.
-#[deprecated(
-    since = "0.0.7",
-    note = "Use `to_fmt_writer_with_options` for fmt::Write or `to_io_writer_with_options` for io::Write."
-)]
-#[cfg(feature = "serialize")]
-pub fn to_writer_with_options<W: std::fmt::Write, T: serde_core::Serialize>(
-    output: &mut W,
-    value: &T,
-    options: SerializerOptions,
-) -> std::result::Result<(), crate::ser::Error> {
-    to_fmt_writer_with_options(output, value, options)
 }
 
 /// Serialize multiple documents into a YAML string.
@@ -214,7 +183,6 @@ pub fn to_string_multiple_with_options<T: serde_core::Serialize>(
 ) -> std::result::Result<String, crate::ser::Error> {
     let mut out = String::new();
     let mut first = true;
-    #[allow(deprecated)]
     let yaml_12 = options.yaml_12;
     for v in values {
         if !first {
@@ -225,7 +193,7 @@ pub fn to_string_multiple_with_options<T: serde_core::Serialize>(
             }
         }
         first = false;
-        to_fmt_writer_with_options(&mut out, v, options)?;
+        to_fmt_writer_with_options(&mut out, v, options.clone())?;
     }
     Ok(out)
 }

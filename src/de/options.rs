@@ -83,6 +83,7 @@ pub enum MergeKeyPolicy {
 /// assert_eq!(limits.max_replay_stack_depth, 32);
 /// # }
 /// ```
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(
     feature = "serde_derived_types",
@@ -91,20 +92,11 @@ pub enum MergeKeyPolicy {
 pub struct AliasLimits {
     /// Maximum total number of **replayed** events injected from aliases across the entire parse.
     /// When exceeded, deserialization errors (alias replay limit exceeded).
-    #[deprecated(
-        note = "Direct construction of `AliasLimits` will be disabled from 1.0.0, use macro `alias_limits!`"
-    )]
     pub max_total_replayed_events: usize,
     /// Maximum depth of the alias replay stack (nested alias → injected buffer → alias, etc.).
-    #[deprecated(
-        note = "Direct construction of `AliasLimits` will be disabled from 1.0.0, use macro `alias_limits!`"
-    )]
     pub max_replay_stack_depth: usize,
     /// Maximum number of times a **single anchor id** may be expanded via alias.
     /// Use `usize::MAX` for "unlimited".
-    #[deprecated(
-        note = "Direct construction of `AliasLimits` will be disabled from 1.0.0, use macro `alias_limits!`"
-    )]
     pub max_alias_expansions_per_anchor: usize,
 }
 
@@ -154,6 +146,7 @@ impl Default for AliasLimits {
 /// let cfg: Config = from_str_with_options(yaml, options).unwrap();
 /// assert_eq!(cfg.name, "My Application");
 /// ```
+#[non_exhaustive]
 #[derive(Clone)]
 #[cfg_attr(
     feature = "serde_derived_types",
@@ -161,29 +154,17 @@ impl Default for AliasLimits {
 )]
 pub struct Options {
     /// Optional YAML budget to enforce before parsing (counts raw parser events).
-    #[deprecated(
-        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
-    )]
     pub budget: Option<Budget>,
     /// Optional callback invoked with the final budget report after parsing.
     /// It is invoked both when parsing is successful and when budget was breached.
     #[cfg_attr(feature = "serde_derived_types", serde(skip))]
-    #[deprecated(
-        note = "Direct construction of `Options` will be disabled from 1.0.0, use `Options::with_budget_report`"
-    )]
     pub budget_report: Option<fn(&crate::budget::BudgetReport)>,
 
     /// Invoked both when parsing is successful and when budget was breached.
     #[cfg_attr(feature = "serde_derived_types", serde(skip))]
-    #[deprecated(
-        note = "Direct construction of `Options` will be disabled from 1.0.0, use `Options::with_budget_report`"
-    )]
     pub budget_report_cb: Option<BudgetReportCallback>,
 
     /// Policy for duplicate keys.
-    #[deprecated(
-        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
-    )]
     pub duplicate_keys: DuplicateKeyPolicy,
     /// Policy for YAML merge keys (`<<`).
     ///
@@ -193,42 +174,24 @@ pub struct Options {
     ///
     /// Default: [`MergeKeyPolicy::Merge`].
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
-    #[deprecated(
-        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
-    )]
     pub merge_keys: MergeKeyPolicy,
     /// Limits for alias replay to harden against alias bombs.
-    #[deprecated(
-        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
-    )]
     pub alias_limits: AliasLimits,
     /// Enable legacy octal parsing where values starting with `0` are treated as base-8.
     /// They are deprecated in YAML 1.2. Default: false.
-    #[deprecated(
-        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
-    )]
     pub legacy_octal_numbers: bool,
     /// If true, interpret only the exact literals `true` and `false` as booleans.
     /// YAML 1.1 forms like `yes`/`no`/`on`/`off` will be rejected and not inferred.
     /// Default: false (accept YAML 1.1 boolean forms).
-    #[deprecated(
-        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
-    )]
     pub strict_booleans: bool,
     /// When a field marked with the `!!binary` tag is deserialized into a `String`,
     /// `serde-saphyr` normally expects the value to be base64-encoded UTF-8.
     /// If you want to treat the value as a plain string and ignore the `!!binary` tag,
     /// set this to `true` (the default is `false`).
-    #[deprecated(
-        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
-    )]
     pub ignore_binary_tag_for_string: bool,
     /// Activates YAML conventions common in robotics community. These extensions support
     /// conversion functions (deg, rad) and simple mathematical expressions such as deg(180),
     /// rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). `robotics` feature must also be enabled.
-    #[deprecated(
-        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
-    )]
     pub angle_conversions: bool,
     /// If true, values that can be parsed as booleans or numbers are rejected as
     /// unquoted strings. This flag is intended for teams that want to enforce
@@ -236,9 +199,6 @@ pub struct Options {
     /// requiring such strings to be explicitly quoted.
     /// The default is false (a number or boolean will be stored in the string
     /// field exactly as provided, without quoting).
-    #[deprecated(
-        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
-    )]
     pub no_schema: bool,
 
     /// If true, `deserialize_any` (typeless targets like `serde_json::Value`) errors on a
@@ -255,17 +215,11 @@ pub struct Options {
     /// Default: true (reject non-finite floats in typeless positions). Set this to false
     /// to round-trip non-finite floats as canonical strings: `.nan`, `.inf`, `-.inf`.
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
-    #[deprecated(
-        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
-    )]
     pub reject_non_finite_typeless_float: bool,
 
     /// If true (default), public APIs that have access to the original YAML input
     /// will wrap returned errors with a snippet wrapper, enabling rustc-like snippet
     /// rendering when a location is available.
-    #[deprecated(
-        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
-    )]
     pub with_snippet: bool,
 
     /// Horizontal crop radius (in character columns) when rendering snippet diagnostics.
@@ -274,15 +228,9 @@ pub struct Options {
     /// column window around the reported error column, so they stay vertically aligned.
     ///
     /// If set to `0`, snippet wrapping is disabled (the original, unwrapped error is returned).
-    #[deprecated(
-        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
-    )]
     pub crop_radius: usize,
 
     /// Indentation requirement for the parsed document.
-    #[deprecated(
-        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
-    )]
     pub require_indent: RequireIndent,
 
     /// Optional include resolver callback.
@@ -291,26 +239,17 @@ pub struct Options {
     ///-like constructs.
     #[cfg(feature = "include")]
     #[cfg_attr(feature = "serde_derived_types", serde(skip))]
-    #[deprecated(
-        note = "Direct construction of `Options` will be disabled from 1.0.0, use `Options::with_include_resolver`"
-    )]
     pub include_resolver: Option<IncludeResolverCallback>,
 
     /// A map of properties to substitute in scalar values.
     /// Used for docker-compose-style interpolation like `${VAR}`.
     #[cfg(feature = "properties")]
     #[cfg_attr(feature = "serde_derived_types", serde(skip))]
-    #[deprecated(
-        note = "Direct construction of `Options` will be disabled from 1.0.0, use `Options::with_properties`"
-    )]
     pub property_map: Option<Rc<HashMap<String, String>>>,
 
     /// Which property-interpolation syntaxes are recognized.
     /// Defaults to [`PropertySyntax::Braced`] (only `${NAME}`).
     #[cfg(feature = "properties")]
-    #[deprecated(
-        note = "Direct construction of `Options` will be disabled from 1.0.0, use macro `options!`"
-    )]
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub property_syntax: PropertySyntax,
 }
@@ -330,7 +269,6 @@ pub type BudgetReportCallback =
     Rc<std::cell::RefCell<dyn FnMut(crate::budget::BudgetReport) + 'static>>;
 
 impl Options {
-    #[allow(deprecated)]
     pub(crate) fn validate(&self) -> Result<(), crate::de_error::Error> {
         self.require_indent.validate()
     }
@@ -350,7 +288,6 @@ impl Options {
     ///     let _ = report;
     /// });
     /// ```
-    #[allow(deprecated)]
     pub fn with_budget_report<F>(mut self, cb: F) -> Self
     where
         F: FnMut(crate::budget::BudgetReport) + 'static,
@@ -425,11 +362,11 @@ impl Options {
     ///     assert_eq!(req.from_name, "<input>");
     ///
     ///     if req.spec == "virtual://users.yaml" {
-    ///         Ok(ResolvedInclude {
-    ///             id: req.spec.to_owned(),
-    ///             name: "virtual users".to_owned(),
-    ///             source: InputSource::from_string(users_yaml.to_owned()),
-    ///         })
+    ///         Ok(ResolvedInclude::new(
+    ///             req.spec,
+    ///             "virtual users",
+    ///             InputSource::from_string(users_yaml.to_owned()),
+    ///         ))
     ///     } else {
     ///         Err(IncludeResolveError::Message(format!("unknown include: {}", req.spec)))
     ///     }
@@ -504,7 +441,6 @@ impl Options {
 }
 
 impl Default for Options {
-    #[allow(deprecated)]
     fn default() -> Self {
         Self {
             budget: Some(Budget::default()),
@@ -534,7 +470,6 @@ impl Default for Options {
 }
 
 impl std::fmt::Debug for Options {
-    #[allow(deprecated)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Options")
             .field("budget", &self.budget)

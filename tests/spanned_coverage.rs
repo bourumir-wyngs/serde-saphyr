@@ -209,7 +209,7 @@ struct ByteVec(Vec<u8>);
 impl<'de> Deserialize<'de> for ByteVec {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct V;
-        impl<'de> Visitor<'de> for V {
+        impl Visitor<'_> for V {
             type Value = ByteVec;
             fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
                 f.write_str("bytes")
@@ -240,7 +240,7 @@ fn visit_byte_buf_fallback() {
 // ── expecting coverage via type mismatch ─────────────────────────────────────
 
 /// A deserializer that calls `deserialize_any` → `visit_enum` which is NOT
-/// implemented by ReprOrPlainVisitor, triggering the `expecting` error message.
+/// implemented by `ReprOrPlainVisitor`, triggering the `expecting` error message.
 struct BadDeser;
 
 impl<'de> Deserializer<'de> for BadDeser {
@@ -280,8 +280,8 @@ fn expecting_is_called_on_type_mismatch() {
     );
 }
 
-/// A deserializer that calls visit_map on the SpannedVisitor (outer), which
-/// doesn't implement visit_map, triggering its `expecting` method.
+/// A deserializer that calls `visit_map` on the `SpannedVisitor` (outer), which
+/// doesn't implement `visit_map`, triggering its `expecting` method.
 struct BadOuterDeser;
 
 impl<'de> Deserializer<'de> for BadOuterDeser {

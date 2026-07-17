@@ -60,7 +60,7 @@ value11
             assert_eq!(m.get("a6").map(String::as_str), Some("1"));
             assert_eq!(m.get("b6").map(String::as_str), Some("2"));
         }
-        other => panic!("doc4 expected MInt or MStr, got: {:?}", other),
+        other @ Doc::S(_) => panic!("doc4 expected MInt or MStr, got: {other:?}"),
     }
     match &docs[5] {
         Doc::MStr(m) => assert_eq!(m.get("key8").map(String::as_str), Some("value7")),

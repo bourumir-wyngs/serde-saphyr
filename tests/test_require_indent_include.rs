@@ -9,11 +9,11 @@ fn parse_with_include(
 ) -> Result<Value, String> {
     let options = serde_saphyr::options! { require_indent: require };
     let options = options.with_include_resolver(move |req| {
-        Ok(serde_saphyr::ResolvedInclude {
-            id: req.spec.to_string(),
-            name: req.spec.to_string(),
-            source: serde_saphyr::InputSource::from_string(child.to_string()),
-        })
+        Ok(serde_saphyr::ResolvedInclude::new(
+            req.spec,
+            req.spec,
+            serde_saphyr::InputSource::from_string(child.to_string()),
+        ))
     });
     serde_saphyr::from_str_with_options::<Value>(main, options).map_err(|e| e.to_string())
 }

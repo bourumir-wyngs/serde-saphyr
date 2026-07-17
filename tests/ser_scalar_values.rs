@@ -196,7 +196,8 @@ fn serialize_i16() {
 
 #[test]
 fn serialize_i128() {
-    let s = serde_saphyr::to_string(&170141183460469231731687303715884105727i128).unwrap();
+    let s =
+        serde_saphyr::to_string(&170_141_183_460_469_231_731_687_303_715_884_105_727_i128).unwrap();
     assert!(s.trim().len() > 10);
 }
 
@@ -214,7 +215,8 @@ fn serialize_u16() {
 
 #[test]
 fn serialize_u128() {
-    let s = serde_saphyr::to_string(&340282366920938463463374607431768211455u128).unwrap();
+    let s =
+        serde_saphyr::to_string(&340_282_366_920_938_463_463_374_607_431_768_211_455_u128).unwrap();
     assert!(s.trim().len() > 10);
 }
 

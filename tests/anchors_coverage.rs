@@ -1,7 +1,7 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 //! Tests targeting coverage gaps in `src/anchors.rs`.
 //! Covers: From conversions, Deref/AsRef/Borrow/Into, PartialEq/Eq,
-//! Debug, Default, wrapping constructors, weak helpers, and Deserialize
+//! Debug, Default, constructors, weak helpers, and Deserialize
 //! error paths for all anchor types.
 
 use std::cell::RefCell;
@@ -26,9 +26,9 @@ struct Val {
 // ── From conversions ─────────────────────────────────────────────────────────
 
 #[test]
-fn from_rc_owned_into_rc_weak_anchor() {
+fn from_rc_ref_into_rc_weak_anchor() {
     let rc = Rc::new(Val { x: 1 });
-    let weak: RcWeakAnchor<Val> = RcWeakAnchor::from(rc.clone());
+    let weak: RcWeakAnchor<Val> = RcWeakAnchor::from(&rc);
     assert!(weak.upgrade().is_some());
     drop(rc);
     assert!(weak.upgrade().is_none());
@@ -42,9 +42,9 @@ fn from_arc_ref_into_arc_weak_anchor() {
 }
 
 #[test]
-fn from_arc_owned_into_arc_weak_anchor() {
+fn arc_weak_anchor_from_ref_dangles_after_strong_arc_drops() {
     let arc = Arc::new(Val { x: 3 });
-    let weak: ArcWeakAnchor<Val> = ArcWeakAnchor::from(arc.clone());
+    let weak: ArcWeakAnchor<Val> = ArcWeakAnchor::from(&arc);
     assert!(weak.upgrade().is_some());
     drop(arc);
     assert!(weak.upgrade().is_none());
@@ -446,7 +446,7 @@ fn arc_recursive_default() {
     assert_eq!(r.lock().unwrap().as_ref().unwrap().x, 0);
 }
 
-// ── wrapping constructors ────────────────────────────────────────────────────
+// ── constructors ─────────────────────────────────────────────────────────────
 
 #[test]
 fn rc_anchor_wrapping() {

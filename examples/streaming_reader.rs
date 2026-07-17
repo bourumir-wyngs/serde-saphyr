@@ -10,8 +10,7 @@ fn main() -> anyhow::Result<()> {
 
     let mut stdin = stdin();
 
-    let iterator: Box<dyn Iterator<Item = Result<serde_json::Value, _>>> =
-        serde_saphyr::read(&mut stdin);
+    let iterator = serde_saphyr::read::<_, serde_json::Value>(&mut stdin);
     for document in iterator {
         match document {
             Ok(document) => {

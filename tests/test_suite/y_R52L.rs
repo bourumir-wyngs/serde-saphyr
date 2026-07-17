@@ -27,7 +27,7 @@ fn y_r52l() {
 
     match &v.top1[0] {
         Top1Item::Str(s) => assert_eq!(s, "item1"),
-        _ => panic!("expected first element to be string 'item1'"),
+        Top1Item::Map(_) => panic!("expected first element to be string 'item1'"),
     }
 
     match &v.top1[1] {
@@ -35,11 +35,11 @@ fn y_r52l() {
             assert_eq!(m.len(), 1);
             assert_eq!(m.get("key2").map(|s| s.as_str()), Some("value2"));
         }
-        _ => panic!("expected second element to be a map with key2: value2"),
+        Top1Item::Str(_) => panic!("expected second element to be a map with key2: value2"),
     }
 
     match &v.top1[2] {
         Top1Item::Str(s) => assert_eq!(s, "item3"),
-        _ => panic!("expected third element to be string 'item3'"),
+        Top1Item::Map(_) => panic!("expected third element to be string 'item3'"),
     }
 }

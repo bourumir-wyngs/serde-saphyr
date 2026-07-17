@@ -578,7 +578,7 @@ fn test_prefer_block_scalars_single_line_unchanged() {
 
     // Single-line strings should not use block scalar
     assert!(
-        !buf.contains("|"),
+        !buf.contains('|'),
         "Single-line string should not use block scalar:\n{}",
         buf
     );

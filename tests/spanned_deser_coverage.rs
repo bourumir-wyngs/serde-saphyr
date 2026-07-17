@@ -1,5 +1,5 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
-/// Targeted tests to increase coverage of src/de/spanned_deser.rs.
+/// Targeted tests to increase coverage of `src/de/spanned_deser.rs`.
 ///
 /// Covers:
 /// - `deserialize_yaml_spanned` with `peek()` returning `None` (end-of-stream path, line 38)
@@ -365,11 +365,11 @@ fn spanned_deser_included_value_preserves_source_id() {
             serde_saphyr::IncludeResolveError,
         > {
             assert_eq!(req.spec, "child.yaml");
-            Ok(serde_saphyr::ResolvedInclude {
-                id: "child.yaml".to_string(),
-                name: "child.yaml".to_string(),
-                source: serde_saphyr::InputSource::from_string("included\n".to_string()),
-            })
+            Ok(serde_saphyr::ResolvedInclude::new(
+                "child.yaml",
+                "child.yaml",
+                serde_saphyr::InputSource::from_string("included\n".to_string()),
+            ))
         },
     );
 

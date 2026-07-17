@@ -107,7 +107,7 @@ mod zmij_format_tests {
         assert!(s.contains("-.inf"));
     }
 
-    /// Exercise the write_float_string path via to_writer (fmt::Write)
+    /// Exercise the `write_float_string` path via `to_fmt_writer`.
     #[test]
     fn write_path_nan() {
         #[derive(Serialize)]
@@ -214,7 +214,7 @@ mod zmij_format_tests {
         }
         serde_saphyr::to_fmt_writer(&mut buf, &W { v: 1e20f32 }).unwrap();
         assert!(
-            buf.contains("e"),
+            buf.contains('e'),
             "expected scientific notation, got: {buf}"
         );
     }
@@ -237,7 +237,7 @@ mod zmij_format_tests {
 
         impl Hash for DummyF64 {
             fn hash<H: Hasher>(&self, state: &mut H) {
-                self.0.to_bits().hash(state)
+                self.0.to_bits().hash(state);
             }
         }
 

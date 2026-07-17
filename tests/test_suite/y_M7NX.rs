@@ -29,11 +29,11 @@ fn yaml_m7nx_nested_flow_collections() {
     assert_eq!(v.a.len(), 3);
     match &v.a[0] {
         Item::S(s) => assert_eq!(s, "b"),
-        _ => panic!("a[0] not 'b'"),
+        Item::M(_) => panic!("a[0] not 'b'"),
     }
     match &v.a[1] {
         Item::S(s) => assert_eq!(s, "c"),
-        _ => panic!("a[1] not 'c'"),
+        Item::M(_) => panic!("a[1] not 'c'"),
     }
     match &v.a[2] {
         Item::M(m) => {
@@ -43,6 +43,6 @@ fn yaml_m7nx_nested_flow_collections() {
                 Some(vec!["e".to_string(), "f".to_string()])
             );
         }
-        _ => panic!("a[2] not a mapping {{d: [e, f]}}"),
+        Item::S(_) => panic!("a[2] not a mapping {{d: [e, f]}}"),
     }
 }

@@ -1,6 +1,6 @@
 use serde_saphyr::SerializerOptions;
 
-/// Test that line_width=80 means 80 chars, not something smaller
+/// Test that `line_width=80` means 80 chars, not something smaller
 #[test]
 fn test_line_width_is_80_not_60() {
     let options = serde_saphyr::ser_options! {

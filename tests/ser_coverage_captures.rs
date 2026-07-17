@@ -1,3 +1,5 @@
+#![cfg(feature = "serialize")]
+
 use serde::Serialize;
 use serde_saphyr::to_string;
 use std::collections::BTreeMap;
