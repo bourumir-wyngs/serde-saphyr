@@ -31,7 +31,7 @@ struct OuterSeq {
 fn assert_custom_message(err: &serde_saphyr::Error, expected: &str) {
     match err.without_snippet() {
         serde_saphyr::Error::Message { msg, .. } | serde_saphyr::Error::AliasError { msg, .. } => {
-            assert_eq!(msg, expected)
+            assert_eq!(msg, expected);
         }
         other => panic!("expected custom message error, got {other:?}"),
     }

@@ -212,7 +212,7 @@ program:
             Command::Turn(d) => robot.turn(d),
             Command::Plant(opt_tree) => {
                 let tree = opt_tree.unwrap_or(Tree::Oak);
-                robot.plant(&mut field, tree)
+                robot.plant(&mut field, tree);
             }
         }
     }

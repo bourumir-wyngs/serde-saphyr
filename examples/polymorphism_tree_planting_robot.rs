@@ -152,7 +152,7 @@ fn run_program(robot: &mut Robot, field: &mut [[char; 10]; 8], program: &[Comman
             Command::Turn { direction } => robot.turn(direction),
             Command::Plant(opt) => {
                 let tree = opt.unwrap_or(PlantArgs { tree: Tree::Birch }).tree;
-                robot.plant(field, tree)
+                robot.plant(field, tree);
             }
             Command::MultiStep { steps } => {
                 // Execute the nested subprogram recursively

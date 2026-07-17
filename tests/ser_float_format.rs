@@ -237,7 +237,7 @@ mod zmij_format_tests {
 
         impl Hash for DummyF64 {
             fn hash<H: Hasher>(&self, state: &mut H) {
-                self.0.to_bits().hash(state)
+                self.0.to_bits().hash(state);
             }
         }
 

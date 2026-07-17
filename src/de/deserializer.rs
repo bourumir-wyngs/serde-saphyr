@@ -1980,7 +1980,8 @@ impl<'de, 'e> de::Deserializer<'de> for YamlDeserializer<'de, 'e> {
                         match &mut self.fallback_guard {
                             Some(guard) => guard.replace_location(location),
                             None => {
-                                self.fallback_guard = Some(MissingFieldLocationGuard::new(location))
+                                self.fallback_guard =
+                                    Some(MissingFieldLocationGuard::new(location));
                             }
                         }
 

@@ -239,7 +239,7 @@ fn read_limits_are_per_document() {
         Err(error) => match unwrap_snippet(&error) {
             Error::Budget { breach, .. } => match breach {
                 BudgetBreach::Nodes { nodes } => {
-                    assert_eq!(nodes, &31)
+                    assert_eq!(nodes, &31);
                 }
                 _ => panic!("Unexpected kind of breach: {:?}", error),
             },
@@ -258,7 +258,7 @@ fn from_reader_limits_are_per_all_content() {
         Err(error) => match unwrap_snippet(&error) {
             Error::Budget { breach, .. } => match breach {
                 BudgetBreach::Nodes { nodes } => {
-                    assert_eq!(nodes, &3001)
+                    assert_eq!(nodes, &3001);
                 }
                 _ => panic!("Unexpected kind of breach: {:?}", error),
             },

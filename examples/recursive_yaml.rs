@@ -95,7 +95,7 @@ kings:
             coronator_coronator = coronator_of_coronator.birth_name,
             coronator_from = coronator_of_coronator.reign_starts,
             k3k3_name = k3k3_name,
-        )
+        );
         // Output:
         // 1920: king Aurelian I (Aurelian Markus), crowned by Aurelian Markus, crowned by Aurelian Markus (1920) crowned by Aurelian Markus .
         // 1950: king Benedict I (Benedict Orlan), crowned by Aurelian Markus, crowned by Aurelian Markus (1920) crowned by Aurelian Markus .
