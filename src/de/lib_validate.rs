@@ -369,7 +369,7 @@ where
     T: DeserializeOwned + garde::Validate + 'a,
     <T as garde::Validate>::Context: Default,
 {
-    read_with_options_valid(reader, Default::default())
+    read_with_options_valid(reader, Options::default())
 }
 
 fn read_with_options_validated<'a, R, T, F>(
@@ -632,7 +632,7 @@ where
     R: Read + 'a,
     T: DeserializeOwned + ValidatorValidate + 'a,
 {
-    read_with_options_validate(reader, Default::default())
+    read_with_options_validate(reader, Options::default())
 }
 
 /// Create an iterator over validated YAML documents from a reader with configurable options.

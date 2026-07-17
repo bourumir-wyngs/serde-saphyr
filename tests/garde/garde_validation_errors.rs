@@ -1,6 +1,6 @@
 use garde::Validate;
 use serde::Deserialize;
-use serde_saphyr::{Error, ValidationSource};
+use serde_saphyr::{Error, Options, ValidationSource};
 
 #[cfg(feature = "include")]
 use std::{cell::RefCell, rc::Rc};
@@ -57,7 +57,7 @@ fn assert_empty_document_validation_error(err: Error) {
 fn validation_error_inside_commented_subtree_uses_child_location() {
     let yaml = "item:\n  value: \"\"\n";
 
-    let err = serde_saphyr::from_str_with_options_valid::<CommentedRoot>(yaml, Default::default())
+    let err = serde_saphyr::from_str_with_options_valid::<CommentedRoot>(yaml, Options::default())
         .expect_err("must fail validation");
 
     let location = err
@@ -155,7 +155,7 @@ struct IncludeValidationLeaf {
 fn from_str_with_options_valid_runs_garde_validation() {
     let yaml = "a: \"\"\n";
 
-    let err = serde_saphyr::from_str_with_options_valid::<Root>(yaml, Default::default())
+    let err = serde_saphyr::from_str_with_options_valid::<Root>(yaml, Options::default())
         .expect_err("must fail validation");
 
     let rendered = err.to_string();
@@ -172,7 +172,7 @@ fn from_str_with_options_valid_runs_garde_validation() {
 
 #[test]
 fn from_str_with_options_valid_preserves_validation_error_after_synthetic_null() {
-    let err = serde_saphyr::from_str_with_options_valid::<NullableTopLevel>("", Default::default())
+    let err = serde_saphyr::from_str_with_options_valid::<NullableTopLevel>("", Options::default())
         .expect_err("empty document must fail validation");
 
     assert_empty_document_validation_error(err);
@@ -183,7 +183,7 @@ fn from_reader_with_options_valid_preserves_validation_error_after_synthetic_nul
     let reader = std::io::Cursor::new(Vec::<u8>::new());
     let err = serde_saphyr::from_reader_with_options_valid::<_, NullableTopLevel>(
         reader,
-        Default::default(),
+        Options::default(),
     )
     .expect_err("empty document must fail validation");
 
@@ -203,7 +203,7 @@ fn serde_rename() {
     let yaml = "myField: \"\"\n";
 
     let err =
-        serde_saphyr::from_str_with_options_valid::<StyleRenamedRoot>(yaml, Default::default())
+        serde_saphyr::from_str_with_options_valid::<StyleRenamedRoot>(yaml, Options::default())
             .expect_err("must fail validation");
     let rendered = err.to_string();
 
@@ -255,7 +255,7 @@ fn from_multiple_with_options_valid_returns_all_validation_errors() {
     // Locations are relative to the whole YAML stream.
     let yaml = "a: \"\"\n---\na: \"\"\n";
 
-    let err = serde_saphyr::from_multiple_with_options_valid::<Root>(yaml, Default::default())
+    let err = serde_saphyr::from_multiple_with_options_valid::<Root>(yaml, Options::default())
         .expect_err("must fail validation");
 
     let Error::ValidationErrors {
@@ -285,7 +285,7 @@ fn from_slice_multiple_with_options_valid_validates_each_document() {
 
     let err = serde_saphyr::from_slice_multiple_with_options_valid::<Root>(
         yaml.as_bytes(),
-        Default::default(),
+        Options::default(),
     )
     .expect_err("second document must fail validation");
 
@@ -315,7 +315,7 @@ fn validation_error_shows_referenced_and_defined_snippets_for_aliases() {
     }
     yaml.push_str("b: *A\n");
 
-    let err = serde_saphyr::from_str_with_options_valid::<AnchorRoot>(&yaml, Default::default())
+    let err = serde_saphyr::from_str_with_options_valid::<AnchorRoot>(&yaml, Options::default())
         .expect_err("must fail validation");
     let rendered = err.to_string();
 
@@ -357,7 +357,7 @@ fn validation_error_shows_longer_garde_path_for_nested_structures() {
     yaml.push_str("    b: *A\n");
 
     let err =
-        serde_saphyr::from_str_with_options_valid::<NestedAnchorRoot>(&yaml, Default::default())
+        serde_saphyr::from_str_with_options_valid::<NestedAnchorRoot>(&yaml, Options::default())
             .expect_err("must fail validation");
     let rendered = err.to_string();
 
@@ -396,7 +396,7 @@ fn validation_error_shows_path_for_nested_map_entry() {
         "        v: \"x\"\n", // length 1 < min 2
     );
 
-    let err = serde_saphyr::from_str_with_options_valid::<NestedMapRoot>(yaml, Default::default())
+    let err = serde_saphyr::from_str_with_options_valid::<NestedMapRoot>(yaml, Options::default())
         .expect_err("must fail validation");
     let rendered = err.to_string();
 
@@ -413,7 +413,7 @@ fn validation_error_shows_path_for_nested_map_entry() {
 fn from_multiple_with_options_valid_validates_each_document() {
     let yaml = concat!("a: \"ok\"\n", "---\n", "a: \"\"\n",);
 
-    let err = serde_saphyr::from_multiple_with_options_valid::<Root>(yaml, Default::default())
+    let err = serde_saphyr::from_multiple_with_options_valid::<Root>(yaml, Options::default())
         .expect_err("second document must fail validation");
     let rendered = err.to_string();
 
@@ -438,7 +438,7 @@ fn reader_validation_root_snapshot_out_of_range_has_no_incorrect_snippet() {
 
     let reader = std::io::Cursor::new(yaml.into_bytes());
 
-    let err = serde_saphyr::from_reader_with_options_valid::<_, Root>(reader, Default::default())
+    let err = serde_saphyr::from_reader_with_options_valid::<_, Root>(reader, Options::default())
         .expect_err("must fail validation");
 
     match &err {
@@ -471,7 +471,7 @@ fn read_with_options_valid_validates_each_document_in_iterator() {
     let yaml = concat!("a: \"ok\"\n", "---\n", "a: \"\"\n",);
     let mut reader = std::io::Cursor::new(yaml.as_bytes());
 
-    let mut it = serde_saphyr::read_with_options_valid::<_, Root>(&mut reader, Default::default());
+    let mut it = serde_saphyr::read_with_options_valid::<_, Root>(&mut reader, Options::default());
 
     let first = it
         .next()
@@ -742,7 +742,7 @@ fn multidoc_validation_anchor_origin_renders_defined_here() {
     );
 
     let err =
-        serde_saphyr::from_multiple_with_options_valid::<AnchorRoot>(yaml, Default::default())
+        serde_saphyr::from_multiple_with_options_valid::<AnchorRoot>(yaml, Options::default())
             .expect_err("anchored value in second document must fail garde rule");
 
     let Error::ValidationErrors {
@@ -805,7 +805,7 @@ fn from_str_with_options_context_valid_uses_custom_context() {
     let context = ValidationContext { min_len: 3 };
     let err = serde_saphyr::from_str_with_options_context_valid::<ContextRoot>(
         "a: hi\n",
-        Default::default(),
+        Options::default(),
         &context,
     )
     .expect_err("context validation must fail");
@@ -843,7 +843,7 @@ fn from_slice_valid_runs_garde_validation() {
 
 #[test]
 fn from_slice_with_options_valid_rejects_invalid_utf8() {
-    let err = serde_saphyr::from_slice_with_options_valid::<Root>(&[0xff], Default::default())
+    let err = serde_saphyr::from_slice_with_options_valid::<Root>(&[0xff], Options::default())
         .expect_err("invalid UTF-8 must be rejected");
 
     assert!(matches!(err, Error::InvalidUtf8Input));

@@ -146,7 +146,11 @@ struct VecOfMaps {
 #[test]
 fn serialize_array_of_empty_maps() {
     let v = VecOfMaps {
-        vec: vec![Default::default(), Default::default(), Default::default()],
+        vec: vec![
+            BTreeMap::default(),
+            BTreeMap::default(),
+            BTreeMap::default(),
+        ],
     };
     let mut buf = String::new();
     serde_saphyr::to_fmt_writer(&mut buf, &v).expect("to_fmt_writer works");
@@ -157,7 +161,11 @@ fn serialize_array_of_empty_maps() {
 #[test]
 fn serialize_array_of_empty_maps_to_io() {
     let v = VecOfMaps {
-        vec: vec![Default::default(), Default::default(), Default::default()],
+        vec: vec![
+            BTreeMap::default(),
+            BTreeMap::default(),
+            BTreeMap::default(),
+        ],
     };
     let mut buf: Vec<u8> = Vec::new();
     serde_saphyr::to_io_writer(&mut buf, &v).expect("to_io_writer works");

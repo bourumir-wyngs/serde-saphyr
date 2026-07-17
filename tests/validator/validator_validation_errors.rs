@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use serde_saphyr::{Error, ValidationSource};
+use serde_saphyr::{Error, Options, ValidationSource};
 use validator::Validate;
 
 #[cfg(feature = "include")]
@@ -86,7 +86,7 @@ fn assert_validator_validation_error_shape(err: &Error) {
 fn from_str_with_options_validate_runs_validator_validation() {
     let yaml = "a: \"\"\n";
 
-    let err = serde_saphyr::from_str_with_options_validate::<Root>(yaml, Default::default())
+    let err = serde_saphyr::from_str_with_options_validate::<Root>(yaml, Options::default())
         .expect_err("must fail validation");
 
     let rendered = err.to_string();
@@ -109,7 +109,7 @@ fn validator_error_inside_commented_subtree_uses_child_location() {
     let yaml = "item:\n  value: \"\"\n";
 
     let err =
-        serde_saphyr::from_str_with_options_validate::<CommentedRoot>(yaml, Default::default())
+        serde_saphyr::from_str_with_options_validate::<CommentedRoot>(yaml, Options::default())
             .expect_err("must fail validation");
 
     let location = err
@@ -128,7 +128,7 @@ fn validator_error_inside_commented_subtree_uses_child_location() {
 #[test]
 fn from_str_with_options_validate_preserves_validation_error_after_synthetic_null() {
     let err =
-        serde_saphyr::from_str_with_options_validate::<NullableTopLevel>("", Default::default())
+        serde_saphyr::from_str_with_options_validate::<NullableTopLevel>("", Options::default())
             .expect_err("empty document must fail validation");
 
     assert_empty_document_validation_error(err);
@@ -139,7 +139,7 @@ fn from_reader_with_options_validate_preserves_validation_error_after_synthetic_
     let reader = std::io::Cursor::new(Vec::<u8>::new());
     let err = serde_saphyr::from_reader_with_options_validate::<_, NullableTopLevel>(
         reader,
-        Default::default(),
+        Options::default(),
     )
     .expect_err("empty document must fail validation");
 
@@ -158,7 +158,7 @@ fn serde_rename() {
     let yaml = "myField: \"\"\n";
 
     let err =
-        serde_saphyr::from_str_with_options_validate::<StyleRenamedRoot>(yaml, Default::default())
+        serde_saphyr::from_str_with_options_validate::<StyleRenamedRoot>(yaml, Options::default())
             .expect_err("must fail validation");
     let rendered = err.to_string();
 
@@ -176,7 +176,7 @@ fn serde_rename() {
 fn from_multiple_with_options_validate_returns_all_validation_errors() {
     let yaml = "a: \"\"\n---\na: \"\"\n";
 
-    let err = serde_saphyr::from_multiple_with_options_validate::<Root>(yaml, Default::default())
+    let err = serde_saphyr::from_multiple_with_options_validate::<Root>(yaml, Options::default())
         .expect_err("must fail validation");
 
     let Error::ValidationErrors {
@@ -209,7 +209,7 @@ fn reader_validation_root_snapshot_out_of_range_has_no_incorrect_snippet() {
     let reader = std::io::Cursor::new(yaml.into_bytes());
 
     let err =
-        serde_saphyr::from_reader_with_options_validate::<_, Root>(reader, Default::default())
+        serde_saphyr::from_reader_with_options_validate::<_, Root>(reader, Options::default())
             .expect_err("must fail validation");
 
     assert_validator_validation_error_shape(&err);
@@ -239,7 +239,7 @@ fn read_with_options_validate_validates_each_document_in_iterator() {
     let mut reader = std::io::Cursor::new(yaml.as_bytes());
 
     let mut it =
-        serde_saphyr::read_with_options_validate::<_, Root>(&mut reader, Default::default());
+        serde_saphyr::read_with_options_validate::<_, Root>(&mut reader, Options::default());
 
     let first = it
         .next()
@@ -421,7 +421,7 @@ fn from_slice_validate_runs_validator_validation() {
 
 #[test]
 fn from_slice_with_options_validate_rejects_invalid_utf8() {
-    let err = serde_saphyr::from_slice_with_options_validate::<Root>(&[0xff], Default::default())
+    let err = serde_saphyr::from_slice_with_options_validate::<Root>(&[0xff], Options::default())
         .expect_err("invalid UTF-8 must be rejected");
 
     assert!(matches!(err, Error::InvalidUtf8Input));
