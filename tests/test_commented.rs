@@ -28,7 +28,10 @@ fn commented_scalar_as_map_value_inline() {
 
 #[test]
 fn commented_scalar_suppressed_in_flow_seq() {
-    let seq = FlowSeq(vec![Commented(1, "a".to_string()), Commented(2, "".into())]);
+    let seq = FlowSeq(vec![
+        Commented(1, "a".to_string()),
+        Commented(2, String::new()),
+    ]);
     let y = to_string(&seq).unwrap();
     // Comments are suppressed in flow contexts
     assert_eq!(y, "[1, 2]\n");
@@ -134,7 +137,10 @@ fn commented_above_sanitizes_newlines() {
 
 #[test]
 fn commented_scalar_suppressed_in_flow_seq_above() {
-    let seq = FlowSeq(vec![Commented(1, "a".to_string()), Commented(2, "".into())]);
+    let seq = FlowSeq(vec![
+        Commented(1, "a".to_string()),
+        Commented(2, String::new()),
+    ]);
     let y = to_string_with_options(
         &seq,
         ser_options! { comment_position: CommentPosition::Above },

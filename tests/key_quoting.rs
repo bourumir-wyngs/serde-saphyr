@@ -48,7 +48,7 @@ fn printable_ascii_single_char_keys_roundtrip() {
 fn specific_key_roundtrip() {
     let mut h = HashMap::new();
     h.insert(",".to_string(), ",".to_string());
-    h.insert("".to_string(), " ".to_string()); // empty key
+    h.insert(String::new(), " ".to_string()); // empty key
     h.insert("null".to_string(), " ".to_string()); // null key
 
     // Serialize with the same FlowSeq wrapper as in the original snippet.

@@ -1009,7 +1009,7 @@ fn overlapping_resolved_values_redact_longest_first() {
 #[test]
 fn empty_resolved_value_does_not_expand_error_text() {
     let mut props = HashMap::new();
-    props.insert("EMPTY".to_string(), "".to_string());
+    props.insert("EMPTY".to_string(), String::new());
 
     let err = from_str_with_options::<CustomHexByte>(
         "${EMPTY}\n",

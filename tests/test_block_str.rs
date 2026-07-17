@@ -366,7 +366,7 @@ fn verdanta_case_fold() -> anyhow::Result<()> {
             ))),
             children: vec![RcAnchor::wrapping(Node2 {
                 id: 0,
-                name: "".to_string(),
+                name: String::new(),
                 description: RcAnchor::wrapping(Some(FoldString(
                     "02This is very very very long description. \
         This is very very very long description. This is very very very long description."

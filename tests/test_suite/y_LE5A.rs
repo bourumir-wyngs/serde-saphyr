@@ -17,7 +17,7 @@ fn yaml_le5a_flow_nodes_with_tags_and_alias() {
             "b".to_string(),
             "c".to_string(),
             "c".to_string(),
-            "".to_string(),
+            String::new(),
         ]
     );
 }
