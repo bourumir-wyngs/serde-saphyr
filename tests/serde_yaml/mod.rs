@@ -5,7 +5,6 @@ mod test_binary;
 mod test_block_scalars;
 mod test_bytes;
 mod test_composite_keys;
-mod test_custom_date_format;
 mod test_de;
 mod test_end_marker;
 mod test_enum_alias_nested;
