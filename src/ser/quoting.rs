@@ -377,7 +377,7 @@ pub(crate) fn is_block_scalar_content_safe(s: &str) -> bool {
         '\r' | '\u{0085}' | '\u{2028}' | '\u{2029}' | '\u{FEFF}' => false,
         c => matches!(
             c as u32,
-            0x20..=0x7E | 0xA0..=0xD7FF | 0xE000..=0xFFFD | 0x10000..=0x10FFFF
+            0x20..=0x7E | 0xA0..=0xD7FF | 0xE000..=0xFFFD | 0x10000..=0x0010_FFFF
         ),
     })
 }
