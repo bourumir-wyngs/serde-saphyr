@@ -16,7 +16,7 @@ fn lit_str_one_trailing_newline_uses_clip() {
     let yaml = to_string(&s).unwrap();
     // literal block with clip (no indicator after |)
     assert!(
-        yaml.contains("|\n") || yaml.contains("| \n") || yaml.starts_with("|"),
+        yaml.contains("|\n") || yaml.contains("| \n") || yaml.starts_with('|'),
         "expected clip: {yaml}"
     );
 }

@@ -20,7 +20,7 @@ fn commented_in_flow_seq_suppresses_comment() {
 fn space_after_in_flow_no_extra_newline() {
     let v = FlowSeq(vec![SpaceAfter(1i32), SpaceAfter(2i32)]);
     let yaml = to_string(&v).unwrap();
-    assert!(yaml.contains("1") && yaml.contains("2"), "yaml: {yaml}");
+    assert!(yaml.contains('1') && yaml.contains('2'), "yaml: {yaml}");
 }
 
 #[test]

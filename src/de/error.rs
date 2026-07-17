@@ -2689,12 +2689,12 @@ mod tests {
         );
         // Should mention both line numbers in some form
         assert!(
-            rendered.contains("5") || rendered.contains("use_it"),
+            rendered.contains('5') || rendered.contains("use_it"),
             "rendered should reference line 5: {}",
             rendered
         );
         assert!(
-            rendered.contains("2") || rendered.contains("anchor"),
+            rendered.contains('2') || rendered.contains("anchor"),
             "rendered should reference line 2: {}",
             rendered
         );

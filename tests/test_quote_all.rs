@@ -107,9 +107,9 @@ fn test_quote_all_long_string_no_folding() {
     };
     let result = serde_saphyr::to_string_with_options(&long_string, opts).unwrap();
     // Should be single-quoted, not folded block style
-    assert!(result.starts_with("'"));
+    assert!(result.starts_with('\''));
     assert!(result.ends_with("'\n"));
-    assert!(!result.contains(">"));
+    assert!(!result.contains('>'));
 }
 
 #[test]

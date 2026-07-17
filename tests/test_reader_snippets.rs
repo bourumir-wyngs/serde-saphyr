@@ -94,7 +94,7 @@ fn reader_missing_field_error() {
 
     // The error should mention the missing field
     assert!(
-        err_str.contains("y") || err_str.contains("missing"),
+        err_str.contains('y') || err_str.contains("missing"),
         "Error should mention missing field: {}",
         err_str
     );

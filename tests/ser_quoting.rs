@@ -43,7 +43,7 @@ fn quote_all_single_quote_in_string_escaped() {
     let yaml = to_string_with_options(&"it's", opts).unwrap();
     // "it's" contains a single quote; in quote_all mode it may use double quotes
     assert!(
-        yaml.contains("it") && yaml.contains("s"),
+        yaml.contains("it") && yaml.contains('s'),
         "expected quoted string: {yaml}"
     );
 }

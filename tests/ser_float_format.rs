@@ -214,7 +214,7 @@ mod zmij_format_tests {
         }
         serde_saphyr::to_fmt_writer(&mut buf, &W { v: 1e20f32 }).unwrap();
         assert!(
-            buf.contains("e"),
+            buf.contains('e'),
             "expected scientific notation, got: {buf}"
         );
     }

@@ -82,7 +82,7 @@ fn test_del_character_filtered() {
 
     // DEL should be replaced with space
     assert!(
-        !error_output.contains("\x7F"),
+        !error_output.contains('\x7F'),
         "Error output should not contain DEL character"
     );
 }
@@ -96,11 +96,11 @@ fn test_multiple_control_chars_filtered() {
     let error_output = error_to_string(&err);
 
     // None of the control characters should appear
-    assert!(!error_output.contains("\x01"), "SOH should be filtered");
-    assert!(!error_output.contains("\x02"), "STX should be filtered");
-    assert!(!error_output.contains("\x03"), "ETX should be filtered");
-    assert!(!error_output.contains("\x1B"), "ESC should be filtered");
-    assert!(!error_output.contains("\x7F"), "DEL should be filtered");
+    assert!(!error_output.contains('\x01'), "SOH should be filtered");
+    assert!(!error_output.contains('\x02'), "STX should be filtered");
+    assert!(!error_output.contains('\x03'), "ETX should be filtered");
+    assert!(!error_output.contains('\x1B'), "ESC should be filtered");
+    assert!(!error_output.contains('\x7F'), "DEL should be filtered");
 }
 
 #[test]
@@ -113,7 +113,7 @@ fn test_newline_and_tab_preserved() {
     let error_output = error_to_string(&err);
 
     // These should still be present (they're safe and needed)
-    assert!(error_output.contains("\n"), "Newlines should be preserved");
+    assert!(error_output.contains('\n'), "Newlines should be preserved");
     // Tab might or might not appear depending on the error location
 }
 
@@ -191,7 +191,7 @@ fn test_crlf_normalization_with_escapes() {
 
     // Escape sequences should be filtered
     assert!(
-        !error_output.contains("\x1B"),
+        !error_output.contains('\x1B'),
         "Escape sequences should be filtered even with CRLF"
     );
 }

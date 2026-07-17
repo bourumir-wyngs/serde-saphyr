@@ -45,7 +45,7 @@ fn commented_scalar_suppressed_in_flow_map_value() {
     let y = to_string(&FlowMap(m)).unwrap();
     // No comments inside flow mapping
     // HashMap iteration order is undefined; parse back to verify structurally and check absence of '#'
-    assert!(y.starts_with("{") && y.ends_with("}\n"));
+    assert!(y.starts_with('{') && y.ends_with("}\n"));
     assert!(!y.contains('#'));
 }
 

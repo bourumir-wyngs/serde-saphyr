@@ -109,7 +109,7 @@ fn seq_of_structs_inline_map_after_dash() {
 fn seq_of_seqs_nested() {
     let v = vec![vec![1i32, 2], vec![3, 4]];
     let yaml = to_string(&v).unwrap();
-    assert!(yaml.contains("1") && yaml.contains("3"), "yaml: {yaml}");
+    assert!(yaml.contains('1') && yaml.contains('3'), "yaml: {yaml}");
 }
 
 #[test]
