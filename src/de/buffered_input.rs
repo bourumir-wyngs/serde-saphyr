@@ -252,10 +252,13 @@ mod tests {
     use crate::buffered_input::ChunkedChars;
     use crate::buffered_input::ReaderInput;
     use crate::buffered_input::buffered_input_from_reader_with_limit;
-    use granit_parser::{Event, Parser};
+    use granit_parser::{BorrowedInput, ErrorKind, Event, Input, Parser};
     use std::cell::Cell;
     use std::io::{Cursor, Read};
     use std::rc::Rc;
+
+    // Ferris is a 4-byte UTF-8 emoji.
+    const FERRIS_EMOJI: char = '\u{1F980}';
 
     struct InterruptOnceReader {
         bytes: Vec<u8>,
@@ -288,6 +291,26 @@ mod tests {
                 return Ok(0);
             }
 
+            buf[0] = self.bytes[self.pos];
+            self.pos += 1;
+            Ok(1)
+        }
+    }
+
+    struct ErrorAtReader {
+        bytes: Vec<u8>,
+        pos: usize,
+        error_at: usize,
+    }
+
+    impl Read for ErrorAtReader {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.pos == self.error_at {
+                return Err(std::io::Error::other("injected reader failure"));
+            }
+            if buf.is_empty() || self.pos >= self.bytes.len() {
+                return Ok(0);
+            }
             buf[0] = self.bytes[self.pos];
             self.pos += 1;
             Ok(1)
@@ -401,6 +424,8 @@ mod tests {
         let mut chars = ChunkedChars::new(reader, None, bytes_read);
 
         assert_eq!(chars.next(), Some(Ok('a')));
+        assert_eq!(chars.next(), None);
+        assert_eq!(chars.next(), None);
     }
 
     #[test]
@@ -410,5 +435,80 @@ mod tests {
         let mut chars = ChunkedChars::new(reader, None, bytes_read);
 
         assert_eq!(chars.next(), Some(Ok('é')));
+    }
+
+    #[test]
+    fn reader_input_delegates_direct_reads_bulk_skips_and_borrow_checks() {
+        let (mut direct, _) = buffered_input_from_reader_with_limit(Cursor::new(b"abc"), None);
+        assert_eq!(direct.raw_read_ch(), 'a');
+
+        let (mut non_break, _) = buffered_input_from_reader_with_limit(Cursor::new(b"abc"), None);
+        assert_eq!(non_break.raw_read_non_breakz_ch(), Some('a'));
+
+        let (mut skipped, _) = buffered_input_from_reader_with_limit(Cursor::new(b"abcd"), None);
+        skipped.lookahead(4);
+        skipped.skip_n(2);
+        assert_eq!(skipped.peek(), 'c');
+        assert_eq!(skipped.slice_borrowed(0, 1), None);
+    }
+
+    #[test]
+    fn chunked_chars_handles_four_byte_and_terminal_decoding_cases() {
+        let bytes_read = Rc::new(Cell::new(0));
+        let mut emoji = ChunkedChars::new(
+            Cursor::new(FERRIS_EMOJI.to_string().into_bytes()),
+            None,
+            bytes_read.clone(),
+        );
+        assert_eq!(emoji.next(), Some(Ok(FERRIS_EMOJI)));
+        assert_eq!(bytes_read.get(), 4);
+
+        let mut invalid_lead = ChunkedChars::new(Cursor::new([0x80]), None, Rc::new(Cell::new(0)));
+        assert!(matches!(
+            invalid_lead.next(),
+            Some(Err(ErrorKind::InputDecoding { .. }))
+        ));
+        assert_eq!(invalid_lead.next(), None);
+
+        let mut truncated =
+            ChunkedChars::new(Cursor::new([0xE2, 0x82]), None, Rc::new(Cell::new(0)));
+        assert!(matches!(
+            truncated.next(),
+            Some(Err(ErrorKind::InputDecoding { .. }))
+        ));
+
+        let mut invalid_continuation =
+            ChunkedChars::new(Cursor::new([0xC2, b'A']), None, Rc::new(Cell::new(0)));
+        assert!(matches!(
+            invalid_continuation.next(),
+            Some(Err(ErrorKind::InputDecoding { .. }))
+        ));
+    }
+
+    #[test]
+    fn chunked_chars_propagates_reader_errors_between_codepoint_bytes() {
+        let reader = ErrorAtReader {
+            bytes: "é".as_bytes().to_vec(),
+            pos: 0,
+            error_at: 1,
+        };
+        let mut chars = ChunkedChars::new(reader, None, Rc::new(Cell::new(0)));
+
+        assert!(matches!(chars.next(), Some(Err(ErrorKind::InputIo { .. }))));
+        assert_eq!(chars.next(), None);
+    }
+
+    #[test]
+    fn event_gatherer_ignores_non_core_events_and_stops_on_source_errors() {
+        let map_input = buffered_input_from_reader(Cursor::new(b"{a: b}"));
+        let events = gather_core_events(Parser::new(map_input));
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, Event::Scalar(..)))
+        );
+
+        let limited = buffered_input_from_reader_with_limit(Cursor::new(b"- value"), Some(0)).0;
+        let _ = gather_core_events(Parser::new(limited));
     }
 }

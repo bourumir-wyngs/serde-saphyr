@@ -813,3 +813,145 @@ fn collect_entries_from_map_rejects_merge_key_under_error_policy() {
         Error::MergeKeyNotAllowed { location } if location == loc(37, 2)
     ));
 }
+
+#[test]
+fn key_node_span_helpers_cover_map_roots_and_rejected_boundaries() {
+    assert_eq!(one_entry_map_spans(&[]), None);
+
+    let not_a_map = vec![
+        seq_start(SfTag::None, None, loc(38, 1)),
+        scalar("key", SfTag::None, None, ScalarStyle::Plain, loc(38, 2)),
+        scalar("value", SfTag::None, None, ScalarStyle::Plain, loc(38, 3)),
+        seq_end(loc(38, 4)),
+    ];
+    assert_eq!(one_entry_map_spans(&not_a_map), None);
+
+    let wrong_end = vec![
+        map_start(loc(39, 1)),
+        scalar("key", SfTag::None, None, ScalarStyle::Plain, loc(39, 2)),
+        scalar("value", SfTag::None, None, ScalarStyle::Plain, loc(39, 3)),
+        seq_end(loc(39, 4)),
+    ];
+    assert_eq!(one_entry_map_spans(&wrong_end), None);
+
+    let nested_map = vec![
+        map_start(loc(40, 1)),
+        scalar("key", SfTag::None, None, ScalarStyle::Plain, loc(40, 2)),
+        seq_start(SfTag::None, None, loc(40, 3)),
+        scalar("item", SfTag::None, None, ScalarStyle::Plain, loc(40, 4)),
+        seq_end(loc(40, 5)),
+        map_end(loc(40, 6)),
+    ];
+    assert_eq!(skip_one_node_len(&nested_map, 0), Some(6));
+
+    let taken_inside_map = vec![
+        map_start(loc(41, 1)),
+        Ev::Taken {
+            location: loc(41, 2),
+        },
+    ];
+    assert_eq!(skip_one_node_len(&taken_inside_map, 0), None);
+}
+
+#[test]
+fn capture_node_reports_eof_at_root_and_inside_mapping() {
+    let mut empty = replay_events(Vec::new());
+    let err = unwrap_err(capture_node(&mut empty));
+    assert!(matches!(
+        err,
+        Error::Eof { location } if location == Location::UNKNOWN
+    ));
+
+    let mut unterminated_map = replay_events(vec![
+        map_start(loc(42, 1)),
+        scalar("key", SfTag::None, None, ScalarStyle::Plain, loc(42, 2)),
+        scalar("value", SfTag::None, None, ScalarStyle::Plain, loc(42, 3)),
+    ]);
+    let err = unwrap_err(capture_node(&mut unterminated_map));
+    assert!(matches!(
+        err,
+        Error::Eof { location } if location == loc(42, 3)
+    ));
+}
+
+#[test]
+fn merge_key_validator_reports_malformed_recorded_nodes() {
+    let err = unwrap_err(validate_no_merge_keys_in_node_events(&[]));
+    assert!(matches!(
+        err,
+        Error::Eof { location } if location == Location::UNKNOWN
+    ));
+
+    let err = unwrap_err(validate_no_merge_keys_in_node_events(&[
+        seq_start(SfTag::None, None, loc(43, 1)),
+        map_end(loc(43, 2)),
+    ]));
+    assert!(matches!(
+        err,
+        Error::UnexpectedContainerEndWhileSkippingNode { location }
+            if location == loc(43, 2)
+    ));
+
+    let err = unwrap_err(validate_no_merge_keys_in_node_events(&[
+        map_start(loc(44, 1)),
+        seq_end(loc(44, 2)),
+    ]));
+    assert!(matches!(
+        err,
+        Error::UnexpectedContainerEndWhileSkippingNode { location }
+            if location == loc(44, 2)
+    ));
+
+    let err = unwrap_err(validate_no_merge_keys_in_node_events(&[
+        map_start(loc(45, 1)),
+        scalar("key", SfTag::None, None, ScalarStyle::Plain, loc(45, 2)),
+        scalar("value", SfTag::None, None, ScalarStyle::Plain, loc(45, 3)),
+    ]));
+    assert!(matches!(
+        err,
+        Error::Eof { location } if location == loc(45, 3)
+    ));
+
+    let err = unwrap_err(validate_no_merge_keys_in_node_events(&[Ev::Taken {
+        location: loc(46, 1),
+    }]));
+    assert_eq!(err.location(), Some(loc(46, 1)));
+
+    let err = unwrap_err(validate_no_merge_keys_in_node_events(&[
+        scalar("one", SfTag::None, None, ScalarStyle::Plain, loc(47, 1)),
+        scalar("two", SfTag::None, None, ScalarStyle::Plain, loc(47, 2)),
+    ]));
+    assert!(matches!(
+        err,
+        Error::Unexpected { location, .. } if location == loc(47, 2)
+    ));
+}
+
+#[test]
+fn duplicate_filter_validates_discarded_values_when_merges_are_forbidden() {
+    let mut replay = replay_events(vec![
+        map_start(loc(48, 1)),
+        scalar("same", SfTag::None, None, ScalarStyle::Plain, loc(48, 2)),
+        scalar("kept", SfTag::None, None, ScalarStyle::Plain, loc(48, 3)),
+        scalar("same", SfTag::None, None, ScalarStyle::Plain, loc(48, 4)),
+        map_start(loc(48, 5)),
+        scalar("<<", SfTag::None, None, ScalarStyle::Plain, loc(48, 6)),
+        map_start(loc(48, 7)),
+        scalar("admin", SfTag::None, None, ScalarStyle::Plain, loc(48, 8)),
+        scalar("true", SfTag::None, None, ScalarStyle::Plain, loc(48, 9)),
+        map_end(loc(48, 10)),
+        map_end(loc(48, 11)),
+        map_end(loc(48, 12)),
+    ]);
+
+    let err = unwrap_err(collect_entries_from_map(
+        &mut replay,
+        loc(48, 1),
+        MergeKeyPolicy::Error,
+        DuplicateKeyPolicy::FirstWins,
+    ));
+    assert!(matches!(
+        err,
+        Error::MergeKeyNotAllowed { location } if location == loc(48, 6)
+    ));
+}

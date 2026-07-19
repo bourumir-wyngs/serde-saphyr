@@ -264,6 +264,24 @@ mod tests {
         msg: &'a str,
     }
 
+    struct PrimarySnippet<'a> {
+        text: &'a str,
+        location: Location,
+        msg: &'a str,
+    }
+
+    impl fmt::Display for PrimarySnippet<'_> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            Snippet::new(self.text, "<test>", 8).fmt_or_fallback(
+                f,
+                Level::ERROR,
+                &DefaultEnglishLocalizer,
+                self.msg,
+                &self.location,
+            )
+        }
+    }
+
     impl fmt::Display for SecondarySnippet<'_> {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             fmt_snippet_window_offset_or_fallback(
@@ -411,6 +429,170 @@ mod tests {
             caret_index, value_index,
             "caret should align with the referenced column:\n{rendered}"
         );
+    }
+
+    #[test]
+    fn window_resolution_rejects_unmappable_rows_and_columns() {
+        assert_eq!(
+            resolve_window_rows(
+                "line\n",
+                &Location::new(4, 1),
+                LineMapping::Offset { start_line: 5 }
+            )
+            .err(),
+            Some(5)
+        );
+        assert_eq!(
+            resolve_window_rows("", &Location::new(1, 1), LineMapping::Identity).err(),
+            Some(1)
+        );
+        assert_eq!(
+            resolve_window_rows("line", &Location::new(2, 1), LineMapping::Identity).err(),
+            Some(1)
+        );
+        assert_eq!(
+            resolve_window_rows(
+                "line",
+                &Location::new(7, 1),
+                LineMapping::Offset { start_line: 5 }
+            )
+            .err(),
+            Some(5)
+        );
+        assert_eq!(
+            resolve_render_window("line", &Location::new(1, 99), LineMapping::Identity).err(),
+            Some(1)
+        );
+
+        let newline =
+            resolve_render_window("a\n", &Location::new(1, 2), LineMapping::Identity).unwrap();
+        assert_eq!(newline.local_start, newline.local_end);
+    }
+
+    #[test]
+    fn source_window_handles_disabled_cropping_and_invalid_locations() {
+        assert_eq!(
+            crop_source_window("", &Location::new(1, 1), LineMapping::Identity, 8),
+            (String::new(), 1)
+        );
+        assert_eq!(
+            crop_source_window("value", &Location::UNKNOWN, LineMapping::Identity, 8),
+            (String::new(), 1)
+        );
+        assert_eq!(
+            crop_source_window("value", &Location::new(9, 1), LineMapping::Identity, 8),
+            (String::new(), 1)
+        );
+        assert_eq!(
+            crop_source_window("value\n", &Location::new(1, 1), LineMapping::Identity, 0),
+            ("value\n".to_owned(), 1)
+        );
+    }
+
+    #[test]
+    fn render_fallbacks_and_secondary_eof_carets_are_stable() {
+        assert_eq!(
+            PrimarySnippet {
+                text: "value",
+                location: Location::UNKNOWN,
+                msg: "plain message",
+            }
+            .to_string(),
+            "plain message"
+        );
+        let fallback = PrimarySnippet {
+            text: "value",
+            location: Location::new(9, 1),
+            msg: "outside",
+        }
+        .to_string();
+        assert!(fallback.contains("outside"));
+        assert!(fallback.contains('9'));
+
+        assert_eq!(
+            snippet_window_frame_prefix_offset("value", 1, &Location::UNKNOWN),
+            None
+        );
+        assert_eq!(
+            SecondarySnippet {
+                text: "value",
+                location: Location::UNKNOWN,
+                start_line: 1,
+                msg: "ignored",
+            }
+            .to_string(),
+            ""
+        );
+        assert_eq!(
+            SecondarySnippet {
+                text: "value",
+                location: Location::new(9, 1),
+                start_line: 1,
+                msg: "ignored",
+            }
+            .to_string(),
+            ""
+        );
+
+        let empty_label = SecondarySnippet {
+            text: "value\n",
+            location: Location::new(2, 1),
+            start_line: 1,
+            msg: "",
+        }
+        .to_string();
+        assert!(empty_label.lines().any(|line| line.ends_with('^')));
+
+        let labeled = SecondarySnippet {
+            text: "value\n",
+            location: Location::new(2, 1),
+            start_line: 1,
+            msg: "at eof",
+        }
+        .to_string();
+        assert!(labeled.contains("^ at eof"));
+    }
+
+    #[test]
+    fn terminal_cleanliness_covers_ascii_and_c1_controls() {
+        assert!(is_terminal_snippet_clean("clean\n\ttext"));
+        assert!(!is_terminal_snippet_clean("escape\u{1b}"));
+        assert!(!is_terminal_snippet_clean("c1\u{0085}"));
+        assert!(is_terminal_snippet_clean("unicode é"));
+
+        let sanitized = sanitize_terminal_snippet_preserve_len("a\u{0085}b".to_owned());
+        assert_eq!(sanitized.len(), "a\u{0085}b".len());
+        assert!(!sanitized.contains('\u{0085}'));
+    }
+
+    #[test]
+    fn crop_and_coordinate_helpers_cover_empty_crlf_and_eof_edges() {
+        assert_eq!(
+            crop_window_text("abc", 1, 1, 1, 0, 0, 1),
+            ("abc".into(), 0, 1)
+        );
+
+        let (normalized, start, end) = crop_window_text("abc\r\n", 1, 1, 4, 0, 3, 3);
+        assert_eq!(normalized, "abc\n");
+        assert_eq!((start, end), (3, 3));
+
+        let (trailing, start, end) = crop_window_text("abc\n", 1, 2, 1, 2, 4, 4);
+        assert_eq!(trailing, "abc\n");
+        assert_eq!((start, end), (4, 4));
+
+        assert_eq!(crop_line_by_cols("", 2, 3).0, "");
+        assert_eq!(col_to_byte_offset_in_line("abc", 0), None);
+        assert_eq!(col_to_byte_offset_in_line("abc", 9), None);
+        assert!(line_starts("").is_empty());
+        assert_eq!(line_col_to_byte_offset_with_starts("", &[], 1, 1), None);
+        assert_eq!(line_col_to_byte_offset_with_starts("a", &[0], 0, 1), None);
+        assert_eq!(line_col_to_byte_offset_with_starts("a", &[0], 2, 1), None);
+        assert_eq!(
+            line_col_to_byte_offset_with_starts("a\r\n", &[0, 3], 1, 2),
+            Some(1)
+        );
+        assert_eq!(next_char_boundary("a", 1), None);
+        assert_eq!(next_char_boundary("a", 0), Some(1));
     }
 }
 
