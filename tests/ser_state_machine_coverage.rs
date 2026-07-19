@@ -255,6 +255,7 @@ fn poisoned_recursive_value() -> Arc<Mutex<Option<i32>>> {
 }
 
 #[test]
+#[cfg_attr(not(panic = "unwind"), ignore = "Test requires panic unwinding")]
 fn poisoned_arc_recursive_definition_reports_a_serde_error() {
     let err = to_string(&ArcRecursive(poisoned_recursive_value())).unwrap_err();
 
@@ -265,6 +266,7 @@ fn poisoned_arc_recursive_definition_reports_a_serde_error() {
 }
 
 #[test]
+#[cfg_attr(not(panic = "unwind"), ignore = "Test requires panic unwinding")]
 fn poisoned_arc_recursive_reference_reports_a_serde_error() {
     let value = poisoned_recursive_value();
     let reference = ArcRecursion(Arc::downgrade(&value));
