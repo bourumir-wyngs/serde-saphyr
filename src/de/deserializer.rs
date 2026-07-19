@@ -752,11 +752,12 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 return visitor.visit_bool(b);
             }
 
-            // Try integers: prefer signed if leading '-', else unsigned. Fallbacks use 64-bit.
+            // Try integers: signed if leading '-', else unsigned, using 64-bit visitors.
             let t = effective.trim();
-            if t.starts_with('-') && !leading_zero_decimal(t) {
-                if let Ok(v) =
-                    parse_int_signed::<i64>(t, "i64", location, self.cfg.legacy_octal_numbers)
+            if t.starts_with('-') {
+                if (!leading_zero_decimal(t) || self.cfg.legacy_octal_numbers)
+                    && let Ok(v) =
+                        parse_int_signed::<i64>(t, "i64", location, self.cfg.legacy_octal_numbers)
                 {
                     return visitor.visit_i64(v);
                 }
@@ -765,12 +766,6 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     parse_int_unsigned::<u64>(t, "u64", location, self.cfg.legacy_octal_numbers)
                 {
                     return visitor.visit_u64(v);
-                }
-                // If unsigned failed, a signed parse might still succeed (e.g., overflow handling)
-                if let Ok(v) =
-                    parse_int_signed::<i64>(t, "i64", location, self.cfg.legacy_octal_numbers)
-                {
-                    return visitor.visit_i64(v);
                 }
             }
 
