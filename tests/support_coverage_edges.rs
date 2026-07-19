@@ -304,7 +304,10 @@ mod safe_resolver {
             .with_root_base_dir(&nested)
             .unwrap();
         let resolved = resolver.resolve(request("root.yaml", None)).unwrap();
-        assert_eq!(resolved.name, "nested/root.yaml");
+        assert_eq!(
+            resolved.name,
+            Path::new("nested").join("root.yaml").display().to_string()
+        );
         assert!(matches!(resolved.source, InputSource::Reader(_)));
     }
 
