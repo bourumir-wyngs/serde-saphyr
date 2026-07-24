@@ -215,7 +215,7 @@ fn recursion_alias_types_require_recursive_anchor_context_and_storage() {
     ));
 }
 
-#[cfg(all(feature = "include_fs", not(target_os = "wasi")))]
+#[cfg(all(feature = "include_fs", not(miri), not(target_os = "wasi")))]
 mod safe_resolver {
     use std::fs;
     use std::path::Path;
