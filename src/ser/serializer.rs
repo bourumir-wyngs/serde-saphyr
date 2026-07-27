@@ -14,7 +14,7 @@ use std::fmt::Write;
 
 use crate::long_strings::{NAME_FOLD_STR, NAME_LIT_STR};
 
-use super::options::{CommentPosition, FOLDED_WRAP_CHARS, MIN_FOLD_CHARS, SerializerOptions};
+use super::options::{CommentPosition, SerializerOptions};
 use super::quoting::{
     escape_double_quoted, is_auto_block_scalar_readable, is_block_scalar_content_safe,
     is_controll_which_needs_escaping, is_plain_value_safe,
@@ -40,8 +40,173 @@ enum StrStyle {
     Folded,  // >
 }
 
+/// Block-scalar style request waiting to be consumed by the next string.
+///
+/// Wrapper types create `Explicit` requests, while the serializer's readability
+/// heuristics create `Automatic` requests. Keeping the origin together with the
+/// style prevents a stale "automatic" flag from existing when no style is pending.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PendingStrStyle {
+    Explicit(StrStyle),
+    Automatic(StrStyle),
+}
+
+impl PendingStrStyle {
+    /// Return the requested style and whether it came from automatic selection.
+    fn into_parts(self) -> (StrStyle, bool) {
+        match self {
+            Self::Explicit(style) => (style, false),
+            Self::Automatic(style) => (style, true),
+        }
+    }
+}
+
 // Numeric anchor id used internally.
 type AnchorId = u32;
+
+/// Immutable formatting policy copied from the public [`SerializerOptions`].
+///
+/// A serializer captures these values once during construction and never mutates
+/// them. Keeping policy separate from [`SerializerState`] makes it clear that
+/// recursive serialization may change traversal state but not caller-selected
+/// behavior. The boolean fields are independent user-facing switches rather than
+/// coupled states in a state machine.
+#[allow(clippy::struct_excessive_bools)]
+struct SerializerSettings {
+    /// Spaces per indentation level for block-style collections.
+    indent_step: usize,
+    /// Threshold for downgrading block-string wrappers to plain scalars.
+    min_fold_chars: usize,
+    /// Wrap width for folded block scalars (`>`).
+    folded_wrap_col: usize,
+    /// Placement mode for [`crate::Commented`] wrappers in block style.
+    comment_position: CommentPosition,
+    /// Emit YAML tags for simple enums that serialize to a single scalar.
+    tagged_enums: bool,
+    /// Emit empty maps as `{}` and empty lists as `[]`.
+    empty_as_braces: bool,
+    /// Emit list items with compact indentation under mapping keys.
+    compact_list_indent: bool,
+    /// Automatically prefer block scalars for eligible strings.
+    prefer_block_scalars: bool,
+    /// Quote all string scalars.
+    quote_all: bool,
+    /// Emit a YAML 1.2 directive and use YAML 1.2-friendly heuristics.
+    yaml_12: bool,
+}
+
+impl From<&SerializerOptions> for SerializerSettings {
+    fn from(options: &SerializerOptions) -> Self {
+        Self {
+            indent_step: options.indent_step,
+            min_fold_chars: options.min_fold_chars,
+            folded_wrap_col: options.folded_wrap_chars,
+            comment_position: options.comment_position,
+            tagged_enums: options.tagged_enums,
+            empty_as_braces: options.empty_as_braces,
+            compact_list_indent: options.compact_list_indent,
+            prefer_block_scalars: options.prefer_block_scalars,
+            quote_all: options.quote_all,
+            yaml_12: options.yaml_12,
+        }
+    }
+}
+
+/// One-shot layout signals passed between a parent serializer and the nested
+/// collection serializer to which it delegates.
+///
+/// These flags describe pending output work, not durable formatting policy. A
+/// consumer must clear a signal after handling it, and code that temporarily
+/// overrides a signal while serializing a child must restore the parent value.
+#[derive(Default)]
+struct PendingLayout {
+    /// Emit the first key of the next mapping inline.
+    pending_inline_map: bool,
+    /// Defer the space following a mapping colon until the value shape is known.
+    pending_space_after_colon: bool,
+    /// Indent a sequence following an inline-after-dash mapping by one level.
+    inline_map_after_dash: bool,
+}
+
+/// Mutable traversal and output state for one serializer instance.
+///
+/// Serde recursively hands the same serializer to child values, so indentation,
+/// cursor position, flow depth, and pending node decorations must survive those
+/// calls. A fresh state is created for every `YamlSerializer`; none of these
+/// values are copied back into the public [`SerializerOptions`].
+struct SerializerState {
+    /// Current nesting depth used for indentation.
+    depth: usize,
+    /// Whether the output cursor is at the start of a line.
+    at_line_start: bool,
+    /// Pending flow-style hint captured from wrapper types.
+    pending_flow: Option<PendingFlow>,
+    /// Number of nested flow containers currently being emitted.
+    in_flow: usize,
+    /// Pending explicit or automatically selected block-string style.
+    pending_str_style: Option<PendingStrStyle>,
+    /// Inline comment waiting for the next scalar.
+    pending_inline_comment: Option<String>,
+    /// Short-lived layout signals shared by nested collection serializers.
+    pending_layout: PendingLayout,
+    /// Whether the last serialized value was a block collection.
+    last_value_was_block: bool,
+    /// Depth captured for the node immediately following a sequence dash.
+    after_dash_depth: Option<usize>,
+    /// Current block-map depth for aligning sequences below mapping keys.
+    current_map_depth: Option<usize>,
+    /// Whether emission of the current document has begun.
+    doc_started: bool,
+}
+
+impl Default for SerializerState {
+    fn default() -> Self {
+        Self {
+            depth: 0,
+            at_line_start: true,
+            pending_flow: None,
+            in_flow: 0,
+            pending_str_style: None,
+            pending_inline_comment: None,
+            pending_layout: PendingLayout::default(),
+            last_value_was_block: false,
+            after_dash_depth: None,
+            current_map_depth: None,
+            doc_started: false,
+        }
+    }
+}
+
+/// Per-serializer registry for YAML anchors and aliases.
+///
+/// Pointer identities receive stable, monotonically increasing ids. When a new
+/// identity is discovered, `pending_id` defers writing its `&anchor` prefix until
+/// the value's serializer reveals whether the next node is scalar or compound.
+/// Custom names are cached by id so later aliases reuse exactly the same name.
+struct AnchorState {
+    /// Map from pointer identity to anchor id.
+    by_ptr: HashMap<usize, AnchorId, BuildNoHashHasher<usize>>,
+    /// Next numeric id to use when generating anchor names.
+    next_id: AnchorId,
+    /// Anchor to prefix onto the next scalar or complex node.
+    pending_id: Option<AnchorId>,
+    /// Optional custom anchor-name generator supplied by the caller.
+    generator: Option<fn(usize) -> String>,
+    /// Cached custom names, indexed by `id - 1`.
+    custom_names: Option<Vec<String>>,
+}
+
+impl AnchorState {
+    fn new(generator: Option<fn(usize) -> String>) -> Self {
+        Self {
+            by_ptr: HashMap::with_hasher(BuildNoHashHasher::default()),
+            next_id: 1,
+            pending_id: None,
+            generator,
+            custom_names: None,
+        }
+    }
+}
 
 /// Core YAML serializer used by `to_string`, `to_fmt_writer`, and `to_io_writer` (and their `_with_options` variants).
 ///
@@ -71,114 +236,27 @@ type AnchorId = u32;
 pub struct YamlSerializer<'a, W: Write> {
     /// Destination writer where YAML text is emitted.
     out: &'a mut W,
-    /// Spaces per indentation level for block-style collections.
-    indent_step: usize,
-    /// Threshold for downgrading block-string wrappers to plain scalars.
-    min_fold_chars: usize,
-    /// Wrap width for folded block scalars ('>').
-    folded_wrap_col: usize,
-    /// Current nesting depth (used for indentation).
-    depth: usize,
-    /// Whether the cursor is at the start of a line.
-    at_line_start: bool,
-
-    // Anchors:
-    /// Map from pointer identity to anchor id.
-    anchors: HashMap<usize, AnchorId, BuildNoHashHasher<usize>>,
-    /// Next numeric id to use when generating anchor names (1-based).
-    next_anchor_id: AnchorId,
-    /// If set, the next scalar/complex node to be emitted will be prefixed with this `&anchor`.
-    pending_anchor_id: Option<AnchorId>,
-    /// Optional custom anchor-name generator supplied by the caller.
-    anchor_gen: Option<fn(usize) -> String>,
-    /// Cache of custom anchor names when generator is present (index = id-1).
-    custom_anchor_names: Option<Vec<String>>,
-
-    // Style flags:
-    /// Pending flow-style hint captured from wrapper types.
-    pending_flow: Option<PendingFlow>,
-    /// Number of nested flow containers we are currently inside (>0 means in-flow).
-    in_flow: usize,
-    /// Pending block-string style hint (literal `|` or folded `>`).
-    pending_str_style: Option<StrStyle>,
-    /// Whether the pending block-string style was selected automatically (`prefer_block_scalars`)
-    /// as opposed to being requested explicitly by wrapper types (LitStr/FoldStr variants).
-    pending_str_from_auto: bool,
-    /// Pending inline comment to be appended after the next scalar (block style only).
-    pending_inline_comment: Option<String>,
-    /// Placement mode for [`crate::Commented`] wrappers in block style.
-    comment_position: CommentPosition,
-    /// If true, emit YAML tags for simple enums that serialize to a single scalar.
-    tagged_enums: bool,
-    /// If true, empty maps are emitted as {} and lists as []
-    empty_as_braces: bool,
-    /// If true, emit list items with a more compact indentation style under mapping keys.
-    compact_list_indent: bool,
-    /// If true, automatically prefer YAML block scalars for plain strings:
-    ///  - Strings containing newlines use literal style `|`.
-    ///  - Single-line strings longer than `folded_wrap_col` use folded style `>`.
-    prefer_block_scalars: bool,
-    /// When the previous token was a list item dash ("- ") and the next node is a mapping,
-    /// emit the first key inline on the same line ("- key: value").
-    pending_inline_map: bool,
-    /// After writing a mapping key and ':', defer writing the following space until we know
-    /// whether the value is a scalar (space) or a complex node (newline with no space).
-    pending_space_after_colon: bool,
-    /// If the previous sequence element after a dash turned out to be a mapping (inline first key),
-    /// indent subsequent dashes by one level to satisfy tests expecting "\n  -".
-    inline_map_after_dash: bool,
-    /// Whether the last serialized value was a block collection (map or sequence).
-    last_value_was_block: bool,
-    /// If a sequence element starts with a dash on this depth, capture that depth so
-    /// struct-variant mappings emitted immediately after can indent their fields correctly.
-    after_dash_depth: Option<usize>,
-    /// Current block map indentation depth (for aligning sequences under a map key).
-    current_map_depth: Option<usize>,
-    /// If true, quote all string scalars. Uses single quotes by default, but switches to
-    /// double quotes when the string contains escape sequences or single quotes.
-    quote_all: bool,
-
-    /// When enabled, emit YAML 1.2 directive and use YAML 1.2-friendly heuristics.
-    yaml_12: bool,
-    /// Whether we have started emitting the current document.
-    doc_started: bool,
+    /// Immutable caller-selected formatting behavior.
+    settings: SerializerSettings,
+    /// Mutable layout and traversal state shared with nested serializers.
+    state: SerializerState,
+    /// Anchor identities, names, and deferred anchor emission.
+    anchors: AnchorState,
 }
 
 impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Construct a [`Serializer`](crate::Serializer) that writes to `out`.
     /// Uses the same defaults as `SerializerOptions::default()`.
     pub fn new(out: &'a mut W) -> Self {
+        Self::from_options_unchecked(out, &SerializerOptions::default())
+    }
+
+    fn from_options_unchecked(out: &'a mut W, options: &SerializerOptions) -> Self {
         Self {
             out,
-            indent_step: 2,
-            min_fold_chars: MIN_FOLD_CHARS,
-            folded_wrap_col: FOLDED_WRAP_CHARS,
-            depth: 0,
-            at_line_start: true,
-            anchors: HashMap::with_hasher(BuildNoHashHasher::default()),
-            next_anchor_id: 1,
-            pending_anchor_id: None,
-            anchor_gen: None,
-            custom_anchor_names: None,
-            pending_flow: None,
-            in_flow: 0,
-            pending_str_style: None,
-            pending_str_from_auto: false,
-            pending_inline_comment: None,
-            comment_position: CommentPosition::Inline,
-            tagged_enums: false,
-            empty_as_braces: true,
-            compact_list_indent: true,
-            prefer_block_scalars: true,
-            pending_inline_map: false,
-            pending_space_after_colon: false,
-            inline_map_after_dash: false,
-            last_value_was_block: false,
-            after_dash_depth: None,
-            current_map_depth: None,
-            quote_all: false,
-            yaml_12: false,
-            doc_started: false,
+            settings: SerializerSettings::from(options),
+            state: SerializerState::default(),
+            anchors: AnchorState::new(options.anchor_generator),
         }
     }
     /// Construct a [`Serializer`](crate::Serializer) with a specific indentation step.
@@ -195,19 +273,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Used by `to_fmt_writer_with_options` and `to_io_writer_with_options`.
     pub fn with_options(out: &'a mut W, options: SerializerOptions) -> Result<Self> {
         options.consistent()?;
-        let mut s = Self::new(out);
-        s.indent_step = options.indent_step;
-        s.min_fold_chars = options.min_fold_chars;
-        s.folded_wrap_col = options.folded_wrap_chars;
-        s.anchor_gen = options.anchor_generator;
-        s.tagged_enums = options.tagged_enums;
-        s.empty_as_braces = options.empty_as_braces;
-        s.compact_list_indent = options.compact_list_indent;
-        s.prefer_block_scalars = options.prefer_block_scalars;
-        s.quote_all = options.quote_all;
-        s.comment_position = options.comment_position;
-        s.yaml_12 = options.yaml_12;
-        Ok(s)
+        Ok(Self::from_options_unchecked(out, &options))
     }
 
     // -------- helpers --------
@@ -245,8 +311,8 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// style, matching the existing serializer policy.
     #[inline]
     fn write_pending_inline_comment(&mut self) -> Result<()> {
-        if self.in_flow == 0
-            && let Some(c) = self.pending_inline_comment.take()
+        if self.state.in_flow == 0
+            && let Some(c) = self.state.pending_inline_comment.take()
         {
             self.out.write_str(" # ")?;
             self.out.write_str(&c)?;
@@ -258,7 +324,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// comment (if any) and then emits a newline. In flow style, comments are suppressed.
     #[inline]
     fn write_end_of_scalar(&mut self) -> Result<()> {
-        if self.in_flow == 0 {
+        if self.state.in_flow == 0 {
             self.write_pending_inline_comment()?;
             self.newline()?;
         }
@@ -277,24 +343,24 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     }
 
     fn write_above_comment(&mut self, comment: &str) -> Result<Option<usize>> {
-        if self.in_flow > 0 || comment.is_empty() {
+        if self.state.in_flow > 0 || comment.is_empty() {
             return Ok(None);
         }
 
-        let target_depth = if self.pending_space_after_colon {
-            let base = self.current_map_depth.unwrap_or(self.depth);
-            self.pending_space_after_colon = false;
-            if !self.at_line_start {
+        let target_depth = if self.state.pending_layout.pending_space_after_colon {
+            let base = self.state.current_map_depth.unwrap_or(self.state.depth);
+            self.state.pending_layout.pending_space_after_colon = false;
+            if !self.state.at_line_start {
                 self.newline()?;
             }
             base + 1
-        } else if !self.at_line_start {
-            let base = self.after_dash_depth.unwrap_or(self.depth);
-            self.pending_inline_map = false;
+        } else if !self.state.at_line_start {
+            let base = self.state.after_dash_depth.unwrap_or(self.state.depth);
+            self.state.pending_layout.pending_inline_map = false;
             self.newline()?;
             base + 1
         } else {
-            self.depth
+            self.state.depth
         };
 
         self.write_indent(target_depth)?;
@@ -308,14 +374,15 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Returns `(id, is_new)`.
     #[inline]
     fn alloc_anchor_for(&mut self, ptr: usize) -> (AnchorId, bool) {
-        match self.anchors.entry(ptr) {
+        match self.anchors.by_ptr.entry(ptr) {
             std::collections::hash_map::Entry::Occupied(e) => (*e.get(), false),
             std::collections::hash_map::Entry::Vacant(v) => {
-                let id = self.next_anchor_id;
-                self.next_anchor_id = self.next_anchor_id.saturating_add(1);
-                if let Some(generator) = self.anchor_gen {
+                let id = self.anchors.next_id;
+                self.anchors.next_id = self.anchors.next_id.saturating_add(1);
+                if let Some(generator) = self.anchors.generator {
                     let name = generator(id as usize);
-                    self.custom_anchor_names
+                    self.anchors
+                        .custom_names
                         .get_or_insert_with(Vec::new)
                         .push(name);
                 }
@@ -328,7 +395,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Resolve an anchor name for `id` and write it.
     #[inline]
     fn write_anchor_name(&mut self, id: AnchorId) -> Result<()> {
-        if let Some(names) = &self.custom_anchor_names {
+        if let Some(names) = &self.anchors.custom_names {
             // ids are 1-based; vec is 0-based
             let idx = id as usize - 1;
             if let Some(name) = names.get(idx) {
@@ -347,13 +414,13 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// insert a single space before the scalar and clear the pending flag.
     #[inline]
     fn write_space_if_pending(&mut self) -> Result<()> {
-        if self.pending_space_after_colon {
+        if self.state.pending_layout.pending_space_after_colon {
             self.out.write_char(' ')?;
-            self.pending_space_after_colon = false;
+            self.state.pending_layout.pending_space_after_colon = false;
         }
         // When a scalar value is serialized, it should reset the block-sibling flag.
         // Most scalar emitters call this method.
-        self.last_value_was_block = false;
+        self.state.last_value_was_block = false;
         Ok(())
     }
 
@@ -361,19 +428,19 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Internal: called by most emitters before writing tokens.
     #[inline]
     fn write_indent(&mut self, depth: usize) -> Result<()> {
-        if self.at_line_start {
-            if !self.doc_started {
-                self.doc_started = true;
-                if self.yaml_12 {
+        if self.state.at_line_start {
+            if !self.state.doc_started {
+                self.state.doc_started = true;
+                if self.settings.yaml_12 {
                     self.out.write_str("%YAML 1.2\n---\n")?;
                     // Still at start of a line after the directive and document start marker.
-                    self.at_line_start = true;
+                    self.state.at_line_start = true;
                 }
             }
-            for _k in 0..self.indent_step * depth {
+            for _k in 0..self.settings.indent_step * depth {
                 self.out.write_char(' ')?;
             }
-            self.at_line_start = false;
+            self.state.at_line_start = false;
         }
         Ok(())
     }
@@ -383,7 +450,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     #[inline]
     fn newline(&mut self) -> Result<()> {
         self.out.write_char('\n')?;
-        self.at_line_start = true;
+        self.state.at_line_start = true;
         Ok(())
     }
 
@@ -394,10 +461,10 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
             self.out,
             s,
             indent,
-            self.indent_step,
-            self.folded_wrap_col,
+            self.settings.indent_step,
+            self.settings.folded_wrap_col,
         )?;
-        self.at_line_start = true;
+        self.state.at_line_start = true;
         Ok(())
     }
 
@@ -407,7 +474,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// (`Variant: ...`), so they need the same ambiguity checks as regular
     /// map and struct keys.
     fn write_key_scalar(&mut self, s: &str) -> Result<()> {
-        let text = scalar_key_to_string(&s, self.yaml_12)?;
+        let text = scalar_key_to_string(&s, self.settings.yaml_12)?;
         self.out.write_str(&text)?;
         Ok(())
     }
@@ -423,14 +490,14 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Like `write_plain_or_quoted`, but intended for VALUE position where ':' is allowed.
     #[inline]
     fn write_plain_or_quoted_value(&mut self, s: &str) -> Result<()> {
-        if self.quote_all {
+        if self.settings.quote_all {
             // In quote_all mode: prefer single quotes, use double quotes when needed
             if Self::needs_double_quotes(s) {
                 self.write_quoted(s)
             } else {
                 self.write_single_quoted(s)
             }
-        } else if is_plain_value_safe(s, self.yaml_12, self.in_flow > 0) {
+        } else if is_plain_value_safe(s, self.settings.yaml_12, self.state.in_flow > 0) {
             self.out.write_str(s)?;
             Ok(())
         } else {
@@ -443,8 +510,8 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// the value depending on its content.
     fn serialize_tagged_scalar(&mut self, enum_name: &str, variant: &str) -> Result<()> {
         self.write_scalar_prefix_if_anchor()?;
-        if self.at_line_start {
-            self.write_indent(self.depth)?;
+        if self.state.at_line_start {
+            self.write_indent(self.state.depth)?;
         }
         self.out.write_str("!!")?;
         self.out.write_str(enum_name)?;
@@ -456,8 +523,8 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     fn serialize_double_quoted_scalar(&mut self, value: &str) -> Result<()> {
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
-        if self.at_line_start {
-            self.write_indent(self.depth)?;
+        if self.state.at_line_start {
+            self.write_indent(self.state.depth)?;
         }
         self.write_quoted(value)?;
         self.write_end_of_scalar()
@@ -472,19 +539,19 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         }
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
-        if self.at_line_start {
-            self.write_indent(self.depth)?;
+        if self.state.at_line_start {
+            self.write_indent(self.state.depth)?;
         }
         self.write_single_quoted(value)?;
         self.write_end_of_scalar()
     }
 
     fn serialize_tilde_null(&mut self) -> Result<()> {
-        self.pending_flow = None;
+        self.state.pending_flow = None;
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
-        if self.at_line_start {
-            self.write_indent(self.depth)?;
+        if self.state.at_line_start {
+            self.write_indent(self.state.depth)?;
         }
         self.out.write_char('~')?;
         self.write_end_of_scalar()
@@ -494,9 +561,9 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Used for in-flow scalars.
     #[inline]
     fn write_scalar_prefix_if_anchor(&mut self) -> Result<()> {
-        if let Some(id) = self.pending_anchor_id.take() {
-            if self.at_line_start {
-                self.write_indent(self.depth)?;
+        if let Some(id) = self.anchors.pending_id.take() {
+            if self.state.at_line_start {
+                self.write_indent(self.state.depth)?;
             }
             self.out.write_char('&')?;
             self.write_anchor_name(id)?;
@@ -509,9 +576,9 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// emit it on its own line before the node.
     #[inline]
     fn write_anchor_for_complex_node(&mut self) -> Result<()> {
-        if let Some(id) = self.pending_anchor_id.take() {
-            if self.at_line_start {
-                self.write_indent(self.depth)?;
+        if let Some(id) = self.anchors.pending_id.take() {
+            if self.state.at_line_start {
+                self.write_indent(self.state.depth)?;
             }
             self.write_space_if_pending()?;
             self.out.write_char('&')?;
@@ -525,8 +592,8 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Used when a previously defined anchor is referenced again.
     #[inline]
     fn write_alias_id(&mut self, id: AnchorId) -> Result<()> {
-        if self.at_line_start {
-            self.write_indent(self.depth)?;
+        if self.state.at_line_start {
+            self.write_indent(self.state.depth)?;
         }
         self.write_space_if_pending()?;
         self.out.write_char('*')?;
@@ -540,20 +607,20 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Consumes any pending flow hint.
     #[inline]
     fn take_flow_for_seq(&mut self) -> bool {
-        if self.in_flow > 0 {
+        if self.state.in_flow > 0 {
             true
         } else {
-            matches!(self.pending_flow.take(), Some(PendingFlow::AnySeq))
+            matches!(self.state.pending_flow.take(), Some(PendingFlow::AnySeq))
         }
     }
     /// Determine whether the next mapping should be emitted in flow style.
     /// Consumes any pending flow hint.
     #[inline]
     fn take_flow_for_map(&mut self) -> bool {
-        if self.in_flow > 0 {
+        if self.state.in_flow > 0 {
             true
         } else {
-            matches!(self.pending_flow.take(), Some(PendingFlow::AnyMap))
+            matches!(self.state.pending_flow.take(), Some(PendingFlow::AnyMap))
         }
     }
 
@@ -561,9 +628,9 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Ensures proper comma insertion and line handling for nested flow nodes.
     #[inline]
     fn with_in_flow<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
-        self.in_flow += 1;
+        self.state.in_flow += 1;
         let r = f(self);
-        self.in_flow -= 1;
+        self.state.in_flow -= 1;
         r
     }
 }
@@ -589,8 +656,8 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     fn serialize_bool(self, v: bool) -> Result<()> {
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
-        if self.at_line_start {
-            self.write_indent(self.depth)?;
+        if self.state.at_line_start {
+            self.write_indent(self.state.depth)?;
         }
         self.out.write_str(if v { "true" } else { "false" })?;
         self.write_end_of_scalar()?;
@@ -609,8 +676,8 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     fn serialize_i64(self, v: i64) -> Result<()> {
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
-        if self.at_line_start {
-            self.write_indent(self.depth)?;
+        if self.state.at_line_start {
+            self.write_indent(self.state.depth)?;
         }
         write!(self.out, "{v}")?;
         self.write_end_of_scalar()?;
@@ -620,8 +687,8 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     fn serialize_i128(self, v: i128) -> Result<()> {
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
-        if self.at_line_start {
-            self.write_indent(self.depth)?;
+        if self.state.at_line_start {
+            self.write_indent(self.state.depth)?;
         }
         write!(self.out, "{v}")?;
         self.write_end_of_scalar()?;
@@ -640,8 +707,8 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     fn serialize_u64(self, v: u64) -> Result<()> {
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
-        if self.at_line_start {
-            self.write_indent(self.depth)?;
+        if self.state.at_line_start {
+            self.write_indent(self.state.depth)?;
         }
         write!(self.out, "{v}")?;
         self.write_end_of_scalar()?;
@@ -651,8 +718,8 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     fn serialize_u128(self, v: u128) -> Result<()> {
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
-        if self.at_line_start {
-            self.write_indent(self.depth)?;
+        if self.state.at_line_start {
+            self.write_indent(self.state.depth)?;
         }
         write!(self.out, "{v}")?;
         self.write_end_of_scalar()?;
@@ -662,8 +729,8 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     fn serialize_f32(self, v: f32) -> Result<()> {
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
-        if self.at_line_start {
-            self.write_indent(self.depth)?;
+        if self.state.at_line_start {
+            self.write_indent(self.state.depth)?;
         }
         zmij_format::write_float_string(self.out, v)?;
         self.write_end_of_scalar()
@@ -672,8 +739,8 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     fn serialize_f64(self, v: f64) -> Result<()> {
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
-        if self.at_line_start {
-            self.write_indent(self.depth)?;
+        if self.state.at_line_start {
+            self.write_indent(self.state.depth)?;
         }
         zmij_format::write_float_string(self.out, v)?;
         self.write_end_of_scalar()
@@ -711,38 +778,41 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         //  - single-line + long (by folded_wrap_col) → folded (>)
         //
         // Also skip block scalars when quote_all is enabled - use quoted strings instead.
-        if self.pending_str_style.is_none() && self.in_flow == 0 && !self.quote_all {
+        if self.state.pending_str_style.is_none()
+            && self.state.in_flow == 0
+            && !self.settings.quote_all
+        {
             if v.contains('\n') {
-                if self.prefer_block_scalars
+                if self.settings.prefer_block_scalars
                     && is_block_scalar_content_safe(v)
                     && is_auto_block_scalar_readable(v)
                 {
-                    self.pending_str_style = Some(StrStyle::Literal);
-                    self.pending_str_from_auto = true;
+                    self.state.pending_str_style =
+                        Some(PendingStrStyle::Automatic(StrStyle::Literal));
                 }
-            } else if self.prefer_block_scalars {
+            } else if self.settings.prefer_block_scalars {
                 // Single-line string. If it needs quoting as a value, don't auto-fold.
                 // Folded block scalars can preserve trailing ASCII spaces, unlike plain
                 // scalars, so ignore only those spaces for the eligibility probe.
                 let auto_fold_probe = v.trim_end_matches(' ');
                 let can_auto_fold = !auto_fold_probe.is_empty()
-                    && is_plain_value_safe(auto_fold_probe, self.yaml_12, false);
+                    && is_plain_value_safe(auto_fold_probe, self.settings.yaml_12, false);
                 if can_auto_fold {
                     // Measure in characters, not bytes.
-                    if v.chars().count() > self.folded_wrap_col {
-                        self.pending_str_style = Some(StrStyle::Folded);
-                        self.pending_str_from_auto = true;
+                    if v.chars().count() > self.settings.folded_wrap_col {
+                        self.state.pending_str_style =
+                            Some(PendingStrStyle::Automatic(StrStyle::Folded));
                     }
                 }
             }
         }
-        if let Some(style) = self.pending_str_style.take() {
+        if let Some(pending_style) = self.state.pending_str_style.take() {
+            let (style, from_auto) = pending_style.into_parts();
             if !is_block_scalar_content_safe(v) {
-                self.pending_str_from_auto = false;
                 self.write_space_if_pending()?;
                 self.write_scalar_prefix_if_anchor()?;
-                if self.at_line_start {
-                    self.write_indent(self.depth)?;
+                if self.state.at_line_start {
+                    self.write_indent(self.state.depth)?;
                 }
                 self.write_quoted(v)?;
                 self.write_end_of_scalar()?;
@@ -754,7 +824,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             //
             // IMPORTANT: capture whether we were in a map-value position *before* clearing
             // `pending_space_after_colon`, as that context influences indentation.
-            let was_map_value = self.pending_space_after_colon;
+            let was_map_value = self.state.pending_layout.pending_space_after_colon;
             self.write_space_if_pending()?;
             // Determine base indentation for the block scalar header/body.
             //
@@ -766,13 +836,13 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             // For map values (we are mid-line after `key:`), prefer the mapping depth.
             // Otherwise, if we are starting a new node right after a dash, use that depth.
             let base = if was_map_value {
-                self.current_map_depth.unwrap_or(self.depth)
+                self.state.current_map_depth.unwrap_or(self.state.depth)
             } else {
                 // Use after_dash_depth when available (we're after a sequence dash),
                 // regardless of at_line_start (which is false after writing "- ").
-                self.after_dash_depth.unwrap_or(self.depth)
+                self.state.after_dash_depth.unwrap_or(self.state.depth)
             };
-            if self.at_line_start {
+            if self.state.at_line_start {
                 self.write_indent(base)?;
             }
 
@@ -791,7 +861,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             // We only emit it when the first non-empty content line has leading whitespace,
             // which would otherwise prevent automatic indentation detection by the parser.
             let body_base = base + 1;
-            let indent_n = self.indent_step;
+            let indent_n = self.settings.indent_step;
 
             // Check if we need an explicit indentation indicator.
             // Required when the first non-empty line has leading whitespace.
@@ -804,8 +874,6 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             // Anchor prefix is already written above, so don't call it again here.
             let indicator_digit = if needs_indicator {
                 let Ok(digit) = block_indent_indicator_digit(indent_n) else {
-                    self.pending_str_style = None;
-                    self.pending_str_from_auto = false;
                     self.write_plain_or_quoted_value(v)?;
                     self.write_end_of_scalar()?;
                     return Ok(());
@@ -843,7 +911,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                     // should produce a single empty content line (tests expect this for "\n").
                     // Precompute body indent string once for the entire block
                     let mut indent_buf: String = String::new();
-                    let spaces = self.indent_step * body_base;
+                    let spaces = self.settings.indent_step * body_base;
                     if spaces > 0 {
                         indent_buf.reserve(spaces);
                         for _ in 0..spaces {
@@ -855,21 +923,21 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                     if content.is_empty() {
                         if trailing_nl >= 1 {
                             self.out.write_str(indent_str)?;
-                            self.at_line_start = false;
+                            self.state.at_line_start = false;
                             // write a single empty content line
                             self.newline()?;
                         }
                     } else {
                         for line in content.split('\n') {
                             self.out.write_str(indent_str)?;
-                            self.at_line_start = false;
+                            self.state.at_line_start = false;
                             self.out.write_str(line)?;
                             self.newline()?;
                         }
                         if trailing_nl >= 2 {
                             for _ in 0..(trailing_nl - 1) {
                                 self.out.write_str(indent_str)?;
-                                self.at_line_start = false;
+                                self.state.at_line_start = false;
                                 self.newline()?;
                             }
                         }
@@ -881,7 +949,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                     if let Some(digit) = indicator_digit {
                         self.out.write_char(digit)?;
                     }
-                    if self.pending_str_from_auto {
+                    if from_auto {
                         // Auto-selected folded style: choose chomping based on trailing newlines
                         // to preserve exact content on round-trip.
                         let content = v.trim_end_matches('\n');
@@ -899,14 +967,12 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                     self.write_folded_block(v, body_base)?;
                 }
             }
-            // reset auto flag after using pending style
-            self.pending_str_from_auto = false;
             return Ok(());
         }
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
-        if self.at_line_start {
-            self.write_indent(self.depth)?;
+        if self.state.at_line_start {
+            self.write_indent(self.state.depth)?;
         }
         // Special-case: prefer single-quoted style for select 1-char punctuation to
         // match expected YAML output in tests ('.', '#', '-').
@@ -932,7 +998,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         //   base64 scalar inline after "key: ". The latter ends up calling serialize_bytes in
         //   value position (mid-line), whereas plain Vec<u8> without serde_bytes goes through
         //   serialize_seq instead. Distinguish by whether we are at the start of a line.
-        if self.at_line_start {
+        if self.state.at_line_start {
             // Top-level or start-of-line: emit as sequence of numbers
             let mut seq = self.serialize_seq(Some(v.len()))?;
             for b in v {
@@ -956,9 +1022,9 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     fn serialize_none(self) -> Result<()> {
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
-        self.last_value_was_block = false;
-        if self.at_line_start {
-            self.write_indent(self.depth)?;
+        self.state.last_value_was_block = false;
+        if self.state.at_line_start {
+            self.write_indent(self.state.depth)?;
         }
         self.out.write_str("null")?;
         self.write_end_of_scalar()?;
@@ -972,9 +1038,9 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     fn serialize_unit(self) -> Result<()> {
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
-        self.last_value_was_block = false;
-        if self.at_line_start {
-            self.write_indent(self.depth)?;
+        self.state.last_value_was_block = false;
+        if self.state.at_line_start {
+            self.write_indent(self.state.depth)?;
         }
         self.out.write_str("null")?;
         self.write_end_of_scalar()?;
@@ -993,7 +1059,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     ) -> Result<()> {
         // If we are in a mapping value position, insert the deferred space after ':'
         self.write_space_if_pending()?;
-        if self.tagged_enums {
+        if self.settings.tagged_enums {
             self.serialize_tagged_scalar(name, variant)
         } else {
             self.serialize_str(variant)
@@ -1008,11 +1074,11 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         // Flow hints & block-string hints:
         match name {
             NAME_FLOW_SEQ => {
-                self.pending_flow = Some(PendingFlow::AnySeq);
+                self.state.pending_flow = Some(PendingFlow::AnySeq);
                 return value.serialize(self);
             }
             NAME_FLOW_MAP => {
-                self.pending_flow = Some(PendingFlow::AnyMap);
+                self.state.pending_flow = Some(PendingFlow::AnyMap);
                 return value.serialize(self);
             }
             NAME_LIT_STR => {
@@ -1022,7 +1088,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 let mut cap = StrCapture::default();
                 value.serialize(&mut cap)?;
                 let s = cap.finish()?;
-                self.pending_str_style = Some(StrStyle::Literal);
+                self.state.pending_str_style = Some(PendingStrStyle::Explicit(StrStyle::Literal));
                 return self.serialize_str(&s);
             }
             NAME_FOLD_STR => {
@@ -1030,16 +1096,16 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 value.serialize(&mut cap)?;
                 let s = cap.finish()?;
                 let is_multiline = s.contains('\n');
-                if !is_multiline && s.len() < self.min_fold_chars {
+                if !is_multiline && s.len() < self.settings.min_fold_chars {
                     return self.serialize_str(&s);
                 }
-                self.pending_str_style = Some(StrStyle::Folded);
+                self.state.pending_str_style = Some(PendingStrStyle::Explicit(StrStyle::Folded));
                 return self.serialize_str(&s);
             }
             NAME_SPACE_AFTER => {
                 // Serialize the value, then emit an empty line after (only in block style).
                 let result = value.serialize(&mut *self);
-                if self.in_flow == 0 {
+                if self.state.in_flow == 0 {
                     // Emit an extra blank line after the value
                     self.newline()?;
                 }
@@ -1073,9 +1139,9 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         variant: &'static str,
         value: &T,
     ) -> Result<()> {
-        let was_inline_value = self.pending_space_after_colon;
-        let anchor_broke_line = self.pending_anchor_id.is_some();
-        let after_dash_depth = self.after_dash_depth;
+        let was_inline_value = self.state.pending_layout.pending_space_after_colon;
+        let anchor_broke_line = self.anchors.pending_id.is_some();
+        let after_dash_depth = self.state.after_dash_depth;
         self.write_anchor_for_complex_node()?;
 
         // If we are the value of a mapping key, YAML forbids "key: Variant: value" inline.
@@ -1084,54 +1150,54 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         // space insertion to the value serializer via pending_space_after_colon.
         if was_inline_value {
             // consume the pending space request and start a new line
-            self.pending_space_after_colon = false;
-            if !self.at_line_start {
+            self.state.pending_layout.pending_space_after_colon = false;
+            if !self.state.at_line_start {
                 self.newline()?;
             }
             // When used as a mapping value, indent relative to the parent mapping's base,
             // not the serializer's current depth (which may still be the outer level).
-            let base = self.current_map_depth.unwrap_or(self.depth);
+            let base = self.state.current_map_depth.unwrap_or(self.state.depth);
             self.write_indent(base + 1)?;
             self.write_key_scalar(variant)?;
             // Write ':' without trailing space, then mark that a space may be needed
             // if the following value is a scalar.
             self.out.write_str(":")?;
-            self.pending_space_after_colon = true;
-            self.at_line_start = false;
+            self.state.pending_layout.pending_space_after_colon = true;
+            self.state.at_line_start = false;
             // Do not let any inline-after-dash hint leak into the variant's inner value.
             // After `Variant:`, the next node is in value position and must choose its own layout.
-            self.pending_inline_map = false;
+            self.state.pending_layout.pending_inline_map = false;
             // Ensure that if the value is another variant or a mapping/sequence,
             // it indents under this variant label rather than the parent map key.
-            let prev_map_depth = self.current_map_depth.replace(base + 1);
+            let prev_map_depth = self.state.current_map_depth.replace(base + 1);
             let res = value.serialize(&mut *self);
-            self.current_map_depth = prev_map_depth;
+            self.state.current_map_depth = prev_map_depth;
             return res;
         }
         // Otherwise (top-level or sequence context).
-        if self.at_line_start {
+        if self.state.at_line_start {
             let depth = if anchor_broke_line {
-                after_dash_depth.map_or(self.depth, |d| d + 1)
+                after_dash_depth.map_or(self.state.depth, |d| d + 1)
             } else {
-                self.depth
+                self.state.depth
             };
             self.write_indent(depth)?;
         }
         self.write_key_scalar(variant)?;
         // Write ':' without a space and defer spacing/newline to the value serializer.
         self.out.write_str(":")?;
-        self.pending_space_after_colon = true;
-        self.at_line_start = false;
+        self.state.pending_layout.pending_space_after_colon = true;
+        self.state.at_line_start = false;
         // Do not let SeqSer's "inline first key after dash" hint leak into the variant's inner value.
         // Without this, a struct/map value can start as `Variant: a: 1`.
-        self.pending_inline_map = false;
+        self.state.pending_layout.pending_inline_map = false;
         // If this variant is inside a block sequence element (`- Variant:`), ensure the nested
         // value indents under the variant label rather than aligning with the list indentation.
         // SeqSer stores the dash's indentation depth in `after_dash_depth`.
-        if let Some(d) = self.after_dash_depth.take() {
-            let prev_map_depth = self.current_map_depth.replace(d + 1);
+        if let Some(d) = self.state.after_dash_depth.take() {
+            let prev_map_depth = self.state.current_map_depth.replace(d + 1);
             let res = value.serialize(&mut *self);
-            self.current_map_depth = prev_map_depth;
+            self.state.current_map_depth = prev_map_depth;
             res
         } else {
             value.serialize(&mut *self)
@@ -1146,12 +1212,12 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             self.write_scalar_prefix_if_anchor()?;
             // Ensure a space after a preceding colon when this sequence is a mapping value.
             self.write_space_if_pending()?;
-            if self.at_line_start {
-                self.write_indent(self.depth)?;
+            if self.state.at_line_start {
+                self.write_indent(self.state.depth)?;
             }
             self.out.write_str("[")?;
-            self.at_line_start = false;
-            let depth_next = self.depth; // inline
+            self.state.at_line_start = false;
+            let depth_next = self.state.depth; // inline
             Ok(SeqSer {
                 ser: self,
                 depth: depth_next,
@@ -1160,21 +1226,21 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             })
         } else {
             // Block sequence. Decide indentation based on whether this is after a map key or after a list dash.
-            let was_inline_value = !self.at_line_start;
+            let was_inline_value = !self.state.at_line_start;
 
             // If we are a value following a block sibling, force a newline now.
             // However, if a complex-node anchor is pending, we must keep `key: &aN` inline;
             // `write_anchor_for_complex_node` will handle emitting the anchor and newline.
-            if self.pending_space_after_colon
-                && self.last_value_was_block
-                && self.pending_anchor_id.is_none()
+            if self.state.pending_layout.pending_space_after_colon
+                && self.state.last_value_was_block
+                && self.anchors.pending_id.is_none()
             {
-                self.pending_space_after_colon = false;
-                if !self.at_line_start {
+                self.state.pending_layout.pending_space_after_colon = false;
+                if !self.state.at_line_start {
                     self.newline()?;
                 }
                 // Consume the sibling-block marker; it should not affect nested nodes.
-                self.last_value_was_block = false;
+                self.state.last_value_was_block = false;
             }
 
             // For block sequences nested under another dash, keep the first inner dash inline.
@@ -1183,19 +1249,19 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             // instead of:
             // -
             //   - 1
-            let inline_first = (!self.at_line_start)
-                && self.after_dash_depth.is_some()
-                && !self.pending_space_after_colon;
+            let inline_first = (!self.state.at_line_start)
+                && self.state.after_dash_depth.is_some()
+                && !self.state.pending_layout.pending_space_after_colon;
             // `inline_first` assumes we stay mid-line, but a pending anchor writes `&aN\n` first.
-            let anchor_broke_line = self.pending_anchor_id.is_some();
+            let anchor_broke_line = self.anchors.pending_id.is_some();
             self.write_anchor_for_complex_node()?;
             if inline_first {
                 if anchor_broke_line {
                     // Inlining now would drop the nested dashes to column 0, past the anchor.
-                    self.pending_inline_map = false;
+                    self.state.pending_layout.pending_inline_map = false;
                 } else {
                     // Collapsing onto the parent dash yields the preferred `- - 1` shape.
-                    self.at_line_start = false;
+                    self.state.at_line_start = false;
                 }
             } else if was_inline_value {
                 // Mid-line start. If we are here due to a map value (after ':'), defer the newline
@@ -1208,11 +1274,11 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             // - As a value after a map key: base is current_map_depth (if set), indent one level deeper.
             // - Otherwise (top-level or already at line start): base is current depth.
             let base = if inline_first {
-                self.after_dash_depth.unwrap_or(self.depth)
-            } else if was_inline_value && self.current_map_depth.is_some() {
-                self.current_map_depth.unwrap_or(self.depth)
+                self.state.after_dash_depth.unwrap_or(self.state.depth)
+            } else if was_inline_value && self.state.current_map_depth.is_some() {
+                self.state.current_map_depth.unwrap_or(self.state.depth)
             } else {
-                self.depth
+                self.state.depth
             };
             // For sequences used as a mapping value, indent them one level deeper so the dash is
             // nested under the parent key (consistent with serde_yaml's formatting). Keep block
@@ -1220,7 +1286,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             let depth_next = if inline_first {
                 base + 1
             } else if was_inline_value {
-                if self.compact_list_indent && self.current_map_depth.is_some() {
+                if self.settings.compact_list_indent && self.state.current_map_depth.is_some() {
                     base
                 } else {
                     base + 1
@@ -1229,7 +1295,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 base
             };
             // Starting a complex (block) sequence: drop any staged inline comment.
-            self.pending_inline_comment = None;
+            self.state.pending_inline_comment = None;
             Ok(SeqSer {
                 ser: self,
                 depth: depth_next,
@@ -1267,25 +1333,25 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         variant: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeTupleVariant> {
-        let was_inline_value = self.pending_space_after_colon;
-        let anchor_broke_line = self.pending_anchor_id.is_some();
-        let after_dash_depth = self.after_dash_depth;
+        let was_inline_value = self.state.pending_layout.pending_space_after_colon;
+        let anchor_broke_line = self.anchors.pending_id.is_some();
+        let after_dash_depth = self.state.after_dash_depth;
         self.write_anchor_for_complex_node()?;
 
         // If we are the value of a mapping key, YAML forbids keeping a nested mapping
         // on the same line (e.g., "key: Variant:"). Move the variant mapping to the next line
         // indented under the parent mapping's base depth.
         if was_inline_value {
-            self.pending_space_after_colon = false;
-            if !self.at_line_start {
+            self.state.pending_layout.pending_space_after_colon = false;
+            if !self.state.at_line_start {
                 self.newline()?;
             }
-            let base = self.current_map_depth.unwrap_or(self.depth) + 1;
+            let base = self.state.current_map_depth.unwrap_or(self.state.depth) + 1;
             self.write_indent(base)?;
             self.write_key_scalar(variant)?;
             self.out.write_str(":\n")?;
-            self.at_line_start = true;
-            self.pending_inline_map = false;
+            self.state.at_line_start = true;
+            self.state.pending_layout.pending_inline_map = false;
             let depth_next = base + 1;
             return Ok(SeqSer {
                 ser: self,
@@ -1295,21 +1361,21 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             });
         }
         // Otherwise (top-level or sequence context).
-        if self.at_line_start {
+        if self.state.at_line_start {
             let depth = if anchor_broke_line {
-                after_dash_depth.map_or(self.depth, |d| d + 1)
+                after_dash_depth.map_or(self.state.depth, |d| d + 1)
             } else {
-                self.depth
+                self.state.depth
             };
             self.write_indent(depth)?;
         }
         self.write_key_scalar(variant)?;
         self.out.write_str(":\n")?;
-        self.at_line_start = true;
-        let mut depth_next = self.depth + 1;
-        if let Some(d) = self.after_dash_depth.take() {
+        self.state.at_line_start = true;
+        let mut depth_next = self.state.depth + 1;
+        if let Some(d) = self.state.after_dash_depth.take() {
             depth_next = d + 2;
-            self.pending_inline_map = false;
+            self.state.pending_layout.pending_inline_map = false;
         }
         Ok(SeqSer {
             ser: self,
@@ -1325,12 +1391,12 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             self.write_scalar_prefix_if_anchor()?;
             // Ensure a space after a preceding colon when this mapping is a value.
             self.write_space_if_pending()?;
-            if self.at_line_start {
-                self.write_indent(self.depth)?;
+            if self.state.at_line_start {
+                self.write_indent(self.state.depth)?;
             }
             self.out.write_str("{")?;
-            self.at_line_start = false;
-            let depth_next = self.depth;
+            self.state.at_line_start = false;
+            let depth_next = self.state.depth;
             Ok(MapSer {
                 ser: self,
                 depth: depth_next,
@@ -1341,32 +1407,35 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 inline_value_start: false,
             })
         } else {
-            let inline_first = self.pending_inline_map;
+            let inline_first = self.state.pending_layout.pending_inline_map;
             // Starting a complex (block) map: drop any staged inline comment.
-            self.pending_inline_comment = None;
+            self.state.pending_inline_comment = None;
             // We only consider "value position" when immediately after a mapping colon.
-            let was_inline_value = self.pending_space_after_colon;
+            let was_inline_value = self.state.pending_layout.pending_space_after_colon;
             let mut forced_newline = false;
 
             // If we are a value following a block sibling, force a newline now.
             // However, if a complex-node anchor is pending, we must keep `key: &aN` inline;
             // `write_anchor_for_complex_node` will handle emitting the anchor and newline.
-            if was_inline_value && self.last_value_was_block && self.pending_anchor_id.is_none() {
-                self.pending_space_after_colon = false;
-                if !self.at_line_start {
+            if was_inline_value
+                && self.state.last_value_was_block
+                && self.anchors.pending_id.is_none()
+            {
+                self.state.pending_layout.pending_space_after_colon = false;
+                if !self.state.at_line_start {
                     self.newline()?;
                 }
                 forced_newline = true;
                 // Consume the sibling-block marker; it should not affect nested nodes.
-                self.last_value_was_block = false;
+                self.state.last_value_was_block = false;
             }
 
             self.write_anchor_for_complex_node()?;
             if inline_first {
                 // Suppress newline after a list dash for inline map first key.
-                self.pending_inline_map = false;
+                self.state.pending_layout.pending_inline_map = false;
                 // Mark that this sequence element is a mapping printed inline after a dash.
-                self.inline_map_after_dash = true;
+                self.state.pending_layout.inline_map_after_dash = true;
             } else if was_inline_value {
                 // Map used as a value after "key: ". If emitting braces for empty maps,
                 // keep this mapping on the same line so that an empty map renders as "{}".
@@ -1378,11 +1447,11 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 let known_empty = matches!(len, Some(0));
                 let known_non_empty = matches!(len, Some(n) if n > 0);
 
-                if !self.empty_as_braces || known_non_empty {
+                if !self.settings.empty_as_braces || known_non_empty {
                     // Move the mapping body to the next line.
                     // If an anchor was emitted, we are already at the start of a new line.
-                    self.pending_space_after_colon = false;
-                    if !self.at_line_start {
+                    self.state.pending_layout.pending_space_after_colon = false;
+                    if !self.state.at_line_start {
                         self.newline()?;
                     }
                 } else if !known_empty {
@@ -1397,11 +1466,11 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             // For complex KEYS (non-scalar), keep using the current serializer depth so that
             // subsequent key lines indent relative to the "? " line, not the parent map's base.
             let base = if inline_first {
-                self.after_dash_depth.unwrap_or(self.depth)
-            } else if was_inline_value && self.current_map_depth.is_some() {
-                self.current_map_depth.unwrap_or(self.depth)
+                self.state.after_dash_depth.unwrap_or(self.state.depth)
+            } else if was_inline_value && self.state.current_map_depth.is_some() {
+                self.state.current_map_depth.unwrap_or(self.state.depth)
             } else {
-                self.depth
+                self.state.depth
             };
             let depth_next = if inline_first || was_inline_value {
                 base + 1
@@ -1409,7 +1478,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 base
             };
             let inline_value_start_flag = was_inline_value
-                && self.empty_as_braces
+                && self.settings.empty_as_braces
                 && len.is_none()
                 && !inline_first
                 && !forced_newline;
@@ -1436,9 +1505,9 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         variant: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeStructVariant> {
-        let was_inline_value = self.pending_space_after_colon;
-        let anchor_broke_line = self.pending_anchor_id.is_some();
-        let after_dash_depth = self.after_dash_depth;
+        let was_inline_value = self.state.pending_layout.pending_space_after_colon;
+        let anchor_broke_line = self.anchors.pending_id.is_some();
+        let after_dash_depth = self.state.after_dash_depth;
         self.write_anchor_for_complex_node()?;
 
         // If we are the value of a mapping key, YAML forbids keeping a nested mapping
@@ -1446,18 +1515,18 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         // indented under the parent mapping's base depth.
         if was_inline_value {
             // Value position after a map key: start the variant mapping on the next line.
-            self.pending_space_after_colon = false;
-            if !self.at_line_start {
+            self.state.pending_layout.pending_space_after_colon = false;
+            if !self.state.at_line_start {
                 self.newline()?;
             }
             // Indent the variant name one level under the parent mapping.
-            let base = self.current_map_depth.unwrap_or(self.depth) + 1;
+            let base = self.state.current_map_depth.unwrap_or(self.state.depth) + 1;
             self.write_indent(base)?;
             self.write_key_scalar(variant)?;
             self.out.write_str(":\n")?;
-            self.at_line_start = true;
+            self.state.at_line_start = true;
             // A complex key stages an inline hint for its value; clear it before the fields.
-            self.pending_inline_map = false;
+            self.state.pending_layout.pending_inline_map = false;
             // Fields indent one more level under the variant label.
             let depth_next = base + 1;
             return Ok(StructVariantSer {
@@ -1466,23 +1535,23 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             });
         }
         // Otherwise (top-level or sequence context), emit the variant name at current depth.
-        if self.at_line_start {
+        if self.state.at_line_start {
             let depth = if anchor_broke_line {
-                after_dash_depth.map_or(self.depth, |d| d + 1)
+                after_dash_depth.map_or(self.state.depth, |d| d + 1)
             } else {
-                self.depth
+                self.state.depth
             };
             self.write_indent(depth)?;
         }
         self.write_key_scalar(variant)?;
         self.out.write_str(":\n")?;
-        self.at_line_start = true;
+        self.state.at_line_start = true;
         // Default indentation for fields under a plain variant line.
-        let mut depth_next = self.depth + 1;
+        let mut depth_next = self.state.depth + 1;
         // If this variant follows a list dash, indent two levels under the dash (one for the element, one for the mapping).
-        if let Some(d) = self.after_dash_depth.take() {
+        if let Some(d) = self.state.after_dash_depth.take() {
             depth_next = d + 2;
-            self.pending_inline_map = false;
+            self.state.pending_layout.pending_inline_map = false;
         }
         Ok(StructVariantSer {
             ser: self,

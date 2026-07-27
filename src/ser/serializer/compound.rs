@@ -68,18 +68,21 @@ impl<W: Write> SerializeSeq for SeqSer<'_, '_, W> {
         } else {
             // If we are the value of a mapping key, we deferred the newline until we knew the
             // sequence is non-empty. Insert it now before emitting the first dash.
-            if self.first && self.ser.pending_space_after_colon {
-                self.ser.pending_space_after_colon = false;
-                if !self.ser.at_line_start {
+            if self.first && self.ser.state.pending_layout.pending_space_after_colon {
+                self.ser.state.pending_layout.pending_space_after_colon = false;
+                if !self.ser.state.at_line_start {
                     self.ser.newline()?;
                 }
-                self.ser.pending_inline_map = false;
+                self.ser.state.pending_layout.pending_inline_map = false;
             }
             // If previous element was an inline map after a dash, just clear the flag; do not change depth.
-            if !self.first && self.ser.inline_map_after_dash {
-                self.ser.inline_map_after_dash = false;
+            if !self.first && self.ser.state.pending_layout.inline_map_after_dash {
+                self.ser.state.pending_layout.inline_map_after_dash = false;
             }
-            if self.first && (!self.ser.at_line_start || self.ser.pending_inline_map) {
+            if self.first
+                && (!self.ser.state.at_line_start
+                    || self.ser.state.pending_layout.pending_inline_map)
+            {
                 // Inline the first element of this nested sequence right after the outer dash
                 // (either we are already mid-line, or the parent staged inline via pending_inline_map).
                 // Do not write indentation here.
@@ -87,17 +90,17 @@ impl<W: Write> SerializeSeq for SeqSer<'_, '_, W> {
                 self.ser.write_indent(self.depth)?;
             }
             self.ser.out.write_str("- ")?;
-            self.ser.at_line_start = false;
-            if self.first && self.ser.inline_map_after_dash {
+            self.ser.state.at_line_start = false;
+            if self.first && self.ser.state.pending_layout.inline_map_after_dash {
                 // We consumed the inline-after-dash behavior for this child sequence.
-                self.ser.inline_map_after_dash = false;
+                self.ser.state.pending_layout.inline_map_after_dash = false;
             }
             // Capture the dash's indentation depth for potential struct-variant that follows.
-            self.ser.after_dash_depth = Some(self.depth);
+            self.ser.state.after_dash_depth = Some(self.depth);
             // Hint to emit first key/element of a following mapping/sequence inline on the same line.
-            self.ser.pending_inline_map = true;
+            self.ser.state.pending_layout.pending_inline_map = true;
             // A sibling element's block-collection state must not leak into this element.
-            self.ser.last_value_was_block = false;
+            self.ser.state.last_value_was_block = false;
             v.serialize(&mut *self.ser)?;
         }
         self.first = false;
@@ -107,17 +110,17 @@ impl<W: Write> SerializeSeq for SeqSer<'_, '_, W> {
     fn end(self) -> Result<()> {
         if self.flow {
             self.ser.out.write_str("]")?;
-            if self.ser.in_flow == 0 {
+            if self.ser.state.in_flow == 0 {
                 self.ser.newline()?;
             }
         } else if self.first {
             // Empty block-style sequence.
-            if self.ser.empty_as_braces {
+            if self.ser.settings.empty_as_braces {
                 // If we were pending a space after a colon (map value position), write it now.
-                if self.ser.pending_space_after_colon {
+                if self.ser.state.pending_layout.pending_space_after_colon {
                     self.ser.out.write_str(" ")?;
-                    self.ser.pending_space_after_colon = false;
-                } else if self.ser.at_line_start {
+                    self.ser.state.pending_layout.pending_space_after_colon = false;
+                } else if self.ser.state.at_line_start {
                     // If at line start, indent appropriately.
                     self.ser.write_indent(self.depth)?;
                 }
@@ -126,17 +129,17 @@ impl<W: Write> SerializeSeq for SeqSer<'_, '_, W> {
             } else {
                 // Preserve legacy behavior: just emit a newline (empty body).
                 // Clear map-value pending state so it does not leak into following elements.
-                self.ser.pending_space_after_colon = false;
+                self.ser.state.pending_layout.pending_space_after_colon = false;
                 self.ser.newline()?;
             }
         } else {
             // Block collection finished and it was not empty.
-            self.ser.last_value_was_block = true;
+            self.ser.state.last_value_was_block = true;
             // Clear any dash/inline hints so they cannot affect the next sibling value
             // (e.g., a mapping field following a block sequence value).
-            self.ser.pending_inline_map = false;
-            self.ser.after_dash_depth = None;
-            self.ser.inline_map_after_dash = false;
+            self.ser.state.pending_layout.pending_inline_map = false;
+            self.ser.state.after_dash_depth = None;
+            self.ser.state.pending_layout.inline_map_after_dash = false;
         }
         Ok(())
     }
@@ -262,7 +265,7 @@ impl<W: Write> SpecialTupleSer<'_, '_, W> {
                         let ptr = cap.finish()?;
                         let (id, fresh) = self.ser.alloc_anchor_for(ptr);
                         if fresh {
-                            self.ser.pending_anchor_id = Some(id); // define before value
+                            self.ser.anchors.pending_id = Some(id); // define before value
                             self.strong_alias_id = None;
                         } else {
                             self.strong_alias_id = Some(id); // alias instead of value
@@ -296,15 +299,15 @@ impl<W: Write> SpecialTupleSer<'_, '_, W> {
                             let ptr = self.weak_anchor_ptr;
                             let (id, fresh) = self.ser.alloc_anchor_for(ptr);
                             if fresh {
-                                self.ser.pending_anchor_id = Some(id); // define before value
+                                self.ser.anchors.pending_id = Some(id); // define before value
                                 self.weak_alias_id = None;
                             } else {
                                 self.weak_alias_id = Some(id); // alias in field #3
                             }
                         } else {
                             // present == false: emit null and skip field #3
-                            if self.ser.at_line_start {
-                                self.ser.write_indent(self.ser.depth)?;
+                            if self.ser.state.at_line_start {
+                                self.ser.write_indent(self.ser.state.depth)?;
                             }
                             self.ser.out.write_str("null")?;
                             // Use shared end-of-scalar so pending inline comments (if any) are appended
@@ -336,27 +339,27 @@ impl<W: Write> SpecialTupleSer<'_, '_, W> {
                     1 => {
                         let comment = self.comment_text.take().unwrap_or_default();
                         let sanitized = YamlSerializer::<W>::sanitize_comment_text(&comment);
-                        match self.ser.comment_position {
+                        match self.ser.settings.comment_position {
                             CommentPosition::Inline => {
-                                if self.ser.in_flow == 0 && !sanitized.is_empty() {
+                                if self.ser.state.in_flow == 0 && !sanitized.is_empty() {
                                     // Stage the comment so scalar/alias serializers append it inline via write_end_of_scalar.
-                                    self.ser.pending_inline_comment = Some(sanitized);
+                                    self.ser.state.pending_inline_comment = Some(sanitized);
                                 }
                                 // Serialize the inner value as-is. Complex values will ignore the comment (it will be cleared).
                                 value.serialize(&mut *self.ser)?;
                                 // Ensure no leftover staged comment leaks to subsequent tokens.
-                                self.ser.pending_inline_comment = None;
+                                self.ser.state.pending_inline_comment = None;
                             }
                             CommentPosition::Above => {
-                                let saved_depth = self.ser.depth;
+                                let saved_depth = self.ser.state.depth;
                                 let target_depth = self.ser.write_above_comment(&sanitized)?;
                                 if let Some(depth) = target_depth {
-                                    self.ser.depth = depth;
+                                    self.ser.state.depth = depth;
                                 }
                                 let result = value.serialize(&mut *self.ser);
-                                self.ser.depth = saved_depth;
+                                self.ser.state.depth = saved_depth;
                                 result?;
-                                self.ser.pending_inline_comment = None;
+                                self.ser.state.pending_inline_comment = None;
                             }
                         }
                     }
@@ -418,20 +421,20 @@ impl<W: Write> MapSer<'_, '_, W> {
     fn write_simple_key(&mut self, text: &str) -> Result<()> {
         // Indent continuation lines. If this map started inline after a dash,
         // align under the first key by adding two spaces instead of a full indent step.
-        if self.align_after_dash && self.ser.at_line_start {
+        if self.align_after_dash && self.ser.state.at_line_start {
             let base = self.depth.saturating_sub(1);
-            for _ in 0..self.ser.indent_step * base {
+            for _ in 0..self.ser.settings.indent_step * base {
                 self.ser.out.write_char(' ')?;
             }
             self.ser.out.write_str("  ")?; // width of "- "
-            self.ser.at_line_start = false;
+            self.ser.state.at_line_start = false;
         } else {
             self.ser.write_indent(self.depth)?;
         }
         self.ser.out.write_str(text)?;
         self.ser.out.write_str(":")?;
-        self.ser.pending_space_after_colon = true;
-        self.ser.at_line_start = false;
+        self.ser.state.pending_layout.pending_space_after_colon = true;
+        self.ser.state.at_line_start = false;
         self.last_key_complex = false;
         Ok(())
     }
@@ -453,31 +456,31 @@ impl<W: Write> MapSer<'_, '_, W> {
         self.ser.write_anchor_for_complex_node()?;
         self.ser.write_indent(self.depth)?;
         self.ser.out.write_str("? ")?;
-        self.ser.at_line_start = false;
+        self.ser.state.at_line_start = false;
 
-        let saved_depth = self.ser.depth;
-        let saved_current_map_depth = self.ser.current_map_depth;
-        let saved_pending_inline_map = self.ser.pending_inline_map;
-        let saved_inline_map_after_dash = self.ser.inline_map_after_dash;
-        let saved_after_dash_depth = self.ser.after_dash_depth;
+        let saved_depth = self.ser.state.depth;
+        let saved_current_map_depth = self.ser.state.current_map_depth;
+        let saved_pending_inline_map = self.ser.state.pending_layout.pending_inline_map;
+        let saved_inline_map_after_dash = self.ser.state.pending_layout.inline_map_after_dash;
+        let saved_after_dash_depth = self.ser.state.after_dash_depth;
 
-        self.ser.pending_inline_map = true;
-        self.ser.depth = self.depth;
+        self.ser.state.pending_layout.pending_inline_map = true;
+        self.ser.state.depth = self.depth;
         // Provide a base depth for nested maps within this complex key so that
         // continuation lines indent one level deeper than the parent mapping.
-        self.ser.current_map_depth = Some(self.depth);
-        self.ser.after_dash_depth = None;
+        self.ser.state.current_map_depth = Some(self.depth);
+        self.ser.state.after_dash_depth = None;
         key.serialize(&mut *self.ser)?;
 
-        self.ser.depth = saved_depth;
-        self.ser.current_map_depth = saved_current_map_depth;
-        self.ser.pending_inline_map = saved_pending_inline_map;
-        self.ser.inline_map_after_dash = saved_inline_map_after_dash;
-        self.ser.after_dash_depth = saved_after_dash_depth;
+        self.ser.state.depth = saved_depth;
+        self.ser.state.current_map_depth = saved_current_map_depth;
+        self.ser.state.pending_layout.pending_inline_map = saved_pending_inline_map;
+        self.ser.state.pending_layout.inline_map_after_dash = saved_inline_map_after_dash;
+        self.ser.state.after_dash_depth = saved_after_dash_depth;
         // A complex key may have been serialized as a block collection, which sets
         // `last_value_was_block`. That state must NOT affect the *value* of this same
         // map entry (e.g. we still want `: x: 3` inline for composite-key maps).
-        self.ser.last_value_was_block = false;
+        self.ser.state.last_value_was_block = false;
         self.last_key_complex = true;
         Ok(())
     }
@@ -492,7 +495,7 @@ impl<W: Write> SerializeMap for MapSer<'_, '_, W> {
             if !self.first {
                 self.ser.out.write_str(", ")?;
             }
-            let text = scalar_key_to_string(key, self.ser.yaml_12)?;
+            let text = scalar_key_to_string(key, self.ser.settings.yaml_12)?;
             if is_simple_key_text(&text) {
                 self.ser.out.write_str(&text)?;
                 self.ser.out.write_str(": ")?;
@@ -501,30 +504,30 @@ impl<W: Write> SerializeMap for MapSer<'_, '_, W> {
                 self.ser.out.write_str(&text)?;
                 self.ser.out.write_str(" : ")?;
             }
-            self.ser.at_line_start = false;
+            self.ser.state.at_line_start = false;
             self.last_key_complex = false;
         } else {
             // If this mapping started inline as a value (after "key:"), but now we
             // are about to emit the first entry, move to the next line before the key.
             if self.inline_value_start {
                 // Cancel a pending space after ':' and break the line.
-                if self.ser.pending_space_after_colon {
-                    self.ser.pending_space_after_colon = false;
+                if self.ser.state.pending_layout.pending_space_after_colon {
+                    self.ser.state.pending_layout.pending_space_after_colon = false;
                 }
-                if !self.ser.at_line_start {
+                if !self.ser.state.at_line_start {
                     self.ser.newline()?;
                 }
                 self.inline_value_start = false;
-            } else if !self.ser.at_line_start {
+            } else if !self.ser.state.at_line_start {
                 self.ser.write_space_if_pending()?;
             }
 
             // A new key in a block map should clear any pending inline hints from previous siblings.
-            self.ser.after_dash_depth = None;
-            self.ser.pending_inline_map = false;
-            self.ser.last_value_was_block = false;
+            self.ser.state.after_dash_depth = None;
+            self.ser.state.pending_layout.pending_inline_map = false;
+            self.ser.state.last_value_was_block = false;
 
-            match scalar_key_to_string(key, self.ser.yaml_12) {
+            match scalar_key_to_string(key, self.ser.settings.yaml_12) {
                 Ok(text) if is_simple_key_text(&text) => {
                     self.write_simple_key(&text)?;
                 }
@@ -542,33 +545,33 @@ impl<W: Write> SerializeMap for MapSer<'_, '_, W> {
         if self.flow {
             self.ser.with_in_flow(|s| value.serialize(s))?;
         } else {
-            let saved_pending_inline_map = self.ser.pending_inline_map;
-            let saved_depth = self.ser.depth;
+            let saved_pending_inline_map = self.ser.state.pending_layout.pending_inline_map;
+            let saved_depth = self.ser.state.depth;
             if self.last_key_complex {
-                if self.align_after_dash && self.ser.at_line_start {
+                if self.align_after_dash && self.ser.state.at_line_start {
                     let base = self.depth.saturating_sub(1);
-                    for _ in 0..self.ser.indent_step * base {
+                    for _ in 0..self.ser.settings.indent_step * base {
                         self.ser.out.write_char(' ')?;
                     }
                     self.ser.out.write_str("  ")?;
-                    self.ser.at_line_start = false;
+                    self.ser.state.at_line_start = false;
                 } else {
                     self.ser.write_indent(self.depth)?;
                 }
                 self.ser.out.write_str(":")?;
-                self.ser.pending_space_after_colon = true;
-                self.ser.pending_inline_map = true;
-                self.ser.at_line_start = false;
-                self.ser.depth = self.depth;
+                self.ser.state.pending_layout.pending_space_after_colon = true;
+                self.ser.state.pending_layout.pending_inline_map = true;
+                self.ser.state.at_line_start = false;
+                self.ser.state.depth = self.depth;
             }
-            let prev_map_depth = self.ser.current_map_depth.replace(self.depth);
+            let prev_map_depth = self.ser.state.current_map_depth.replace(self.depth);
             let result = value.serialize(&mut *self.ser);
-            self.ser.current_map_depth = prev_map_depth;
+            self.ser.state.current_map_depth = prev_map_depth;
             // Always restore the parent's pending_inline_map to avoid leaking inline hints
             // across sibling values (e.g., after finishing a sequence value like `groups`).
-            self.ser.pending_inline_map = saved_pending_inline_map;
+            self.ser.state.pending_layout.pending_inline_map = saved_pending_inline_map;
             if self.last_key_complex {
-                self.ser.depth = saved_depth;
+                self.ser.state.depth = saved_depth;
                 self.last_key_complex = false;
             }
             result?;
@@ -580,27 +583,27 @@ impl<W: Write> SerializeMap for MapSer<'_, '_, W> {
     fn end(self) -> Result<()> {
         if self.flow {
             self.ser.out.write_str("}")?;
-            if self.ser.in_flow == 0 {
+            if self.ser.state.in_flow == 0 {
                 self.ser.newline()?;
             }
         } else if self.first {
             // Empty block-style map.
-            if self.ser.empty_as_braces {
+            if self.ser.settings.empty_as_braces {
                 // If we were pending a space after a colon (map value position), write it now.
-                if self.ser.pending_space_after_colon {
+                if self.ser.state.pending_layout.pending_space_after_colon {
                     self.ser.out.write_str(" ")?;
-                    self.ser.pending_space_after_colon = false;
+                    self.ser.state.pending_layout.pending_space_after_colon = false;
                 }
                 // If at line start, indent appropriately.
-                if self.ser.at_line_start {
+                if self.ser.state.at_line_start {
                     // If we are aligning after a dash, mimic the indentation logic used for keys.
                     if self.align_after_dash {
                         let base = self.depth.saturating_sub(1);
-                        for _ in 0..self.ser.indent_step * base {
+                        for _ in 0..self.ser.settings.indent_step * base {
                             self.ser.out.write_char(' ')?;
                         }
                         self.ser.out.write_str("  ")?; // width of "- "
-                        self.ser.at_line_start = false;
+                        self.ser.state.at_line_start = false;
                     } else {
                         self.ser.write_indent(self.depth)?;
                     }
@@ -613,7 +616,7 @@ impl<W: Write> SerializeMap for MapSer<'_, '_, W> {
             }
         } else {
             // Block collection finished and it was not empty.
-            self.ser.last_value_was_block = true;
+            self.ser.state.last_value_was_block = true;
         }
         Ok(())
     }
@@ -655,17 +658,17 @@ impl<W: Write> SerializeStructVariant for StructVariantSer<'_, '_, W> {
         key: &'static str,
         value: &T,
     ) -> Result<()> {
-        let text = scalar_key_to_string(&key, self.ser.yaml_12)?;
+        let text = scalar_key_to_string(&key, self.ser.settings.yaml_12)?;
         self.ser.write_indent(self.depth)?;
         self.ser.out.write_str(&text)?;
         // Defer spacing/newline decision to the value serializer similarly to map entries.
         self.ser.out.write_str(":")?;
-        self.ser.pending_space_after_colon = true;
-        self.ser.at_line_start = false;
+        self.ser.state.pending_layout.pending_space_after_colon = true;
+        self.ser.state.at_line_start = false;
         // Ensure nested mappings/collections used as this field's value indent relative to this struct variant.
-        let prev_map_depth = self.ser.current_map_depth.replace(self.depth);
+        let prev_map_depth = self.ser.state.current_map_depth.replace(self.depth);
         let result = value.serialize(&mut *self.ser);
-        self.ser.current_map_depth = prev_map_depth;
+        self.ser.state.current_map_depth = prev_map_depth;
         result
     }
     fn end(self) -> Result<()> {
