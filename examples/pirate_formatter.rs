@@ -145,7 +145,7 @@ impl MessageFormatter for PirateFormatter {
 }
 
 impl PirateFormatter {
-    fn format_serialization_error<'a>(&self, err: &'a ser_error::Error) -> Cow<'a, str> {
+    fn format_serialization_error(err: &ser_error::Error) -> Cow<'_, str> {
         match err {
             ser_error::Error::SingleQuotedRequiresEscaping { ch } => Cow::Owned(format!(
                 "That rune {ch:?} needs two horns, no unicorns here!"
@@ -268,7 +268,7 @@ fn main() {
         println!("\n[Default Serialization Error]:\n{e}");
         println!(
             "\n[Pirate Serialization Error]:\n{}",
-            PirateFormatter.format_serialization_error(&e)
+            PirateFormatter::format_serialization_error(&e)
         );
     }
 

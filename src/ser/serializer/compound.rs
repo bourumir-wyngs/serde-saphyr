@@ -245,7 +245,7 @@ impl<W: Write> SerializeTupleStruct for TupleSer<'_, '_, W> {
     fn end(self) -> Result<()> {
         match self.inner {
             TupleSerInner::Seq(seq) => SerializeSeq::end(seq),
-            TupleSerInner::Special(s) => s.end(),
+            TupleSerInner::Special(_) => Ok(()),
         }
     }
 }
@@ -365,10 +365,6 @@ impl<W: Write> SpecialTupleSer<'_, '_, W> {
             }
         }
         self.idx += 1;
-        Ok(())
-    }
-
-    fn end(self) -> Result<()> {
         Ok(())
     }
 }

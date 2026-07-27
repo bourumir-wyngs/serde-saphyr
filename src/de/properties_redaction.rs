@@ -150,8 +150,7 @@ pub(crate) fn with_interp_redaction<T>(f: impl FnOnce(&[ScalarRedactionCtx]) -> 
         let borrow = cell.borrow();
         let pairs = borrow
             .last()
-            .map(|scope| scope.pairs.as_slice())
-            .unwrap_or(&[]);
+            .map_or(&[] as &[ScalarRedactionCtx], |scope| scope.pairs.as_slice());
         f(pairs)
     })
 }

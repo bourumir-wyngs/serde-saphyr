@@ -17,7 +17,7 @@ fn deserialize_with_type_error_renders_snippet() {
     impl BaseEntityProperties {
         pub fn get_object_id(&self) -> String {
             // Deterministic key for the test; the exact mapping key is irrelevant.
-            "example".to_string()
+            self.name.clone()
         }
     }
 

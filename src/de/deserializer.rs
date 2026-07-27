@@ -387,7 +387,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         }
     }
 
-    fn quoting_required_for_scalar(&self, view: &ScalarView<'de>) -> Error {
+    fn quoting_required_for_scalar(view: &ScalarView<'de>) -> Error {
         Error::quoting_required(view.raw.as_ref(), view.interpolated).with_location(view.location)
     }
 
@@ -967,7 +967,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             {
                 // Require quoting for ambiguous plain scalars in no_schema mode.
                 let view = self.take_scalar_view()?;
-                return Err(self.quoting_required_for_scalar(&view));
+                return Err(Self::quoting_required_for_scalar(&view));
             }
         }
 
@@ -1009,7 +1009,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     && view.tag != SfTag::String
                 {
                     let view = self.take_scalar_view()?;
-                    return Err(self.quoting_required_for_scalar(&view));
+                    return Err(Self::quoting_required_for_scalar(&view));
                 }
 
                 if view.tag == SfTag::Binary && !self.cfg.ignore_binary_tag_for_string {
@@ -1094,7 +1094,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             {
                 // Consume the scalar to anchor the error at the correct location.
                 let view = self.take_scalar_view()?;
-                return Err(self.quoting_required_for_scalar(&view));
+                return Err(Self::quoting_required_for_scalar(&view));
             }
             if view.tag == SfTag::Binary && !self.cfg.ignore_binary_tag_for_string {
                 return visitor.visit_string(self.take_string_scalar()?);
@@ -1429,11 +1429,10 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         // rule applies to comments written above the alias token.
         let mut seq_start_comments = std::mem::take(&mut self.pending_value_comments);
         seq_start_comments.extend(self.ev.take_leading_comments_for_next_node()?);
-        let seq_location = self
-            .ev
-            .peek()?
-            .map(|ev| ev.location())
-            .unwrap_or_else(|| self.ev.last_location());
+        let seq_location = match self.ev.peek()? {
+            Some(ev) => ev.location(),
+            None => self.ev.last_location(),
+        };
         let child_cfg = self.cfg.enter_container(seq_location)?;
         self.expect_seq_start()?;
         /// Streaming `SeqAccess` over the underlying `Events`.
@@ -1614,11 +1613,10 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         // anchored map start here; comments above the alias follow the same rule.
         let mut map_start_comments = std::mem::take(&mut self.pending_value_comments);
         map_start_comments.extend(self.ev.take_leading_comments_for_next_node()?);
-        let map_location = self
-            .ev
-            .peek()?
-            .map(|ev| ev.location())
-            .unwrap_or_else(|| self.ev.last_location());
+        let map_location = match self.ev.peek()? {
+            Some(ev) => ev.location(),
+            None => self.ev.last_location(),
+        };
         let child_cfg = self.cfg.enter_container(map_location)?;
         self.expect_map_start()?;
 
@@ -2179,10 +2177,10 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
                     // Definition-site location: where the node is defined in the YAML.
                     // For aliases, this will point at the anchor definition.
-                    let defined_location = replay
-                        .peek()?
-                        .map(|ev| ev.location())
-                        .unwrap_or_else(|| replay.last_location());
+                    let defined_location = match replay.peek()? {
+                        Some(ev) => ev.location(),
+                        None => replay.last_location(),
+                    };
 
                     #[cfg(any(feature = "garde", feature = "validator"))]
                     {
@@ -2238,11 +2236,10 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     value_comments.extend(self.ev.take_leading_comments_for_next_node()?);
 
                     // Live stream: get both locations for potential alias error reporting.
-                    let defined_location = self
-                        .ev
-                        .peek()?
-                        .map(|ev: &Ev| ev.location())
-                        .unwrap_or_else(|| self.ev.last_location());
+                    let defined_location = match self.ev.peek()? {
+                        Some(ev) => ev.location(),
+                        None => self.ev.last_location(),
+                    };
 
                     let reference_location = self.ev.reference_location();
 
@@ -2398,7 +2395,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     && maybe_not_string(&view.effective, &style, self.cfg.strict_booleans)
                 {
                     let view = self.take_scalar_view()?;
-                    return Err(self.quoting_required_for_scalar(&view));
+                    return Err(Self::quoting_required_for_scalar(&view));
                 }
                 // If the tag matches a variant name, use tag as variant selector
                 // and the scalar value as newtype payload.
@@ -2454,7 +2451,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                         && maybe_not_string(&view.raw, &view.style, self.cfg.strict_booleans)
                     {
                         let view = key_de.take_scalar_view()?;
-                        return Err(self.quoting_required_for_scalar(&view));
+                        return Err(Self::quoting_required_for_scalar(&view));
                     }
                     let view = key_de.take_scalar_view()?;
                     Mode::Map(view.raw.into_owned(), view.location)
@@ -2634,11 +2631,10 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 T: de::DeserializeSeed<'de>,
             {
                 // Get locations for error reporting before deserializing.
-                let defined_location = self
-                    .ev
-                    .peek()?
-                    .map(|ev: &Ev| ev.location())
-                    .unwrap_or_else(|| self.ev.last_location());
+                let defined_location = match self.ev.peek()? {
+                    Some(ev) => ev.location(),
+                    None => self.ev.last_location(),
+                };
                 let reference_location = self.ev.reference_location();
 
                 let mut de = YamlDeserializer::new(self.ev, self.cfg);

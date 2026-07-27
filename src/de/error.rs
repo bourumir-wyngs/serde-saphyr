@@ -571,6 +571,7 @@ impl MissingFieldLocationGuard {
     }
 
     /// Update the fallback location in place, reusing the existing guard's restore point.
+    #[allow(clippy::unused_self)] // The receiver ties this update to the lifetime of a live guard.
     pub(crate) fn replace_location(&mut self, location: Location) {
         MISSING_FIELD_FALLBACK.with(|c| c.set(Some(location)));
     }

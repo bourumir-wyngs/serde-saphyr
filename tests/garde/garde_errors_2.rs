@@ -19,7 +19,7 @@ fn main() {
 
     impl BaseEntityProperties {
         pub fn get_object_id(&self) -> String {
-            "example".to_string()
+            self.id.clone().unwrap_or_else(|| self.name.clone())
         }
     }
 
