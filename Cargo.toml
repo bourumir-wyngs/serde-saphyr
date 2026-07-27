@@ -30,7 +30,7 @@ figment = { version = "0.10", optional = true }
 figment2 = { version = "0.11", optional = true }
 garde = { version = ">= 0.19.0, < 0.24", optional = true, features = ["derive"] }
 miette = { version = "7", optional = true, features = ["fancy"] }
-validator = { version = ">= 0.11, < 0.21", optional = true, features = ["derive"] }
+validator = { version = ">= 0.11, < 0.22", optional = true, features = ["derive"] }
 
 [features]
 default = ["serialize", "deserialize"]
