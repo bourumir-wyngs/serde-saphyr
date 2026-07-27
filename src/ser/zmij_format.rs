@@ -5,10 +5,7 @@ use std::fmt::Write;
 use zmij::Float;
 
 /// Format as float string, make changes to be sure valid YAML float
-pub(crate) fn push_float_string<F: Float + FloatCore>(
-    target: &mut String,
-    f: F,
-) -> ser::Result<()> {
+pub(crate) fn push_float_string<F: Float + FloatCore>(target: &mut String, f: F) {
     if f.is_nan() {
         target.push_str(".nan");
     } else if f.is_infinite() {
@@ -52,7 +49,6 @@ pub(crate) fn push_float_string<F: Float + FloatCore>(
             target.push_str(s);
         }
     }
-    Ok(())
 }
 
 /// Format as float string, make changes to be sure valid YAML float

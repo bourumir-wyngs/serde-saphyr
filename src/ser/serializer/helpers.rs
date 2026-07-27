@@ -539,10 +539,12 @@ impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
         Ok(())
     }
     fn serialize_f32(self, v: f32) -> Result<()> {
-        zmij_format::push_float_string(self.s, v)
+        zmij_format::push_float_string(self.s, v);
+        Ok(())
     }
     fn serialize_f64(self, v: f64) -> Result<()> {
-        zmij_format::push_float_string(self.s, v)
+        zmij_format::push_float_string(self.s, v);
+        Ok(())
     }
 
     fn serialize_char(self, v: char) -> Result<()> {
@@ -710,23 +712,23 @@ mod tests_internal {
         let mut s = String::new();
 
         // 1.0 -> no decimal, no exp -> line 48-50
-        zmij_format::push_float_string(&mut s, 1.0f64).unwrap();
+        zmij_format::push_float_string(&mut s, 1.0f64);
         assert!(s.contains(".0"));
 
         // 1e-10 -> exponent without plus sign -> line 35-36? wait, no, "1e-10" has minus sign.
         // We need exponent missing decimal, and exponent missing sign (+).
         s.clear();
-        zmij_format::push_float_string(&mut s, 1e20f64).unwrap();
+        zmij_format::push_float_string(&mut s, 1e20f64);
         // and f32 variations
         s.clear();
-        zmij_format::push_float_string(&mut s, 1e30f32).unwrap();
+        zmij_format::push_float_string(&mut s, 1e30f32);
 
         s.clear();
-        zmij_format::push_float_string(&mut s, f32::NAN).unwrap();
+        zmij_format::push_float_string(&mut s, f32::NAN);
         s.clear();
-        zmij_format::push_float_string(&mut s, f32::INFINITY).unwrap();
+        zmij_format::push_float_string(&mut s, f32::INFINITY);
         s.clear();
-        zmij_format::push_float_string(&mut s, f32::NEG_INFINITY).unwrap();
+        zmij_format::push_float_string(&mut s, f32::NEG_INFINITY);
     }
 
     #[test]
