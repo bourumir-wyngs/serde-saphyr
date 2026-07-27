@@ -87,12 +87,8 @@ where
                  wrap bare terms with deg(...) or rad(...), or remove the tag",
             ));
         }
-    } else {
-        match tag {
-            SfTag::Degrees => value *= DEG2RAD,
-            SfTag::Radians => { /* already radians */ }
-            _ => { /* ignore other tags for floats */ }
-        }
+    } else if matches!(tag, SfTag::Degrees) {
+        value *= DEG2RAD;
     }
 
     Ok(T::from_f64(value))
