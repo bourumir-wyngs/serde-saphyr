@@ -1397,15 +1397,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             self.out.write_str("{")?;
             self.state.at_line_start = false;
             let depth_next = self.state.depth;
-            Ok(MapSer {
-                ser: self,
-                depth: depth_next,
-                flow: true,
-                first: true,
-                last_key_complex: false,
-                align_after_dash: false,
-                inline_value_start: false,
-            })
+            Ok(MapSer::flow(self, depth_next))
         } else {
             let inline_first = self.state.pending_layout.pending_inline_map;
             // Starting a complex (block) map: drop any staged inline comment.
@@ -1482,15 +1474,12 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 && len.is_none()
                 && !inline_first
                 && !forced_newline;
-            Ok(MapSer {
-                ser: self,
-                depth: depth_next,
-                flow: false,
-                first: true,
-                last_key_complex: false,
-                align_after_dash: inline_first,
-                inline_value_start: inline_value_start_flag,
-            })
+            Ok(MapSer::block(
+                self,
+                depth_next,
+                inline_first,
+                inline_value_start_flag,
+            ))
         }
     }
 

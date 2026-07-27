@@ -399,29 +399,103 @@ impl<W: Write> SerializeTupleVariant for SeqSer<'_, '_, W> {
 #[doc(hidden)]
 pub struct MapSer<'a, 'b, W: Write> {
     /// Parent YAML serializer.
-    pub(super) ser: &'a mut YamlSerializer<'b, W>,
+    ser: &'a mut YamlSerializer<'b, W>,
     /// Target indentation depth for block-style entries.
-    pub(super) depth: usize,
-    /// Whether the mapping is in flow style (`{k: v}`).
-    pub(super) flow: bool,
-    /// Whether the next entry is the first (comma handling in flow style).
-    pub(super) first: bool,
-    /// Whether the most recently serialized key was a complex (non-scalar) node.
-    pub(super) last_key_complex: bool,
-    /// Align continuation lines under an inline-after-dash first key by adding 2 spaces.
-    pub(super) align_after_dash: bool,
-    /// If true, this mapping began in a value position and stayed inline (after `key:`)
-    /// so that an empty map can be serialized as `{}` right there. When the first key arrives,
-    /// we must break the line and indent appropriately.
-    pub(super) inline_value_start: bool,
+    depth: usize,
+    /// Flow/block layout and block-only alignment state.
+    layout: MapLayout,
+    /// Number of values successfully emitted.
+    entries_written: usize,
+    /// Kind of key waiting for its corresponding value.
+    pending_key: Option<MapKeyKind>,
 }
 
-impl<W: Write> MapSer<'_, '_, W> {
+/// Output layout selected when a mapping is created.
+///
+/// The two block-only flags live inside the `Block` variant so flow mappings
+/// cannot accidentally carry indentation state that has no meaning for them.
+enum MapLayout {
+    /// Emit the mapping as `{key: value}`.
+    Flow,
+    /// Emit one mapping entry per block line.
+    Block {
+        /// Align continuation lines below a mapping opened immediately after `- `.
+        align_after_dash: bool,
+        /// Delay the first newline while an unknown-length map may still be empty.
+        inline_value_start: bool,
+    },
+}
+
+impl MapLayout {
+    fn is_flow(&self) -> bool {
+        matches!(self, Self::Flow)
+    }
+
+    fn align_after_dash(&self) -> bool {
+        matches!(
+            self,
+            Self::Block {
+                align_after_dash: true,
+                ..
+            }
+        )
+    }
+
+    /// Consume the deferred inline start when the first actual key proves the map is non-empty.
+    fn take_inline_value_start(&mut self) -> bool {
+        match self {
+            Self::Block {
+                inline_value_start, ..
+            } => std::mem::take(inline_value_start),
+            Self::Flow => false,
+        }
+    }
+}
+
+/// Shape of the serialized key whose value is expected next.
+///
+/// Complex block keys need a separate `:` line before their value; scalar keys
+/// already wrote their colon while serializing the key.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MapKeyKind {
+    Simple,
+    Complex,
+}
+
+impl<'a, 'b, W: Write> MapSer<'a, 'b, W> {
+    pub(super) fn flow(ser: &'a mut YamlSerializer<'b, W>, depth: usize) -> Self {
+        Self {
+            ser,
+            depth,
+            layout: MapLayout::Flow,
+            entries_written: 0,
+            pending_key: None,
+        }
+    }
+
+    pub(super) fn block(
+        ser: &'a mut YamlSerializer<'b, W>,
+        depth: usize,
+        align_after_dash: bool,
+        inline_value_start: bool,
+    ) -> Self {
+        Self {
+            ser,
+            depth,
+            layout: MapLayout::Block {
+                align_after_dash,
+                inline_value_start,
+            },
+            entries_written: 0,
+            pending_key: None,
+        }
+    }
+
     /// Emit a scalar key inline as `key:`.
     fn write_simple_key(&mut self, text: &str) -> Result<()> {
         // Indent continuation lines. If this map started inline after a dash,
         // align under the first key by adding two spaces instead of a full indent step.
-        if self.align_after_dash && self.ser.state.at_line_start {
+        if self.layout.align_after_dash() && self.ser.state.at_line_start {
             let base = self.depth.saturating_sub(1);
             for _ in 0..self.ser.settings.indent_step * base {
                 self.ser.out.write_char(' ')?;
@@ -435,7 +509,7 @@ impl<W: Write> MapSer<'_, '_, W> {
         self.ser.out.write_str(":")?;
         self.ser.state.pending_layout.pending_space_after_colon = true;
         self.ser.state.at_line_start = false;
-        self.last_key_complex = false;
+        self.pending_key = Some(MapKeyKind::Simple);
         Ok(())
     }
 
@@ -447,7 +521,7 @@ impl<W: Write> MapSer<'_, '_, W> {
         self.ser.out.write_str("? ")?;
         self.ser.out.write_str(text)?;
         self.ser.newline()?;
-        self.last_key_complex = true;
+        self.pending_key = Some(MapKeyKind::Complex);
         Ok(())
     }
 
@@ -481,7 +555,7 @@ impl<W: Write> MapSer<'_, '_, W> {
         // `last_value_was_block`. That state must NOT affect the *value* of this same
         // map entry (e.g. we still want `: x: 3` inline for composite-key maps).
         self.ser.state.last_value_was_block = false;
-        self.last_key_complex = true;
+        self.pending_key = Some(MapKeyKind::Complex);
         Ok(())
     }
 }
@@ -491,8 +565,8 @@ impl<W: Write> SerializeMap for MapSer<'_, '_, W> {
     type Error = Error;
 
     fn serialize_key<T: ?Sized + Serialize>(&mut self, key: &T) -> Result<()> {
-        if self.flow {
-            if !self.first {
+        if self.layout.is_flow() {
+            if self.entries_written > 0 {
                 self.ser.out.write_str(", ")?;
             }
             let text = scalar_key_to_string(key, self.ser.settings.yaml_12)?;
@@ -505,11 +579,11 @@ impl<W: Write> SerializeMap for MapSer<'_, '_, W> {
                 self.ser.out.write_str(" : ")?;
             }
             self.ser.state.at_line_start = false;
-            self.last_key_complex = false;
+            self.pending_key = Some(MapKeyKind::Simple);
         } else {
             // If this mapping started inline as a value (after "key:"), but now we
             // are about to emit the first entry, move to the next line before the key.
-            if self.inline_value_start {
+            if self.layout.take_inline_value_start() {
                 // Cancel a pending space after ':' and break the line.
                 if self.ser.state.pending_layout.pending_space_after_colon {
                     self.ser.state.pending_layout.pending_space_after_colon = false;
@@ -517,7 +591,6 @@ impl<W: Write> SerializeMap for MapSer<'_, '_, W> {
                 if !self.ser.state.at_line_start {
                     self.ser.newline()?;
                 }
-                self.inline_value_start = false;
             } else if !self.ser.state.at_line_start {
                 self.ser.write_space_if_pending()?;
             }
@@ -542,13 +615,14 @@ impl<W: Write> SerializeMap for MapSer<'_, '_, W> {
     }
 
     fn serialize_value<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<()> {
-        if self.flow {
+        let key_kind = self.pending_key.take();
+        if self.layout.is_flow() {
             self.ser.with_in_flow(|s| value.serialize(s))?;
         } else {
             let saved_pending_inline_map = self.ser.state.pending_layout.pending_inline_map;
             let saved_depth = self.ser.state.depth;
-            if self.last_key_complex {
-                if self.align_after_dash && self.ser.state.at_line_start {
+            if key_kind == Some(MapKeyKind::Complex) {
+                if self.layout.align_after_dash() && self.ser.state.at_line_start {
                     let base = self.depth.saturating_sub(1);
                     for _ in 0..self.ser.settings.indent_step * base {
                         self.ser.out.write_char(' ')?;
@@ -570,23 +644,22 @@ impl<W: Write> SerializeMap for MapSer<'_, '_, W> {
             // Always restore the parent's pending_inline_map to avoid leaking inline hints
             // across sibling values (e.g., after finishing a sequence value like `groups`).
             self.ser.state.pending_layout.pending_inline_map = saved_pending_inline_map;
-            if self.last_key_complex {
+            if key_kind == Some(MapKeyKind::Complex) {
                 self.ser.state.depth = saved_depth;
-                self.last_key_complex = false;
             }
             result?;
         }
-        self.first = false;
+        self.entries_written = self.entries_written.saturating_add(1);
         Ok(())
     }
 
     fn end(self) -> Result<()> {
-        if self.flow {
+        if self.layout.is_flow() {
             self.ser.out.write_str("}")?;
             if self.ser.state.in_flow == 0 {
                 self.ser.newline()?;
             }
-        } else if self.first {
+        } else if self.entries_written == 0 {
             // Empty block-style map.
             if self.ser.settings.empty_as_braces {
                 // If we were pending a space after a colon (map value position), write it now.
@@ -597,7 +670,7 @@ impl<W: Write> SerializeMap for MapSer<'_, '_, W> {
                 // If at line start, indent appropriately.
                 if self.ser.state.at_line_start {
                     // If we are aligning after a dash, mimic the indentation logic used for keys.
-                    if self.align_after_dash {
+                    if self.layout.align_after_dash() {
                         let base = self.depth.saturating_sub(1);
                         for _ in 0..self.ser.settings.indent_step * base {
                             self.ser.out.write_char(' ')?;
