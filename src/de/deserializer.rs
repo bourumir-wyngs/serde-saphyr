@@ -1494,8 +1494,8 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
                         let mut de =
                             YamlDeserializer::new_with_path_recorder(self.ev, self.cfg, recorder);
-                        de.pending_comments = item_comments.clone();
-                        de.pending_value_separator_comments = value_separator_comments.clone();
+                        de.pending_comments = item_comments;
+                        de.pending_value_separator_comments = value_separator_comments;
                         let redaction_ctx = de.peek_scalar_redaction_ctx()?;
                         let res = with_subtree_redaction(redaction_ctx, || seed.deserialize(de))
                             .map(Some)
@@ -2206,9 +2206,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                                 self.cfg,
                                 recorder,
                             );
-                            de.pending_comments = field_comments.clone();
-                            de.pending_value_separator_comments = value_separator_comments.clone();
-                            de.pending_value_comments = value_comments.clone();
+                            de.pending_comments = field_comments;
+                            de.pending_value_separator_comments = value_separator_comments;
+                            de.pending_value_comments = value_comments;
                             let redaction_ctx = de.peek_scalar_redaction_ctx()?;
                             let res =
                                 with_subtree_redaction(redaction_ctx, || seed.deserialize(de))
@@ -2265,9 +2265,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             let mut de = YamlDeserializer::new_with_path_recorder(
                                 self.ev, self.cfg, recorder,
                             );
-                            de.pending_comments = field_comments.clone();
-                            de.pending_value_separator_comments = value_separator_comments.clone();
-                            de.pending_value_comments = value_comments.clone();
+                            de.pending_comments = field_comments;
+                            de.pending_value_separator_comments = value_separator_comments;
+                            de.pending_value_comments = value_comments;
                             let redaction_ctx = de.peek_scalar_redaction_ctx()?;
                             let res =
                                 with_subtree_redaction(redaction_ctx, || seed.deserialize(de))
