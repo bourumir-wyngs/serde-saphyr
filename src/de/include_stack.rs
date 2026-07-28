@@ -604,6 +604,7 @@ mod tests {
     use super::*;
     use std::cell::Cell;
 
+    #[track_caller]
     fn expect_budget_breach(error: CollectAnchorEventsError) -> BudgetBreach {
         match error {
             CollectAnchorEventsError::Budget(breach) => breach,
@@ -613,6 +614,7 @@ mod tests {
         }
     }
 
+    #[track_caller]
     fn expect_fragment_message(error: CollectAnchorEventsError) -> String {
         match error {
             CollectAnchorEventsError::Message(message) => message,

@@ -44,6 +44,7 @@ use regex::Regex;
 /// Spec sources:
 /// - YAML 1.1 float tag repository: <https://yaml.org/type/float.html>
 /// - YAML 1.2.2 JSON/Core schema tag resolution: <https://yaml.org/spec/1.2.2/>
+#[track_caller]
 fn assert_yaml11_and_yaml12_float_scalar(s: &str) {
     // YAML 1.1 `!!float` (base 10) regexp (as published in the YAML 1.1 type repo).
     // NOTE: The published regexp has a known issue allowing extra '.' characters,

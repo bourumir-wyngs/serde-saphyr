@@ -46,6 +46,7 @@ fn tagged_int_cannot_parse_into_boolean() {
     ));
 }
 
+#[track_caller]
 fn assert_tagged_string_cannot_parse_into_integer<T>()
 where
     T: serde::de::DeserializeOwned + Debug,

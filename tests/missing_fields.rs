@@ -14,6 +14,7 @@ struct Root {
     item: Item,
 }
 
+#[track_caller]
 fn assert_has_snippet(rendered: &str) {
     assert!(
         rendered.contains(" -->"),

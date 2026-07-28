@@ -629,6 +629,7 @@ mod tests {
         (0..len).map(|i| b'a' + (i % 26) as u8).collect()
     }
 
+    #[track_caller]
     fn assert_snapshot_offsets_consistent(s: &RecentSnapshot) {
         assert_eq!(s.end_offset, s.start_offset + s.bytes.len() as u64);
     }

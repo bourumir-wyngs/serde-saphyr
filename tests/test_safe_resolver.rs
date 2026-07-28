@@ -61,6 +61,7 @@ fn request_builders_set_optional_metadata() {
     assert_eq!(request.size_remaining, Some(1024));
 }
 
+#[track_caller]
 fn resolver_problem(err: &Error) -> &ResolveProblem {
     match err.without_snippet() {
         Error::ResolverError {
@@ -71,6 +72,7 @@ fn resolver_problem(err: &Error) -> &ResolveProblem {
     }
 }
 
+#[track_caller]
 fn include_problem(err: &IncludeResolveError) -> &ResolveProblem {
     match err {
         IncludeResolveError::FileInclude(problem) => problem,

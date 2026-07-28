@@ -165,6 +165,7 @@ x:
     assert_indentation_error(&err, RequireIndent::Uniform(Some(2)), 3);
 }
 
+#[track_caller]
 fn assert_indentation_error(err: &Error, required: RequireIndent, actual: usize) {
     match err.without_snippet() {
         Error::IndentationError {

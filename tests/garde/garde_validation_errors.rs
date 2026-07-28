@@ -36,6 +36,7 @@ fn reject_empty_document(value: &Option<String>, _ctx: &()) -> garde::Result {
 #[allow(dead_code)]
 struct NullableTopLevel(#[garde(custom(reject_empty_document))] Option<String>);
 
+#[track_caller]
 fn assert_empty_document_validation_error(err: &Error) {
     match err {
         Error::ValidationError { .. } => {}

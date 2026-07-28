@@ -7,6 +7,7 @@ fn unwrap_snippet(err: &Error) -> &Error {
     err.without_snippet()
 }
 
+#[track_caller]
 fn expect_location(err: &Error, line: u64, column: u64) {
     if let Some(loc) = err.location() {
         assert_eq!(
@@ -21,6 +22,7 @@ fn expect_location(err: &Error, line: u64, column: u64) {
     }
 }
 
+#[track_caller]
 fn expect_span_offset(err: &Error, offset: usize) {
     if let Some(loc) = err.location() {
         assert_eq!(

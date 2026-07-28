@@ -66,6 +66,7 @@ struct BlockSiblingCollections {
     third: BTreeMap<&'static str, i32>,
 }
 
+#[track_caller]
 fn assert_unexpected_error<T: Serialize>(value: &T, expected: &str) {
     let err = to_string(value).expect_err("serialization should fail");
     assert!(matches!(
@@ -74,6 +75,7 @@ fn assert_unexpected_error<T: Serialize>(value: &T, expected: &str) {
     ));
 }
 
+#[track_caller]
 fn assert_message_error<T: Serialize>(value: &T, expected: &str) {
     let err = to_string(value).expect_err("serialization should fail");
     assert!(matches!(

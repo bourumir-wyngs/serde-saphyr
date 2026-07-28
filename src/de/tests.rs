@@ -120,6 +120,7 @@ fn scalar_text(events: &[Ev<'_>]) -> Option<String> {
     }
 }
 
+#[track_caller]
 fn pending_pair(entry: &PendingEntry<'_>) -> (String, String, Location) {
     (
         scalar_text(entry.key.events()).expect("scalar key"),
@@ -128,6 +129,7 @@ fn pending_pair(entry: &PendingEntry<'_>) -> (String, String, Location) {
     )
 }
 
+#[track_caller]
 fn unwrap_err<T>(result: Result<T, Error>) -> Error {
     match result {
         Ok(_) => panic!("expected error"),

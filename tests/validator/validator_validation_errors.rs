@@ -51,6 +51,7 @@ impl Validate for NullableTopLevel {
     }
 }
 
+#[track_caller]
 fn assert_empty_document_validation_error(err: &Error) {
     assert_validator_validation_error_shape(err);
 
@@ -65,6 +66,7 @@ fn assert_empty_document_validation_error(err: &Error) {
     );
 }
 
+#[track_caller]
 fn assert_validator_validation_error_shape(err: &Error) {
     match err {
         Error::ValidationError {

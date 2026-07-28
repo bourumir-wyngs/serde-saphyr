@@ -11,6 +11,7 @@ use std::collections::HashMap;
 #[cfg(feature = "validator")]
 use validator::Validate;
 
+#[track_caller]
 fn assert_redacted_message(message: &str, placeholder: &str, secret: &str) {
     assert!(
         message.contains(placeholder),

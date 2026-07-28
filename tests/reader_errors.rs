@@ -46,6 +46,7 @@ fn injected_error(kind: io::ErrorKind) -> io::Error {
     io::Error::new(kind, "injected reader failure")
 }
 
+#[track_caller]
 fn assert_injected_io_error(error: &Error, expected_kind: io::ErrorKind) {
     match error.without_snippet() {
         Error::IOError { cause } => {

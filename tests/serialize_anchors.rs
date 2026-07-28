@@ -105,6 +105,7 @@ fn rc_anchor_enum_variants_anchor_the_variant_node() {
         b: RcAnchor<Event>,
     }
 
+    #[track_caller]
     fn assert_round_trip(event: Event, expected: &str) {
         let shared = Rc::new(event);
         let doc = Doc {

@@ -425,6 +425,7 @@ value: 42
         assert_eq!(result.value, 42);
     }
 
+    #[track_caller]
     fn assert_transform_error(err: &Error) {
         match err.without_snippet() {
             Error::CannotBorrowTransformedString { .. } => {

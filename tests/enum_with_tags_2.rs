@@ -65,6 +65,7 @@ fn test_tagged_pair_wrong_shape_scalar_should_error() {
     ));
 }
 
+#[track_caller]
 fn serde_saphyr<T: DeserializeOwned + Debug>(yaml: &str) -> T {
     match serde_saphyr::from_str::<T>(yaml) {
         Ok(value) => value,

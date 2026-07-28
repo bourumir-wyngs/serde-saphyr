@@ -53,6 +53,7 @@ fn test_template_context() {
     );
 }
 
+#[track_caller]
 fn serde_saphyr<T: DeserializeOwned + Debug>(yaml: &str) -> T {
     match serde_saphyr::from_str::<T>(yaml) {
         Ok(value) => value,

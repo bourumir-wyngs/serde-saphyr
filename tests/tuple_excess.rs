@@ -76,6 +76,7 @@ fn early_returning_sequence_visitor_does_not_desync_parent_map() {
     );
 }
 
+#[track_caller]
 fn assert_invalid_length(err: &serde_saphyr::Error, expected: &str) {
     let err = err.without_snippet();
     match err {

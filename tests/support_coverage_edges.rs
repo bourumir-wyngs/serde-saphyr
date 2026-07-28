@@ -6,6 +6,7 @@ use serde_saphyr::{
     ArcAnchor, ArcRecursion, ArcWeakAnchor, Commented, RcAnchor, RcRecursion, RcWeakAnchor,
 };
 
+#[track_caller]
 fn expect_error<T, E>(result: Result<T, E>) -> E {
     match result {
         Ok(_) => panic!("operation unexpectedly succeeded"),
@@ -241,6 +242,7 @@ mod safe_resolver {
         }
     }
 
+    #[track_caller]
     fn problem(error: &IncludeResolveError) -> &ResolveProblem {
         match error {
             IncludeResolveError::FileInclude(problem) => problem,

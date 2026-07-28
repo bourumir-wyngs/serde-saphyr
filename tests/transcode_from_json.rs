@@ -10,6 +10,7 @@ mod tests {
         .unwrap()
     }
 
+    #[track_caller]
     fn assert_json_eq(actual_json: &str, expected_json: &str) {
         let actual: serde_json::Value = serde_json::from_str(actual_json).unwrap();
         let expected: serde_json::Value = serde_json::from_str(expected_json).unwrap();

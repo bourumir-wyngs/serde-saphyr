@@ -421,6 +421,7 @@ impl<T> RcRecursive<T> {
     ///
     /// Panics if called while a recursive anchor placeholder is still uninitialized.
     /// Use [`try_borrow_initialized`](Self::try_borrow_initialized) when early access is possible.
+    #[track_caller]
     pub fn borrow(&self) -> std::cell::Ref<'_, T> {
         let borrowed = self.0.as_ref().borrow();
         std::cell::Ref::filter_map(borrowed, Option::as_ref)

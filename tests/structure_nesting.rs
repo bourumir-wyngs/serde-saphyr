@@ -22,6 +22,7 @@ mod tests {
     fn prints_serialized_structure() {
         /// Asserts that the lines containing `aligned_a`, `aligned_b`, and `aligned_c`
         /// all start at the same indentation (same number of leading whitespace chars)
+        #[track_caller]
         fn aligned_keys_have_same_indentation(data: &str) {
             let find_indent_for = |key: &str| -> (usize, usize) {
                 data.lines()

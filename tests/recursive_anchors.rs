@@ -41,6 +41,7 @@ struct Kingdom {
     kings: Vec<RcRecursive<King>>,
 }
 
+#[track_caller]
 fn assert_recursive_outer_arc(outer: &OuterArc) {
     let foo_guard = outer.foo.lock().unwrap();
     let foo_ref = foo_guard.as_ref().expect("foo_ref should be initialized");
@@ -76,6 +77,7 @@ fn assert_recursive_outer_arc(outer: &OuterArc) {
     // We have infinite recursion here, be careful with this.
 }
 
+#[track_caller]
 fn assert_recursive_outer(outer: &Outer) {
     let foo_ref = outer.foo.borrow();
     assert_eq!(foo_ref.k1, "One");

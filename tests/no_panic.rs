@@ -66,6 +66,7 @@ fn deeply_nested_block_mapping_errors_without_abort() {
     assert_budget_depth_error(&err);
 }
 
+#[track_caller]
 fn assert_budget_depth_error(err: &serde_saphyr::Error) {
     assert!(matches!(
         budget_error_inner(err),

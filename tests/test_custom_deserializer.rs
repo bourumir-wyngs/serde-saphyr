@@ -28,6 +28,7 @@ struct OuterSeq {
     items: Vec<AlwaysFails>,
 }
 
+#[track_caller]
 fn assert_custom_message(err: &serde_saphyr::Error, expected: &str) {
     match err.without_snippet() {
         serde_saphyr::Error::Message { msg, .. } | serde_saphyr::Error::AliasError { msg, .. } => {

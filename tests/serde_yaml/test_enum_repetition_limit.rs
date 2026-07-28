@@ -78,6 +78,7 @@ fn test_smaller() {
     assert!(parsed.is_ok(), "{parsed:?}");
 }
 
+#[track_caller]
 fn assert_budget_error(err: &Error) {
     match err.without_snippet() {
         Error::Budget { .. } => {}
