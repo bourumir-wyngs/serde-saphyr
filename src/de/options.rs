@@ -288,6 +288,7 @@ impl Options {
     ///     let _ = report;
     /// });
     /// ```
+    #[must_use]
     pub fn with_budget_report<F>(mut self, cb: F) -> Self
     where
         F: FnMut(crate::budget::BudgetReport) + 'static,
@@ -378,6 +379,7 @@ impl Options {
     /// # }
     /// ```
     #[cfg(feature = "include")]
+    #[must_use]
     pub fn with_include_resolver<F>(mut self, cb: F) -> Self
     where
         F: for<'res> FnMut(

@@ -167,6 +167,7 @@ pub struct Spanned<T> {
 }
 
 impl<T> Spanned<T> {
+    #[must_use]
     pub const fn new(value: T, referenced: Location, defined: Location) -> Self {
         Self {
             value,

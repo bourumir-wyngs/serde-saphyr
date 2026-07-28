@@ -270,6 +270,7 @@ impl InputSource {
     }
 
     #[inline]
+    #[must_use]
     pub fn from_reader<R>(r: R) -> Self
     where
         R: Read + 'static,

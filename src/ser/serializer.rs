@@ -247,6 +247,7 @@ pub struct YamlSerializer<'a, W: Write> {
 impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Construct a [`Serializer`](crate::Serializer) that writes to `out`.
     /// Uses the same defaults as `SerializerOptions::default()`.
+    #[must_use]
     pub fn new(out: &'a mut W) -> Self {
         Self::from_options_unchecked(out, &SerializerOptions::default())
     }

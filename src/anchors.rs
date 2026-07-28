@@ -409,6 +409,7 @@ impl<T> RcRecursive<T> {
     /// Try to borrow the inner value if the recursive placeholder has been initialized.
     ///
     /// Returns [`None`] while a recursive anchor is still being deserialized.
+    #[must_use]
     pub fn try_borrow_initialized(&self) -> Option<std::cell::Ref<'_, T>> {
         let borrowed = self.0.as_ref().try_borrow().ok()?;
         std::cell::Ref::filter_map(borrowed, Option::as_ref).ok()
@@ -462,6 +463,7 @@ impl<T> RcWeakAnchor<T> {
 impl<T> RcRecursion<T> {
     /// Try to upgrade the weak reference to [`RcRecursive<T>`].
     #[inline]
+    #[must_use]
     pub fn upgrade(&self) -> Option<RcRecursive<T>> {
         self.0.upgrade().map(RcRecursive)
     }
@@ -484,6 +486,7 @@ impl<T> RcRecursion<T> {
 impl<T> ArcRecursion<T> {
     /// Try to upgrade the weak reference to [`ArcRecursive<T>`].
     #[inline]
+    #[must_use]
     pub fn upgrade(&self) -> Option<ArcRecursive<T>> {
         self.0.upgrade().map(ArcRecursive)
     }

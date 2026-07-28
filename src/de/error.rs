@@ -173,6 +173,7 @@ impl<'a> RenderOptions<'a> {
     /// Defaults:
     /// - `snippets`: [`SnippetMode::Auto`]
     #[inline]
+    #[must_use]
     pub fn new(formatter: &'a dyn MessageFormatter) -> Self {
         Self {
             formatter,
@@ -1211,6 +1212,7 @@ impl Error {
     }
 
     /// Render this error using a custom message formatter.
+    #[must_use]
     pub fn render_with_formatter(&self, formatter: &dyn MessageFormatter) -> String {
         self.render_with_options(RenderOptions {
             formatter,
@@ -1479,6 +1481,7 @@ impl Error {
     ///
     /// Used by:
     /// - Callers that want to surface precise positions to users.
+    #[must_use]
     pub fn location(&self) -> Option<Location> {
         #[cfg(any(feature = "garde", feature = "validator"))]
         if let Error::ValidationErrors { errors, .. } = self {
@@ -1498,6 +1501,7 @@ impl Error {
     ///
     ///   These two locations may differ when YAML anchors/aliases are involved.
     /// - Returns `None` when no meaningful location information is available.
+    #[must_use]
     pub fn locations(&self) -> Option<Locations> {
         match self {
             Error::Message { location, .. }

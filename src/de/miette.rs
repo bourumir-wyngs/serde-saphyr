@@ -43,6 +43,7 @@ pub fn to_miette_report(err: &Error, source: &str, file: &str) -> miette::Report
     to_miette_report_with_formatter(err, source, file, RenderOptions::default().formatter)
 }
 
+#[must_use]
 pub fn to_miette_report_with_formatter(
     err: &Error,
     source: &str,
