@@ -1191,7 +1191,7 @@ impl Error {
         }
     }
 
-    /// Provide "no snippet" version for cases when snippet rendering is not  desired.
+    /// Provide "no snippet" version for cases when snippet rendering is not desired.
     #[must_use]
     pub fn without_snippet(&self) -> &Self {
         match self {
