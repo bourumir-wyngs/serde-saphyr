@@ -638,7 +638,6 @@ impl fmt::Display for TransformReason {
 
 /// Error type compatible with `serde::de::Error`.
 #[non_exhaustive]
-#[derive(Debug)]
 pub enum Error {
     /// Free-form error with optional source location.
     Message {
@@ -1915,6 +1914,12 @@ fn fmt_error_rendered(
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_error_rendered(f, self, RenderOptions::default())
+    }
+}
+
+impl fmt::Debug for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, f)
     }
 }
 

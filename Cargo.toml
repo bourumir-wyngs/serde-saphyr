@@ -82,17 +82,17 @@ huge_documents = []
 indoc = { version = ">= 2.0.6, < 2.1"}
 serde_bytes = "0.11"
 serde = { version = "1.0", features = ["derive", "rc"] }
-serde_repr = "0.1.20"
+serde_repr = "0.1.21"
 anyhow = "1.0"
 trybuild = "1"
 regex = { version = ">= 1.5.5, < 2.0"}
 
-serde-transcode = "1.1.1" # we only use in tests
+serde-transcode = "1.1" # we only use in tests
 serde_ignored = "0.1"
 serde_path_to_error = "0.1"
 serde_json = { version = "1", features = ["preserve_order"] }
 miette = { version = "7", features = ["fancy"] }
-tempfile = "3.27.0"
+tempfile = "3.27"
 rstest = "0.26"
 
 [package.metadata]

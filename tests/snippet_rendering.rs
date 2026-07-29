@@ -43,6 +43,19 @@ fn error_renders_snippet_text_when_available() {
     );
 }
 
+#[test]
+fn error_debug_forwards_to_display() {
+    let yaml = "*missing\n";
+
+    let err = from_str::<String>(yaml).expect_err("unknown anchor should error");
+    let displayed = err.to_string();
+    let debugged = format!("{err:?}");
+
+    assert_eq!(debugged, displayed);
+    assert!(debugged.contains("*missing"));
+    assert!(!debugged.contains("WithSnippet"));
+}
+
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 struct Cfg {
