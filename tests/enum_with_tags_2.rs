@@ -15,6 +15,32 @@ pub struct Context {
     value: Value,
 }
 
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum TaggedScalar {
+    Relative(i32),
+    Unsigned(u32),
+    Boolean(bool),
+    Text(String),
+}
+
+#[test]
+fn local_tags_do_not_become_core_string_tags() {
+    for (yaml, expected) in [
+        ("!relative 5", TaggedScalar::Relative(5)),
+        ("!relative -3", TaggedScalar::Relative(-3)),
+        ("!relative 0", TaggedScalar::Relative(0)),
+        ("!unsigned 7", TaggedScalar::Unsigned(7)),
+        ("!boolean true", TaggedScalar::Boolean(true)),
+        ("!text 5", TaggedScalar::Text("5".to_owned())),
+    ] {
+        let actual: TaggedScalar =
+            serde_saphyr::from_str(yaml).expect("tagged scalar should deserialize");
+
+        assert_eq!(actual, expected, "failed to deserialize {yaml:?}");
+    }
+}
+
 #[test]
 fn test_tagged_expression_scalar() {
     assert_eq!(
