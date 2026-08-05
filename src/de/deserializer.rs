@@ -2421,7 +2421,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             } => {
                                 vec![Ev::Scalar {
                                     value,
-                                    tag: SfTag::String,
+                                    tag: SfTag::None,
                                     raw_tag: None,
                                     style,
                                     location,
