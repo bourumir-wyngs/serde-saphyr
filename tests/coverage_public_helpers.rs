@@ -19,18 +19,29 @@ fn standalone_budget_helper_reports_accept_reject_and_scan_error() {
 
 #[cfg(feature = "serde_derived_types")]
 #[test]
-fn budget_deserialization_defaults_the_new_comment_limit() {
+fn budget_deserialization_defaults_new_limits() {
     let default = budget::Budget::default();
     let mut json = serde_json::to_value(&default).unwrap();
-    json.as_object_mut()
-        .unwrap()
-        .remove("max_total_comment_bytes");
+    let object = json.as_object_mut().unwrap();
+    object.remove("max_total_comment_bytes");
+    object.remove("max_buffered_comment_events");
+    object.remove("simple_key_max_lookahead");
+    object.remove("flow_nesting_limit");
 
     let restored: budget::Budget = serde_json::from_value(json).unwrap();
     assert_eq!(
         restored.max_total_comment_bytes,
         default.max_total_comment_bytes
     );
+    assert_eq!(
+        restored.max_buffered_comment_events,
+        default.max_buffered_comment_events
+    );
+    assert_eq!(
+        restored.simple_key_max_lookahead,
+        default.simple_key_max_lookahead
+    );
+    assert_eq!(restored.flow_nesting_limit, default.flow_nesting_limit);
 }
 
 #[test]

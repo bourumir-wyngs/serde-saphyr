@@ -224,7 +224,7 @@ impl<'input> ParserStack<'input> {
                     self.budget.max_reader_input_bytes,
                     self.reader_bytes_read.clone(),
                 );
-                let parser = Parser::new(input);
+                let parser = Parser::with_options(input, self.budget.parser_options());
                 self.push_stream_parser_with_snippet(parser, name, Some(&snippet), location);
             }
             InputSource::Reader(r) => {
@@ -233,7 +233,7 @@ impl<'input> ParserStack<'input> {
                     self.budget.max_reader_input_bytes,
                     self.reader_bytes_read.clone(),
                 );
-                let parser = Parser::new(input);
+                let parser = Parser::with_options(input, self.budget.parser_options());
                 self.push_stream_parser_with_snippet(parser, name, None, crate::Location::UNKNOWN);
             }
             InputSource::AnchoredText { mut text, anchor } => {
@@ -359,7 +359,7 @@ fn collect_anchor_events(
 ) -> Result<CollectedAnchorEvents, CollectAnchorEventsError> {
     let mut document_count = 0usize;
     let mut anchor_defs: Vec<(String, usize)> = Vec::new();
-    let scanner = Scanner::new(StrInput::new(text));
+    let scanner = Scanner::with_options(StrInput::new(text), budget.parser_options());
     for token in scanner {
         let token = token.map_err(|err| {
             CollectAnchorEventsError::Message(format!(
@@ -377,7 +377,7 @@ fn collect_anchor_events(
             }
         }
     }
-    let mut parser = Parser::new_from_str(text);
+    let mut parser = Parser::with_options(StrInput::new(text), budget.parser_options());
     parser.set_anchor_offset(anchor_offset.max(1));
     let mut events = Vec::new();
     let mut current_depth: usize = 0;

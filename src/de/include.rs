@@ -3,7 +3,6 @@ use granit_parser::Parser;
 #[cfg(feature = "include")]
 use std::rc::Rc;
 
-#[cfg(not(feature = "include"))]
 use granit_parser::StrInput;
 
 #[cfg(feature = "include")]
@@ -32,7 +31,10 @@ pub(crate) fn create_parser_from_reader_input<'input>(
     if let Some(r) = resolver {
         stack.set_resolver(r);
     }
-    stack.push_stream_parser(Parser::new(input), "<input>".to_string());
+    stack.push_stream_parser(
+        Parser::with_options(input, budget.parser_options()),
+        "<input>".to_string(),
+    );
     stack
 }
 
@@ -55,7 +57,7 @@ pub(crate) fn create_parser_from_str<'a>(
         text: Rc::from(input),
     };
     stack.push_str_parser_with_snippet(
-        Parser::new_from_str(input),
+        Parser::with_options(StrInput::new(input), budget.parser_options()),
         "<input>".to_string(),
         Some(&snippet),
         crate::Location::UNKNOWN,
@@ -65,8 +67,11 @@ pub(crate) fn create_parser_from_str<'a>(
 
 #[cfg(not(feature = "include"))]
 #[inline]
-pub(crate) fn create_parser_from_str<'a>(input: &'a str) -> BaseParser<'a, StrInput<'a>> {
-    Parser::new_from_str(input)
+pub(crate) fn create_parser_from_str<'a>(
+    input: &'a str,
+    budget: &crate::Budget,
+) -> BaseParser<'a, StrInput<'a>> {
+    Parser::with_options(StrInput::new(input), budget.parser_options())
 }
 
 #[cfg(all(test, feature = "include"))]

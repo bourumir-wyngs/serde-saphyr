@@ -291,9 +291,7 @@ impl<'a> LiveEvents<'a> {
 
         // Build a streaming character iterator from the byte reader, honoring input byte cap if configured
         let max_bytes = budget.as_ref().and_then(|b| b.max_reader_input_bytes);
-        #[cfg(feature = "include")]
         let default_budget = crate::Budget::default();
-        #[cfg(feature = "include")]
         let resolved_budget = budget.as_ref().unwrap_or(&default_budget);
         let (input, reader_bytes_read) = buffered_input_from_reader_with_limit(inputs, max_bytes);
         #[cfg(not(feature = "include"))]
@@ -302,7 +300,7 @@ impl<'a> LiveEvents<'a> {
         let parser =
             create_parser_from_reader_input(input, reader_bytes_read, resolved_budget, resolver);
         #[cfg(not(feature = "include"))]
-        let parser = granit_parser::Parser::new(input);
+        let parser = granit_parser::Parser::with_options(input, resolved_budget.parser_options());
         Self {
             produced_any_in_doc: false,
             synthesized_null_emitted: false,
@@ -369,16 +367,14 @@ impl<'a> LiveEvents<'a> {
         let resolver = crate::resolver_from_options(&options);
 
         let input = input.strip_prefix('\u{FEFF}').unwrap_or(input);
-        #[cfg(feature = "include")]
         let default_budget = crate::Budget::default();
-        #[cfg(feature = "include")]
         let resolved_budget = budget.as_ref().unwrap_or(&default_budget);
         #[cfg(feature = "include")]
         let reader_bytes_read = Rc::new(std::cell::Cell::new(0));
         #[cfg(feature = "include")]
         let parser = create_parser_from_str(input, reader_bytes_read, resolved_budget, resolver);
         #[cfg(not(feature = "include"))]
-        let parser = create_parser_from_str(input);
+        let parser = create_parser_from_str(input, resolved_budget);
         Self {
             produced_any_in_doc: false,
             synthesized_null_emitted: false,

@@ -10,10 +10,28 @@ use std::collections::HashSet;
 
 const DEFAULT_MAX_SCALAR_BYTES: usize = 64 * 1024 * 1024;
 const DEFAULT_MAX_TOTAL_COMMENT_BYTES: usize = 64 * 1024 * 1024;
+const DEFAULT_MAX_BUFFERED_COMMENT_EVENTS: usize = 32;
+const DEFAULT_SIMPLE_KEY_MAX_LOOKAHEAD: usize = 1024;
+const DEFAULT_FLOW_NESTING_LIMIT: usize = 255;
 
 #[cfg(feature = "serde_derived_types")]
 fn default_max_total_comment_bytes() -> usize {
     DEFAULT_MAX_TOTAL_COMMENT_BYTES
+}
+
+#[cfg(feature = "serde_derived_types")]
+fn default_max_buffered_comment_events() -> usize {
+    DEFAULT_MAX_BUFFERED_COMMENT_EVENTS
+}
+
+#[cfg(feature = "serde_derived_types")]
+fn default_simple_key_max_lookahead() -> usize {
+    DEFAULT_SIMPLE_KEY_MAX_LOOKAHEAD
+}
+
+#[cfg(feature = "serde_derived_types")]
+fn default_flow_nesting_limit() -> usize {
+    DEFAULT_FLOW_NESTING_LIMIT
 }
 
 /// Budgets for a streaming YAML scan.
@@ -70,6 +88,38 @@ pub struct Budget {
     ///
     /// Default: 256 Mb
     pub max_reader_input_bytes: Option<usize>,
+    /// Maximum number of consecutive comment events the parser may buffer while resolving an
+    /// ambiguous collection entry.
+    ///
+    /// A value of `0` rejects the first comment that would need buffering.
+    ///
+    /// Default: 32
+    #[cfg_attr(
+        feature = "serde_derived_types",
+        serde(default = "default_max_buffered_comment_events")
+    )]
+    pub max_buffered_comment_events: usize,
+    /// Maximum number of characters the scanner may inspect while resolving a simple key.
+    ///
+    /// A key at exactly this limit is accepted. Values above 1,024 relax YAML's simple-key
+    /// length restriction, while lower values impose a stricter resource limit.
+    ///
+    /// Default: 1,024
+    #[cfg_attr(
+        feature = "serde_derived_types",
+        serde(default = "default_simple_key_max_lookahead")
+    )]
+    pub simple_key_max_lookahead: usize,
+    /// Maximum number of simultaneously nested flow collections.
+    ///
+    /// A value of `0` rejects the first flow collection opener.
+    ///
+    /// Default: 255
+    #[cfg_attr(
+        feature = "serde_derived_types",
+        serde(default = "default_flow_nesting_limit")
+    )]
+    pub flow_nesting_limit: usize,
     /// Maximum total parser events (counting every event).
     ///
     /// Default: 1,000,000
@@ -145,8 +195,11 @@ impl Default for Budget {
     fn default() -> Self {
         Self {
             max_reader_input_bytes: Some(256 * 1024 * 1024), // 256 Mb
-            max_events: 1_000_000,                           // plenty for normal configs
-            max_aliases: 50_000,                             // liberal absolute cap
+            max_buffered_comment_events: DEFAULT_MAX_BUFFERED_COMMENT_EVENTS,
+            simple_key_max_lookahead: DEFAULT_SIMPLE_KEY_MAX_LOOKAHEAD,
+            flow_nesting_limit: DEFAULT_FLOW_NESTING_LIMIT,
+            max_events: 1_000_000, // plenty for normal configs
+            max_aliases: 50_000,   // liberal absolute cap
             max_anchors: 50_000,
             max_depth: 64, // protects stack/CPU
             max_inclusion_depth: 24,
@@ -158,6 +211,16 @@ impl Default for Budget {
             enforce_alias_anchor_ratio: true,
             alias_anchor_min_aliases: 100,
             alias_anchor_ratio_multiplier: 10,
+        }
+    }
+}
+
+impl Budget {
+    pub(crate) fn parser_options(&self) -> granit_parser::Options {
+        granit_parser::options! {
+            max_buffered_comment_events: self.max_buffered_comment_events,
+            simple_key_max_lookahead: self.simple_key_max_lookahead,
+            flow_nesting_limit: self.flow_nesting_limit,
         }
     }
 }
@@ -725,7 +788,8 @@ pub fn check_yaml_budget(
     budget: Budget,
     scope: EnforcingPolicy,
 ) -> Result<BudgetReport, ScanError> {
-    let parser = Parser::new_from_str(input);
+    let parser_options = budget.parser_options();
+    let parser = Parser::with_options(granit_parser::StrInput::new(input), parser_options);
     let mut enforcer = BudgetEnforcer::new(budget, scope, MergeKeyPolicy::Merge);
 
     for item in parser {
