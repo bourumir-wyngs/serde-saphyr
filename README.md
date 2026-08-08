@@ -476,6 +476,14 @@ merge keys.
 
 - As granit-parser now supports comments, the wrapper [Commented](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) will also capture the relevant YAML comment into its field when deserializing YAML.
 - Comment capture is enabled by default. Set `emit_comments: false` in [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html) to recognize and validate YAML comments without retaining their text or emitting parser comment events. In this mode, deserialized `Commented<T>` values have an empty comment string. Comment bytes are still consumed and validated, so this is not an input-size or processing-time limit.
+
+  Budget enforcement and reporting then treat comments as unretained data:
+
+  - `Budget::max_total_comment_bytes` is not enforced;
+  - `Budget::max_buffered_comment_events` has no effect;
+  - comments do not count toward `Budget::max_events` or `BudgetReport::events`; and
+  - `BudgetReport::total_comment_bytes` remains `0`.
+
 - During serialization, [Commented](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) also emits a comment next to a scalar or reference (handy when the reference is far from its definition and needs explanation).
 - For container values, a comment attached to the parent value itself, such as `root: # comment`, is captured only by `Commented<Container>` and is not inherited by the first child. A comment inside the container, directly above a child key or sequence item, is captured by that child.
 - Comments are not copied from anchor definitions through aliases or merge keys. In `actual: { <<: *defaults }`, a `Commented` field materialized from `&defaults` will not receive a comment that was written at the definition site above `defaults.port`; that comment belongs to the original field.

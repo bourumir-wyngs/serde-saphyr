@@ -174,6 +174,14 @@ pub struct Options {
     /// empty comment string.
     /// Comment bytes are still consumed and validated, so disabling emission is not an input-size
     /// or processing-time limit.
+    ///
+    /// Comment-related budget accounting follows emitted, retained parser data. Setting this to
+    /// `false` also:
+    ///
+    /// - disables enforcement of [`Budget::max_total_comment_bytes`];
+    /// - makes [`Budget::max_buffered_comment_events`] ineffective;
+    /// - excludes comments from [`Budget::max_events`]; and
+    /// - keeps [`crate::budget::BudgetReport::total_comment_bytes`] at zero.
     #[cfg_attr(
         feature = "serde_derived_types",
         serde(default = "default_emit_comments")
