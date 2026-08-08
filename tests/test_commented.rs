@@ -166,6 +166,23 @@ fn commented_deserialize_captures_inline_comment_and_keeps_value() {
 }
 
 #[test]
+fn emit_comments_false_disables_capture_for_string_and_reader_inputs() {
+    let input = "# leading\n5 # trailing\n";
+
+    let from_string: Commented<i32> =
+        serde_saphyr::from_str_with_options(input, serde_saphyr::options! { emit_comments: false })
+            .unwrap();
+    assert_eq!(from_string, Commented(5, String::new()));
+
+    let from_reader: Commented<i32> = serde_saphyr::from_reader_with_options(
+        std::io::Cursor::new(input.as_bytes()),
+        serde_saphyr::options! { emit_comments: false },
+    )
+    .unwrap();
+    assert_eq!(from_reader, Commented(5, String::new()));
+}
+
+#[test]
 fn commented_deserialize_captures_comments_around_mapping_fields() {
     #[derive(Debug, Deserialize, PartialEq)]
     struct Wrap {
