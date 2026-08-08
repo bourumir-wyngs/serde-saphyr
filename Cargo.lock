@@ -349,7 +349,7 @@ checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
 [[package]]
 name = "granit-parser"
 version = "1.1.0"
-source = "git+https://github.com/bourumir-wyngs/granit-parser#09a07e2f00ccd3711ac35a33217c3280003c2084"
+source = "git+https://github.com/bourumir-wyngs/granit-parser#789394aecb57b1c52f7c48492067c7c096627c63"
 dependencies = [
  "arraydeque",
  "smallvec",

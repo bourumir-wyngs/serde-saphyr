@@ -1,4 +1,4 @@
-use granit_parser::Parser;
+use granit_parser::{Options as ParserOptions, Parser};
 
 #[cfg(feature = "include")]
 use std::rc::Rc;
@@ -25,14 +25,16 @@ pub(crate) fn create_parser_from_reader_input<'input>(
     input: ReaderInput<'input>,
     reader_bytes_read: ReaderInputBytesRead,
     budget: &crate::Budget,
+    parser_options: ParserOptions,
     resolver: Option<Box<IncludeResolver<'input>>>,
 ) -> ParserStack<'input> {
-    let mut stack = ParserStack::new(reader_bytes_read, budget);
+    let mut stack =
+        ParserStack::with_parser_options(reader_bytes_read, budget, parser_options.clone());
     if let Some(r) = resolver {
         stack.set_resolver(r);
     }
     stack.push_stream_parser(
-        Parser::with_options(input, budget.parser_options()),
+        Parser::with_options(input, parser_options),
         "<input>".to_string(),
     );
     stack
@@ -46,9 +48,11 @@ pub(crate) fn create_parser_from_str<'a>(
     input: &'a str,
     reader_bytes_read: ReaderInputBytesRead,
     budget: &crate::Budget,
+    parser_options: ParserOptions,
     resolver: Option<Box<IncludeResolver<'a>>>,
 ) -> ParserStack<'a> {
-    let mut stack = ParserStack::new(reader_bytes_read, budget);
+    let mut stack =
+        ParserStack::with_parser_options(reader_bytes_read, budget, parser_options.clone());
     if let Some(r) = resolver {
         stack.set_resolver(r);
     }
@@ -57,7 +61,7 @@ pub(crate) fn create_parser_from_str<'a>(
         text: Rc::from(input),
     };
     stack.push_str_parser_with_snippet(
-        Parser::with_options(StrInput::new(input), budget.parser_options()),
+        Parser::with_options(StrInput::new(input), parser_options),
         "<input>".to_string(),
         Some(&snippet),
         crate::Location::UNKNOWN,
@@ -69,9 +73,9 @@ pub(crate) fn create_parser_from_str<'a>(
 #[inline]
 pub(crate) fn create_parser_from_str<'a>(
     input: &'a str,
-    budget: &crate::Budget,
+    parser_options: ParserOptions,
 ) -> BaseParser<'a, StrInput<'a>> {
-    Parser::with_options(StrInput::new(input), budget.parser_options())
+    Parser::with_options(StrInput::new(input), parser_options)
 }
 
 #[cfg(all(test, feature = "include"))]
@@ -81,10 +85,13 @@ mod tests {
     #[test]
     fn create_parser_from_str_borrows_root_text_for_snippets() {
         let input = "root: 1";
+        let budget = crate::Budget::default();
+        let parser_options = crate::Options::default().parser_options();
         let stack = create_parser_from_str(
             input,
             std::rc::Rc::new(std::cell::Cell::new(0)),
-            &crate::Budget::default(),
+            &budget,
+            parser_options,
             None,
         );
 

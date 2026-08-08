@@ -4,8 +4,8 @@ use crate::buffered_input::{
 };
 use crate::input_source::{IncludeResolveError, IncludeResolver, InputSource, ResolvedInclude};
 use granit_parser::{
-    Event, Parser, ParserStack as GranitParserStack, ReplayParser, ScanError, Scanner, Span,
-    StrInput, TokenType,
+    Event, Options as ParserOptions, Parser, ParserStack as GranitParserStack, ReplayParser,
+    ScanError, Scanner, Span, StrInput, TokenType,
 };
 use std::{
     borrow::Cow,
@@ -37,19 +37,31 @@ pub struct ParserStack<'input> {
     include_resolver: Option<Box<IncludeResolver<'input>>>,
     reader_bytes_read: ReaderInputBytesRead,
     budget: crate::Budget,
+    parser_options: ParserOptions,
     active_ids: Vec<(usize, String)>,
     next_source_id: u32,
     active_source_ids: Vec<u32>,
     pub(crate) resolved_sources: HashMap<u32, RecordedSource>,
 }
 impl<'input> ParserStack<'input> {
+    #[cfg(test)]
     #[must_use]
     pub fn new(reader_bytes_read: ReaderInputBytesRead, budget: &crate::Budget) -> Self {
+        Self::with_parser_options(reader_bytes_read, budget, budget.parser_options())
+    }
+
+    #[must_use]
+    pub fn with_parser_options(
+        reader_bytes_read: ReaderInputBytesRead,
+        budget: &crate::Budget,
+        parser_options: ParserOptions,
+    ) -> Self {
         Self {
-            inner: InnerStack::new(),
+            inner: InnerStack::with_options(parser_options.clone()),
             include_resolver: None,
             reader_bytes_read,
             budget: budget.clone(),
+            parser_options,
             active_ids: Vec::new(),
             next_source_id: 1,
             active_source_ids: Vec::new(),
@@ -224,7 +236,7 @@ impl<'input> ParserStack<'input> {
                     self.budget.max_reader_input_bytes,
                     self.reader_bytes_read.clone(),
                 );
-                let parser = Parser::with_options(input, self.budget.parser_options());
+                let parser = Parser::with_options(input, self.parser_options.clone());
                 self.push_stream_parser_with_snippet(parser, name, Some(&snippet), location);
             }
             InputSource::Reader(r) => {
@@ -233,7 +245,7 @@ impl<'input> ParserStack<'input> {
                     self.budget.max_reader_input_bytes,
                     self.reader_bytes_read.clone(),
                 );
-                let parser = Parser::with_options(input, self.budget.parser_options());
+                let parser = Parser::with_options(input, self.parser_options.clone());
                 self.push_stream_parser_with_snippet(parser, name, None, crate::Location::UNKNOWN);
             }
             InputSource::AnchoredText { mut text, anchor } => {
@@ -260,11 +272,12 @@ impl<'input> ParserStack<'input> {
                     name: name.clone(),
                     text: Rc::from(text.as_str()),
                 };
-                let events = collect_anchor_events(
+                let events = collect_anchor_events_with_parser_options(
                     &text,
                     &anchor,
                     self.inner.current_anchor_offset(),
                     &self.budget,
+                    &self.parser_options,
                 )
                 .map_err(|error| match error {
                     CollectAnchorEventsError::Budget(breach) => {
@@ -351,15 +364,32 @@ fn observe_expanded_scalar_budget(
     Ok(())
 }
 
+#[cfg(test)]
 fn collect_anchor_events(
     text: &str,
     target_anchor: &str,
     anchor_offset: usize,
     budget: &crate::Budget,
 ) -> Result<CollectedAnchorEvents, CollectAnchorEventsError> {
+    collect_anchor_events_with_parser_options(
+        text,
+        target_anchor,
+        anchor_offset,
+        budget,
+        &budget.parser_options(),
+    )
+}
+
+fn collect_anchor_events_with_parser_options(
+    text: &str,
+    target_anchor: &str,
+    anchor_offset: usize,
+    budget: &crate::Budget,
+    parser_options: &ParserOptions,
+) -> Result<CollectedAnchorEvents, CollectAnchorEventsError> {
     let mut document_count = 0usize;
     let mut anchor_defs: Vec<(String, usize)> = Vec::new();
-    let scanner = Scanner::with_options(StrInput::new(text), budget.parser_options());
+    let scanner = Scanner::with_options(StrInput::new(text), parser_options.clone());
     for token in scanner {
         let token = token.map_err(|err| {
             CollectAnchorEventsError::Message(format!(
@@ -377,7 +407,7 @@ fn collect_anchor_events(
             }
         }
     }
-    let mut parser = Parser::with_options(StrInput::new(text), budget.parser_options());
+    let mut parser = Parser::with_options(StrInput::new(text), parser_options.clone());
     parser.set_anchor_offset(anchor_offset.max(1));
     let mut events = Vec::new();
     let mut current_depth: usize = 0;
@@ -704,6 +734,50 @@ mod tests {
         assert!(
             !matches!(collected.events.as_slice(), [(Event::Comment(_, _), _)]),
             "comment must not be the only collected anchor event"
+        );
+    }
+
+    #[test]
+    fn emit_comments_false_suppresses_anchor_collection_comments() {
+        let budget = crate::Budget::default();
+        let options = crate::options! { emit_comments: false };
+        let parser_options = options.parser_options();
+        let collected = collect_anchor_events_with_parser_options(
+            "# outside\nselected: &selected 1 # inline\n",
+            "selected",
+            0,
+            &budget,
+            &parser_options,
+        )
+        .expect("anchor collection should succeed without comment events");
+
+        assert!(
+            !collected
+                .events
+                .iter()
+                .any(|(event, _)| matches!(event, Event::Comment(_, _)))
+        );
+    }
+
+    #[test]
+    fn emit_comments_false_suppresses_comments_from_pushed_parsers() {
+        let reader_bytes_read = Rc::new(Cell::new(0));
+        let budget = crate::Budget::default();
+        let options = crate::options! { emit_comments: false };
+        let parser_options = options.parser_options();
+        let mut stack =
+            ParserStack::with_parser_options(reader_bytes_read, &budget, parser_options);
+        push_test_str_parser(
+            &mut stack,
+            Parser::new_from_str("# leading\n1 # trailing\n"),
+            "comments.yaml",
+        );
+
+        let events = stack.collect::<Result<Vec<_>, _>>().unwrap();
+        assert!(
+            !events
+                .iter()
+                .any(|(event, _)| matches!(event, Event::Comment(_, _)))
         );
     }
 
