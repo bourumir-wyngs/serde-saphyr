@@ -100,9 +100,7 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
         Error::MultipleDocuments { hint, .. } => {
             Cow::Owned(format!("multiple YAML documents detected; {hint}"))
         }
-        Error::Unexpected { expected, .. } => {
-            Cow::Owned(format!("expected {expected}"))
-        }
+        Error::Unexpected { expected, .. } => Cow::Owned(format!("expected {expected}")),
         Error::MergeValueNotMapOrSeqOfMaps { .. } => {
             Cow::Borrowed("YAML merge value must be mapping or sequence of mappings")
         }
