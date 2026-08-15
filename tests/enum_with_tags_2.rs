@@ -75,6 +75,37 @@ struct FlattenedTaggedMappings {
     values: BTreeMap<String, TaggedMapping>,
 }
 
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+enum TaggedKey {
+    First { x: u32 },
+    Second { x: u32 },
+    Unit,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+enum TaggedScalarKey {
+    First(u32),
+    Second(u32),
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+enum TaggedSequenceKey {
+    First(Vec<u32>),
+    Second(Vec<u32>),
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum MapCompatibilityKey {
+    Map(BTreeMap<String, u32>),
+    X(u32),
+}
+
+const TAGGED_MAPPING_KEYS: &str = "? !First {x: 1}\n\
+                                   : 10\n\
+                                   ? !Second {x: 1}\n\
+                                   : 20\n";
+
 #[test]
 fn local_tags_do_not_become_core_string_tags() {
     for (yaml, expected) in [
@@ -183,6 +214,150 @@ fn custom_mapping_tag_survives_flatten_buffering() {
             values: BTreeMap::from([("value".to_owned(), TaggedMapping::Struct { a: 1, b: 2 },)]),
         }
     );
+}
+
+#[test]
+fn differently_tagged_mapping_keys_are_not_duplicates() {
+    let actual: BTreeMap<TaggedKey, u32> = serde_saphyr::from_str(TAGGED_MAPPING_KEYS)
+        .expect("different tagged enum keys must not be considered duplicates");
+
+    assert_eq!(actual.len(), 2);
+    assert_eq!(actual.get(&TaggedKey::First { x: 1 }), Some(&10));
+    assert_eq!(actual.get(&TaggedKey::Second { x: 1 }), Some(&20));
+}
+
+#[test]
+fn custom_tagged_empty_mapping_key_is_not_an_implicit_empty_key() {
+    let actual: BTreeMap<TaggedKey, u32> = serde_saphyr::from_str("? !Unit {}\n: 10\n")
+        .expect("a tagged empty mapping must remain an enum key payload");
+
+    assert_eq!(actual, BTreeMap::from([(TaggedKey::Unit, 10)]));
+}
+
+#[test]
+fn first_wins_keeps_differently_tagged_mapping_keys() {
+    let options = serde_saphyr::options! {
+        duplicate_keys: serde_saphyr::DuplicateKeyPolicy::FirstWins,
+    };
+    let actual: BTreeMap<TaggedKey, u32> =
+        serde_saphyr::from_str_with_options(TAGGED_MAPPING_KEYS, options)
+            .expect("first-wins must not discard a differently tagged key");
+
+    assert_eq!(actual.len(), 2);
+    assert_eq!(actual.get(&TaggedKey::First { x: 1 }), Some(&10));
+    assert_eq!(actual.get(&TaggedKey::Second { x: 1 }), Some(&20));
+}
+
+#[test]
+fn last_wins_merge_keeps_differently_tagged_mapping_keys() {
+    let options = serde_saphyr::options! {
+        duplicate_keys: serde_saphyr::DuplicateKeyPolicy::LastWins,
+    };
+    let actual: BTreeMap<String, BTreeMap<TaggedKey, u32>> = serde_saphyr::from_str_with_options(
+        concat!(
+            "base: &base\n",
+            "  ? !Second {x: 1}\n",
+            "  : 20\n",
+            "target:\n",
+            "  ? !First {x: 1}\n",
+            "  : 10\n",
+            "  <<: *base\n",
+        ),
+        options,
+    )
+    .expect("last-wins merge filtering must preserve a differently tagged key");
+
+    let target = &actual["target"];
+    assert_eq!(target.len(), 2);
+    assert_eq!(target.get(&TaggedKey::First { x: 1 }), Some(&10));
+    assert_eq!(target.get(&TaggedKey::Second { x: 1 }), Some(&20));
+}
+
+#[test]
+fn differently_tagged_scalar_keys_are_not_duplicates() {
+    let actual: BTreeMap<TaggedScalarKey, u32> = serde_saphyr::from_str(
+        "? !First 1\n\
+         : 10\n\
+         ? !Second 1\n\
+         : 20\n",
+    )
+    .expect("different scalar tags must remain distinct key identities");
+
+    assert_eq!(actual.len(), 2);
+    assert_eq!(actual.get(&TaggedScalarKey::First(1)), Some(&10));
+    assert_eq!(actual.get(&TaggedScalarKey::Second(1)), Some(&20));
+}
+
+#[test]
+fn differently_tagged_sequence_keys_are_not_duplicates() {
+    let actual: BTreeMap<TaggedSequenceKey, u32> = serde_saphyr::from_str(
+        "? !First [1]\n\
+         : 10\n\
+         ? !Second [1]\n\
+         : 20\n",
+    )
+    .expect("different sequence tags must remain distinct key identities");
+
+    assert_eq!(actual.len(), 2);
+    assert_eq!(actual.get(&TaggedSequenceKey::First(vec![1])), Some(&10));
+    assert_eq!(actual.get(&TaggedSequenceKey::Second(vec![1])), Some(&20));
+}
+
+#[test]
+fn local_map_tag_is_distinct_from_resolved_core_map_tag_in_keys() {
+    let actual: BTreeMap<MapCompatibilityKey, u32> = serde_saphyr::from_str(
+        "? !map {x: 1}\n\
+         : 10\n\
+         ? !!map {x: 1}\n\
+         : 20\n",
+    )
+    .expect("local !map and YAML core map must have distinct key identities");
+
+    assert_eq!(actual.len(), 2);
+    assert_eq!(
+        actual.get(&MapCompatibilityKey::Map(BTreeMap::from([(
+            "x".to_owned(),
+            1,
+        )]))),
+        Some(&10)
+    );
+    assert_eq!(actual.get(&MapCompatibilityKey::X(1)), Some(&20));
+}
+
+#[test]
+fn equivalent_core_map_tag_spellings_remain_duplicate_keys() {
+    let error = serde_saphyr::from_str::<BTreeMap<MapCompatibilityKey, u32>>(
+        "? !!map {x: 1}\n\
+         : 10\n\
+         ? !<tag:yaml.org,2002:map> {x: 1}\n\
+         : 20\n",
+    )
+    .expect_err("equivalent resolved core tags must have the same key identity");
+    let error = error.without_snippet();
+
+    assert!(matches!(
+        error,
+        serde_saphyr::Error::DuplicateMappingKey { key: None, .. }
+    ));
+}
+
+#[test]
+fn equivalent_resolved_custom_tag_spellings_remain_duplicate_keys() {
+    let error = serde_saphyr::from_str::<BTreeMap<TaggedKey, u32>>(
+        "%TAG !f! !\n\
+         ---\n\
+         ? !First {x: 1}\n\
+         : 10\n\
+         ? !f!First {x: 1}\n\
+         : 20\n",
+    )
+    .expect_err("equivalent resolved custom tags must have the same key identity");
+    let error = error.without_snippet();
+
+    assert!(matches!(
+        error,
+        serde_saphyr::Error::DuplicateMappingKey { key: None, .. }
+    ));
 }
 
 #[test]

@@ -71,6 +71,12 @@ fn replay_events(buf: Vec<Ev<'static>>) -> ReplayEvents<'static> {
     ReplayEvents::new(buf, None, PropertySyntax::Braced)
 }
 
+fn captured_fingerprint(events: Vec<Ev<'static>>) -> KeyFingerprint<'static> {
+    let mut replay = replay_events(events);
+    let mut node = capture_node(&mut replay).expect("valid node should be captured");
+    node.take_fingerprint()
+}
+
 #[cfg(not(feature = "properties"))]
 fn replay_events_with_reference(
     buf: Vec<Ev<'static>>,
@@ -313,25 +319,45 @@ fn simple_tagged_enum_helpers_accept_only_simple_variant_names() {
 
 #[test]
 fn key_fingerprint_helpers_normalize_string_like_tags() {
-    assert_eq!(canonical_scalar_key_tag(SfTag::None), SfTag::String);
-    assert_eq!(canonical_scalar_key_tag(SfTag::Other), SfTag::String);
-    assert_eq!(canonical_scalar_key_tag(SfTag::Include), SfTag::String);
-    assert_eq!(canonical_scalar_key_tag(SfTag::NonSpecific), SfTag::String);
-    assert_eq!(canonical_scalar_key_tag(SfTag::Int), SfTag::Int);
+    let no_raw_tag = None;
+    assert_eq!(
+        canonical_scalar_key_tag(SfTag::None, &no_raw_tag),
+        CanonicalKeyTag::Semantic(SfTag::String)
+    );
+    assert_eq!(
+        canonical_scalar_key_tag(SfTag::Include, &no_raw_tag),
+        CanonicalKeyTag::Semantic(SfTag::String)
+    );
+    assert_eq!(
+        canonical_scalar_key_tag(SfTag::NonSpecific, &no_raw_tag),
+        CanonicalKeyTag::Semantic(SfTag::String)
+    );
+    assert_eq!(
+        canonical_scalar_key_tag(SfTag::Int, &no_raw_tag),
+        CanonicalKeyTag::Semantic(SfTag::Int)
+    );
+    assert_eq!(
+        canonical_scalar_key_tag(SfTag::Other, &Some(Cow::Borrowed("!Variant"))),
+        CanonicalKeyTag::Custom(Cow::Borrowed("!Variant"))
+    );
 
     let stringy = KeyFingerprint::Scalar {
         value: Cow::Borrowed("hello"),
-        tag: SfTag::Other,
+        tag: CanonicalKeyTag::Custom(Cow::Borrowed("!Variant")),
     };
     assert_eq!(stringy.stringy_scalar_value(), Some("hello"));
 
     let binary = KeyFingerprint::Scalar {
         value: Cow::Borrowed("SGVsbG8="),
-        tag: SfTag::Binary,
+        tag: CanonicalKeyTag::Semantic(SfTag::Binary),
     };
     assert_eq!(binary.stringy_scalar_value(), None);
     assert_eq!(
-        KeyFingerprint::Sequence(vec![]).stringy_scalar_value(),
+        KeyFingerprint::Sequence {
+            tag: CanonicalKeyTag::Semantic(SfTag::Seq),
+            elements: vec![],
+        }
+        .stringy_scalar_value(),
         None
     );
 }
@@ -344,8 +370,107 @@ fn scalar_key_fingerprint_borrows_event_value() {
         key.fingerprint().into_owned(),
         KeyFingerprint::Scalar {
             value: Cow::Borrowed("borrowed"),
-            tag: SfTag::String,
+            tag: CanonicalKeyTag::Semantic(SfTag::String),
         }
+    ));
+}
+
+#[test]
+fn captured_fingerprints_include_canonical_root_tag_identity() {
+    let scalar_first = captured_fingerprint(vec![scalar(
+        "1",
+        SfTag::Other,
+        Some("!First"),
+        ScalarStyle::Plain,
+        loc(9, 2),
+    )]);
+    let scalar_second = captured_fingerprint(vec![scalar(
+        "1",
+        SfTag::Other,
+        Some("!Second"),
+        ScalarStyle::Plain,
+        loc(9, 3),
+    )]);
+    assert_ne!(scalar_first, scalar_second);
+
+    let sequence_first = captured_fingerprint(vec![
+        seq_start(SfTag::Other, Some("!First"), loc(9, 4)),
+        scalar("1", SfTag::None, None, ScalarStyle::Plain, loc(9, 5)),
+        seq_end(loc(9, 6)),
+    ]);
+    let sequence_second = captured_fingerprint(vec![
+        seq_start(SfTag::Other, Some("!Second"), loc(9, 7)),
+        scalar("1", SfTag::None, None, ScalarStyle::Plain, loc(9, 8)),
+        seq_end(loc(9, 9)),
+    ]);
+    assert_ne!(sequence_first, sequence_second);
+
+    let mapping_first = captured_fingerprint(vec![
+        tagged_map_start(SfTag::Other, Some("!First"), loc(9, 10)),
+        scalar("x", SfTag::None, None, ScalarStyle::Plain, loc(9, 11)),
+        scalar("1", SfTag::None, None, ScalarStyle::Plain, loc(9, 12)),
+        map_end(loc(9, 13)),
+    ]);
+    let mapping_second = captured_fingerprint(vec![
+        tagged_map_start(SfTag::Other, Some("!Second"), loc(9, 14)),
+        scalar("x", SfTag::None, None, ScalarStyle::Plain, loc(9, 15)),
+        scalar("1", SfTag::None, None, ScalarStyle::Plain, loc(9, 16)),
+        map_end(loc(9, 17)),
+    ]);
+    assert_ne!(mapping_first, mapping_second);
+
+    let implicit_sequence = captured_fingerprint(vec![
+        seq_start(SfTag::None, None, loc(9, 18)),
+        seq_end(loc(9, 19)),
+    ]);
+    let core_sequence = captured_fingerprint(vec![
+        seq_start(SfTag::Seq, Some("tag:yaml.org,2002:seq"), loc(9, 20)),
+        seq_end(loc(9, 21)),
+    ]);
+    let non_specific_sequence = captured_fingerprint(vec![
+        seq_start(SfTag::NonSpecific, Some("!"), loc(9, 22)),
+        seq_end(loc(9, 23)),
+    ]);
+    assert_eq!(implicit_sequence, core_sequence);
+    assert_eq!(implicit_sequence, non_specific_sequence);
+
+    let implicit_mapping = captured_fingerprint(vec![
+        tagged_map_start(SfTag::None, None, loc(9, 24)),
+        map_end(loc(9, 25)),
+    ]);
+    let core_mapping = captured_fingerprint(vec![
+        tagged_map_start(SfTag::Map, Some("tag:yaml.org,2002:map"), loc(9, 26)),
+        map_end(loc(9, 27)),
+    ]);
+    let local_map_mapping = captured_fingerprint(vec![
+        tagged_map_start(SfTag::Map, Some("!map"), loc(9, 28)),
+        map_end(loc(9, 29)),
+    ]);
+    let non_specific_mapping = captured_fingerprint(vec![
+        tagged_map_start(SfTag::NonSpecific, Some("!"), loc(9, 30)),
+        map_end(loc(9, 31)),
+    ]);
+    assert_eq!(implicit_mapping, core_mapping);
+    assert_eq!(implicit_mapping, non_specific_mapping);
+    assert_ne!(local_map_mapping, core_mapping);
+    assert!(is_empty_mapping_key_fingerprint(&implicit_mapping));
+    assert!(!is_empty_mapping_key_fingerprint(&local_map_mapping));
+
+    let custom_nullish_inner_key = KeyFingerprint::Mapping {
+        tag: CanonicalKeyTag::Semantic(SfTag::Map),
+        entries: vec![(
+            KeyFingerprint::Scalar {
+                value: Cow::Borrowed("null"),
+                tag: CanonicalKeyTag::Custom(Cow::Borrowed("!First")),
+            },
+            KeyFingerprint::Scalar {
+                value: Cow::Borrowed("value"),
+                tag: CanonicalKeyTag::Semantic(SfTag::String),
+            },
+        )],
+    };
+    assert!(!is_one_entry_nullish_mapping_key_fingerprint(
+        &custom_nullish_inner_key
     ));
 }
 
@@ -432,22 +557,28 @@ fn capture_node_captures_nested_fingerprints_and_rejects_invalid_streams() {
             assert_eq!(events.len(), 7);
             assert_eq!(
                 fingerprint,
-                KeyFingerprint::Sequence(vec![
-                    KeyFingerprint::Scalar {
-                        value: Cow::Borrowed("a"),
-                        tag: SfTag::String,
-                    },
-                    KeyFingerprint::Mapping(vec![(
+                KeyFingerprint::Sequence {
+                    tag: CanonicalKeyTag::Semantic(SfTag::Seq),
+                    elements: vec![
                         KeyFingerprint::Scalar {
-                            value: Cow::Borrowed("b"),
-                            tag: SfTag::String,
+                            value: Cow::Borrowed("a"),
+                            tag: CanonicalKeyTag::Semantic(SfTag::String),
                         },
-                        KeyFingerprint::Scalar {
-                            value: Cow::Borrowed("c"),
-                            tag: SfTag::String,
+                        KeyFingerprint::Mapping {
+                            tag: CanonicalKeyTag::Semantic(SfTag::Map),
+                            entries: vec![(
+                                KeyFingerprint::Scalar {
+                                    value: Cow::Borrowed("b"),
+                                    tag: CanonicalKeyTag::Semantic(SfTag::String),
+                                },
+                                KeyFingerprint::Scalar {
+                                    value: Cow::Borrowed("c"),
+                                    tag: CanonicalKeyTag::Semantic(SfTag::String),
+                                },
+                            )],
                         },
-                    )]),
-                ])
+                    ],
+                }
             );
         }
         KeyNode::Scalar { .. } => panic!("expected fingerprinted node"),
