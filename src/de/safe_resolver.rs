@@ -229,11 +229,11 @@ impl SafeFileResolver {
         };
         let source = match (self.read_mode, fragment) {
             (_, Some(fragment)) => InputSource::AnchoredText {
-                text: read_decoded_file(&canonical_target)?,
+                text: read_decoded_file(&canonical_target, req.size_remaining)?,
                 anchor: fragment.to_string(),
             },
             (SafeFileReadMode::Text, None) => {
-                InputSource::from_string(read_decoded_file(&canonical_target)?)
+                InputSource::from_string(read_decoded_file(&canonical_target, req.size_remaining)?)
             }
             (SafeFileReadMode::Reader, None) => {
                 InputSource::from_reader(fs::File::open(&canonical_target)?)
@@ -377,14 +377,40 @@ impl SafeFileResolver {
 }
 
 #[cfg(feature = "include")]
-fn read_decoded_file(path: &Path) -> Result<String, IncludeResolveError> {
+fn read_decoded_file(
+    path: &Path,
+    size_remaining: Option<usize>,
+) -> Result<String, IncludeResolveError> {
     let file = fs::File::open(path)?;
-    let mut decoder = DecodeReaderBytesBuilder::new()
+    let decoder = DecodeReaderBytesBuilder::new()
         .encoding(None)
         .bom_override(true)
         .build(file);
     let mut text = String::new();
-    decoder.read_to_string(&mut text)?;
+    if let Some(remaining) = size_remaining {
+        // Limit the decoded stream rather than trusting the metadata check above: the file can
+        // change between `metadata` and `open`, and replacement characters emitted while decoding
+        // malformed input can occupy more bytes than the source file. Reading just beyond the
+        // quota lets us distinguish an exact fit from an oversized source without materializing it.
+        // Allow up to four extra bytes so the limiter does not split a UTF-8 code point; oversized
+        // data is rejected before conversion regardless.
+        let read_limit = u64::try_from(remaining)
+            .unwrap_or(u64::MAX)
+            .saturating_add(4);
+        let mut decoded = Vec::new();
+        decoder.take(read_limit).read_to_end(&mut decoded)?;
+        if decoded.len() > remaining {
+            return Err(IncludeResolveError::SizeLimitExceeded(
+                decoded.len(),
+                remaining,
+            ));
+        }
+        text = String::from_utf8(decoded)
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err.utf8_error()))?;
+    } else {
+        let mut decoder = decoder;
+        decoder.read_to_string(&mut text)?;
+    }
     Ok(text)
 }
 
@@ -621,6 +647,24 @@ mod tests {
         assert!(matches!(
             error,
             IncludeResolveError::SizeLimitExceeded(size, 4) if size > 4
+        ));
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn safe_file_resolver_limits_eager_decoded_output() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        let path = root.join("child.yaml");
+        std::fs::write(&path, "value: 123\n").unwrap();
+
+        // Exercise the limit at the read itself. This is the protection that remains effective if
+        // a file grows after `resolve` checks its metadata but before it opens the file.
+        let error = read_decoded_file(&path, Some(2)).unwrap_err();
+
+        assert!(matches!(
+            error,
+            IncludeResolveError::SizeLimitExceeded(size, 2) if size > 2
         ));
     }
 }
