@@ -376,8 +376,18 @@ pub(super) fn capture_node<'a>(ev: &mut dyn Events<'a>) -> Result<KeyNode<'a>, E
                 location,
             })
         }
-        Ev::MapStart { anchor, location } => {
-            let mut events = vec![Ev::MapStart { anchor, location }];
+        Ev::MapStart {
+            anchor,
+            tag,
+            raw_tag,
+            location,
+        } => {
+            let mut events = vec![Ev::MapStart {
+                anchor,
+                tag,
+                raw_tag,
+                location,
+            }];
             let mut entries = Vec::new();
             loop {
                 match ev.peek()? {
@@ -431,6 +441,12 @@ pub(super) fn simple_tagged_node_name(event: &Ev<'_>) -> Option<(String, Locatio
             raw_tag,
             location,
             ..
+        }
+        | Ev::MapStart {
+            tag,
+            raw_tag,
+            location,
+            ..
         } => simple_tagged_enum_name(raw_tag, tag).map(|name| (name, *location)),
         _ => None,
     }
@@ -438,12 +454,8 @@ pub(super) fn simple_tagged_node_name(event: &Ev<'_>) -> Option<(String, Locatio
 
 /// Remove the YAML tag from the payload node after it has been promoted to a map key.
 pub(super) fn strip_root_tag_for_externally_tagged_payload(events: &mut [Ev<'_>]) {
-    match events.first_mut() {
-        Some(Ev::Scalar { tag, raw_tag, .. }) | Some(Ev::SeqStart { tag, raw_tag, .. }) => {
-            *tag = SfTag::None;
-            *raw_tag = None;
-        }
-        _ => {}
+    if let Some(event) = events.first_mut() {
+        let _ = event.strip_node_tag();
     }
 }
 
@@ -466,6 +478,8 @@ pub(super) fn externally_tagged_payload_as_map_events(
     let mut events = Vec::with_capacity(payload_events.len() + 3);
     events.push(Ev::MapStart {
         anchor: 0,
+        tag: SfTag::None,
+        raw_tag: None,
         location: tag_location,
     });
     events.push(Ev::Scalar {

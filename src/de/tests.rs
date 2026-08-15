@@ -45,8 +45,14 @@ fn seq_end(location: Location) -> Ev<'static> {
 }
 
 fn map_start(location: Location) -> Ev<'static> {
+    tagged_map_start(SfTag::None, None, location)
+}
+
+fn tagged_map_start(tag: SfTag, raw_tag: Option<&'static str>, location: Location) -> Ev<'static> {
     Ev::MapStart {
         anchor: 0,
+        tag,
+        raw_tag: raw_tag.map(Cow::Borrowed),
         location,
     }
 }
@@ -245,6 +251,14 @@ fn simple_tagged_enum_helpers_accept_only_simple_variant_names() {
         Some("Widget".to_owned())
     );
     assert_eq!(
+        simple_tagged_enum_name(&Some(Cow::Borrowed("!map")), &SfTag::Map),
+        None
+    );
+    assert_eq!(
+        simple_tagged_enum_name(&Some(Cow::Borrowed("tag:yaml.org,2002:map")), &SfTag::Map),
+        None
+    );
+    assert_eq!(
         simple_tagged_enum_name(
             &Some(Cow::Borrowed("!<tag:yaml.org,2002:Widget>")),
             &SfTag::Other
@@ -287,7 +301,14 @@ fn simple_tagged_enum_helpers_accept_only_simple_variant_names() {
         simple_tagged_node_name(&seq_event),
         Some(("SeqVariant".to_owned(), seq_loc))
     );
-    assert_eq!(simple_tagged_node_name(&map_start(loc(9, 1))), None);
+
+    let map_loc = loc(9, 1);
+    let map_event = tagged_map_start(SfTag::Other, Some("!MapVariant"), map_loc);
+    assert_eq!(
+        simple_tagged_node_name(&map_event),
+        Some(("MapVariant".to_owned(), map_loc))
+    );
+    assert_eq!(simple_tagged_node_name(&map_start(loc(10, 1))), None);
 }
 
 #[test]
@@ -467,6 +488,22 @@ fn tagged_payload_helpers_strip_root_tags_and_build_external_map_events() {
         other => panic!("expected seq start, got {other:?}"),
     }
 
+    let map_loc = loc(19, 4);
+    let mut map_payload = vec![
+        tagged_map_start(SfTag::Other, Some("!MapVariant"), map_loc),
+        scalar("key", SfTag::None, None, ScalarStyle::Plain, loc(19, 5)),
+        scalar("value", SfTag::None, None, ScalarStyle::Plain, loc(19, 6)),
+        map_end(loc(19, 7)),
+    ];
+    strip_root_tag_for_externally_tagged_payload(&mut map_payload);
+    match &map_payload[0] {
+        Ev::MapStart { tag, raw_tag, .. } => {
+            assert_eq!(*tag, SfTag::None);
+            assert!(raw_tag.is_none());
+        }
+        other => panic!("expected map start, got {other:?}"),
+    }
+
     let wrapped = externally_tagged_payload_as_map_events("Empty".to_owned(), seq_loc, Vec::new());
     assert!(matches!(
         &wrapped[..],
@@ -527,6 +564,29 @@ fn tagged_payload_helpers_strip_root_tags_and_build_external_map_events() {
             .unwrap()
             .is_none()
     );
+
+    let tagged_map_loc = loc(20, 2);
+    let mut tagged_map = replay_events(vec![
+        tagged_map_start(SfTag::Other, Some("!Mapping"), tagged_map_loc),
+        scalar("key", SfTag::None, None, ScalarStyle::Plain, loc(20, 3)),
+        scalar("value", SfTag::None, None, ScalarStyle::Plain, loc(20, 4)),
+        map_end(loc(20, 5)),
+    ]);
+    let captured = capture_simple_tagged_node_as_map_events(&mut tagged_map)
+        .unwrap()
+        .expect("tagged mapping should be converted");
+    assert!(matches!(
+        captured.get(1),
+        Some(Ev::Scalar { value, .. }) if value.as_ref() == "Mapping"
+    ));
+    assert!(matches!(
+        captured.get(2),
+        Some(Ev::MapStart {
+            tag: SfTag::None,
+            raw_tag: None,
+            ..
+        })
+    ));
 }
 
 #[test]

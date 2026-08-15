@@ -743,8 +743,7 @@ impl<'a> LiveEvents<'a> {
                 }
 
                 Event::MappingStart(_style, anchor_id, tag) => {
-                    #[cfg(not(feature = "include"))]
-                    let _ = tag;
+                    let tag_s = SfTag::from_optional_cow(&tag);
 
                     #[cfg(feature = "include")]
                     let mut anchor_id = anchor_id;
@@ -766,6 +765,8 @@ impl<'a> LiveEvents<'a> {
 
                     let ev = Ev::MapStart {
                         anchor: anchor_id,
+                        tag: tag_s,
+                        raw_tag: tag.as_ref().map(|t| Cow::Owned(t.to_string())),
                         location,
                     };
                     self.bump_depth_on_start();
@@ -1153,6 +1154,20 @@ impl<'de> Events<'de> for LiveEvents<'de> {
         }
 
         Ok((&self.look).into())
+    }
+
+    fn strip_peeked_node_tag(&mut self) -> Result<(), Error> {
+        let location = self
+            .look
+            .as_ref()
+            .map_or(self.last_location, super::events::Ev::location);
+        match self.look.as_mut() {
+            Some(event) => event
+                .strip_node_tag()
+                .then_some(())
+                .ok_or_else(|| Error::unexpected("tagged node").with_location(location)),
+            None => Err(Error::unexpected("tagged node").with_location(location)),
+        }
     }
     fn last_location(&self) -> Location {
         self.last_location
