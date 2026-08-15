@@ -264,16 +264,14 @@ plain
     }
 
     #[test]
-    fn duplicate_keys_error_policy_custom_tagged_string_key() {
+    fn custom_tagged_string_key_has_distinct_yaml_key_identity() {
         let y = "a: 1\n!foo a: 2\n";
-        let err = from_str::<HashMap<String, i32>>(y).unwrap_err();
-        assert!(matches!(
-            unwrap_snippet(&err),
-            Error::DuplicateMappingKey {
-                key: Some(key),
-                ..
-            } if key == "a"
-        ));
+        let actual = from_str::<HashMap<String, i32>>(y)
+            .expect("the custom tag makes this a distinct YAML key node");
+
+        // The target type intentionally erases YAML tags, so HashMap's own key
+        // equality still lets the later deserialized String value replace the first.
+        assert_eq!(actual, HashMap::from([("a".to_owned(), 2)]));
     }
 
     #[test]

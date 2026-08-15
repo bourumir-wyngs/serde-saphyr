@@ -82,7 +82,12 @@ pub(crate) enum Ev<'a> {
     /// End of a sequence.
     SeqEnd { location: Location },
     /// Start of a mapping (`{` or block mapping).
-    MapStart { anchor: usize, location: Location },
+    MapStart {
+        anchor: usize,
+        tag: SfTag,
+        raw_tag: Option<Cow<'a, str>>,
+        location: Location,
+    },
     /// End of a mapping.
     MapEnd { location: Location },
     /// The event has been taken from the array, with only its location remaining.
@@ -117,6 +122,20 @@ impl Ev<'_> {
             | Ev::Taken { location } => *location,
         }
     }
+
+    /// Clear the YAML tag attached to a scalar or container-start event.
+    pub(super) fn strip_node_tag(&mut self) -> bool {
+        match self {
+            Ev::Scalar { tag, raw_tag, .. }
+            | Ev::SeqStart { tag, raw_tag, .. }
+            | Ev::MapStart { tag, raw_tag, .. } => {
+                *tag = SfTag::None;
+                *raw_tag = None;
+                true
+            }
+            Ev::SeqEnd { .. } | Ev::MapEnd { .. } | Ev::Taken { .. } => false,
+        }
+    }
 }
 
 /// `from_slice_multiple` location-free representation of events for duplicate-key comparison.
@@ -143,6 +162,12 @@ pub(crate) trait Events<'de> {
     /// Called by:
     /// - Lookahead logic (merge, container boundaries, option/unit handling).
     fn peek(&mut self) -> Result<Option<&Ev<'de>>, Error>;
+
+    /// Strip the tag from the node currently exposed by [`Self::peek`].
+    ///
+    /// This lets typed enum handling reinterpret a YAML tag as the enum variant while
+    /// continuing to deserialize the payload directly from the original event source.
+    fn strip_peeked_node_tag(&mut self) -> Result<(), Error>;
 
     /// Last location that `next` or `peek` has observed.
     ///
@@ -337,6 +362,20 @@ impl<'a> Events<'a> for ReplayEvents<'a> {
 
     fn peek(&mut self) -> Result<Option<&Ev<'a>>, Error> {
         Ok(self.buf.get(self.idx))
+    }
+
+    fn strip_peeked_node_tag(&mut self) -> Result<(), Error> {
+        let location = self
+            .buf
+            .get(self.idx)
+            .map_or_else(|| self.last_location(), Ev::location);
+        match self.buf.get_mut(self.idx) {
+            Some(event) => event
+                .strip_node_tag()
+                .then_some(())
+                .ok_or_else(|| Error::unexpected("tagged node").with_location(location)),
+            None => Err(Error::unexpected("tagged node").with_location(location)),
+        }
     }
 
     fn last_location(&self) -> Location {

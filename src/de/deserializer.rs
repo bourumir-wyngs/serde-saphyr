@@ -157,6 +157,22 @@ fn drain_remaining_sequence(ev: &mut dyn Events<'_>) -> Result<(), Error> {
     }
 }
 
+/// Whether `V` is Serde's private visitor for buffering an arbitrary value as
+/// `Content`, as used by `#[serde(untagged)]` and `#[serde(flatten)]`.
+///
+/// This intentionally does not match every visitor in Serde's private
+/// deserialization module. In particular, internally tagged enums use
+/// `TaggedContentVisitor`, whose input mapping must remain unchanged.
+fn is_serde_content_buffer<V>() -> bool {
+    let name = std::any::type_name::<V>();
+    // Recent rustc versions include the visitor's unused lifetime as `<'_>`;
+    // older versions omit it from `type_name`.
+    let bare_name = name
+        .split_once('<')
+        .map_or(name, |(bare_name, _)| bare_name);
+    name.contains("::private::de::") && bare_name.ends_with("::ContentVisitor")
+}
+
 /// The streaming Serde deserializer.
 ///
 /// ## Important: this deserializer *borrows* and is only available in a closure
@@ -678,11 +694,10 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     /// Flow: We inspect the next event; scalars are parsed with the heuristic above; containers
     /// delegate to `deserialize_seq`/`deserialize_map`.
     fn deserialize_any<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        // Serde's internal buffering for `untagged` or `flatten` uses internal private visitors.
-        // We only want to convert tagged nodes into map events for these buffers to preserve enum variants.
-        // General untyped visitors (like `serde_json::Value`) expect the tag to be discarded.
-        let is_serde_internal_buffer = std::any::type_name::<V>().contains("::private::de::");
-        if is_serde_internal_buffer
+        // Only Serde's generic Content buffer needs tagged nodes represented as
+        // synthetic maps. General untyped visitors discard YAML tags, while other
+        // private Serde visitors may attach their own meaning to the original map.
+        if is_serde_content_buffer::<V>()
             && let Some(events) = capture_simple_tagged_node_as_map_events(self.ev)?
         {
             let mut replay = ReplayEvents::new(
@@ -1929,8 +1944,15 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             value_events = events.drain(vs..ve).collect();
                             // Build empty map events using the first and last from original events.
                             let start = match events.first() {
-                                Some(Ev::MapStart { anchor, location }) => Ev::MapStart {
+                                Some(Ev::MapStart {
+                                    anchor,
+                                    tag,
+                                    raw_tag,
+                                    location,
+                                }) => Ev::MapStart {
                                     anchor: *anchor,
+                                    tag: *tag,
+                                    raw_tag: raw_tag.clone(),
                                     location: *location,
                                 },
                                 Some(other) => other.clone(),
@@ -2441,7 +2463,39 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     Mode::Unit(EnumScalarId::from_view(view))
                 }
             }
-            Some(Ev::MapStart { .. }) => {
+            Some(Ev::MapStart {
+                tag,
+                raw_tag,
+                location,
+                ..
+            }) => {
+                // `!map` is classified as `SfTag::Map` for compatibility when used as
+                // an ordinary mapping tag. In a typed enum context it may instead select
+                // a renamed `map` variant. Resolved core forms (`!!map`, verbatim tags,
+                // and directive-expanded handles) have a different `raw_tag` and remain
+                // YAML type annotations.
+                let tag_name = simple_tagged_enum_name(&raw_tag, &tag).or_else(|| {
+                    (tag == SfTag::Map && raw_tag.as_deref() == Some("!map"))
+                        .then(|| "map".to_owned())
+                });
+                if let Some(tag_name) = tag_name
+                    && variants.contains(&tag_name.as_str())
+                {
+                    self.ev.strip_peeked_node_tag()?;
+                    return visitor.visit_enum(EA {
+                        ev: self.ev,
+                        cfg: self.cfg,
+                        variant: EnumScalarId {
+                            raw: Cow::Owned(tag_name.clone()),
+                            effective: Cow::Owned(tag_name),
+                            interpolated: false,
+                            location,
+                        },
+                        map_mode: false,
+                        tagged_payload: true,
+                    });
+                }
+
                 self.expect_map_start()?;
                 let mut key_de = YamlDeserializer::new(&mut *self.ev, self.cfg);
                 key_de.in_key = true;
@@ -2557,6 +2611,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             cfg: Cfg,
             variant: EnumScalarId<'de>,
             map_mode: bool,
+            tagged_payload: bool,
         }
 
         impl<'de, 'e> de::EnumAccess<'de> for EA<'de, 'e> {
@@ -2573,9 +2628,18 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     cfg,
                     variant,
                     map_mode,
+                    tagged_payload,
                 } = self;
                 let v = seed.deserialize(variant.into_deserializer())?;
-                Ok((v, VA { ev, cfg, map_mode }))
+                Ok((
+                    v,
+                    VA {
+                        ev,
+                        cfg,
+                        map_mode,
+                        tagged_payload,
+                    },
+                ))
             }
         }
 
@@ -2583,6 +2647,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             ev: &'e mut dyn Events<'de>,
             cfg: Cfg,
             map_mode: bool,
+            tagged_payload: bool,
         }
 
         impl VA<'_, '_> {
@@ -2620,6 +2685,8 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                         }),
                         None => Err(eof_with_loc(self.ev)),
                     }
+                } else if self.tagged_payload {
+                    skip_one_node_from_events(self.ev)
                 } else {
                     Ok(())
                 }
@@ -2752,6 +2819,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 cfg: self.cfg,
                 variant,
                 map_mode: false,
+                tagged_payload: false,
             },
             Mode::Map(variant, variant_location) => EA {
                 ev: self.ev,
@@ -2763,6 +2831,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     location: variant_location,
                 },
                 map_mode: true,
+                tagged_payload: false,
             },
             Mode::TaggedNewtype(variant, replay_buf) => {
                 let replay = Box::new(ReplayEvents::new(

@@ -46,40 +46,90 @@ pub(super) fn simple_tagged_enum_name(
     Some(candidate.to_owned())
 }
 
+/// Canonical tag identity used by [`KeyFingerprint`].
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(super) enum CanonicalKeyTag<'a> {
+    /// A tag whose meaning is represented by `SfTag`.
+    Semantic(SfTag),
+    /// A custom tag, stored in its parser-resolved spelling.
+    Custom(Cow<'a, str>),
+}
+
 /// Canonical fingerprint of a YAML node for duplicate-key detection.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub(super) enum KeyFingerprint<'a> {
-    /// Scalar fingerprint (value plus optional tag).
-    Scalar { value: Cow<'a, str>, tag: SfTag },
-    /// Sequence fingerprint (ordered fingerprints of children).
-    Sequence(Vec<KeyFingerprint<'a>>),
-    /// Mapping fingerprint (ordered list of `(key, value)` fingerprints).
-    Mapping(Vec<(KeyFingerprint<'a>, KeyFingerprint<'a>)>),
+    /// Scalar fingerprint (value plus tag identity).
+    Scalar {
+        value: Cow<'a, str>,
+        tag: CanonicalKeyTag<'a>,
+    },
+    /// Sequence fingerprint (root tag plus ordered fingerprints of children).
+    Sequence {
+        tag: CanonicalKeyTag<'a>,
+        elements: Vec<KeyFingerprint<'a>>,
+    },
+    /// Mapping fingerprint (root tag plus ordered `(key, value)` fingerprints).
+    Mapping {
+        tag: CanonicalKeyTag<'a>,
+        entries: Vec<(KeyFingerprint<'a>, KeyFingerprint<'a>)>,
+    },
     /// Should not be used, arises after taking the value away
     #[default]
     Default,
 }
 
-pub(super) fn canonical_scalar_key_tag(tag: SfTag) -> SfTag {
-    if tag.can_parse_into_string() {
+fn canonical_node_key_tag<'a>(
+    tag: SfTag,
+    raw_tag: &Option<Cow<'a, str>>,
+    implicit_tag: SfTag,
+) -> CanonicalKeyTag<'a> {
+    // `raw_tag` contains the parser-resolved tag identity. Keep it for tags
+    // collapsed into `Other`, and for local `!map`, which is deliberately
+    // distinct from the resolved core map tag in typed enum contexts.
+    if (tag == SfTag::Other
+        || (implicit_tag == SfTag::Map && tag == SfTag::Map && raw_tag.as_deref() == Some("!map")))
+        && let Some(raw_tag) = raw_tag
+    {
+        return CanonicalKeyTag::Custom(raw_tag.clone());
+    }
+
+    let tag = if matches!(tag, SfTag::None | SfTag::NonSpecific) {
+        implicit_tag
+    } else if implicit_tag == SfTag::String && tag.can_parse_into_string() {
         SfTag::String
     } else {
         tag
-    }
+    };
+    CanonicalKeyTag::Semantic(tag)
+}
+
+pub(super) fn canonical_scalar_key_tag<'a>(
+    tag: SfTag,
+    raw_tag: &Option<Cow<'a, str>>,
+) -> CanonicalKeyTag<'a> {
+    canonical_node_key_tag(tag, raw_tag, SfTag::String)
 }
 
 pub(super) fn is_empty_mapping_key_fingerprint(fingerprint: &KeyFingerprint<'_>) -> bool {
-    matches!(fingerprint, KeyFingerprint::Mapping(pairs) if pairs.is_empty())
+    matches!(
+        fingerprint,
+        KeyFingerprint::Mapping {
+            tag: CanonicalKeyTag::Semantic(SfTag::Map),
+            entries,
+        } if entries.is_empty()
+    )
 }
 
 fn is_nullish_scalar_key_fingerprint(fingerprint: &KeyFingerprint<'_>) -> bool {
     match fingerprint {
-        KeyFingerprint::Scalar { value, tag } => {
-            *tag == SfTag::Null
-                || value.is_empty()
-                || value == "~"
-                || value.eq_ignore_ascii_case("null")
-        }
+        KeyFingerprint::Scalar {
+            tag: CanonicalKeyTag::Semantic(SfTag::Null),
+            ..
+        } => true,
+        KeyFingerprint::Scalar {
+            value,
+            tag: CanonicalKeyTag::Semantic(SfTag::String),
+        } => value.is_empty() || value == "~" || value.eq_ignore_ascii_case("null"),
         _ => false,
     }
 }
@@ -88,9 +138,10 @@ pub(super) fn is_one_entry_nullish_mapping_key_fingerprint(
     fingerprint: &KeyFingerprint<'_>,
 ) -> bool {
     match fingerprint {
-        KeyFingerprint::Mapping(pairs) if pairs.len() == 1 => {
-            is_nullish_scalar_key_fingerprint(&pairs[0].0)
-        }
+        KeyFingerprint::Mapping {
+            tag: CanonicalKeyTag::Semantic(SfTag::Map),
+            entries,
+        } if entries.len() == 1 => is_nullish_scalar_key_fingerprint(&entries[0].0),
         _ => false,
     }
 }
@@ -107,7 +158,13 @@ impl KeyFingerprint<'_> {
     pub(super) fn stringy_scalar_value(&self) -> Option<&str> {
         match self {
             KeyFingerprint::Scalar { value, tag } => {
-                if tag.can_parse_into_string() && tag != &SfTag::Binary {
+                let is_stringy = match tag {
+                    CanonicalKeyTag::Semantic(tag) => {
+                        tag.can_parse_into_string() && tag != &SfTag::Binary
+                    }
+                    CanonicalKeyTag::Custom(_) => true,
+                };
+                if is_stringy {
                     Some(value.as_ref())
                 } else {
                     None
@@ -144,9 +201,15 @@ impl<'a> KeyNode<'a> {
         match self {
             KeyNode::Fingerprinted { fingerprint, .. } => Cow::Borrowed(fingerprint),
             KeyNode::Scalar { events, .. } => {
-                if let Some(Ev::Scalar { tag, value, .. }) = events.first() {
+                if let Some(Ev::Scalar {
+                    tag,
+                    raw_tag,
+                    value,
+                    ..
+                }) = events.first()
+                {
                     Cow::Owned(KeyFingerprint::Scalar {
-                        tag: canonical_scalar_key_tag(*tag),
+                        tag: canonical_scalar_key_tag(*tag, raw_tag),
                         value: value.clone(),
                     })
                 } else {
@@ -342,6 +405,7 @@ pub(super) fn capture_node<'a>(ev: &mut dyn Events<'a>) -> Result<KeyNode<'a>, E
             raw_tag,
             location,
         } => {
+            let fingerprint_tag = canonical_node_key_tag(tag, &raw_tag, SfTag::Seq);
             let mut events = vec![Ev::SeqStart {
                 anchor,
                 tag,
@@ -371,13 +435,27 @@ pub(super) fn capture_node<'a>(ev: &mut dyn Events<'a>) -> Result<KeyNode<'a>, E
                 }
             }
             Ok(KeyNode::Fingerprinted {
-                fingerprint: KeyFingerprint::Sequence(elements),
+                fingerprint: KeyFingerprint::Sequence {
+                    tag: fingerprint_tag,
+                    elements,
+                },
                 events,
                 location,
             })
         }
-        Ev::MapStart { anchor, location } => {
-            let mut events = vec![Ev::MapStart { anchor, location }];
+        Ev::MapStart {
+            anchor,
+            tag,
+            raw_tag,
+            location,
+        } => {
+            let fingerprint_tag = canonical_node_key_tag(tag, &raw_tag, SfTag::Map);
+            let mut events = vec![Ev::MapStart {
+                anchor,
+                tag,
+                raw_tag,
+                location,
+            }];
             let mut entries = Vec::new();
             loop {
                 match ev.peek()? {
@@ -405,7 +483,10 @@ pub(super) fn capture_node<'a>(ev: &mut dyn Events<'a>) -> Result<KeyNode<'a>, E
                 }
             }
             Ok(KeyNode::Fingerprinted {
-                fingerprint: KeyFingerprint::Mapping(entries),
+                fingerprint: KeyFingerprint::Mapping {
+                    tag: fingerprint_tag,
+                    entries,
+                },
                 events,
                 location,
             })
@@ -431,6 +512,12 @@ pub(super) fn simple_tagged_node_name(event: &Ev<'_>) -> Option<(String, Locatio
             raw_tag,
             location,
             ..
+        }
+        | Ev::MapStart {
+            tag,
+            raw_tag,
+            location,
+            ..
         } => simple_tagged_enum_name(raw_tag, tag).map(|name| (name, *location)),
         _ => None,
     }
@@ -438,12 +525,8 @@ pub(super) fn simple_tagged_node_name(event: &Ev<'_>) -> Option<(String, Locatio
 
 /// Remove the YAML tag from the payload node after it has been promoted to a map key.
 pub(super) fn strip_root_tag_for_externally_tagged_payload(events: &mut [Ev<'_>]) {
-    match events.first_mut() {
-        Some(Ev::Scalar { tag, raw_tag, .. }) | Some(Ev::SeqStart { tag, raw_tag, .. }) => {
-            *tag = SfTag::None;
-            *raw_tag = None;
-        }
-        _ => {}
+    if let Some(event) = events.first_mut() {
+        let _ = event.strip_node_tag();
     }
 }
 
@@ -466,6 +549,8 @@ pub(super) fn externally_tagged_payload_as_map_events(
     let mut events = Vec::with_capacity(payload_events.len() + 3);
     events.push(Ev::MapStart {
         anchor: 0,
+        tag: SfTag::None,
+        raw_tag: None,
         location: tag_location,
     });
     events.push(Ev::Scalar {
