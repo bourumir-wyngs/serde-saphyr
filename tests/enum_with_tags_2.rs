@@ -57,6 +57,24 @@ struct TaggedMappingContainer {
     value: TaggedMapping,
 }
 
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[serde(tag = "kind")]
+enum InternallyTaggedMapping {
+    Struct { a: u32, b: u32 },
+}
+
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[serde(tag = "kind", content = "data")]
+enum AdjacentlyTaggedMapping {
+    Struct { a: u32, b: u32 },
+}
+
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+struct FlattenedTaggedMappings {
+    #[serde(flatten)]
+    values: BTreeMap<String, TaggedMapping>,
+}
+
 #[test]
 fn local_tags_do_not_become_core_string_tags() {
     for (yaml, expected) in [
@@ -133,6 +151,37 @@ fn custom_mapping_tag_survives_untagged_enum_buffering() {
     assert_eq!(
         actual,
         UntaggedTaggedMapping::Tagged(TaggedMapping::Struct { a: 123, b: 456 })
+    );
+}
+
+#[test]
+fn custom_yaml_mapping_tag_does_not_hide_serde_internal_tag() {
+    let actual: InternallyTaggedMapping =
+        serde_saphyr::from_str("!metadata {kind: Struct, a: 1, b: 2}")
+            .expect("the YAML tag must not rewrite an internally tagged enum");
+
+    assert_eq!(actual, InternallyTaggedMapping::Struct { a: 1, b: 2 });
+}
+
+#[test]
+fn custom_yaml_mapping_tag_does_not_hide_serde_adjacent_tag() {
+    let actual: AdjacentlyTaggedMapping =
+        serde_saphyr::from_str("!metadata {data: {a: 1, b: 2}, kind: Struct}")
+            .expect("the YAML tag must not rewrite an adjacently tagged enum");
+
+    assert_eq!(actual, AdjacentlyTaggedMapping::Struct { a: 1, b: 2 });
+}
+
+#[test]
+fn custom_mapping_tag_survives_flatten_buffering() {
+    let actual: FlattenedTaggedMappings = serde_saphyr::from_str("value: !struct {a: 1, b: 2}")
+        .expect("a custom YAML tag buffered by flatten should retain its enum variant");
+
+    assert_eq!(
+        actual,
+        FlattenedTaggedMappings {
+            values: BTreeMap::from([("value".to_owned(), TaggedMapping::Struct { a: 1, b: 2 },)]),
+        }
     );
 }
 
