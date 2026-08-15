@@ -8,7 +8,10 @@ use std::io;
 use std::path::Path;
 use std::rc::Rc;
 
-// Intentionally no `granit_parser` imports here: include resolvers are handled in serde-saphyr.
+#[cfg(feature = "serde_derived_types")]
+const fn default_emit_comments() -> bool {
+    true
+}
 
 /// Duplicate key handling policy for mappings.
 #[non_exhaustive]
@@ -112,7 +115,7 @@ impl Default for AliasLimits {
 
 /// Parser configuration options.
 ///
-/// Use this to configure duplicate-key policy, alias-replay limits, and an
+/// Use this to configure comment emission, duplicate-key policy, alias-replay limits, and an
 /// optional pre-parse YAML [`Budget`].
 ///
 /// Example: parse a small `Config` using custom `Options`.
@@ -163,6 +166,27 @@ pub struct Options {
     /// Invoked both when parsing is successful and when budget was breached.
     #[cfg_attr(feature = "serde_derived_types", serde(skip))]
     pub budget_report_cb: Option<BudgetReportCallback>,
+
+    /// Whether the parser emits comment events for deserialization.
+    ///
+    /// The default is `true`. When this is `false`, comments are still recognized and validated
+    /// as YAML syntax, but their text is not captured and [`crate::Commented`] values receive an
+    /// empty comment string.
+    /// Comment bytes are still consumed and validated, so disabling emission is not an input-size
+    /// or processing-time limit.
+    ///
+    /// Comment-related budget accounting follows emitted, retained parser data. Setting this to
+    /// `false` also:
+    ///
+    /// - disables enforcement of [`Budget::max_total_comment_bytes`];
+    /// - makes [`Budget::max_buffered_comment_events`] ineffective;
+    /// - excludes comments from [`Budget::max_events`]; and
+    /// - keeps [`crate::budget::BudgetReport::total_comment_bytes`] at zero.
+    #[cfg_attr(
+        feature = "serde_derived_types",
+        serde(default = "default_emit_comments")
+    )]
+    pub emit_comments: bool,
 
     /// Policy for duplicate keys.
     pub duplicate_keys: DuplicateKeyPolicy,
@@ -269,6 +293,14 @@ pub type BudgetReportCallback =
     Rc<std::cell::RefCell<dyn FnMut(crate::budget::BudgetReport) + 'static>>;
 
 impl Options {
+    pub(crate) fn parser_options(&self) -> granit_parser::Options {
+        let default_budget = Budget::default();
+        let budget = self.budget.as_ref().unwrap_or(&default_budget);
+        let mut parser_options = budget.parser_options();
+        parser_options.emit_comments = self.emit_comments;
+        parser_options
+    }
+
     pub(crate) fn validate(&self) -> Result<(), crate::de_error::Error> {
         self.require_indent.validate()
     }
@@ -448,6 +480,7 @@ impl Default for Options {
             budget: Some(Budget::default()),
             budget_report: None,
             budget_report_cb: None,
+            emit_comments: true,
             duplicate_keys: DuplicateKeyPolicy::Error,
             merge_keys: MergeKeyPolicy::Merge,
             alias_limits: AliasLimits::default(),
@@ -484,6 +517,7 @@ impl std::fmt::Debug for Options {
                     "none"
                 },
             )
+            .field("emit_comments", &self.emit_comments)
             .field("duplicate_keys", &self.duplicate_keys)
             .field("merge_keys", &self.merge_keys)
             .field("alias_limits", &self.alias_limits)
@@ -561,6 +595,7 @@ mod tests {
         assert!(opts.budget.is_some());
         assert!(opts.budget_report.is_none());
         assert!(opts.budget_report_cb.is_none());
+        assert!(opts.emit_comments);
         assert!(matches!(opts.duplicate_keys, DuplicateKeyPolicy::Error));
         assert!(matches!(opts.merge_keys, MergeKeyPolicy::Merge));
         assert_eq!(opts.alias_limits.max_total_replayed_events, 1_000_000);
@@ -604,6 +639,7 @@ mod tests {
         assert!(debug_str.contains("Options"));
         assert!(debug_str.contains("budget"));
         assert!(debug_str.contains("budget_report_cb: \"none\""));
+        assert!(debug_str.contains("emit_comments: true"));
 
         #[cfg(feature = "include")]
         assert!(debug_str.contains("include_resolver: \"none\""));

@@ -44,6 +44,16 @@ fn budget_deserialization_defaults_new_limits() {
     assert_eq!(restored.flow_nesting_limit, default.flow_nesting_limit);
 }
 
+#[cfg(feature = "serde_derived_types")]
+#[test]
+fn options_deserialization_defaults_emit_comments() {
+    let mut json = serde_json::to_value(serde_saphyr::Options::default()).unwrap();
+    json.as_object_mut().unwrap().remove("emit_comments");
+
+    let restored: serde_saphyr::Options = serde_json::from_value(json).unwrap();
+    assert!(restored.emit_comments);
+}
+
 #[test]
 fn public_message_and_include_builders_keep_attached_metadata() {
     let params = [("minimum".to_owned(), "3".to_owned())];
