@@ -1,3 +1,5 @@
+use super::yaml_suite_support::{assert_invalid_case, assert_json_case};
+
 #[test]
 fn yaml_2g84_literal_modifiers_valid_cases_parse_to_empty_string() {
     // 2G84 explores literal block scalars with indentation and chomping modifiers.
@@ -27,4 +29,24 @@ fn yaml_2g84_literal_modifiers_valid_cases_parse_to_empty_string() {
         "Expected at least one newline (or empty due to parser quirk) for |1+, got {:?}",
         s2
     );
+}
+
+#[test]
+fn yaml_suite_2g84_00() {
+    assert_invalid_case("--- |0\n");
+}
+
+#[test]
+fn yaml_suite_2g84_01() {
+    assert_invalid_case("--- |10\n");
+}
+
+#[test]
+fn yaml_suite_2g84_02() {
+    assert_json_case("--- |1-", "\"\"\n");
+}
+
+#[test]
+fn yaml_suite_2g84_03() {
+    assert_json_case("--- |1+", "\"\"\n");
 }

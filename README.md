@@ -16,7 +16,13 @@
 [![crates.io](https://img.shields.io/crates/v/serde-saphyr.svg)](https://crates.io/crates/serde-saphyr)
 [![crates.io](https://img.shields.io/crates/d/serde-saphyr.svg)](https://crates.io/crates/serde-saphyr)
 
-**serde-saphyr** is a strongly typed YAML deserializer built on top of [`granit-parser`](https://crates.io/crates/granit-parser). It aims to be **panic-free** on malformed input and to exclude `unsafe` code from the library. The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.” Try it online as a WebAssembly application [here](https://verdanta.tech/yva/).
+**serde-saphyr** is a strongly typed YAML deserializer built on top of [`granit-parser`](https://crates.io/crates/granit-parser). 
+
+The parser is fuzz-tested and designed not to panic on malformed YAML. This does not cover out-of-memory conditions, 
+panics in user-provided callbacks and cases the like. The library is configured to deny `unsafe` code. This does
+not extend to transitive dependencies. 
+
+The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.” Try it online as a WebAssembly application [here](https://verdanta.tech/yva/). 
 
 See [release history](https://github.com/bourumir-wyngs/serde-saphyr/releases) on GitHub.
 
@@ -27,15 +33,17 @@ See [release history](https://github.com/bourumir-wyngs/serde-saphyr/releases) o
 - **Light on resources:** Having almost no intermediate data structures should result in more efficient parsing, especially if anchors are used only lightly.
 - **Also, simpler:** No code to support intermediate Values of all kinds.
 - **Type-driven parsing:** YAML that doesn’t match the expected Rust types is rejected early.
-- **Safer by construction:** serde-saphyr avoids the typical YAML remote code execution vulnerability because it does not support or implement tag-driven object instantiation. Instead, it deserializes into fixed Rust types via Serde, removing the object-instantiation mechanism that such [exploits](https://www.arp242.net/yaml-config.html) depend on. 
-
+- **Safer by construction:** serde-saphyr avoids the typical YAML remote code execution [vulnerability](https://www.arp242.net/yaml-config.html) because it does not support or implement tag-driven arbitrary object instantiation.  
+- 
+  serde-saphyr does not implement tag-driven  object construction,
+  
 ### Notable features
 
 - **Configurable budgets:** Enforce input limits to mitigate resource exhaustion (e.g., deeply nested structures or very large arrays); see [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
 - Precise error reporting with **snippet rendering**.
 - Optional **!include** support with a custom or default resolver (inclusion of either a complete document or the node referenced by a specified anchor).
 - **Comment support**. Wrapper [Commented](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) both captures and emits comments.
-- **Property support** (to prevent leaking any secrets from YAML files via error messages or files themselves)
+- **Optional property support**, with redaction (removal) of property values from later crate-generated diagnostics.
 - **Serializer supports emitting anchors** (Rc, Arc, Weak) if they are properly wrapped (see below).
 - **Declarative validation with optional [`validator`](https://crates.io/crates/validator) ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/validator_validate.rs))** or **[`garde`](https://crates.io/crates/garde)** ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/garde_validate.rs)).
 - **Optional [`miette`](https://crates.io/crates/miette)** ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/miette.rs)) integration for more advanced error reporting.
@@ -45,9 +53,9 @@ See [release history](https://github.com/bourumir-wyngs/serde-saphyr/releases) o
 - Correct handling for JSON-style Unicode surrogate pairs.
 - **robotic extensions** to support YAML dialect common in robotics (see below).
 
-`serde-saphyr` is compatible with WebAssembly. The CI flow includes builds for both `wasm32-unknown-unknown` (browser / JS) and `wasm32-wasip1` (WASI runtimes) with the full test suite running and passing. We also wrote [yva](https://github.com/bourumir-wyngs/yva) in [dioxus](https://dioxuslabs.com/) to deploy `serde-saphyr` on the web.
+`serde-saphyr` is compatible with WebAssembly. The CI flow includes builds for both `wasm32-unknown-unknown` (browser / JS) and `wasm32-wasip1` (WASI runtimes) with mostly full test suite running and passing (excluding file access and other similarly unsupported cases). We also wrote [yva](https://github.com/bourumir-wyngs/yva) in [dioxus](https://dioxuslabs.com/) to deploy `serde-saphyr` on the web.
 
-The test suite currently includes over 2000 passing tests, including the fully converted [yaml-test-suite](https://github.com/yaml/yaml-test-suite), with *ALL* tests from there passing with no exceptions. To pass the last few remaining cases, we use [`granit-parser`](https://crates.io/crates/granit-parser), a fork of Saphyr's parser. Some additional cases are taken from the original serde-yaml tests.
+The test suite currently includes over 2000 passing tests, including converted cases from [YAML Test Suite v2022-01-17](https://github.com/yaml/yaml-test-suite/releases/tag/v2022-01-17) (corresponding to the [`data-2022-01-17` release](https://github.com/yaml/yaml-test-suite/releases/tag/data-2022-01-17)). All included converted cases pass. The deserializer uses [`granit-parser`](https://crates.io/crates/granit-parser), a fork of Saphyr's parser. Some additional cases are taken from the original serde-yaml tests.
 
 ### Project relationship
 
@@ -178,8 +186,9 @@ fn main() {
 
 ### Pathological inputs & budgets
 
-Fuzzing shows that certain adversarial inputs can make YAML parsers consume excessive time or memory, enabling denial-of-service scenarios. To counter this, `serde-saphyr` offers a fast, configurable pre-check via a [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html), available through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). Defaults are conservative; tighten them when you know your input shape, or disable the budget if you only parse YAML you generate yourself.
-During [reader](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.from_reader_with_options.html)-based deserialization, serde-saphyr does not buffer the entire payload; it parses incrementally, counting bytes and enforcing configured budgets. This design blocks denial-of-service attempts via excessively large inputs. When [streaming](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.read_with_options.html) from the reader through the iterator, other budget limits apply on a per-document basis, since such a reader may be expected to stream indefinitely. The total size of the input is not limited in this case.
+Fuzzing shows that certain adversarial inputs can make YAML parsers consume excessive time or memory, enabling denial-of-service scenarios. To counter this, `serde-saphyr` offers a fast, configurable pre-check via a [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html), available through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). Defaults are intentionally quite permissive; tighten them when you know your input shape, or disable the budget if you only parse YAML you generate yourself.
+During [reader](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.from_reader_with_options.html)-based deserialization, serde-saphyr does not buffer the entire payload; it parses incrementally, counting bytes and enforcing configured budgets.
+Reader-based APIs enforce configured byte and structural limits while reading. When [streaming](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.read_with_options.html) from the reader through the iterator, other budget limits apply on a per-document basis, since such a reader may be expected to stream indefinitely. The total size of the input is not limited in this case.
 To find the typical budget requirements for your file, use our [web demo](https://verdanta.tech/yva/) or run the `main()` executable of this library, providing a YAML file path as a program parameter. You can also fetch the budget programmatically by registering a closure with [`Options::with_budget_report`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html#method.with_budget_report).
 
 ### Indentation checking
@@ -286,7 +295,7 @@ let yaml = r#"
 There are two variants of the deserialization functions: from_* and from_*_with_options. The latter accepts an [Options](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html)
 object that allows you to configure budget and other aspects of parsing. For larger projects that require consistent parsing behavior, we recommend defining a wrapper function so that all option and budget settings are managed in one place (see examples/wrapper_function.rs).
 
-Tagged enums written as `!!EnumName VARIANT` are also supported, but only for single-level scalar variants. YAML itself cannot nest such tagged enums, so use mapping-based representations (`EnumName: RED`) if you need to embed enums within other enums.
+Tagged enums written as `!!EnumName VARIANT` are also supported, but only for single-level scalar variants. Use mapping-based representations (`EnumName: RED`) if you need to embed enums within other enums.
 
 ### Tuple enum variants
 
@@ -383,7 +392,7 @@ fn main() -> Result<(), serde_saphyr::Error> {
 
 ### Deserializing into abstract JSON Value
 
-If you must work with abstract types, you can also deserialize YAML into [`serde_json::Value`](https://docs.rs/serde_json/latest/serde_json/value/index.html). Serde will drive the process through [`deserialize_any`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Deserializer.html#method.deserialize_any) because `Value` does not fix a Rust primitive type ahead of time. You lose the strict type control provided by Rust `struct` data types. Also, unlike YAML, JSON does not allow composite keys; keys must be strings. Field order will be preserved.
+If you must work with abstract types, you can also deserialize YAML into [`serde_json::Value`](https://docs.rs/serde_json/latest/serde_json/value/index.html). Serde will drive the process through [`deserialize_any`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Deserializer.html#method.deserialize_any) because `Value` does not fix a Rust primitive type ahead of time. You lose the strict type control provided by Rust `struct` data types. Also, unlike YAML, JSON does not allow composite keys; keys must be strings. Mapping entries are presented to Serde in source order. Whether the target retains that order depends on its implementation.
 
 ### Borrowed string deserialization
 

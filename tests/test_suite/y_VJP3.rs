@@ -22,3 +22,16 @@ fn yaml_vjp3_flow_collections_multiline_valid() {
     let v: Outer = serde_saphyr::from_str(y).expect("failed to parse VJP3 valid case");
     assert_eq!(v.k.k, "v");
 }
+
+#[test]
+fn yaml_suite_vjp3_00() {
+    super::yaml_suite_support::assert_invalid_case("k: {\nk\n:\nv\n}\n");
+}
+
+#[test]
+fn yaml_suite_vjp3_01() {
+    super::yaml_suite_support::assert_json_case(
+        "k: {\n k\n :\n v\n }\n",
+        "{\n  \"k\" : {\n    \"k\" : \"v\"\n  }\n}\n",
+    );
+}

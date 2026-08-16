@@ -12,3 +12,18 @@ fn yaml_jef9_trailing_whitespace_block_keep() {
     assert_eq!(v.len(), 1);
     assert_eq!(v[0].as_str(), "\n\n");
 }
+
+#[test]
+fn yaml_suite_jef9_00() {
+    super::yaml_suite_support::assert_json_case("- |+\n\n\n", "[\n  \"\\n\\n\"\n]\n");
+}
+
+#[test]
+fn yaml_suite_jef9_01() {
+    super::yaml_suite_support::assert_json_case("- |+\n   \n", "[\n  \"\\n\"\n]\n");
+}
+
+#[test]
+fn yaml_suite_jef9_02() {
+    super::yaml_suite_support::assert_json_case("- |+\n   ", "[\n  \"\\n\"\n]\n");
+}

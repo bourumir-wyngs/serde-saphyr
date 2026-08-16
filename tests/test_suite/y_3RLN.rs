@@ -1,3 +1,5 @@
+use super::yaml_suite_support::assert_json_case;
+
 // 3RLN: Leading tabs in double quoted
 // The YAML test file shows multiple variants. Some use explicit \t escape,
 // others display special glyphs (<tab-glyph> etc.) that are typographical markers in the
@@ -42,4 +44,34 @@ fn yaml_3rln_leading_tabs_in_double_quoted() {
     // the double-quoted scalar (\\———»), which are not conventional escapes. Our parser
     // treats them as literal characters. We skip strict assertions for those here. If needed,
     // they can be revisited once the parser adopts the suite’s display conventions.
+}
+
+#[test]
+fn yaml_suite_3rln_00() {
+    assert_json_case("\"1 leading\n    \\ttab\"\n", "\"1 leading \\ttab\"\n");
+}
+
+#[test]
+fn yaml_suite_3rln_01() {
+    assert_json_case("\"2 leading\n    \\\ttab\"\n", "\"2 leading \\ttab\"\n");
+}
+
+#[test]
+fn yaml_suite_3rln_02() {
+    assert_json_case("\"3 leading\n    \ttab\"\n", "\"3 leading tab\"\n");
+}
+
+#[test]
+fn yaml_suite_3rln_03() {
+    assert_json_case("\"4 leading\n    \\t  tab\"\n", "\"4 leading \\t  tab\"\n");
+}
+
+#[test]
+fn yaml_suite_3rln_04() {
+    assert_json_case("\"5 leading\n    \\\t  tab\"\n", "\"5 leading \\t  tab\"\n");
+}
+
+#[test]
+fn yaml_suite_3rln_05() {
+    assert_json_case("\"6 leading\n    \t  tab\"\n", "\"6 leading tab\"\n");
 }

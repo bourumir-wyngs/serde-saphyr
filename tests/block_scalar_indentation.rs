@@ -43,3 +43,14 @@ fn nested_mapping_block_scalar_body_is_correctly_indented() -> anyhow::Result<()
 
     Ok(())
 }
+
+#[test]
+fn nested_folded_scalar_content_must_be_indented() {
+    for yaml in ["key: >\nline1\n", "- >\nline1\n"] {
+        let result = serde_saphyr::from_str::<serde_json::Value>(yaml);
+        assert!(
+            result.is_err(),
+            "unindented nested folded-scalar content must be rejected: {yaml:?}"
+        );
+    }
+}

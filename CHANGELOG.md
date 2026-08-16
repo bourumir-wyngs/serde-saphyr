@@ -14,6 +14,8 @@
   `Budget` representation that omits these fields uses the documented defaults.
 
 ### Fixes
+  - Accepted valid zero-indented root folded block scalars, including `#`-prefixed content lines,
+    fixing YAML Test Suite cases `DK3J` and `FP8R`
   - Fixed enums tags for struct variants (#177)
   - Improved error message wording (#178)
   - Rejected non-UTF-8 canonical include paths before resolver policy checks and identity handling,

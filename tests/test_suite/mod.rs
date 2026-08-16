@@ -1,5 +1,10 @@
 #![allow(non_snake_case)]
 
+mod yaml_suite_ext_json_a;
+mod yaml_suite_ext_json_b;
+mod yaml_suite_ext_special;
+mod yaml_suite_support;
+
 mod y_229Q;
 mod y_236B;
 mod y_2AUY;

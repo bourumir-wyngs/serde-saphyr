@@ -1,14 +1,16 @@
-use std::collections::HashMap;
+use super::yaml_suite_support::assert_valid_events_with_options;
+use serde_saphyr::DuplicateKeyPolicy;
 
 #[test]
-fn yaml_2jqs_block_mapping_with_missing_keys_should_error_on_duplicate_empty_key() {
-    // Two entries with empty keys; mapping into HashMap should produce a duplicate-key error
+fn yaml_2jqs_block_mapping_with_missing_keys() {
     let yaml = ": a\n: b\n";
+    let events = "+STR\n+DOC\n+MAP\n=VAL :\n=VAL :a\n=VAL :\n=VAL :b\n-MAP\n-DOC\n-STR\n";
 
-    let result = serde_saphyr::from_str::<HashMap<String, String>>(yaml);
-    assert!(
-        result.is_err(),
-        "Expected duplicate-key error for empty keys, but got: {:?}",
-        result
-    );
+    // YAML Test Suite records both pairs at the parser-event level; it does not
+    // prescribe how a constructed mapping resolves duplicate keys. Use an
+    // explicitly permissive construction policy, then compare its exact event stream.
+    let options = serde_saphyr::options! {
+        duplicate_keys: DuplicateKeyPolicy::FirstWins,
+    };
+    assert_valid_events_with_options(yaml, events, options);
 }

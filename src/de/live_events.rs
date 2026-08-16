@@ -647,12 +647,6 @@ impl<'a> LiveEvents<'a> {
                 Event::Scalar(val, style, anchor_id, tag) => {
                     #[cfg(feature = "include")]
                     let mut anchor_id = anchor_id;
-                    if matches!(style, ScalarStyle::Folded)
-                        && span.start.col() == 0
-                        && !val.trim().is_empty()
-                    {
-                        return Err(Error::FoldedBlockScalarMustIndentContent { location });
-                    }
 
                     let tag_s = SfTag::from_optional_cow(&tag);
 

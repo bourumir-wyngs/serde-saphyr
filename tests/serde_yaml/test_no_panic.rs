@@ -28,15 +28,12 @@ fn test_yaml_malformed() {
 }
 
 #[test]
-fn test_lexer_errors() {
+fn test_zero_indented_root_folded_scalar() {
     let yaml_input = ">\n@ !";
-    let result: Result<serde_json::Value, _> = serde_saphyr::from_str(yaml_input);
+    let result: serde_json::Value =
+        serde_saphyr::from_str(yaml_input).expect("Root folded scalar should deserialize");
 
-    // The YAML input is invalid, so expect an Err, but no panic
-    assert!(
-        result.is_err(),
-        "Parsing invalid YAML should return an error, not panic."
-    );
+    assert_eq!(result, serde_json::Value::String("@ !\n".to_string()));
 }
 
 #[test]

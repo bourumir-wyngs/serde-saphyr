@@ -28,7 +28,6 @@ fn test_yaml_malformed() {
 }
 
 #[rstest]
-#[case::lexer_errors(">\n@ !")]
 #[case::unmatched_brackets("{key: [value1, value2")]
 #[case::invalid_escape_sequence(r#"key: "Invalid\xEscape""#)]
 #[case::invalid_boolean_tagged("key: !!bool truue")]
@@ -42,6 +41,14 @@ fn test_invalid_yaml_errors_without_panic(#[case] yaml_input: &str) {
         result.is_err(),
         "expected error for input `{yaml_input}`, got Ok"
     );
+}
+
+#[test]
+fn zero_indented_root_folded_scalar_is_valid() {
+    let result: serde_json::Value =
+        serde_saphyr::from_str(">\n@ !").expect("root folded scalar should deserialize");
+
+    assert_eq!(result, serde_json::Value::String("@ !\n".to_string()));
 }
 
 #[test]
