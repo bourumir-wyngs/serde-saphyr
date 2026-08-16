@@ -65,6 +65,8 @@ The test suite currently includes over 2000 passing tests. For [YAML Test Suite 
 
 ## Getting started
 
+`serde-saphyr` requires Rust 1.89 or newer. This minimum supported Rust version (MSRV) is tested in CI.
+
 ### Usage
 
 ```rust

@@ -2,6 +2,7 @@
 name = "serde-saphyr"
 version = "1.2.0"
 edition = "2024"
+rust-version = "1.89"
 license = "MIT OR Apache-2.0"
 description = "YAML (de)serializer for Serde, emphasizing panic-free parsing, fast builds and good error reporting. Supports properties, comments, include"
 documentation = "https://docs.rs/serde-saphyr/latest/serde-saphyr/"

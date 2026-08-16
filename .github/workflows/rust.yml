@@ -85,7 +85,36 @@ jobs:
       - name: Run large huge_documents
         run: |
           cargo test --locked --offline --features huge_documents
-          
+
+  msrv:
+    name: MSRV (Rust 1.89)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pick toolchain BEFORE rust-cache (cache key includes rustc version).
+      - name: Install Rust 1.89
+        run: |
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup default 1.89.0
+          rustc -V
+          cargo -V
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Prefetch dependencies
+        run: cargo fetch --locked
+
+      - name: Run full test suite
+        run: |
+          cargo test --locked --offline --doc --all-features
+          cargo test --locked --offline
+          cargo test --locked --offline --features miette
+          cargo test --locked --offline --features garde,validator,miette,figment,robotics
+          cargo test --locked --offline --no-default-features --features serialize,deserialize
+          cargo test --locked --offline --features huge_documents
+          cargo test --locked --offline --all-features
 
   build_wasm32-unknown-unknown:
     runs-on: ubuntu-latest
