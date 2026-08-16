@@ -109,7 +109,7 @@ pub struct SafeFileResolver {
     root_source_id: Option<String>,
     /// Controls whether included files are decoded eagerly into text or streamed to the parser.
     read_mode: SafeFileReadMode,
-    /// Determines whether symlinks are followed within the root or rejected outright.
+    /// Determines how symlinks observed during path validation are handled.
     symlink_policy: SymlinkPolicy,
 }
 
