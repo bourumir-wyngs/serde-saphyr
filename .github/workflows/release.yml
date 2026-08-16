@@ -54,6 +54,10 @@ jobs:
           cargo fetch 
           cargo fetch  --manifest-path fuzz/Cargo.toml
 
+      - name: Compile documentation examples
+        run: |
+          cargo test --offline --doc --all-features
+
       - name: Check formatting (crate)
         run: |
           cargo fmt --all -- --check
@@ -124,4 +128,4 @@ jobs:
       - name: Publish crate
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-        run: cargo publish 
+        run: cargo publish

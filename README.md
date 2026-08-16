@@ -162,6 +162,8 @@ Serde-saphyr provides control over serialization and deserialization behavior. W
 To support different use cases, most behavior can be enabled, disabled, or tuned via [Options](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html) (deserializers) and [SerializerOptions](https://docs.rs/serde-saphyr/latest/serde_saphyr/ser/options/struct.SerializerOptions.html) (serializers). Serde-saphyr uses a macro-driven approach based on the [`options!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.options.html), [`budget!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.budget.html), and [`ser_options!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.ser_options.html) macros.
 
 ```rust
+use serde_saphyr::DuplicateKeyPolicy;
+
 fn main() {
     let options = serde_saphyr::options! {
      budget: serde_saphyr::budget! {
@@ -235,7 +237,8 @@ fn main() {
    name: Bob
    age: 25
 "#;
-    let docs = serde_saphyr::from_multiple(input).expect("valid YAML stream");
+    let docs: Vec<Document> =
+        serde_saphyr::from_multiple(input).expect("valid YAML stream");
 }
 ```
 
@@ -264,15 +267,15 @@ let yaml = r#"
 - by: 10.0
   constraints:
     - StayWithin:
-      x: 0.0
-      y: 0.0
-      r: 5.0
+        x: 0.0
+        y: 0.0
+        r: 5.0
     - StayWithin:
-      x: 4.0
-      y: 0.0
-      r: 5.0
+        x: 4.0
+        y: 0.0
+        r: 5.0
     - MaxSpeed:
-      v: 3.5
+        v: 3.5
       "#;
 
   let robot_moves: Vec<Move> = serde_saphyr::from_str(yaml).unwrap();
@@ -290,6 +293,8 @@ Tagged enums written as `!!EnumName VARIANT` are also supported, but only for si
 It is possible to deserialize tuple enum variants:
 
 ```rust
+use serde::Deserialize;
+
 #[derive(Debug, PartialEq, Eq, Deserialize)]
 pub enum Value {
   Expression(String),
@@ -346,7 +351,7 @@ struct Blob {
     data: Vec<u8>,
 }
 
-fn parse_blob() {
+fn main() {
     let blob: Blob = serde_saphyr::from_str("data: !!binary aGVsbG8=").unwrap();
     assert_eq!(blob.data, b"hello");
 }
@@ -363,7 +368,7 @@ struct ContainsString {
     name: String,
 }
 
-fn parse_string() {
+fn main() -> Result<(), serde_saphyr::Error> {
     let value: ContainsString = serde_saphyr::from_str_with_options(
         "name: !!binary H4sIAA==",
         serde_saphyr::options! {
@@ -371,6 +376,7 @@ fn parse_string() {
         },
     )?;
     assert_eq!(value.name, "H4sIAA==");
+    Ok(())
 }
 ```
 `!!binary` for other types like `Vec<u8>` will stay supported.
@@ -429,8 +435,7 @@ struct Connection {
 
 fn main() {
     let yaml_input = r#"
-# Here we define "default configuration"  
-defaults: &defaults
+defaults: &defaults # Here we define "default configuration"
   adapter: postgres
   host: localhost
 
@@ -522,6 +527,8 @@ The `error` hint may be empty (`${NAME?}` / `${NAME:?}`), matching docker-compos
 Once enabled, pass a property map through `Options::with_properties(...)`:
 
 ```rust
+use serde::Deserialize;
+
 #[cfg(feature = "properties")]
 #[derive(Debug, PartialEq, Eq, Deserialize)]
 struct Config {
@@ -552,7 +559,7 @@ fn property_map() -> Result<Config, serde_saphyr::Error> {
 }
 
 #[cfg(feature = "properties")]
-fn property_map_example_works() {
+fn main() {
     let parsed = property_map().unwrap();
     assert_eq!(
         parsed,
@@ -562,6 +569,8 @@ fn property_map_example_works() {
         }
     );
 }
+# #[cfg(not(feature = "properties"))]
+# fn main() {}
 ```
 
 Set `property_syntax: PropertySyntax::BracedOrBare` to also accept the unbraced `$NAME` shorthand.
@@ -572,13 +581,15 @@ Unset names produce an error.
 Modifiers stay brace-only:
 
 ```rust
+use serde::Deserialize;
+
 #[derive(Debug, Deserialize, PartialEq)]
 struct Config {
     db: String,
 }
 
 #[cfg(feature = "properties")]
-fn unbraced() -> Result<(), serde_saphyr::Error> {
+fn main() -> Result<(), serde_saphyr::Error> {
     use serde::Deserialize;
     use serde_saphyr::{PropertySyntax, options, from_str_with_options};
     use std::collections::HashMap;
@@ -594,6 +605,8 @@ fn unbraced() -> Result<(), serde_saphyr::Error> {
     assert_eq!(expected, parsed);
     Ok(())
 }
+# #[cfg(not(feature = "properties"))]
+# fn main() {}
 ```
 
 A bare `${NAME}` with no value in the map (and no `-`/`:-` default), a `${NAME?msg}` / `${NAME:?msg}` that triggers its error condition, or a malformed `${...}` candidate (invalid name, unsupported modifier), fails deserialization with a dedicated error pointing at the YAML source location.
@@ -637,14 +650,33 @@ b: 2
 
 `!include` is gated behind the `include` feature flag. If it is not enabled, or the resolver is not set, this tag has no special treatment. The `include` feature allows resolvers that do not access the filesystem. For the most common case, where files are included from the filesystem, `include_fs` must be enabled as well. Then the most common way to enable includes looks like this:
 
-```rust
-fn main() {
-    let options = options! {}
-        .with_filesystem_root("examples").expect("failed to create filesystem include resolver");
+```rust,no_run
+use serde::Deserialize;
+use serde_saphyr::{from_str_with_options, options};
 
-    let config: Config = from_str_with_options(yaml_to_parse, options)
-        .expect("failed to parse filesystem include example");
+#[derive(Debug, Deserialize)]
+struct Config {
+    selected_users: Vec<User>,
 }
+
+#[derive(Debug, Deserialize)]
+struct User {
+    name: String,
+}
+
+# #[cfg(feature = "include_fs")]
+fn main() {
+    let yaml = "selected_users: !include#users value.yaml\n";
+    let options = options! {}
+        .with_filesystem_root("examples")
+        .expect("failed to create filesystem include resolver");
+
+    let config: Config = from_str_with_options(yaml, options)
+        .expect("failed to parse filesystem include example");
+    assert_eq!(config.selected_users[0].name, "Alice");
+}
+# #[cfg(not(feature = "include_fs"))]
+# fn main() {}
 ```
 
 You can alternatively use [`SafeFileResolver`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.SafeFileResolver.html) to configure more options, or provide your own [`IncludeResolver`](https://docs.rs/serde-saphyr/latest/serde_saphyr/type.IncludeResolver.html) callback that resolves a name into YAML text, which can be useful for custom storage backends or generated YAML without using the filesystem. The safety features of this resolver are summarized in the documentation header of this class.
@@ -673,9 +705,12 @@ This crate optionally integrates with [validator](https://crates.io/crates/valid
 #### Garde
 
 ```rust
+# #[cfg(feature = "garde")]
 use garde::Validate;
+# #[cfg(feature = "garde")]
 use serde::Deserialize;
 
+# #[cfg(feature = "garde")]
 #[derive(Debug, Deserialize, Validate)]
 #[serde(rename_all = "camelCase")] // Rust in snake_case, YAML in camelCase.
 struct AB {
@@ -687,6 +722,7 @@ struct AB {
     second_string: String,
 }
 
+# #[cfg(feature = "garde")]
 fn main() {
     let yaml = r#"
         firstString: &A "x"
@@ -699,14 +735,19 @@ fn main() {
     // Field in error message in camelCase (as in YAML).
     eprintln!("{err}");
 }
+# #[cfg(not(feature = "garde"))]
+# fn main() {}
 ```
 
 #### Validator
 
 ```rust
+# #[cfg(feature = "validator")]
 use serde::Deserialize;
+# #[cfg(feature = "validator")]
 use validator::Validate;
 
+# #[cfg(feature = "validator")]
 #[derive(Debug, Deserialize, Validate)]
 #[serde(rename_all = "camelCase")] // Rust in snake_case, YAML in camelCase.
 struct AB {
@@ -718,6 +759,7 @@ struct AB {
     second_string: String,
 }
 
+# #[cfg(feature = "validator")]
 fn main() {
     let yaml = r#"
         firstString: &A "x"
@@ -729,6 +771,8 @@ fn main() {
 
     eprintln!("{err}");
 }
+# #[cfg(not(feature = "validator"))]
+# fn main() {}
 ```
 
 A typical output with serde-saphyr native snippet rendering looks like:
@@ -782,9 +826,10 @@ println!("\n[User Error]:\n{}", err.render_with_formatter(&UserMessageFormatter)
 If you want fancy diagnostics via `miette`, you can convert a `serde-saphyr` error to a
 `miette::Report` while still controlling the message text via a custom formatter:
 
-```rust,ignore
+```rust
 use serde_saphyr::{MessageFormatter, UserMessageFormatter};
 
+# #[cfg(feature = "miette")]
 fn main() {
     let yaml = "not_a_bool\n";
     let opts = serde_saphyr::options! { with_snippet: false };
@@ -803,6 +848,8 @@ fn main() {
 
     eprintln!("{report:?}");
 }
+# #[cfg(not(feature = "miette"))]
+# fn main() {}
 ```
 
 This requires enabling the crate’s `miette` feature.
@@ -817,7 +864,7 @@ Both [figment](https://crates.io/crates/figment) and [figment2](https://crates.i
 
 ### Serialization
 
-```rust,ignore
+```rust
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -831,54 +878,44 @@ assert!(yaml.contains("name: Ada"));
 
 Serde-saphyr can conceptually connect YAML anchors with Rust shared references (Rc, Weak and Arc). You need to use wrappers to activate this feature:
 
-- [RcAnchor<T>](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.RcAnchor.html) and [ArcAnchor<T>](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.ArcAnchor.html) emit anchors like `&a1` on first occurrence and may emit aliases `*a1` later.
-- [RcWeakAnchor<T>](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.RcWeakAnchor.html) and [ArcWeakAnchor<T>](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.ArcWeakAnchor.html) serialize a weak ref: if the strong pointer is gone, it becomes `null`.
+- [`RcAnchor<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.RcAnchor.html) and [`ArcAnchor<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.ArcAnchor.html) emit anchors like `&a1` on first occurrence and may emit aliases `*a1` later.
+- [`RcWeakAnchor<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.RcWeakAnchor.html) and [`ArcWeakAnchor<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.ArcWeakAnchor.html) serialize a weak ref: if the strong pointer is gone, it becomes `null`.
 
-```rust,ignore
-     #[derive(Deserialize, Serialize)]
-    struct Doc {
-        a: RcAnchor<Node>,
-        b: RcAnchor<Node>,
-    }
+```rust
+use serde::{Deserialize, Serialize};
+use serde_saphyr::RcAnchor;
+use std::rc::Rc;
 
-    #[derive(Deserialize, Serialize)]
-    struct Bigger {
-        primary_a: RcAnchor<Node>,
-        doc: Doc,
-    }
+#[derive(Debug, Deserialize, Serialize)]
+struct Node {
+    name: String,
+}
 
-    let the_a = RcAnchor::from(Rc::new(Node {
-        name: "primary_a".to_string(),
-    }));
+#[derive(Debug, Deserialize, Serialize)]
+struct Document {
+    primary: RcAnchor<Node>,
+    alias: RcAnchor<Node>,
+}
 
-    let data = Bigger {
-        primary_a: the_a.clone(),
-        doc: Doc {
-            a: the_a.clone(),
-            b: RcAnchor::from(Rc::new(Node {
-                name: "the_b".to_string(),
-            })),
-        },
+fn main() {
+    let shared = Rc::new(Node {
+        name: "shared node".to_string(),
+    });
+    let document = Document {
+        primary: RcAnchor::from(shared.clone()),
+        alias: RcAnchor::from(shared),
     };
 
-    let serialized = serde_saphyr::to_string(&data)?;
-    assert_eq!(serialized, String::from(
-        indoc! {
-            r#"primary_a: &a1
-                  name: primary_a
-                doc:
-                  a: *a1
-                  b: &a2
-                    name: the_b
-            "#}));
+    let yaml = serde_saphyr::to_string(&document).expect("serialize anchors");
+    assert!(yaml.contains("&a1"));
+    assert!(yaml.contains("*a1"));
 
-    let deserialized: Bigger = serde_saphyr::from_str(&serialized)?;
-
-    assert_eq!(&deserialized.primary_a.name, &deserialized.doc.a.name);
-    assert_eq!(&deserialized.doc.b.name, &data.doc.b.name);
-    assert!(Rc::ptr_eq(&deserialized.primary_a.0, &deserialized.doc.a.0));
-
-    Ok(())
+    let deserialized: Document =
+        serde_saphyr::from_str(&yaml).expect("deserialize anchors");
+    assert!(Rc::ptr_eq(
+        &deserialized.primary.0,
+        &deserialized.alias.0,
+    ));
 }
 ```
 
@@ -919,13 +956,29 @@ hh_mm_secs: -0:30:30.5 # Time
 longitude: !radians 8:32:53.2 # Nautical, ETH Zürich Main Building (8°32′53.2″ E)
 ```
 
-```rust,ignore
-let options = Options {
-    angle_conversions: true, // enable robotics angle parsing
-    .. Options::default()
-};
+```rust
+use serde::Deserialize;
 
-let v: RoboFloats = from_str_with_options(yaml, options).expect("parse robotics YAML");
+#[derive(Debug, Deserialize)]
+struct RoboFloats {
+    func_deg: f64,
+    func_rad: f64,
+}
+
+# #[cfg(feature = "robotics")]
+fn main() {
+    let yaml = "func_deg: deg(180)\nfunc_rad: rad(pi)\n";
+    let options = serde_saphyr::options! {
+        angle_conversions: true,
+    };
+
+    let v: RoboFloats = serde_saphyr::from_str_with_options(yaml, options)
+        .expect("parse robotics YAML");
+    assert!((v.func_deg - std::f64::consts::PI).abs() < 1e-12);
+    assert!((v.func_rad - std::f64::consts::PI).abs() < 1e-12);
+}
+# #[cfg(not(feature = "robotics"))]
+# fn main() {}
 ```
 
 Safety hardening measures with this feature enabled include limits on maximal expression depth, maximal number of digits, strict underscore placement, and fraction parsing limits to the precision-relevant digit.
@@ -935,7 +988,7 @@ Safety hardening measures with this feature enabled include limits on maximal ex
 ### Unsupported features
 
 - Common Serde renames made to follow naming conventions (case changes, snake_case, kebab-case, r# stripping) are supported in snippets, as long as they do not introduce ambiguity. Arbitrary renames, flattening, aliases and other complex manipulations possible with serde are not. Parsing and validation will still work, but error messages for arbitrarily renamed fields will only show the Rust path.
-- [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html)  cannot be used within variants of untagged or internally tagged enums due to a fundamental limitation in Serde. Instead, wrap the entire enum in Spanned<T>, or use externally tagged enums (the default).
+- [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html) cannot be used within variants of untagged or internally tagged enums due to a fundamental limitation in Serde. Instead, wrap the entire enum in `Spanned<T>`, or use externally tagged enums (the default).
 - Anchors are not fully compatible with `#[serde(flatten)]` directive (this is Serde limitation we can't work around). Deserialization succeeds, but full strong-pointer identity may be lost for nested anchors inside flattened payloads.
 - Borrowing works for any scalar whose parsed value exists **verbatim** in the input. This includes plain scalars and simple quoted strings without escape sequences (e.g., `"hello world"` can be borrowed, but `"hello\nworld"` cannot because `\n` is transformed to a newline). For maximum flexibility, use `Cow<'a, str>` which borrows when possible and owns when transformation is required.
 - Reader-based entry points (`from_reader`) require `DeserializeOwned` and cannot return borrowed values.

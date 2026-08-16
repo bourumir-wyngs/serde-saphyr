@@ -62,6 +62,10 @@ jobs:
         run: |         
           cargo fetch --locked
 
+      - name: Compile documentation examples
+        run: |
+          cargo test --locked --offline --doc --all-features
+
       - name: Run tests (default)
         run: |        
           cargo test --locked --offline

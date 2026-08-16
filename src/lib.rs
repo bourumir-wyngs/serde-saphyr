@@ -1,4 +1,12 @@
 #![forbid(unsafe_code)]
+// The README documents both halves of the default API. Always render it as the
+// crate-level documentation, but only extract its doctests when both halves are
+// available.
+#![cfg_attr(not(doctest), doc = include_str!("../README.md"))]
+#![cfg_attr(
+    all(doctest, feature = "serialize", feature = "deserialize"),
+    doc = include_str!("../README.md")
+)]
 
 #[cfg(not(any(feature = "serialize", feature = "deserialize")))]
 compile_error!(
