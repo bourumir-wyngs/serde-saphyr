@@ -1,22 +1,24 @@
 // ZYU8: Directive variants
-// The suite notes these are valid per 1.2 productions but "not usefully valid" and are skipped.
-// We'll implement the first case only: "%YAML1.1" followed by an empty document `---`.
-// Expected JSON is `null`, so deserializing into Option<T> should yield None.
+use super::yaml_suite_support::assert_json_case;
 
-// In YAML 1.2, a directive name is any non‑space, non‑line‑break sequence of characters
-// Serde-saphyr expects only alphabetic characters in a directive name, dot . triggers the error.
-// serde-saphyr does not support lots of directives anyway as granit-parser does not surface them.
 #[test]
-fn yaml_zyu8_directive_variant_yaml11_null_document() -> anyhow::Result<()> {
-    let y = "%YAML1.1\n---\n";
-    let v: Option<i32> = serde_saphyr::from_str(y)?;
-    assert!(v.is_none(), "Expected null document to deserialize to None");
-    Ok(())
+fn yaml_zyu8_directive_variant_yaml11_null_document() {
+    assert_json_case("%YAML1.1\n---\n", "null\n");
+}
+
+#[test]
+fn yaml_zyu8_punctuation_directive_null_document() {
+    assert_json_case("%***\n---\n", "null\n");
+}
+
+#[test]
+fn yaml_zyu8_large_minor_version_null_document() {
+    assert_json_case("%YAML 1.12345\n---\n", "null\n");
 }
 
 #[test]
 fn yaml_zyu8_directive_variant_spaced_yaml11_null_document() -> anyhow::Result<()> {
-    // With space is fine.
+    // Additional control using the conventional YAML 1.1 directive form.
     let y = "%YAML 1.1\n---\n";
     let v: Option<i32> = serde_saphyr::from_str(y)?;
     assert!(v.is_none(), "Expected null document to deserialize to None");
