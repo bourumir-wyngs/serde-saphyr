@@ -53,6 +53,8 @@ pub enum SymlinkPolicy {
 ///
 /// - **Canonical-root check**: The target's canonical path must resolve inside the configured root
 ///   when checked.
+/// - **UTF-8 Path Validation**: Canonical target paths that are not valid UTF-8 are rejected before
+///   canonical-target policies or source identity handling.
 /// - **No Absolute Paths**: Include directives specifying absolute paths are immediately rejected.
 /// - **Symlink Policy**: Path components observed as symlinks are rejected by default; optionally,
 ///   symlinks whose canonical targets pass the root check can be followed.
@@ -154,18 +156,22 @@ impl SafeFileResolver {
     /// This adjusts top-level include resolution to use the parent directory of `root_file`, while
     /// requiring resolved targets to pass the configured root check. It also remembers the
     /// canonical identity of the root file so `!include root.yaml` can be rejected immediately
-    /// instead of recursing once before cycle detection catches it.
+    /// instead of recursing once before cycle detection catches it. The canonical root-file path
+    /// must be valid UTF-8 so its string identity is lossless.
     pub fn with_root_file<P>(mut self, root_file: P) -> io::Result<Self>
     where
         P: AsRef<Path>,
     {
         let root_file = canonicalize_existing_file(root_file.as_ref())?;
         ensure_inside_root_io(&self.allow_root, &root_file, "root file")?;
+        let root_source_id = validate_utf8_path(&root_file)
+            .map_err(|_| invalid_input("root file path is not valid UTF-8"))?
+            .to_owned();
         let Some(parent) = root_file.parent() else {
             return Err(invalid_input("root file does not have a parent directory"));
         };
         self.root_base_dir = parent.to_path_buf();
-        self.root_source_id = Some(path_to_string(&root_file));
+        self.root_source_id = Some(root_source_id);
         Ok(self)
     }
 
@@ -206,6 +212,8 @@ impl SafeFileResolver {
                 err: e,
             }))
         })?;
+        let canonical_target_id = validate_utf8_path(&canonical_target)
+            .map_err(|problem| IncludeResolveError::FileInclude(Box::new(problem)))?;
         self.ensure_inside_root(&canonical_target, req.spec)?;
         validate_include_extension(&canonical_target, req.spec)?;
 
@@ -224,7 +232,7 @@ impl SafeFileResolver {
             }
         }
 
-        let id = path_to_string(&canonical_target);
+        let id = canonical_target_id.to_owned();
         if req.from_id.is_none()
             && let Some(root_source_id) = &self.root_source_id
             && root_source_id == &id
@@ -482,6 +490,11 @@ fn canonicalize_existing_file(path: &Path) -> io::Result<PathBuf> {
 }
 
 #[cfg(feature = "include")]
+fn validate_utf8_path(path: &Path) -> Result<&str, ResolveProblem> {
+    path.to_str().ok_or(ResolveProblem::NonUtf8Path)
+}
+
+#[cfg(feature = "include")]
 fn validate_relative_include_spec(
     spec_path: &Path,
     raw_spec: &str,
@@ -580,11 +593,6 @@ fn ensure_inside_root_io(allow_root: &Path, canonical_path: &Path, what: &str) -
 #[cfg(feature = "include")]
 fn invalid_input(message: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message.into())
-}
-
-#[cfg(feature = "include")]
-fn path_to_string(path: &Path) -> String {
-    path.as_os_str().to_string_lossy().into_owned()
 }
 
 #[cfg(all(test, feature = "include_fs", not(miri), not(target_os = "wasi")))]

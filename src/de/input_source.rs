@@ -113,6 +113,8 @@ pub enum ResolveProblem {
     AbsolutePathNotAllowed { spec: String },
     /// The include path is empty.
     EmptyPath,
+    /// The resolved include target path is not valid UTF-8.
+    NonUtf8Path,
     /// The include target does not have a valid YAML extension (.yml or .yaml).
     InvalidExtension { spec: String },
     /// The include target is a hidden file (starts with a dot).
