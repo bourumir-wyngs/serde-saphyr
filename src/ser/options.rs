@@ -94,6 +94,8 @@ pub struct SerializerOptions {
     ///
     /// Receives a monotonically increasing `usize` id (starting at 1) and returns the
     /// anchor name to emit. If `None`, the built-in generator yields names like `a1`, `a2`, ...
+    /// It is entirely your responsibility to ensure that custom anchor generator produces valid YAML
+    /// and returned ids are unique.
     pub anchor_generator: Option<fn(usize) -> String>,
     /// Threshold for block-string wrappers ([`crate::LitStr`]/[`crate::FoldStr`] and owned variants
     /// [`crate::LitString`]/[`crate::FoldString`]).
