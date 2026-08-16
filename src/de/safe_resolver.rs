@@ -600,6 +600,19 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    #[cfg(unix)]
+    #[test]
+    fn validate_utf8_path_rejects_non_utf8_path_without_filesystem_support() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let path = Path::new(std::ffi::OsStr::from_bytes(b"invalid-\xff.yaml"));
+
+        assert!(matches!(
+            validate_utf8_path(path),
+            Err(ResolveProblem::NonUtf8Path)
+        ));
+    }
+
     #[test]
     #[cfg_attr(miri, ignore)]
     fn safe_file_resolver_streams_regular_files_by_default() {

@@ -87,7 +87,9 @@ fn write_text(path: &Path, text: &str) {
     fs::write(path, text).unwrap();
 }
 
-#[cfg(unix)]
+// APFS rejects invalid UTF-8 names with `EILSEQ`, so Apple targets cannot reliably materialize
+// these paths. Other Unix CI targets retain the filesystem-level coverage.
+#[cfg(all(unix, not(target_vendor = "apple")))]
 fn non_utf8_name(bytes: &[u8]) -> std::ffi::OsString {
     use std::os::unix::ffi::OsStringExt;
 
@@ -440,7 +442,7 @@ fn safe_file_resolver_follow_within_root_checks_canonical_extension() {
     ));
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_vendor = "apple")))]
 #[test]
 fn safe_file_resolver_rejects_non_utf8_canonical_target() {
     use std::os::unix::fs::symlink;
@@ -461,7 +463,7 @@ fn safe_file_resolver_rejects_non_utf8_canonical_target() {
     assert!(matches!(include_problem(&err), ResolveProblem::NonUtf8Path));
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_vendor = "apple")))]
 #[test]
 fn safe_file_resolver_rejects_non_utf8_hidden_component() {
     use std::os::unix::fs::symlink;
@@ -483,7 +485,7 @@ fn safe_file_resolver_rejects_non_utf8_hidden_component() {
     assert!(matches!(include_problem(&err), ResolveProblem::NonUtf8Path));
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_vendor = "apple")))]
 #[test]
 fn safe_file_resolver_rejects_non_utf8_targets_without_an_allowed_extension() {
     use std::os::unix::fs::symlink;
@@ -510,7 +512,7 @@ fn safe_file_resolver_rejects_non_utf8_targets_without_an_allowed_extension() {
     }
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_vendor = "apple")))]
 #[test]
 fn safe_file_resolver_rejects_non_utf8_targets_with_colliding_lossy_paths() {
     use std::os::unix::fs::symlink;
@@ -539,7 +541,7 @@ fn safe_file_resolver_rejects_non_utf8_targets_with_colliding_lossy_paths() {
     }
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_vendor = "apple")))]
 #[test]
 fn safe_file_resolver_rejects_non_utf8_root_file_identity() {
     let temp = TempDir::new().unwrap();
