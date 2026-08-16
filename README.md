@@ -55,7 +55,9 @@ See [release history](https://github.com/bourumir-wyngs/serde-saphyr/releases) o
 
 `serde-saphyr` is compatible with WebAssembly. The CI flow includes builds for both `wasm32-unknown-unknown` (browser / JS) and `wasm32-wasip1` (WASI runtimes) with mostly full test suite running and passing (excluding file access and other similarly unsupported cases). We also wrote [yva](https://github.com/bourumir-wyngs/yva) in [dioxus](https://dioxuslabs.com/) to deploy `serde-saphyr` on the web.
 
-The test suite currently includes over 2000 passing tests, including converted cases from [YAML Test Suite v2022-01-17](https://github.com/yaml/yaml-test-suite/releases/tag/v2022-01-17) (corresponding to the [`data-2022-01-17` release](https://github.com/yaml/yaml-test-suite/releases/tag/data-2022-01-17)). All included converted cases pass. The deserializer uses [`granit-parser`](https://crates.io/crates/granit-parser), a fork of Saphyr's parser. Some additional cases are taken from the original serde-yaml tests.
+### Testing
+
+The test suite currently includes over 2000 passing tests. For [YAML Test Suite v2022-01-17](https://github.com/yaml/yaml-test-suite/releases/tag/v2022-01-17), all 350 active test IDs and all 402 active cases from the [`data-2022-01-17` release](https://github.com/yaml/yaml-test-suite/releases/tag/data-2022-01-17) are represented. Although we made a reasonable effort, accidental omissions or conversion errors remain possible. Some additional cases are taken from the original serde-yaml tests.
 
 ### Project relationship
 
