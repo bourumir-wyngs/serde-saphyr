@@ -7,8 +7,19 @@ use std::sync::{Arc, Mutex};
 use serde::Serialize;
 use serde_saphyr::{
     ArcAnchor, ArcRecursion, ArcRecursive, ArcWeakAnchor, RcAnchor, RcRecursion, RcRecursive,
-    RcWeakAnchor, to_string, to_string_with_options,
+    RcWeakAnchor, SerializeError, to_string, to_string_with_options,
 };
+
+type AnchorGenerator = fn(usize) -> String;
+
+fn serialize_with_anchor_generator(generator: AnchorGenerator) -> Result<String, SerializeError> {
+    let shared = Rc::new(42i32);
+    let values = vec![RcAnchor(shared.clone()), RcAnchor(shared)];
+    let options = serde_saphyr::ser_options! {
+        anchor_generator: Some(generator),
+    };
+    to_string_with_options(&values, options)
+}
 
 #[test]
 fn arc_weak_anchor_dangling_emits_null() {
@@ -165,18 +176,78 @@ fn arc_recursion_live_emits_value() {
 }
 
 #[test]
-fn custom_anchor_generator_out_of_sync_fallback() {
-    use std::rc::Rc;
-    // Use a generator that returns empty names to trigger the fallback path
-    let opts = serde_saphyr::ser_options! {
-        anchor_generator: Some(|_id| String::new()),
+fn custom_anchor_generator_rejects_unsupported_names() {
+    let invalid_generators: [(&str, AnchorGenerator); 11] = [
+        ("empty", |_| String::new()),
+        ("257 ASCII bytes", |_| "a".repeat(257)),
+        ("258 UTF-8 bytes", |_| "é".repeat(129)),
+        ("ASCII whitespace", |_| "bad name".to_string()),
+        ("Unicode whitespace", |_| "bad\u{a0}name".to_string()),
+        ("control character", |_| "bad\u{7}name".to_string()),
+        ("opening bracket", |_| "bad[name".to_string()),
+        ("closing bracket", |_| "bad]name".to_string()),
+        ("opening brace", |_| "bad{name".to_string()),
+        ("closing brace", |_| "bad}name".to_string()),
+        ("comma", |_| "bad,name".to_string()),
+    ];
+
+    for (case, generator) in invalid_generators {
+        let error = serialize_with_anchor_generator(generator).unwrap_err();
+        match error {
+            SerializeError::InvalidOptions(message) => {
+                assert!(
+                    message.contains("custom anchor generator"),
+                    "{case}: {message}"
+                );
+                assert!(message.contains("anchor id 1"), "{case}: {message}");
+            }
+            other => panic!("{case}: expected InvalidOptions, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn custom_anchor_generator_accepts_supported_names_at_byte_limit() {
+    let valid_generators: [(&str, AnchorGenerator); 3] = [
+        ("256 ASCII bytes", |_| "a".repeat(256)),
+        ("256 UTF-8 bytes", |_| "é".repeat(128)),
+        ("Unicode and punctuation", |_| {
+            "release-1.2:β/日本語?".to_string()
+        }),
+    ];
+
+    for (case, generator) in valid_generators {
+        let yaml = serialize_with_anchor_generator(generator).unwrap();
+        let name = generator(1);
+        assert!(yaml.contains(&format!("&{name}")), "{case}: {yaml}");
+        assert!(yaml.contains(&format!("*{name}")), "{case}: {yaml}");
+
+        let parsed: Vec<RcAnchor<i32>> = serde_saphyr::from_str(&yaml).unwrap();
+        assert!(Rc::ptr_eq(&parsed[0].0, &parsed[1].0), "{case}: {yaml}");
+    }
+}
+
+#[test]
+fn custom_anchor_generator_is_not_called_without_anchors() {
+    let options = serde_saphyr::ser_options! {
+        anchor_generator: Some(|_| String::new()),
     };
+
+    assert_eq!(to_string_with_options(&42, options).unwrap(), "42\n");
+}
+
+#[test]
+fn custom_anchor_generator_rejects_unsupported_name_for_live_weak_anchor() {
     let shared = Rc::new(42i32);
-    let a = RcAnchor(shared.clone());
-    let b = RcAnchor(shared.clone());
-    let v = vec![a, b];
-    let yaml = to_string_with_options(&v, opts).unwrap();
-    assert!(yaml.contains("42"), "yaml: {yaml}");
+    let weak = RcWeakAnchor(Rc::downgrade(&shared));
+    let options = serde_saphyr::ser_options! {
+        anchor_generator: Some(|_| String::new()),
+    };
+
+    assert!(matches!(
+        to_string_with_options(&weak, options),
+        Err(SerializeError::InvalidOptions(_))
+    ));
 }
 
 #[test]

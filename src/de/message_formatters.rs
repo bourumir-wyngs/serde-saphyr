@@ -314,6 +314,10 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
                         crate::input_source::ResolveProblem::EmptyPath => {
                             "include path must not be empty".to_string()
                         }
+                        crate::input_source::ResolveProblem::NonUtf8Path => {
+                            "include target resolves to a non-UTF-8 path, which is not supported"
+                                .to_string()
+                        }
                         crate::input_source::ResolveProblem::InvalidExtension { spec } => {
                             format!(
                                 "include target '{spec}' does not have a valid YAML extension (.yml or .yaml)"

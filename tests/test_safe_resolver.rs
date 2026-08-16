@@ -87,6 +87,13 @@ fn write_text(path: &Path, text: &str) {
     fs::write(path, text).unwrap();
 }
 
+#[cfg(unix)]
+fn non_utf8_name(bytes: &[u8]) -> std::ffi::OsString {
+    use std::os::unix::ffi::OsStringExt;
+
+    std::ffi::OsString::from_vec(bytes.to_vec())
+}
+
 fn write_utf16le(path: &Path, text: &str) {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).unwrap();
@@ -431,6 +438,126 @@ fn safe_file_resolver_follow_within_root_checks_canonical_extension() {
         include_problem(&err),
         ResolveProblem::InvalidExtension { .. }
     ));
+}
+
+#[cfg(unix)]
+#[test]
+fn safe_file_resolver_rejects_non_utf8_canonical_target() {
+    use std::os::unix::fs::symlink;
+
+    let temp = TempDir::new().unwrap();
+    let allow_root = temp.path().join("allowed");
+    fs::create_dir_all(&allow_root).unwrap();
+    let target = allow_root.join(non_utf8_name(b"real-\xff.yaml"));
+    write_text(&target, "bar_value\n");
+    symlink(&target, allow_root.join("visible.yaml")).unwrap();
+
+    let resolver = SafeFileResolver::new(&allow_root)
+        .unwrap()
+        .with_symlink_policy(SymlinkPolicy::FollowWithinRoot);
+    let err = resolver
+        .resolve(request("visible.yaml", "", None))
+        .unwrap_err();
+    assert!(matches!(include_problem(&err), ResolveProblem::NonUtf8Path));
+}
+
+#[cfg(unix)]
+#[test]
+fn safe_file_resolver_rejects_non_utf8_hidden_component() {
+    use std::os::unix::fs::symlink;
+
+    let temp = TempDir::new().unwrap();
+    let allow_root = temp.path().join("allowed");
+    let target = allow_root
+        .join(non_utf8_name(b".hidden-\xff"))
+        .join("real.yaml");
+    write_text(&target, "bar_value\n");
+    symlink(&target, allow_root.join("visible.yaml")).unwrap();
+
+    let resolver = SafeFileResolver::new(&allow_root)
+        .unwrap()
+        .with_symlink_policy(SymlinkPolicy::FollowWithinRoot);
+    let err = resolver
+        .resolve(request("visible.yaml", "", None))
+        .unwrap_err();
+    assert!(matches!(include_problem(&err), ResolveProblem::NonUtf8Path));
+}
+
+#[cfg(unix)]
+#[test]
+fn safe_file_resolver_rejects_non_utf8_targets_without_an_allowed_extension() {
+    use std::os::unix::fs::symlink;
+
+    let temp = TempDir::new().unwrap();
+    let allow_root = temp.path().join("allowed");
+    fs::create_dir_all(&allow_root).unwrap();
+    let cases: [(&str, &[u8]); 2] = [
+        ("disallowed.yaml", b"secret-\xff.txt"),
+        ("absent.yaml", b"secret-\xfe"),
+    ];
+    for (link_name, target_name) in cases {
+        let target = allow_root.join(non_utf8_name(target_name));
+        write_text(&target, "bar_value\n");
+        symlink(&target, allow_root.join(link_name)).unwrap();
+    }
+
+    let resolver = SafeFileResolver::new(&allow_root)
+        .unwrap()
+        .with_symlink_policy(SymlinkPolicy::FollowWithinRoot);
+    for (link_name, _) in cases {
+        let err = resolver.resolve(request(link_name, "", None)).unwrap_err();
+        assert!(matches!(include_problem(&err), ResolveProblem::NonUtf8Path));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn safe_file_resolver_rejects_non_utf8_targets_with_colliding_lossy_paths() {
+    use std::os::unix::fs::symlink;
+
+    let temp = TempDir::new().unwrap();
+    let allow_root = temp.path().join("allowed");
+    fs::create_dir_all(&allow_root).unwrap();
+    let first_target = allow_root.join(non_utf8_name(b"same-\x80.yaml"));
+    let second_target = allow_root.join(non_utf8_name(b"same-\x81.yaml"));
+    assert_ne!(first_target, second_target);
+    assert_eq!(
+        first_target.to_string_lossy(),
+        second_target.to_string_lossy()
+    );
+    write_text(&first_target, "first\n");
+    write_text(&second_target, "second\n");
+    symlink(&first_target, allow_root.join("first.yaml")).unwrap();
+    symlink(&second_target, allow_root.join("second.yaml")).unwrap();
+
+    let resolver = SafeFileResolver::new(&allow_root)
+        .unwrap()
+        .with_symlink_policy(SymlinkPolicy::FollowWithinRoot);
+    for link_name in ["first.yaml", "second.yaml"] {
+        let err = resolver.resolve(request(link_name, "", None)).unwrap_err();
+        assert!(matches!(include_problem(&err), ResolveProblem::NonUtf8Path));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn safe_file_resolver_rejects_non_utf8_root_file_identity() {
+    let temp = TempDir::new().unwrap();
+    let non_utf8_root_file = temp.path().join(non_utf8_name(b"root-\x80.yaml"));
+    let utf8_file = temp.path().join("root-\u{fffd}.yaml");
+    assert_ne!(non_utf8_root_file, utf8_file);
+    assert_eq!(
+        non_utf8_root_file.to_string_lossy(),
+        utf8_file.to_string_lossy()
+    );
+    write_text(&non_utf8_root_file, "non-UTF-8 root\n");
+    write_text(&utf8_file, "UTF-8 include\n");
+
+    let err = SafeFileResolver::new(temp.path())
+        .unwrap()
+        .with_root_file(&non_utf8_root_file)
+        .unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
 }
 
 #[cfg(unix)]

@@ -64,6 +64,16 @@ impl PendingStrStyle {
 // Numeric anchor id used internally.
 type AnchorId = u32;
 
+const MAX_ANCHOR_NAME_BYTES: usize = 256;
+
+fn is_supported_anchor_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= MAX_ANCHOR_NAME_BYTES
+        && name.chars().all(|ch| {
+            !ch.is_whitespace() && !ch.is_control() && !matches!(ch, '[' | ']' | '{' | '}' | ',')
+        })
+}
+
 /// Immutable formatting policy copied from the public [`SerializerOptions`].
 ///
 /// A serializer captures these values once during construction and never mutates
@@ -372,23 +382,34 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     }
 
     /// Allocate (or get existing) anchor id for a pointer identity.
-    /// Returns `(id, is_new)`.
+    /// Returns `(id, is_new)`, or an error when the custom generator returns an unsupported name.
     #[inline]
-    fn alloc_anchor_for(&mut self, ptr: usize) -> (AnchorId, bool) {
+    fn alloc_anchor_for(&mut self, ptr: usize) -> Result<(AnchorId, bool)> {
         match self.anchors.by_ptr.entry(ptr) {
-            std::collections::hash_map::Entry::Occupied(e) => (*e.get(), false),
+            std::collections::hash_map::Entry::Occupied(e) => Ok((*e.get(), false)),
             std::collections::hash_map::Entry::Vacant(v) => {
                 let id = self.anchors.next_id;
-                self.anchors.next_id = self.anchors.next_id.saturating_add(1);
-                if let Some(generator) = self.anchors.generator {
+                let custom_name = if let Some(generator) = self.anchors.generator {
                     let name = generator(id as usize);
+                    if !is_supported_anchor_name(&name) {
+                        return Err(Error::InvalidOptions(format!(
+                            "custom anchor generator returned an invalid name for anchor id {id}; names must be 1..={MAX_ANCHOR_NAME_BYTES} bytes and contain no whitespace, control characters, or '[', ']', '{{', '}}', ','"
+                        )));
+                    }
+                    Some(name)
+                } else {
+                    None
+                };
+
+                self.anchors.next_id = self.anchors.next_id.saturating_add(1);
+                if let Some(name) = custom_name {
                     self.anchors
                         .custom_names
                         .get_or_insert_with(Vec::new)
                         .push(name);
                 }
                 v.insert(id);
-                (id, true)
+                Ok((id, true))
             }
         }
     }

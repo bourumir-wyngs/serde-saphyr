@@ -263,7 +263,7 @@ impl<W: Write> SpecialTupleSer<'_, '_, W> {
                         let mut cap = UsizeCapture::default();
                         value.serialize(&mut cap)?;
                         let ptr = cap.finish()?;
-                        let (id, fresh) = self.ser.alloc_anchor_for(ptr);
+                        let (id, fresh) = self.ser.alloc_anchor_for(ptr)?;
                         if fresh {
                             self.ser.anchors.pending_id = Some(id); // define before value
                             self.strong_alias_id = None;
@@ -297,7 +297,7 @@ impl<W: Write> SpecialTupleSer<'_, '_, W> {
                         self.weak_present = bc.finish()?;
                         if self.weak_present {
                             let ptr = self.weak_anchor_ptr;
-                            let (id, fresh) = self.ser.alloc_anchor_for(ptr);
+                            let (id, fresh) = self.ser.alloc_anchor_for(ptr)?;
                             if fresh {
                                 self.ser.anchors.pending_id = Some(id); // define before value
                                 self.weak_alias_id = None;
