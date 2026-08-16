@@ -219,8 +219,8 @@ macro_rules! __serde_saphyr_serializer_options_apply {
     // Special-case indent_step when the value is a literal: enforce at compile time.
     ($opt:ident, indent_step : $value:literal $(, $($rest:tt)*)? ) => {{
         const _: () = {
-            // Keep the check aligned with the YAML emitter's constraints.
-            if !($value > 0 && $value <= $crate::SerializerOptions::MAX_INDENT_STEP) {
+            // Keep the limit aligned with SerializerOptions' runtime validation.
+            if !($value > 0 && $value <= 64) {
                 panic!("`indent_step` must be in the range 1..=64");
             }
         };

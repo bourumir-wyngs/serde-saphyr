@@ -272,7 +272,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     }
     /// Construct a [`Serializer`](crate::Serializer) with a specific indentation step.
     /// All other settings use `SerializerOptions::default()`. Returns an error if
-    /// `indent_step` is outside `1..=`[`SerializerOptions::MAX_INDENT_STEP`].
+    /// `indent_step` is outside `1..=64`.
     pub fn with_indent(out: &'a mut W, indent_step: usize) -> Result<Self> {
         let options = SerializerOptions {
             indent_step,

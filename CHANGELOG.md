@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.2.0 Maintenance release
+
+### Changed
+
+- Hardened serializer indentation handling: `indent_step` is now limited to `1..=64`, all
+  serializer entry points validate it, and indentation arithmetic returns an error instead of
+  overflowing. We do not consider this breaking because values outside this range does not look sane.
+- Validated custom anchor-generator names before emission. Names must be 1–256 bytes and cannot
+  contain whitespace, control characters, or YAML flow punctuation; unsupported names now return
+  a serialization error.
+
+### Fixes
+
+- Accepted valid zero-indented root folded block scalars, including `#`-prefixed content lines.
+- Rejected non-UTF-8 canonical include and root-file paths before resolver policy checks and source
+  identity handling, preventing lossy path collisions and policy bypasses on Unix.
+
+### Testing
+
+- Reviewed yaml test suite, made sure all 350 active IDs and all 402 active cases are represented and documented
+  we use  [YAML Test Suite v2022-01-17](https://github.com/yaml/yaml-test-suite/releases/tag/v2022-01-17).
+
 ## 1.1.0 Maintenance release
 
 ### Added
@@ -14,10 +36,6 @@
   `Budget` representation that omits these fields uses the documented defaults.
 
 ### Fixes
-  - Accepted valid zero-indented root folded block scalars, including `#`-prefixed content lines,
-    fixing YAML Test Suite cases `DK3J` and `FP8R`
-  - Fixed enums tags for struct variants (#177)
-  - Improved error message wording (#178)
-  - Rejected non-UTF-8 canonical include paths before resolver policy checks and identity handling,
-    preventing hidden-path and extension bypasses as well as lossy path-ID collisions on Unix
-  - Validated names returned by custom anchor generators before emitting YAML anchors and aliases
+
+- Fixed enums tags for struct variants (#177).
+- Improved error message wording (#178).

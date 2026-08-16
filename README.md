@@ -19,7 +19,7 @@
 **serde-saphyr** is a strongly typed YAML deserializer built on top of [`granit-parser`](https://crates.io/crates/granit-parser). 
 
 The parser is fuzz-tested and designed not to panic on malformed YAML. This does not cover out-of-memory conditions, 
-panics in user-provided callbacks and cases the like. The library is configured to deny `unsafe` code. This does
+panics in user-provided callbacks and cases the like. The library build is configured to deny `unsafe` code. This does
 not extend to transitive dependencies. 
 
 The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.” Try it online as a WebAssembly application [here](https://verdanta.tech/yva/). 

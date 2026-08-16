@@ -77,7 +77,7 @@ fn serializer_constructors_enforce_indent_step_upper_bound() {
     }
 
     let mut out = String::new();
-    let max_indent_step = serde_saphyr::SerializerOptions::MAX_INDENT_STEP;
+    let max_indent_step = 64;
     {
         let mut serializer = serde_saphyr::Serializer::with_indent(&mut out, max_indent_step)
             .expect("the maximum indentation step must remain usable");

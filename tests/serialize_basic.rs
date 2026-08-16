@@ -179,11 +179,7 @@ fn test_invalid_options() {
     // Use a non-literal expression so this remains a runtime error (the macro enforces
     // the valid range at compile time for literal values).
     let object = VecOfMaps { vec: vec![] };
-    for indent_step in [
-        0,
-        serde_saphyr::SerializerOptions::MAX_INDENT_STEP + 1,
-        usize::MAX,
-    ] {
+    for indent_step in [0, 65, usize::MAX] {
         let mut out = String::new();
         let mut ovec = Vec::new();
         let invalid_options = serde_saphyr::ser_options! { indent_step: indent_step };
@@ -202,7 +198,7 @@ fn test_invalid_options() {
 
 #[test]
 fn invalid_options_are_rejected_for_empty_document_lists() {
-    let indent_step = serde_saphyr::SerializerOptions::MAX_INDENT_STEP + 1;
+    let indent_step = 65;
     let invalid_options = serde_saphyr::ser_options! { indent_step: indent_step };
 
     let err = serde_saphyr::to_string_multiple_with_options::<i32>(&[], invalid_options)
