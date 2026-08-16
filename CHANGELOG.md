@@ -21,6 +21,7 @@
 
 - Reviewed yaml test suite, made sure all 350 active IDs and all 402 active cases are represented and documented
   we use  [YAML Test Suite v2022-01-17](https://github.com/yaml/yaml-test-suite/releases/tag/v2022-01-17).
+- property test with 1,024 generated cases to check the round trip
 
 ## 1.1.0 Maintenance release
 

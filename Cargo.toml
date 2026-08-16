@@ -96,6 +96,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 miette = { version = "7", features = ["fancy"] }
 tempfile = "3.27"
 rstest = "0.26"
+proptest = { version = "1", default-features = false, features = ["std"] }
 
 [package.metadata]
 status = "actively developed"
