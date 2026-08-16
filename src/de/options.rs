@@ -439,8 +439,7 @@ impl Options {
     /// # }
     /// ```
     ///
-    /// It enables filesystem-backed `!include` resolution while keeping every included file
-    /// confined to the canonicalized `path` root.
+    /// It enables filesystem-backed `!include` resolution.
     ///
     /// ```rust,no_run
     /// # #[cfg(feature = "include_fs")]

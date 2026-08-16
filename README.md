@@ -679,7 +679,7 @@ fn main() {
 # fn main() {}
 ```
 
-You can alternatively use [`SafeFileResolver`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.SafeFileResolver.html) to configure more options, or provide your own [`IncludeResolver`](https://docs.rs/serde-saphyr/latest/serde_saphyr/type.IncludeResolver.html) callback that resolves a name into YAML text, which can be useful for custom storage backends or generated YAML without using the filesystem. The safety features of this resolver are summarized in the documentation header of this class.
+You can alternatively use [`SafeFileResolver`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.SafeFileResolver.html) to configure more options, or provide your own [`IncludeResolver`](https://docs.rs/serde-saphyr/latest/serde_saphyr/type.IncludeResolver.html) callback that resolves a name into YAML text, which can be useful for custom storage backends or generated YAML without using the filesystem.
 
 Instead of including the whole document, you can also include only the value of a specific anchor defined in the included YAML document:
 ```yaml

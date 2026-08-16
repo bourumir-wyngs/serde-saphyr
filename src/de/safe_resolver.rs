@@ -29,37 +29,51 @@ pub enum SafeFileReadMode {
     Text,
 }
 
-/// Policy for symlink handling in [`SafeFileResolver`]. Default is reject (safest).
-/// Symlinks within the specified root can be enabled (some setups use this for configurations),
-/// but not arbitrary symlinks.
+/// Policy for handling symlinks encountered while resolving includes.
+///
+/// By default, symlinks observed during path inspection are rejected.
 #[cfg(feature = "include")]
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SymlinkPolicy {
-    /// Follow symlinks, but only if the final canonical target remains inside the configured root.
+    /// Follow symlinks when the canonical target resolves inside the configured root during
+    /// validation.
     FollowWithinRoot,
 
-    /// Reject any include path that traverses a symlink. This guards against TOCTOU
-    /// (Time-of-Check to Time-of-Use) exploit.
+    /// Reject an include path when any traversed component is observed to be a symlink.
     #[default]
     Reject,
 }
 
-/// A filesystem-backed include resolver that confines all resolved files to a configured root.
+/// A filesystem-backed include resolver that validates resolved paths against a configured root.
 ///
-/// # Safety Features
+/// # Path and input validation
 ///
-/// This resolver implements multiple layers of security to prevent path traversal, arbitrary
-/// file read vulnerabilities, and other common inclusion risks:
+/// Before opening an include, this resolver performs the following checks:
 ///
-/// - **Root Confinement**: All resolved canonical targets must reside strictly within the configured root directory.
+/// - **Canonical-root check**: The target's canonical path must resolve inside the configured root
+///   when checked.
 /// - **No Absolute Paths**: Include directives specifying absolute paths are immediately rejected.
-/// - **Symlink Restrictions**: Symlink traversal can be rejected entirely (default) or restricted to the root directory, preventing TOCTOU attacks.
-/// - **File Type Validation**: Included targets must be regular files. Directories and special files are rejected.
+/// - **Symlink Policy**: Path components observed as symlinks are rejected by default; optionally,
+///   symlinks whose canonical targets pass the root check can be followed.
+/// - **File Type Validation**: The target observed during validation must be a regular file.
+///   Directories and special files are rejected.
 /// - **Extension Allowlist**: Only files ending in `.yml` or `.yaml` are accepted.
-/// - **Hidden File Rejection**: Files and folders starting with a dot (`.`), whether reached directly or through a symlink, are explicitly rejected.
-/// - **Cycle Detection**: Self-inclusion and recursive inclusion cycles are prevented.
-/// - **Budget Enforcement**: When using `Reader` mode, parser size limits apply natively to prevent `DoS` via massive files.
+/// - **Hidden File Rejection**: Paths with a component starting with a dot (`.`), whether reached
+///   directly or through a symlink, are rejected when checked.
+///
+/// After resolution, the include machinery uses the canonical path identity to reject recursive
+/// include cycles. When using `Reader` mode, configured parser size limits apply while the file is
+/// read.
+///
+/// # Security limitations
+///
+/// Validation and file opening use separate path-based filesystem operations, so these checks do
+/// not prevent time-of-check to time-of-use (TOCTOU) races. The configured root is not a hard
+/// sandbox boundary: an attacker who can concurrently modify the root, its ancestors, or entries
+/// beneath it may replace a checked path before it is opened. Use this resolver only with a
+/// directory tree protected from untrusted modification. Hard confinement requires an OS sandbox
+/// or a custom [`crate::IncludeResolver`] built on appropriate platform-specific filesystem APIs.
 ///
 /// Typical usage is to configure a resolver once and hand it to the deserializer for every
 /// `!include` lookup:
@@ -87,7 +101,7 @@ pub enum SymlinkPolicy {
 #[cfg(feature = "include")]
 #[derive(Clone, Debug)]
 pub struct SafeFileResolver {
-    /// Canonical directory that forms the hard security boundary for all resolved include targets.
+    /// Canonical directory against which resolved include paths are validated.
     allow_root: PathBuf,
     /// Canonical directory used to resolve top-level includes when there is no parent include file.
     root_base_dir: PathBuf,
@@ -101,7 +115,7 @@ pub struct SafeFileResolver {
 
 #[cfg(feature = "include")]
 impl SafeFileResolver {
-    /// Create a resolver confined to `allow_root`.
+    /// Create a resolver that validates include paths against `allow_root`.
     ///
     /// Top-level includes (those requested from the root parser input, where `from_id` is absent)
     /// are resolved relative to this same directory unless you later call
@@ -122,7 +136,7 @@ impl SafeFileResolver {
 
     /// Set the base directory used for top-level includes.
     ///
-    /// The directory must already exist and must remain inside the configured root.
+    /// The directory must already exist and resolve inside the configured root when configured.
     /// Calling this clears any previously configured root-file identity.
     pub fn with_root_base_dir<P>(mut self, root_base_dir: P) -> io::Result<Self>
     where
@@ -138,9 +152,9 @@ impl SafeFileResolver {
     /// Set the root file that the caller is parsing.
     ///
     /// This adjusts top-level include resolution to use the parent directory of `root_file`, while
-    /// still confining all resolved targets to the configured root. It also remembers the canonical
-    /// identity of the root file so `!include root.yaml` can be rejected immediately instead of
-    /// recursing once before cycle detection catches it.
+    /// requiring resolved targets to pass the configured root check. It also remembers the
+    /// canonical identity of the root file so `!include root.yaml` can be rejected immediately
+    /// instead of recursing once before cycle detection catches it.
     pub fn with_root_file<P>(mut self, root_file: P) -> io::Result<Self>
     where
         P: AsRef<Path>,
