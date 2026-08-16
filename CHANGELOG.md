@@ -16,3 +16,6 @@
 ### Fixes
   - Fixed enums tags for struct variants (#177)
   - Improved error message wording (#178)
+  - Rejected non-UTF-8 canonical include paths before resolver policy checks and identity handling,
+    preventing hidden-path and extension bypasses as well as lossy path-ID collisions on Unix
+  - Validated names returned by custom anchor generators before emitting YAML anchors and aliases

@@ -181,6 +181,7 @@ pub fn to_string_multiple_with_options<T: serde_core::Serialize>(
     values: &[T],
     options: SerializerOptions,
 ) -> std::result::Result<String, crate::ser::Error> {
+    options.consistent()?;
     let mut out = String::new();
     let mut first = true;
     let yaml_12 = options.yaml_12;

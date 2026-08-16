@@ -70,8 +70,7 @@ pub struct SerializerOptions {
     /// for a human to read.
     pub empty_as_braces: bool,
     /// Number of spaces to indent per nesting level when emitting block-style collections (2 by default).
-    /// A value of 0 is invalid and will produce an error when serializing, because
-    /// no indentation would otherwise produce invalid YAML.
+    /// Values must be in `1..=`[`SerializerOptions::MAX_INDENT_STEP`].
     pub indent_step: usize,
     /// When enabled, emit list items with a more compact indentation style. On by default.
     /// ```yaml
@@ -163,11 +162,15 @@ pub(crate) const MIN_FOLD_CHARS: usize = 32;
 pub(crate) const FOLDED_WRAP_CHARS: usize = 80;
 
 impl SerializerOptions {
+    /// Largest supported number of spaces per indentation level.
+    pub const MAX_INDENT_STEP: usize = 64;
+
     pub(crate) fn consistent(&self) -> Result<(), Error> {
-        if self.indent_step == 0 {
-            return Err(Error::InvalidOptions(
-                "Invalid indent step must be positive".to_string(),
-            ));
+        if self.indent_step == 0 || self.indent_step > Self::MAX_INDENT_STEP {
+            return Err(Error::InvalidOptions(format!(
+                "indent_step must be in 1..={}",
+                Self::MAX_INDENT_STEP
+            )));
         }
         Ok(())
     }

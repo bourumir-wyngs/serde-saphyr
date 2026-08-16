@@ -497,9 +497,7 @@ impl<'a, 'b, W: Write> MapSer<'a, 'b, W> {
         // align under the first key by adding two spaces instead of a full indent step.
         if self.layout.align_after_dash() && self.ser.state.at_line_start {
             let base = self.depth.saturating_sub(1);
-            for _ in 0..self.ser.settings.indent_step * base {
-                self.ser.out.write_char(' ')?;
-            }
+            self.ser.write_indent_spaces(base)?;
             self.ser.out.write_str("  ")?; // width of "- "
             self.ser.state.at_line_start = false;
         } else {
@@ -624,9 +622,7 @@ impl<W: Write> SerializeMap for MapSer<'_, '_, W> {
             if key_kind == Some(MapKeyKind::Complex) {
                 if self.layout.align_after_dash() && self.ser.state.at_line_start {
                     let base = self.depth.saturating_sub(1);
-                    for _ in 0..self.ser.settings.indent_step * base {
-                        self.ser.out.write_char(' ')?;
-                    }
+                    self.ser.write_indent_spaces(base)?;
                     self.ser.out.write_str("  ")?;
                     self.ser.state.at_line_start = false;
                 } else {
@@ -672,9 +668,7 @@ impl<W: Write> SerializeMap for MapSer<'_, '_, W> {
                     // If we are aligning after a dash, mimic the indentation logic used for keys.
                     if self.layout.align_after_dash() {
                         let base = self.depth.saturating_sub(1);
-                        for _ in 0..self.ser.settings.indent_step * base {
-                            self.ser.out.write_char(' ')?;
-                        }
+                        self.ser.write_indent_spaces(base)?;
                         self.ser.out.write_str("  ")?; // width of "- "
                         self.ser.state.at_line_start = false;
                     } else {

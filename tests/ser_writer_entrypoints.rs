@@ -66,6 +66,60 @@ fn serializer_constructors_reject_invalid_options() {
 }
 
 #[test]
+fn serializer_constructors_enforce_indent_step_upper_bound() {
+    #[derive(Serialize)]
+    struct Inner {
+        value: u8,
+    }
+    #[derive(Serialize)]
+    struct Outer {
+        inner: Inner,
+    }
+
+    let mut out = String::new();
+    let max_indent_step = serde_saphyr::SerializerOptions::MAX_INDENT_STEP;
+    {
+        let mut serializer = serde_saphyr::Serializer::with_indent(&mut out, max_indent_step)
+            .expect("the maximum indentation step must remain usable");
+        Outer {
+            inner: Inner { value: 1 },
+        }
+        .serialize(&mut serializer)
+        .unwrap();
+    }
+    assert!(out.contains(&format!("{}value: 1", " ".repeat(max_indent_step))));
+
+    let too_large = max_indent_step + 1;
+    let err = serde_saphyr::Serializer::with_indent(&mut out, too_large)
+        .err()
+        .expect("indentation steps above the supported maximum must be rejected");
+    assert!(matches!(
+        err,
+        serde_saphyr::ser_error::Error::InvalidOptions(message)
+            if message == "indent_step must be in 1..=64"
+    ));
+
+    let invalid = serde_saphyr::ser_options! { indent_step: too_large };
+    assert!(serde_saphyr::Serializer::with_options(&mut out, invalid).is_err());
+}
+
+#[test]
+fn extreme_indent_step_is_rejected_before_serialization() {
+    let indent_step = usize::MAX / 2 + 1;
+    let options = serde_saphyr::ser_options! { indent_step: indent_step };
+    let nested = vec![vec![vec![0u8, 1u8]]];
+    let mut out = String::new();
+
+    let err = serde_saphyr::to_fmt_writer_with_options(&mut out, &nested, options).unwrap_err();
+    assert!(matches!(
+        err,
+        serde_saphyr::ser_error::Error::InvalidOptions(message)
+            if message == "indent_step must be in 1..=64"
+    ));
+    assert!(out.is_empty());
+}
+
+#[test]
 fn with_indent_changes_indentation() {
     #[derive(Serialize)]
     struct S<'a> {

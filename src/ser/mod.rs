@@ -32,6 +32,8 @@
 //! }
 //! ```
 
+use serde_core::ser::Error as _;
+
 pub(crate) mod api;
 pub mod error;
 pub mod options;
@@ -49,6 +51,20 @@ pub use self::serializer::{MapSer, SeqSer, StructVariantSer, TupleSer};
 /// Result alias.
 pub type Result<T> = std::result::Result<T, Error>;
 
+#[inline]
+fn checked_indentation(indent_step: usize, depth: usize) -> Result<usize> {
+    indent_step
+        .checked_mul(depth)
+        .ok_or_else(|| Error::custom("serializer indentation exceeds usize"))
+}
+
+#[inline]
+fn checked_depth_add(depth: usize, additional_levels: usize) -> Result<usize> {
+    depth
+        .checked_add(additional_levels)
+        .ok_or_else(|| Error::custom("serializer indentation depth exceeds usize"))
+}
+
 pub use crate::long_strings::{FoldStr, FoldString, LitStr, LitString};
 
 // Flow hints and block-string hints: we use newtype-struct names.
@@ -61,3 +77,27 @@ const NAME_SPACE_AFTER: &str = "__yaml_space_after";
 const NAME_DOUBLE_QUOTED: &str = "__yaml_double_quoted";
 const NAME_SINGLE_QUOTED: &str = "__yaml_single_quoted";
 const NAME_NULLABLE_TILDE: &str = "__yaml_nullable_tilde";
+
+#[cfg(test)]
+mod tests {
+    use super::{checked_depth_add, checked_indentation};
+
+    #[test]
+    fn indentation_arithmetic_is_checked() {
+        assert_eq!(checked_indentation(64, 2).unwrap(), 128);
+        assert_eq!(
+            checked_indentation(2, usize::MAX).unwrap_err().to_string(),
+            "serializer indentation exceeds usize"
+        );
+        assert_eq!(
+            checked_depth_add(usize::MAX, 1).unwrap_err().to_string(),
+            "serializer indentation depth exceeds usize"
+        );
+        assert_eq!(
+            checked_depth_add(usize::MAX - 1, 2)
+                .unwrap_err()
+                .to_string(),
+            "serializer indentation depth exceeds usize"
+        );
+    }
+}

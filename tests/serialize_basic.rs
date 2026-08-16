@@ -176,18 +176,40 @@ fn serialize_array_of_empty_maps_to_io() {
 
 #[test]
 fn test_invalid_options() {
-    let mut out = String::new();
-    let mut ovec = Vec::new();
     // Use a non-literal expression so this remains a runtime error (the macro enforces
     // the valid range at compile time for literal values).
-    let zero = 0usize;
-    let invalid_options = serde_saphyr::ser_options! { indent_step: zero };
-
     let object = VecOfMaps { vec: vec![] };
+    for indent_step in [
+        0,
+        serde_saphyr::SerializerOptions::MAX_INDENT_STEP + 1,
+        usize::MAX,
+    ] {
+        let mut out = String::new();
+        let mut ovec = Vec::new();
+        let invalid_options = serde_saphyr::ser_options! { indent_step: indent_step };
 
-    assert!(
-        serde_saphyr::to_io_writer_with_options(&mut ovec, &object, invalid_options.clone())
-            .is_err()
-    );
-    assert!(serde_saphyr::to_fmt_writer_with_options(&mut out, &object, invalid_options).is_err());
+        assert!(
+            serde_saphyr::to_io_writer_with_options(&mut ovec, &object, invalid_options.clone(),)
+                .is_err()
+        );
+        assert!(
+            serde_saphyr::to_fmt_writer_with_options(&mut out, &object, invalid_options).is_err()
+        );
+        assert!(out.is_empty());
+        assert!(ovec.is_empty());
+    }
+}
+
+#[test]
+fn invalid_options_are_rejected_for_empty_document_lists() {
+    let indent_step = serde_saphyr::SerializerOptions::MAX_INDENT_STEP + 1;
+    let invalid_options = serde_saphyr::ser_options! { indent_step: indent_step };
+
+    let err = serde_saphyr::to_string_multiple_with_options::<i32>(&[], invalid_options)
+        .expect_err("options must be validated even when there are no documents");
+    assert!(matches!(
+        err,
+        serde_saphyr::ser_error::Error::InvalidOptions(message)
+            if message == "indent_step must be in 1..=64"
+    ));
 }

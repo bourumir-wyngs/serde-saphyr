@@ -2,7 +2,7 @@
 
 use std::fmt::Write;
 
-use crate::ser::Result;
+use super::{Result, checked_indentation};
 
 /// Find leading spaces on the first non-empty line of content.
 pub fn first_line_leading_spaces(s: &str) -> usize {
@@ -43,7 +43,7 @@ pub fn write_folded_block<W: Write>(
 ) -> Result<()> {
     // Precompute indent prefix for this block body and reuse it for each emitted line.
     let mut indent_buf: String = String::new();
-    let spaces = indent_step * indent;
+    let spaces = checked_indentation(indent_step, indent)?;
     if spaces > 0 {
         indent_buf.reserve(spaces);
         for _ in 0..spaces {
@@ -190,6 +190,14 @@ mod tests {
         let mut out = String::new();
         write_folded_block(&mut out, "hello world", 1, 2, 80).unwrap();
         assert_eq!(out, "  hello world\n");
+    }
+
+    #[test]
+    fn write_folded_block_rejects_indentation_overflow() {
+        let mut out = String::new();
+        let err = write_folded_block(&mut out, "hello", usize::MAX, 2, 80).unwrap_err();
+        assert_eq!(err.to_string(), "serializer indentation exceeds usize");
+        assert!(out.is_empty());
     }
 
     #[test]

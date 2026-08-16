@@ -220,9 +220,8 @@ macro_rules! __serde_saphyr_serializer_options_apply {
     ($opt:ident, indent_step : $value:literal $(, $($rest:tt)*)? ) => {{
         const _: () = {
             // Keep the check aligned with the YAML emitter's constraints.
-            // Valid range: 1..=65535.
-            if !($value > 0 && $value < 65536) {
-                panic!("`indent_step` must be in the range 1..=65535");
+            if !($value > 0 && $value <= $crate::SerializerOptions::MAX_INDENT_STEP) {
+                panic!("`indent_step` must be in the range 1..=64");
             }
         };
         $opt.indent_step = $value;
