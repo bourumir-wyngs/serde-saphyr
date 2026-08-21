@@ -95,6 +95,19 @@ fn from_reader_rejects_trailing_garbage_without_document_end_marker() {
     assert!(!err.to_string().is_empty());
 }
 
+// Regression coverage adapted (assuming MIT and Apache licenses) from:
+// - Pull request: https://github.com/yaml/yaml-serde/pull/10
+// - Author: bradleyd (https://github.com/bradleyd)
+#[test]
+fn read_iterator_terminates_after_initial_syntax_error() {
+    let yaml = b"app: {apikey";
+    let mut reader = std::io::Cursor::new(&yaml[..]);
+    let mut iter = serde_saphyr::read::<_, serde::de::IgnoredAny>(&mut reader);
+
+    assert!(iter.next().expect("expected syntax error").is_err());
+    assert!(iter.next().is_none());
+}
+
 #[test]
 fn read_iterator_returns_syntax_error_and_then_ends() {
     let yaml = b"id: 1\n---\n[\n";
