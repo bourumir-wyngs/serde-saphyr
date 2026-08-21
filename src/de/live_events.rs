@@ -963,14 +963,10 @@ impl<'a> LiveEvents<'a> {
         // Anchors are per-document. Instead of dropping the whole vec (which frees
         // capacity and may cause re-allocation in the next document), keep the
         // allocation and just clear the entries.
-        for slot in &mut self.anchors {
-            *slot = None;
-        }
+        self.anchors.fill(None);
 
         // Reset per-anchor expansion counters without dropping capacity.
-        for cnt in &mut self.per_anchor_expansions {
-            *cnt = 0;
-        }
+        self.per_anchor_expansions.fill(0);
 
         self.total_replayed_events = 0;
         self.seen_doc_end = false;

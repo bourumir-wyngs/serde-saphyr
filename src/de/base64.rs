@@ -30,8 +30,9 @@ pub(crate) fn decode_base64_yaml(s: &str) -> Result<Vec<u8>, Error> {
 
     let mut out = Vec::with_capacity(cleaned.len() / 4 * 3);
 
-    let total_chunks = cleaned.len() / 4;
-    for (idx, chunk) in cleaned.chunks_exact(4).enumerate() {
+    let chunks = cleaned.as_chunks::<4>().0;
+    let total_chunks = chunks.len();
+    for (idx, chunk) in chunks.iter().enumerate() {
         let pad = chunk.iter().rev().take_while(|&&c| c == b'=').count();
         if pad > 0 && idx + 1 != total_chunks {
             return Err(Error::InvalidBinaryBase64 {
