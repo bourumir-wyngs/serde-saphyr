@@ -170,7 +170,7 @@ impl<'input> ParserStack<'input> {
             );
         };
 
-        let include_depth = self.inner.stack().len() as u32;
+        let include_depth = u32::try_from(self.inner.stack().len()).unwrap_or(u32::MAX);
         if include_depth > self.budget.max_inclusion_depth {
             return Err(crate::de_error::Error::Budget {
                 breach: crate::budget::BudgetBreach::InclusionDepth {
