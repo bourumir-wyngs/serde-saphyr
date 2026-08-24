@@ -34,7 +34,23 @@ fn arb_value() -> impl Strategy<Value = Value> {
     )
 }
 
+fn roundtrip_config() -> ProptestConfig {
+    let mut config = ProptestConfig::default();
+
+    if cfg!(any(miri, target_arch = "wasm32")) {
+        config.failure_persistence = None;
+    }
+
+    if cfg!(miri) {
+        config.cases = 16;
+    }
+
+    config
+}
+
 proptest! {
+    #![proptest_config(roundtrip_config())]
+
     #[test]
     fn serializer_output_roundtrips(value in arb_value()) {
         let yaml = serde_saphyr::to_string(&value)
