@@ -59,6 +59,57 @@ fn early_sequence_return_drains_nested_remaining_nodes() {
 }
 
 #[derive(Debug, PartialEq)]
+struct FirstMapEntry(u8);
+
+impl<'de> Deserialize<'de> for FirstMapEntry {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_map(FirstMapEntryVisitor)
+    }
+}
+
+struct FirstMapEntryVisitor;
+
+impl<'de> Visitor<'de> for FirstMapEntryVisitor {
+    type Value = FirstMapEntry;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a map with at least one byte value")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let (_, value) = map
+            .next_entry::<IgnoredAny, u8>()?
+            .expect("fixture has a first entry");
+        Ok(FirstMapEntry(value))
+    }
+}
+
+#[test]
+fn map_visitor_that_does_not_poll_for_end_keeps_parent_in_sync() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Document {
+        head: FirstMapEntry,
+        tail: u8,
+    }
+
+    let document: Document = serde_saphyr::from_str("head: {first: 1}\ntail: 9\n").unwrap();
+
+    assert_eq!(
+        document,
+        Document {
+            head: FirstMapEntry(1),
+            tail: 9,
+        }
+    );
+}
+
+#[derive(Debug, PartialEq)]
 struct TupleSizeHint(u8);
 
 impl<'de> Deserialize<'de> for TupleSizeHint {

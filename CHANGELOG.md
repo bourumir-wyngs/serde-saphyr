@@ -14,6 +14,9 @@
 ### Fixes
 
 - Accepted valid zero-indented root folded block scalars, including `#`-prefixed content lines.
+- Fixed externally tagged `typetag` trait-object deserialization by consuming the closing mapping
+  event when a Serde map visitor returns after its final key/value pair, preventing a false
+  "multiple YAML documents" error.
 - Rejected non-UTF-8 canonical include and root-file paths before resolver policy checks and source
   identity handling, preventing lossy path collisions and policy bypasses on Unix.
 
@@ -21,7 +24,8 @@
 
 - Reviewed yaml test suite, made sure all 350 active IDs and all 402 active cases are represented and documented
   we use  [YAML Test Suite v2022-01-17](https://github.com/yaml/yaml-test-suite/releases/tag/v2022-01-17).
-- property test with 1,024 generated cases to check the round trip
+- property test with 1,024 generated cases to check the round trip.
+- added tests for [typetag](https://crates.io/crates/typetag).
 
 ## 1.1.0 Maintenance release
 

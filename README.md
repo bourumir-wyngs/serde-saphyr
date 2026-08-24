@@ -321,6 +321,8 @@ pub struct Context {
 ```
 `serde_saphyr::from_str::<Context>(yaml)` would take the `value: !Expression 1 + 1` or `value: !Pair [a, 12]`. Both YAML lists and Rust tuples allow their elements to have different types.
 
+To support polymorphism of arbitrary objects, not just enums, Serde-saphyr is also tested against [typetag](https://crates.io/crates/typetag).
+
 ### Composite keys
 
 YAML supports complex (non-string) mapping keys. Rust maps can mirror this, allowing you to parse such structures directly.

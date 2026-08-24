@@ -1880,6 +1880,27 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 }
                 false
             }
+
+            /// Consume this mapping's end if its visitor returned without asking for it.
+            ///
+            /// typetag's externally tagged visitor reads its one key/value pair
+            /// and returns without polling `next_key` again. Poll once on the visitor's behalf so
+            /// the closing event is consumed, while still rejecting an unexpected extra entry.
+            fn finish(&mut self) -> Result<(), Error> {
+                if self.have_key {
+                    return Err(
+                        Error::unexpected("mapping end").with_location(self.ev.last_location())
+                    );
+                }
+
+                if de::MapAccess::next_key::<de::IgnoredAny>(self)?.is_some() {
+                    return Err(
+                        Error::unexpected("mapping end").with_location(self.ev.last_location())
+                    );
+                }
+
+                Ok(())
+            }
         }
 
         impl<'de> de::MapAccess<'de> for MA<'de, '_> {
@@ -2333,7 +2354,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         #[cfg(any(feature = "garde", feature = "validator"))]
         let garde = self.garde;
 
-        visitor.visit_map(MA {
+        let mut access = MA {
             ev: self.ev,
             cfg: child_cfg,
             have_key: false,
@@ -2355,7 +2376,10 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             pending_value_separator_comments: Vec::new(),
             pending_value_comments: Vec::new(),
             pending_first_key_comments,
-        })
+        };
+        let result = visitor.visit_map(&mut access)?;
+        access.finish()?;
+        Ok(result)
     }
 
     /// **Delegates struct deserialization** to the same machinery as mappings.
