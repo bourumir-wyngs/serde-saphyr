@@ -905,6 +905,7 @@ dependencies = [
  "anyhow",
  "base64",
  "encoding_rs_io",
+ "erased-serde",
  "figment",
  "figment2",
  "garde",
