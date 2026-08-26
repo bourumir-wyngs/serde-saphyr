@@ -721,7 +721,7 @@ fn tagged_payload_helpers_strip_root_tags_and_build_external_map_events() {
 }
 
 #[test]
-fn is_merge_key_requires_plain_untagged_double_angle() {
+fn is_merge_key_accepts_implicit_and_explicit_merge_tags() {
     assert!(is_merge_key(&scalar_key_node(
         "<<",
         SfTag::None,
@@ -740,10 +740,28 @@ fn is_merge_key_requires_plain_untagged_double_angle() {
         ScalarStyle::SingleQuoted,
         loc(21, 3)
     )));
+    assert!(is_merge_key(&scalar_key_node(
+        "<<",
+        SfTag::Merge,
+        ScalarStyle::Plain,
+        loc(21, 4)
+    )));
+    assert!(is_merge_key(&scalar_key_node(
+        "<<",
+        SfTag::Merge,
+        ScalarStyle::SingleQuoted,
+        loc(21, 5)
+    )));
+    assert!(!is_merge_key(&scalar_key_node(
+        "not-merge",
+        SfTag::Merge,
+        ScalarStyle::Plain,
+        loc(21, 6)
+    )));
     assert!(!is_merge_key(&KeyNode::Fingerprinted {
         fingerprint: KeyFingerprint::Default,
-        events: vec![map_start(loc(21, 4)), map_end(loc(21, 5))],
-        location: loc(21, 4),
+        events: vec![map_start(loc(21, 7)), map_end(loc(21, 8))],
+        location: loc(21, 7),
     }));
 }
 

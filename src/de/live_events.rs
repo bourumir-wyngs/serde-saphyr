@@ -37,7 +37,7 @@ use crate::include::{BaseParser, create_parser_from_str};
 use crate::location::location_from_span;
 use crate::options::BudgetReportCallback;
 use crate::tags::SfTag;
-use granit_parser::{Event, Placement, ScalarStyle, ScanError, Span, StructureStyle};
+use granit_parser::{Event, Placement, ScalarStyle, ScanError, Span, StructureStyle, Tag};
 
 #[cfg(not(feature = "include"))]
 use granit_parser::StrInput;
@@ -223,6 +223,9 @@ pub(crate) struct LiveEvents<'a> {
     /// Invalid options are reported through the same stream error channel as parse errors.
     pending_error: Option<Error>,
 
+    /// Whether explicitly tagged nodes whose tags are unknown to this crate are rejected.
+    reject_unsupported_tags: bool,
+
     /// Indentation requirement to validate against parser-reported indentation hints.
     ///
     /// For `Uniform(None)` this also memoizes the inferred unit on first use.
@@ -282,6 +285,7 @@ impl<'a> LiveEvents<'a> {
         let alias_limits = options.alias_limits;
         let merge_keys = options.merge_keys;
         let pending_error = options.validate().err();
+        let reject_unsupported_tags = options.reject_unsupported_tags;
         let require_indent = options.require_indent;
         #[cfg(feature = "properties")]
         let property_map = options.property_map.clone();
@@ -341,6 +345,7 @@ impl<'a> LiveEvents<'a> {
             seen_doc_end: false,
 
             pending_error,
+            reject_unsupported_tags,
 
             require_indent,
             #[cfg(feature = "include")]
@@ -367,6 +372,7 @@ impl<'a> LiveEvents<'a> {
         let alias_limits = options.alias_limits;
         let merge_keys = options.merge_keys;
         let pending_error = options.validate().err();
+        let reject_unsupported_tags = options.reject_unsupported_tags;
         let require_indent = options.require_indent;
         #[cfg(feature = "properties")]
         let property_map = options.property_map.clone();
@@ -425,6 +431,7 @@ impl<'a> LiveEvents<'a> {
             seen_doc_end: false,
 
             pending_error,
+            reject_unsupported_tags,
 
             require_indent,
             #[cfg(feature = "include")]
@@ -444,6 +451,21 @@ impl<'a> LiveEvents<'a> {
                 }
             }
         }
+    }
+
+    fn ensure_supported_tag(
+        &self,
+        tag_kind: SfTag,
+        tag: Option<&Tag>,
+        location: Location,
+    ) -> Result<(), Error> {
+        if self.reject_unsupported_tags && tag_kind == SfTag::Other {
+            return Err(Error::UnsupportedTag {
+                tag: tag.map_or_else(String::new, Tag::original),
+                location,
+            });
+        }
+        Ok(())
     }
 
     fn event_kind(ev: &Ev<'_>) -> Option<ConsumedEventKind> {
@@ -649,6 +671,7 @@ impl<'a> LiveEvents<'a> {
                     let mut anchor_id = anchor_id;
 
                     let tag_s = SfTag::from_optional_cow(&tag);
+                    self.ensure_supported_tag(tag_s, tag.as_deref(), location)?;
 
                     #[cfg(feature = "include")]
                     if tag_s == SfTag::Include && self.parser.has_resolver() {
@@ -692,6 +715,7 @@ impl<'a> LiveEvents<'a> {
                     #[cfg(feature = "include")]
                     let mut anchor_id = anchor_id;
                     let tag_s = SfTag::from_optional_cow(&tag);
+                    self.ensure_supported_tag(tag_s, tag.as_deref(), location)?;
 
                     #[cfg(feature = "include")]
                     if self.parser.has_resolver()
@@ -755,6 +779,7 @@ impl<'a> LiveEvents<'a> {
 
                 Event::MappingStart(_style, anchor_id, tag) => {
                     let tag_s = SfTag::from_optional_cow(&tag);
+                    self.ensure_supported_tag(tag_s, tag.as_deref(), location)?;
 
                     #[cfg(feature = "include")]
                     let mut anchor_id = anchor_id;

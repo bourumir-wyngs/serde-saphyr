@@ -299,6 +299,11 @@ let yaml = r#"
 There are two variants of the deserialization functions: from_* and from_*_with_options. The latter accepts an [Options](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html)
 object that allows you to configure budget and other aspects of parsing. For larger projects that require consistent parsing behavior, we recommend defining a wrapper function so that all option and budget settings are managed in one place (see examples/wrapper_function.rs).
 
+By default, unknown application-specific YAML tags remain available for tagged-enum handling and
+are otherwise ignored where possible. Set `reject_unsupported_tags: true` in `Options` to reject any
+explicit tag that serde-saphyr does not recognize. This strict mode also rejects custom tags used to
+select enum variants; known tags such as `!!merge` and the no-op `!!value` remain accepted.
+
 Tagged enums written as `!!EnumName VARIANT` are also supported, but only for single-level scalar variants. Use mapping-based representations (`EnumName: RED`) if you need to embed enums within other enums.
 
 ### Tuple enum variants
@@ -488,9 +493,14 @@ production:
 Merge keys are standard in YAML 1.1. Although YAML 1.2 no longer includes merge keys in its specification, it doesn't explicitly disallow them either, and many parsers implement this feature.
 
 Merge-key handling is configurable with the `merge_keys` option. The default
-`MergeKeyPolicy::Merge` expands `<<` entries. Use `MergeKeyPolicy::AsOrdinary`
-to accept `<<` as a regular mapping key, or `MergeKeyPolicy::Error` to reject
-merge keys.
+`MergeKeyPolicy::Merge` expands both implicitly resolved `<<` entries and explicit
+YAML 1.1 `!!merge <<` entries. The verbatim `!<tag:yaml.org,2002:merge>` form and
+equivalent `%TAG` handles are also recognized. Use `MergeKeyPolicy::AsOrdinary`
+to accept these as regular mapping keys, or `MergeKeyPolicy::Error` to reject them.
+
+The YAML 1.1 `!!value` tag is recognized but intentionally has no special default-value
+behavior. Its scalar content is deserialized normally, and a tagged `=` mapping key remains
+an ordinary `"="` key.
 
 ### Comments
 

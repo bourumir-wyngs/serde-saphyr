@@ -107,6 +107,7 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
         Error::MergeKeyNotAllowed { .. } => {
             Cow::Borrowed("YAML merge keys are not allowed by configured policy")
         }
+        Error::UnsupportedTag { tag, .. } => Cow::Owned(format!("unsupported tag `{tag}`")),
         Error::InvalidBinaryBase64 { .. } => Cow::Borrowed("invalid !!binary base64"),
         Error::InvalidUtf8Input => Cow::Borrowed("input is not valid UTF-8"),
         Error::BinaryNotUtf8 { .. } => Cow::Borrowed(

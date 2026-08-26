@@ -3,6 +3,7 @@
 //! This inspects the parser's event stream and enforces simple budgets to
 //! avoid pathological inputs
 
+use super::tags::is_yaml_merge_tag;
 use crate::options::MergeKeyPolicy;
 use granit_parser::{Event, Parser, ScalarStyle, ScanError, Tag};
 use smallvec::SmallVec;
@@ -468,7 +469,7 @@ impl BudgetEnforcer {
                         .saturating_add(tag_display_len(tag_opt.as_deref())),
                 )?;
                 self.record_anchor(*anchor_id)?;
-                self.handle_scalar(value, style, tag_opt.is_some())?;
+                self.handle_scalar(value, style, tag_opt.as_deref())?;
             }
             Event::MappingStart(_style, anchor_id, tag_opt) => {
                 self.enter_container(*anchor_id, tag_opt.as_deref(), |from_mapping_value| {
@@ -631,14 +632,14 @@ impl BudgetEnforcer {
         &mut self,
         value: &str,
         style: &ScalarStyle,
-        has_tag: bool,
+        tag: Option<&Tag>,
     ) -> Result<(), BudgetBreach> {
         if let Some(ContainerState::Mapping { expecting_key, .. }) = self.containers.last_mut() {
             if *expecting_key {
                 if matches!(self.merge_keys, MergeKeyPolicy::Merge)
-                    && !has_tag
-                    && matches!(style, ScalarStyle::Plain)
                     && value == "<<"
+                    && (tag.is_some_and(is_yaml_merge_tag)
+                        || tag.is_none() && matches!(style, ScalarStyle::Plain))
                 {
                     self.report.merge_keys += 1;
                     if self.report.merge_keys > self.budget.max_merge_keys {
@@ -928,6 +929,23 @@ e: *A
             Some(BudgetBreach::MergeKeys { merge_keys }) if merge_keys == 3
         ));
         assert_eq!(rep.merge_keys, 3);
+    }
+
+    #[test]
+    fn explicit_merge_tag_counts_against_merge_key_limit() {
+        let yaml = "root:\n  !!merge <<: { key: value }\n";
+        let budget = Budget {
+            max_merge_keys: 0,
+            ..Default::default()
+        };
+
+        let report = check_yaml_budget(yaml, budget, EnforcingPolicy::AllContent).unwrap();
+
+        assert!(matches!(
+            report.breached,
+            Some(BudgetBreach::MergeKeys { merge_keys: 1 })
+        ));
+        assert_eq!(report.merge_keys, 1);
     }
 
     #[test]

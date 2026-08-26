@@ -696,6 +696,12 @@ pub enum Error {
         location: Location,
     },
 
+    /// An explicitly specified YAML tag is not supported by this crate.
+    UnsupportedTag {
+        tag: String,
+        location: Location,
+    },
+
     /// `!!binary` scalar could not be decoded as base64.
     InvalidBinaryBase64 {
         location: Location,
@@ -1398,6 +1404,7 @@ impl Error {
             | Error::Unexpected { location, .. }
             | Error::MergeValueNotMapOrSeqOfMaps { location }
             | Error::MergeKeyNotAllowed { location }
+            | Error::UnsupportedTag { location, .. }
             | Error::InvalidBinaryBase64 { location }
             | Error::BinaryNotUtf8 { location }
             | Error::TaggedScalarCannotDeserializeIntoString { location }
@@ -1511,6 +1518,7 @@ impl Error {
             | Error::Unexpected { location, .. }
             | Error::MergeValueNotMapOrSeqOfMaps { location }
             | Error::MergeKeyNotAllowed { location }
+            | Error::UnsupportedTag { location, .. }
             | Error::InvalidBinaryBase64 { location }
             | Error::BinaryNotUtf8 { location }
             | Error::TaggedScalarCannotDeserializeIntoString { location }

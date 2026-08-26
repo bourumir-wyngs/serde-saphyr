@@ -5,6 +5,8 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
 
+const YAML_TAG_NAMESPACE: &str = "tag:yaml.org,2002:";
+
 const INCLUDE_TAG_PLAIN: [&str; 3] = [
     "!include",
     "tag:yaml.org,2002:include",
@@ -81,6 +83,10 @@ pub(crate) enum SfTag {
     TimeStamp,
     Binary,
     String,
+    /// YAML 1.1 merge key (`tag:yaml.org,2002:merge`).
+    Merge,
+    /// YAML 1.1 value key (`tag:yaml.org,2002:value`), accepted without special handling.
+    Value,
     /// Non-specific tag "!" (no resolution) — we force scalar to be treated as string
     NonSpecific,
     /// !include tag - include external resource
@@ -189,6 +195,14 @@ impl SfTag {
                     return core_tag;
                 }
 
+                if is_yaml_merge_tag(cow) {
+                    return SfTag::Merge;
+                }
+
+                if is_yaml_value_tag(cow) {
+                    return SfTag::Value;
+                }
+
                 let key = cow.to_string();
                 TAG_LOOKUP_MAP
                     .get(key.as_str())
@@ -201,9 +215,13 @@ impl SfTag {
 
     pub(crate) fn can_parse_into_string(&self) -> bool {
         match self {
-            SfTag::None | SfTag::String | SfTag::Other | SfTag::Include | SfTag::NonSpecific => {
-                true
-            }
+            SfTag::None
+            | SfTag::String
+            | SfTag::Merge
+            | SfTag::Value
+            | SfTag::Other
+            | SfTag::Include
+            | SfTag::NonSpecific => true,
             SfTag::Binary
             | SfTag::Int
             | SfTag::Float
@@ -232,9 +250,28 @@ impl SfTag {
     }
 }
 
+/// Whether a parser tag resolves to the YAML 1.1 merge-key tag.
+///
+/// This uses the resolved URI rather than the source spelling, so it accepts
+/// `!!merge`, the verbatim URI form, and directive-defined handles while leaving
+/// the distinct local tag `!merge` alone.
+pub(crate) fn is_yaml_merge_tag(tag: &Tag) -> bool {
+    tag.suffix_in_namespace(YAML_TAG_NAMESPACE)
+        .is_some_and(|suffix| suffix == "merge")
+}
+
+/// Whether a parser tag resolves to the YAML 1.1 value-key tag.
+///
+/// The tag is recognized so it is not treated as an application-specific tag,
+/// but its default-value semantics are intentionally ignored.
+fn is_yaml_value_tag(tag: &Tag) -> bool {
+    tag.suffix_in_namespace(YAML_TAG_NAMESPACE)
+        .is_some_and(|suffix| suffix == "value")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{SfTag, core_suffix_to_sf_tag};
+    use super::{SfTag, core_suffix_to_sf_tag, is_yaml_merge_tag, is_yaml_value_tag};
     use granit_parser::Tag;
     use std::borrow::Cow;
 
@@ -281,6 +318,36 @@ mod tests {
         assert_eq!(sf_tag(timestamp), SfTag::TimeStamp);
         assert_eq!(sf_tag(binary), SfTag::Binary);
         assert_eq!(sf_tag(unknown), SfTag::Other);
+    }
+
+    #[test]
+    fn maps_resolved_yaml_merge_tag_forms() {
+        let shorthand = Tag::with_original_handle("tag:yaml.org,2002:", "merge", "!!");
+        let verbatim = Tag::with_original_handle("", "tag:yaml.org,2002:merge", "");
+        let split = Tag::with_original_handle("tag:yaml.org,2002:m", "erge", "!m!");
+        let local = Tag::new("!", "merge");
+
+        for tag in [shorthand, verbatim, split] {
+            assert!(is_yaml_merge_tag(&tag));
+            assert_eq!(sf_tag(tag), SfTag::Merge);
+        }
+        assert!(!is_yaml_merge_tag(&local));
+        assert_eq!(sf_tag(local), SfTag::Other);
+    }
+
+    #[test]
+    fn maps_resolved_yaml_value_tag_forms() {
+        let shorthand = Tag::with_original_handle("tag:yaml.org,2002:", "value", "!!");
+        let verbatim = Tag::with_original_handle("", "tag:yaml.org,2002:value", "");
+        let split = Tag::with_original_handle("tag:yaml.org,2002:v", "alue", "!v!");
+        let local = Tag::new("!", "value");
+
+        for tag in [shorthand, verbatim, split] {
+            assert!(is_yaml_value_tag(&tag));
+            assert_eq!(sf_tag(tag), SfTag::Value);
+        }
+        assert!(!is_yaml_value_tag(&local));
+        assert_eq!(sf_tag(local), SfTag::Other);
     }
 
     #[test]

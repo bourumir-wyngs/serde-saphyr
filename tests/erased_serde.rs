@@ -1,5 +1,7 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 
+use std::collections::BTreeMap;
+
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
 
@@ -204,5 +206,22 @@ fn type_erased_deserializer_propagates_yaml_errors() {
     assert!(
         error.to_string().contains("missing field `bikes`"),
         "{error}"
+    );
+}
+
+#[test]
+fn type_erased_deserializer_expands_explicit_merge_tag() {
+    let yaml = "!!merge <<: {a: 1, b: 2}\nown: 3\n";
+
+    let map: BTreeMap<String, i32> =
+        deserialize_erased(yaml).expect("explicit merge tag must survive type erasure");
+
+    assert_eq!(
+        map,
+        BTreeMap::from([
+            ("a".to_owned(), 1),
+            ("b".to_owned(), 2),
+            ("own".to_owned(), 3),
+        ])
     );
 }
