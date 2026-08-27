@@ -5,27 +5,27 @@ use std::rc::Rc;
 
 use serde::{Deserialize, Serialize};
 use serde_saphyr::{
-    Commented, FlowMap, FlowSeq, RcAnchor, Tagged, from_str, ser_options, to_string,
-    to_string_with_options,
+    Commented, FlowMap, FlowSeq, RcAnchor, SerializeError, Tagged, from_str, ser_options,
+    to_string, to_string_with_options,
 };
 
 #[test]
 fn resolved_core_verbatim_and_directive_tags_normalize_on_output() {
     let core: Tagged<i32> = from_str("!!int 42").unwrap();
-    assert_eq!(core, Tagged(42, "tag:yaml.org,2002:int".into()));
+    assert_eq!(core, Tagged(42, Some("tag:yaml.org,2002:int".into())));
     let yaml = to_string(&core).unwrap();
     assert_eq!(yaml, "!<tag:yaml.org,2002:int> 42\n");
     assert_eq!(from_str::<Tagged<i32>>(&yaml).unwrap(), core);
 
     let verbatim: Tagged<String> = from_str("!<tag:example.com,2026:widget> value").unwrap();
-    assert_eq!(verbatim.1, "tag:example.com,2026:widget");
+    assert_eq!(verbatim.1.as_deref(), Some("tag:example.com,2026:widget"));
     let yaml = to_string(&verbatim).unwrap();
     assert_eq!(yaml, "!<tag:example.com,2026:widget> value\n");
     assert_eq!(from_str::<Tagged<String>>(&yaml).unwrap(), verbatim);
 
     let directive: Tagged<String> =
         from_str("%TAG !e! tag:example.com,2026:\n--- !e!widget value\n").unwrap();
-    assert_eq!(directive.1, "tag:example.com,2026:widget");
+    assert_eq!(directive.1.as_deref(), Some("tag:example.com,2026:widget"));
     let yaml = to_string(&directive).unwrap();
     assert_eq!(yaml, "!<tag:example.com,2026:widget> value\n");
     assert_eq!(from_str::<Tagged<String>>(&yaml).unwrap(), directive);
@@ -33,14 +33,14 @@ fn resolved_core_verbatim_and_directive_tags_normalize_on_output() {
 
 #[test]
 fn local_and_global_resolved_tags_are_safely_percent_encoded() {
-    let local = Tagged("value".to_owned(), "!space here/%".to_owned());
+    let local = Tagged("value".to_owned(), Some("!space here/%".to_owned()));
     let yaml = to_string(&local).unwrap();
     assert_eq!(yaml, "!space%20here/%25 value\n");
     assert_eq!(from_str::<Tagged<String>>(&yaml).unwrap(), local);
 
     let global = Tagged(
         "value".to_owned(),
-        "tag:example.com,2026:a>b % snowman ☃".to_owned(),
+        Some("tag:example.com,2026:a>b % snowman ☃".to_owned()),
     );
     let yaml = to_string(&global).unwrap();
     assert_eq!(
@@ -51,14 +51,21 @@ fn local_and_global_resolved_tags_are_safely_percent_encoded() {
 }
 
 #[test]
-fn resolved_strings_starting_with_bang_are_local() {
-    let value = Tagged(42, "!!int".to_owned());
+fn resolved_strings_starting_with_bang_are_local_and_none_is_untagged() {
+    let value = Tagged(42, Some("!!int".to_owned()));
     let yaml = to_string(&value).unwrap();
     assert_eq!(yaml, "!%21int 42\n");
     assert_eq!(from_str::<Tagged<i32>>(&yaml).unwrap(), value);
 
-    assert_eq!(to_string(&Tagged(42, "!".to_owned())).unwrap(), "! 42\n");
-    assert_eq!(to_string(&Tagged(42, String::new())).unwrap(), "42\n");
+    assert_eq!(
+        to_string(&Tagged(42, Some("!".to_owned()))).unwrap(),
+        "! 42\n"
+    );
+    assert_eq!(to_string(&Tagged(42, None)).unwrap(), "42\n");
+    assert_eq!(from_str::<Tagged<i32>>("42\n").unwrap(), Tagged(42, None));
+
+    let error = to_string(&Tagged(42, Some(String::new()))).unwrap_err();
+    assert!(matches!(error, SerializeError::EmptyResolvedTag));
 }
 
 #[test]
@@ -70,10 +77,10 @@ fn tagged_flow_collections_have_correct_field_spacing_and_round_trip() {
     }
 
     let doc = Doc {
-        seq: Tagged(FlowSeq(vec![1, 2]), "!numbers".into()),
+        seq: Tagged(FlowSeq(vec![1, 2]), Some("!numbers".into())),
         map: Tagged(
             FlowMap(BTreeMap::from([("answer".to_owned(), 42)])),
-            "!lookup".into(),
+            Some("!lookup".into()),
         ),
     };
     let yaml = to_string(&doc).unwrap();
@@ -90,10 +97,10 @@ fn tagged_block_collections_round_trip() {
     }
 
     let doc = Doc {
-        seq: Tagged(vec![1, 2], "!numbers".into()),
+        seq: Tagged(vec![1, 2], Some("!numbers".into())),
         map: Tagged(
             BTreeMap::from([("answer".to_owned(), 42)]),
-            "!lookup".into(),
+            Some("!lookup".into()),
         ),
     };
     let yaml = to_string(&doc).unwrap();
@@ -106,12 +113,12 @@ fn tagged_block_collections_round_trip() {
 fn tagged_empty_collections_remain_nodes_when_empty_markers_are_disabled() {
     let options = ser_options! { empty_as_braces: false };
 
-    let seq = Tagged(Vec::<i32>::new(), "!empty-seq".into());
+    let seq = Tagged(Vec::<i32>::new(), Some("!empty-seq".into()));
     let yaml = to_string_with_options(&seq, options.clone()).unwrap();
     assert_eq!(yaml, "!empty-seq\n[]\n");
     assert_eq!(from_str::<Tagged<Vec<i32>>>(&yaml).unwrap(), seq);
 
-    let map = Tagged(BTreeMap::<String, i32>::new(), "!empty-map".into());
+    let map = Tagged(BTreeMap::<String, i32>::new(), Some("!empty-map".into()));
     let yaml = to_string_with_options(&map, options.clone()).unwrap();
     assert_eq!(yaml, "!empty-map\n{}\n");
     assert_eq!(
@@ -132,8 +139,8 @@ fn tagged_empty_collections_remain_nodes_when_empty_markers_are_disabled() {
 
 #[test]
 fn tagged_and_commented_compose_in_both_orders() {
-    let tagged_comment = Tagged(Commented(7, "note".into()), "!number".into());
-    let commented_tag = Commented(Tagged(7, "!number".into()), "note".into());
+    let tagged_comment = Tagged(Commented(7, "note".into()), Some("!number".into()));
+    let commented_tag = Commented(Tagged(7, Some("!number".into())), "note".into());
 
     assert_eq!(to_string(&tagged_comment).unwrap(), "!number 7 # note\n");
     assert_eq!(to_string(&commented_tag).unwrap(), "!number 7 # note\n");
@@ -149,10 +156,10 @@ fn tagged_and_commented_compose_in_both_orders() {
 
 #[test]
 fn equal_nested_tags_coalesce_and_different_tags_fail() {
-    let same = Tagged(Tagged(7, "!same".into()), "!same".into());
+    let same = Tagged(Tagged(7, Some("!same".into())), Some("!same".into()));
     assert_eq!(to_string(&same).unwrap(), "!same 7\n");
 
-    let different = Tagged(Tagged(7, "!inner".into()), "!outer".into());
+    let different = Tagged(Tagged(7, Some("!inner".into())), Some("!outer".into()));
     let error = to_string(&different).unwrap_err().to_string();
     assert!(
         error.contains("!outer") && error.contains("!inner"),
@@ -168,13 +175,13 @@ fn generated_enum_tags_coalesce_by_resolved_identity() {
     }
 
     let options = ser_options! { tagged_enums: true };
-    let same = Tagged(Color::Red, "tag:yaml.org,2002:Color".into());
+    let same = Tagged(Color::Red, Some("tag:yaml.org,2002:Color".into()));
     assert_eq!(
         to_string_with_options(&same, options.clone()).unwrap(),
         "!<tag:yaml.org,2002:Color> Red\n"
     );
 
-    let different = Tagged(Color::Red, "!other".into());
+    let different = Tagged(Color::Red, Some("!other".into()));
     let error = to_string_with_options(&different, options)
         .unwrap_err()
         .to_string();
@@ -194,7 +201,7 @@ fn generated_binary_tag_coalesces_by_resolved_identity() {
     let doc = Doc {
         data: Tagged(
             serde_bytes::ByteBuf::from(vec![1, 2]),
-            "tag:yaml.org,2002:binary".into(),
+            Some("tag:yaml.org,2002:binary".into()),
         ),
     };
     let yaml = to_string(&doc).unwrap();
@@ -202,7 +209,10 @@ fn generated_binary_tag_coalesces_by_resolved_identity() {
     assert_eq!(from_str::<Doc>(&yaml).unwrap(), doc);
 
     let conflict = Doc {
-        data: Tagged(serde_bytes::ByteBuf::from(vec![1, 2]), "!other".into()),
+        data: Tagged(
+            serde_bytes::ByteBuf::from(vec![1, 2]),
+            Some("!other".into()),
+        ),
     };
     let error = to_string(&conflict).unwrap_err().to_string();
     assert!(
@@ -222,8 +232,8 @@ fn tags_on_shared_anchors_are_checked_and_do_not_leak() {
 
     let shared = Rc::new(7);
     let doc = Doc {
-        first: Tagged(RcAnchor(shared.clone()), "!number".into()),
-        second: Tagged(RcAnchor(shared), "!number".into()),
+        first: Tagged(RcAnchor(shared.clone()), Some("!number".into())),
+        second: Tagged(RcAnchor(shared), Some("!number".into())),
         after: 9,
     };
     assert_eq!(
@@ -233,8 +243,8 @@ fn tags_on_shared_anchors_are_checked_and_do_not_leak() {
 
     let shared = Rc::new(7);
     let conflict = Doc {
-        first: Tagged(RcAnchor(shared.clone()), "!first".into()),
-        second: Tagged(RcAnchor(shared), "!second".into()),
+        first: Tagged(RcAnchor(shared.clone()), Some("!first".into())),
+        second: Tagged(RcAnchor(shared), Some("!second".into())),
         after: 9,
     };
     let error = to_string(&conflict).unwrap_err().to_string();
@@ -246,7 +256,7 @@ fn tags_on_shared_anchors_are_checked_and_do_not_leak() {
 
 #[test]
 fn tag_text_cannot_inject_yaml_syntax() {
-    let value = Tagged("value", "tag:evil>\nforged: true #".into());
+    let value = Tagged("value", Some("tag:evil>\nforged: true #".into()));
     let yaml = to_string(&value).unwrap();
     assert_eq!(yaml.lines().count(), 1, "{yaml:?}");
     assert!(!yaml.contains("\nforged"), "{yaml:?}");

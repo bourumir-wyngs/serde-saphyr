@@ -19,6 +19,8 @@ use std::{fmt, io};
 /// - `SingleQuotedRequiresEscaping` reports a `SingleQuoted` wrapper value
 ///   that needs YAML escape sequences and therefore cannot be emitted in
 ///   single-quoted style.
+/// - `EmptyResolvedTag` reports a `Tagged` wrapper whose explicit resolved tag
+///   is empty. Use `None` to represent the absence of a tag.
 /// - `Unexpected` is used internally for invariant violations (e.g., around
 ///   anchors). It should not normally surface; if it does, please file a bug.
 #[non_exhaustive]
@@ -37,6 +39,10 @@ pub enum Error {
     /// A [`crate::SingleQuoted`] value contains a character that cannot be represented safely in
     /// YAML single-quoted style.
     SingleQuotedRequiresEscaping { ch: char },
+    /// A [`crate::Tagged`] value uses an empty string as an explicit resolved tag identity.
+    ///
+    /// Use `None` to represent a value without an explicit tag.
+    EmptyResolvedTag,
 }
 
 impl serde_core::ser::Error for Error {
@@ -106,6 +112,9 @@ impl fmt::Display for Error {
                     "Single quotes cannot be used for a string containing {ch:?}. Use double quoting for values that require YAML escape sequences"
                 )
             }
+            Error::EmptyResolvedTag => {
+                f.write_str("cannot serialize an explicit YAML tag with an empty resolved identity")
+            }
         }
     }
 }
@@ -118,7 +127,8 @@ impl std::error::Error for Error {
             Error::Message { .. }
             | Error::Unexpected { .. }
             | Error::InvalidOptions(_)
-            | Error::SingleQuotedRequiresEscaping { .. } => None,
+            | Error::SingleQuotedRequiresEscaping { .. }
+            | Error::EmptyResolvedTag => None,
         }
     }
 }

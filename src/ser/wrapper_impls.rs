@@ -210,10 +210,14 @@ impl<T: Serialize> Serialize for Commented<T> {
 
 impl<T: Serialize> Serialize for Tagged<T> {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        let Some(tag) = self.1.as_ref() else {
+            return self.0.serialize(s);
+        };
+
         // Stage the resolved tag before the value reveals whether it is a scalar
         // or collection, just as Commented stages its presentation metadata.
         let mut ts = s.serialize_tuple_struct(NAME_TUPLE_TAGGED, 2)?;
-        ts.serialize_field(&self.1)?;
+        ts.serialize_field(tag)?;
         ts.serialize_field(&self.0)?;
         ts.end()
     }

@@ -7,7 +7,7 @@ use super::events::Ev;
 use crate::Deserializer;
 
 /// Capture the parser-resolved tag on the next YAML node and expose the
-/// wrapper as the virtual sequence `[value, tag]`.
+/// wrapper as the virtual sequence `[value, tag?]`.
 pub(super) fn deserialize_yaml_tagged<'de, V>(
     de: Deserializer<'de, '_>,
     visitor: V,
@@ -20,8 +20,8 @@ where
             Ev::Scalar { raw_tag, .. }
             | Ev::SeqStart { raw_tag, .. }
             | Ev::MapStart { raw_tag, .. },
-        ) => raw_tag.as_deref().unwrap_or_default().to_owned(),
-        Some(Ev::SeqEnd { .. } | Ev::MapEnd { .. } | Ev::Taken { .. }) | None => String::new(),
+        ) => raw_tag.as_deref().map(str::to_owned),
+        Some(Ev::SeqEnd { .. } | Ev::MapEnd { .. } | Ev::Taken { .. }) | None => None,
     };
 
     visitor.visit_seq(TaggedSeqAccess { de, tag, state: 0 })
@@ -29,7 +29,7 @@ where
 
 struct TaggedSeqAccess<'de, 'e> {
     de: Deserializer<'de, 'e>,
-    tag: String,
+    tag: Option<String>,
     state: u8,
 }
 
@@ -80,15 +80,18 @@ impl<'de> de::SeqAccess<'de> for TaggedSeqAccess<'de, '_> {
             }
             1 => {
                 self.state = 2;
-                seed.deserialize(std::mem::take(&mut self.tag).into_deserializer())
-                    .map(Some)
+                match self.tag.take() {
+                    Some(tag) => seed.deserialize(tag.into_deserializer()).map(Some),
+                    None => Ok(None),
+                }
             }
             _ => Ok(None),
         }
     }
 
     fn size_hint(&self) -> Option<usize> {
-        Some(2usize.saturating_sub(self.state.into()))
+        let len = 1 + usize::from(self.tag.is_some());
+        Some(len.saturating_sub(self.state.into()))
     }
 }
 
@@ -97,21 +100,24 @@ mod tests {
     use crate::{Commented, Tagged, from_str};
 
     #[test]
-    fn captures_resolved_tags_and_empty_for_untagged_nodes() {
+    fn captures_resolved_tags_and_none_for_untagged_nodes() {
         let core: Tagged<String> = from_str("!!str value").unwrap();
-        assert_eq!(core, Tagged("value".into(), "tag:yaml.org,2002:str".into()));
+        assert_eq!(
+            core,
+            Tagged("value".into(), Some("tag:yaml.org,2002:str".into()))
+        );
 
         let local: Tagged<String> = from_str("!widget value").unwrap();
-        assert_eq!(local, Tagged("value".into(), "!widget".into()));
+        assert_eq!(local, Tagged("value".into(), Some("!widget".into())));
 
         let verbatim: Tagged<String> = from_str("!<tag:example.com,2026:widget> value").unwrap();
         assert_eq!(
             verbatim,
-            Tagged("value".into(), "tag:example.com,2026:widget".into())
+            Tagged("value".into(), Some("tag:example.com,2026:widget".into()))
         );
 
         let untagged: Tagged<String> = from_str("value").unwrap();
-        assert_eq!(untagged, Tagged("value".into(), String::new()));
+        assert_eq!(untagged, Tagged("value".into(), None));
     }
 
     #[test]
@@ -121,14 +127,17 @@ mod tests {
 
         assert_eq!(
             tagged,
-            Tagged("value".into(), "tag:example.com,2026:widget".into())
+            Tagged("value".into(), Some("tag:example.com,2026:widget".into()))
         );
     }
 
     #[test]
     fn captures_container_tags() {
         let sequence: Tagged<Vec<u32>> = from_str("!!seq [1, 2]").unwrap();
-        assert_eq!(sequence, Tagged(vec![1, 2], "tag:yaml.org,2002:seq".into()));
+        assert_eq!(
+            sequence,
+            Tagged(vec![1, 2], Some("tag:yaml.org,2002:seq".into()))
+        );
 
         let mapping: Tagged<std::collections::BTreeMap<String, u32>> =
             from_str("!!map {one: 1}").unwrap();
@@ -136,7 +145,7 @@ mod tests {
             mapping,
             Tagged(
                 std::collections::BTreeMap::from([("one".into(), 1)]),
-                "tag:yaml.org,2002:map".into(),
+                Some("tag:yaml.org,2002:map".into()),
             )
         );
     }
@@ -146,13 +155,19 @@ mod tests {
         let tagged_comment: Tagged<Commented<String>> = from_str("!widget value # note").unwrap();
         assert_eq!(
             tagged_comment,
-            Tagged(Commented("value".into(), "note".into()), "!widget".into())
+            Tagged(
+                Commented("value".into(), "note".into()),
+                Some("!widget".into())
+            )
         );
 
         let commented_tag: Commented<Tagged<String>> = from_str("!widget value # note").unwrap();
         assert_eq!(
             commented_tag,
-            Commented(Tagged("value".into(), "!widget".into()), "note".into())
+            Commented(
+                Tagged("value".into(), Some("!widget".into())),
+                "note".into()
+            )
         );
     }
 }

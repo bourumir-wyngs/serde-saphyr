@@ -195,11 +195,13 @@ pub struct Commented<T>(pub T, pub String);
 /// Capture and emit the resolved YAML tag attached to a value.
 ///
 /// The first field contains the value and the second contains its resolved tag.
-/// An empty tag string means that the input node had no explicit tag. Resolution
-/// deliberately discards source spelling: for example, `!!str` is captured as
-/// `tag:yaml.org,2002:str`, while a local tag such as `!widget` remains
-/// `!widget`. Tags resolved through a `%TAG` directive are captured as their
-/// complete URI.
+/// `None` means that the input node had no explicit tag. Resolution deliberately
+/// discards source spelling: for example, `!!str` is captured as
+/// `Some("tag:yaml.org,2002:str")`, while a local tag such as `!widget` is
+/// captured as `Some("!widget")`. Tags resolved through a `%TAG` directive are
+/// captured as their complete URI. A present tag always has a non-empty resolved
+/// identity; `Some("")` is invalid when serializing rather than an alternative
+/// spelling of `None`.
 ///
 /// During serialization, a resolved global tag URI is emitted using YAML's
 /// verbatim form (`!<...>`). This preserves the resolved tag identity across a
@@ -211,8 +213,8 @@ pub struct Commented<T>(pub T, pub String);
 /// `reject_unsupported_tags` option.
 ///
 /// Deserializers other than serde-saphyr do not provide YAML tag metadata; when
-/// used with one of them, `Tagged<T>` behaves transparently and gets an empty
-/// tag string.
+/// used with one of them, `Tagged<T>` behaves transparently and gets `None` as
+/// its tag.
 ///
 /// ```rust
 /// # #[cfg(all(feature = "serialize", feature = "deserialize"))]
@@ -222,7 +224,7 @@ pub struct Commented<T>(pub T, pub String);
 /// let value: Tagged<String> = from_str("!!str value").unwrap();
 /// assert_eq!(
 ///     value,
-///     Tagged("value".into(), "tag:yaml.org,2002:str".into()),
+///     Tagged("value".into(), Some("tag:yaml.org,2002:str".into())),
 /// );
 /// assert_eq!(
 ///     to_string(&value).unwrap(),
@@ -233,19 +235,25 @@ pub struct Commented<T>(pub T, pub String);
 ///     from_str("!widget value # note").unwrap();
 /// assert_eq!(
 ///     tagged_comment,
-///     Tagged(Commented("value".into(), "note".into()), "!widget".into()),
+///     Tagged(
+///         Commented("value".into(), "note".into()),
+///         Some("!widget".into()),
+///     ),
 /// );
 ///
 /// let commented_tag: Commented<Tagged<String>> =
 ///     from_str("!widget value # note").unwrap();
 /// assert_eq!(
 ///     commented_tag,
-///     Commented(Tagged("value".into(), "!widget".into()), "note".into()),
+///     Commented(
+///         Tagged("value".into(), Some("!widget".into())),
+///         "note".into(),
+///     ),
 /// );
 /// # }
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Tagged<T>(pub T, pub String);
+pub struct Tagged<T>(pub T, pub Option<String>);
 
 #[cfg(feature = "garde")]
 impl<T: garde::Validate> garde::Validate for Commented<T> {
@@ -392,7 +400,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Tagged<T> {
             where
                 D: Deserializer<'de>,
             {
-                T::deserialize(deserializer).map(|value| Tagged(value, String::new()))
+                T::deserialize(deserializer).map(|value| Tagged(value, None))
             }
 
             fn visit_seq<A>(self, mut seq: A) -> std::result::Result<Self::Value, A::Error>
@@ -402,7 +410,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Tagged<T> {
                 let value = seq
                     .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(0, &self))?;
-                let tag = seq.next_element()?.unwrap_or_default();
+                let tag: Option<String> = seq.next_element()?;
                 Ok(Tagged(value, tag))
             }
         }
@@ -467,6 +475,6 @@ mod tests {
     fn tagged_is_transparent_for_non_yaml_deserializers() {
         let value: Tagged<u32> = serde_json::from_str("5").unwrap();
 
-        assert_eq!(value, Tagged(5, String::new()));
+        assert_eq!(value, Tagged(5, None));
     }
 }

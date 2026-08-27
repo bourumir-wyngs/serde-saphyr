@@ -639,11 +639,10 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         }
     }
 
-    /// Stage a resolved tag supplied by [`crate::Tagged`]. An empty string is
-    /// transparent, matching deserialization of an untagged node.
+    /// Stage a resolved tag supplied by [`crate::Tagged`].
     fn stage_resolved_tag(&mut self, resolved: &str) -> Result<()> {
         if resolved.is_empty() {
-            return Ok(());
+            return Err(Error::EmptyResolvedTag);
         }
         self.stage_tag_with_token(resolved, resolved_tag_token(resolved))
     }
