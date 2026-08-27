@@ -50,6 +50,61 @@ fn strict_mode_rejects_unknown_tags_on_every_node_kind() {
 }
 
 #[test]
+fn known_tags_reject_incompatible_node_kinds_in_all_modes() {
+    for (yaml, expected_tag) in [
+        ("!!int [1]", "!!int"),
+        ("!!float {value: 1}", "!!float"),
+        ("!!bool [true]", "!!bool"),
+        ("!!null {value: null}", "!!null"),
+        ("!!timestamp [2026-01-01]", "!!timestamp"),
+        ("!!binary {value: SGVsbG8=}", "!!binary"),
+        ("!!str [value]", "!!str"),
+        ("!!seq scalar", "!!seq"),
+        ("!!seq {value: 1}", "!!seq"),
+        ("!!map scalar", "!!map"),
+        ("!!map [1]", "!!map"),
+        ("!!merge [value]", "!!merge"),
+        ("!!value {key: value}", "!!value"),
+        ("!degrees [180]", "!degrees"),
+        ("!radians {value: 0.5}", "!radians"),
+    ] {
+        let error = from_str::<IgnoredAny>(yaml).unwrap_err();
+        assert_unsupported_tag(&error, expected_tag);
+
+        let error = from_str_with_options::<IgnoredAny>(yaml, strict_options()).unwrap_err();
+        assert_unsupported_tag(&error, expected_tag);
+    }
+}
+
+#[test]
+fn include_tag_requires_a_scalar_in_all_modes() {
+    for yaml in ["!include [child.yaml]", "!include {path: child.yaml}"] {
+        let error = from_str::<IgnoredAny>(yaml).unwrap_err();
+        assert!(matches!(
+            error.without_snippet(),
+            Error::UnsupportedIncludeForm { .. }
+        ));
+
+        let error = from_str_with_options::<IgnoredAny>(yaml, strict_options()).unwrap_err();
+        assert!(matches!(
+            error.without_snippet(),
+            Error::UnsupportedIncludeForm { .. }
+        ));
+    }
+}
+
+#[test]
+fn strict_mode_accepts_collection_tags_on_compatible_node_kinds() {
+    let sequence = from_str_with_options::<Vec<String>>("!!seq [value]", strict_options()).unwrap();
+    assert_eq!(sequence, ["value"]);
+
+    let mapping =
+        from_str_with_options::<BTreeMap<String, String>>("!!map {key: value}", strict_options())
+            .unwrap();
+    assert_eq!(mapping.get("key").map(String::as_str), Some("value"));
+}
+
+#[test]
 fn strict_mode_reports_the_source_tag_spelling() {
     for (yaml, expected) in [
         ("!!unknown value", "!!unknown"),
@@ -144,11 +199,6 @@ fn strict_mode_rejects_merge_and_value_outside_exact_scalar_mapping_keys() {
         // Mapping keys with the wrong scalar content.
         ("!!merge foo: bar", "!!merge"),
         ("!!value foo: bar", "!!value"),
-        // These tags are scalar-only, independently of mapping position.
-        ("x: !!merge [foo]", "!!merge"),
-        ("x: !!value {foo: bar}", "!!value"),
-        ("!!merge [foo]", "!!merge"),
-        ("!!value {foo: bar}", "!!value"),
         // A tagged scalar nested inside a complex key is not itself a mapping key.
         ("? [!!merge <<]\n: value", "!!merge"),
     ] {
@@ -182,6 +232,15 @@ fn strict_mode_converts_robotics_tags_when_enabled() {
 
     let radians = from_str_with_options::<f64>("!radians 0.5", strict_robotics_options()).unwrap();
     assert!((radians - 0.5).abs() < f64::EPSILON);
+
+    for (yaml, expected_tag) in [
+        ("!degrees [180]", "!degrees"),
+        ("!radians {value: 0.5}", "!radians"),
+    ] {
+        let error =
+            from_str_with_options::<IgnoredAny>(yaml, strict_robotics_options()).unwrap_err();
+        assert_unsupported_tag(&error, expected_tag);
+    }
 }
 
 #[cfg(not(feature = "include"))]
@@ -198,6 +257,23 @@ fn strict_mode_rejects_include_without_configured_resolver() {
     let error =
         from_str_with_options::<IgnoredAny>("!include child.yaml", strict_options()).unwrap_err();
     assert_unsupported_tag(&error, "!include");
+}
+
+#[cfg(feature = "include")]
+#[test]
+fn strict_mode_rejects_non_scalar_include_with_configured_resolver() {
+    let options = strict_options().with_include_resolver(|request| {
+        Ok(serde_saphyr::ResolvedInclude::new(
+            request.spec,
+            "unused.yaml",
+            serde_saphyr::InputSource::from_string("unused".to_owned()),
+        ))
+    });
+    let error = from_str_with_options::<IgnoredAny>("!include [child.yaml]", options).unwrap_err();
+    assert!(matches!(
+        error.without_snippet(),
+        Error::UnsupportedIncludeForm { .. }
+    ));
 }
 
 #[test]

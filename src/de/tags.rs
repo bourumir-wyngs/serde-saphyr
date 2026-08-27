@@ -97,6 +97,17 @@ pub(crate) enum SfTag {
     Other,
 }
 
+/// Syntactic YAML node kind required by a recognized tag.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum TagNodeKind {
+    /// A scalar node.
+    Scalar,
+    /// A sequence node.
+    Sequence,
+    /// A mapping node.
+    Mapping,
+}
+
 static TAG_LOOKUP_MAP: LazyLock<BTreeMap<&'static str, SfTag>> = LazyLock::new(|| {
     BTreeMap::from([
         // Core-like spellings kept for compatibility. Resolved YAML 1.2.2 Core Schema tags are
@@ -181,6 +192,30 @@ fn core_suffix_to_sf_tag(suffix: &str) -> Option<SfTag> {
 }
 
 impl SfTag {
+    /// Return the node kind required by this tag, if it has one.
+    ///
+    /// Unknown and non-specific tags have no intrinsic kind requirement. Their
+    /// acceptance is controlled separately by strict unsupported-tag validation.
+    pub(crate) const fn requires(self) -> Option<TagNodeKind> {
+        match self {
+            SfTag::Int
+            | SfTag::Float
+            | SfTag::Bool
+            | SfTag::Null
+            | SfTag::TimeStamp
+            | SfTag::Binary
+            | SfTag::String
+            | SfTag::Merge
+            | SfTag::Value
+            | SfTag::Include
+            | SfTag::Degrees
+            | SfTag::Radians => Some(TagNodeKind::Scalar),
+            SfTag::Seq => Some(TagNodeKind::Sequence),
+            SfTag::Map => Some(TagNodeKind::Mapping),
+            SfTag::None | SfTag::NonSpecific | SfTag::Other => None,
+        }
+    }
+
     pub(crate) fn from_optional_cow(tag: &Option<Cow<Tag>>) -> SfTag {
         match parse_include_tag(tag) {
             IncludeTag::Plain | IncludeTag::WithFragment(_) | IncludeTag::InvalidFragment => {
@@ -271,7 +306,7 @@ fn is_yaml_value_tag(tag: &Tag) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{SfTag, core_suffix_to_sf_tag, is_yaml_merge_tag, is_yaml_value_tag};
+    use super::{SfTag, TagNodeKind, core_suffix_to_sf_tag, is_yaml_merge_tag, is_yaml_value_tag};
     use granit_parser::Tag;
     use std::borrow::Cow;
 
@@ -353,5 +388,30 @@ mod tests {
     #[test]
     fn non_specific_tag_is_string_compatible() {
         assert!(SfTag::NonSpecific.can_parse_into_string());
+    }
+
+    #[test]
+    fn recognized_tags_expose_their_required_node_kind() {
+        for tag in [
+            SfTag::Int,
+            SfTag::Float,
+            SfTag::Bool,
+            SfTag::Null,
+            SfTag::TimeStamp,
+            SfTag::Binary,
+            SfTag::String,
+            SfTag::Merge,
+            SfTag::Value,
+            SfTag::Include,
+            SfTag::Degrees,
+            SfTag::Radians,
+        ] {
+            assert_eq!(tag.requires(), Some(TagNodeKind::Scalar));
+        }
+        assert_eq!(SfTag::Seq.requires(), Some(TagNodeKind::Sequence));
+        assert_eq!(SfTag::Map.requires(), Some(TagNodeKind::Mapping));
+        for tag in [SfTag::None, SfTag::NonSpecific, SfTag::Other] {
+            assert_eq!(tag.requires(), None);
+        }
     }
 }

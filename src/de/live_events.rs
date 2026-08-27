@@ -37,7 +37,7 @@ use crate::include::create_parser_from_reader_input;
 use crate::include::{BaseParser, create_parser_from_str};
 use crate::location::location_from_span;
 use crate::options::BudgetReportCallback;
-use crate::tags::SfTag;
+use crate::tags::{SfTag, TagNodeKind};
 use granit_parser::{Event, Placement, ScalarStyle, ScanError, Span, StructureStyle, Tag};
 
 #[cfg(not(feature = "include"))]
@@ -512,20 +512,48 @@ impl<'a> LiveEvents<'a> {
         &self,
         tag_kind: SfTag,
         tag: impl FnOnce() -> String,
+        node_kind: TagNodeKind,
         scalar_value: Option<&str>,
         position: NodePosition,
         location: Location,
     ) -> Result<(), Error> {
-        let supported = match tag_kind {
+        if tag_kind
+            .requires()
+            .is_some_and(|required| required != node_kind)
+        {
+            return if tag_kind == SfTag::Include {
+                Err(Error::UnsupportedIncludeForm { location })
+            } else {
+                Err(Error::UnsupportedTag {
+                    tag: tag(),
+                    location,
+                })
+            };
+        }
+
+        if !self.reject_unsupported_tags {
+            return Ok(());
+        }
+
+        let supported_in_strict_mode = match tag_kind {
             SfTag::Other => false,
             SfTag::Merge => position == NodePosition::MappingKey && scalar_value == Some("<<"),
             SfTag::Value => position == NodePosition::MappingKey && scalar_value == Some("="),
             SfTag::Degrees | SfTag::Radians => self.angle_conversions && cfg!(feature = "robotics"),
             SfTag::Include => self.parser.has_resolver(),
-            _ => true,
+            SfTag::None
+            | SfTag::Int
+            | SfTag::Float
+            | SfTag::Bool
+            | SfTag::Null
+            | SfTag::Seq
+            | SfTag::Map
+            | SfTag::TimeStamp
+            | SfTag::Binary
+            | SfTag::String
+            | SfTag::NonSpecific => true,
         };
-
-        if !supported {
+        if !supported_in_strict_mode {
             return Err(Error::UnsupportedTag {
                 tag: tag(),
                 location,
@@ -575,13 +603,18 @@ impl<'a> LiveEvents<'a> {
         value: &str,
         location: Location,
     ) -> Result<(), Error> {
-        if !self.reject_unsupported_tags {
-            return Ok(());
-        }
-
         let position = self.next_node_position();
-        self.ensure_supported_tag(tag_kind, tag, Some(value), position, location)?;
-        self.finish_tagged_node(position);
+        self.ensure_supported_tag(
+            tag_kind,
+            tag,
+            TagNodeKind::Scalar,
+            Some(value),
+            position,
+            location,
+        )?;
+        if self.reject_unsupported_tags {
+            self.finish_tagged_node(position);
+        }
         Ok(())
     }
 
@@ -592,12 +625,16 @@ impl<'a> LiveEvents<'a> {
         is_mapping: bool,
         location: Location,
     ) -> Result<(), Error> {
+        let parent_position = self.next_node_position();
+        let node_kind = if is_mapping {
+            TagNodeKind::Mapping
+        } else {
+            TagNodeKind::Sequence
+        };
+        self.ensure_supported_tag(tag_kind, tag, node_kind, None, parent_position, location)?;
         if !self.reject_unsupported_tags {
             return Ok(());
         }
-
-        let parent_position = self.next_node_position();
-        self.ensure_supported_tag(tag_kind, tag, None, parent_position, location)?;
         self.tag_context.push(if is_mapping {
             TagContextFrame::Mapping {
                 expecting_key: true,

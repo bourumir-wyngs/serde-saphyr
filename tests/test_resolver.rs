@@ -322,7 +322,7 @@ fn resolver_request_uses_canonical_from_id_and_display_from_name() {
 
 #[cfg(feature = "include")]
 #[test]
-fn test_unsupported_include_form() {
+fn test_include_tag_requires_scalar_form() {
     let input = "
 foo: !include { \"path\": \"file_b.yml\", \"extension\": \"txt\" }
 ";
@@ -341,32 +341,36 @@ foo: !include { \"path\": \"file_b.yml\", \"extension\": \"txt\" }
 
 #[cfg(feature = "include")]
 #[test]
-fn test_include_sequence_form_without_resolver_is_not_treated_as_include() {
+fn test_include_sequence_form_without_resolver_is_rejected() {
     let input = "
 foo: !include [file_b.yml]
 ";
-    let result: Result<serde::de::IgnoredAny, _> =
-        serde_saphyr::from_str_with_options(input, serde_saphyr::options! {});
-    assert!(
-        result.is_ok(),
-        "Expected Ok without resolver, got: {:?}",
-        result
+    let err = serde_saphyr::from_str_with_options::<serde::de::IgnoredAny>(
+        input,
+        serde_saphyr::options! {},
     );
+    let err: Error = err.unwrap_err();
+    assert!(matches!(
+        err.without_snippet(),
+        Error::UnsupportedIncludeForm { .. }
+    ));
 }
 
 #[cfg(feature = "include")]
 #[test]
-fn test_include_mapping_form_without_resolver_is_not_treated_as_include() {
+fn test_include_mapping_form_without_resolver_is_rejected() {
     let input = "
 foo: !include { path: file_b.yml, extension: txt }
 ";
-    let result: Result<serde::de::IgnoredAny, _> =
-        serde_saphyr::from_str_with_options(input, serde_saphyr::options! {});
-    assert!(
-        result.is_ok(),
-        "Expected Ok without resolver, got: {:?}",
-        result
+    let err = serde_saphyr::from_str_with_options::<serde::de::IgnoredAny>(
+        input,
+        serde_saphyr::options! {},
     );
+    let err: Error = err.unwrap_err();
+    assert!(matches!(
+        err.without_snippet(),
+        Error::UnsupportedIncludeForm { .. }
+    ));
 }
 
 #[cfg(feature = "include")]

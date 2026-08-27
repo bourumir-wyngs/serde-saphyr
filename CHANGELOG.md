@@ -11,6 +11,8 @@
   robotics-only `!degrees` and `!radians` require both the `robotics` crate feature and
   `angle_conversions`, and `!include` requires both the `include` crate feature and a configured
   resolver.
+- Enforced the scalar, sequence, or mapping node kinds required by recognized tags even when
+  `reject_unsupported_tags` is disabled.
 - Hardened serializer indentation handling: `indent_step` is now limited to `1..=64`, all
   serializer entry points validate it, and indentation arithmetic returns an error instead of
   overflowing. We do not consider this breaking because values outside this range does not look sane.
