@@ -233,7 +233,9 @@ pub struct Options {
     /// and `!!value` tags are accepted only on their exact scalar mapping keys, `<<`
     /// and `=` respectively. Robotics-only `!degrees` and `!radians` tags are
     /// supported only when the `robotics` crate feature and
-    /// [`Self::angle_conversions`] are both enabled.
+    /// [`Self::angle_conversions`] are both enabled. The `!include` tag is supported
+    /// only when the `include` crate feature is enabled and an include resolver is
+    /// configured.
     ///
     /// Default: false (preserve unsupported tags for compatibility with tagged enums
     /// and otherwise ignore them where possible).

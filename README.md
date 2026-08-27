@@ -306,6 +306,8 @@ select enum variants. YAML 1.1 `!!merge` and `!!value` tags remain accepted only
 scalar mapping keys, `<<` and `=` respectively; using either tag on a value, a collection, or any
 other scalar is rejected in strict mode. Robotics-only `!degrees` and `!radians` tags are accepted
 in strict mode only when the `robotics` crate feature and `angle_conversions: true` are both enabled.
+Likewise, `!include` is accepted only when the `include` crate feature is enabled and an include
+resolver is configured.
 
 Tagged enums written as `!!EnumName VARIANT` are also supported, but only for single-level scalar variants. Use mapping-based representations (`EnumName: RED`) if you need to embed enums within other enums.
 
@@ -678,7 +680,7 @@ a: 1
 b: 2
 ```
 
-`!include` is gated behind the `include` feature flag. If it is not enabled, or the resolver is not set, this tag has no special treatment. The `include` feature allows resolvers that do not access the filesystem. For the most common case, where files are included from the filesystem, `include_fs` must be enabled as well. Then the most common way to enable includes looks like this:
+`!include` is gated behind the `include` feature flag. If it is not enabled, or the resolver is not set, this tag has no special treatment; with `reject_unsupported_tags: true`, it is rejected as unsupported. The `include` feature allows resolvers that do not access the filesystem. For the most common case, where files are included from the filesystem, `include_fs` must be enabled as well. Then the most common way to enable includes looks like this:
 
 ```rust,no_run
 use serde::Deserialize;

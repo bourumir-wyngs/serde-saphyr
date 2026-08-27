@@ -9,7 +9,8 @@
   permissive for compatibility with custom tagged enums. YAML 1.1 `!!merge` and `!!value` are
   accepted in this mode only as the exact scalar mapping keys `<<` and `=`, respectively, while
   robotics-only `!degrees` and `!radians` require both the `robotics` crate feature and
-  `angle_conversions`.
+  `angle_conversions`, and `!include` requires both the `include` crate feature and a configured
+  resolver.
 - Hardened serializer indentation handling: `indent_step` is now limited to `1..=64`, all
   serializer entry points validate it, and indentation arithmetic returns an error instead of
   overflowing. We do not consider this breaking because values outside this range does not look sane.

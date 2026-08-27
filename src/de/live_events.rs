@@ -174,6 +174,11 @@ impl<'input> GranitParser<'input> {
         }
     }
 
+    #[cfg(not(feature = "include"))]
+    fn has_resolver(&self) -> bool {
+        false
+    }
+
     #[cfg(feature = "include")]
     fn recorded_source_chain(&self, source_id: u32) -> Vec<&crate::include_stack::RecordedSource> {
         match self {
@@ -516,6 +521,7 @@ impl<'a> LiveEvents<'a> {
             SfTag::Merge => position == NodePosition::MappingKey && scalar_value == Some("<<"),
             SfTag::Value => position == NodePosition::MappingKey && scalar_value == Some("="),
             SfTag::Degrees | SfTag::Radians => self.angle_conversions && cfg!(feature = "robotics"),
+            SfTag::Include => self.parser.has_resolver(),
             _ => true,
         };
 

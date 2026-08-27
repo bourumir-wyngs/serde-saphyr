@@ -184,6 +184,22 @@ fn strict_mode_converts_robotics_tags_when_enabled() {
     assert!((radians - 0.5).abs() < f64::EPSILON);
 }
 
+#[cfg(not(feature = "include"))]
+#[test]
+fn strict_mode_rejects_include_without_compiled_support() {
+    let error =
+        from_str_with_options::<IgnoredAny>("!include child.yaml", strict_options()).unwrap_err();
+    assert_unsupported_tag(&error, "!include");
+}
+
+#[cfg(feature = "include")]
+#[test]
+fn strict_mode_rejects_include_without_configured_resolver() {
+    let error =
+        from_str_with_options::<IgnoredAny>("!include child.yaml", strict_options()).unwrap_err();
+    assert_unsupported_tag(&error, "!include");
+}
+
 #[test]
 fn strict_mode_rechecks_key_only_tags_when_aliases_are_replayed() {
     let error = from_str_with_options::<IgnoredAny>(
