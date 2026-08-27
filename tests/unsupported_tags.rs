@@ -151,6 +151,21 @@ fn strict_mode_rejects_merge_and_value_outside_exact_scalar_mapping_keys() {
 }
 
 #[test]
+fn strict_mode_accepts_robotics_tags_only_with_angle_conversions() {
+    for (yaml, expected_tag) in [("!degrees 180", "!degrees"), ("!radians 0.5", "!radians")] {
+        let error = from_str_with_options::<f64>(yaml, strict_options()).unwrap_err();
+        assert_unsupported_tag(&error, expected_tag);
+
+        let options = options! {
+            reject_unsupported_tags: true,
+            angle_conversions: true,
+        };
+        from_str_with_options::<f64>(yaml, options)
+            .expect("enabled robotics tag must be accepted in strict mode");
+    }
+}
+
+#[test]
 fn strict_mode_rechecks_key_only_tags_when_aliases_are_replayed() {
     let error = from_str_with_options::<IgnoredAny>(
         "&tagged !!value =: definition\nmisused: *tagged\n",

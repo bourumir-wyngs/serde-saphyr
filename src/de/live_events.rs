@@ -263,6 +263,9 @@ pub(crate) struct LiveEvents<'a> {
     /// Whether explicitly tagged nodes whose tags are unknown to this crate are rejected.
     reject_unsupported_tags: bool,
 
+    /// Whether robotics-only angle tags are supported in strict mode.
+    angle_conversions: bool,
+
     /// Structural context used to constrain YAML 1.1 key-only tags in strict mode.
     tag_context: SmallVec<[TagContextFrame; 16]>,
 
@@ -326,6 +329,7 @@ impl<'a> LiveEvents<'a> {
         let merge_keys = options.merge_keys;
         let pending_error = options.validate().err();
         let reject_unsupported_tags = options.reject_unsupported_tags;
+        let angle_conversions = options.angle_conversions;
         let require_indent = options.require_indent;
         #[cfg(feature = "properties")]
         let property_map = options.property_map.clone();
@@ -386,6 +390,7 @@ impl<'a> LiveEvents<'a> {
 
             pending_error,
             reject_unsupported_tags,
+            angle_conversions,
             tag_context: SmallVec::new(),
 
             require_indent,
@@ -414,6 +419,7 @@ impl<'a> LiveEvents<'a> {
         let merge_keys = options.merge_keys;
         let pending_error = options.validate().err();
         let reject_unsupported_tags = options.reject_unsupported_tags;
+        let angle_conversions = options.angle_conversions;
         let require_indent = options.require_indent;
         #[cfg(feature = "properties")]
         let property_map = options.property_map.clone();
@@ -473,6 +479,7 @@ impl<'a> LiveEvents<'a> {
 
             pending_error,
             reject_unsupported_tags,
+            angle_conversions,
             tag_context: SmallVec::new(),
 
             require_indent,
@@ -507,6 +514,7 @@ impl<'a> LiveEvents<'a> {
             SfTag::Other => false,
             SfTag::Merge => position == NodePosition::MappingKey && scalar_value == Some("<<"),
             SfTag::Value => position == NodePosition::MappingKey && scalar_value == Some("="),
+            SfTag::Degrees | SfTag::Radians => self.angle_conversions,
             _ => true,
         };
 
