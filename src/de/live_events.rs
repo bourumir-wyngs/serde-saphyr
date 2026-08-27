@@ -26,6 +26,7 @@ use crate::budget::{BudgetEnforcer, EnforcingPolicy};
 #[cfg(not(feature = "include"))]
 use crate::buffered_input::ReaderInput;
 
+use super::events::attach_alias_locations_if_missing;
 use crate::buffered_input::buffered_input_from_reader_with_limit;
 #[cfg(feature = "properties")]
 use crate::de::PropertySyntax;
@@ -635,7 +636,12 @@ impl<'a> LiveEvents<'a> {
             )
         }
 
-        match ev {
+        let defined_location = ev.location();
+        let reference_location = self
+            .inject
+            .last()
+            .map_or(defined_location, |frame| frame.reference_location);
+        let result = match ev {
             Ev::Scalar {
                 value,
                 tag,
@@ -681,7 +687,11 @@ impl<'a> LiveEvents<'a> {
             Ev::Taken { location } => {
                 Err(Error::unexpected("consumed event").with_location(*location))
             }
-        }
+        };
+
+        result.map_err(|error| {
+            attach_alias_locations_if_missing(error, reference_location, defined_location)
+        })
     }
 
     fn event_kind(ev: &Ev<'_>) -> Option<ConsumedEventKind> {
@@ -1240,8 +1250,13 @@ impl<'a> LiveEvents<'a> {
     /// Observe the configured budget for a replayed (injected) event.
     ///
     /// Reconstructs a parser Event equivalent to the Ev and passes it to the
-    /// `BudgetEnforcer`, attaching the event's location on error.
+    /// `BudgetEnforcer`, attaching the alias use and anchor definition locations on error.
     fn observe_budget_for_replay(&mut self, ev: &Ev) -> Result<(), Error> {
+        let defined_location = ev.location();
+        let reference_location = self
+            .inject
+            .last()
+            .map_or(defined_location, |frame| frame.reference_location);
         let Some(budget) = self.budget.as_mut() else {
             return Ok(());
         };
@@ -1265,9 +1280,13 @@ impl<'a> LiveEvents<'a> {
             }
         };
 
-        budget
-            .observe(&raw)
-            .map_err(|breach| budget_error(breach).with_location(ev.location()))
+        budget.observe(&raw).map_err(|breach| {
+            attach_alias_locations_if_missing(
+                budget_error(breach).with_location(defined_location),
+                reference_location,
+                defined_location,
+            )
+        })
     }
 
     /// Record an event into active recording frames.

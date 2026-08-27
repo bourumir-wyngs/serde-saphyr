@@ -175,10 +175,17 @@ fn strict_mode_rechecks_key_only_tags_when_aliases_are_replayed() {
     assert!(
         matches!(
             error.without_snippet(),
-            Error::UnsupportedTag { tag, .. } if tag.ends_with("value")
+            Error::AliasError { msg, .. }
+                if msg.contains("unsupported tag") && msg.contains("value")
         ),
         "unexpected error: {error:?}"
     );
+    let locations = error
+        .locations()
+        .expect("alias error must report locations");
+    assert_eq!(locations.reference_location.line(), 2);
+    assert_eq!(locations.defined_location.line(), 1);
+    assert_eq!(error.location().map(|location| location.line()), Some(2));
 }
 
 #[cfg(feature = "include")]

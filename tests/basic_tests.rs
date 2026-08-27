@@ -724,13 +724,14 @@ target:
             assert!(
                 matches!(
                     unwrap_snippet(&err),
-                    Error::Budget {
-                        breach: BudgetBreach::MergeKeys { merge_keys: 1 },
-                        ..
-                    }
+                    Error::AliasError { msg, .. } if msg.starts_with("budget breached")
                 ),
                 "unexpected error: {err:?}"
             );
+            let locations = err.locations().expect("alias error must report locations");
+            assert_eq!(locations.reference_location.line(), 5);
+            assert_eq!(locations.defined_location.line(), 2);
+            assert_eq!(err.location().map(|location| location.line()), Some(5));
         }
     }
 }

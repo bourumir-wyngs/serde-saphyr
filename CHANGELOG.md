@@ -27,6 +27,8 @@
   "multiple YAML documents" error.
 - Rejected non-UTF-8 canonical include and root-file paths before resolver policy checks and source
   identity handling, preventing lossy path collisions and policy bypasses on Unix.
+- Reported alias-use locations as primary for unsupported-tag and budget failures during replay,
+  while retaining the anchor-definition locations as secondary context.
 
 ### Testing
 
