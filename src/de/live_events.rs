@@ -98,20 +98,39 @@ struct PendingTrailingComment<'a> {
     kind: PendingTrailingCommentKind,
 }
 
+/// Position occupied by a complete YAML node relative to its immediate parent.
+///
+/// Strict tag validation uses this distinction because YAML 1.1 `!!merge` and
+/// `!!value` are valid only when the tagged scalar itself is a mapping key. A
+/// scalar nested inside a sequence used as a complex key is therefore [`Self::Other`],
+/// not [`Self::MappingKey`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum NodePosition {
+    /// The node is a direct mapping key.
     MappingKey,
+    /// The node is a direct mapping value.
     MappingValue,
+    /// The node is a document root or sequence item.
     Other,
 }
 
+/// Strict-tag structural state for an open collection in the logical event stream.
+///
+/// `parent_position` records the slot occupied by the collection as a whole. That
+/// slot is completed only when the collection ends, so nested events cannot advance
+/// the enclosing mapping's key/value state prematurely.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TagContextFrame {
+    /// An open sequence.
     Sequence {
+        /// Position of the complete sequence in its enclosing collection.
         parent_position: NodePosition,
     },
+    /// An open mapping.
     Mapping {
+        /// Whether the next direct child begins a key rather than a value.
         expecting_key: bool,
+        /// Position of the complete mapping in its enclosing collection.
         parent_position: NodePosition,
     },
 }
