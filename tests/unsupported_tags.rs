@@ -3,6 +3,7 @@
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 use serde_saphyr::{Error, from_reader_with_options, from_str, from_str_with_options, options};
+use std::collections::BTreeMap;
 use std::io::Cursor;
 
 fn strict_options() -> serde_saphyr::Options {
@@ -85,7 +86,7 @@ fn strict_mode_applies_to_reader_entrypoints() {
 
 #[test]
 fn strict_mode_accepts_merge_and_value_as_exact_scalar_mapping_keys() {
-    let ordinary = from_str_with_options::<std::collections::BTreeMap<String, String>>(
+    let ordinary = from_str_with_options::<BTreeMap<String, String>>(
         "!!value =: library.dll\nversion: 1.2\n",
         strict_options(),
     )
@@ -93,7 +94,7 @@ fn strict_mode_accepts_merge_and_value_as_exact_scalar_mapping_keys() {
     assert_eq!(ordinary.get("=").map(String::as_str), Some("library.dll"));
     assert_eq!(ordinary.get("version").map(String::as_str), Some("1.2"));
 
-    let merged = from_str_with_options::<std::collections::BTreeMap<String, u32>>(
+    let merged = from_str_with_options::<BTreeMap<String, u32>>(
         "!!merge <<: {one: 1}\ntwo: 2\n",
         strict_options(),
     )
@@ -108,11 +109,8 @@ fn strict_mode_accepts_resolved_merge_and_value_key_tag_forms() {
         "!<tag:yaml.org,2002:value> '=': data",
         "%TAG !v! tag:yaml.org,2002:\n---\n!v!value =: data",
     ] {
-        let value = from_str_with_options::<std::collections::BTreeMap<String, String>>(
-            yaml,
-            strict_options(),
-        )
-        .unwrap();
+        let value =
+            from_str_with_options::<BTreeMap<String, String>>(yaml, strict_options()).unwrap();
         assert_eq!(value.get("=").map(String::as_str), Some("data"));
     }
 
@@ -120,11 +118,7 @@ fn strict_mode_accepts_resolved_merge_and_value_key_tag_forms() {
         "!<tag:yaml.org,2002:merge> '<<': {one: 1}",
         "%TAG !m! tag:yaml.org,2002:\n---\n!m!merge <<: {one: 1}",
     ] {
-        let value = from_str_with_options::<std::collections::BTreeMap<String, u32>>(
-            yaml,
-            strict_options(),
-        )
-        .unwrap();
+        let value = from_str_with_options::<BTreeMap<String, u32>>(yaml, strict_options()).unwrap();
         assert_eq!(value.get("one"), Some(&1));
     }
 }
@@ -132,14 +126,23 @@ fn strict_mode_accepts_resolved_merge_and_value_key_tag_forms() {
 #[test]
 fn strict_mode_rejects_merge_and_value_outside_exact_scalar_mapping_keys() {
     for (yaml, expected) in [
+        // Exact value-position examples from issue #180.
         ("x: !!merge foo", "!!merge"),
         ("x: !!value foo", "!!value"),
-        ("x: !!merge [foo]", "!!merge"),
-        ("x: !!value {foo: bar}", "!!value"),
+        // Correct special scalars, including quoted forms, are still invalid as values.
         ("x: !!merge <<", "!!merge"),
         ("x: !!value =", "!!value"),
+        ("x: !!merge '<<'", "!!merge"),
+        ("x: !!value '='", "!!value"),
+        // Mapping keys with the wrong scalar content.
         ("!!merge foo: bar", "!!merge"),
         ("!!value foo: bar", "!!value"),
+        // These tags are scalar-only, independently of mapping position.
+        ("x: !!merge [foo]", "!!merge"),
+        ("x: !!value {foo: bar}", "!!value"),
+        ("!!merge [foo]", "!!merge"),
+        ("!!value {foo: bar}", "!!value"),
+        // A tagged scalar nested inside a complex key is not itself a mapping key.
         ("? [!!merge <<]\n: value", "!!merge"),
     ] {
         let error = from_str_with_options::<IgnoredAny>(yaml, strict_options()).unwrap_err();
