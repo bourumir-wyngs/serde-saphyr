@@ -229,10 +229,10 @@ pub struct Options {
 
     /// Reject explicitly specified YAML tags that `serde-saphyr` does not recognize.
     ///
-    /// This includes application-specific local and global tags. Known YAML tags and
-    /// tags supported by this crate, such as `!!merge` and `!!value`, remain accepted.
-    /// Robotics-only `!degrees` and `!radians` tags are supported only when
-    /// [`Self::angle_conversions`] is enabled.
+    /// This includes application-specific local and global tags. YAML 1.1 `!!merge`
+    /// and `!!value` tags are accepted only on their exact scalar mapping keys, `<<`
+    /// and `=` respectively. Robotics-only `!degrees` and `!radians` tags are
+    /// supported only when [`Self::angle_conversions`] is enabled.
     ///
     /// Default: false (preserve unsupported tags for compatibility with tagged enums
     /// and otherwise ignore them where possible).
