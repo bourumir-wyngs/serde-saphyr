@@ -21,8 +21,9 @@ use super::quoting::{
 };
 use super::{
     Error, NAME_DOUBLE_QUOTED, NAME_FLOW_MAP, NAME_FLOW_SEQ, NAME_NULLABLE_TILDE,
-    NAME_SINGLE_QUOTED, NAME_SPACE_AFTER, NAME_TUPLE_ANCHOR, NAME_TUPLE_COMMENTED, NAME_TUPLE_WEAK,
-    Result, checked_depth_add, checked_indentation, wrapping, zmij_format,
+    NAME_SINGLE_QUOTED, NAME_SPACE_AFTER, NAME_TUPLE_ANCHOR, NAME_TUPLE_COMMENTED,
+    NAME_TUPLE_TAGGED, NAME_TUPLE_WEAK, Result, checked_depth_add, checked_indentation, wrapping,
+    zmij_format,
 };
 
 // ------------------------------------------------------------
@@ -65,6 +66,89 @@ impl PendingStrStyle {
 type AnchorId = u32;
 
 const MAX_ANCHOR_NAME_BYTES: usize = 256;
+const YAML_TAG_NAMESPACE: &str = "tag:yaml.org,2002:";
+
+/// A tag staged by a wrapper or by an internal serializer feature.
+///
+/// Equality and anchor compatibility use the resolved identity. `emitted` is
+/// only a presentation choice, retained so existing `!!binary` and tagged-enum
+/// output stays compact when those features stage the tag first.
+struct PendingTag {
+    resolved: String,
+    emitted: String,
+}
+
+#[inline]
+const fn is_global_tag_uri_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric()
+        || matches!(
+            byte,
+            b'-' | b'#'
+                | b';'
+                | b'/'
+                | b'?'
+                | b':'
+                | b'@'
+                | b'&'
+                | b'='
+                | b'+'
+                | b'$'
+                | b','
+                | b'_'
+                | b'.'
+                | b'!'
+                | b'~'
+                | b'*'
+                | b'\''
+                | b'('
+                | b')'
+                | b'['
+                | b']'
+        )
+}
+
+#[inline]
+const fn is_local_tag_suffix_byte(byte: u8) -> bool {
+    is_global_tag_uri_byte(byte) && !matches!(byte, b'!' | b',' | b'[' | b']')
+}
+
+fn push_percent_encoded(out: &mut String, value: &str, safe: fn(u8) -> bool) {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    for byte in value.bytes() {
+        // A literal '%' must always be escaped: the YAML parser interprets it
+        // as the start of an encoded UTF-8 scalar and decodes it again.
+        if byte != b'%' && safe(byte) {
+            out.push(char::from(byte));
+        } else {
+            out.push('%');
+            out.push(char::from(HEX[usize::from(byte >> 4)]));
+            out.push(char::from(HEX[usize::from(byte & 0x0f)]));
+        }
+    }
+}
+
+/// Convert a resolved tag identity into one canonical, injection-safe YAML token.
+fn resolved_tag_token(resolved: &str) -> String {
+    if let Some(suffix) = resolved.strip_prefix('!') {
+        let mut token = String::with_capacity(resolved.len());
+        token.push('!');
+        push_percent_encoded(&mut token, suffix, is_local_tag_suffix_byte);
+        token
+    } else {
+        let mut token = String::with_capacity(resolved.len() + 3);
+        token.push_str("!<");
+        push_percent_encoded(&mut token, resolved, is_global_tag_uri_byte);
+        token.push('>');
+        token
+    }
+}
+
+fn core_tag_token(suffix: &str) -> String {
+    let mut token = String::with_capacity(suffix.len() + 2);
+    token.push_str("!!");
+    push_percent_encoded(&mut token, suffix, is_local_tag_suffix_byte);
+    token
+}
 
 fn is_supported_anchor_name(name: &str) -> bool {
     !name.is_empty()
@@ -155,6 +239,8 @@ struct SerializerState {
     in_flow: usize,
     /// Pending explicit or automatically selected block-string style.
     pending_str_style: Option<PendingStrStyle>,
+    /// Resolved tag identity and its selected output spelling for the next node.
+    pending_tag: Option<PendingTag>,
     /// Inline comment waiting for the next scalar.
     pending_inline_comment: Option<String>,
     /// Short-lived layout signals shared by nested collection serializers.
@@ -177,6 +263,7 @@ impl Default for SerializerState {
             pending_flow: None,
             in_flow: 0,
             pending_str_style: None,
+            pending_tag: None,
             pending_inline_comment: None,
             pending_layout: PendingLayout::default(),
             last_value_was_block: false,
@@ -204,6 +291,8 @@ struct AnchorState {
     generator: Option<fn(usize) -> String>,
     /// Cached custom names, indexed by `id - 1`.
     custom_names: Option<Vec<String>>,
+    /// Resolved tag attached to each anchor definition, indexed by `id - 1`.
+    resolved_tags: Vec<Option<String>>,
 }
 
 impl AnchorState {
@@ -214,7 +303,22 @@ impl AnchorState {
             pending_id: None,
             generator,
             custom_names: None,
+            resolved_tags: Vec::new(),
         }
+    }
+
+    fn record_resolved_tag(&mut self, id: AnchorId, tag: Option<&str>) {
+        let idx = id as usize - 1;
+        if self.resolved_tags.len() <= idx {
+            self.resolved_tags.resize_with(idx + 1, || None);
+        }
+        self.resolved_tags[idx] = tag.map(ToOwned::to_owned);
+    }
+
+    fn resolved_tag(&self, id: AnchorId) -> Option<&str> {
+        self.resolved_tags
+            .get(id as usize - 1)
+            .and_then(Option::as_deref)
     }
 }
 
@@ -535,16 +639,50 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         }
     }
 
+    /// Stage a resolved tag supplied by [`crate::Tagged`]. An empty string is
+    /// transparent, matching deserialization of an untagged node.
+    fn stage_resolved_tag(&mut self, resolved: &str) -> Result<()> {
+        if resolved.is_empty() {
+            return Ok(());
+        }
+        self.stage_tag_with_token(resolved, resolved_tag_token(resolved))
+    }
+
+    /// Stage a tag with a preferred spelling used by built-in serializer
+    /// features. Nested equal tags coalesce by resolved identity; different
+    /// tags cannot both decorate the same YAML node.
+    fn stage_tag_with_token(&mut self, resolved: &str, emitted: String) -> Result<()> {
+        match self.state.pending_tag.as_ref() {
+            Some(pending) if pending.resolved == resolved => Ok(()),
+            Some(pending) => Err(Error::custom(format_args!(
+                "cannot serialize one YAML node with both tag {:?} and tag {:?}",
+                pending.resolved, resolved
+            ))),
+            None => {
+                self.state.pending_tag = Some(PendingTag {
+                    resolved: resolved.to_owned(),
+                    emitted,
+                });
+                Ok(())
+            }
+        }
+    }
+
+    fn stage_core_tag(&mut self, suffix: &str) -> Result<()> {
+        let mut resolved = String::with_capacity(YAML_TAG_NAMESPACE.len() + suffix.len());
+        resolved.push_str(YAML_TAG_NAMESPACE);
+        resolved.push_str(suffix);
+        self.stage_tag_with_token(&resolved, core_tag_token(suffix))
+    }
+
     /// Serialize a tagged scalar of the form `!!Type value` using plain or quoted style for
     /// the value depending on its content.
     fn serialize_tagged_scalar(&mut self, enum_name: &str, variant: &str) -> Result<()> {
+        self.stage_core_tag(enum_name)?;
         self.write_scalar_prefix_if_anchor()?;
         if self.state.at_line_start {
             self.write_indent(self.state.depth)?;
         }
-        self.out.write_str("!!")?;
-        self.out.write_str(enum_name)?;
-        self.out.write_char(' ')?;
         self.write_plain_or_quoted_value(variant)?;
         self.write_end_of_scalar()
     }
@@ -586,32 +724,52 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         self.write_end_of_scalar()
     }
 
-    /// If an anchor is pending for the next scalar, emit `&name ` prefix.
-    /// Used for in-flow scalars.
+    /// Emit pending YAML node properties before a scalar.
     #[inline]
     fn write_scalar_prefix_if_anchor(&mut self) -> Result<()> {
-        if let Some(id) = self.anchors.pending_id.take() {
+        let tag = self.state.pending_tag.take();
+        let anchor_id = self.anchors.pending_id.take();
+        if tag.is_some() || anchor_id.is_some() {
             if self.state.at_line_start {
                 self.write_indent(self.state.depth)?;
             }
-            self.out.write_char('&')?;
-            self.write_anchor_name(id)?;
-            self.out.write_char(' ')?;
+            if let Some(tag) = tag.as_ref() {
+                self.out.write_str(&tag.emitted)?;
+                self.out.write_char(' ')?;
+            }
+            if let Some(id) = anchor_id {
+                self.anchors
+                    .record_resolved_tag(id, tag.as_ref().map(|tag| tag.resolved.as_str()));
+                self.out.write_char('&')?;
+                self.write_anchor_name(id)?;
+                self.out.write_char(' ')?;
+            }
         }
         Ok(())
     }
 
-    /// If an anchor is pending for the next complex node (seq/map),
-    /// emit it on its own line before the node.
+    /// Emit pending YAML node properties on their own line before a block node.
     #[inline]
     fn write_anchor_for_complex_node(&mut self) -> Result<()> {
-        if let Some(id) = self.anchors.pending_id.take() {
+        let tag = self.state.pending_tag.take();
+        let anchor_id = self.anchors.pending_id.take();
+        if tag.is_some() || anchor_id.is_some() {
+            self.write_space_if_pending()?;
             if self.state.at_line_start {
                 self.write_indent(self.state.depth)?;
             }
-            self.write_space_if_pending()?;
-            self.out.write_char('&')?;
-            self.write_anchor_name(id)?;
+            if let Some(tag) = tag.as_ref() {
+                self.out.write_str(&tag.emitted)?;
+            }
+            if let Some(id) = anchor_id {
+                self.anchors
+                    .record_resolved_tag(id, tag.as_ref().map(|tag| tag.resolved.as_str()));
+                if tag.is_some() {
+                    self.out.write_char(' ')?;
+                }
+                self.out.write_char('&')?;
+                self.write_anchor_name(id)?;
+            }
             self.newline()?;
         }
         Ok(())
@@ -621,6 +779,15 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Used when a previously defined anchor is referenced again.
     #[inline]
     fn write_alias_id(&mut self, id: AnchorId) -> Result<()> {
+        if let Some(requested) = self.state.pending_tag.take()
+            && self.anchors.resolved_tag(id) != Some(requested.resolved.as_str())
+        {
+            return Err(Error::custom(format_args!(
+                "cannot apply tag {:?} to alias whose anchor was defined with tag {:?}",
+                requested.resolved,
+                self.anchors.resolved_tag(id).unwrap_or("")
+            )));
+        }
         if self.state.at_line_start {
             self.write_indent(self.state.depth)?;
         }
@@ -630,6 +797,11 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         // Use the shared end-of-scalar path so pending inline comments are appended in block style
         self.write_end_of_scalar()?;
         Ok(())
+    }
+
+    #[inline]
+    fn has_pending_node_properties(&self) -> bool {
+        self.state.pending_tag.is_some() || self.anchors.pending_id.is_some()
     }
 
     /// Determine whether the next sequence should be emitted in flow style.
@@ -1038,9 +1210,9 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
 
         // Inline value position: emit !!binary with base64.
         self.write_space_if_pending()?;
+        self.stage_core_tag("binary")?;
         self.write_scalar_prefix_if_anchor()?;
         // No indent needed mid-line; mirror serialize_str behavior.
-        self.out.write_str("!!binary ")?;
         let mut s = String::new();
         B64.encode_string(v, &mut s);
         self.out.write_str(&s)?;
@@ -1169,7 +1341,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         value: &T,
     ) -> Result<()> {
         let was_inline_value = self.state.pending_layout.pending_space_after_colon;
-        let anchor_broke_line = self.anchors.pending_id.is_some();
+        let anchor_broke_line = self.has_pending_node_properties();
         let after_dash_depth = self.state.after_dash_depth;
         self.write_anchor_for_complex_node()?;
 
@@ -1243,9 +1415,9 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
         let flow = self.take_flow_for_seq();
         if flow {
-            self.write_scalar_prefix_if_anchor()?;
             // Ensure a space after a preceding colon when this sequence is a mapping value.
             self.write_space_if_pending()?;
+            self.write_scalar_prefix_if_anchor()?;
             if self.state.at_line_start {
                 self.write_indent(self.state.depth)?;
             }
@@ -1257,6 +1429,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 depth: depth_next,
                 flow: true,
                 first: true,
+                force_empty_marker: false,
             })
         } else {
             // Block sequence. Decide indentation based on whether this is after a map key or after a list dash.
@@ -1267,7 +1440,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             // `write_anchor_for_complex_node` will handle emitting the anchor and newline.
             if self.state.pending_layout.pending_space_after_colon
                 && self.state.last_value_was_block
-                && self.anchors.pending_id.is_none()
+                && !self.has_pending_node_properties()
             {
                 self.state.pending_layout.pending_space_after_colon = false;
                 if !self.state.at_line_start {
@@ -1287,7 +1460,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 && self.state.after_dash_depth.is_some()
                 && !self.state.pending_layout.pending_space_after_colon;
             // `inline_first` assumes we stay mid-line, but a pending anchor writes `&aN\n` first.
-            let anchor_broke_line = self.anchors.pending_id.is_some();
+            let anchor_broke_line = self.has_pending_node_properties();
             self.write_anchor_for_complex_node()?;
             if inline_first {
                 if anchor_broke_line {
@@ -1320,7 +1493,10 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             let depth_next = if inline_first {
                 checked_depth_add(base, 1)?
             } else if was_inline_value {
-                if self.settings.compact_list_indent && self.state.current_map_depth.is_some() {
+                if self.settings.compact_list_indent
+                    && self.state.current_map_depth.is_some()
+                    && !anchor_broke_line
+                {
                     base
                 } else {
                     checked_depth_add(base, 1)?
@@ -1335,6 +1511,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 depth: depth_next,
                 flow: false,
                 first: true,
+                force_empty_marker: anchor_broke_line,
             })
         }
     }
@@ -1354,6 +1531,8 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             Ok(TupleSer::anchor_weak(self))
         } else if name == NAME_TUPLE_COMMENTED {
             Ok(TupleSer::commented(self))
+        } else if name == NAME_TUPLE_TAGGED {
+            Ok(TupleSer::tagged(self))
         } else {
             // Normal tuple-struct: emit as a block sequence.
             Ok(TupleSer::sequence(self.serialize_seq(Some(len))?))
@@ -1368,7 +1547,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         _len: usize,
     ) -> Result<Self::SerializeTupleVariant> {
         let was_inline_value = self.state.pending_layout.pending_space_after_colon;
-        let anchor_broke_line = self.anchors.pending_id.is_some();
+        let anchor_broke_line = self.has_pending_node_properties();
         let after_dash_depth = self.state.after_dash_depth;
         self.write_anchor_for_complex_node()?;
 
@@ -1393,6 +1572,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 depth: depth_next,
                 flow: false,
                 first: true,
+                force_empty_marker: false,
             });
         }
         // Otherwise (top-level or sequence context).
@@ -1420,15 +1600,16 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             depth: depth_next,
             flow: false,
             first: true,
+            force_empty_marker: false,
         })
     }
 
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap> {
         let flow = self.take_flow_for_map();
         if flow {
-            self.write_scalar_prefix_if_anchor()?;
             // Ensure a space after a preceding colon when this mapping is a value.
             self.write_space_if_pending()?;
+            self.write_scalar_prefix_if_anchor()?;
             if self.state.at_line_start {
                 self.write_indent(self.state.depth)?;
             }
@@ -1437,6 +1618,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             let depth_next = self.state.depth;
             Ok(MapSer::flow(self, depth_next))
         } else {
+            let node_properties_broke_line = self.has_pending_node_properties();
             let inline_first = self.state.pending_layout.pending_inline_map;
             // Starting a complex (block) map: drop any staged inline comment.
             self.state.pending_inline_comment = None;
@@ -1449,7 +1631,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             // `write_anchor_for_complex_node` will handle emitting the anchor and newline.
             if was_inline_value
                 && self.state.last_value_was_block
-                && self.anchors.pending_id.is_none()
+                && !self.has_pending_node_properties()
             {
                 self.state.pending_layout.pending_space_after_colon = false;
                 if !self.state.at_line_start {
@@ -1517,6 +1699,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 depth_next,
                 inline_first,
                 inline_value_start_flag,
+                node_properties_broke_line,
             ))
         }
     }
@@ -1533,7 +1716,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         _len: usize,
     ) -> Result<Self::SerializeStructVariant> {
         let was_inline_value = self.state.pending_layout.pending_space_after_colon;
-        let anchor_broke_line = self.anchors.pending_id.is_some();
+        let anchor_broke_line = self.has_pending_node_properties();
         let after_dash_depth = self.state.after_dash_depth;
         self.write_anchor_for_complex_node()?;
 

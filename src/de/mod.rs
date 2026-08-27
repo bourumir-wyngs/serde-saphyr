@@ -71,6 +71,7 @@ mod deserializer;
 mod events;
 mod key_nodes;
 mod spanned_deser;
+mod tagged_deser;
 #[cfg(test)]
 mod tests;
 

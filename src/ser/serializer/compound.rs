@@ -40,6 +40,9 @@ pub struct SeqSer<'a, 'b, W: Write> {
     pub(super) flow: bool,
     /// Whether the next element is the first (comma handling in flow style).
     pub(super) first: bool,
+    /// A block node property was already emitted, so an empty sequence must
+    /// still emit `[]` even when the general empty-braces option is disabled.
+    pub(super) force_empty_marker: bool,
 }
 
 impl<W: Write> SerializeTuple for SeqSer<'_, '_, W> {
@@ -115,7 +118,7 @@ impl<W: Write> SerializeSeq for SeqSer<'_, '_, W> {
             }
         } else if self.first {
             // Empty block-style sequence.
-            if self.ser.settings.empty_as_braces {
+            if self.ser.settings.empty_as_braces || self.force_empty_marker {
                 // If we were pending a space after a colon (map value position), write it now.
                 if self.ser.state.pending_layout.pending_space_after_colon {
                     self.ser.out.write_str(" ")?;
@@ -185,11 +188,14 @@ struct SpecialTupleSer<'a, 'b, W: Write> {
     weak_alias_id: Option<AnchorId>,
     /// For commented wrapper: captured comment text from field #0.
     comment_text: Option<String>,
+    /// For tagged wrapper: resolved tag identity captured from field #0.
+    resolved_tag: Option<String>,
 }
 enum TupleKind {
     AnchorStrong, // [ptr, value]
     AnchorWeak,   // [ptr, present, value]
     Commented,    // [comment, value]
+    Tagged,       // [resolved tag, value]
 }
 impl<'a, 'b, W: Write> TupleSer<'a, 'b, W> {
     pub(super) fn sequence(seq: SeqSer<'a, 'b, W>) -> Self {
@@ -216,6 +222,12 @@ impl<'a, 'b, W: Write> TupleSer<'a, 'b, W> {
             inner: TupleSerInner::Special(SpecialTupleSer::new(ser, TupleKind::Commented)),
         }
     }
+    /// Create a tuple serializer for the internal tagged wrapper.
+    pub(super) fn tagged(ser: &'a mut YamlSerializer<'b, W>) -> Self {
+        Self {
+            inner: TupleSerInner::Special(SpecialTupleSer::new(ser, TupleKind::Tagged)),
+        }
+    }
 }
 
 impl<'a, 'b, W: Write> SpecialTupleSer<'a, 'b, W> {
@@ -230,6 +242,7 @@ impl<'a, 'b, W: Write> SpecialTupleSer<'a, 'b, W> {
             skip_third: false,
             weak_alias_id: None,
             comment_text: None,
+            resolved_tag: None,
         }
     }
 }
@@ -306,6 +319,8 @@ impl<W: Write> SpecialTupleSer<'_, '_, W> {
                             }
                         } else {
                             // present == false: emit null and skip field #3
+                            self.ser.write_space_if_pending()?;
+                            self.ser.write_scalar_prefix_if_anchor()?;
                             if self.ser.state.at_line_start {
                                 self.ser.write_indent(self.ser.state.depth)?;
                             }
@@ -366,6 +381,19 @@ impl<W: Write> SpecialTupleSer<'_, '_, W> {
                     _ => return Err(Error::unexpected("unexpected field in __yaml_commented")),
                 }
             }
+            TupleKind::Tagged => match self.idx {
+                0 => {
+                    let mut sc = StrCapture::default();
+                    value.serialize(&mut sc)?;
+                    self.resolved_tag = Some(sc.finish()?);
+                }
+                1 => {
+                    let tag = self.resolved_tag.take().unwrap_or_default();
+                    self.ser.stage_resolved_tag(&tag)?;
+                    value.serialize(&mut *self.ser)?;
+                }
+                _ => return Err(Error::unexpected("unexpected field in __yaml_tagged")),
+            },
         }
         self.idx += 1;
         Ok(())
@@ -408,6 +436,9 @@ pub struct MapSer<'a, 'b, W: Write> {
     entries_written: usize,
     /// Kind of key waiting for its corresponding value.
     pending_key: Option<MapKeyKind>,
+    /// A block node property was already emitted, so an empty mapping must
+    /// still emit `{}` even when the general empty-braces option is disabled.
+    force_empty_marker: bool,
 }
 
 /// Output layout selected when a mapping is created.
@@ -470,6 +501,7 @@ impl<'a, 'b, W: Write> MapSer<'a, 'b, W> {
             layout: MapLayout::Flow,
             entries_written: 0,
             pending_key: None,
+            force_empty_marker: false,
         }
     }
 
@@ -478,6 +510,7 @@ impl<'a, 'b, W: Write> MapSer<'a, 'b, W> {
         depth: usize,
         align_after_dash: bool,
         inline_value_start: bool,
+        force_empty_marker: bool,
     ) -> Self {
         Self {
             ser,
@@ -488,6 +521,7 @@ impl<'a, 'b, W: Write> MapSer<'a, 'b, W> {
             },
             entries_written: 0,
             pending_key: None,
+            force_empty_marker,
         }
     }
 
@@ -657,7 +691,7 @@ impl<W: Write> SerializeMap for MapSer<'_, '_, W> {
             }
         } else if self.entries_written == 0 {
             // Empty block-style map.
-            if self.ser.settings.empty_as_braces {
+            if self.ser.settings.empty_as_braces || self.force_empty_marker {
                 // If we were pending a space after a colon (map value position), write it now.
                 if self.ser.state.pending_layout.pending_space_after_colon {
                     self.ser.out.write_str(" ")?;
