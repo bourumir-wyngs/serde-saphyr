@@ -1220,7 +1220,15 @@ impl<'a> LiveEvents<'a> {
         };
 
         let raw = match ev {
-            Ev::Scalar { value, style, .. } => Event::Scalar(Cow::Borrowed(value), *style, 0, None),
+            Ev::Scalar {
+                value, tag, style, ..
+            } => {
+                // The budget distinguishes an explicitly tagged merge key from a quoted
+                // ordinary `<<` scalar. Preserve that semantic tag while replaying aliases.
+                let tag = (*tag == SfTag::Merge)
+                    .then(|| Cow::Owned(Tag::new("tag:yaml.org,2002:", "merge")));
+                Event::Scalar(Cow::Borrowed(value), *style, 0, tag)
+            }
             Ev::SeqStart { .. } => Event::SequenceStart(StructureStyle::Block, 0, None),
             Ev::SeqEnd { .. } => Event::SequenceEnd,
             Ev::MapStart { .. } => Event::MappingStart(StructureStyle::Block, 0, None),
