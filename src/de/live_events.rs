@@ -98,6 +98,24 @@ struct PendingTrailingComment<'a> {
     kind: PendingTrailingCommentKind,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NodePosition {
+    MappingKey,
+    MappingValue,
+    Other,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TagContextFrame {
+    Sequence {
+        parent_position: NodePosition,
+    },
+    Mapping {
+        expecting_key: bool,
+        parent_position: NodePosition,
+    },
+}
+
 /// Handle input polymorphism
 pub(crate) enum GranitParser<'a> {
     #[cfg(feature = "include")]
@@ -226,6 +244,9 @@ pub(crate) struct LiveEvents<'a> {
     /// Whether explicitly tagged nodes whose tags are unknown to this crate are rejected.
     reject_unsupported_tags: bool,
 
+    /// Structural context used to constrain YAML 1.1 key-only tags in strict mode.
+    tag_context: SmallVec<[TagContextFrame; 16]>,
+
     /// Indentation requirement to validate against parser-reported indentation hints.
     ///
     /// For `Uniform(None)` this also memoizes the inferred unit on first use.
@@ -346,6 +367,7 @@ impl<'a> LiveEvents<'a> {
 
             pending_error,
             reject_unsupported_tags,
+            tag_context: SmallVec::new(),
 
             require_indent,
             #[cfg(feature = "include")]
@@ -432,6 +454,7 @@ impl<'a> LiveEvents<'a> {
 
             pending_error,
             reject_unsupported_tags,
+            tag_context: SmallVec::new(),
 
             require_indent,
             #[cfg(feature = "include")]
@@ -456,16 +479,182 @@ impl<'a> LiveEvents<'a> {
     fn ensure_supported_tag(
         &self,
         tag_kind: SfTag,
-        tag: Option<&Tag>,
+        tag: impl FnOnce() -> String,
+        scalar_value: Option<&str>,
+        position: NodePosition,
         location: Location,
     ) -> Result<(), Error> {
-        if self.reject_unsupported_tags && tag_kind == SfTag::Other {
+        let supported = match tag_kind {
+            SfTag::Other => false,
+            SfTag::Merge => position == NodePosition::MappingKey && scalar_value == Some("<<"),
+            SfTag::Value => position == NodePosition::MappingKey && scalar_value == Some("="),
+            _ => true,
+        };
+
+        if !supported {
             return Err(Error::UnsupportedTag {
-                tag: tag.map_or_else(String::new, Tag::original),
+                tag: tag(),
                 location,
             });
         }
         Ok(())
+    }
+
+    fn next_node_position(&self) -> NodePosition {
+        match self.tag_context.last() {
+            Some(TagContextFrame::Mapping {
+                expecting_key: true,
+                ..
+            }) => NodePosition::MappingKey,
+            Some(TagContextFrame::Mapping {
+                expecting_key: false,
+                ..
+            }) => NodePosition::MappingValue,
+            Some(TagContextFrame::Sequence { .. }) | None => NodePosition::Other,
+        }
+    }
+
+    fn finish_tagged_node(&mut self, position: NodePosition) {
+        let Some(TagContextFrame::Mapping { expecting_key, .. }) = self.tag_context.last_mut()
+        else {
+            debug_assert_eq!(position, NodePosition::Other);
+            return;
+        };
+
+        match position {
+            NodePosition::MappingKey => {
+                debug_assert!(*expecting_key);
+                *expecting_key = false;
+            }
+            NodePosition::MappingValue => {
+                debug_assert!(!*expecting_key);
+                *expecting_key = true;
+            }
+            NodePosition::Other => {}
+        }
+    }
+
+    fn validate_scalar_tag(
+        &mut self,
+        tag_kind: SfTag,
+        tag: impl FnOnce() -> String,
+        value: &str,
+        location: Location,
+    ) -> Result<(), Error> {
+        if !self.reject_unsupported_tags {
+            return Ok(());
+        }
+
+        let position = self.next_node_position();
+        self.ensure_supported_tag(tag_kind, tag, Some(value), position, location)?;
+        self.finish_tagged_node(position);
+        Ok(())
+    }
+
+    fn validate_container_tag(
+        &mut self,
+        tag_kind: SfTag,
+        tag: impl FnOnce() -> String,
+        is_mapping: bool,
+        location: Location,
+    ) -> Result<(), Error> {
+        if !self.reject_unsupported_tags {
+            return Ok(());
+        }
+
+        let parent_position = self.next_node_position();
+        self.ensure_supported_tag(tag_kind, tag, None, parent_position, location)?;
+        self.tag_context.push(if is_mapping {
+            TagContextFrame::Mapping {
+                expecting_key: true,
+                parent_position,
+            }
+        } else {
+            TagContextFrame::Sequence { parent_position }
+        });
+        Ok(())
+    }
+
+    fn finish_tagged_container(&mut self, is_mapping: bool) {
+        if !self.reject_unsupported_tags {
+            return;
+        }
+
+        let frame = self.tag_context.pop();
+        debug_assert!(matches!(
+            (is_mapping, frame),
+            (true, Some(TagContextFrame::Mapping { .. }))
+                | (false, Some(TagContextFrame::Sequence { .. }))
+        ));
+        let parent_position = match frame {
+            Some(TagContextFrame::Sequence { parent_position })
+            | Some(TagContextFrame::Mapping {
+                parent_position, ..
+            }) => parent_position,
+            None => return,
+        };
+        self.finish_tagged_node(parent_position);
+    }
+
+    fn validate_replayed_event(&mut self, ev: &Ev<'_>) -> Result<(), Error> {
+        fn replayed_tag_spelling(tag: SfTag, raw_tag: Option<&str>) -> String {
+            raw_tag.map_or_else(
+                || match tag {
+                    SfTag::Merge => "!!merge".to_owned(),
+                    SfTag::Value => "!!value".to_owned(),
+                    _ => String::new(),
+                },
+                str::to_owned,
+            )
+        }
+
+        match ev {
+            Ev::Scalar {
+                value,
+                tag,
+                raw_tag,
+                location,
+                ..
+            } => self.validate_scalar_tag(
+                *tag,
+                || replayed_tag_spelling(*tag, raw_tag.as_deref()),
+                value,
+                *location,
+            ),
+            Ev::SeqStart {
+                tag,
+                raw_tag,
+                location,
+                ..
+            } => self.validate_container_tag(
+                *tag,
+                || replayed_tag_spelling(*tag, raw_tag.as_deref()),
+                false,
+                *location,
+            ),
+            Ev::MapStart {
+                tag,
+                raw_tag,
+                location,
+                ..
+            } => self.validate_container_tag(
+                *tag,
+                || replayed_tag_spelling(*tag, raw_tag.as_deref()),
+                true,
+                *location,
+            ),
+            Ev::SeqEnd { .. } => {
+                self.finish_tagged_container(false);
+                Ok(())
+            }
+            Ev::MapEnd { .. } => {
+                self.finish_tagged_container(true);
+                Ok(())
+            }
+            Ev::Taken { location } => {
+                Err(Error::unexpected("consumed event").with_location(*location))
+            }
+        }
     }
 
     fn event_kind(ev: &Ev<'_>) -> Option<ConsumedEventKind> {
@@ -622,6 +811,7 @@ impl<'a> LiveEvents<'a> {
                 });
             }
             self.observe_budget_for_replay(&ev)?;
+            self.validate_replayed_event(&ev)?;
             self.record(
                 &ev, /*is_start*/ false, /*seeded_new_frame*/ false,
             );
@@ -671,7 +861,6 @@ impl<'a> LiveEvents<'a> {
                     let mut anchor_id = anchor_id;
 
                     let tag_s = SfTag::from_optional_cow(&tag);
-                    self.ensure_supported_tag(tag_s, tag.as_deref(), location)?;
 
                     #[cfg(feature = "include")]
                     if tag_s == SfTag::Include && self.parser.has_resolver() {
@@ -691,6 +880,13 @@ impl<'a> LiveEvents<'a> {
                         anchor_id = self.pending_include_anchor;
                         self.pending_include_anchor = 0;
                     }
+
+                    self.validate_scalar_tag(
+                        tag_s,
+                        || tag.as_deref().map_or_else(String::new, Tag::original),
+                        &val,
+                        location,
+                    )?;
 
                     let ev = Ev::Scalar {
                         value: val,
@@ -715,7 +911,12 @@ impl<'a> LiveEvents<'a> {
                     #[cfg(feature = "include")]
                     let mut anchor_id = anchor_id;
                     let tag_s = SfTag::from_optional_cow(&tag);
-                    self.ensure_supported_tag(tag_s, tag.as_deref(), location)?;
+                    self.validate_container_tag(
+                        tag_s,
+                        || tag.as_deref().map_or_else(String::new, Tag::original),
+                        false,
+                        location,
+                    )?;
 
                     #[cfg(feature = "include")]
                     if self.parser.has_resolver()
@@ -767,6 +968,7 @@ impl<'a> LiveEvents<'a> {
                     return Ok(Some(ev));
                 }
                 Event::SequenceEnd => {
+                    self.finish_tagged_container(false);
                     let ev = Ev::SeqEnd { location };
                     self.record(&ev, false, false);
                     self.bump_depth_on_end()
@@ -779,7 +981,12 @@ impl<'a> LiveEvents<'a> {
 
                 Event::MappingStart(_style, anchor_id, tag) => {
                     let tag_s = SfTag::from_optional_cow(&tag);
-                    self.ensure_supported_tag(tag_s, tag.as_deref(), location)?;
+                    self.validate_container_tag(
+                        tag_s,
+                        || tag.as_deref().map_or_else(String::new, Tag::original),
+                        true,
+                        location,
+                    )?;
 
                     #[cfg(feature = "include")]
                     let mut anchor_id = anchor_id;
@@ -827,6 +1034,7 @@ impl<'a> LiveEvents<'a> {
                     return Ok(Some(ev));
                 }
                 Event::MappingEnd => {
+                    self.finish_tagged_container(true);
                     let ev = Ev::MapEnd { location };
                     self.record(&ev, false, false);
                     self.bump_depth_on_end()
@@ -887,6 +1095,7 @@ impl<'a> LiveEvents<'a> {
                                 anchor: anchor_id,
                                 location,
                             };
+                            self.validate_replayed_event(&ev)?;
                             self.record(&ev, false, false);
                             self.attach_leading_comments_to_next_event();
                             self.last_location = location;
@@ -958,6 +1167,7 @@ impl<'a> LiveEvents<'a> {
                 anchor: 0,
                 location: self.last_location,
             };
+            self.validate_replayed_event(&ev)?;
             self.produced_any_in_doc = true;
             self.synthesized_null_emitted = true;
             self.last_location = ev.location();
@@ -984,6 +1194,7 @@ impl<'a> LiveEvents<'a> {
         // Clear injected replay buffers and recording stack but keep capacity.
         self.inject.clear();
         self.rec_stack.clear();
+        self.tag_context.clear();
 
         // Anchors are per-document. Instead of dropping the whole vec (which frees
         // capacity and may cause re-allocation in the next document), keep the
@@ -1288,6 +1499,7 @@ impl LiveEvents<'_> {
         self.look = None;
         self.inject.clear();
         self.rec_stack.clear();
+        self.tag_context.clear();
 
         // Pull raw events from the parser until we see DocumentStart or EOF
         while let Some(item) = self.parser.next() {

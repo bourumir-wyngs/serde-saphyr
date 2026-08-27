@@ -696,12 +696,6 @@ pub enum Error {
         location: Location,
     },
 
-    /// An explicitly specified YAML tag is not supported by this crate.
-    UnsupportedTag {
-        tag: String,
-        location: Location,
-    },
-
     /// `!!binary` scalar could not be decoded as base64.
     InvalidBinaryBase64 {
         location: Location,
@@ -1049,6 +1043,12 @@ pub enum Error {
     ValidationErrors {
         source: ValidationSource,
         errors: Vec<Error>,
+    },
+
+    /// An explicitly specified YAML tag is not supported by this crate.
+    UnsupportedTag {
+        tag: String,
+        location: Location,
     },
 }
 

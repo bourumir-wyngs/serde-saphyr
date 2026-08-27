@@ -302,7 +302,9 @@ object that allows you to configure budget and other aspects of parsing. For lar
 By default, unknown application-specific YAML tags remain available for tagged-enum handling and
 are otherwise ignored where possible. Set `reject_unsupported_tags: true` in `Options` to reject any
 explicit tag that serde-saphyr does not recognize. This strict mode also rejects custom tags used to
-select enum variants; known tags such as `!!merge` and the no-op `!!value` remain accepted.
+select enum variants. YAML 1.1 `!!merge` and `!!value` tags remain accepted only on their exact
+scalar mapping keys, `<<` and `=` respectively; using either tag on a value, a collection, or any
+other scalar is rejected in strict mode.
 
 Tagged enums written as `!!EnumName VARIANT` are also supported, but only for single-level scalar variants. Use mapping-based representations (`EnumName: RED`) if you need to embed enums within other enums.
 
@@ -500,7 +502,9 @@ to accept these as regular mapping keys, or `MergeKeyPolicy::Error` to reject th
 
 The YAML 1.1 `!!value` tag is recognized but intentionally has no special default-value
 behavior. Its scalar content is deserialized normally, and a tagged `=` mapping key remains
-an ordinary `"="` key.
+an ordinary `"="` key. With `reject_unsupported_tags: true`, this tag is accepted only on that
+exact scalar mapping key. The same strict-mode context check limits `!!merge` to a scalar `<<`
+mapping key.
 
 ### Comments
 
