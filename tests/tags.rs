@@ -1,6 +1,7 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde_saphyr as yaml;
 use serde_saphyr::Error;
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 
 #[test]
@@ -86,4 +87,24 @@ fn tagged_int_can_parse_into_int() {
 fn tagged_null_is_none_for_option_string() {
     let v: Option<String> = yaml::from_str("!!null").expect("parse !!null");
     assert!(v.is_none());
+}
+
+#[test]
+fn value_tag_is_accepted_and_ignored() {
+    let documents = [
+        "!!value '='",
+        "!<tag:yaml.org,2002:value> '='",
+        "%TAG !v! tag:yaml.org,2002:\n--- !v!value '='",
+    ];
+
+    for document in documents {
+        let value: String = yaml::from_str(document).expect("!!value must be string-compatible");
+        assert_eq!(value, "=");
+    }
+
+    let mapping: BTreeMap<String, String> =
+        yaml::from_str("!!value =: library.dll\nversion: 1.2\n")
+            .expect("!!value mapping key must remain ordinary data");
+    assert_eq!(mapping.get("=").map(String::as_str), Some("library.dll"));
+    assert_eq!(mapping.get("version").map(String::as_str), Some("1.2"));
 }

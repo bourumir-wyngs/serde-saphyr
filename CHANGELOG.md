@@ -4,6 +4,15 @@
 
 ### Changed
 
+- Added the opt-in `Options::reject_unsupported_tags` strict mode. It rejects explicitly tagged
+  scalar, sequence, and mapping nodes when their tag is unknown to serde-saphyr; the default remains
+  permissive for compatibility with custom tagged enums. YAML 1.1 `!!merge` and `!!value` are
+  accepted in this mode only as the exact scalar mapping keys `<<` and `=`, respectively, while
+  robotics-only `!degrees` and `!radians` require both the `robotics` crate feature and
+  `angle_conversions`, and `!include` requires both the `include` crate feature and a configured
+  resolver.
+- Enforced the scalar, sequence, or mapping node kinds required by recognized tags even when
+  `reject_unsupported_tags` is disabled.
 - Hardened serializer indentation handling: `indent_step` is now limited to `1..=64`, all
   serializer entry points validate it, and indentation arithmetic returns an error instead of
   overflowing. We do not consider this breaking because values outside this range does not look sane.
@@ -13,12 +22,17 @@
 
 ### Fixes
 
+- Recognized explicit YAML 1.1 `!!merge` keys, including verbatim tags and `%TAG`-expanded
+  handles, everywhere implicit `<<` merge keys are supported.
+- Recognized the YAML 1.1 `!!value` tag while intentionally treating it as a no-op annotation.
 - Accepted valid zero-indented root folded block scalars, including `#`-prefixed content lines.
 - Fixed externally tagged `typetag` trait-object deserialization by consuming the closing mapping
   event when a Serde map visitor returns after its final key/value pair, preventing a false
   "multiple YAML documents" error.
 - Rejected non-UTF-8 canonical include and root-file paths before resolver policy checks and source
   identity handling, preventing lossy path collisions and policy bypasses on Unix.
+- Reported alias-use locations as primary for unsupported-tag and budget failures during replay,
+  while retaining the anchor-definition locations as secondary context.
 
 ### Testing
 

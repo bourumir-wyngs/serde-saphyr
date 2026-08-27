@@ -588,7 +588,10 @@ pub(super) fn capture_simple_tagged_node_as_map_events<'a>(
     )))
 }
 
-/// True if `node` is the YAML merge key (`<<`) as an untagged plain scalar.
+/// True if `node` is a YAML merge key.
+///
+/// This accepts both the implicitly resolved untagged plain `<<` spelling and
+/// the explicit YAML 1.1 `tag:yaml.org,2002:merge` scalar (`!!merge`).
 ///
 /// Used by:
 /// - Mapping deserialization to trigger merge value expansion.
@@ -603,15 +606,15 @@ pub(super) fn is_merge_key(node: &KeyNode) -> bool {
 
 #[inline]
 pub(super) fn is_merge_key_event(event: &Ev<'_>) -> bool {
-    matches!(
-        event,
-        Ev::Scalar {
-            value,
-            tag,
-            style: ScalarStyle::Plain,
-            ..
-        } if tag == &SfTag::None && value.as_ref() == "<<"
-    )
+    if let Ev::Scalar {
+        value, tag, style, ..
+    } = event
+    {
+        value.as_ref() == "<<"
+            && (*tag == SfTag::Merge || *tag == SfTag::None && matches!(style, ScalarStyle::Plain))
+    } else {
+        false
+    }
 }
 
 pub(super) fn validate_no_merge_keys_in_node_events(events: &[Ev<'_>]) -> Result<(), Error> {

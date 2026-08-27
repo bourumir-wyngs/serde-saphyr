@@ -299,6 +299,18 @@ let yaml = r#"
 There are two variants of the deserialization functions: from_* and from_*_with_options. The latter accepts an [Options](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html)
 object that allows you to configure budget and other aspects of parsing. For larger projects that require consistent parsing behavior, we recommend defining a wrapper function so that all option and budget settings are managed in one place (see examples/wrapper_function.rs).
 
+By default, unknown application-specific YAML tags remain available for tagged-enum handling and
+are otherwise ignored where possible. Set `reject_unsupported_tags: true` in `Options` to reject any
+explicit tag that serde-saphyr does not recognize. This strict mode also rejects custom tags used to
+select enum variants. YAML 1.1 `!!merge` and `!!value` tags remain accepted only on their exact
+scalar mapping keys, `<<` and `=` respectively; using either tag on a value, a collection, or any
+other scalar is rejected in strict mode. Known scalar, sequence, and mapping tags are likewise
+accepted only on matching node kinds, even when `reject_unsupported_tags` is false. Robotics-only
+`!degrees` and `!radians` tags are accepted in strict mode only when the `robotics` crate feature and
+`angle_conversions: true` are both enabled.
+Likewise, in strict mode, `!include` is accepted only when the `include` crate feature is enabled
+and an include resolver is configured.
+
 Tagged enums written as `!!EnumName VARIANT` are also supported, but only for single-level scalar variants. Use mapping-based representations (`EnumName: RED`) if you need to embed enums within other enums.
 
 ### Tuple enum variants
@@ -488,9 +500,16 @@ production:
 Merge keys are standard in YAML 1.1. Although YAML 1.2 no longer includes merge keys in its specification, it doesn't explicitly disallow them either, and many parsers implement this feature.
 
 Merge-key handling is configurable with the `merge_keys` option. The default
-`MergeKeyPolicy::Merge` expands `<<` entries. Use `MergeKeyPolicy::AsOrdinary`
-to accept `<<` as a regular mapping key, or `MergeKeyPolicy::Error` to reject
-merge keys.
+`MergeKeyPolicy::Merge` expands both implicitly resolved `<<` entries and explicit
+YAML 1.1 `!!merge <<` entries. The verbatim `!<tag:yaml.org,2002:merge>` form and
+equivalent `%TAG` handles are also recognized. Use `MergeKeyPolicy::AsOrdinary`
+to accept these as regular mapping keys, or `MergeKeyPolicy::Error` to reject them.
+
+The YAML 1.1 `!!value` tag is recognized but intentionally has no special default-value
+behavior. Its scalar content is deserialized normally, and a tagged `=` mapping key remains
+an ordinary `"="` key. With `reject_unsupported_tags: true`, this tag is accepted only on that
+exact scalar mapping key. The same strict-mode context check limits `!!merge` to a scalar `<<`
+mapping key.
 
 ### Comments
 
@@ -663,7 +682,7 @@ a: 1
 b: 2
 ```
 
-`!include` is gated behind the `include` feature flag. If it is not enabled, or the resolver is not set, this tag has no special treatment. The `include` feature allows resolvers that do not access the filesystem. For the most common case, where files are included from the filesystem, `include_fs` must be enabled as well. Then the most common way to enable includes looks like this:
+`!include` is gated behind the `include` feature flag. If it is not enabled, or the resolver is not set, this tag has no special treatment; with `reject_unsupported_tags: true`, it is rejected as unsupported. The `include` feature allows resolvers that do not access the filesystem. For the most common case, where files are included from the filesystem, `include_fs` must be enabled as well. Then the most common way to enable includes looks like this:
 
 ```rust,no_run
 use serde::Deserialize;

@@ -693,5 +693,45 @@ root:
                 }
             ));
         }
+
+        #[test]
+        fn explicitly_tagged_quoted_merge_key_alias_counts_toward_budget() {
+            let y = r#"
+merge_key: &merge_key !!merge '<<'
+defaults: &defaults {a: 1}
+target:
+  *merge_key : *defaults
+"#;
+
+            let allowed_options = serde_saphyr::options! {
+                budget: serde_saphyr::budget! {
+                    max_merge_keys: 1,
+                },
+            };
+            let parsed =
+                from_str_with_options::<HashMap<String, serde_json::Value>>(y, allowed_options)
+                    .unwrap();
+            assert_eq!(parsed["target"]["a"], 1);
+
+            let options = serde_saphyr::options! {
+                budget: serde_saphyr::budget! {
+                    max_merge_keys: 0,
+                },
+            };
+
+            let err = from_str_with_options::<HashMap<String, serde_json::Value>>(y, options)
+                .unwrap_err();
+            assert!(
+                matches!(
+                    unwrap_snippet(&err),
+                    Error::AliasError { msg, .. } if msg.starts_with("budget breached")
+                ),
+                "unexpected error: {err:?}"
+            );
+            let locations = err.locations().expect("alias error must report locations");
+            assert_eq!(locations.reference_location.line(), 5);
+            assert_eq!(locations.defined_location.line(), 2);
+            assert_eq!(err.location().map(|location| location.line()), Some(5));
+        }
     }
 }

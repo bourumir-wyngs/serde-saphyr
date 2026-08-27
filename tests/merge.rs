@@ -39,6 +39,40 @@ target:
 }
 
 #[test]
+fn explicit_merge_tag_forms_expand_mappings() {
+    let documents = [
+        r#"
+target:
+  !!merge <<: { a: 1, b: 2 }
+  own: 3
+"#,
+        r#"
+target:
+  !<tag:yaml.org,2002:merge> '<<': { a: 1, b: 2 }
+  own: 3
+"#,
+        r#"%TAG !m! tag:yaml.org,2002:
+---
+target:
+  !m!merge <<: { a: 1, b: 2 }
+  own: 3
+"#,
+    ];
+
+    let expected = BTreeMap::from([
+        ("a".to_owned(), 1),
+        ("b".to_owned(), 2),
+        ("own".to_owned(), 3),
+    ]);
+
+    for yaml in documents {
+        let doc: MergeDoc<BTreeMap<String, i32>> =
+            from_str(yaml).expect("explicit merge tag must expand its mapping");
+        assert_eq!(doc.target, expected);
+    }
+}
+
+#[test]
 fn merge_conflicts_keep_earlier_sequence_mapping_by_default() {
     let yaml = r#"
 base1: &B1 { a: 1, b: 2 }
@@ -136,6 +170,26 @@ target:
 }
 
 #[test]
+fn explicit_merge_tag_is_literal_with_as_ordinary_policy() {
+    let yaml = r#"
+target:
+  !!merge <<: { a: 1, b: 2 }
+  own: 3
+"#;
+
+    let options = serde_saphyr::options! {
+        merge_keys: MergeKeyPolicy::AsOrdinary,
+    };
+
+    let doc: MergeDoc<BTreeMap<String, serde_json::Value>> =
+        from_str_with_options(yaml, options).expect("tagged merge key must be literal");
+    assert_eq!(doc.target.get("a"), None);
+    assert_eq!(doc.target.get("b"), None);
+    assert_eq!(doc.target.get("own"), Some(&json!(3)));
+    assert_eq!(doc.target.get("<<"), Some(&json!({ "a": 1, "b": 2 })));
+}
+
+#[test]
 fn ordinary_merge_keys_do_not_count_against_merge_key_budget() {
     let yaml = r#"
 base: &B { a: 1 }
@@ -174,6 +228,28 @@ target:
         from_str_with_options::<MergeDoc<BTreeMap<String, serde_json::Value>>>(yaml, options)
     else {
         panic!("merge key must be rejected");
+    };
+    assert!(matches!(
+        err.without_snippet(),
+        serde_saphyr::Error::MergeKeyNotAllowed { .. }
+    ));
+}
+
+#[test]
+fn merge_key_policy_error_rejects_explicit_merge_tag() {
+    let yaml = r#"
+target:
+  !!merge <<: { a: 1 }
+"#;
+
+    let options = serde_saphyr::options! {
+        merge_keys: MergeKeyPolicy::Error,
+    };
+
+    let Err(err) =
+        from_str_with_options::<MergeDoc<BTreeMap<String, serde_json::Value>>>(yaml, options)
+    else {
+        panic!("explicit merge tag must be rejected");
     };
     assert!(matches!(
         err.without_snippet(),

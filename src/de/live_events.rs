@@ -26,6 +26,7 @@ use crate::budget::{BudgetEnforcer, EnforcingPolicy};
 #[cfg(not(feature = "include"))]
 use crate::buffered_input::ReaderInput;
 
+use super::events::attach_alias_locations_if_missing;
 use crate::buffered_input::buffered_input_from_reader_with_limit;
 #[cfg(feature = "properties")]
 use crate::de::PropertySyntax;
@@ -36,8 +37,8 @@ use crate::include::create_parser_from_reader_input;
 use crate::include::{BaseParser, create_parser_from_str};
 use crate::location::location_from_span;
 use crate::options::BudgetReportCallback;
-use crate::tags::SfTag;
-use granit_parser::{Event, Placement, ScalarStyle, ScanError, Span, StructureStyle};
+use crate::tags::{SfTag, TagNodeKind};
+use granit_parser::{Event, Placement, ScalarStyle, ScanError, Span, StructureStyle, Tag};
 
 #[cfg(not(feature = "include"))]
 use granit_parser::StrInput;
@@ -98,6 +99,43 @@ struct PendingTrailingComment<'a> {
     kind: PendingTrailingCommentKind,
 }
 
+/// Position occupied by a complete YAML node relative to its immediate parent.
+///
+/// Strict tag validation uses this distinction because YAML 1.1 `!!merge` and
+/// `!!value` are valid only when the tagged scalar itself is a mapping key. A
+/// scalar nested inside a sequence used as a complex key is therefore [`Self::Other`],
+/// not [`Self::MappingKey`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NodePosition {
+    /// The node is a direct mapping key.
+    MappingKey,
+    /// The node is a direct mapping value.
+    MappingValue,
+    /// The node is a document root or sequence item.
+    Other,
+}
+
+/// Strict-tag structural state for an open collection in the logical event stream.
+///
+/// `parent_position` records the slot occupied by the collection as a whole. That
+/// slot is completed only when the collection ends, so nested events cannot advance
+/// the enclosing mapping's key/value state prematurely.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TagContextFrame {
+    /// An open sequence.
+    Sequence {
+        /// Position of the complete sequence in its enclosing collection.
+        parent_position: NodePosition,
+    },
+    /// An open mapping.
+    Mapping {
+        /// Whether the next direct child begins a key rather than a value.
+        expecting_key: bool,
+        /// Position of the complete mapping in its enclosing collection.
+        parent_position: NodePosition,
+    },
+}
+
 /// Handle input polymorphism
 pub(crate) enum GranitParser<'a> {
     #[cfg(feature = "include")]
@@ -134,6 +172,11 @@ impl<'input> GranitParser<'input> {
             GranitParser::StringParser(parser) => parser.has_resolver(),
             GranitParser::StreamParser(parser) => parser.has_resolver(),
         }
+    }
+
+    #[cfg(not(feature = "include"))]
+    fn has_resolver(&self) -> bool {
+        false
     }
 
     #[cfg(feature = "include")]
@@ -223,6 +266,15 @@ pub(crate) struct LiveEvents<'a> {
     /// Invalid options are reported through the same stream error channel as parse errors.
     pending_error: Option<Error>,
 
+    /// Whether explicitly tagged nodes whose tags are unknown to this crate are rejected.
+    reject_unsupported_tags: bool,
+
+    /// Whether robotics-only angle tags are supported in strict mode.
+    angle_conversions: bool,
+
+    /// Structural context used to constrain YAML 1.1 key-only tags in strict mode.
+    tag_context: SmallVec<[TagContextFrame; 16]>,
+
     /// Indentation requirement to validate against parser-reported indentation hints.
     ///
     /// For `Uniform(None)` this also memoizes the inferred unit on first use.
@@ -282,6 +334,8 @@ impl<'a> LiveEvents<'a> {
         let alias_limits = options.alias_limits;
         let merge_keys = options.merge_keys;
         let pending_error = options.validate().err();
+        let reject_unsupported_tags = options.reject_unsupported_tags;
+        let angle_conversions = options.angle_conversions;
         let require_indent = options.require_indent;
         #[cfg(feature = "properties")]
         let property_map = options.property_map.clone();
@@ -341,6 +395,9 @@ impl<'a> LiveEvents<'a> {
             seen_doc_end: false,
 
             pending_error,
+            reject_unsupported_tags,
+            angle_conversions,
+            tag_context: SmallVec::new(),
 
             require_indent,
             #[cfg(feature = "include")]
@@ -367,6 +424,8 @@ impl<'a> LiveEvents<'a> {
         let alias_limits = options.alias_limits;
         let merge_keys = options.merge_keys;
         let pending_error = options.validate().err();
+        let reject_unsupported_tags = options.reject_unsupported_tags;
+        let angle_conversions = options.angle_conversions;
         let require_indent = options.require_indent;
         #[cfg(feature = "properties")]
         let property_map = options.property_map.clone();
@@ -425,6 +484,9 @@ impl<'a> LiveEvents<'a> {
             seen_doc_end: false,
 
             pending_error,
+            reject_unsupported_tags,
+            angle_conversions,
+            tag_context: SmallVec::new(),
 
             require_indent,
             #[cfg(feature = "include")]
@@ -444,6 +506,235 @@ impl<'a> LiveEvents<'a> {
                 }
             }
         }
+    }
+
+    fn ensure_supported_tag(
+        &self,
+        tag_kind: SfTag,
+        tag: impl FnOnce() -> String,
+        node_kind: TagNodeKind,
+        scalar_value: Option<&str>,
+        position: NodePosition,
+        location: Location,
+    ) -> Result<(), Error> {
+        if tag_kind
+            .requires()
+            .is_some_and(|required| required != node_kind)
+        {
+            return if tag_kind == SfTag::Include {
+                Err(Error::UnsupportedIncludeForm { location })
+            } else {
+                Err(Error::UnsupportedTag {
+                    tag: tag(),
+                    location,
+                })
+            };
+        }
+
+        if !self.reject_unsupported_tags {
+            return Ok(());
+        }
+
+        let supported_in_strict_mode = match tag_kind {
+            SfTag::Other => false,
+            SfTag::Merge => position == NodePosition::MappingKey && scalar_value == Some("<<"),
+            SfTag::Value => position == NodePosition::MappingKey && scalar_value == Some("="),
+            SfTag::Degrees | SfTag::Radians => self.angle_conversions && cfg!(feature = "robotics"),
+            SfTag::Include => self.parser.has_resolver(),
+            SfTag::None
+            | SfTag::Int
+            | SfTag::Float
+            | SfTag::Bool
+            | SfTag::Null
+            | SfTag::Seq
+            | SfTag::Map
+            | SfTag::TimeStamp
+            | SfTag::Binary
+            | SfTag::String
+            | SfTag::NonSpecific => true,
+        };
+        if !supported_in_strict_mode {
+            return Err(Error::UnsupportedTag {
+                tag: tag(),
+                location,
+            });
+        }
+        Ok(())
+    }
+
+    fn next_node_position(&self) -> NodePosition {
+        match self.tag_context.last() {
+            Some(TagContextFrame::Mapping {
+                expecting_key: true,
+                ..
+            }) => NodePosition::MappingKey,
+            Some(TagContextFrame::Mapping {
+                expecting_key: false,
+                ..
+            }) => NodePosition::MappingValue,
+            Some(TagContextFrame::Sequence { .. }) | None => NodePosition::Other,
+        }
+    }
+
+    fn finish_tagged_node(&mut self, position: NodePosition) {
+        let Some(TagContextFrame::Mapping { expecting_key, .. }) = self.tag_context.last_mut()
+        else {
+            debug_assert_eq!(position, NodePosition::Other);
+            return;
+        };
+
+        match position {
+            NodePosition::MappingKey => {
+                debug_assert!(*expecting_key);
+                *expecting_key = false;
+            }
+            NodePosition::MappingValue => {
+                debug_assert!(!*expecting_key);
+                *expecting_key = true;
+            }
+            NodePosition::Other => {}
+        }
+    }
+
+    fn validate_scalar_tag(
+        &mut self,
+        tag_kind: SfTag,
+        tag: impl FnOnce() -> String,
+        value: &str,
+        location: Location,
+    ) -> Result<(), Error> {
+        let position = self.next_node_position();
+        self.ensure_supported_tag(
+            tag_kind,
+            tag,
+            TagNodeKind::Scalar,
+            Some(value),
+            position,
+            location,
+        )?;
+        if self.reject_unsupported_tags {
+            self.finish_tagged_node(position);
+        }
+        Ok(())
+    }
+
+    fn validate_container_tag(
+        &mut self,
+        tag_kind: SfTag,
+        tag: impl FnOnce() -> String,
+        is_mapping: bool,
+        location: Location,
+    ) -> Result<(), Error> {
+        let parent_position = self.next_node_position();
+        let node_kind = if is_mapping {
+            TagNodeKind::Mapping
+        } else {
+            TagNodeKind::Sequence
+        };
+        self.ensure_supported_tag(tag_kind, tag, node_kind, None, parent_position, location)?;
+        if !self.reject_unsupported_tags {
+            return Ok(());
+        }
+        self.tag_context.push(if is_mapping {
+            TagContextFrame::Mapping {
+                expecting_key: true,
+                parent_position,
+            }
+        } else {
+            TagContextFrame::Sequence { parent_position }
+        });
+        Ok(())
+    }
+
+    fn finish_tagged_container(&mut self, is_mapping: bool) {
+        if !self.reject_unsupported_tags {
+            return;
+        }
+
+        let frame = self.tag_context.pop();
+        debug_assert!(matches!(
+            (is_mapping, frame),
+            (true, Some(TagContextFrame::Mapping { .. }))
+                | (false, Some(TagContextFrame::Sequence { .. }))
+        ));
+        let parent_position = match frame {
+            Some(TagContextFrame::Sequence { parent_position })
+            | Some(TagContextFrame::Mapping {
+                parent_position, ..
+            }) => parent_position,
+            None => return,
+        };
+        self.finish_tagged_node(parent_position);
+    }
+
+    fn validate_replayed_event(&mut self, ev: &Ev<'_>) -> Result<(), Error> {
+        fn replayed_tag_spelling(tag: SfTag, raw_tag: Option<&str>) -> String {
+            raw_tag.map_or_else(
+                || match tag {
+                    SfTag::Merge => "!!merge".to_owned(),
+                    SfTag::Value => "!!value".to_owned(),
+                    _ => String::new(),
+                },
+                str::to_owned,
+            )
+        }
+
+        let defined_location = ev.location();
+        let reference_location = self
+            .inject
+            .last()
+            .map_or(defined_location, |frame| frame.reference_location);
+        let result = match ev {
+            Ev::Scalar {
+                value,
+                tag,
+                raw_tag,
+                location,
+                ..
+            } => self.validate_scalar_tag(
+                *tag,
+                || replayed_tag_spelling(*tag, raw_tag.as_deref()),
+                value,
+                *location,
+            ),
+            Ev::SeqStart {
+                tag,
+                raw_tag,
+                location,
+                ..
+            } => self.validate_container_tag(
+                *tag,
+                || replayed_tag_spelling(*tag, raw_tag.as_deref()),
+                false,
+                *location,
+            ),
+            Ev::MapStart {
+                tag,
+                raw_tag,
+                location,
+                ..
+            } => self.validate_container_tag(
+                *tag,
+                || replayed_tag_spelling(*tag, raw_tag.as_deref()),
+                true,
+                *location,
+            ),
+            Ev::SeqEnd { .. } => {
+                self.finish_tagged_container(false);
+                Ok(())
+            }
+            Ev::MapEnd { .. } => {
+                self.finish_tagged_container(true);
+                Ok(())
+            }
+            Ev::Taken { location } => {
+                Err(Error::unexpected("consumed event").with_location(*location))
+            }
+        };
+
+        result.map_err(|error| {
+            attach_alias_locations_if_missing(error, reference_location, defined_location)
+        })
     }
 
     fn event_kind(ev: &Ev<'_>) -> Option<ConsumedEventKind> {
@@ -600,6 +891,7 @@ impl<'a> LiveEvents<'a> {
                 });
             }
             self.observe_budget_for_replay(&ev)?;
+            self.validate_replayed_event(&ev)?;
             self.record(
                 &ev, /*is_start*/ false, /*seeded_new_frame*/ false,
             );
@@ -669,6 +961,13 @@ impl<'a> LiveEvents<'a> {
                         self.pending_include_anchor = 0;
                     }
 
+                    self.validate_scalar_tag(
+                        tag_s,
+                        || tag.as_deref().map_or_else(String::new, Tag::original),
+                        &val,
+                        location,
+                    )?;
+
                     let ev = Ev::Scalar {
                         value: val,
                         tag: tag_s,
@@ -692,6 +991,12 @@ impl<'a> LiveEvents<'a> {
                     #[cfg(feature = "include")]
                     let mut anchor_id = anchor_id;
                     let tag_s = SfTag::from_optional_cow(&tag);
+                    self.validate_container_tag(
+                        tag_s,
+                        || tag.as_deref().map_or_else(String::new, Tag::original),
+                        false,
+                        location,
+                    )?;
 
                     #[cfg(feature = "include")]
                     if self.parser.has_resolver()
@@ -743,6 +1048,7 @@ impl<'a> LiveEvents<'a> {
                     return Ok(Some(ev));
                 }
                 Event::SequenceEnd => {
+                    self.finish_tagged_container(false);
                     let ev = Ev::SeqEnd { location };
                     self.record(&ev, false, false);
                     self.bump_depth_on_end()
@@ -755,6 +1061,12 @@ impl<'a> LiveEvents<'a> {
 
                 Event::MappingStart(_style, anchor_id, tag) => {
                     let tag_s = SfTag::from_optional_cow(&tag);
+                    self.validate_container_tag(
+                        tag_s,
+                        || tag.as_deref().map_or_else(String::new, Tag::original),
+                        true,
+                        location,
+                    )?;
 
                     #[cfg(feature = "include")]
                     let mut anchor_id = anchor_id;
@@ -802,6 +1114,7 @@ impl<'a> LiveEvents<'a> {
                     return Ok(Some(ev));
                 }
                 Event::MappingEnd => {
+                    self.finish_tagged_container(true);
                     let ev = Ev::MapEnd { location };
                     self.record(&ev, false, false);
                     self.bump_depth_on_end()
@@ -862,6 +1175,7 @@ impl<'a> LiveEvents<'a> {
                                 anchor: anchor_id,
                                 location,
                             };
+                            self.validate_replayed_event(&ev)?;
                             self.record(&ev, false, false);
                             self.attach_leading_comments_to_next_event();
                             self.last_location = location;
@@ -933,6 +1247,7 @@ impl<'a> LiveEvents<'a> {
                 anchor: 0,
                 location: self.last_location,
             };
+            self.validate_replayed_event(&ev)?;
             self.produced_any_in_doc = true;
             self.synthesized_null_emitted = true;
             self.last_location = ev.location();
@@ -959,6 +1274,7 @@ impl<'a> LiveEvents<'a> {
         // Clear injected replay buffers and recording stack but keep capacity.
         self.inject.clear();
         self.rec_stack.clear();
+        self.tag_context.clear();
 
         // Anchors are per-document. Instead of dropping the whole vec (which frees
         // capacity and may cause re-allocation in the next document), keep the
@@ -977,14 +1293,27 @@ impl<'a> LiveEvents<'a> {
     /// Observe the configured budget for a replayed (injected) event.
     ///
     /// Reconstructs a parser Event equivalent to the Ev and passes it to the
-    /// `BudgetEnforcer`, attaching the event's location on error.
+    /// `BudgetEnforcer`, attaching the alias use and anchor definition locations on error.
     fn observe_budget_for_replay(&mut self, ev: &Ev) -> Result<(), Error> {
+        let defined_location = ev.location();
+        let reference_location = self
+            .inject
+            .last()
+            .map_or(defined_location, |frame| frame.reference_location);
         let Some(budget) = self.budget.as_mut() else {
             return Ok(());
         };
 
         let raw = match ev {
-            Ev::Scalar { value, style, .. } => Event::Scalar(Cow::Borrowed(value), *style, 0, None),
+            Ev::Scalar {
+                value, tag, style, ..
+            } => {
+                // The budget distinguishes an explicitly tagged merge key from a quoted
+                // ordinary `<<` scalar. Preserve that semantic tag while replaying aliases.
+                let tag = (*tag == SfTag::Merge)
+                    .then(|| Cow::Owned(Tag::new("tag:yaml.org,2002:", "merge")));
+                Event::Scalar(Cow::Borrowed(value), *style, 0, tag)
+            }
             Ev::SeqStart { .. } => Event::SequenceStart(StructureStyle::Block, 0, None),
             Ev::SeqEnd { .. } => Event::SequenceEnd,
             Ev::MapStart { .. } => Event::MappingStart(StructureStyle::Block, 0, None),
@@ -994,9 +1323,13 @@ impl<'a> LiveEvents<'a> {
             }
         };
 
-        budget
-            .observe(&raw)
-            .map_err(|breach| budget_error(breach).with_location(ev.location()))
+        budget.observe(&raw).map_err(|breach| {
+            attach_alias_locations_if_missing(
+                budget_error(breach).with_location(defined_location),
+                reference_location,
+                defined_location,
+            )
+        })
     }
 
     /// Record an event into active recording frames.
@@ -1263,6 +1596,7 @@ impl LiveEvents<'_> {
         self.look = None;
         self.inject.clear();
         self.rec_stack.clear();
+        self.tag_context.clear();
 
         // Pull raw events from the parser until we see DocumentStart or EOF
         while let Some(item) = self.parser.next() {

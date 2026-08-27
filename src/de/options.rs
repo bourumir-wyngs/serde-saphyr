@@ -60,14 +60,16 @@ pub enum PropertySyntax {
 )]
 #[cfg_attr(feature = "serde_derived_types", serde(rename_all = "snake_case"))]
 pub enum MergeKeyPolicy {
-    /// Expand YAML merge keys (`<<`) into the surrounding mapping, as per YAML 1.1 specs.
+    /// Expand YAML merge keys (`<<` and explicit `!!merge <<`) into the surrounding mapping,
+    /// as per the YAML 1.1 specification.
     #[default]
     Merge,
 
-    /// Treat YAML merge keys (`<<`) as ordinary mapping keys.
+    /// Treat YAML merge keys (`<<` and explicit `!!merge <<`) as ordinary mapping keys.
     AsOrdinary,
 
-    /// Error out on encountering a YAML merge key (`<<`), reporting the location.
+    /// Error out on encountering a YAML merge key (`<<` or explicit `!!merge <<`), reporting
+    /// the location.
     Error,
 }
 
@@ -190,7 +192,7 @@ pub struct Options {
 
     /// Policy for duplicate keys.
     pub duplicate_keys: DuplicateKeyPolicy,
-    /// Policy for YAML merge keys (`<<`).
+    /// Policy for YAML merge keys (`<<` and explicit `!!merge <<`).
     ///
     /// [`MergeKeyPolicy::Merge`] expands merge keys and counts them against
     /// [`Budget::max_merge_keys`]. [`MergeKeyPolicy::AsOrdinary`] accepts `<<`
@@ -224,6 +226,23 @@ pub struct Options {
     /// The default is false (a number or boolean will be stored in the string
     /// field exactly as provided, without quoting).
     pub no_schema: bool,
+
+    /// Reject explicitly specified YAML tags that `serde-saphyr` does not recognize.
+    ///
+    /// This includes application-specific local and global tags. YAML 1.1 `!!merge`
+    /// and `!!value` tags are accepted only on their exact scalar mapping keys, `<<`
+    /// and `=` respectively. Known scalar, sequence, and mapping tags are accepted
+    /// only on matching node kinds; this node-kind requirement is enforced regardless
+    /// of this option. Robotics-only `!degrees` and `!radians` tags are
+    /// supported only when the `robotics` crate feature and
+    /// [`Self::angle_conversions`] are both enabled. The `!include` tag is supported
+    /// only when the `include` crate feature is enabled and an include resolver is
+    /// configured.
+    ///
+    /// Default: false (preserve unsupported tags for compatibility with tagged enums
+    /// and otherwise ignore them where possible).
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
+    pub reject_unsupported_tags: bool,
 
     /// If true, `deserialize_any` (typeless targets like `serde_json::Value`) errors on a
     /// non-finite float (NaN, ±Inf, or a decimal literal that overflows `f64` to infinity,
@@ -488,6 +507,7 @@ impl Default for Options {
             angle_conversions: false,
             ignore_binary_tag_for_string: false,
             no_schema: false,
+            reject_unsupported_tags: false,
             reject_non_finite_typeless_float: true,
             with_snippet: true,
             crop_radius: 64,
@@ -528,6 +548,7 @@ impl std::fmt::Debug for Options {
             )
             .field("angle_conversions", &self.angle_conversions)
             .field("no_schema", &self.no_schema)
+            .field("reject_unsupported_tags", &self.reject_unsupported_tags)
             .field(
                 "reject_non_finite_typeless_float",
                 &self.reject_non_finite_typeless_float,
@@ -603,6 +624,7 @@ mod tests {
         assert!(!opts.ignore_binary_tag_for_string);
         assert!(!opts.angle_conversions);
         assert!(!opts.no_schema);
+        assert!(!opts.reject_unsupported_tags);
         assert!(opts.reject_non_finite_typeless_float);
         assert!(opts.with_snippet);
         assert_eq!(opts.crop_radius, 64);
@@ -639,6 +661,7 @@ mod tests {
         assert!(debug_str.contains("budget"));
         assert!(debug_str.contains("budget_report_cb: \"none\""));
         assert!(debug_str.contains("emit_comments: true"));
+        assert!(debug_str.contains("reject_unsupported_tags: false"));
 
         #[cfg(feature = "include")]
         assert!(debug_str.contains("include_resolver: \"none\""));
