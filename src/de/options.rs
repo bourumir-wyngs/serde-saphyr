@@ -232,7 +232,8 @@ pub struct Options {
     /// This includes application-specific local and global tags. YAML 1.1 `!!merge`
     /// and `!!value` tags are accepted only on their exact scalar mapping keys, `<<`
     /// and `=` respectively. Robotics-only `!degrees` and `!radians` tags are
-    /// supported only when [`Self::angle_conversions`] is enabled.
+    /// supported only when the `robotics` crate feature and
+    /// [`Self::angle_conversions`] are both enabled.
     ///
     /// Default: false (preserve unsupported tags for compatibility with tagged enums
     /// and otherwise ignore them where possible).

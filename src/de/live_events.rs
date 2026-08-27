@@ -515,7 +515,7 @@ impl<'a> LiveEvents<'a> {
             SfTag::Other => false,
             SfTag::Merge => position == NodePosition::MappingKey && scalar_value == Some("<<"),
             SfTag::Value => position == NodePosition::MappingKey && scalar_value == Some("="),
-            SfTag::Degrees | SfTag::Radians => self.angle_conversions,
+            SfTag::Degrees | SfTag::Radians => self.angle_conversions && cfg!(feature = "robotics"),
             _ => true,
         };
 

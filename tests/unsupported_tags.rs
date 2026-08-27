@@ -10,6 +10,13 @@ fn strict_options() -> serde_saphyr::Options {
     options! { reject_unsupported_tags: true }
 }
 
+fn strict_robotics_options() -> serde_saphyr::Options {
+    options! {
+        reject_unsupported_tags: true,
+        angle_conversions: true,
+    }
+}
+
 fn assert_unsupported_tag(error: &Error, expected: &str) {
     let error = error.without_snippet();
     assert!(
@@ -151,18 +158,30 @@ fn strict_mode_rejects_merge_and_value_outside_exact_scalar_mapping_keys() {
 }
 
 #[test]
-fn strict_mode_accepts_robotics_tags_only_with_angle_conversions() {
+fn strict_mode_rejects_robotics_tags_without_angle_conversions() {
     for (yaml, expected_tag) in [("!degrees 180", "!degrees"), ("!radians 0.5", "!radians")] {
         let error = from_str_with_options::<f64>(yaml, strict_options()).unwrap_err();
         assert_unsupported_tag(&error, expected_tag);
-
-        let options = options! {
-            reject_unsupported_tags: true,
-            angle_conversions: true,
-        };
-        from_str_with_options::<f64>(yaml, options)
-            .expect("enabled robotics tag must be accepted in strict mode");
     }
+}
+
+#[cfg(not(feature = "robotics"))]
+#[test]
+fn strict_mode_rejects_robotics_tags_without_compiled_support() {
+    for (yaml, expected_tag) in [("!degrees 180", "!degrees"), ("!radians 0.5", "!radians")] {
+        let error = from_str_with_options::<f64>(yaml, strict_robotics_options()).unwrap_err();
+        assert_unsupported_tag(&error, expected_tag);
+    }
+}
+
+#[cfg(feature = "robotics")]
+#[test]
+fn strict_mode_converts_robotics_tags_when_enabled() {
+    let degrees = from_str_with_options::<f64>("!degrees 180", strict_robotics_options()).unwrap();
+    assert!((degrees - std::f64::consts::PI).abs() < 1e-12);
+
+    let radians = from_str_with_options::<f64>("!radians 0.5", strict_robotics_options()).unwrap();
+    assert!((radians - 0.5).abs() < f64::EPSILON);
 }
 
 #[test]

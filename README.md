@@ -305,7 +305,7 @@ explicit tag that serde-saphyr does not recognize. This strict mode also rejects
 select enum variants. YAML 1.1 `!!merge` and `!!value` tags remain accepted only on their exact
 scalar mapping keys, `<<` and `=` respectively; using either tag on a value, a collection, or any
 other scalar is rejected in strict mode. Robotics-only `!degrees` and `!radians` tags are accepted
-in strict mode only when `angle_conversions: true`.
+in strict mode only when the `robotics` crate feature and `angle_conversions: true` are both enabled.
 
 Tagged enums written as `!!EnumName VARIANT` are also supported, but only for single-level scalar variants. Use mapping-based representations (`EnumName: RED`) if you need to embed enums within other enums.
 
