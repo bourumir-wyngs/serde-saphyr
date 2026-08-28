@@ -155,6 +155,32 @@ fn tagged_and_commented_compose_in_both_orders() {
 }
 
 #[test]
+fn tag_selected_enum_and_commented_compose_in_both_orders() {
+    #[derive(Debug, Deserialize, PartialEq, Serialize)]
+    enum Value {
+        Int(i32),
+    }
+
+    let tagged_comment = Tagged(Commented(Value::Int(7), "note".into()), Some("!Int".into()));
+    let commented_tag = Commented(Tagged(Value::Int(7), Some("!Int".into())), "note".into());
+
+    for yaml in [
+        to_string(&tagged_comment).unwrap(),
+        to_string(&commented_tag).unwrap(),
+    ] {
+        assert_eq!(yaml, "!Int 7 # note\n");
+        assert_eq!(
+            from_str::<Tagged<Commented<Value>>>(&yaml).unwrap(),
+            tagged_comment
+        );
+        assert_eq!(
+            from_str::<Commented<Tagged<Value>>>(&yaml).unwrap(),
+            commented_tag
+        );
+    }
+}
+
+#[test]
 fn equal_nested_tags_coalesce_and_different_tags_fail() {
     let same = Tagged(Tagged(7, Some("!same".into())), Some("!same".into()));
     assert_eq!(to_string(&same).unwrap(), "!same 7\n");
