@@ -14,6 +14,8 @@ const DEFAULT_MAX_TOTAL_COMMENT_BYTES: usize = 64 * 1024 * 1024;
 const DEFAULT_MAX_BUFFERED_COMMENT_EVENTS: usize = 32;
 const DEFAULT_SIMPLE_KEY_MAX_LOOKAHEAD: usize = 1024;
 const DEFAULT_FLOW_NESTING_LIMIT: usize = 255;
+const DEFAULT_MAX_PROPERTY_EXPANSION_DEPTH: usize = 64;
+const DEFAULT_MAX_TOTAL_PROPERTY_INTERPOLATION_WORK: usize = 256 * 1024 * 1024;
 
 #[cfg(feature = "serde_derived_types")]
 fn default_max_total_comment_bytes() -> usize {
@@ -45,7 +47,17 @@ fn default_flow_nesting_limit() -> usize {
     DEFAULT_FLOW_NESTING_LIMIT
 }
 
-/// Budgets for a streaming YAML scan.
+#[cfg(feature = "serde_derived_types")]
+fn default_max_property_expansion_depth() -> usize {
+    DEFAULT_MAX_PROPERTY_EXPANSION_DEPTH
+}
+
+#[cfg(feature = "serde_derived_types")]
+fn default_max_total_property_interpolation_work() -> usize {
+    DEFAULT_MAX_TOTAL_PROPERTY_INTERPOLATION_WORK
+}
+
+/// Resource budgets for YAML parsing and deserialization.
 ///
 /// The defaults are intentionally permissive for typical configuration files
 /// while stopping obvious resource-amplifying inputs. Tune these per your
@@ -168,6 +180,29 @@ pub struct Budget {
         serde(default = "default_max_recorded_anchor_bytes")
     )]
     pub max_recorded_anchor_bytes: usize,
+    /// Maximum nested operator-text expansions in one property interpolation.
+    ///
+    /// The root scalar is not included. This limit is used only when the `properties`
+    /// feature is enabled and a property map is configured.
+    ///
+    /// Default: 64
+    #[cfg_attr(
+        feature = "serde_derived_types",
+        serde(default = "default_max_property_expansion_depth")
+    )]
+    pub max_property_expansion_depth: usize,
+    /// Maximum cumulative property-interpolation work across one deserialization stream.
+    ///
+    /// Work is measured in attacker-controlled input bytes inspected while scanning property
+    /// references and nested operator text. This limit is used only when the `properties`
+    /// feature is enabled and a property map is configured.
+    ///
+    /// Default: 268,435,456 (256 MiB of byte inspections)
+    #[cfg_attr(
+        feature = "serde_derived_types",
+        serde(default = "default_max_total_property_interpolation_work")
+    )]
+    pub max_total_property_interpolation_work: usize,
     /// Maximum structural nesting depth (sequences + mappings).
     ///
     /// Default: 64
@@ -239,6 +274,8 @@ impl Default for Budget {
             max_anchors: 50_000,
             max_recorded_anchor_events: 1_000_000,
             max_recorded_anchor_bytes: 64 * 1024 * 1024,
+            max_property_expansion_depth: DEFAULT_MAX_PROPERTY_EXPANSION_DEPTH,
+            max_total_property_interpolation_work: DEFAULT_MAX_TOTAL_PROPERTY_INTERPOLATION_WORK,
             max_depth: 64, // protects stack/CPU
             max_inclusion_depth: 24,
             max_documents: 1_024, // doc separator storms
@@ -369,6 +406,23 @@ pub enum BudgetBreach {
     RecordedAnchorBytes {
         /// Cumulative owned payload bytes attempted at the moment of the breach.
         recorded_anchor_bytes: usize,
+    },
+
+    /// Property operator text exceeded [`Budget::max_property_expansion_depth`].
+    PropertyExpansionDepth {
+        /// Nested expansion depth attempted at the moment of the breach.
+        depth: usize,
+        /// Configured maximum nested expansion depth.
+        max_depth: usize,
+    },
+
+    /// Property interpolation exceeded
+    /// [`Budget::max_total_property_interpolation_work`].
+    PropertyInterpolationWork {
+        /// Cumulative work attempted at the moment of the breach.
+        work: usize,
+        /// Configured maximum cumulative work.
+        max_work: usize,
     },
 }
 
@@ -648,6 +702,14 @@ impl BudgetEnforcer {
             && let Err(breach) = result
         {
             self.report.breached = Some(breach.clone());
+        }
+    }
+
+    /// Record a breach detected by a deserialization stage that shares this budget.
+    #[cfg(feature = "properties")]
+    pub(crate) fn record_external_breach(&mut self, breach: BudgetBreach) {
+        if self.report.breached.is_none() {
+            self.report.breached = Some(breach);
         }
     }
 
@@ -1155,10 +1217,15 @@ e: *A
     }
 
     #[test]
-    fn budget_default_sets_max_inclusion_depth() {
+    fn budget_default_sets_specialized_limits() {
         let budget = Budget::default();
 
         assert_eq!(budget.max_inclusion_depth, 24);
+        assert_eq!(budget.max_property_expansion_depth, 64);
+        assert_eq!(
+            budget.max_total_property_interpolation_work,
+            256 * 1024 * 1024
+        );
     }
 
     #[test]

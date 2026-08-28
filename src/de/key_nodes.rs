@@ -1,17 +1,13 @@
 use std::borrow::Cow;
-#[cfg(feature = "properties")]
-use std::collections::HashMap;
 use std::collections::HashSet;
 use std::mem;
-#[cfg(feature = "properties")]
-use std::rc::Rc;
 
 use granit_parser::ScalarStyle;
 
 use super::error::Error;
-use super::events::{Ev, Events, ReplayEvents};
 #[cfg(feature = "properties")]
-use super::options::PropertySyntax;
+use super::events::PropertyInterpolation;
+use super::events::{Ev, Events, ReplayEvents};
 use super::options::{DuplicateKeyPolicy, MergeKeyPolicy};
 use super::tags::SfTag;
 use crate::location::Location;
@@ -743,16 +739,13 @@ pub(super) fn pending_entries_from_events(
     reference_location: Location,
     merge_keys: MergeKeyPolicy,
     duplicate_keys: DuplicateKeyPolicy,
-    #[cfg(feature = "properties")] property_map: Option<Rc<HashMap<String, String>>>,
-    #[cfg(feature = "properties")] property_syntax: PropertySyntax,
+    #[cfg(feature = "properties")] property_interpolation: PropertyInterpolation,
 ) -> Result<Vec<PendingEntry<'_>>, Error> {
     let mut replay = ReplayEvents::with_reference(
         events,
         reference_location,
         #[cfg(feature = "properties")]
-        property_map.clone(),
-        #[cfg(feature = "properties")]
-        property_syntax,
+        property_interpolation.clone(),
     );
     match replay.peek()? {
         Some(Ev::Scalar { value, style, .. }) if scalar_is_nullish(value.as_ref(), style) => {
@@ -787,9 +780,7 @@ pub(super) fn pending_entries_from_events(
                             merge_keys,
                             duplicate_keys,
                             #[cfg(feature = "properties")]
-                            property_map.clone(),
-                            #[cfg(feature = "properties")]
-                            property_syntax,
+                            property_interpolation.clone(),
                         )?); // recursive
                     }
                     None => {
@@ -830,9 +821,7 @@ pub(super) fn pending_entries_from_live_events<'a>(
     duplicate_keys: DuplicateKeyPolicy,
 ) -> Result<Vec<PendingEntry<'a>>, Error> {
     #[cfg(feature = "properties")]
-    let property_map = ev.property_map().map(Rc::clone);
-    #[cfg(feature = "properties")]
-    let property_syntax = ev.property_syntax();
+    let property_interpolation = ev.property_interpolation().clone();
     match ev.peek()? {
         Some(Ev::Scalar { value, style, .. }) if scalar_is_nullish(value.as_ref(), style) => {
             let _ = ev.next()?;
@@ -850,9 +839,7 @@ pub(super) fn pending_entries_from_live_events<'a>(
                 merge_keys,
                 duplicate_keys,
                 #[cfg(feature = "properties")]
-                property_map,
-                #[cfg(feature = "properties")]
-                property_syntax,
+                property_interpolation,
             )
         }
         Some(Ev::SeqStart { .. }) => {
@@ -875,9 +862,7 @@ pub(super) fn pending_entries_from_live_events<'a>(
                             merge_keys,
                             duplicate_keys,
                             #[cfg(feature = "properties")]
-                            property_map.clone(),
-                            #[cfg(feature = "properties")]
-                            property_syntax,
+                            property_interpolation.clone(),
                         )?);
                     }
                     None => return Err(Error::eof().with_location(ev.last_location())),

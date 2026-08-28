@@ -1,5 +1,8 @@
 use super::options::PropertySyntax;
+#[cfg(test)]
+use crate::Budget;
 use std::borrow::Cow;
+use std::cell::Cell;
 use std::collections::HashMap;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -15,6 +18,10 @@ pub(crate) enum PropertyError {
     /// `${NAME:?text}` referenced a variable that was present but empty.
     /// `message` may be empty.
     RequiredButEmpty { name: String, message: String },
+    /// A selected operator branch exceeded the configured nesting limit.
+    ExpansionDepthLimitExceeded { depth: usize, max_depth: usize },
+    /// Property scanning exceeded the configured aggregate work limit.
+    ExpansionWorkLimitExceeded { work: usize, max_work: usize },
 }
 
 /// Checks whether a character is valid as the first character of a variable name.
@@ -29,22 +36,29 @@ fn is_var_continue(ch: char) -> bool {
 
 /// Parses a valid variable name from the beginning of the input string.
 /// Returns the parsed name and the remaining unparsed input.
-fn parse_name(input: &str) -> Option<(&str, &str)> {
+fn parse_name<'a>(
+    input: &'a str,
+    work: &mut WorkBudget<'_>,
+) -> Result<Option<(&'a str, &'a str)>, PropertyError> {
     let mut chars = input.char_indices();
-    let (_, first) = chars.next()?;
+    let Some((_, first)) = chars.next() else {
+        return Ok(None);
+    };
+    work.charge(first.len_utf8())?;
     if !is_var_start(first) {
-        return None;
+        return Ok(None);
     }
 
     let mut end = first.len_utf8();
     for (i, ch) in chars {
+        work.charge(ch.len_utf8())?;
         if !is_var_continue(ch) {
-            return Some((&input[..end], &input[i..]));
+            return Ok(Some((&input[..end], &input[i..])));
         }
         end = i + ch.len_utf8();
     }
 
-    Some((&input[..end], &input[end..]))
+    Ok(Some((&input[..end], &input[end..])))
 }
 
 /// The docker-compose `${...}` substitution forms.
@@ -77,20 +91,44 @@ struct BraceRef<'a> {
     op: BraceOp<'a>,
 }
 
+/// Charges property-interpolation scanning work against the stream-wide cumulative limit.
+struct WorkBudget<'a> {
+    total: &'a Cell<usize>,
+    max: usize,
+}
+
+impl WorkBudget<'_> {
+    #[inline]
+    fn charge(&mut self, additional: usize) -> Result<(), PropertyError> {
+        let current = self.total.get();
+        let work = current.saturating_add(additional);
+        if work > self.max {
+            self.total.set(work);
+            return Err(PropertyError::ExpansionWorkLimitExceeded {
+                work,
+                max_work: self.max,
+            });
+        }
+        self.total.set(work);
+        Ok(())
+    }
+}
+
 /// Returns `Err` when the `${...}` candidate is malformed, `Ok(None)` when the brace
 /// isn't closed (treat the `$` as literal), or `Ok(Some(...))` with the parsed reference
 /// and the byte index just past the closing `}`.
-fn parse_braced_reference(
-    input: &str,
+fn parse_braced_reference<'a>(
+    input: &'a str,
     start: usize,
-) -> Result<Option<(BraceRef<'_>, usize)>, String> {
+    work: &mut WorkBudget<'_>,
+) -> Result<Option<(BraceRef<'a>, usize)>, PropertyError> {
     let body_start = start + 2;
-    let Some(close) = find_braced_reference_close(input, body_start) else {
+    let Some(close) = find_braced_reference_close(input, body_start, work)? else {
         return Ok(None);
     };
     let body = &input[body_start..close];
-    let Some((name, rest)) = parse_name(body) else {
-        return Err(input[start..=close].to_owned());
+    let Some((name, rest)) = parse_name(body, work)? else {
+        return Err(PropertyError::InvalidName(input[start..=close].to_owned()));
     };
 
     let op = if rest.is_empty() {
@@ -108,19 +146,25 @@ fn parse_braced_reference(
     } else if let Some(text) = rest.strip_prefix('?') {
         BraceOp::ErrorIfUnset(text)
     } else {
-        return Err(input[start..=close].to_owned());
+        return Err(PropertyError::InvalidName(input[start..=close].to_owned()));
     };
 
     Ok(Some((BraceRef { name, op }, close + 1)))
 }
 
-fn find_braced_reference_close(input: &str, body_start: usize) -> Option<usize> {
+fn find_braced_reference_close(
+    input: &str,
+    body_start: usize,
+    work: &mut WorkBudget<'_>,
+) -> Result<Option<usize>, PropertyError> {
     let bytes = input.as_bytes();
     let mut depth = 0usize;
     let mut i = body_start;
 
     while i < bytes.len() {
+        work.charge(1)?;
         if bytes[i] == b'$' && bytes.get(i + 1) == Some(&b'{') {
+            work.charge(1)?;
             depth = depth.saturating_add(1);
             i += 2;
             continue;
@@ -128,7 +172,7 @@ fn find_braced_reference_close(input: &str, body_start: usize) -> Option<usize> 
 
         if bytes[i] == b'}' {
             if depth == 0 {
-                return Some(i);
+                return Ok(Some(i));
             }
             depth -= 1;
         }
@@ -136,62 +180,149 @@ fn find_braced_reference_close(input: &str, body_start: usize) -> Option<usize> 
         i += 1;
     }
 
-    None
+    Ok(None)
 }
 
-fn resolve_operator_text<'a>(
-    text: &'a str,
-    vars: &'a HashMap<String, String>,
-) -> Result<Cow<'a, str>, PropertyError> {
-    if text.contains("${") {
-        interpolate_compose_style(Cow::Borrowed(text), vars, PropertySyntax::Braced)
-    } else {
-        Ok(Cow::Borrowed(text))
+/// Describes how a completed interpolation frame is applied to its parent or returned as an error.
+enum FrameCompletion {
+    /// Return the completed value as the result of the top-level interpolation.
+    Root,
+    /// Append the completed nested operator text to its parent frame.
+    Append,
+    /// Report an unset required property after interpolating its error text.
+    RequiredButUnset(String),
+    /// Report an empty required property after interpolating its error text.
+    RequiredButEmpty(String),
+}
+
+/// Explicit-stack state for expanding one root scalar or selected operator-text branch.
+struct ExpansionFrame<'a> {
+    input: &'a str,
+    syntax: PropertySyntax,
+    out: String,
+    changed: bool,
+    last: usize,
+    cursor: usize,
+    completion: FrameCompletion,
+}
+
+impl<'a> ExpansionFrame<'a> {
+    fn new(input: &'a str, syntax: PropertySyntax, completion: FrameCompletion) -> Self {
+        Self {
+            input,
+            syntax,
+            // Allocate only for materialized output. Reserving every nested suffix here would
+            // recreate the quadratic retained-memory behavior of the recursive implementation.
+            out: String::new(),
+            changed: false,
+            last: 0,
+            cursor: 0,
+            completion,
+        }
+    }
+
+    fn begin_replacement(&mut self, start: usize, end: usize) {
+        if self.changed {
+            self.out.push_str(&self.input[self.last..start]);
+        } else {
+            self.out.push_str(&self.input[..start]);
+            self.changed = true;
+        }
+        self.cursor = end;
+        self.last = end;
+    }
+
+    fn append_replacement(&mut self, start: usize, end: usize, value: &str) {
+        self.begin_replacement(start, end);
+        self.out.push_str(value);
     }
 }
 
-fn resolve_brace<'a>(
-    brace: &'a BraceRef<'a>,
+/// Completed frame output that preserves borrowing when interpolation made no replacement.
+enum FrameValue<'a> {
+    /// The frame completed without changing its input.
+    Borrowed(&'a str),
+    /// The frame materialized an interpolated value.
+    Owned(String),
+}
+
+impl FrameValue<'_> {
+    fn as_str(&self) -> &str {
+        match self {
+            Self::Borrowed(value) => value,
+            Self::Owned(value) => value,
+        }
+    }
+
+    fn into_owned(self) -> String {
+        match self {
+            Self::Borrowed(value) => value.to_owned(),
+            Self::Owned(value) => value,
+        }
+    }
+}
+
+/// Action produced by resolving one braced property reference against the property map.
+enum BraceAction<'a> {
+    /// Append a property value or an empty replacement directly.
+    Append(&'a str),
+    /// Evaluate selected operator text in a nested interpolation frame.
+    Interpolate {
+        text: &'a str,
+        completion: FrameCompletion,
+    },
+    /// Stop interpolation and return the property error.
+    Error(PropertyError),
+}
+
+fn resolve_brace_action<'a>(
+    brace: BraceRef<'a>,
     vars: &'a HashMap<String, String>,
-) -> Result<Cow<'a, str>, PropertyError> {
+) -> BraceAction<'a> {
     let name = brace.name;
     let value = vars.get(name).map(String::as_str);
-    match (&brace.op, value) {
-        (BraceOp::Required, Some(v)) => Ok(Cow::Borrowed(v)),
-        (BraceOp::Required, None) => Err(PropertyError::Unresolved(name.to_owned())),
-        (BraceOp::DefaultIfUnset(text), None) => resolve_operator_text(text, vars),
-        (BraceOp::DefaultIfUnset(_), Some(v)) => Ok(Cow::Borrowed(v)),
-        (BraceOp::DefaultIfUnsetOrEmpty(text), None | Some("")) => {
-            resolve_operator_text(text, vars)
+    match (brace.op, value) {
+        (BraceOp::Required, Some(value)) => BraceAction::Append(value),
+        (BraceOp::Required, None) => BraceAction::Error(PropertyError::Unresolved(name.to_owned())),
+        (BraceOp::DefaultIfUnset(text), None)
+        | (BraceOp::DefaultIfUnsetOrEmpty(text), None | Some("")) => BraceAction::Interpolate {
+            text,
+            completion: FrameCompletion::Append,
+        },
+        (BraceOp::DefaultIfUnset(_), Some(value))
+        | (BraceOp::DefaultIfUnsetOrEmpty(_), Some(value)) => BraceAction::Append(value),
+        (BraceOp::AlternateIfSet(text), Some(_)) => BraceAction::Interpolate {
+            text,
+            completion: FrameCompletion::Append,
+        },
+        (BraceOp::AlternateIfSet(_), None) => BraceAction::Append(""),
+        (BraceOp::AlternateIfSetAndNonEmpty(text), Some(value)) => {
+            if value.is_empty() {
+                BraceAction::Append("")
+            } else {
+                BraceAction::Interpolate {
+                    text,
+                    completion: FrameCompletion::Append,
+                }
+            }
         }
-        (BraceOp::DefaultIfUnsetOrEmpty(_), Some(v)) => Ok(Cow::Borrowed(v)),
-        (BraceOp::AlternateIfSet(text), Some(_)) => resolve_operator_text(text, vars),
-        (BraceOp::AlternateIfSet(_), None) => Ok(Cow::Borrowed("")),
-        (BraceOp::AlternateIfSetAndNonEmpty(_), None | Some("")) => Ok(Cow::Borrowed("")),
-        (BraceOp::AlternateIfSetAndNonEmpty(text), Some(_)) => resolve_operator_text(text, vars),
-        (BraceOp::ErrorIfUnset(_), Some(v)) => Ok(Cow::Borrowed(v)),
-        (BraceOp::ErrorIfUnset(msg), None) => {
-            let message = resolve_operator_text(msg, vars)?.into_owned();
-            Err(PropertyError::RequiredButUnset {
-                name: name.to_owned(),
-                message,
-            })
+        (BraceOp::AlternateIfSetAndNonEmpty(_), None) => BraceAction::Append(""),
+        (BraceOp::ErrorIfUnset(_), Some(value)) => BraceAction::Append(value),
+        (BraceOp::ErrorIfUnset(message), None) => BraceAction::Interpolate {
+            text: message,
+            completion: FrameCompletion::RequiredButUnset(name.to_owned()),
+        },
+        (BraceOp::ErrorIfUnsetOrEmpty(_), Some(value)) if !value.is_empty() => {
+            BraceAction::Append(value)
         }
-        (BraceOp::ErrorIfUnsetOrEmpty(_), Some(v)) if !v.is_empty() => Ok(Cow::Borrowed(v)),
-        (BraceOp::ErrorIfUnsetOrEmpty(msg), Some(_)) => {
-            let message = resolve_operator_text(msg, vars)?.into_owned();
-            Err(PropertyError::RequiredButEmpty {
-                name: name.to_owned(),
-                message,
-            })
-        }
-        (BraceOp::ErrorIfUnsetOrEmpty(msg), None) => {
-            let message = resolve_operator_text(msg, vars)?.into_owned();
-            Err(PropertyError::RequiredButUnset {
-                name: name.to_owned(),
-                message,
-            })
-        }
+        (BraceOp::ErrorIfUnsetOrEmpty(message), Some(_)) => BraceAction::Interpolate {
+            text: message,
+            completion: FrameCompletion::RequiredButEmpty(name.to_owned()),
+        },
+        (BraceOp::ErrorIfUnsetOrEmpty(message), None) => BraceAction::Interpolate {
+            text: message,
+            completion: FrameCompletion::RequiredButUnset(name.to_owned()),
+        },
     }
 }
 
@@ -204,111 +335,198 @@ fn resolve_brace<'a>(
 /// Placeholders inside map entries are not re-expanded. Braced placeholders inside
 /// default, alternate, and error text from the input are expanded recursively.
 /// Returns `Cow::Borrowed` when nothing changed so the common no-`$` path stays allocation-free.
+#[cfg(test)]
 pub(crate) fn interpolate_compose_style<'s>(
     input: Cow<'s, str>,
     vars: &HashMap<String, String>,
     syntax: PropertySyntax,
 ) -> Result<Cow<'s, str>, PropertyError> {
-    if !input.contains('$') {
+    let total_work = Cell::new(0);
+    let budget = Budget::default();
+    interpolate_compose_style_with_limits(
+        input,
+        vars,
+        syntax,
+        budget.max_property_expansion_depth,
+        budget.max_total_property_interpolation_work,
+        &total_work,
+    )
+}
+
+pub(crate) fn interpolate_compose_style_with_limits<'s>(
+    input: Cow<'s, str>,
+    vars: &HashMap<String, String>,
+    syntax: PropertySyntax,
+    max_nested_expansions: usize,
+    max_total_interpolation_work: usize,
+    total_work: &Cell<usize>,
+) -> Result<Cow<'s, str>, PropertyError> {
+    let mut work = WorkBudget {
+        total: total_work,
+        max: max_total_interpolation_work,
+    };
+    let Some(first_dollar) = input.find('$') else {
+        work.charge(input.len())?;
         return Ok(input);
-    }
+    };
+    work.charge(first_dollar.saturating_add(1))?;
 
     let input_str = input.as_ref();
-    let bytes = input.as_bytes();
-    let mut out = String::with_capacity(input.len());
-    let mut changed = false;
-    let mut last = 0usize;
-    let mut i = 0usize;
+    let mut frames = vec![ExpansionFrame::new(
+        input_str,
+        syntax,
+        FrameCompletion::Root,
+    )];
 
-    while i < bytes.len() {
-        if bytes[i] != b'$' {
-            i += 1;
+    loop {
+        if let Some(mut frame) = frames.pop_if(|frame| frame.cursor >= frame.input.len()) {
+            let value = if frame.changed {
+                frame.out.push_str(&frame.input[frame.last..]);
+                FrameValue::Owned(frame.out)
+            } else {
+                FrameValue::Borrowed(frame.input)
+            };
+
+            match frame.completion {
+                FrameCompletion::Root => {
+                    return match value {
+                        FrameValue::Borrowed(_) => Ok(input),
+                        FrameValue::Owned(value) => Ok(Cow::Owned(value)),
+                    };
+                }
+                FrameCompletion::Append => frames
+                    .last_mut()
+                    .expect("nested interpolation has a parent")
+                    .out
+                    .push_str(value.as_str()),
+                FrameCompletion::RequiredButUnset(name) => {
+                    return Err(PropertyError::RequiredButUnset {
+                        name,
+                        message: value.into_owned(),
+                    });
+                }
+                FrameCompletion::RequiredButEmpty(name) => {
+                    return Err(PropertyError::RequiredButEmpty {
+                        name,
+                        message: value.into_owned(),
+                    });
+                }
+            }
             continue;
         }
 
+        let frame = frames.last_mut().expect("interpolation stack is non-empty");
+        work.charge(1)?;
+        let bytes = frame.input.as_bytes();
+        let i = frame.cursor;
+        if bytes[i] != b'$' {
+            frame.cursor += 1;
+            continue;
+        }
         let next = i + 1;
         if next >= bytes.len() {
-            i += 1;
+            frame.cursor += 1;
             continue;
         }
+        work.charge(1)?;
 
         if bytes[next] == b'$' {
-            // $$ = escaped, so skip and treat as literal
-            if changed {
-                out.push_str(&input_str[last..i]);
-            } else {
-                out.push_str(&input_str[..i]);
-                changed = true;
-            }
-            out.push('$');
-            i += 2;
-            last = i;
+            frame.append_replacement(i, i + 2, "$");
             continue;
         }
 
         if bytes[next] == b'{' {
-            // a ${.. reference, so parse as braced
-            let Some((brace, end)) =
-                parse_braced_reference(input_str, i).map_err(PropertyError::InvalidName)?
-            else {
-                i += 1;
+            let frame_input = frame.input;
+            let Some((brace, end)) = parse_braced_reference(frame_input, i, &mut work)? else {
+                frames
+                    .last_mut()
+                    .expect("interpolation stack is non-empty")
+                    .cursor += 1;
                 continue;
             };
 
-            let value = resolve_brace(&brace, vars)?;
+            match resolve_brace_action(brace, vars) {
+                BraceAction::Append(value) => frames
+                    .last_mut()
+                    .expect("interpolation stack is non-empty")
+                    .append_replacement(i, end, value),
+                BraceAction::Error(error) => return Err(error),
+                BraceAction::Interpolate { text, completion } => {
+                    // Preserve lazy operators: only selected text is inspected or depth-limited.
+                    // The scan itself is charged because repeating it at each selected level is
+                    // the source of the historical quadratic behavior.
+                    work.charge(text.len())?;
+                    if !text.contains("${") {
+                        match completion {
+                            FrameCompletion::Append => frames
+                                .last_mut()
+                                .expect("interpolation stack is non-empty")
+                                .append_replacement(i, end, text),
+                            FrameCompletion::RequiredButUnset(name) => {
+                                return Err(PropertyError::RequiredButUnset {
+                                    name,
+                                    message: text.to_owned(),
+                                });
+                            }
+                            FrameCompletion::RequiredButEmpty(name) => {
+                                return Err(PropertyError::RequiredButEmpty {
+                                    name,
+                                    message: text.to_owned(),
+                                });
+                            }
+                            FrameCompletion::Root => {
+                                unreachable!("operator text cannot complete the root frame")
+                            }
+                        }
+                        continue;
+                    }
 
-            if changed {
-                out.push_str(&input_str[last..i]);
-            } else {
-                out.push_str(&input_str[..i]);
-                changed = true;
+                    let depth = frames.len();
+                    if depth > max_nested_expansions {
+                        return Err(PropertyError::ExpansionDepthLimitExceeded {
+                            depth,
+                            max_depth: max_nested_expansions,
+                        });
+                    }
+                    frames
+                        .last_mut()
+                        .expect("interpolation stack is non-empty")
+                        .begin_replacement(i, end);
+                    frames.push(ExpansionFrame::new(
+                        text,
+                        PropertySyntax::Braced,
+                        completion,
+                    ));
+                }
             }
-            out.push_str(value.as_ref());
-
-            i = end;
-            last = i;
-        } else if syntax == PropertySyntax::Braced {
-            i += 1; // not a ${.. reference, so skip and treat as literal
+        } else if frame.syntax == PropertySyntax::Braced {
+            frame.cursor += 1;
             continue;
         } else {
-            // not a ${.. reference but we are PropertySyntax::BracedOrBare, so parse as bare
-            let body = &input_str[next..];
-            let Some((name, _rest)) = parse_name(body) else {
-                // $ not followed by a valid name start -> treat $ as literal
-                i += 1;
+            let body = &frame.input[next..];
+            let Some((name, _rest)) = parse_name(body, &mut work)? else {
+                frame.cursor += 1;
                 continue;
             };
             let value = vars
                 .get(name)
                 .map(String::as_str)
                 .ok_or_else(|| PropertyError::Unresolved(name.to_owned()))?;
-
-            if changed {
-                out.push_str(&input_str[last..i]);
-            } else {
-                out.push_str(&input_str[..i]);
-                changed = true;
-            }
-            out.push_str(value);
-
-            i = next + name.len();
-            last = i;
+            frame.append_replacement(i, next + name.len(), value);
         }
     }
-
-    if !changed {
-        return Ok(input);
-    }
-
-    out.push_str(&input_str[last..]);
-    Ok(Cow::Owned(out))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{PropertyError, PropertySyntax, interpolate_compose_style};
+    use super::{
+        PropertyError, PropertySyntax, interpolate_compose_style,
+        interpolate_compose_style_with_limits,
+    };
+    use crate::Budget;
     use rstest::rstest;
     use std::borrow::Cow;
+    use std::cell::Cell;
     use std::collections::HashMap;
 
     fn vars() -> HashMap<String, String> {
@@ -357,8 +575,11 @@ mod tests {
 
     #[rstest]
     #[case::outer_set_skips_nested_default("${SET:-${MISSING}}", "value")]
+    #[case::default_if_unset("${MISSING-${SET}}", "value")]
     #[case::outer_missing_resolves_nested_default("${MISSING:-${SET}}", "value")]
     #[case::outer_empty_resolves_nested_default("${EMPTY:-${SET}}", "value")]
+    #[case::alternate_if_set("${EMPTY+${SET}}", "value")]
+    #[case::alternate_if_set_and_nonempty("${SET:+${SET}}", "value")]
     #[case::multiple_levels("${MISSING:-${ALSO_MISSING:-${SET}}}", "value")]
     #[case::with_prefix_and_suffix("prefix-${MISSING:-${SET}}-suffix", "prefix-value-suffix")]
     fn nested_braced_references_in_operator_text_resolve(
@@ -399,6 +620,134 @@ mod tests {
                 message: "value".into()
             }
         );
+    }
+
+    #[test]
+    fn nested_braced_reference_in_empty_error_message_resolves_before_error() {
+        let error = interpolate_compose_style(
+            Cow::Borrowed("${EMPTY:?${SET}}"),
+            &vars(),
+            PropertySyntax::Braced,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            PropertyError::RequiredButEmpty {
+                name: "EMPTY".into(),
+                message: "value".into()
+            }
+        );
+    }
+
+    #[test]
+    fn deeply_nested_defaults_are_rejected() {
+        let depth = 10_000;
+        let input = format!("{}value{}", "${MISSING:-".repeat(depth), "}".repeat(depth));
+
+        let result =
+            interpolate_compose_style(Cow::Borrowed(&input), &vars(), PropertySyntax::Braced);
+
+        assert_eq!(
+            result.unwrap_err(),
+            PropertyError::ExpansionDepthLimitExceeded {
+                depth: 65,
+                max_depth: 64,
+            }
+        );
+    }
+
+    #[test]
+    fn nesting_at_configured_limit_is_preserved() {
+        let input = "${MISSING:-${MISSING:-${MISSING:-value}}}";
+        let budget = Budget::default();
+        let total_work = Cell::new(0);
+
+        let output = interpolate_compose_style_with_limits(
+            Cow::Borrowed(input),
+            &vars(),
+            PropertySyntax::Braced,
+            2,
+            budget.max_total_property_interpolation_work,
+            &total_work,
+        )
+        .unwrap();
+
+        assert_eq!(output.as_ref(), "value");
+    }
+
+    #[test]
+    fn nesting_above_configured_limit_is_rejected() {
+        let input = "${MISSING:-${MISSING:-${MISSING:-${MISSING:-value}}}}";
+        let budget = Budget::default();
+        let total_work = Cell::new(0);
+
+        let error = interpolate_compose_style_with_limits(
+            Cow::Borrowed(input),
+            &vars(),
+            PropertySyntax::Braced,
+            2,
+            budget.max_total_property_interpolation_work,
+            &total_work,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            PropertyError::ExpansionDepthLimitExceeded {
+                depth: 3,
+                max_depth: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn interpolation_work_is_cumulative_and_checked_at_the_boundary() {
+        let input = Cow::Borrowed("${SET}");
+        let budget = Budget::default();
+        let total_work = Cell::new(0);
+
+        for _ in 0..2 {
+            let output = interpolate_compose_style_with_limits(
+                input.clone(),
+                &vars(),
+                PropertySyntax::Braced,
+                budget.max_property_expansion_depth,
+                20,
+                &total_work,
+            )
+            .unwrap();
+            assert_eq!(output.as_ref(), "value");
+        }
+
+        let error = interpolate_compose_style_with_limits(
+            input,
+            &vars(),
+            PropertySyntax::Braced,
+            budget.max_property_expansion_depth,
+            20,
+            &total_work,
+        )
+        .unwrap_err();
+        assert_eq!(
+            error,
+            PropertyError::ExpansionWorkLimitExceeded {
+                work: 21,
+                max_work: 20,
+            }
+        );
+    }
+
+    #[test]
+    fn deeply_nested_unselected_default_remains_lazy() {
+        let nested = format!("{}value{}", "${MISSING:-".repeat(1_000), "}".repeat(1_000));
+        let input = format!("${{SET:-{nested}}}");
+
+        let output =
+            interpolate_compose_style(Cow::Borrowed(&input), &vars(), PropertySyntax::Braced)
+                .unwrap();
+
+        assert_eq!(output.as_ref(), "value");
     }
 
     #[test]

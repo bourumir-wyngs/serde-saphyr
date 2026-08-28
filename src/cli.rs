@@ -118,6 +118,16 @@ fn format_budget_breach(out: &mut String, breach: &BudgetBreach) {
             out.push_str("breached:\n  InputBytes:\n");
             let _ = writeln!(out, "    input_bytes: {input_bytes}");
         }
+        BudgetBreach::PropertyExpansionDepth { depth, max_depth } => {
+            out.push_str("breached:\n  PropertyExpansionDepth:\n");
+            let _ = writeln!(out, "    depth: {depth}");
+            let _ = writeln!(out, "    max_depth: {max_depth}");
+        }
+        BudgetBreach::PropertyInterpolationWork { work, max_work } => {
+            out.push_str("breached:\n  PropertyInterpolationWork:\n");
+            let _ = writeln!(out, "    work: {work}");
+            let _ = writeln!(out, "    max_work: {max_work}");
+        }
     }
 }
 
@@ -403,6 +413,22 @@ mod tests {
                 "  InputBytes:",
                 "    input_bytes: 23",
             ),
+            (
+                report_with_breach(BudgetBreach::PropertyExpansionDepth {
+                    depth: 25,
+                    max_depth: 24,
+                }),
+                "  PropertyExpansionDepth:",
+                "    max_depth: 24",
+            ),
+            (
+                report_with_breach(BudgetBreach::PropertyInterpolationWork {
+                    work: 27,
+                    max_work: 26,
+                }),
+                "  PropertyInterpolationWork:",
+                "    max_work: 26",
+            ),
         ];
 
         for (report, expected_type, expected_value) in cases {
@@ -458,6 +484,14 @@ mod tests {
             }),
             report_with_breach(BudgetBreach::SequenceUnbalanced),
             report_with_breach(BudgetBreach::InputBytes { input_bytes: 23 }),
+            report_with_breach(BudgetBreach::PropertyExpansionDepth {
+                depth: 25,
+                max_depth: 24,
+            }),
+            report_with_breach(BudgetBreach::PropertyInterpolationWork {
+                work: 27,
+                max_work: 26,
+            }),
         ];
 
         for report in reports {

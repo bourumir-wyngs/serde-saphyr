@@ -160,8 +160,8 @@ impl Default for AliasLimits {
     derive(serde::Serialize, serde::Deserialize)
 )]
 pub struct Options {
-    /// Optional YAML budget enforced during parsing, including raw events and retained anchor
-    /// copies.
+    /// Optional YAML budget enforced during parsing and deserialization, including raw events,
+    /// retained anchor copies, and property interpolation. `None` disables budget enforcement.
     pub budget: Option<Budget>,
     /// Optional callback invoked with the final budget report after parsing.
     /// It is invoked both when parsing is successful and when budget was breached.

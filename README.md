@@ -190,7 +190,7 @@ fn main() {
 
 ### Pathological inputs & budgets
 
-Fuzzing shows that certain adversarial inputs can make YAML parsers consume excessive time or memory, enabling denial-of-service scenarios. To counter this, `serde-saphyr` offers a configurable [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html), available through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). It accounts for parser events as well as retained copies used to replay anchors. Defaults are intentionally quite permissive; tighten them when you know your input shape, or disable the budget if you only parse YAML you generate yourself.
+Fuzzing shows that certain adversarial inputs can make YAML parsers consume excessive time or memory, enabling denial-of-service scenarios. To counter this, `serde-saphyr` offers a configurable [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html), available through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). It accounts for parser events, retained copies used to replay anchors, and property-interpolation depth and work. Defaults are intentionally quite permissive; tighten them when you know your input shape, or disable the budget if you only parse YAML you generate yourself.
 During [reader](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.from_reader_with_options.html)-based deserialization, serde-saphyr does not buffer the entire payload; it parses incrementally, counting bytes and enforcing configured budgets.
 Reader-based APIs enforce configured byte and structural limits while reading. When [streaming](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.read_with_options.html) from the reader through the iterator, other budget limits apply on a per-document basis, since such a reader may be expected to stream indefinitely. The total size of the input is not limited in this case.
 To find the typical budget requirements for your file, use our [web demo](https://verdanta.tech/yva/) or run the `main()` executable of this library, providing a YAML file path as a program parameter. You can also fetch the budget programmatically by registering a closure with [`Options::with_budget_report`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html#method.with_budget_report).
@@ -541,7 +541,7 @@ Interpolation is intentionally narrow:
 - the supported forms are listed in the table below,
 - the unbraced `$NAME` form is opt-in (see below) so a bare `$NAME` stays a literal by default,
 - `$${NAME}` escapes to a literal `${NAME}`,
-- nesting is not supported: `default`/`replacement`/`error` text is taken verbatim up to the first `}` with no further interpolation or escape processing,
+- selected `default`/`replacement`/`error` text supports nested braced references, subject to the configured budget,
 - if no property map is configured, every `${...}` form remains unchanged.
 
 | Form | `NAME` unset | `NAME` set to empty | `NAME` set to non-empty |
@@ -554,7 +554,9 @@ Interpolation is intentionally narrow:
 | `${NAME?error}` | error (with `error` as hint) | `""` | the value |
 | `${NAME:?error}` | error (with `error` as hint) | error (with `error` as hint) | the value |
 
-`default`, `replacement`, and `error` are literal text from the YAML and are not treated as secret.
+`default`, `replacement`, and `error` are source text from the YAML and are not treated as secret.
+Selected operator text can contain nested braced references, for example
+`${PRIMARY:-${FALLBACK:-default}}`.
 The `error` hint may be empty (`${NAME?}` / `${NAME:?}`), matching docker-compose.
 
 `properties` is gated behind the `properties` feature flag.
@@ -581,7 +583,13 @@ fn property_map() -> Result<Config, serde_saphyr::Error> {
     );
     properties.insert("MODE".to_string(), "production".to_string());
 
-    let options = options! {}.with_properties(properties);
+    let options = options! {
+        budget: serde_saphyr::budget! {
+            max_property_expansion_depth: 16,
+            max_total_property_interpolation_work: 1_048_576,
+        },
+    }
+    .with_properties(properties);
 
     let yaml = r#"
         database_url: ${DATABASE_URL}
@@ -606,6 +614,11 @@ fn main() {
 # #[cfg(not(feature = "properties"))]
 # fn main() {}
 ```
+
+Property expansion limits are configured through `Budget`. Exceeding either limit returns
+`Error::Budget` with a `BudgetBreach::PropertyExpansionDepth` or
+`BudgetBreach::PropertyInterpolationWork` value. Setting `Options::budget` to `None` disables
+these limits together with the rest of budget enforcement.
 
 Set `property_syntax: PropertySyntax::BracedOrBare` to also accept the unbraced `$NAME` shorthand.
 It uses the same Required semantics as `${NAME}`, including `"$$NAME"` being a literal `"$NAME"`.
