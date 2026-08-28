@@ -192,8 +192,98 @@ pub struct NullableTilde<T>(pub Option<T>);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Commented<T>(pub T, pub String);
 
+/// Capture and emit the resolved YAML tag attached to a value.
+///
+/// The first field contains the value and the second contains its resolved tag.
+/// `Some(tag)` is how an arbitrary tag is put on a node: the serializer emits it
+/// as that node's explicit tag. `None` requests no tag and serializes exactly as
+/// the unwrapped `T` would, which is also what deserializing an untagged node
+/// produces.
+///
+/// Resolution deliberately discards source spelling: for example, `!!str` is
+/// captured as `Some("tag:yaml.org,2002:str")`, while a local tag such as
+/// `!widget` is captured as `Some("!widget")`. Tags resolved through a `%TAG`
+/// directive are captured as their complete URI. A present tag always has a
+/// non-empty resolved identity; `Some("")` is invalid when serializing rather
+/// than an alternative spelling of `None`.
+///
+/// During serialization, a resolved global tag URI is emitted using YAML's
+/// verbatim form (`!<...>`). This preserves the resolved tag identity across a
+/// round trip, but does not reproduce tag handles or `%TAG` directives. Local
+/// tags are emitted directly. A non-local identity must have valid absolute-URI
+/// structure; characters requiring URI escaping are percent-encoded on output.
+///
+/// `Tagged<Commented<T>>` and `Commented<Tagged<T>>` are both supported. Tag
+/// capture remains subject to the deserializer's normal tag semantics and
+/// `reject_unsupported_tags` option.
+///
+/// # Clashing tags
+///
+/// A YAML node carries at most one tag, and serializing certain values produces
+/// a tag without being asked: `!!binary` for a byte buffer, or the variant tag
+/// emitted under the `tagged_enums` option. Where such a generated tag meets the
+/// wrapper's own on one node, they must match or wrappers' own tag must
+/// be `None`. Otherwise, error is reported.
+///
+/// Deserializers other than serde-saphyr do not provide YAML tag metadata; when
+/// used with one of them, `Tagged<T>` behaves transparently and gets `None` as
+/// its tag.
+///
+/// ```rust
+/// # #[cfg(all(feature = "serialize", feature = "deserialize"))]
+/// # {
+/// use serde_saphyr::{Commented, Tagged, from_str, to_string};
+///
+/// let value: Tagged<String> = from_str("!!str value").unwrap();
+/// assert_eq!(
+///     value,
+///     Tagged("value".into(), Some("tag:yaml.org,2002:str".into())),
+/// );
+/// assert_eq!(
+///     to_string(&value).unwrap(),
+///     "!<tag:yaml.org,2002:str> value\n",
+/// );
+///
+/// let tagged_comment: Tagged<Commented<String>> =
+///     from_str("!widget value # note").unwrap();
+/// assert_eq!(
+///     tagged_comment,
+///     Tagged(
+///         Commented("value".into(), "note".into()),
+///         Some("!widget".into()),
+///     ),
+/// );
+///
+/// let commented_tag: Commented<Tagged<String>> =
+///     from_str("!widget value # note").unwrap();
+/// assert_eq!(
+///     commented_tag,
+///     Commented(
+///         Tagged("value".into(), Some("!widget".into())),
+///         "note".into(),
+///     ),
+/// );
+/// # }
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Tagged<T>(pub T, pub Option<String>);
+
 #[cfg(feature = "garde")]
 impl<T: garde::Validate> garde::Validate for Commented<T> {
+    type Context = T::Context;
+
+    fn validate_into(
+        &self,
+        ctx: &Self::Context,
+        parent: &mut dyn FnMut() -> garde::Path,
+        report: &mut garde::Report,
+    ) {
+        self.0.validate_into(ctx, parent, report);
+    }
+}
+
+#[cfg(feature = "garde")]
+impl<T: garde::Validate> garde::Validate for Tagged<T> {
     type Context = T::Context;
 
     fn validate_into(
@@ -214,7 +304,23 @@ impl<T: validator::Validate> validator::Validate for Commented<T> {
 }
 
 #[cfg(feature = "validator")]
+impl<T: validator::Validate> validator::Validate for Tagged<T> {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        self.0.validate()
+    }
+}
+
+#[cfg(feature = "validator")]
 impl<'v_a, T: validator::ValidateArgs<'v_a>> validator::ValidateArgs<'v_a> for Commented<T> {
+    type Args = T::Args;
+
+    fn validate_with_args(&self, args: Self::Args) -> Result<(), validator::ValidationErrors> {
+        self.0.validate_with_args(args)
+    }
+}
+
+#[cfg(feature = "validator")]
+impl<'v_a, T: validator::ValidateArgs<'v_a>> validator::ValidateArgs<'v_a> for Tagged<T> {
     type Args = T::Args;
 
     fn validate_with_args(&self, args: Self::Args) -> Result<(), validator::ValidationErrors> {
@@ -289,6 +395,43 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Commented<T> {
     }
 }
 
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Tagged<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        struct TaggedVisitor<T>(PhantomData<T>);
+
+        impl<'de, T: Deserialize<'de>> Visitor<'de> for TaggedVisitor<T> {
+            type Value = Tagged<T>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a tagged YAML value")
+            }
+
+            fn visit_newtype_struct<D>(
+                self,
+                deserializer: D,
+            ) -> std::result::Result<Self::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                T::deserialize(deserializer).map(|value| Tagged(value, None))
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: de::SeqAccess<'de>,
+            {
+                let value = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+                let tag: Option<String> = seq.next_element()?;
+                Ok(Tagged(value, tag))
+            }
+        }
+
+        deserializer.deserialize_newtype_struct("__yaml_tagged", TaggedVisitor(PhantomData))
+    }
+}
+
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for SpaceAfter<T> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
         T::deserialize(deserializer).map(SpaceAfter)
@@ -306,7 +449,7 @@ mod tests {
     use serde::Deserialize;
 
     use crate::{
-        Commented, DoubleQuoted, FlowMap, FlowSeq, NullableTilde, SingleQuoted, SpaceAfter,
+        Commented, DoubleQuoted, FlowMap, FlowSeq, NullableTilde, SingleQuoted, SpaceAfter, Tagged,
     };
 
     #[derive(Debug, Deserialize, PartialEq)]
@@ -339,5 +482,12 @@ mod tests {
         assert_eq!(value.double_quoted, DoubleQuoted("value".to_string()));
         assert_eq!(value.single_quoted, SingleQuoted("value".to_string()));
         assert_eq!(value.map.0.get("a"), Some(&1));
+    }
+
+    #[test]
+    fn tagged_is_transparent_for_non_yaml_deserializers() {
+        let value: Tagged<u32> = serde_json::from_str("5").unwrap();
+
+        assert_eq!(value, Tagged(5, None));
     }
 }

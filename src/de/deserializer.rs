@@ -25,6 +25,7 @@ use super::properties_redaction::{
     ScalarRedactionCtx, ScalarRedactionGuard, with_interp_redaction_scope,
 };
 use super::spanned_deser;
+use super::tagged_deser;
 use super::tags::SfTag;
 use crate::anchor_store::{self, AnchorKind};
 #[cfg(feature = "properties")]
@@ -1352,6 +1353,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             // Internal wrapper types use `__yaml_*` names (see `__yaml_rc_anchor`, etc.).
             "__yaml_spanned" => spanned_deser::deserialize_yaml_spanned(self, visitor),
             "__yaml_commented" => commented_deser::deserialize_yaml_commented(self, visitor),
+            "__yaml_tagged" => tagged_deser::deserialize_yaml_tagged(self, visitor),
             "__yaml_rc_anchor" => {
                 let anchor = self.peek_anchor_id()?;
                 anchor_store::with_anchor_context(AnchorKind::Rc, anchor, || {

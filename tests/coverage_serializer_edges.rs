@@ -18,6 +18,10 @@ struct WeakAnchorPayloadWithExtra(usize, bool, &'static str, &'static str);
 struct CommentedPayloadWithExtra(&'static str, &'static str, &'static str);
 
 #[derive(Serialize)]
+#[serde(rename = "__yaml_tagged")]
+struct TaggedPayloadWithExtra(&'static str, &'static str, &'static str);
+
+#[derive(Serialize)]
 #[serde(rename = "__yaml_anchor")]
 struct AnchorPayloadWithBytes<'a>(&'a serde_bytes::Bytes, &'static str);
 
@@ -28,6 +32,10 @@ struct WeakAnchorPayloadWithBytes(usize, serde_bytes::ByteBuf, &'static str);
 #[derive(Serialize)]
 #[serde(rename = "__yaml_commented")]
 struct CommentedPayloadWithBytes(serde_bytes::ByteBuf, &'static str);
+
+#[derive(Serialize)]
+#[serde(rename = "__yaml_tagged")]
+struct TaggedPayloadWithBytes(serde_bytes::ByteBuf, &'static str);
 
 struct UnknownLenMap;
 
@@ -98,6 +106,10 @@ fn internal_tuple_payloads_reject_extra_fields() {
         &CommentedPayloadWithExtra("comment", "value", "extra"),
         "unexpected field in __yaml_commented",
     );
+    assert_unexpected_error(
+        &TaggedPayloadWithExtra("!tag", "value", "extra"),
+        "unexpected field in __yaml_tagged",
+    );
 }
 
 #[test]
@@ -112,6 +124,10 @@ fn internal_tuple_payload_captures_reject_bytes_in_scalar_slots() {
     );
     assert_unexpected_error(
         &CommentedPayloadWithBytes(serde_bytes::ByteBuf::from(b"comment".to_vec()), "value"),
+        "str expected",
+    );
+    assert_unexpected_error(
+        &TaggedPayloadWithBytes(serde_bytes::ByteBuf::from(b"tag".to_vec()), "value"),
         "str expected",
     );
 }

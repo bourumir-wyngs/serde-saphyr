@@ -43,6 +43,7 @@ See [release history](https://github.com/bourumir-wyngs/serde-saphyr/releases) o
 - Precise error reporting with **snippet rendering**.
 - Optional **!include** support with a custom or default resolver (inclusion of either a complete document or the node referenced by a specified anchor).
 - **Comment support**. Wrapper [Commented](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) both captures and emits comments.
+- **Tag support**. Wrapper [Tagged](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Tagged.html) captures and emits a node's resolved YAML tag.
 - **Optional property support**, with redaction (removal) of property values from later crate-generated diagnostics.
 - **Serializer supports emitting anchors** (Rc, Arc, Weak) if they are properly wrapped (see below).
 - **Declarative validation with optional [`validator`](https://crates.io/crates/validator) ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/validator_validate.rs))** or **[`garde`](https://crates.io/crates/garde)** ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/garde_validate.rs)).
@@ -510,6 +511,33 @@ behavior. Its scalar content is deserialized normally, and a tagged `=` mapping 
 an ordinary `"="` key. With `reject_unsupported_tags: true`, this tag is accepted only on that
 exact scalar mapping key. The same strict-mode context check limits `!!merge` to a scalar `<<`
 mapping key.
+
+### Tags
+
+`serde-saphyr` can capture tags. Applications can use custom tags to express units, priorities, accessibility and the like.
+
+The [`Tagged<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Tagged.html)
+wrapper stores a value and the resolved YAML tag attached to its node. The tag is represented as an
+`Option<String>`: `Some(tag)` contains an explicit tag, while `None` means that the node had no
+explicit tag. An empty string is not a valid tag value; use `None` instead.
+
+Tag handles are resolved while parsing. For example, `!!str` becomes
+`tag:yaml.org,2002:str`, while the local tag `!nanoseconds` remains `!nanoseconds`. Given:
+
+```yaml
+%TAG !css! tag:app.styles,2026:
+---
+font: !css!important bold
+```
+
+When the `font` value is deserialized as `Tagged<String>`, the captured tag is
+`Some("tag:app.styles,2026:important")`.
+
+Serialization round-trips the resolved tag identity, but may normalize its source spelling. Tag
+capture does not bypass normal YAML tag semantics or the `reject_unsupported_tags` option.
+When constructing `Tagged<T>` directly, a tag beginning with `!` is local; every other tag identity
+must have valid absolute-URI structure. Characters requiring URI escaping are percent-encoded on
+output.
 
 ### Comments
 

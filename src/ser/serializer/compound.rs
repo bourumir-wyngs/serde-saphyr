@@ -40,6 +40,9 @@ pub struct SeqSer<'a, 'b, W: Write> {
     pub(super) flow: bool,
     /// Whether the next element is the first (comma handling in flow style).
     pub(super) first: bool,
+    /// A block node property was already emitted, so an empty sequence must
+    /// still emit `[]` even when the general empty-braces option is disabled.
+    pub(super) force_empty_marker: bool,
 }
 
 impl<W: Write> SerializeTuple for SeqSer<'_, '_, W> {
@@ -115,7 +118,7 @@ impl<W: Write> SerializeSeq for SeqSer<'_, '_, W> {
             }
         } else if self.first {
             // Empty block-style sequence.
-            if self.ser.settings.empty_as_braces {
+            if self.ser.settings.empty_as_braces || self.force_empty_marker {
                 // If we were pending a space after a colon (map value position), write it now.
                 if self.ser.state.pending_layout.pending_space_after_colon {
                     self.ser.out.write_str(" ")?;
@@ -185,11 +188,14 @@ struct SpecialTupleSer<'a, 'b, W: Write> {
     weak_alias_id: Option<AnchorId>,
     /// For commented wrapper: captured comment text from field #0.
     comment_text: Option<String>,
+    /// For tagged wrapper: resolved tag identity captured from field #0.
+    resolved_tag: Option<String>,
 }
 enum TupleKind {
     AnchorStrong, // [ptr, value]
     AnchorWeak,   // [ptr, present, value]
     Commented,    // [comment, value]
+    Tagged,       // [resolved tag, value]
 }
 impl<'a, 'b, W: Write> TupleSer<'a, 'b, W> {
     pub(super) fn sequence(seq: SeqSer<'a, 'b, W>) -> Self {
@@ -216,6 +222,12 @@ impl<'a, 'b, W: Write> TupleSer<'a, 'b, W> {
             inner: TupleSerInner::Special(SpecialTupleSer::new(ser, TupleKind::Commented)),
         }
     }
+    /// Create a tuple serializer for the internal tagged wrapper.
+    pub(super) fn tagged(ser: &'a mut YamlSerializer<'b, W>) -> Self {
+        Self {
+            inner: TupleSerInner::Special(SpecialTupleSer::new(ser, TupleKind::Tagged)),
+        }
+    }
 }
 
 impl<'a, 'b, W: Write> SpecialTupleSer<'a, 'b, W> {
@@ -230,6 +242,7 @@ impl<'a, 'b, W: Write> SpecialTupleSer<'a, 'b, W> {
             skip_third: false,
             weak_alias_id: None,
             comment_text: None,
+            resolved_tag: None,
         }
     }
 }
@@ -306,6 +319,8 @@ impl<W: Write> SpecialTupleSer<'_, '_, W> {
                             }
                         } else {
                             // present == false: emit null and skip field #3
+                            self.ser.write_space_if_pending()?;
+                            self.ser.write_scalar_prefix_if_anchor()?;
                             if self.ser.state.at_line_start {
                                 self.ser.write_indent(self.ser.state.depth)?;
                             }
@@ -366,6 +381,19 @@ impl<W: Write> SpecialTupleSer<'_, '_, W> {
                     _ => return Err(Error::unexpected("unexpected field in __yaml_commented")),
                 }
             }
+            TupleKind::Tagged => match self.idx {
+                0 => {
+                    let mut sc = StrCapture::default();
+                    value.serialize(&mut sc)?;
+                    self.resolved_tag = Some(sc.finish()?);
+                }
+                1 => {
+                    let tag = self.resolved_tag.take().unwrap_or_default();
+                    self.ser.stage_resolved_tag(&tag)?;
+                    value.serialize(&mut *self.ser)?;
+                }
+                _ => return Err(Error::unexpected("unexpected field in __yaml_tagged")),
+            },
         }
         self.idx += 1;
         Ok(())
@@ -408,6 +436,9 @@ pub struct MapSer<'a, 'b, W: Write> {
     entries_written: usize,
     /// Kind of key waiting for its corresponding value.
     pending_key: Option<MapKeyKind>,
+    /// A block node property was already emitted, so an empty mapping must
+    /// still emit `{}` even when the general empty-braces option is disabled.
+    force_empty_marker: bool,
 }
 
 /// Output layout selected when a mapping is created.
@@ -470,6 +501,7 @@ impl<'a, 'b, W: Write> MapSer<'a, 'b, W> {
             layout: MapLayout::Flow,
             entries_written: 0,
             pending_key: None,
+            force_empty_marker: false,
         }
     }
 
@@ -478,6 +510,7 @@ impl<'a, 'b, W: Write> MapSer<'a, 'b, W> {
         depth: usize,
         align_after_dash: bool,
         inline_value_start: bool,
+        force_empty_marker: bool,
     ) -> Self {
         Self {
             ser,
@@ -488,6 +521,7 @@ impl<'a, 'b, W: Write> MapSer<'a, 'b, W> {
             },
             entries_written: 0,
             pending_key: None,
+            force_empty_marker,
         }
     }
 
@@ -657,7 +691,7 @@ impl<W: Write> SerializeMap for MapSer<'_, '_, W> {
             }
         } else if self.entries_written == 0 {
             // Empty block-style map.
-            if self.ser.settings.empty_as_braces {
+            if self.ser.settings.empty_as_braces || self.force_empty_marker {
                 // If we were pending a space after a colon (map value position), write it now.
                 if self.ser.state.pending_layout.pending_space_after_colon {
                     self.ser.out.write_str(" ")?;
@@ -709,13 +743,41 @@ impl<W: Write> SerializeStruct for MapSer<'_, '_, W> {
 ///
 /// Created by `YamlSerializer::serialize_struct_variant` to emit the variant name
 /// followed by a block mapping of fields.
+///
+/// This must remain public because it is exposed as the associated
+/// `SerializeStructVariant` type of the public `YamlSerializer` implementation;
+/// crate-only visibility would leak a private type through that interface (E0446).
 #[doc(hidden)]
 pub struct StructVariantSer<'a, 'b, W: Write> {
-    /// Parent YAML serializer.
-    pub(super) ser: &'a mut YamlSerializer<'b, W>,
-    /// Target indentation depth for the fields.
-    pub(super) depth: usize,
+    inner: StructVariantSerInner<'a, 'b, W>,
 }
+
+enum StructVariantSerInner<'a, 'b, W: Write> {
+    /// The usual externally tagged representation, whose variant key and
+    /// newline have already been emitted.
+    External {
+        ser: &'a mut YamlSerializer<'b, W>,
+        depth: usize,
+    },
+    /// A YAML tag already selected the variant, so the fields are the root
+    /// mapping payload rather than the value of another `Variant:` mapping.
+    Payload(MapSer<'a, 'b, W>),
+}
+
+impl<'a, 'b, W: Write> StructVariantSer<'a, 'b, W> {
+    pub(super) fn external(ser: &'a mut YamlSerializer<'b, W>, depth: usize) -> Self {
+        Self {
+            inner: StructVariantSerInner::External { ser, depth },
+        }
+    }
+
+    pub(super) fn payload(map: MapSer<'a, 'b, W>) -> Self {
+        Self {
+            inner: StructVariantSerInner::Payload(map),
+        }
+    }
+}
+
 impl<W: Write> SerializeStructVariant for StructVariantSer<'_, '_, W> {
     type Ok = ();
     type Error = Error;
@@ -725,20 +787,31 @@ impl<W: Write> SerializeStructVariant for StructVariantSer<'_, '_, W> {
         key: &'static str,
         value: &T,
     ) -> Result<()> {
-        let text = scalar_key_to_string(&key, self.ser.settings.yaml_12)?;
-        self.ser.write_indent(self.depth)?;
-        self.ser.out.write_str(&text)?;
-        // Defer spacing/newline decision to the value serializer similarly to map entries.
-        self.ser.out.write_str(":")?;
-        self.ser.state.pending_layout.pending_space_after_colon = true;
-        self.ser.state.at_line_start = false;
-        // Ensure nested mappings/collections used as this field's value indent relative to this struct variant.
-        let prev_map_depth = self.ser.state.current_map_depth.replace(self.depth);
-        let result = value.serialize(&mut *self.ser);
-        self.ser.state.current_map_depth = prev_map_depth;
-        result
+        match &mut self.inner {
+            StructVariantSerInner::External { ser, depth } => {
+                let text = scalar_key_to_string(&key, ser.settings.yaml_12)?;
+                ser.write_indent(*depth)?;
+                ser.out.write_str(&text)?;
+                // Defer spacing/newline decision to the value serializer similarly to map entries.
+                ser.out.write_str(":")?;
+                ser.state.pending_layout.pending_space_after_colon = true;
+                ser.state.at_line_start = false;
+                // Ensure nested mappings/collections used as this field's value indent relative to this struct variant.
+                let prev_map_depth = ser.state.current_map_depth.replace(*depth);
+                let result = value.serialize(&mut **ser);
+                ser.state.current_map_depth = prev_map_depth;
+                result
+            }
+            StructVariantSerInner::Payload(map) => {
+                SerializeStruct::serialize_field(map, key, value)
+            }
+        }
     }
+
     fn end(self) -> Result<()> {
-        Ok(())
+        match self.inner {
+            StructVariantSerInner::External { .. } => Ok(()),
+            StructVariantSerInner::Payload(map) => SerializeStruct::end(map),
+        }
     }
 }

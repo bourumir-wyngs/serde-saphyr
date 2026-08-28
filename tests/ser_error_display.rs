@@ -55,6 +55,24 @@ mod ser_error_tests {
     }
 
     #[test]
+    fn display_empty_resolved_tag() {
+        let e = Error::EmptyResolvedTag;
+        assert_eq!(
+            e.to_string(),
+            "cannot serialize an explicit YAML tag with an empty resolved identity"
+        );
+    }
+
+    #[test]
+    fn display_invalid_global_tag_uri() {
+        let e = Error::InvalidGlobalTagUri { tag: "$:?".into() };
+        assert_eq!(
+            e.to_string(),
+            "cannot serialize resolved YAML tag \"$:?\": non-local tag identities must be absolute URIs"
+        );
+    }
+
+    #[test]
     fn source_delegates() {
         let fmt_err = Error::Format {
             error: std::fmt::Error,
@@ -77,6 +95,13 @@ mod ser_error_tests {
 
         let single_quoted = Error::SingleQuotedRequiresEscaping { ch: '\n' };
         assert!(single_quoted.source().is_none());
+
+        assert!(Error::EmptyResolvedTag.source().is_none());
+        assert!(
+            Error::InvalidGlobalTagUri { tag: "$:?".into() }
+                .source()
+                .is_none()
+        );
     }
 
     #[test]
