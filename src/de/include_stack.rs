@@ -1,7 +1,8 @@
-use crate::budget::BudgetBreach;
+use crate::budget::{BudgetBreach, BudgetEnforcer};
 use crate::buffered_input::{
     ReaderInput, ReaderInputBytesRead, buffered_input_from_reader_with_limit_shared,
 };
+use crate::de::AliasLimits;
 use crate::input_source::{IncludeResolveError, IncludeResolver, InputSource, ResolvedInclude};
 use granit_parser::{
     Event, Options as ParserOptions, Parser, ParserStack as GranitParserStack, ReplayParser,
@@ -37,6 +38,8 @@ pub struct ParserStack<'input> {
     include_resolver: Option<Box<IncludeResolver<'input>>>,
     reader_bytes_read: ReaderInputBytesRead,
     budget: crate::Budget,
+    alias_limits: AliasLimits,
+    fragment_aliases: usize,
     parser_options: ParserOptions,
     active_ids: Vec<(usize, String)>,
     next_source_id: u32,
@@ -50,17 +53,35 @@ impl<'input> ParserStack<'input> {
         Self::with_parser_options(reader_bytes_read, budget, budget.parser_options())
     }
 
+    #[cfg(test)]
     #[must_use]
     pub fn with_parser_options(
         reader_bytes_read: ReaderInputBytesRead,
         budget: &crate::Budget,
         parser_options: ParserOptions,
     ) -> Self {
+        Self::with_parser_options_and_alias_limits(
+            reader_bytes_read,
+            budget,
+            parser_options,
+            AliasLimits::default(),
+        )
+    }
+
+    #[must_use]
+    pub(crate) fn with_parser_options_and_alias_limits(
+        reader_bytes_read: ReaderInputBytesRead,
+        budget: &crate::Budget,
+        parser_options: ParserOptions,
+        alias_limits: AliasLimits,
+    ) -> Self {
         Self {
             inner: InnerStack::with_options(parser_options.clone()),
             include_resolver: None,
             reader_bytes_read,
             budget: budget.clone(),
+            alias_limits,
+            fragment_aliases: 0,
             parser_options,
             active_ids: Vec::new(),
             next_source_id: 1,
@@ -158,10 +179,30 @@ impl<'input> ParserStack<'input> {
         self.resolved_sources
             .retain(|id, _| active_source_ids.contains(id));
     }
+    #[cfg(test)]
     pub fn resolve(
         &mut self,
         include_str: &str,
         location: crate::Location,
+    ) -> Result<(), crate::de_error::Error> {
+        let mut total_replayed_events = 0;
+        let mut per_anchor_expansions = Vec::new();
+        self.resolve_with_state(
+            include_str,
+            location,
+            &mut total_replayed_events,
+            &mut per_anchor_expansions,
+            None,
+        )
+    }
+
+    pub(crate) fn resolve_with_state(
+        &mut self,
+        include_str: &str,
+        location: crate::Location,
+        total_replayed_events: &mut usize,
+        per_anchor_expansions: &mut Vec<usize>,
+        budget_enforcer: Option<&mut BudgetEnforcer>,
     ) -> Result<(), crate::de_error::Error> {
         let Some(resolver) = &mut self.include_resolver else {
             return Err(
@@ -272,12 +313,19 @@ impl<'input> ParserStack<'input> {
                     name: name.clone(),
                     text: Rc::from(text.as_str()),
                 };
-                let events = collect_anchor_events_with_parser_options(
+                let events = collect_anchor_events_with_parser_options_and_state(
                     &text,
                     &anchor,
                     self.inner.current_anchor_offset(),
                     &self.budget,
+                    &self.alias_limits,
                     &self.parser_options,
+                    AnchorExpansionState {
+                        fragment_aliases: &mut self.fragment_aliases,
+                        total_replayed_events,
+                        per_anchor_expansions,
+                        budget_enforcer,
+                    },
                 )
                 .map_err(|error| match error {
                     CollectAnchorEventsError::Budget(breach) => {
@@ -291,6 +339,7 @@ impl<'input> ParserStack<'input> {
                             location,
                         }
                     }
+                    CollectAnchorEventsError::Deserialize(error) => error.with_location(location),
                 })?;
                 self.push_replay_parser_with_snippet(
                     ReplayParser::new(events.events, events.anchor_offset),
@@ -313,6 +362,7 @@ struct CollectedAnchorEvents {
 enum CollectAnchorEventsError {
     Message(String),
     Budget(BudgetBreach),
+    Deserialize(crate::de_error::Error),
 }
 
 fn anchored_event_initial_depth(event: &Event<'_>) -> usize {
@@ -320,6 +370,26 @@ fn anchored_event_initial_depth(event: &Event<'_>) -> usize {
         Event::SequenceStart(_, _, _) | Event::MappingStart(_, _, _) => 1,
         _ => 0,
     }
+}
+
+#[derive(Clone, Debug)]
+struct AnchoredNode {
+    anchor_id: Option<usize>,
+    events: RangeInclusive<usize>,
+}
+
+#[derive(Debug)]
+struct AnchorExpansionFrame {
+    anchor_id: Option<usize>,
+    events: RangeInclusive<usize>,
+    is_alias_replay: bool,
+}
+
+struct AnchorExpansionState<'a> {
+    fragment_aliases: &'a mut usize,
+    total_replayed_events: &'a mut usize,
+    per_anchor_expansions: &'a mut Vec<usize>,
+    budget_enforcer: Option<&'a mut BudgetEnforcer>,
 }
 
 /// Adds one expanded event's retained comment bytes to the include-fragment budget.
@@ -376,16 +446,47 @@ fn collect_anchor_events(
         target_anchor,
         anchor_offset,
         budget,
+        &AliasLimits::default(),
         &budget.parser_options(),
     )
 }
 
+#[cfg(test)]
 fn collect_anchor_events_with_parser_options(
     text: &str,
     target_anchor: &str,
     anchor_offset: usize,
     budget: &crate::Budget,
+    alias_limits: &AliasLimits,
     parser_options: &ParserOptions,
+) -> Result<CollectedAnchorEvents, CollectAnchorEventsError> {
+    let mut fragment_aliases = 0;
+    let mut total_replayed_events = 0;
+    let mut per_anchor_expansions = Vec::new();
+    collect_anchor_events_with_parser_options_and_state(
+        text,
+        target_anchor,
+        anchor_offset,
+        budget,
+        alias_limits,
+        parser_options,
+        AnchorExpansionState {
+            fragment_aliases: &mut fragment_aliases,
+            total_replayed_events: &mut total_replayed_events,
+            per_anchor_expansions: &mut per_anchor_expansions,
+            budget_enforcer: None,
+        },
+    )
+}
+
+fn collect_anchor_events_with_parser_options_and_state(
+    text: &str,
+    target_anchor: &str,
+    anchor_offset: usize,
+    budget: &crate::Budget,
+    alias_limits: &AliasLimits,
+    parser_options: &ParserOptions,
+    mut expansion_state: AnchorExpansionState<'_>,
 ) -> Result<CollectedAnchorEvents, CollectAnchorEventsError> {
     let mut document_count = 0usize;
     let mut anchor_defs: Vec<(String, usize)> = Vec::new();
@@ -467,9 +568,9 @@ fn collect_anchor_events_with_parser_options(
         }
     }
 
-    let mut anchor_nodes_by_name: HashMap<String, RangeInclusive<usize>> =
+    let mut anchor_nodes_by_name: HashMap<String, AnchoredNode> =
         HashMap::with_capacity(anchor_defs.len());
-    let mut anchor_nodes_by_id: HashMap<usize, RangeInclusive<usize>> =
+    let mut anchor_nodes_by_id: HashMap<usize, AnchoredNode> =
         HashMap::with_capacity(anchor_defs.len());
     let mut event_cursor = 0usize;
 
@@ -517,15 +618,18 @@ fn collect_anchor_events_with_parser_options(
                 }
             }
         }
-        let node_range = start..=end;
-        if let Some(anchor_id) = events[node_start].0.anchor_id() {
-            anchor_nodes_by_id.insert(anchor_id, node_range.clone());
+        let node = AnchoredNode {
+            anchor_id: events[node_start].0.anchor_id(),
+            events: start..=end,
+        };
+        if let Some(anchor_id) = node.anchor_id {
+            anchor_nodes_by_id.insert(anchor_id, node.clone());
         }
-        anchor_nodes_by_name.insert(name.clone(), node_range);
+        anchor_nodes_by_name.insert(name.clone(), node);
         event_cursor = node_start + 1;
     }
 
-    let target_events = anchor_nodes_by_name
+    let target_node = anchor_nodes_by_name
         .get(target_anchor)
         .cloned()
         .ok_or_else(|| {
@@ -535,35 +639,129 @@ fn collect_anchor_events_with_parser_options(
         })?;
 
     let mut expanded_events = Vec::new();
-    let mut to_process: Vec<usize> = target_events.rev().collect();
-    let mut expansion_count = 0;
+    // Keep one iterator per active expansion instead of copying every referenced event index
+    // into a pending-work vector. Together with active-path cycle detection and the alias replay
+    // limits checked before pushing a frame, pending storage is bounded by replay depth.
+    let mut frames = vec![AnchorExpansionFrame {
+        anchor_id: target_node.anchor_id,
+        events: target_node.events,
+        is_alias_replay: false,
+    }];
+    let mut active_anchor_ids = HashSet::new();
+    if let Some(anchor_id) = target_node.anchor_id {
+        active_anchor_ids.insert(anchor_id);
+    }
     let mut expanded_scalar_bytes = 0usize;
     let mut expanded_comment_bytes = 0usize;
 
-    while let Some(event_index) = to_process.pop() {
-        let (event, span) = &events[event_index];
-        if let Event::Alias(id) = &event
-            && let Some(alias_events) = anchor_nodes_by_id.get(id)
-        {
-            expansion_count += 1;
-            if expansion_count > budget.max_aliases {
-                return Err(CollectAnchorEventsError::Budget(BudgetBreach::Aliases {
-                    aliases: expansion_count,
-                }));
-            }
-            for alias_event_index in alias_events.clone().rev() {
-                to_process.push(alias_event_index);
+    while !frames.is_empty() {
+        let next_event = frames.last_mut().and_then(|frame| {
+            frame
+                .events
+                .next()
+                .map(|event_index| (event_index, frame.is_alias_replay))
+        });
+        let Some((event_index, is_alias_replay)) = next_event else {
+            let completed = frames.pop().expect("non-empty expansion frame stack");
+            if let Some(anchor_id) = completed.anchor_id {
+                active_anchor_ids.remove(&anchor_id);
             }
             continue;
+        };
+
+        let (event, span) = &events[event_index];
+        if let Event::Alias(id) = &event
+            && let Some(alias_node) = anchor_nodes_by_id.get(id)
+        {
+            if active_anchor_ids.contains(id) {
+                let anchor_name = anchor_nodes_by_name
+                    .iter()
+                    .find_map(|(name, node)| (node.anchor_id == Some(*id)).then_some(name.as_str()))
+                    .map_or_else(|| format!("id {id}"), |name| format!("'{name}'"));
+                return Err(CollectAnchorEventsError::Message(format!(
+                    "include fragment '{target_anchor}' contains a cyclic alias to anchor {anchor_name}"
+                )));
+            }
+
+            *expansion_state.fragment_aliases = expansion_state.fragment_aliases.saturating_add(1);
+            if let Some(enforcer) = expansion_state.budget_enforcer.as_deref_mut()
+                && let Err(breach) = enforcer.observe_alias_reference()
+            {
+                return Err(CollectAnchorEventsError::Budget(breach));
+            }
+            if *expansion_state.fragment_aliases > budget.max_aliases {
+                return Err(CollectAnchorEventsError::Budget(BudgetBreach::Aliases {
+                    aliases: *expansion_state.fragment_aliases,
+                }));
+            }
+
+            if *id >= expansion_state.per_anchor_expansions.len() {
+                expansion_state.per_anchor_expansions.resize(*id + 1, 0);
+            }
+            let expansions = &mut expansion_state.per_anchor_expansions[*id];
+            *expansions = expansions.saturating_add(1);
+            if *expansions > alias_limits.max_alias_expansions_per_anchor {
+                return Err(CollectAnchorEventsError::Deserialize(
+                    crate::de_error::Error::AliasExpansionLimitExceeded {
+                        anchor_id: *id,
+                        expansions: *expansions,
+                        max_expansions_per_anchor: alias_limits.max_alias_expansions_per_anchor,
+                        location: crate::Location::UNKNOWN,
+                    },
+                ));
+            }
+
+            // The root frame is not an alias replay, so the current frame count is the
+            // prospective alias replay depth. Check it before allocating another frame.
+            let next_depth = frames.len();
+            if next_depth > alias_limits.max_replay_stack_depth {
+                return Err(CollectAnchorEventsError::Deserialize(
+                    crate::de_error::Error::AliasReplayStackDepthExceeded {
+                        depth: next_depth,
+                        max_depth: alias_limits.max_replay_stack_depth,
+                        location: crate::Location::UNKNOWN,
+                    },
+                ));
+            }
+
+            active_anchor_ids.insert(*id);
+            frames.push(AnchorExpansionFrame {
+                anchor_id: Some(*id),
+                events: alias_node.events.clone(),
+                is_alias_replay: true,
+            });
+            continue;
         }
+
+        if is_alias_replay {
+            *expansion_state.total_replayed_events = expansion_state
+                .total_replayed_events
+                .checked_add(1)
+                .ok_or(CollectAnchorEventsError::Deserialize(
+                    crate::de_error::Error::AliasReplayCounterOverflow {
+                        location: crate::Location::UNKNOWN,
+                    },
+                ))?;
+            if *expansion_state.total_replayed_events > alias_limits.max_total_replayed_events {
+                return Err(CollectAnchorEventsError::Deserialize(
+                    crate::de_error::Error::AliasReplayLimitExceeded {
+                        total_replayed_events: *expansion_state.total_replayed_events,
+                        max_total_replayed_events: alias_limits.max_total_replayed_events,
+                        location: crate::Location::UNKNOWN,
+                    },
+                ));
+            }
+        }
+
         observe_expanded_scalar_budget(event, &mut expanded_scalar_bytes, budget)?;
         observe_expanded_comment_budget(event, &mut expanded_comment_bytes, budget)?;
-        expanded_events.push((event.clone(), *span));
-        if expanded_events.len() > budget.max_events {
+        let attempted_events = expanded_events.len().saturating_add(1);
+        if attempted_events > budget.max_events {
             return Err(CollectAnchorEventsError::Budget(BudgetBreach::Events {
-                events: expanded_events.len(),
+                events: attempted_events,
             }));
         }
+        expanded_events.push((event.clone(), *span));
     }
 
     Ok(CollectedAnchorEvents {
@@ -618,6 +816,7 @@ impl<'input> Iterator for ParserStack<'input> {
             Some(Ok((Event::DocumentStart(explicit, version), span))) => {
                 self.sync_source_tracking(self.inner.stack().len());
                 if self.inner.stack().len() == 1 {
+                    self.fragment_aliases = 0;
                     self.prune_resolved_sources();
                 }
                 Some(Ok((Event::DocumentStart(explicit, version), span)))
@@ -641,6 +840,9 @@ mod tests {
             CollectAnchorEventsError::Message(message) => {
                 panic!("expected budget breach, got message error: {message}")
             }
+            CollectAnchorEventsError::Deserialize(error) => {
+                panic!("expected budget breach, got deserialization error: {error:?}")
+            }
         }
     }
 
@@ -650,6 +852,22 @@ mod tests {
             CollectAnchorEventsError::Message(message) => message,
             CollectAnchorEventsError::Budget(breach) => {
                 panic!("expected message error, got budget breach: {breach:?}")
+            }
+            CollectAnchorEventsError::Deserialize(error) => {
+                panic!("expected message error, got deserialization error: {error:?}")
+            }
+        }
+    }
+
+    #[track_caller]
+    fn expect_deserialize_error(error: CollectAnchorEventsError) -> crate::de_error::Error {
+        match error {
+            CollectAnchorEventsError::Deserialize(error) => error,
+            CollectAnchorEventsError::Message(message) => {
+                panic!("expected deserialization error, got message error: {message}")
+            }
+            CollectAnchorEventsError::Budget(breach) => {
+                panic!("expected deserialization error, got budget breach: {breach:?}")
             }
         }
     }
@@ -711,6 +929,165 @@ mod tests {
     }
 
     #[test]
+    fn collect_anchor_events_rejects_direct_alias_cycle() {
+        let budget = crate::Budget {
+            max_aliases: 3,
+            ..crate::Budget::default()
+        };
+        let error = collect_anchor_events(
+            "selected: &selected\n  - *selected\n  - sibling\n",
+            "selected",
+            0,
+            &budget,
+        )
+        .expect_err("a self-referential fragment anchor must be rejected");
+        let error = expect_fragment_message(error);
+
+        assert!(
+            error.contains("cyclic alias") && error.contains("selected"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn collect_anchor_events_rejects_indirect_alias_cycle() {
+        let error = collect_anchor_events(
+            "outer: &outer\n  child: &child\n    - *outer\nselected: &selected\n  - *child\n",
+            "selected",
+            0,
+            &crate::Budget::default(),
+        )
+        .expect_err("a descendant-to-ancestor alias cycle must be rejected");
+        let error = expect_fragment_message(error);
+
+        assert!(
+            error.contains("cyclic alias") && error.contains("outer"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn collect_anchor_events_allows_repeated_acyclic_aliases() {
+        let collected = collect_anchor_events(
+            "base: &base value\nselected: &selected [*base, *base]\n",
+            "selected",
+            0,
+            &crate::Budget::default(),
+        )
+        .expect("repeated aliases are valid when the referenced anchor is not active");
+
+        let values = collected
+            .events
+            .iter()
+            .filter(|(event, _)| {
+                matches!(event, Event::Scalar(value, _, _, _) if value.as_ref() == "value")
+            })
+            .count();
+        assert_eq!(values, 2);
+    }
+
+    #[test]
+    fn collect_anchor_events_enforces_total_alias_replay_limit() {
+        let budget = crate::Budget::default();
+        let alias_limits = AliasLimits {
+            max_total_replayed_events: 0,
+            ..AliasLimits::default()
+        };
+        let error = collect_anchor_events_with_parser_options(
+            "base: &base value\nselected: &selected [*base]\n",
+            "selected",
+            0,
+            &budget,
+            &alias_limits,
+            &budget.parser_options(),
+        )
+        .expect_err("the first alias-replayed event should exceed a zero limit");
+
+        assert!(matches!(
+            expect_deserialize_error(error),
+            crate::de_error::Error::AliasReplayLimitExceeded {
+                total_replayed_events: 1,
+                max_total_replayed_events: 0,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn collect_anchor_events_enforces_alias_expansions_per_anchor() {
+        let budget = crate::Budget::default();
+        let alias_limits = AliasLimits {
+            max_alias_expansions_per_anchor: 1,
+            ..AliasLimits::default()
+        };
+        let error = collect_anchor_events_with_parser_options(
+            "base: &base value\nselected: &selected [*base, *base]\n",
+            "selected",
+            0,
+            &budget,
+            &alias_limits,
+            &budget.parser_options(),
+        )
+        .expect_err("the second expansion of one anchor should exceed the limit");
+
+        assert!(matches!(
+            expect_deserialize_error(error),
+            crate::de_error::Error::AliasExpansionLimitExceeded {
+                expansions: 2,
+                max_expansions_per_anchor: 1,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn collect_anchor_events_enforces_alias_budget_before_scheduling() {
+        let budget = crate::Budget {
+            max_aliases: 1,
+            ..crate::Budget::default()
+        };
+        let error = collect_anchor_events(
+            "base: &base value\nselected: &selected [*base, *base]\n",
+            "selected",
+            0,
+            &budget,
+        )
+        .expect_err("the second alias expansion should exceed the budget");
+
+        assert!(matches!(
+            expect_budget_breach(error),
+            BudgetBreach::Aliases { aliases: 2 }
+        ));
+    }
+
+    #[test]
+    fn collect_anchor_events_enforces_alias_replay_stack_depth() {
+        let budget = crate::Budget::default();
+        let alias_limits = AliasLimits {
+            max_replay_stack_depth: 1,
+            ..AliasLimits::default()
+        };
+        let error = collect_anchor_events_with_parser_options(
+            "leaf: &leaf value\nmiddle: &middle [*leaf]\nselected: &selected [*middle]\n",
+            "selected",
+            0,
+            &budget,
+            &alias_limits,
+            &budget.parser_options(),
+        )
+        .expect_err("the second nested alias frame should exceed the depth limit");
+
+        assert!(matches!(
+            expect_deserialize_error(error),
+            crate::de_error::Error::AliasReplayStackDepthExceeded {
+                depth: 2,
+                max_depth: 1,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn collect_anchor_events_skips_comment_between_anchor_and_node() {
         let collected = collect_anchor_events(
             "selected: &selected # note\n  user: Alice\n",
@@ -747,6 +1124,7 @@ mod tests {
             "selected",
             0,
             &budget,
+            &AliasLimits::default(),
             &parser_options,
         )
         .expect("anchor collection should succeed without comment events");

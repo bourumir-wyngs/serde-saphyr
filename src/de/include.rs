@@ -1,3 +1,5 @@
+#[cfg(feature = "include")]
+use crate::de::AliasLimits;
 use granit_parser::{Options as ParserOptions, Parser};
 
 #[cfg(feature = "include")]
@@ -25,11 +27,16 @@ pub(crate) fn create_parser_from_reader_input<'input>(
     input: ReaderInput<'input>,
     reader_bytes_read: ReaderInputBytesRead,
     budget: &crate::Budget,
+    alias_limits: AliasLimits,
     parser_options: ParserOptions,
     resolver: Option<Box<IncludeResolver<'input>>>,
 ) -> ParserStack<'input> {
-    let mut stack =
-        ParserStack::with_parser_options(reader_bytes_read, budget, parser_options.clone());
+    let mut stack = ParserStack::with_parser_options_and_alias_limits(
+        reader_bytes_read,
+        budget,
+        parser_options.clone(),
+        alias_limits,
+    );
     if let Some(r) = resolver {
         stack.set_resolver(r);
     }
@@ -48,11 +55,16 @@ pub(crate) fn create_parser_from_str<'a>(
     input: &'a str,
     reader_bytes_read: ReaderInputBytesRead,
     budget: &crate::Budget,
+    alias_limits: AliasLimits,
     parser_options: ParserOptions,
     resolver: Option<Box<IncludeResolver<'a>>>,
 ) -> ParserStack<'a> {
-    let mut stack =
-        ParserStack::with_parser_options(reader_bytes_read, budget, parser_options.clone());
+    let mut stack = ParserStack::with_parser_options_and_alias_limits(
+        reader_bytes_read,
+        budget,
+        parser_options.clone(),
+        alias_limits,
+    );
     if let Some(r) = resolver {
         stack.set_resolver(r);
     }
@@ -91,6 +103,7 @@ mod tests {
             input,
             std::rc::Rc::new(std::cell::Cell::new(0)),
             &budget,
+            AliasLimits::default(),
             parser_options,
             None,
         );

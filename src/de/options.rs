@@ -75,6 +75,8 @@ pub enum MergeKeyPolicy {
 
 /// Limits applied to alias replay to harden against alias bombs.
 ///
+/// These limits also apply while aliases are expanded from anchored `!include` fragments.
+///
 /// Prefer constructing this via the [`alias_limits!`](crate::alias_limits!) macro instead of a
 /// struct literal. This keeps call sites stable if new fields are added in the future.
 ///

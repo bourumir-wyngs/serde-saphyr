@@ -159,10 +159,25 @@ impl<'input> GranitParser<'input> {
         &mut self,
         include_str: &str,
         location: crate::Location,
+        total_replayed_events: &mut usize,
+        per_anchor_expansions: &mut Vec<usize>,
+        budget: Option<&mut BudgetEnforcer>,
     ) -> Result<(), crate::de_error::Error> {
         match self {
-            GranitParser::StringParser(parser) => parser.resolve(include_str, location),
-            GranitParser::StreamParser(parser) => parser.resolve(include_str, location),
+            GranitParser::StringParser(parser) => parser.resolve_with_state(
+                include_str,
+                location,
+                total_replayed_events,
+                per_anchor_expansions,
+                budget,
+            ),
+            GranitParser::StreamParser(parser) => parser.resolve_with_state(
+                include_str,
+                location,
+                total_replayed_events,
+                per_anchor_expansions,
+                budget,
+            ),
         }
     }
 
@@ -358,6 +373,7 @@ impl<'a> LiveEvents<'a> {
             input,
             reader_bytes_read,
             resolved_budget,
+            alias_limits,
             parser_options,
             resolver,
         );
@@ -446,6 +462,7 @@ impl<'a> LiveEvents<'a> {
             input,
             reader_bytes_read,
             resolved_budget,
+            alias_limits,
             parser_options,
             resolver,
         );
@@ -946,7 +963,13 @@ impl<'a> LiveEvents<'a> {
                     if tag_s == SfTag::Include && self.parser.has_resolver() {
                         match crate::tags::include_spec_from_tag_and_value(&tag, &val) {
                             Ok(Some(include_spec)) => {
-                                self.parser.resolve(&include_spec, location)?;
+                                self.parser.resolve(
+                                    &include_spec,
+                                    location,
+                                    &mut self.total_replayed_events,
+                                    &mut self.per_anchor_expansions,
+                                    self.budget.as_mut(),
+                                )?;
                                 self.pending_include_anchor = anchor_id;
                                 continue;
                             }
