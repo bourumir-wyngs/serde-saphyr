@@ -743,13 +743,41 @@ impl<W: Write> SerializeStruct for MapSer<'_, '_, W> {
 ///
 /// Created by `YamlSerializer::serialize_struct_variant` to emit the variant name
 /// followed by a block mapping of fields.
+///
+/// This must remain public because it is exposed as the associated
+/// `SerializeStructVariant` type of the public `YamlSerializer` implementation;
+/// crate-only visibility would leak a private type through that interface (E0446).
 #[doc(hidden)]
 pub struct StructVariantSer<'a, 'b, W: Write> {
-    /// Parent YAML serializer.
-    pub(super) ser: &'a mut YamlSerializer<'b, W>,
-    /// Target indentation depth for the fields.
-    pub(super) depth: usize,
+    inner: StructVariantSerInner<'a, 'b, W>,
 }
+
+enum StructVariantSerInner<'a, 'b, W: Write> {
+    /// The usual externally tagged representation, whose variant key and
+    /// newline have already been emitted.
+    External {
+        ser: &'a mut YamlSerializer<'b, W>,
+        depth: usize,
+    },
+    /// A YAML tag already selected the variant, so the fields are the root
+    /// mapping payload rather than the value of another `Variant:` mapping.
+    Payload(MapSer<'a, 'b, W>),
+}
+
+impl<'a, 'b, W: Write> StructVariantSer<'a, 'b, W> {
+    pub(super) fn external(ser: &'a mut YamlSerializer<'b, W>, depth: usize) -> Self {
+        Self {
+            inner: StructVariantSerInner::External { ser, depth },
+        }
+    }
+
+    pub(super) fn payload(map: MapSer<'a, 'b, W>) -> Self {
+        Self {
+            inner: StructVariantSerInner::Payload(map),
+        }
+    }
+}
+
 impl<W: Write> SerializeStructVariant for StructVariantSer<'_, '_, W> {
     type Ok = ();
     type Error = Error;
@@ -759,20 +787,31 @@ impl<W: Write> SerializeStructVariant for StructVariantSer<'_, '_, W> {
         key: &'static str,
         value: &T,
     ) -> Result<()> {
-        let text = scalar_key_to_string(&key, self.ser.settings.yaml_12)?;
-        self.ser.write_indent(self.depth)?;
-        self.ser.out.write_str(&text)?;
-        // Defer spacing/newline decision to the value serializer similarly to map entries.
-        self.ser.out.write_str(":")?;
-        self.ser.state.pending_layout.pending_space_after_colon = true;
-        self.ser.state.at_line_start = false;
-        // Ensure nested mappings/collections used as this field's value indent relative to this struct variant.
-        let prev_map_depth = self.ser.state.current_map_depth.replace(self.depth);
-        let result = value.serialize(&mut *self.ser);
-        self.ser.state.current_map_depth = prev_map_depth;
-        result
+        match &mut self.inner {
+            StructVariantSerInner::External { ser, depth } => {
+                let text = scalar_key_to_string(&key, ser.settings.yaml_12)?;
+                ser.write_indent(*depth)?;
+                ser.out.write_str(&text)?;
+                // Defer spacing/newline decision to the value serializer similarly to map entries.
+                ser.out.write_str(":")?;
+                ser.state.pending_layout.pending_space_after_colon = true;
+                ser.state.at_line_start = false;
+                // Ensure nested mappings/collections used as this field's value indent relative to this struct variant.
+                let prev_map_depth = ser.state.current_map_depth.replace(*depth);
+                let result = value.serialize(&mut **ser);
+                ser.state.current_map_depth = prev_map_depth;
+                result
+            }
+            StructVariantSerInner::Payload(map) => {
+                SerializeStruct::serialize_field(map, key, value)
+            }
+        }
     }
+
     fn end(self) -> Result<()> {
-        Ok(())
+        match self.inner {
+            StructVariantSerInner::External { .. } => Ok(()),
+            StructVariantSerInner::Payload(map) => SerializeStruct::end(map),
+        }
     }
 }

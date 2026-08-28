@@ -674,6 +674,17 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         self.stage_tag_with_token(&resolved, core_tag_token(suffix))
     }
 
+    /// Whether the tag staged for the next node is the local tag that Serde's
+    /// enum deserializer interprets as `variant`.
+    #[inline]
+    fn pending_tag_selects_variant(&self, variant: &str) -> bool {
+        self.state
+            .pending_tag
+            .as_ref()
+            .and_then(|tag| tag.resolved.strip_prefix('!'))
+            == Some(variant)
+    }
+
     /// Serialize a tagged scalar of the form `!!Type value` using plain or quoted style for
     /// the value depending on its content.
     fn serialize_tagged_scalar(&mut self, enum_name: &str, variant: &str) -> Result<()> {
@@ -1339,6 +1350,13 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         variant: &'static str,
         value: &T,
     ) -> Result<()> {
+        // `!Variant payload` already carries the same variant selection as
+        // Serde's usual `{Variant: payload}` representation. Keep the tag
+        // staged for the payload and omit the redundant external wrapper.
+        if self.pending_tag_selects_variant(variant) {
+            return value.serialize(self);
+        }
+
         let was_inline_value = self.state.pending_layout.pending_space_after_colon;
         let anchor_broke_line = self.has_pending_node_properties();
         let after_dash_depth = self.state.after_dash_depth;
@@ -1543,8 +1561,12 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         _name: &'static str,
         _variant_index: u32,
         variant: &'static str,
-        _len: usize,
+        len: usize,
     ) -> Result<Self::SerializeTupleVariant> {
+        if self.pending_tag_selects_variant(variant) {
+            return self.serialize_seq(Some(len));
+        }
+
         let was_inline_value = self.state.pending_layout.pending_space_after_colon;
         let anchor_broke_line = self.has_pending_node_properties();
         let after_dash_depth = self.state.after_dash_depth;
@@ -1712,8 +1734,12 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         _name: &'static str,
         _variant_index: u32,
         variant: &'static str,
-        _len: usize,
+        len: usize,
     ) -> Result<Self::SerializeStructVariant> {
+        if self.pending_tag_selects_variant(variant) {
+            return Ok(StructVariantSer::payload(self.serialize_map(Some(len))?));
+        }
+
         let was_inline_value = self.state.pending_layout.pending_space_after_colon;
         let anchor_broke_line = self.has_pending_node_properties();
         let after_dash_depth = self.state.after_dash_depth;
@@ -1739,10 +1765,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             self.state.pending_layout.pending_inline_map = false;
             // Fields indent one more level under the variant label.
             let depth_next = checked_depth_add(base, 1)?;
-            return Ok(StructVariantSer {
-                ser: self,
-                depth: depth_next,
-            });
+            return Ok(StructVariantSer::external(self, depth_next));
         }
         // Otherwise (top-level or sequence context), emit the variant name at current depth.
         if self.state.at_line_start {
@@ -1766,10 +1789,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             depth_next = checked_depth_add(d, 2)?;
             self.state.pending_layout.pending_inline_map = false;
         }
-        Ok(StructVariantSer {
-            ser: self,
-            depth: depth_next,
-        })
+        Ok(StructVariantSer::external(self, depth_next))
     }
 }
 
