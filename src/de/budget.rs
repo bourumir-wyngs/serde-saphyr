@@ -289,19 +289,6 @@ pub enum BudgetBreach {
         anchors: usize,
     },
 
-    /// Retained anchor event copies exceeded [`Budget::max_recorded_anchor_events`].
-    RecordedAnchorEvents {
-        /// Cumulative copies attempted at the moment of the breach.
-        recorded_anchor_events: usize,
-    },
-
-    /// Owned payload copied into retained anchor events exceeded
-    /// [`Budget::max_recorded_anchor_bytes`].
-    RecordedAnchorBytes {
-        /// Cumulative owned payload bytes attempted at the moment of the breach.
-        recorded_anchor_bytes: usize,
-    },
-
     /// The structural nesting depth exceeded [`Budget::max_depth`].
     ///
     /// Depth counts nested `SequenceStart` and `MappingStart` events.
@@ -369,6 +356,19 @@ pub enum BudgetBreach {
     InputBytes {
         /// Total number of bytes consumed from the input when the breach occurred.
         input_bytes: usize,
+    },
+
+    /// Retained anchor event copies exceeded [`Budget::max_recorded_anchor_events`].
+    RecordedAnchorEvents {
+        /// Cumulative copies attempted at the moment of the breach.
+        recorded_anchor_events: usize,
+    },
+
+    /// Owned payload copied into retained anchor events exceeded
+    /// [`Budget::max_recorded_anchor_bytes`].
+    RecordedAnchorBytes {
+        /// Cumulative owned payload bytes attempted at the moment of the breach.
+        recorded_anchor_bytes: usize,
     },
 }
 
