@@ -19,7 +19,7 @@ fn assert_redacted_message(message: &str, placeholder: &str, secret: &str) {
     );
     assert!(
         !message.contains(secret),
-        "secret `{secret}` leaked in: {message}"
+        "secret leaked in message"
     );
 }
 
