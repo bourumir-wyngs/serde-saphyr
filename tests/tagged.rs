@@ -51,6 +51,25 @@ fn local_and_global_resolved_tags_are_safely_percent_encoded() {
 }
 
 #[test]
+fn encoded_global_tag_brackets_round_trip_without_escaping_ipv6_hosts() {
+    for input in [
+        "!<http://example.com/path%5B0%5D> value\n",
+        "!<http://example%5B0%5D.com/path> value\n",
+        "!<http://example.com/path?q=%5B0%5D#%5B1%5D> value\n",
+    ] {
+        let tagged: Tagged<String> = from_str(input).unwrap();
+        let yaml = to_string(&tagged).unwrap();
+        assert_eq!(yaml, input);
+        assert_eq!(from_str::<Tagged<String>>(&yaml).unwrap(), tagged);
+    }
+
+    let ipv6: Tagged<String> = from_str("!<http://[2001:db8::1]/path%5B0%5D> value\n").unwrap();
+    let yaml = to_string(&ipv6).unwrap();
+    assert_eq!(yaml, "!<http://[2001:db8::1]/path%5B0%5D> value\n");
+    assert_eq!(from_str::<Tagged<String>>(&yaml).unwrap(), ipv6);
+}
+
+#[test]
 fn resolved_strings_starting_with_bang_are_local_and_none_is_untagged() {
     let value = Tagged(42, Some("!!int".to_owned()));
     let yaml = to_string(&value).unwrap();

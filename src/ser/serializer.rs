@@ -102,28 +102,72 @@ const fn is_global_tag_uri_byte(byte: u8) -> bool {
                 | b'\''
                 | b'('
                 | b')'
-                | b'['
-                | b']'
         )
 }
 
 #[inline]
 const fn is_local_tag_suffix_byte(byte: u8) -> bool {
-    is_global_tag_uri_byte(byte) && !matches!(byte, b'!' | b',' | b'[' | b']')
+    is_global_tag_uri_byte(byte) && !matches!(byte, b'!' | b',')
+}
+
+fn push_percent_encoded_byte(out: &mut String, byte: u8, safe: bool) {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    // A literal '%' must always be escaped: the YAML parser interprets it as
+    // the start of an encoded UTF-8 scalar and decodes it again.
+    if byte != b'%' && safe {
+        out.push(char::from(byte));
+    } else {
+        out.push('%');
+        out.push(char::from(HEX[usize::from(byte >> 4)]));
+        out.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
 }
 
 fn push_percent_encoded(out: &mut String, value: &str, safe: fn(u8) -> bool) {
-    const HEX: &[u8; 16] = b"0123456789ABCDEF";
     for byte in value.bytes() {
-        // A literal '%' must always be escaped: the YAML parser interprets it
-        // as the start of an encoded UTF-8 scalar and decodes it again.
-        if byte != b'%' && safe(byte) {
-            out.push(char::from(byte));
-        } else {
-            out.push('%');
-            out.push(char::from(HEX[usize::from(byte >> 4)]));
-            out.push(char::from(HEX[usize::from(byte & 0x0f)]));
-        }
+        push_percent_encoded_byte(out, byte, safe(byte));
+    }
+}
+
+/// Return the byte positions of the brackets delimiting a valid IP-literal
+/// authority. Brackets elsewhere in a resolved URI are data and must be
+/// percent-encoded before the URI is placed in a verbatim YAML tag.
+fn uri_ip_literal_brackets(uri: &str) -> Option<(usize, usize)> {
+    let scheme_end = uri.find(':')?;
+    let authority_start = scheme_end.checked_add(3)?;
+    let remainder = uri.get(scheme_end + 1..)?.strip_prefix("//")?;
+    let authority_end = remainder.find(['/', '?', '#']).unwrap_or(remainder.len());
+    let authority = &remainder[..authority_end];
+    let host_start = authority.rfind('@').map_or(0, |idx| idx + 1);
+    let host_and_port = &authority[host_start..];
+    let literal_and_port = host_and_port.strip_prefix('[')?;
+    let close = literal_and_port.find(']')?;
+    if !uri_ip_literal_is_valid(&literal_and_port[..close]) {
+        return None;
+    }
+    let port = &literal_and_port[close + 1..];
+    if !port.is_empty()
+        && !port
+            .strip_prefix(':')
+            .is_some_and(|value| value.bytes().all(|byte| byte.is_ascii_digit()))
+    {
+        return None;
+    }
+    let open = authority_start.checked_add(host_start)?;
+    Some((open, open.checked_add(close + 1)?))
+}
+
+fn push_global_tag_uri_percent_encoded(out: &mut String, value: &str) {
+    let ip_literal_brackets = uri_ip_literal_brackets(value);
+
+    for (idx, byte) in value.bytes().enumerate() {
+        let is_ip_literal_bracket =
+            ip_literal_brackets.is_some_and(|(open, close)| idx == open || idx == close);
+        push_percent_encoded_byte(
+            out,
+            byte,
+            is_ip_literal_bracket || is_global_tag_uri_byte(byte),
+        );
     }
 }
 
@@ -137,7 +181,7 @@ fn resolved_tag_token(resolved: &str) -> String {
     } else {
         let mut token = String::with_capacity(resolved.len() + 3);
         token.push_str("!<");
-        push_percent_encoded(&mut token, resolved, is_global_tag_uri_byte);
+        push_global_tag_uri_percent_encoded(&mut token, resolved);
         token.push('>');
         token
     }
