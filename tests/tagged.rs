@@ -51,15 +51,36 @@ fn local_and_global_resolved_tags_are_safely_percent_encoded() {
 }
 
 #[test]
-fn encoded_global_tag_brackets_round_trip_without_escaping_ipv6_hosts() {
-    for input in [
-        "!<http://example.com/path%5B0%5D> value\n",
-        "!<http://example%5B0%5D.com/path> value\n",
-        "!<http://example.com/path?q=%5B0%5D#%5B1%5D> value\n",
+fn encoded_global_tag_delimiters_round_trip_contextually() {
+    for (input, expected) in [
+        (
+            "!<http://example.com/path%5B0%5D> value\n",
+            "!<http://example.com/path%5B0%5D> value\n",
+        ),
+        (
+            "!<http://example%5B0%5D.com/path> value\n",
+            "!<http://example%5B0%5D.com/path> value\n",
+        ),
+        (
+            "!<http://example.com/path?q=%5B0%5D#%5B1%5D> value\n",
+            "!<http://example.com/path?q=%5B0%5D#%5B1%5D> value\n",
+        ),
+        (
+            "!<http://user%40name@example.com/> value\n",
+            "!<http://user%40name@example.com/> value\n",
+        ),
+        (
+            "!<http://example%3Aname:8080/> value\n",
+            "!<http://example%3Aname:8080/> value\n",
+        ),
+        (
+            "!<tag:example.com,2026:part%23one%23two> value\n",
+            "!<tag:example.com,2026:part#one%23two> value\n",
+        ),
     ] {
         let tagged: Tagged<String> = from_str(input).unwrap();
         let yaml = to_string(&tagged).unwrap();
-        assert_eq!(yaml, input);
+        assert_eq!(yaml, expected);
         assert_eq!(from_str::<Tagged<String>>(&yaml).unwrap(), tagged);
     }
 

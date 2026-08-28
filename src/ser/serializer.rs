@@ -137,46 +137,95 @@ fn push_percent_encoded(out: &mut String, value: &str, safe: fn(u8) -> bool) {
     }
 }
 
-/// Return the byte positions of the brackets delimiting a valid IP-literal
-/// authority. Brackets elsewhere in a resolved URI are data and must be
-/// percent-encoded before the URI is placed in a verbatim YAML tag.
-fn uri_ip_literal_brackets(uri: &str) -> Option<(usize, usize)> {
-    let scheme_end = uri.find(':')?;
-    let authority_start = scheme_end.checked_add(3)?;
-    let remainder = uri.get(scheme_end + 1..)?.strip_prefix("//")?;
-    let authority_end = remainder.find(['/', '?', '#']).unwrap_or(remainder.len());
-    let authority = &remainder[..authority_end];
-    let host_start = authority.rfind('@').map_or(0, |idx| idx + 1);
-    let host_and_port = &authority[host_start..];
-    let literal_and_port = host_and_port.strip_prefix('[')?;
-    let close = literal_and_port.find(']')?;
+/// Whether `host_and_port` is an IP-literal with an optional numeric port.
+fn uri_ip_literal_host_is_valid(host_and_port: &str) -> bool {
+    let Some(literal_and_port) = host_and_port.strip_prefix('[') else {
+        return false;
+    };
+    let Some(close) = literal_and_port.find(']') else {
+        return false;
+    };
     if !uri_ip_literal_is_valid(&literal_and_port[..close]) {
-        return None;
+        return false;
     }
     let port = &literal_and_port[close + 1..];
-    if !port.is_empty()
-        && !port
+    port.is_empty()
+        || port
             .strip_prefix(':')
             .is_some_and(|value| value.bytes().all(|byte| byte.is_ascii_digit()))
-    {
-        return None;
-    }
-    let open = authority_start.checked_add(host_start)?;
-    Some((open, open.checked_add(close + 1)?))
 }
 
-fn push_global_tag_uri_percent_encoded(out: &mut String, value: &str) {
-    let ip_literal_brackets = uri_ip_literal_brackets(value);
+fn push_uri_authority_percent_encoded(out: &mut String, authority: &str) {
+    let host_and_port = if let Some((userinfo, host_and_port)) = authority.rsplit_once('@') {
+        push_percent_encoded(out, userinfo, is_uri_userinfo_char);
+        out.push('@');
+        host_and_port
+    } else {
+        authority
+    };
 
-    for (idx, byte) in value.bytes().enumerate() {
-        let is_ip_literal_bracket =
-            ip_literal_brackets.is_some_and(|(open, close)| idx == open || idx == close);
-        push_percent_encoded_byte(
-            out,
-            byte,
-            is_ip_literal_bracket || is_global_tag_uri_byte(byte),
-        );
+    if uri_ip_literal_host_is_valid(host_and_port) {
+        out.push_str(host_and_port);
+        return;
     }
+
+    let (host, port) = match host_and_port.rsplit_once(':') {
+        Some((host, port)) if port.bytes().all(|byte| byte.is_ascii_digit()) => (host, Some(port)),
+        _ => (host_and_port, None),
+    };
+    push_percent_encoded(out, host, is_uri_reg_name_char);
+    if let Some(port) = port {
+        out.push(':');
+        out.push_str(port);
+    }
+}
+
+fn push_uri_hier_part_percent_encoded(out: &mut String, hier_part: &str) {
+    if let Some(authority_and_path) = hier_part.strip_prefix("//") {
+        out.push_str("//");
+        let path_start = authority_and_path.find('/');
+        let (authority, path) = match path_start {
+            Some(idx) => authority_and_path.split_at(idx),
+            None => (authority_and_path, ""),
+        };
+        push_uri_authority_percent_encoded(out, authority);
+        push_percent_encoded(out, path, is_uri_path_char);
+    } else {
+        push_percent_encoded(out, hier_part, is_uri_path_char);
+    }
+}
+
+fn push_global_tag_uri_percent_encoded(out: &mut String, uri: &str) {
+    let Some((scheme, remainder)) = uri.split_once(':') else {
+        push_percent_encoded(out, uri, is_global_tag_uri_byte);
+        return;
+    };
+    push_percent_encoded(out, scheme, is_uri_scheme_char);
+    out.push(':');
+
+    let (without_fragment, fragment) = match remainder.split_once('#') {
+        Some((head, tail)) => (head, Some(tail)),
+        None => (remainder, None),
+    };
+    let (hier_part, query) = match without_fragment.split_once('?') {
+        Some((head, tail)) => (head, Some(tail)),
+        None => (without_fragment, None),
+    };
+
+    push_uri_hier_part_percent_encoded(out, hier_part);
+    if let Some(query) = query {
+        out.push('?');
+        push_percent_encoded(out, query, is_uri_query_or_fragment_char);
+    }
+    if let Some(fragment) = fragment {
+        out.push('#');
+        push_percent_encoded(out, fragment, is_uri_query_or_fragment_char);
+    }
+}
+
+#[inline]
+const fn is_uri_scheme_char(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.')
 }
 
 /// Convert a resolved tag identity into one canonical, injection-safe YAML token.
