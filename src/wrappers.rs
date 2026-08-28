@@ -206,7 +206,8 @@ pub struct Commented<T>(pub T, pub String);
 /// During serialization, a resolved global tag URI is emitted using YAML's
 /// verbatim form (`!<...>`). This preserves the resolved tag identity across a
 /// round trip, but does not reproduce tag handles or `%TAG` directives. Local
-/// tags are emitted directly.
+/// tags are emitted directly. A non-local identity must have valid absolute-URI
+/// structure; characters requiring URI escaping are percent-encoded on output.
 ///
 /// `Tagged<Commented<T>>` and `Commented<Tagged<T>>` are both supported. Tag
 /// capture remains subject to the deserializer's normal tag semantics and

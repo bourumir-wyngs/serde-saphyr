@@ -69,6 +69,15 @@ fn resolved_strings_starting_with_bang_are_local_and_none_is_untagged() {
 }
 
 #[test]
+fn invalid_global_tag_identity_is_rejected() {
+    let error = to_string(&Tagged(1, Some("$:?".to_owned()))).unwrap_err();
+    assert!(matches!(
+        error,
+        SerializeError::InvalidGlobalTagUri { tag } if tag == "$:?"
+    ));
+}
+
+#[test]
 fn tagged_flow_collections_have_correct_field_spacing_and_round_trip() {
     #[derive(Debug, Deserialize, PartialEq, Serialize)]
     struct Doc {

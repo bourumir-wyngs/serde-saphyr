@@ -535,6 +535,9 @@ When the `font` value is deserialized as `Tagged<String>`, the captured tag is
 
 Serialization round-trips the resolved tag identity, but may normalize its source spelling. Tag
 capture does not bypass normal YAML tag semantics or the `reject_unsupported_tags` option.
+When constructing `Tagged<T>` directly, a tag beginning with `!` is local; every other tag identity
+must have valid absolute-URI structure. Characters requiring URI escaping are percent-encoded on
+output.
 
 ### Comments
 

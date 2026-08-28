@@ -150,6 +150,169 @@ fn core_tag_token(suffix: &str) -> String {
     token
 }
 
+#[inline]
+const fn is_uri_unreserved(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~')
+}
+
+#[inline]
+const fn is_uri_sub_delim(byte: u8) -> bool {
+    matches!(
+        byte,
+        b'!' | b'$' | b'&' | b'\'' | b'(' | b')' | b'*' | b'+' | b',' | b';' | b'='
+    )
+}
+
+#[inline]
+const fn is_uri_pchar(byte: u8) -> bool {
+    is_uri_unreserved(byte) || is_uri_sub_delim(byte) || matches!(byte, b':' | b'@')
+}
+
+fn uri_component_is_valid(value: &str, allowed: fn(u8) -> bool) -> bool {
+    let bytes = value.as_bytes();
+    let mut idx = 0;
+    while idx < bytes.len() {
+        if bytes[idx] == b'%' {
+            if idx + 2 >= bytes.len()
+                || !bytes[idx + 1].is_ascii_hexdigit()
+                || !bytes[idx + 2].is_ascii_hexdigit()
+            {
+                return false;
+            }
+            idx += 3;
+        } else if allowed(bytes[idx]) {
+            idx += 1;
+        } else {
+            return false;
+        }
+    }
+    true
+}
+
+#[inline]
+const fn is_uri_userinfo_char(byte: u8) -> bool {
+    is_uri_unreserved(byte) || is_uri_sub_delim(byte) || byte == b':'
+}
+
+#[inline]
+const fn is_uri_reg_name_char(byte: u8) -> bool {
+    is_uri_unreserved(byte) || is_uri_sub_delim(byte)
+}
+
+#[inline]
+const fn is_uri_path_char(byte: u8) -> bool {
+    is_uri_pchar(byte) || byte == b'/'
+}
+
+#[inline]
+const fn is_uri_query_or_fragment_char(byte: u8) -> bool {
+    is_uri_pchar(byte) || matches!(byte, b'/' | b'?')
+}
+
+#[inline]
+const fn is_ipv_future_char(byte: u8) -> bool {
+    is_uri_unreserved(byte) || is_uri_sub_delim(byte) || byte == b':'
+}
+
+fn uri_ip_literal_is_valid(value: &str) -> bool {
+    if value.parse::<std::net::Ipv6Addr>().is_ok() {
+        return true;
+    }
+
+    let Some(version_and_address) = value.strip_prefix('v').or_else(|| value.strip_prefix('V'))
+    else {
+        return false;
+    };
+    let Some((version, address)) = version_and_address.split_once('.') else {
+        return false;
+    };
+    !version.is_empty()
+        && version.bytes().all(|byte| byte.is_ascii_hexdigit())
+        && !address.is_empty()
+        && address.bytes().all(is_ipv_future_char)
+}
+
+fn uri_authority_is_valid(authority: &str) -> bool {
+    let mut userinfo_and_host = authority.split('@');
+    let first = userinfo_and_host.next().unwrap_or_default();
+    let (userinfo, host_and_port) = match userinfo_and_host.next() {
+        Some(host) if userinfo_and_host.next().is_none() => (Some(first), host),
+        Some(_) => return false,
+        None => (None, first),
+    };
+    if userinfo.is_some_and(|value| !uri_component_is_valid(value, is_uri_userinfo_char)) {
+        return false;
+    }
+
+    if let Some(literal_and_port) = host_and_port.strip_prefix('[') {
+        let Some((literal, port)) = literal_and_port.split_once(']') else {
+            return false;
+        };
+        if !uri_ip_literal_is_valid(literal) {
+            return false;
+        }
+        return port.is_empty()
+            || port
+                .strip_prefix(':')
+                .is_some_and(|value| value.bytes().all(|byte| byte.is_ascii_digit()));
+    }
+
+    let (host, port) = match host_and_port.rsplit_once(':') {
+        Some((host, port)) if !host.contains(':') => (host, Some(port)),
+        Some(_) => return false,
+        None => (host_and_port, None),
+    };
+    uri_component_is_valid(host, is_uri_reg_name_char)
+        && port.is_none_or(|value| value.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
+/// Validate the RFC 3986 `URI` production with an explicit scheme.
+///
+/// Unlike the RFC's narrower `absolute-URI` production, YAML global tags may
+/// include a fragment, so this accepts the optional `#fragment` from `URI`.
+fn absolute_uri_is_valid(uri: &str) -> bool {
+    let Some((scheme, remainder)) = uri.split_once(':') else {
+        return false;
+    };
+    if !scheme
+        .as_bytes()
+        .first()
+        .is_some_and(u8::is_ascii_alphabetic)
+        || !scheme
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.'))
+    {
+        return false;
+    }
+
+    let (without_fragment, fragment) = match remainder.split_once('#') {
+        Some((head, tail)) => (head, Some(tail)),
+        None => (remainder, None),
+    };
+    if fragment.is_some_and(|value| !uri_component_is_valid(value, is_uri_query_or_fragment_char)) {
+        return false;
+    }
+
+    let (hier_part, query) = match without_fragment.split_once('?') {
+        Some((head, tail)) => (head, Some(tail)),
+        None => (without_fragment, None),
+    };
+    if query.is_some_and(|value| !uri_component_is_valid(value, is_uri_query_or_fragment_char)) {
+        return false;
+    }
+
+    if let Some(authority_and_path) = hier_part.strip_prefix("//") {
+        let path_start = authority_and_path.find('/');
+        let (authority, path) = match path_start {
+            Some(idx) => authority_and_path.split_at(idx),
+            None => (authority_and_path, ""),
+        };
+        uri_authority_is_valid(authority) && uri_component_is_valid(path, is_uri_path_char)
+    } else {
+        uri_component_is_valid(hier_part, is_uri_path_char)
+    }
+}
+
 fn is_supported_anchor_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= MAX_ANCHOR_NAME_BYTES
@@ -644,7 +807,13 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         if resolved.is_empty() {
             return Err(Error::EmptyResolvedTag);
         }
-        self.stage_tag_with_token(resolved, resolved_tag_token(resolved))
+        let emitted = resolved_tag_token(resolved);
+        if !resolved.starts_with('!') && !absolute_uri_is_valid(&emitted[2..emitted.len() - 1]) {
+            return Err(Error::InvalidGlobalTagUri {
+                tag: resolved.to_owned(),
+            });
+        }
+        self.stage_tag_with_token(resolved, emitted)
     }
 
     /// Stage a tag with a preferred spelling used by built-in serializer
@@ -1803,7 +1972,41 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
 
 #[cfg(test)]
 mod tests {
-    use super::YamlSerializer;
+    use super::{YamlSerializer, absolute_uri_is_valid};
+
+    #[test]
+    fn absolute_uri_validation_covers_global_tag_syntax() {
+        for valid in [
+            "tag:yaml.org,2002:str",
+            "urn:isbn:9780141036144",
+            "https://example.com/path?query=yes#section",
+            "git+ssh://user@example.com:22/repository",
+            "custom:",
+            "http://[2001:db8::1]:8080/path",
+            "http://[v1.alpha:beta]/path",
+            "tag:escaped%20text",
+        ] {
+            assert!(absolute_uri_is_valid(valid), "expected valid URI: {valid}");
+        }
+
+        for invalid in [
+            "",
+            "$:?",
+            "relative/path",
+            "1scheme:value",
+            "bad scheme:value",
+            "http://[not-ip]/",
+            "http://example.com:port/",
+            "http://first@second@third/",
+            "http://example.com/path[0]",
+            "tag:bad%escape",
+        ] {
+            assert!(
+                !absolute_uri_is_valid(invalid),
+                "expected invalid URI: {invalid}"
+            );
+        }
+    }
 
     #[test]
     fn write_indent_rejects_indentation_overflow() {

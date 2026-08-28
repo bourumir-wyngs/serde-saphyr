@@ -21,6 +21,8 @@ use std::{fmt, io};
 ///   single-quoted style.
 /// - `EmptyResolvedTag` reports a `Tagged` wrapper whose explicit resolved tag
 ///   is empty. Use `None` to represent the absence of a tag.
+/// - `InvalidGlobalTagUri` reports a non-local `Tagged` identity that is not an
+///   absolute URI.
 /// - `Unexpected` is used internally for invariant violations (e.g., around
 ///   anchors). It should not normally surface; if it does, please file a bug.
 #[non_exhaustive]
@@ -43,6 +45,8 @@ pub enum Error {
     ///
     /// Use `None` to represent a value without an explicit tag.
     EmptyResolvedTag,
+    /// A non-local [`crate::Tagged`] identity is not a valid absolute URI.
+    InvalidGlobalTagUri { tag: String },
 }
 
 impl serde_core::ser::Error for Error {
@@ -115,6 +119,10 @@ impl fmt::Display for Error {
             Error::EmptyResolvedTag => {
                 f.write_str("cannot serialize an explicit YAML tag with an empty resolved identity")
             }
+            Error::InvalidGlobalTagUri { tag } => write!(
+                f,
+                "cannot serialize resolved YAML tag {tag:?}: non-local tag identities must be absolute URIs"
+            ),
         }
     }
 }
@@ -128,7 +136,8 @@ impl std::error::Error for Error {
             | Error::Unexpected { .. }
             | Error::InvalidOptions(_)
             | Error::SingleQuotedRequiresEscaping { .. }
-            | Error::EmptyResolvedTag => None,
+            | Error::EmptyResolvedTag
+            | Error::InvalidGlobalTagUri { .. } => None,
         }
     }
 }
