@@ -43,6 +43,7 @@ See [release history](https://github.com/bourumir-wyngs/serde-saphyr/releases) o
 - Precise error reporting with **snippet rendering**.
 - Optional **!include** support with a custom or default resolver (inclusion of either a complete document or the node referenced by a specified anchor).
 - **Comment support**. Wrapper [Commented](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) both captures and emits comments.
+- **Tag support**. Wrapper [Tagged](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Tagged.html) captures and emits a node's resolved YAML tag.
 - **Optional property support**, with redaction (removal) of property values from later crate-generated diagnostics.
 - **Serializer supports emitting anchors** (Rc, Arc, Weak) if they are properly wrapped (see below).
 - **Declarative validation with optional [`validator`](https://crates.io/crates/validator) ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/validator_validate.rs))** or **[`garde`](https://crates.io/crates/garde)** ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/garde_validate.rs)).
@@ -190,7 +191,7 @@ fn main() {
 
 ### Pathological inputs & budgets
 
-Fuzzing shows that certain adversarial inputs can make YAML parsers consume excessive time or memory, enabling denial-of-service scenarios. To counter this, `serde-saphyr` offers a fast, configurable pre-check via a [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html), available through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). Defaults are intentionally quite permissive; tighten them when you know your input shape, or disable the budget if you only parse YAML you generate yourself.
+Fuzzing shows that certain adversarial inputs can make YAML parsers consume excessive time or memory, enabling denial-of-service scenarios. To counter this, `serde-saphyr` offers a configurable [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html), available through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). It accounts for parser events, retained copies used to replay anchors, and property-interpolation depth and work. Defaults are intentionally quite permissive; tighten them when you know your input shape, or disable the budget if you only parse YAML you generate yourself.
 During [reader](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.from_reader_with_options.html)-based deserialization, serde-saphyr does not buffer the entire payload; it parses incrementally, counting bytes and enforcing configured budgets.
 Reader-based APIs enforce configured byte and structural limits while reading. When [streaming](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.read_with_options.html) from the reader through the iterator, other budget limits apply on a per-document basis, since such a reader may be expected to stream indefinitely. The total size of the input is not limited in this case.
 To find the typical budget requirements for your file, use our [web demo](https://verdanta.tech/yva/) or run the `main()` executable of this library, providing a YAML file path as a program parameter. You can also fetch the budget programmatically by registering a closure with [`Options::with_budget_report`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html#method.with_budget_report).
@@ -511,6 +512,33 @@ an ordinary `"="` key. With `reject_unsupported_tags: true`, this tag is accepte
 exact scalar mapping key. The same strict-mode context check limits `!!merge` to a scalar `<<`
 mapping key.
 
+### Tags
+
+`serde-saphyr` can capture tags. Applications can use custom tags to express units, priorities, accessibility and the like.
+
+The [`Tagged<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Tagged.html)
+wrapper stores a value and the resolved YAML tag attached to its node. The tag is represented as an
+`Option<String>`: `Some(tag)` contains an explicit tag, while `None` means that the node had no
+explicit tag. An empty string is not a valid tag value; use `None` instead.
+
+Tag handles are resolved while parsing. For example, `!!str` becomes
+`tag:yaml.org,2002:str`, while the local tag `!nanoseconds` remains `!nanoseconds`. Given:
+
+```yaml
+%TAG !css! tag:app.styles,2026:
+---
+font: !css!important bold
+```
+
+When the `font` value is deserialized as `Tagged<String>`, the captured tag is
+`Some("tag:app.styles,2026:important")`.
+
+Serialization round-trips the resolved tag identity, but may normalize its source spelling. Tag
+capture does not bypass normal YAML tag semantics or the `reject_unsupported_tags` option.
+When constructing `Tagged<T>` directly, a tag beginning with `!` is local; every other tag identity
+must have valid absolute-URI structure. Characters requiring URI escaping are percent-encoded on
+output.
+
 ### Comments
 
 - As granit-parser now supports comments, the wrapper [Commented](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) will also capture the relevant YAML comment into its field when deserializing YAML.
@@ -541,7 +569,7 @@ Interpolation is intentionally narrow:
 - the supported forms are listed in the table below,
 - the unbraced `$NAME` form is opt-in (see below) so a bare `$NAME` stays a literal by default,
 - `$${NAME}` escapes to a literal `${NAME}`,
-- nesting is not supported: `default`/`replacement`/`error` text is taken verbatim up to the first `}` with no further interpolation or escape processing,
+- selected `default`/`replacement`/`error` text supports nested braced references, subject to the configured budget,
 - if no property map is configured, every `${...}` form remains unchanged.
 
 | Form | `NAME` unset | `NAME` set to empty | `NAME` set to non-empty |
@@ -554,7 +582,9 @@ Interpolation is intentionally narrow:
 | `${NAME?error}` | error (with `error` as hint) | `""` | the value |
 | `${NAME:?error}` | error (with `error` as hint) | error (with `error` as hint) | the value |
 
-`default`, `replacement`, and `error` are literal text from the YAML and are not treated as secret.
+`default`, `replacement`, and `error` are source text from the YAML and are not treated as secret.
+Selected operator text can contain nested braced references, for example
+`${PRIMARY:-${FALLBACK:-default}}`.
 The `error` hint may be empty (`${NAME?}` / `${NAME:?}`), matching docker-compose.
 
 `properties` is gated behind the `properties` feature flag.
@@ -581,7 +611,13 @@ fn property_map() -> Result<Config, serde_saphyr::Error> {
     );
     properties.insert("MODE".to_string(), "production".to_string());
 
-    let options = options! {}.with_properties(properties);
+    let options = options! {
+        budget: serde_saphyr::budget! {
+            max_property_expansion_depth: 16,
+            max_total_property_interpolation_work: 1_048_576,
+        },
+    }
+    .with_properties(properties);
 
     let yaml = r#"
         database_url: ${DATABASE_URL}
@@ -606,6 +642,11 @@ fn main() {
 # #[cfg(not(feature = "properties"))]
 # fn main() {}
 ```
+
+Property expansion limits are configured through `Budget`. Exceeding either limit returns
+`Error::Budget` with a `BudgetBreach::PropertyExpansionDepth` or
+`BudgetBreach::PropertyInterpolationWork` value. Setting `Options::budget` to `None` disables
+these limits together with the rest of budget enforcement.
 
 Set `property_syntax: PropertySyntax::BracedOrBare` to also accept the unbraced `$NAME` shorthand.
 It uses the same Required semantics as `${NAME}`, including `"$$NAME"` being a literal `"$NAME"`.

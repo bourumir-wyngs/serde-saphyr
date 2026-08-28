@@ -24,6 +24,12 @@ struct CommentedLeaf {
     value: String,
 }
 
+#[derive(Debug, Deserialize, Validate)]
+struct TaggedRoot {
+    #[garde(dive)]
+    item: serde_saphyr::Tagged<CommentedLeaf>,
+}
+
 fn reject_empty_document(value: &Option<String>, _ctx: &()) -> garde::Result {
     if value.is_none() {
         Err(garde::Error::new("empty document is not valid"))
@@ -72,6 +78,26 @@ fn validation_error_inside_commented_subtree_uses_child_location() {
     assert!(
         rendered.contains("for `item.value`"),
         "expected nested commented path in output, got: {rendered}"
+    );
+}
+
+#[test]
+fn validation_error_inside_tagged_subtree_uses_child_location() {
+    let yaml = "item: !leaf\n  value: \"\"\n";
+
+    let err = serde_saphyr::from_str_with_options_valid::<TaggedRoot>(yaml, Options::default())
+        .expect_err("must fail validation");
+
+    let location = err
+        .location()
+        .expect("garde error inside Tagged<T> should expose a location");
+    assert_eq!(location.line(), 2);
+    assert_eq!(location.column(), 10);
+
+    let rendered = err.to_string();
+    assert!(
+        rendered.contains("for `item.value`"),
+        "expected nested tagged path in output, got: {rendered}"
     );
 }
 

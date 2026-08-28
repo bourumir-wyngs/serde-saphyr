@@ -6,12 +6,12 @@ use std::sync::{Arc, Mutex};
 use crate::{
     ArcAnchor, ArcRecursion, ArcRecursive, ArcWeakAnchor, Commented, DoubleQuoted, FlowMap,
     FlowSeq, NullableTilde, RcAnchor, RcRecursion, RcRecursive, RcWeakAnchor, SingleQuoted,
-    SpaceAfter,
+    SpaceAfter, Tagged,
 };
 
 use super::{
     NAME_DOUBLE_QUOTED, NAME_FLOW_MAP, NAME_FLOW_SEQ, NAME_NULLABLE_TILDE, NAME_SINGLE_QUOTED,
-    NAME_SPACE_AFTER, NAME_TUPLE_ANCHOR, NAME_TUPLE_COMMENTED, NAME_TUPLE_WEAK,
+    NAME_SPACE_AFTER, NAME_TUPLE_ANCHOR, NAME_TUPLE_COMMENTED, NAME_TUPLE_TAGGED, NAME_TUPLE_WEAK,
 };
 
 // ------------------------------------------------------------
@@ -204,6 +204,23 @@ impl<T: Serialize> Serialize for Commented<T> {
         let mut ts = s.serialize_tuple_struct(NAME_TUPLE_COMMENTED, 2)?;
         ts.serialize_field(&self.1)?; // comment first
         ts.serialize_field(&self.0)?; // then value
+        ts.end()
+    }
+}
+
+impl<T: Serialize> Serialize for Tagged<T> {
+    fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        let Some(tag) = self.1.as_ref() else {
+            // No tag requested: place no requirement on the node at all, so the
+            // inner value serializes exactly as it would unwrapped.
+            return self.0.serialize(s);
+        };
+
+        // Stage the resolved tag before the value reveals whether it is a scalar
+        // or collection, just as Commented stages its presentation metadata.
+        let mut ts = s.serialize_tuple_struct(NAME_TUPLE_TAGGED, 2)?;
+        ts.serialize_field(tag)?;
+        ts.serialize_field(&self.0)?;
         ts.end()
     }
 }

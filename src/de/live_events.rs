@@ -13,7 +13,7 @@
 //!   anchor is injected (replayed) back into the stream.
 //! - Enforce alias-bomb hardening via `AliasLimits` and account replayed events
 //!   per anchor and in total. `BudgetEnforcer` can also be attached to limit raw
-//!   event production.
+//!   event production and retained anchor copies.
 //! - Maintain a single-item lookahead buffer to implement `peek()`, and keep
 //!   `last_location` to improve error reporting.
 //!
@@ -26,10 +26,10 @@ use crate::budget::{BudgetEnforcer, EnforcingPolicy};
 #[cfg(not(feature = "include"))]
 use crate::buffered_input::ReaderInput;
 
+#[cfg(feature = "properties")]
+use super::events::PropertyInterpolation;
 use super::events::attach_alias_locations_if_missing;
 use crate::buffered_input::buffered_input_from_reader_with_limit;
-#[cfg(feature = "properties")]
-use crate::de::PropertySyntax;
 use crate::de::{AliasLimits, Error, Ev, Events, Location, Options};
 use crate::de_error::budget_error;
 #[cfg(feature = "include")]
@@ -44,9 +44,7 @@ use granit_parser::{Event, Placement, ScalarStyle, ScanError, Span, StructureSty
 use granit_parser::StrInput;
 use smallvec::SmallVec;
 use std::borrow::Cow;
-#[cfg(feature = "properties")]
-use std::collections::HashMap;
-#[cfg(any(feature = "include", feature = "properties"))]
+#[cfg(feature = "include")]
 use std::rc::Rc;
 
 #[cfg(feature = "include")]
@@ -159,10 +157,25 @@ impl<'input> GranitParser<'input> {
         &mut self,
         include_str: &str,
         location: crate::Location,
+        total_replayed_events: &mut usize,
+        per_anchor_expansions: &mut Vec<usize>,
+        budget: Option<&mut BudgetEnforcer>,
     ) -> Result<(), crate::de_error::Error> {
         match self {
-            GranitParser::StringParser(parser) => parser.resolve(include_str, location),
-            GranitParser::StreamParser(parser) => parser.resolve(include_str, location),
+            GranitParser::StringParser(parser) => parser.resolve_with_state(
+                include_str,
+                location,
+                total_replayed_events,
+                per_anchor_expansions,
+                budget,
+            ),
+            GranitParser::StreamParser(parser) => parser.resolve_with_state(
+                include_str,
+                location,
+                total_replayed_events,
+                per_anchor_expansions,
+                budget,
+            ),
         }
     }
 
@@ -235,7 +248,7 @@ pub(crate) struct LiveEvents<'a> {
     anchors: Vec<Option<Box<[Ev<'a>]>>>,
     /// Recording frames for currently-open anchored containers.
     rec_stack: Vec<RecFrame<'a>>,
-    /// Budget (raw events); independent of alias replay limits below.
+    /// Budget for raw events and retained anchor copies; independent of alias replay limits below.
     budget: Option<BudgetEnforcer>,
     /// Optional reporter to expose budget usage once parsing completes.
     budget_report: Option<fn(&crate::budget::BudgetReport)>,
@@ -253,11 +266,9 @@ pub(crate) struct LiveEvents<'a> {
     /// Total number of replayed events across the whole stream (enforced by `alias_limits`).
     total_replayed_events: usize,
 
-    /// Property map for interpolation.
+    /// Property interpolation configuration and stream-wide work accounting.
     #[cfg(feature = "properties")]
-    property_map: Option<Rc<HashMap<String, String>>>,
-    #[cfg(feature = "properties")]
-    property_syntax: PropertySyntax,
+    property_interpolation: PropertyInterpolation,
     /// Per-anchor replay expansion counters, indexed by anchor id (dense ids).
     per_anchor_expansions: Vec<usize>,
     /// Indicates whether a `DocumentEnd` was seen for the last parsed document.
@@ -338,9 +349,11 @@ impl<'a> LiveEvents<'a> {
         let angle_conversions = options.angle_conversions;
         let require_indent = options.require_indent;
         #[cfg(feature = "properties")]
-        let property_map = options.property_map.clone();
-        #[cfg(feature = "properties")]
-        let property_syntax = options.property_syntax;
+        let property_interpolation = PropertyInterpolation::new(
+            options.property_map.clone(),
+            options.property_syntax,
+            budget.as_ref(),
+        );
         #[cfg(feature = "include")]
         let resolver = crate::resolver_from_options(&options);
 
@@ -358,6 +371,7 @@ impl<'a> LiveEvents<'a> {
             input,
             reader_bytes_read,
             resolved_budget,
+            alias_limits,
             parser_options,
             resolver,
         );
@@ -388,9 +402,7 @@ impl<'a> LiveEvents<'a> {
             alias_limits,
             total_replayed_events: 0,
             #[cfg(feature = "properties")]
-            property_map,
-            #[cfg(feature = "properties")]
-            property_syntax,
+            property_interpolation,
             per_anchor_expansions: Vec::new(),
             seen_doc_end: false,
 
@@ -428,9 +440,11 @@ impl<'a> LiveEvents<'a> {
         let angle_conversions = options.angle_conversions;
         let require_indent = options.require_indent;
         #[cfg(feature = "properties")]
-        let property_map = options.property_map.clone();
-        #[cfg(feature = "properties")]
-        let property_syntax = options.property_syntax;
+        let property_interpolation = PropertyInterpolation::new(
+            options.property_map.clone(),
+            options.property_syntax,
+            budget.as_ref(),
+        );
         #[cfg(feature = "include")]
         let resolver = crate::resolver_from_options(&options);
 
@@ -446,6 +460,7 @@ impl<'a> LiveEvents<'a> {
             input,
             reader_bytes_read,
             resolved_budget,
+            alias_limits,
             parser_options,
             resolver,
         );
@@ -477,9 +492,7 @@ impl<'a> LiveEvents<'a> {
             alias_limits,
             total_replayed_events: 0,
             #[cfg(feature = "properties")]
-            property_map: property_map.clone(),
-            #[cfg(feature = "properties")]
-            property_syntax,
+            property_interpolation,
             per_anchor_expansions: Vec::new(),
             seen_doc_end: false,
 
@@ -894,7 +907,7 @@ impl<'a> LiveEvents<'a> {
             self.validate_replayed_event(&ev)?;
             self.record(
                 &ev, /*is_start*/ false, /*seeded_new_frame*/ false,
-            );
+            )?;
             self.attach_leading_comments_to_next_event();
             self.last_location = ev.location();
             self.produced_any_in_doc = true;
@@ -946,7 +959,13 @@ impl<'a> LiveEvents<'a> {
                     if tag_s == SfTag::Include && self.parser.has_resolver() {
                         match crate::tags::include_spec_from_tag_and_value(&tag, &val) {
                             Ok(Some(include_spec)) => {
-                                self.parser.resolve(&include_spec, location)?;
+                                self.parser.resolve(
+                                    &include_spec,
+                                    location,
+                                    &mut self.total_replayed_events,
+                                    &mut self.per_anchor_expansions,
+                                    self.budget.as_mut(),
+                                )?;
                                 self.pending_include_anchor = anchor_id;
                                 continue;
                             }
@@ -976,8 +995,9 @@ impl<'a> LiveEvents<'a> {
                         anchor: anchor_id,
                         location,
                     };
-                    self.record(&ev, false, false);
+                    self.record(&ev, false, false)?;
                     if anchor_id != 0 {
+                        self.observe_recorded_anchor_copy(&ev)?;
                         self.ensure_anchor_capacity(anchor_id);
                         self.anchors[anchor_id] = Some(vec![ev.clone()].into_boxed_slice());
                     }
@@ -1026,6 +1046,7 @@ impl<'a> LiveEvents<'a> {
                     // and include the start event in the new buffer.
                     if anchor_id != 0 {
                         let mut buf: SmallVec<[Ev; SMALLVECT_INLINE]> = SmallVec::new();
+                        self.observe_recorded_anchor_copy(&ev)?;
                         buf.push(ev.clone());
                         self.rec_stack.push(RecFrame {
                             id: anchor_id,
@@ -1041,7 +1062,7 @@ impl<'a> LiveEvents<'a> {
                         &ev,
                         /*is_start*/ true,
                         /*seeded_new_frame*/ anchor_id != 0,
-                    );
+                    )?;
                     self.attach_leading_comments_to_next_event();
                     self.last_location = location;
                     self.produced_any_in_doc = true;
@@ -1050,7 +1071,7 @@ impl<'a> LiveEvents<'a> {
                 Event::SequenceEnd => {
                     self.finish_tagged_container(false);
                     let ev = Ev::SeqEnd { location };
-                    self.record(&ev, false, false);
+                    self.record(&ev, false, false)?;
                     self.bump_depth_on_end()
                         .map_err(|err| err.with_location(location))?; // may finalize frames
                     self.produced_leading_comments.clear();
@@ -1095,6 +1116,7 @@ impl<'a> LiveEvents<'a> {
                     self.bump_depth_on_start();
                     if anchor_id != 0 {
                         let mut buf: SmallVec<[Ev; SMALLVECT_INLINE]> = SmallVec::new();
+                        self.observe_recorded_anchor_copy(&ev)?;
                         buf.push(ev.clone());
                         self.rec_stack.push(RecFrame {
                             id: anchor_id,
@@ -1107,7 +1129,7 @@ impl<'a> LiveEvents<'a> {
                         &ev,
                         /*is_start*/ true,
                         /*seeded_new_frame*/ anchor_id != 0,
-                    );
+                    )?;
                     self.attach_leading_comments_to_next_event();
                     self.last_location = location;
                     self.produced_any_in_doc = true;
@@ -1116,7 +1138,7 @@ impl<'a> LiveEvents<'a> {
                 Event::MappingEnd => {
                     self.finish_tagged_container(true);
                     let ev = Ev::MapEnd { location };
-                    self.record(&ev, false, false);
+                    self.record(&ev, false, false)?;
                     self.bump_depth_on_end()
                         .map_err(|err| err.with_location(location))?;
                     self.produced_leading_comments.clear();
@@ -1176,7 +1198,7 @@ impl<'a> LiveEvents<'a> {
                                 location,
                             };
                             self.validate_replayed_event(&ev)?;
-                            self.record(&ev, false, false);
+                            self.record(&ev, false, false)?;
                             self.attach_leading_comments_to_next_event();
                             self.last_location = location;
                             self.produced_any_in_doc = true;
@@ -1332,6 +1354,29 @@ impl<'a> LiveEvents<'a> {
         })
     }
 
+    /// Charge one event copy before retaining it in an anchor buffer.
+    fn observe_recorded_anchor_copy(&mut self, ev: &Ev<'a>) -> Result<(), Error> {
+        let defined_location = ev.location();
+        let reference_location = self
+            .inject
+            .last()
+            .map_or(defined_location, |frame| frame.reference_location);
+        let owned_bytes = ev.owned_payload_bytes();
+        let Some(budget) = self.budget.as_mut() else {
+            return Ok(());
+        };
+
+        budget
+            .observe_recorded_anchor_event(owned_bytes)
+            .map_err(|breach| {
+                attach_alias_locations_if_missing(
+                    budget_error(breach).with_location(defined_location),
+                    reference_location,
+                    defined_location,
+                )
+            })
+    }
+
     /// Record an event into active recording frames.
     ///
     /// # Parameters
@@ -1339,28 +1384,32 @@ impl<'a> LiveEvents<'a> {
     /// - `is_start`: whether this is a container start event.
     /// - `seeded_new_frame`: true **only** when a new frame was just created and already
     ///   seeded with the same start event (i.e., anchored container start).
-    fn record(&mut self, ev: &Ev<'a>, is_start: bool, seeded_new_frame: bool) {
+    fn record(&mut self, ev: &Ev<'a>, is_start: bool, seeded_new_frame: bool) -> Result<(), Error> {
         if self.rec_stack.is_empty() {
-            return;
+            return Ok(());
         }
         if is_start {
             if seeded_new_frame {
                 let last = self.rec_stack.len() - 1;
-                for (i, fr) in self.rec_stack.iter_mut().enumerate() {
+                for i in 0..self.rec_stack.len() {
                     if i != last {
-                        fr.buf.push(ev.clone());
+                        self.observe_recorded_anchor_copy(ev)?;
+                        self.rec_stack[i].buf.push(ev.clone());
                     }
                 }
             } else {
-                for fr in &mut self.rec_stack {
-                    fr.buf.push(ev.clone());
+                for i in 0..self.rec_stack.len() {
+                    self.observe_recorded_anchor_copy(ev)?;
+                    self.rec_stack[i].buf.push(ev.clone());
                 }
             }
         } else {
-            for fr in &mut self.rec_stack {
-                fr.buf.push(ev.clone());
+            for i in 0..self.rec_stack.len() {
+                self.observe_recorded_anchor_copy(ev)?;
+                self.rec_stack[i].buf.push(ev.clone());
             }
         }
+        Ok(())
     }
 
     /// Increase recording depth for all active anchored frames on a container start.
@@ -1435,6 +1484,13 @@ impl<'a> LiveEvents<'a> {
     /// Finalize and deliver the budget report, taking its state so callbacks run once.
     #[cold]
     fn deliver_budget_report(&mut self) -> Option<crate::budget::BudgetBreach> {
+        #[cfg(feature = "properties")]
+        if let Some(breach) = self.property_interpolation.breach()
+            && let Some(budget) = self.budget.as_mut()
+        {
+            budget.record_external_breach(breach);
+        }
+
         if let Some(budget) = self.budget.take() {
             let report = budget.finalize();
             if let Some(callback) = self.budget_report.take() {
@@ -1555,13 +1611,8 @@ impl<'de> Events<'de> for LiveEvents<'de> {
     }
 
     #[cfg(feature = "properties")]
-    fn property_map(&self) -> Option<&Rc<HashMap<String, String>>> {
-        self.property_map.as_ref()
-    }
-
-    #[cfg(feature = "properties")]
-    fn property_syntax(&self) -> PropertySyntax {
-        self.property_syntax
+    fn property_interpolation(&self) -> &PropertyInterpolation {
+        &self.property_interpolation
     }
 }
 

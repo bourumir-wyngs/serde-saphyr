@@ -14,10 +14,22 @@ const DEFAULT_MAX_TOTAL_COMMENT_BYTES: usize = 64 * 1024 * 1024;
 const DEFAULT_MAX_BUFFERED_COMMENT_EVENTS: usize = 32;
 const DEFAULT_SIMPLE_KEY_MAX_LOOKAHEAD: usize = 1024;
 const DEFAULT_FLOW_NESTING_LIMIT: usize = 255;
+const DEFAULT_MAX_PROPERTY_EXPANSION_DEPTH: usize = 64;
+const DEFAULT_MAX_TOTAL_PROPERTY_INTERPOLATION_WORK: usize = 256 * 1024 * 1024;
 
 #[cfg(feature = "serde_derived_types")]
 fn default_max_total_comment_bytes() -> usize {
     DEFAULT_MAX_TOTAL_COMMENT_BYTES
+}
+
+#[cfg(feature = "serde_derived_types")]
+fn default_max_recorded_anchor_events() -> usize {
+    1_000_000
+}
+
+#[cfg(feature = "serde_derived_types")]
+fn default_max_recorded_anchor_bytes() -> usize {
+    64 * 1024 * 1024
 }
 
 #[cfg(feature = "serde_derived_types")]
@@ -35,7 +47,17 @@ fn default_flow_nesting_limit() -> usize {
     DEFAULT_FLOW_NESTING_LIMIT
 }
 
-/// Budgets for a streaming YAML scan.
+#[cfg(feature = "serde_derived_types")]
+fn default_max_property_expansion_depth() -> usize {
+    DEFAULT_MAX_PROPERTY_EXPANSION_DEPTH
+}
+
+#[cfg(feature = "serde_derived_types")]
+fn default_max_total_property_interpolation_work() -> usize {
+    DEFAULT_MAX_TOTAL_PROPERTY_INTERPOLATION_WORK
+}
+
+/// Resource budgets for YAML parsing and deserialization.
 ///
 /// The defaults are intentionally permissive for typical configuration files
 /// while stopping obvious resource-amplifying inputs. Tune these per your
@@ -133,7 +155,59 @@ pub struct Budget {
     ///
     /// Default: 50,000
     pub max_anchors: usize,
+    /// Maximum cumulative number of event copies attempted for anchor retention.
+    ///
+    /// An event copied into multiple simultaneously open anchored containers is charged once
+    /// for every destination buffer. Scalar anchor buffers and events recorded while replaying
+    /// aliases are charged by the same limit.
+    ///
+    /// Default: `1_000_000` retained event copies.
+    #[cfg_attr(
+        feature = "serde_derived_types",
+        serde(default = "default_max_recorded_anchor_events")
+    )]
+    pub max_recorded_anchor_events: usize,
+    /// Maximum cumulative bytes of owned string payload attempted for retained anchor events.
+    ///
+    /// This counts owned scalar values and explicit tag spellings before each retained clone.
+    /// Borrowed input text is excluded because cloning its [`std::borrow::Cow`] does not copy
+    /// the referenced bytes. [`Budget::max_recorded_anchor_events`] separately limits the
+    /// fixed-size event storage for both borrowed and owned input.
+    ///
+    /// Default: `67_108_864` bytes (64 MiB).
+    #[cfg_attr(
+        feature = "serde_derived_types",
+        serde(default = "default_max_recorded_anchor_bytes")
+    )]
+    pub max_recorded_anchor_bytes: usize,
+    /// Maximum nested operator-text expansions in one property interpolation.
+    ///
+    /// The root scalar is not included. This limit is used only when the `properties`
+    /// feature is enabled and a property map is configured.
+    ///
+    /// Default: 64
+    #[cfg_attr(
+        feature = "serde_derived_types",
+        serde(default = "default_max_property_expansion_depth")
+    )]
+    pub max_property_expansion_depth: usize,
+    /// Maximum cumulative property-interpolation work across one deserialization stream.
+    ///
+    /// Work is measured in attacker-controlled input bytes inspected while scanning property
+    /// references and nested operator text. This limit is used only when the `properties`
+    /// feature is enabled and a property map is configured.
+    ///
+    /// Default: 268,435,456 (256 MiB of byte inspections)
+    #[cfg_attr(
+        feature = "serde_derived_types",
+        serde(default = "default_max_total_property_interpolation_work")
+    )]
+    pub max_total_property_interpolation_work: usize,
     /// Maximum structural nesting depth (sequences + mappings).
+    ///
+    /// This also raises the parser's block-collection nesting limit as needed.
+    /// The separate [`Self::flow_nesting_limit`] remains an independent cap on
+    /// flow collections.
     ///
     /// Default: 64
     pub max_depth: usize,
@@ -202,6 +276,10 @@ impl Default for Budget {
             max_events: 1_000_000, // plenty for normal configs
             max_aliases: 50_000,   // liberal absolute cap
             max_anchors: 50_000,
+            max_recorded_anchor_events: 1_000_000,
+            max_recorded_anchor_bytes: 64 * 1024 * 1024,
+            max_property_expansion_depth: DEFAULT_MAX_PROPERTY_EXPANSION_DEPTH,
+            max_total_property_interpolation_work: DEFAULT_MAX_TOTAL_PROPERTY_INTERPOLATION_WORK,
             max_depth: 64, // protects stack/CPU
             max_inclusion_depth: 24,
             max_documents: 1_024, // doc separator storms
@@ -218,10 +296,18 @@ impl Default for Budget {
 
 impl Budget {
     pub(crate) fn parser_options(&self) -> granit_parser::Options {
+        // Preserve the parser's baseline for smaller budgets. For larger budgets,
+        // allow the first over-limit container through so callers receive
+        // BudgetBreach::Depth rather than a parser error.
+        let block_nesting_limit = granit_parser::Options::default()
+            .block_nesting_limit
+            .max(self.max_depth.saturating_add(1));
+
         granit_parser::options! {
             max_buffered_comment_events: self.max_buffered_comment_events,
             simple_key_max_lookahead: self.simple_key_max_lookahead,
             flow_nesting_limit: self.flow_nesting_limit,
+            block_nesting_limit: block_nesting_limit,
         }
     }
 }
@@ -320,6 +406,36 @@ pub enum BudgetBreach {
         /// Total number of bytes consumed from the input when the breach occurred.
         input_bytes: usize,
     },
+
+    /// Retained anchor event copies exceeded [`Budget::max_recorded_anchor_events`].
+    RecordedAnchorEvents {
+        /// Cumulative copies attempted at the moment of the breach.
+        recorded_anchor_events: usize,
+    },
+
+    /// Owned payload copied into retained anchor events exceeded
+    /// [`Budget::max_recorded_anchor_bytes`].
+    RecordedAnchorBytes {
+        /// Cumulative owned payload bytes attempted at the moment of the breach.
+        recorded_anchor_bytes: usize,
+    },
+
+    /// Property operator text exceeded [`Budget::max_property_expansion_depth`].
+    PropertyExpansionDepth {
+        /// Nested expansion depth attempted at the moment of the breach.
+        depth: usize,
+        /// Configured maximum nested expansion depth.
+        max_depth: usize,
+    },
+
+    /// Property interpolation exceeded
+    /// [`Budget::max_total_property_interpolation_work`].
+    PropertyInterpolationWork {
+        /// Cumulative work attempted at the moment of the breach.
+        work: usize,
+        /// Configured maximum cumulative work.
+        max_work: usize,
+    },
 }
 
 /// Summary of the scan (even if no breach).
@@ -341,6 +457,14 @@ pub struct BudgetReport {
 
     /// Total number of distinct anchors that were defined (by id).
     pub anchors: usize,
+
+    /// Cumulative number of event copies attempted for anchor retention.
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
+    pub recorded_anchor_events: usize,
+
+    /// Cumulative owned string payload bytes attempted for retained anchor events.
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
+    pub recorded_anchor_bytes: usize,
 
     /// Total number of YAML documents in the stream.
     pub documents: usize,
@@ -368,6 +492,8 @@ impl BudgetReport {
         self.events = 0;
         self.aliases = 0;
         self.anchors = 0;
+        self.recorded_anchor_events = 0;
+        self.recorded_anchor_bytes = 0;
         self.nodes = 0;
         self.max_depth = 0;
         self.total_scalar_bytes = 0;
@@ -536,6 +662,43 @@ impl BudgetEnforcer {
         result
     }
 
+    /// Charge one event clone that is about to be retained in an anchor buffer.
+    pub(crate) fn observe_recorded_anchor_event(
+        &mut self,
+        owned_bytes: usize,
+    ) -> Result<(), BudgetBreach> {
+        if let Some(breach) = self.report.breached.as_ref() {
+            return Err(breach.clone());
+        }
+        let result = self.observe_recorded_anchor_event_inner(owned_bytes);
+        self.remember_breach(&result);
+        result
+    }
+
+    fn observe_recorded_anchor_event_inner(
+        &mut self,
+        owned_bytes: usize,
+    ) -> Result<(), BudgetBreach> {
+        self.report.recorded_anchor_events = self.report.recorded_anchor_events.saturating_add(1);
+        if self.report.recorded_anchor_events > self.budget.max_recorded_anchor_events {
+            return Err(BudgetBreach::RecordedAnchorEvents {
+                recorded_anchor_events: self.report.recorded_anchor_events,
+            });
+        }
+
+        self.report.recorded_anchor_bytes = self
+            .report
+            .recorded_anchor_bytes
+            .saturating_add(owned_bytes);
+        if self.report.recorded_anchor_bytes > self.budget.max_recorded_anchor_bytes {
+            return Err(BudgetBreach::RecordedAnchorBytes {
+                recorded_anchor_bytes: self.report.recorded_anchor_bytes,
+            });
+        }
+
+        Ok(())
+    }
+
     fn observe_alias_reference_inner(&mut self) -> Result<(), BudgetBreach> {
         self.report.events += 1;
         if self.report.events > self.budget.max_events {
@@ -551,6 +714,14 @@ impl BudgetEnforcer {
             && let Err(breach) = result
         {
             self.report.breached = Some(breach.clone());
+        }
+    }
+
+    /// Record a breach detected by a deserialization stage that shares this budget.
+    #[cfg(feature = "properties")]
+    pub(crate) fn record_external_breach(&mut self, breach: BudgetBreach) {
+        if self.report.breached.is_none() {
+            self.report.breached = Some(breach);
         }
     }
 
@@ -897,6 +1068,21 @@ e: *A
     }
 
     #[test]
+    fn parser_block_nesting_limit_tracks_max_depth() {
+        let parser_default = granit_parser::Options::default().block_nesting_limit;
+        for max_depth in [0, 64, parser_default, parser_default + 1, usize::MAX] {
+            let budget = Budget {
+                max_depth,
+                ..Default::default()
+            };
+            assert_eq!(
+                budget.parser_options().block_nesting_limit,
+                parser_default.max(max_depth.saturating_add(1))
+            );
+        }
+    }
+
+    #[test]
     fn anchors_limit_trips() {
         // Three distinct anchors defined on scalar nodes
         let y = "a: &A 1\nb: &B 2\nc: &C 3\n";
@@ -1058,10 +1244,15 @@ e: *A
     }
 
     #[test]
-    fn budget_default_sets_max_inclusion_depth() {
+    fn budget_default_sets_specialized_limits() {
         let budget = Budget::default();
 
         assert_eq!(budget.max_inclusion_depth, 24);
+        assert_eq!(budget.max_property_expansion_depth, 64);
+        assert_eq!(
+            budget.max_total_property_interpolation_work,
+            256 * 1024 * 1024
+        );
     }
 
     #[test]

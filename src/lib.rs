@@ -70,7 +70,7 @@ pub use span::Span;
 pub use spanned::Spanned;
 #[cfg(any(feature = "serialize", feature = "deserialize"))]
 pub use wrappers::{
-    Commented, DoubleQuoted, FlowMap, FlowSeq, NullableTilde, SingleQuoted, SpaceAfter,
+    Commented, DoubleQuoted, FlowMap, FlowSeq, NullableTilde, SingleQuoted, SpaceAfter, Tagged,
 };
 
 #[cfg(all(feature = "deserialize", feature = "include"))]
@@ -107,6 +107,8 @@ mod parse_scalars;
 pub mod ser;
 mod span;
 mod spanned;
+#[cfg(any(feature = "serialize", feature = "deserialize"))]
+mod tag;
 #[cfg(any(feature = "serialize", feature = "deserialize"))]
 mod wrappers;
 

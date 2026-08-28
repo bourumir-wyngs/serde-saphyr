@@ -18,6 +18,24 @@ struct ExactFitRoot {
     included: String,
 }
 
+#[derive(Debug, Deserialize, PartialEq)]
+struct SequenceRoot {
+    included: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct SequencePairRoot {
+    included1: Vec<String>,
+    included2: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct MixedAliasRoot {
+    base: String,
+    ordinary: String,
+    included: Vec<String>,
+}
+
 #[test]
 fn test_anchored_includes_exceed_budget() {
     let yaml = r#"
@@ -153,5 +171,171 @@ fn test_same_anchored_include_parses_with_different_limits() {
             error: IncludeResolveError::Message(message),
             ..
         } if message.starts_with("input byte limit ")
+    ));
+}
+
+#[test]
+fn test_anchored_include_rejects_cyclic_alias_before_expansion() {
+    let options = serde_saphyr::options! {}.with_include_resolver(|req| {
+        Ok(ResolvedInclude::new(
+            req.spec,
+            req.spec,
+            InputSource::AnchoredText {
+                text: "selected: &selected [*selected, sibling]\n".to_string(),
+                anchor: "selected".to_string(),
+            },
+        ))
+    });
+
+    let error = from_reader_with_options::<_, SequenceRoot>(
+        b"included: !include \"f.yml#selected\"\n".as_slice(),
+        options,
+    )
+    .expect_err("cyclic aliases in anchored includes must be rejected");
+
+    assert!(matches!(
+        error.without_snippet(),
+        Error::ResolverError {
+            error: IncludeResolveError::Message(message),
+            ..
+        } if message.contains("cyclic alias") && message.contains("selected")
+    ));
+}
+
+#[test]
+fn test_anchored_include_honors_alias_replay_limits() {
+    let options = serde_saphyr::options! {
+        alias_limits: serde_saphyr::alias_limits! {
+            max_total_replayed_events: 0,
+        },
+    }
+    .with_include_resolver(|req| {
+        Ok(ResolvedInclude::new(
+            req.spec,
+            req.spec,
+            InputSource::AnchoredText {
+                text: "base: &base value\nselected: &selected [*base]\n".to_string(),
+                anchor: "selected".to_string(),
+            },
+        ))
+    });
+
+    let error = from_reader_with_options::<_, SequenceRoot>(
+        b"included: !include \"f.yml#selected\"\n".as_slice(),
+        options,
+    )
+    .expect_err("anchored alias expansion must honor AliasLimits");
+
+    assert!(matches!(
+        error.without_snippet(),
+        Error::AliasReplayLimitExceeded {
+            total_replayed_events: 1,
+            max_total_replayed_events: 0,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn test_alias_replay_limit_is_aggregate_across_anchored_includes() {
+    let options = serde_saphyr::options! {
+        alias_limits: serde_saphyr::alias_limits! {
+            max_total_replayed_events: 1,
+        },
+    }
+    .with_include_resolver(|req| {
+        Ok(ResolvedInclude::new(
+            req.spec,
+            req.spec,
+            InputSource::AnchoredText {
+                text: "base: &base value\nselected: &selected [*base]\n".to_string(),
+                anchor: "selected".to_string(),
+            },
+        ))
+    });
+
+    let error = from_reader_with_options::<_, SequencePairRoot>(
+        b"included1: !include \"f.yml#selected\"\nincluded2: !include \"f.yml#selected\"\n"
+            .as_slice(),
+        options,
+    )
+    .expect_err("separate anchored includes must share the total replay limit");
+
+    assert!(matches!(
+        error.without_snippet(),
+        Error::AliasReplayLimitExceeded {
+            total_replayed_events: 2,
+            max_total_replayed_events: 1,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn test_alias_budget_is_aggregate_across_anchored_includes() {
+    let options = serde_saphyr::options! {
+        budget: serde_saphyr::budget! {
+            max_aliases: 1,
+        },
+    }
+    .with_include_resolver(|req| {
+        Ok(ResolvedInclude::new(
+            req.spec,
+            req.spec,
+            InputSource::AnchoredText {
+                text: "base: &base value\nselected: &selected [*base]\n".to_string(),
+                anchor: "selected".to_string(),
+            },
+        ))
+    });
+
+    let error = from_reader_with_options::<_, SequencePairRoot>(
+        b"included1: !include \"f.yml#selected\"\nincluded2: !include \"f.yml#selected\"\n"
+            .as_slice(),
+        options,
+    )
+    .expect_err("separate anchored includes must share the alias budget");
+
+    assert!(matches!(
+        error.without_snippet(),
+        Error::Budget {
+            breach: serde_saphyr::budget::BudgetBreach::Aliases { aliases: 2 },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn test_alias_replay_limit_is_shared_with_ordinary_aliases() {
+    let options = serde_saphyr::options! {
+        alias_limits: serde_saphyr::alias_limits! {
+            max_total_replayed_events: 1,
+        },
+    }
+    .with_include_resolver(|req| {
+        Ok(ResolvedInclude::new(
+            req.spec,
+            req.spec,
+            InputSource::AnchoredText {
+                text: "base: &base included\nselected: &selected [*base]\n".to_string(),
+                anchor: "selected".to_string(),
+            },
+        ))
+    });
+
+    let error = from_reader_with_options::<_, MixedAliasRoot>(
+        b"base: &base ordinary\nordinary: *base\nincluded: !include \"f.yml#selected\"\n"
+            .as_slice(),
+        options,
+    )
+    .expect_err("ordinary and anchored aliases must share the total replay limit");
+
+    assert!(matches!(
+        error.without_snippet(),
+        Error::AliasReplayLimitExceeded {
+            total_replayed_events: 2,
+            max_total_replayed_events: 1,
+            ..
+        }
     ));
 }

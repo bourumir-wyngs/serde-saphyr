@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 use crate::long_strings::{NAME_FOLD_STR, NAME_LIT_STR};
+use crate::tag::{YAML_TAG_NAMESPACE, simple_enum_variant_name};
 
 use super::options::{CommentPosition, SerializerOptions};
 use super::quoting::{
@@ -21,8 +22,9 @@ use super::quoting::{
 };
 use super::{
     Error, NAME_DOUBLE_QUOTED, NAME_FLOW_MAP, NAME_FLOW_SEQ, NAME_NULLABLE_TILDE,
-    NAME_SINGLE_QUOTED, NAME_SPACE_AFTER, NAME_TUPLE_ANCHOR, NAME_TUPLE_COMMENTED, NAME_TUPLE_WEAK,
-    Result, checked_depth_add, checked_indentation, wrapping, zmij_format,
+    NAME_SINGLE_QUOTED, NAME_SPACE_AFTER, NAME_TUPLE_ANCHOR, NAME_TUPLE_COMMENTED,
+    NAME_TUPLE_TAGGED, NAME_TUPLE_WEAK, Result, checked_depth_add, checked_indentation, wrapping,
+    zmij_format,
 };
 
 // ------------------------------------------------------------
@@ -65,6 +67,344 @@ impl PendingStrStyle {
 type AnchorId = u32;
 
 const MAX_ANCHOR_NAME_BYTES: usize = 256;
+
+/// A tag staged by a wrapper or by an internal serializer feature.
+///
+/// Equality and anchor compatibility use the resolved identity. `emitted` is
+/// only a presentation choice, retained so existing `!!binary` and tagged-enum
+/// output stays compact when those features stage the tag first.
+struct PendingTag {
+    resolved: String,
+    emitted: String,
+}
+
+#[inline]
+const fn is_global_tag_uri_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric()
+        || matches!(
+            byte,
+            b'-' | b'#'
+                | b';'
+                | b'/'
+                | b'?'
+                | b':'
+                | b'@'
+                | b'&'
+                | b'='
+                | b'+'
+                | b'$'
+                | b','
+                | b'_'
+                | b'.'
+                | b'!'
+                | b'~'
+                | b'*'
+                | b'\''
+                | b'('
+                | b')'
+        )
+}
+
+#[inline]
+const fn is_local_tag_suffix_byte(byte: u8) -> bool {
+    is_global_tag_uri_byte(byte) && !matches!(byte, b'!' | b',')
+}
+
+fn push_percent_encoded_byte(out: &mut String, byte: u8, safe: bool) {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    // A literal '%' must always be escaped: the YAML parser interprets it as
+    // the start of an encoded UTF-8 scalar and decodes it again.
+    if byte != b'%' && safe {
+        out.push(char::from(byte));
+    } else {
+        out.push('%');
+        out.push(char::from(HEX[usize::from(byte >> 4)]));
+        out.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+}
+
+fn push_percent_encoded(out: &mut String, value: &str, safe: fn(u8) -> bool) {
+    for byte in value.bytes() {
+        push_percent_encoded_byte(out, byte, safe(byte));
+    }
+}
+
+/// Whether `host_and_port` is an IP-literal with an optional numeric port.
+fn uri_ip_literal_host_is_valid(host_and_port: &str) -> bool {
+    let Some(literal_and_port) = host_and_port.strip_prefix('[') else {
+        return false;
+    };
+    let Some(close) = literal_and_port.find(']') else {
+        return false;
+    };
+    if !uri_ip_literal_is_valid(&literal_and_port[..close]) {
+        return false;
+    }
+    let port = &literal_and_port[close + 1..];
+    port.is_empty()
+        || port
+            .strip_prefix(':')
+            .is_some_and(|value| value.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
+fn push_uri_authority_percent_encoded(out: &mut String, authority: &str) {
+    let host_and_port = if let Some((userinfo, host_and_port)) = authority.rsplit_once('@') {
+        push_percent_encoded(out, userinfo, is_uri_userinfo_char);
+        out.push('@');
+        host_and_port
+    } else {
+        authority
+    };
+
+    if uri_ip_literal_host_is_valid(host_and_port) {
+        out.push_str(host_and_port);
+        return;
+    }
+
+    let (host, port) = match host_and_port.rsplit_once(':') {
+        Some((host, port)) if port.bytes().all(|byte| byte.is_ascii_digit()) => (host, Some(port)),
+        _ => (host_and_port, None),
+    };
+    push_percent_encoded(out, host, is_uri_reg_name_char);
+    if let Some(port) = port {
+        out.push(':');
+        out.push_str(port);
+    }
+}
+
+fn push_uri_hier_part_percent_encoded(out: &mut String, hier_part: &str) {
+    if let Some(authority_and_path) = hier_part.strip_prefix("//") {
+        out.push_str("//");
+        let path_start = authority_and_path.find('/');
+        let (authority, path) = match path_start {
+            Some(idx) => authority_and_path.split_at(idx),
+            None => (authority_and_path, ""),
+        };
+        push_uri_authority_percent_encoded(out, authority);
+        push_percent_encoded(out, path, is_uri_path_char);
+    } else {
+        push_percent_encoded(out, hier_part, is_uri_path_char);
+    }
+}
+
+fn push_global_tag_uri_percent_encoded(out: &mut String, uri: &str) {
+    let Some((scheme, remainder)) = uri.split_once(':') else {
+        push_percent_encoded(out, uri, is_global_tag_uri_byte);
+        return;
+    };
+    push_percent_encoded(out, scheme, is_uri_scheme_char);
+    out.push(':');
+
+    let (without_fragment, fragment) = match remainder.split_once('#') {
+        Some((head, tail)) => (head, Some(tail)),
+        None => (remainder, None),
+    };
+    let (hier_part, query) = match without_fragment.split_once('?') {
+        Some((head, tail)) => (head, Some(tail)),
+        None => (without_fragment, None),
+    };
+
+    push_uri_hier_part_percent_encoded(out, hier_part);
+    if let Some(query) = query {
+        out.push('?');
+        push_percent_encoded(out, query, is_uri_query_or_fragment_char);
+    }
+    if let Some(fragment) = fragment {
+        out.push('#');
+        push_percent_encoded(out, fragment, is_uri_query_or_fragment_char);
+    }
+}
+
+#[inline]
+const fn is_uri_scheme_char(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.')
+}
+
+/// Convert a resolved tag identity into one canonical, injection-safe YAML token.
+fn resolved_tag_token(resolved: &str) -> String {
+    if let Some(suffix) = resolved.strip_prefix('!') {
+        let mut token = String::with_capacity(resolved.len());
+        token.push('!');
+        push_percent_encoded(&mut token, suffix, is_local_tag_suffix_byte);
+        token
+    } else {
+        let mut token = String::with_capacity(resolved.len() + 3);
+        token.push_str("!<");
+        push_global_tag_uri_percent_encoded(&mut token, resolved);
+        token.push('>');
+        token
+    }
+}
+
+fn core_tag_token(suffix: &str) -> String {
+    let mut token = String::with_capacity(suffix.len() + 2);
+    token.push_str("!!");
+    push_percent_encoded(&mut token, suffix, is_local_tag_suffix_byte);
+    token
+}
+
+#[inline]
+const fn is_uri_unreserved(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~')
+}
+
+#[inline]
+const fn is_uri_sub_delim(byte: u8) -> bool {
+    matches!(
+        byte,
+        b'!' | b'$' | b'&' | b'\'' | b'(' | b')' | b'*' | b'+' | b',' | b';' | b'='
+    )
+}
+
+#[inline]
+const fn is_uri_pchar(byte: u8) -> bool {
+    is_uri_unreserved(byte) || is_uri_sub_delim(byte) || matches!(byte, b':' | b'@')
+}
+
+fn uri_component_is_valid(value: &str, allowed: fn(u8) -> bool) -> bool {
+    let bytes = value.as_bytes();
+    let mut idx = 0;
+    while idx < bytes.len() {
+        if bytes[idx] == b'%' {
+            if idx + 2 >= bytes.len()
+                || !bytes[idx + 1].is_ascii_hexdigit()
+                || !bytes[idx + 2].is_ascii_hexdigit()
+            {
+                return false;
+            }
+            idx += 3;
+        } else if allowed(bytes[idx]) {
+            idx += 1;
+        } else {
+            return false;
+        }
+    }
+    true
+}
+
+#[inline]
+const fn is_uri_userinfo_char(byte: u8) -> bool {
+    is_uri_unreserved(byte) || is_uri_sub_delim(byte) || byte == b':'
+}
+
+#[inline]
+const fn is_uri_reg_name_char(byte: u8) -> bool {
+    is_uri_unreserved(byte) || is_uri_sub_delim(byte)
+}
+
+#[inline]
+const fn is_uri_path_char(byte: u8) -> bool {
+    is_uri_pchar(byte) || byte == b'/'
+}
+
+#[inline]
+const fn is_uri_query_or_fragment_char(byte: u8) -> bool {
+    is_uri_pchar(byte) || matches!(byte, b'/' | b'?')
+}
+
+#[inline]
+const fn is_ipv_future_char(byte: u8) -> bool {
+    is_uri_unreserved(byte) || is_uri_sub_delim(byte) || byte == b':'
+}
+
+fn uri_ip_literal_is_valid(value: &str) -> bool {
+    if value.parse::<std::net::Ipv6Addr>().is_ok() {
+        return true;
+    }
+
+    let Some(version_and_address) = value.strip_prefix('v').or_else(|| value.strip_prefix('V'))
+    else {
+        return false;
+    };
+    let Some((version, address)) = version_and_address.split_once('.') else {
+        return false;
+    };
+    !version.is_empty()
+        && version.bytes().all(|byte| byte.is_ascii_hexdigit())
+        && !address.is_empty()
+        && address.bytes().all(is_ipv_future_char)
+}
+
+fn uri_authority_is_valid(authority: &str) -> bool {
+    let mut userinfo_and_host = authority.split('@');
+    let first = userinfo_and_host.next().unwrap_or_default();
+    let (userinfo, host_and_port) = match userinfo_and_host.next() {
+        Some(host) if userinfo_and_host.next().is_none() => (Some(first), host),
+        Some(_) => return false,
+        None => (None, first),
+    };
+    if userinfo.is_some_and(|value| !uri_component_is_valid(value, is_uri_userinfo_char)) {
+        return false;
+    }
+
+    if let Some(literal_and_port) = host_and_port.strip_prefix('[') {
+        let Some((literal, port)) = literal_and_port.split_once(']') else {
+            return false;
+        };
+        if !uri_ip_literal_is_valid(literal) {
+            return false;
+        }
+        return port.is_empty()
+            || port
+                .strip_prefix(':')
+                .is_some_and(|value| value.bytes().all(|byte| byte.is_ascii_digit()));
+    }
+
+    let (host, port) = match host_and_port.rsplit_once(':') {
+        Some((host, port)) if !host.contains(':') => (host, Some(port)),
+        Some(_) => return false,
+        None => (host_and_port, None),
+    };
+    uri_component_is_valid(host, is_uri_reg_name_char)
+        && port.is_none_or(|value| value.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
+/// Validate the RFC 3986 `URI` production with an explicit scheme.
+///
+/// Unlike the RFC's narrower `absolute-URI` production, YAML global tags may
+/// include a fragment, so this accepts the optional `#fragment` from `URI`.
+fn absolute_uri_is_valid(uri: &str) -> bool {
+    let Some((scheme, remainder)) = uri.split_once(':') else {
+        return false;
+    };
+    if !scheme
+        .as_bytes()
+        .first()
+        .is_some_and(u8::is_ascii_alphabetic)
+        || !scheme
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.'))
+    {
+        return false;
+    }
+
+    let (without_fragment, fragment) = match remainder.split_once('#') {
+        Some((head, tail)) => (head, Some(tail)),
+        None => (remainder, None),
+    };
+    if fragment.is_some_and(|value| !uri_component_is_valid(value, is_uri_query_or_fragment_char)) {
+        return false;
+    }
+
+    let (hier_part, query) = match without_fragment.split_once('?') {
+        Some((head, tail)) => (head, Some(tail)),
+        None => (without_fragment, None),
+    };
+    if query.is_some_and(|value| !uri_component_is_valid(value, is_uri_query_or_fragment_char)) {
+        return false;
+    }
+
+    if let Some(authority_and_path) = hier_part.strip_prefix("//") {
+        let path_start = authority_and_path.find('/');
+        let (authority, path) = match path_start {
+            Some(idx) => authority_and_path.split_at(idx),
+            None => (authority_and_path, ""),
+        };
+        uri_authority_is_valid(authority) && uri_component_is_valid(path, is_uri_path_char)
+    } else {
+        uri_component_is_valid(hier_part, is_uri_path_char)
+    }
+}
 
 fn is_supported_anchor_name(name: &str) -> bool {
     !name.is_empty()
@@ -155,6 +495,8 @@ struct SerializerState {
     in_flow: usize,
     /// Pending explicit or automatically selected block-string style.
     pending_str_style: Option<PendingStrStyle>,
+    /// Tag staged for the next node by a wrapper or a serializer feature.
+    pending_tag: Option<PendingTag>,
     /// Inline comment waiting for the next scalar.
     pending_inline_comment: Option<String>,
     /// Short-lived layout signals shared by nested collection serializers.
@@ -177,6 +519,7 @@ impl Default for SerializerState {
             pending_flow: None,
             in_flow: 0,
             pending_str_style: None,
+            pending_tag: None,
             pending_inline_comment: None,
             pending_layout: PendingLayout::default(),
             last_value_was_block: false,
@@ -204,6 +547,8 @@ struct AnchorState {
     generator: Option<fn(usize) -> String>,
     /// Cached custom names, indexed by `id - 1`.
     custom_names: Option<Vec<String>>,
+    /// Resolved tag attached to each anchor definition, indexed by `id - 1`.
+    resolved_tags: Vec<Option<String>>,
 }
 
 impl AnchorState {
@@ -214,7 +559,22 @@ impl AnchorState {
             pending_id: None,
             generator,
             custom_names: None,
+            resolved_tags: Vec::new(),
         }
+    }
+
+    fn record_resolved_tag(&mut self, id: AnchorId, tag: Option<&str>) {
+        let idx = id as usize - 1;
+        if self.resolved_tags.len() <= idx {
+            self.resolved_tags.resize_with(idx + 1, || None);
+        }
+        self.resolved_tags[idx] = tag.map(ToOwned::to_owned);
+    }
+
+    fn resolved_tag(&self, id: AnchorId) -> Option<&str> {
+        self.resolved_tags
+            .get(id as usize - 1)
+            .and_then(Option::as_deref)
     }
 }
 
@@ -535,16 +895,68 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         }
     }
 
+    /// Stage a resolved tag supplied by [`crate::Tagged`].
+    fn stage_resolved_tag(&mut self, resolved: &str) -> Result<()> {
+        if resolved.is_empty() {
+            return Err(Error::EmptyResolvedTag);
+        }
+        let emitted = resolved_tag_token(resolved);
+        if !resolved.starts_with('!') && !absolute_uri_is_valid(&emitted[2..emitted.len() - 1]) {
+            return Err(Error::InvalidGlobalTagUri {
+                tag: resolved.to_owned(),
+            });
+        }
+        self.stage_tag_with_token(resolved, emitted)
+    }
+
+    /// Stage a tag with a preferred spelling used by built-in serializer
+    /// features. A YAML node carries at most one tag, so tags that resolve to
+    /// the same identity coalesce and are emitted once; only two different
+    /// identities competing for one node are a clash.
+    fn stage_tag_with_token(&mut self, resolved: &str, emitted: String) -> Result<()> {
+        match self.state.pending_tag.as_ref() {
+            Some(pending) if pending.resolved == resolved => Ok(()),
+            Some(pending) => Err(Error::custom(format_args!(
+                "cannot serialize one YAML node with both tag {:?} and tag {:?}",
+                pending.resolved, resolved
+            ))),
+            None => {
+                self.state.pending_tag = Some(PendingTag {
+                    resolved: resolved.to_owned(),
+                    emitted,
+                });
+                Ok(())
+            }
+        }
+    }
+
+    fn stage_core_tag(&mut self, suffix: &str) -> Result<()> {
+        let mut resolved = String::with_capacity(YAML_TAG_NAMESPACE.len() + suffix.len());
+        resolved.push_str(YAML_TAG_NAMESPACE);
+        resolved.push_str(suffix);
+        self.stage_tag_with_token(&resolved, core_tag_token(suffix))
+    }
+
+    /// Whether the tag staged for the next node is a tag that Serde's enum
+    /// deserializer interprets as `variant`.
+    #[inline]
+    fn pending_tag_selects_variant(&self, variant: &str) -> bool {
+        self.state
+            .pending_tag
+            .as_ref()
+            .map(|tag| tag.resolved.as_str())
+            .and_then(simple_enum_variant_name)
+            == Some(variant)
+    }
+
     /// Serialize a tagged scalar of the form `!!Type value` using plain or quoted style for
     /// the value depending on its content.
     fn serialize_tagged_scalar(&mut self, enum_name: &str, variant: &str) -> Result<()> {
+        self.stage_core_tag(enum_name)?;
         self.write_scalar_prefix_if_anchor()?;
         if self.state.at_line_start {
             self.write_indent(self.state.depth)?;
         }
-        self.out.write_str("!!")?;
-        self.out.write_str(enum_name)?;
-        self.out.write_char(' ')?;
         self.write_plain_or_quoted_value(variant)?;
         self.write_end_of_scalar()
     }
@@ -586,32 +998,52 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         self.write_end_of_scalar()
     }
 
-    /// If an anchor is pending for the next scalar, emit `&name ` prefix.
-    /// Used for in-flow scalars.
+    /// Emit pending YAML node properties before a scalar.
     #[inline]
     fn write_scalar_prefix_if_anchor(&mut self) -> Result<()> {
-        if let Some(id) = self.anchors.pending_id.take() {
+        let tag = self.state.pending_tag.take();
+        let anchor_id = self.anchors.pending_id.take();
+        if tag.is_some() || anchor_id.is_some() {
             if self.state.at_line_start {
                 self.write_indent(self.state.depth)?;
             }
-            self.out.write_char('&')?;
-            self.write_anchor_name(id)?;
-            self.out.write_char(' ')?;
+            if let Some(tag) = tag.as_ref() {
+                self.out.write_str(&tag.emitted)?;
+                self.out.write_char(' ')?;
+            }
+            if let Some(id) = anchor_id {
+                self.anchors
+                    .record_resolved_tag(id, tag.as_ref().map(|tag| tag.resolved.as_str()));
+                self.out.write_char('&')?;
+                self.write_anchor_name(id)?;
+                self.out.write_char(' ')?;
+            }
         }
         Ok(())
     }
 
-    /// If an anchor is pending for the next complex node (seq/map),
-    /// emit it on its own line before the node.
+    /// Emit pending YAML node properties on their own line before a block node.
     #[inline]
     fn write_anchor_for_complex_node(&mut self) -> Result<()> {
-        if let Some(id) = self.anchors.pending_id.take() {
+        let tag = self.state.pending_tag.take();
+        let anchor_id = self.anchors.pending_id.take();
+        if tag.is_some() || anchor_id.is_some() {
+            self.write_space_if_pending()?;
             if self.state.at_line_start {
                 self.write_indent(self.state.depth)?;
             }
-            self.write_space_if_pending()?;
-            self.out.write_char('&')?;
-            self.write_anchor_name(id)?;
+            if let Some(tag) = tag.as_ref() {
+                self.out.write_str(&tag.emitted)?;
+            }
+            if let Some(id) = anchor_id {
+                self.anchors
+                    .record_resolved_tag(id, tag.as_ref().map(|tag| tag.resolved.as_str()));
+                if tag.is_some() {
+                    self.out.write_char(' ')?;
+                }
+                self.out.write_char('&')?;
+                self.write_anchor_name(id)?;
+            }
             self.newline()?;
         }
         Ok(())
@@ -621,6 +1053,16 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Used when a previously defined anchor is referenced again.
     #[inline]
     fn write_alias_id(&mut self, id: AnchorId) -> Result<()> {
+        let anchor_tag = self.anchors.resolved_tag(id);
+        if let Some(requested) = self.state.pending_tag.take()
+            && anchor_tag != Some(requested.resolved.as_str())
+        {
+            return Err(Error::custom(format_args!(
+                "cannot apply tag {:?} to alias whose anchor was defined with tag {:?}",
+                requested.resolved,
+                anchor_tag.unwrap_or("")
+            )));
+        }
         if self.state.at_line_start {
             self.write_indent(self.state.depth)?;
         }
@@ -630,6 +1072,11 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         // Use the shared end-of-scalar path so pending inline comments are appended in block style
         self.write_end_of_scalar()?;
         Ok(())
+    }
+
+    #[inline]
+    fn has_pending_node_properties(&self) -> bool {
+        self.state.pending_tag.is_some() || self.anchors.pending_id.is_some()
     }
 
     /// Determine whether the next sequence should be emitted in flow style.
@@ -1021,13 +1468,20 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     }
 
     fn serialize_bytes(self, v: &[u8]) -> Result<()> {
-        // Two behaviors are required by tests:
+        // Three behaviors are required by tests:
         // - Top-level &[u8] should serialize as a block sequence of integers.
+        // - A captured root !!binary tag must keep the bytes on a base64 scalar;
+        //   attaching that tag to the usual root sequence changes the YAML node kind.
         // - Fields using #[serde(with = "serde_bytes")] should serialize as a tagged !!binary
         //   base64 scalar inline after "key: ". The latter ends up calling serialize_bytes in
         //   value position (mid-line), whereas plain Vec<u8> without serde_bytes goes through
-        //   serialize_seq instead. Distinguish by whether we are at the start of a line.
-        if self.state.at_line_start {
+        //   serialize_seq instead.
+        //
+        // The untagged sequence is reachable only while no tag is staged at all. Any staged
+        // tag makes this a tagged scalar node, so the base64 branch below both keeps a
+        // requested !!binary on a scalar and lets any other identity clash with the
+        // !!binary that branch stages, exactly as it does in value position.
+        if self.state.at_line_start && self.state.pending_tag.is_none() {
             // Top-level or start-of-line: emit as sequence of numbers
             let mut seq = self.serialize_seq(Some(v.len()))?;
             for b in v {
@@ -1036,11 +1490,12 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             return serde_core::ser::SerializeSeq::end(seq);
         }
 
-        // Inline value position: emit !!binary with base64.
+        // Inline value position, or a root value whose captured tag is binary:
+        // emit !!binary with base64.
         self.write_space_if_pending()?;
+        self.stage_core_tag("binary")?;
         self.write_scalar_prefix_if_anchor()?;
-        // No indent needed mid-line; mirror serialize_str behavior.
-        self.out.write_str("!!binary ")?;
+        // The prefix writer handles root indentation and inline placement.
         let mut s = String::new();
         B64.encode_string(v, &mut s);
         self.out.write_str(&s)?;
@@ -1168,8 +1623,15 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         variant: &'static str,
         value: &T,
     ) -> Result<()> {
+        // `!Variant payload` already carries the same variant selection as
+        // Serde's usual `{Variant: payload}` representation. Keep the tag
+        // staged for the payload and omit the redundant external wrapper.
+        if self.pending_tag_selects_variant(variant) {
+            return value.serialize(self);
+        }
+
         let was_inline_value = self.state.pending_layout.pending_space_after_colon;
-        let anchor_broke_line = self.anchors.pending_id.is_some();
+        let anchor_broke_line = self.has_pending_node_properties();
         let after_dash_depth = self.state.after_dash_depth;
         self.write_anchor_for_complex_node()?;
 
@@ -1243,9 +1705,9 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
         let flow = self.take_flow_for_seq();
         if flow {
-            self.write_scalar_prefix_if_anchor()?;
             // Ensure a space after a preceding colon when this sequence is a mapping value.
             self.write_space_if_pending()?;
+            self.write_scalar_prefix_if_anchor()?;
             if self.state.at_line_start {
                 self.write_indent(self.state.depth)?;
             }
@@ -1257,6 +1719,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 depth: depth_next,
                 flow: true,
                 first: true,
+                force_empty_marker: false,
             })
         } else {
             // Block sequence. Decide indentation based on whether this is after a map key or after a list dash.
@@ -1267,7 +1730,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             // `write_anchor_for_complex_node` will handle emitting the anchor and newline.
             if self.state.pending_layout.pending_space_after_colon
                 && self.state.last_value_was_block
-                && self.anchors.pending_id.is_none()
+                && !self.has_pending_node_properties()
             {
                 self.state.pending_layout.pending_space_after_colon = false;
                 if !self.state.at_line_start {
@@ -1287,7 +1750,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 && self.state.after_dash_depth.is_some()
                 && !self.state.pending_layout.pending_space_after_colon;
             // `inline_first` assumes we stay mid-line, but a pending anchor writes `&aN\n` first.
-            let anchor_broke_line = self.anchors.pending_id.is_some();
+            let anchor_broke_line = self.has_pending_node_properties();
             self.write_anchor_for_complex_node()?;
             if inline_first {
                 if anchor_broke_line {
@@ -1320,7 +1783,10 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             let depth_next = if inline_first {
                 checked_depth_add(base, 1)?
             } else if was_inline_value {
-                if self.settings.compact_list_indent && self.state.current_map_depth.is_some() {
+                if self.settings.compact_list_indent
+                    && self.state.current_map_depth.is_some()
+                    && !anchor_broke_line
+                {
                     base
                 } else {
                     checked_depth_add(base, 1)?
@@ -1335,6 +1801,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 depth: depth_next,
                 flow: false,
                 first: true,
+                force_empty_marker: anchor_broke_line,
             })
         }
     }
@@ -1354,6 +1821,8 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             Ok(TupleSer::anchor_weak(self))
         } else if name == NAME_TUPLE_COMMENTED {
             Ok(TupleSer::commented(self))
+        } else if name == NAME_TUPLE_TAGGED {
+            Ok(TupleSer::tagged(self))
         } else {
             // Normal tuple-struct: emit as a block sequence.
             Ok(TupleSer::sequence(self.serialize_seq(Some(len))?))
@@ -1365,10 +1834,14 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         _name: &'static str,
         _variant_index: u32,
         variant: &'static str,
-        _len: usize,
+        len: usize,
     ) -> Result<Self::SerializeTupleVariant> {
+        if self.pending_tag_selects_variant(variant) {
+            return self.serialize_seq(Some(len));
+        }
+
         let was_inline_value = self.state.pending_layout.pending_space_after_colon;
-        let anchor_broke_line = self.anchors.pending_id.is_some();
+        let anchor_broke_line = self.has_pending_node_properties();
         let after_dash_depth = self.state.after_dash_depth;
         self.write_anchor_for_complex_node()?;
 
@@ -1393,6 +1866,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 depth: depth_next,
                 flow: false,
                 first: true,
+                force_empty_marker: false,
             });
         }
         // Otherwise (top-level or sequence context).
@@ -1420,15 +1894,16 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             depth: depth_next,
             flow: false,
             first: true,
+            force_empty_marker: false,
         })
     }
 
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap> {
         let flow = self.take_flow_for_map();
         if flow {
-            self.write_scalar_prefix_if_anchor()?;
             // Ensure a space after a preceding colon when this mapping is a value.
             self.write_space_if_pending()?;
+            self.write_scalar_prefix_if_anchor()?;
             if self.state.at_line_start {
                 self.write_indent(self.state.depth)?;
             }
@@ -1437,6 +1912,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             let depth_next = self.state.depth;
             Ok(MapSer::flow(self, depth_next))
         } else {
+            let node_properties_broke_line = self.has_pending_node_properties();
             let inline_first = self.state.pending_layout.pending_inline_map;
             // Starting a complex (block) map: drop any staged inline comment.
             self.state.pending_inline_comment = None;
@@ -1449,7 +1925,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             // `write_anchor_for_complex_node` will handle emitting the anchor and newline.
             if was_inline_value
                 && self.state.last_value_was_block
-                && self.anchors.pending_id.is_none()
+                && !self.has_pending_node_properties()
             {
                 self.state.pending_layout.pending_space_after_colon = false;
                 if !self.state.at_line_start {
@@ -1517,6 +1993,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 depth_next,
                 inline_first,
                 inline_value_start_flag,
+                node_properties_broke_line,
             ))
         }
     }
@@ -1530,10 +2007,14 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         _name: &'static str,
         _variant_index: u32,
         variant: &'static str,
-        _len: usize,
+        len: usize,
     ) -> Result<Self::SerializeStructVariant> {
+        if self.pending_tag_selects_variant(variant) {
+            return Ok(StructVariantSer::payload(self.serialize_map(Some(len))?));
+        }
+
         let was_inline_value = self.state.pending_layout.pending_space_after_colon;
-        let anchor_broke_line = self.anchors.pending_id.is_some();
+        let anchor_broke_line = self.has_pending_node_properties();
         let after_dash_depth = self.state.after_dash_depth;
         self.write_anchor_for_complex_node()?;
 
@@ -1557,10 +2038,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             self.state.pending_layout.pending_inline_map = false;
             // Fields indent one more level under the variant label.
             let depth_next = checked_depth_add(base, 1)?;
-            return Ok(StructVariantSer {
-                ser: self,
-                depth: depth_next,
-            });
+            return Ok(StructVariantSer::external(self, depth_next));
         }
         // Otherwise (top-level or sequence context), emit the variant name at current depth.
         if self.state.at_line_start {
@@ -1584,16 +2062,54 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             depth_next = checked_depth_add(d, 2)?;
             self.state.pending_layout.pending_inline_map = false;
         }
-        Ok(StructVariantSer {
-            ser: self,
-            depth: depth_next,
-        })
+        Ok(StructVariantSer::external(self, depth_next))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::YamlSerializer;
+    use super::{YamlSerializer, absolute_uri_is_valid};
+
+    #[test]
+    fn absolute_uri_validation_covers_global_tag_syntax() {
+        for valid in [
+            "tag:yaml.org,2002:str",
+            "urn:isbn:9780141036144",
+            "https://example.com/path?query=yes#section",
+            "https://example.com",
+            "git+ssh://user@example.com:22/repository",
+            "custom:",
+            "http://[2001:db8::1]:8080/path",
+            "http://[v1.alpha:beta]/path",
+            "tag:escaped%20text",
+        ] {
+            assert!(absolute_uri_is_valid(valid), "expected valid URI: {valid}");
+        }
+
+        for invalid in [
+            "",
+            "$:?",
+            "relative/path",
+            "1scheme:value",
+            "bad scheme:value",
+            "http://[not-ip]/",
+            "http://[v1]/",
+            "http://[2001:db8::1/",
+            "http://example.com:port/",
+            "http://host:name:80/",
+            "http://bad[info@example.com/",
+            "http://first@second@third/",
+            "http://example.com/path[0]",
+            "tag:value?bad[query]",
+            "tag:value#bad[fragment]",
+            "tag:bad%escape",
+        ] {
+            assert!(
+                !absolute_uri_is_valid(invalid),
+                "expected invalid URI: {invalid}"
+            );
+        }
+    }
 
     #[test]
     fn write_indent_rejects_indentation_overflow() {

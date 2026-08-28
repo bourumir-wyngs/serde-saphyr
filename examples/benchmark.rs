@@ -84,6 +84,8 @@ fn main() -> Result<(), Error> {
                 max_events: many,
                 max_aliases: many,
                 max_anchors: many,
+                max_recorded_anchor_events: many,
+                max_recorded_anchor_bytes: many,
                 max_depth: many,
                 max_documents: many,
                 max_nodes: many,

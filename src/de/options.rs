@@ -75,6 +75,8 @@ pub enum MergeKeyPolicy {
 
 /// Limits applied to alias replay to harden against alias bombs.
 ///
+/// These limits also apply while aliases are expanded from anchored `!include` fragments.
+///
 /// Prefer constructing this via the [`alias_limits!`](crate::alias_limits!) macro instead of a
 /// struct literal. This keeps call sites stable if new fields are added in the future.
 ///
@@ -158,7 +160,8 @@ impl Default for AliasLimits {
     derive(serde::Serialize, serde::Deserialize)
 )]
 pub struct Options {
-    /// Optional YAML budget to enforce before parsing (counts raw parser events).
+    /// Optional YAML budget enforced during parsing and deserialization, including raw events,
+    /// retained anchor copies, and property interpolation. `None` disables budget enforcement.
     pub budget: Option<Budget>,
     /// Optional callback invoked with the final budget report after parsing.
     /// It is invoked both when parsing is successful and when budget was breached.

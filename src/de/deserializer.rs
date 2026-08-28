@@ -20,13 +20,18 @@ use super::options::{DuplicateKeyPolicy, MergeKeyPolicy};
 #[cfg(any(feature = "garde", feature = "validator"))]
 use super::path_map::PathRecorder;
 #[cfg(feature = "properties")]
-use super::properties::interpolate_compose_style;
+use super::properties::interpolate_compose_style_with_limits;
 use super::properties_redaction::{
     ScalarRedactionCtx, ScalarRedactionGuard, with_interp_redaction_scope,
 };
 use super::spanned_deser;
+use super::tagged_deser;
 use super::tags::SfTag;
 use crate::anchor_store::{self, AnchorKind};
+#[cfg(feature = "properties")]
+use crate::budget::BudgetBreach;
+#[cfg(feature = "properties")]
+use crate::de_error::budget_error;
 use crate::location::Location;
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::location::Locations;
@@ -419,7 +424,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
 
         #[cfg(feature = "properties")]
         {
-            self.ev.property_map().is_some()
+            self.ev.property_interpolation().property_map().is_some()
         }
     }
 
@@ -611,13 +616,21 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
 
         #[cfg(feature = "properties")]
         {
-            let Some(vars) = self.ev.property_map() else {
+            let properties = self.ev.property_interpolation();
+            let Some(vars) = properties.property_map() else {
                 return Ok(value);
             };
             let vars = vars.as_ref();
-            let syntax = self.ev.property_syntax();
+            let syntax = properties.syntax();
 
-            match interpolate_compose_style(value, vars, syntax) {
+            match interpolate_compose_style_with_limits(
+                value,
+                vars,
+                syntax,
+                properties.max_expansion_depth(),
+                properties.max_total_work(),
+                properties.total_work(),
+            ) {
                 Ok(value) => Ok(value),
                 Err(crate::properties::PropertyError::Unresolved(name)) => {
                     Err(Error::UnresolvedProperty { name, location })
@@ -638,6 +651,22 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
                         message,
                         location,
                     })
+                }
+                Err(crate::properties::PropertyError::ExpansionDepthLimitExceeded {
+                    depth,
+                    max_depth,
+                }) => {
+                    let breach = BudgetBreach::PropertyExpansionDepth { depth, max_depth };
+                    properties.record_breach(breach.clone());
+                    Err(budget_error(breach).with_location(location))
+                }
+                Err(crate::properties::PropertyError::ExpansionWorkLimitExceeded {
+                    work,
+                    max_work,
+                }) => {
+                    let breach = BudgetBreach::PropertyInterpolationWork { work, max_work };
+                    properties.record_breach(breach.clone());
+                    Err(budget_error(breach).with_location(location))
                 }
             }
         }
@@ -703,9 +732,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             let mut replay = ReplayEvents::new(
                 events,
                 #[cfg(feature = "properties")]
-                self.ev.property_map().cloned(),
-                #[cfg(feature = "properties")]
-                self.ev.property_syntax(),
+                self.ev.property_interpolation().clone(),
             );
             return YamlDeserializer::new(&mut replay, self.cfg).deserialize_map(visitor);
         }
@@ -1326,6 +1353,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             // Internal wrapper types use `__yaml_*` names (see `__yaml_rc_anchor`, etc.).
             "__yaml_spanned" => spanned_deser::deserialize_yaml_spanned(self, visitor),
             "__yaml_commented" => commented_deser::deserialize_yaml_commented(self, visitor),
+            "__yaml_tagged" => tagged_deser::deserialize_yaml_tagged(self, visitor),
             "__yaml_rc_anchor" => {
                 let anchor = self.peek_anchor_id()?;
                 anchor_store::with_anchor_context(AnchorKind::Rc, anchor, || {
@@ -1831,9 +1859,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 let mut replay = ReplayEvents::new(
                     events,
                     #[cfg(feature = "properties")]
-                    self.ev.property_map().cloned(),
-                    #[cfg(feature = "properties")]
-                    self.ev.property_syntax(),
+                    self.ev.property_interpolation().clone(),
                 );
 
                 // Get location from replay events for error reporting.
@@ -2213,9 +2239,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                         events,
                         reference_location,
                         #[cfg(feature = "properties")]
-                        self.ev.property_map().cloned(),
-                        #[cfg(feature = "properties")]
-                        self.ev.property_syntax(),
+                        self.ev.property_interpolation().clone(),
                     );
 
                     // Definition-site location: where the node is defined in the YAML.
@@ -2591,9 +2615,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     let replay = Box::new(ReplayEvents::new(
                         replay_events,
                         #[cfg(feature = "properties")]
-                        self.ev.property_map().cloned(),
-                        #[cfg(feature = "properties")]
-                        self.ev.property_syntax(),
+                        self.ev.property_interpolation().clone(),
                     ));
                     return visitor.visit_enum(TaggedEA {
                         replay,
@@ -2861,9 +2883,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 let replay = Box::new(ReplayEvents::new(
                     replay_buf,
                     #[cfg(feature = "properties")]
-                    self.ev.property_map().cloned(),
-                    #[cfg(feature = "properties")]
-                    self.ev.property_syntax(),
+                    self.ev.property_interpolation().clone(),
                 ));
                 // We need to use a replay source for the payload
                 return visitor.visit_enum(TaggedEA {
@@ -2894,12 +2914,17 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
 #[cfg(all(test, feature = "properties"))]
 mod tests {
+    use super::super::events::PropertyInterpolation;
     use super::super::options::{Options, PropertySyntax};
     use super::*;
 
     #[test]
     fn effective_scalar_value_without_property_map_returns_original_scalar() {
-        let mut events = ReplayEvents::new(Vec::new(), None, PropertySyntax::Braced);
+        let budget = crate::Budget::default();
+        let mut events = ReplayEvents::new(
+            Vec::new(),
+            PropertyInterpolation::new(None, PropertySyntax::Braced, Some(&budget)),
+        );
         let de = YamlDeserializer::new(&mut events, Cfg::from_options(&Options::default()));
 
         let value = de

@@ -5,7 +5,7 @@ use std::rc::Rc;
 use serde_core::de::IgnoredAny;
 
 use crate::de::budget::{BudgetBreach, BudgetReport};
-use crate::{Error, from_str_with_options};
+use crate::{Budget, Error, from_str_with_options};
 
 fn usage() -> &'static str {
     "Usage: serde-saphyr [--plain] [--include <path>] <path>\n\
@@ -30,6 +30,16 @@ fn format_budget_report(report: &BudgetReport) -> String {
     let _ = writeln!(out, "events: {}", report.events);
     let _ = writeln!(out, "aliases: {}", report.aliases);
     let _ = writeln!(out, "anchors: {}", report.anchors);
+    let _ = writeln!(
+        out,
+        "recorded_anchor_events: {}",
+        report.recorded_anchor_events
+    );
+    let _ = writeln!(
+        out,
+        "recorded_anchor_bytes: {}",
+        report.recorded_anchor_bytes
+    );
     let _ = writeln!(out, "documents: {}", report.documents);
     let _ = writeln!(out, "nodes: {}", report.nodes);
     let _ = writeln!(out, "max_depth: {}", report.max_depth);
@@ -53,6 +63,18 @@ fn format_budget_breach(out: &mut String, breach: &BudgetBreach) {
         BudgetBreach::Anchors { anchors } => {
             out.push_str("breached:\n  Anchors:\n");
             let _ = writeln!(out, "    anchors: {anchors}");
+        }
+        BudgetBreach::RecordedAnchorEvents {
+            recorded_anchor_events,
+        } => {
+            out.push_str("breached:\n  RecordedAnchorEvents:\n");
+            let _ = writeln!(out, "    recorded_anchor_events: {recorded_anchor_events}");
+        }
+        BudgetBreach::RecordedAnchorBytes {
+            recorded_anchor_bytes,
+        } => {
+            out.push_str("breached:\n  RecordedAnchorBytes:\n");
+            let _ = writeln!(out, "    recorded_anchor_bytes: {recorded_anchor_bytes}");
         }
         BudgetBreach::Depth { depth } => {
             out.push_str("breached:\n  Depth:\n");
@@ -96,7 +118,33 @@ fn format_budget_breach(out: &mut String, breach: &BudgetBreach) {
             out.push_str("breached:\n  InputBytes:\n");
             let _ = writeln!(out, "    input_bytes: {input_bytes}");
         }
+        BudgetBreach::PropertyExpansionDepth { depth, max_depth } => {
+            out.push_str("breached:\n  PropertyExpansionDepth:\n");
+            let _ = writeln!(out, "    depth: {depth}");
+            let _ = writeln!(out, "    max_depth: {max_depth}");
+        }
+        BudgetBreach::PropertyInterpolationWork { work, max_work } => {
+            out.push_str("breached:\n  PropertyInterpolationWork:\n");
+            let _ = writeln!(out, "    work: {work}");
+            let _ = writeln!(out, "    max_work: {max_work}");
+        }
     }
+}
+
+/// Check the input's filesystem-reported size against the reader byte limit.
+fn check_input_file_size(path: &str, budget: &Budget) -> std::io::Result<()> {
+    let Some(limit) = budget.max_reader_input_bytes else {
+        return Ok(());
+    };
+    let file_size = std::fs::metadata(path)?.len();
+    let limit_u64 = u64::try_from(limit).unwrap_or(u64::MAX);
+    if file_size > limit_u64 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::FileTooLarge,
+            format!("input size limit of {limit} bytes exceeded"),
+        ));
+    }
+    Ok(())
 }
 
 /// Run the serde-saphyr CLI with explicit arguments and output streams.
@@ -152,17 +200,6 @@ where
         return 1;
     };
 
-    let content = match std::fs::read_to_string(&path) {
-        Ok(content) => content,
-        Err(err) => {
-            let _ = writeln!(stderr, "Failed to read {path}: {err}");
-            return 2;
-        }
-    };
-
-    let buffered_output = Rc::new(RefCell::new(Vec::<String>::new()));
-    let budget_output = Rc::clone(&buffered_output);
-
     let mut options = if plain {
         crate::options! {
             // Plain mode uses serde-saphyr's own snippet rendering.
@@ -174,8 +211,27 @@ where
             // Otherwise, keep serde-saphyr snippets enabled.
             with_snippet: cfg!(feature = "miette") == false,
         }
+    };
+
+    if let Some(budget) = options.budget.as_ref()
+        && let Err(err) = check_input_file_size(&path, budget)
+    {
+        let _ = writeln!(stderr, "Failed to read {path}: {err}");
+        return 2;
     }
-    .with_budget_report(move |report| {
+
+    let content = match std::fs::read_to_string(&path) {
+        Ok(content) => content,
+        Err(err) => {
+            let _ = writeln!(stderr, "Failed to read {path}: {err}");
+            return 2;
+        }
+    };
+
+    let buffered_output = Rc::new(RefCell::new(Vec::<String>::new()));
+    let budget_output = Rc::clone(&buffered_output);
+
+    options = options.with_budget_report(move |report| {
         let formatted = format_budget_report(&report);
         budget_output
             .borrow_mut()
@@ -225,6 +281,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write as _;
 
     fn report_with_breach(breached: BudgetBreach) -> BudgetReport {
         BudgetReport {
@@ -232,12 +289,14 @@ mod tests {
             events: 1,
             aliases: 2,
             anchors: 3,
-            documents: 4,
-            nodes: 5,
-            max_depth: 6,
-            total_scalar_bytes: 7,
-            total_comment_bytes: 8,
-            merge_keys: 9,
+            recorded_anchor_events: 4,
+            recorded_anchor_bytes: 5,
+            documents: 6,
+            nodes: 7,
+            max_depth: 8,
+            total_scalar_bytes: 9,
+            total_comment_bytes: 10,
+            merge_keys: 11,
         }
     }
 
@@ -248,17 +307,21 @@ mod tests {
             events: 10,
             aliases: 0,
             anchors: 1,
-            documents: 2,
-            nodes: 3,
-            max_depth: 4,
-            total_scalar_bytes: 5,
-            total_comment_bytes: 6,
-            merge_keys: 7,
+            recorded_anchor_events: 2,
+            recorded_anchor_bytes: 3,
+            documents: 4,
+            nodes: 5,
+            max_depth: 6,
+            total_scalar_bytes: 7,
+            total_comment_bytes: 8,
+            merge_keys: 9,
         });
 
         assert!(formatted.contains("breached: null"));
         assert!(formatted.contains("events: 10"));
-        assert!(formatted.contains("total_comment_bytes: 6"));
+        assert!(formatted.contains("recorded_anchor_events: 2"));
+        assert!(formatted.contains("recorded_anchor_bytes: 3"));
+        assert!(formatted.contains("total_comment_bytes: 8"));
     }
 
     #[test]
@@ -278,6 +341,20 @@ mod tests {
                 report_with_breach(BudgetBreach::Anchors { anchors: 13 }),
                 "  Anchors:",
                 "    anchors: 13",
+            ),
+            (
+                report_with_breach(BudgetBreach::RecordedAnchorEvents {
+                    recorded_anchor_events: 14,
+                }),
+                "  RecordedAnchorEvents:",
+                "    recorded_anchor_events: 14",
+            ),
+            (
+                report_with_breach(BudgetBreach::RecordedAnchorBytes {
+                    recorded_anchor_bytes: 15,
+                }),
+                "  RecordedAnchorBytes:",
+                "    recorded_anchor_bytes: 15",
             ),
             (
                 report_with_breach(BudgetBreach::Depth { depth: 14 }),
@@ -329,12 +406,28 @@ mod tests {
             (
                 report_with_breach(BudgetBreach::SequenceUnbalanced),
                 "breached: SequenceUnbalanced",
-                "nodes: 5",
+                "nodes: 7",
             ),
             (
                 report_with_breach(BudgetBreach::InputBytes { input_bytes: 23 }),
                 "  InputBytes:",
                 "    input_bytes: 23",
+            ),
+            (
+                report_with_breach(BudgetBreach::PropertyExpansionDepth {
+                    depth: 25,
+                    max_depth: 24,
+                }),
+                "  PropertyExpansionDepth:",
+                "    max_depth: 24",
+            ),
+            (
+                report_with_breach(BudgetBreach::PropertyInterpolationWork {
+                    work: 27,
+                    max_work: 26,
+                }),
+                "  PropertyInterpolationWork:",
+                "    max_work: 26",
             ),
         ];
 
@@ -343,6 +436,27 @@ mod tests {
             assert!(formatted.contains(expected_type), "{formatted}");
             assert!(formatted.contains(expected_value), "{formatted}");
         }
+    }
+
+    #[test]
+    fn input_file_size_check_uses_reader_budget_limit() {
+        let mut file = tempfile::NamedTempFile::new().expect("create temp file");
+        write!(file, "1234").expect("write temp file");
+        let mut budget = Budget {
+            max_reader_input_bytes: Some(4),
+            ..Budget::default()
+        };
+        check_input_file_size(file.path().to_str().unwrap(), &budget)
+            .expect("a file at the limit should be accepted");
+
+        budget.max_reader_input_bytes = Some(3);
+        let error = check_input_file_size(file.path().to_str().unwrap(), &budget)
+            .expect_err("a file above the limit should be rejected");
+        assert_eq!(error.kind(), std::io::ErrorKind::FileTooLarge);
+
+        budget.max_reader_input_bytes = None;
+        check_input_file_size(file.path().to_str().unwrap(), &budget)
+            .expect("a disabled reader limit should accept the file");
     }
 
     #[cfg(feature = "serde_derived_types")]
@@ -354,12 +468,14 @@ mod tests {
                 events: 10,
                 aliases: 0,
                 anchors: 1,
-                documents: 2,
-                nodes: 3,
-                max_depth: 4,
-                total_scalar_bytes: 5,
-                total_comment_bytes: 6,
-                merge_keys: 7,
+                recorded_anchor_events: 2,
+                recorded_anchor_bytes: 3,
+                documents: 4,
+                nodes: 5,
+                max_depth: 6,
+                total_scalar_bytes: 7,
+                total_comment_bytes: 8,
+                merge_keys: 9,
             },
             report_with_breach(BudgetBreach::Events { events: 11 }),
             report_with_breach(BudgetBreach::AliasAnchorRatio {
@@ -368,6 +484,14 @@ mod tests {
             }),
             report_with_breach(BudgetBreach::SequenceUnbalanced),
             report_with_breach(BudgetBreach::InputBytes { input_bytes: 23 }),
+            report_with_breach(BudgetBreach::PropertyExpansionDepth {
+                depth: 25,
+                max_depth: 24,
+            }),
+            report_with_breach(BudgetBreach::PropertyInterpolationWork {
+                work: 27,
+                max_work: 26,
+            }),
         ];
 
         for report in reports {

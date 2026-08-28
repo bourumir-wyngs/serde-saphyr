@@ -4,8 +4,8 @@
 use rstest::rstest;
 use serde::Deserialize;
 use serde_saphyr::{
-    Options, PropertySyntax, from_multiple_with_options, from_reader_with_options,
-    from_str_with_options,
+    Options, PropertySyntax, budget::BudgetBreach, from_multiple_with_options,
+    from_reader_with_options, from_str_with_options,
 };
 use std::collections::HashMap;
 #[cfg(feature = "validator")]
@@ -266,6 +266,240 @@ fn missing_property_is_an_error_when_properties_are_enabled(
     assert!(
         err_str.contains(&format!("value: {placeholder}")),
         "unexpected: {err_str}"
+    );
+}
+
+#[test]
+fn nested_property_expansion_above_limit_returns_structured_error() {
+    let options = serde_saphyr::options! {
+        budget: serde_saphyr::budget! {
+            max_property_expansion_depth: 2,
+        },
+    }
+    .with_properties(HashMap::new());
+    let yaml = "value: ${MISSING:-${MISSING:-${MISSING:-${MISSING:-value}}}}\n";
+
+    let err = from_str_with_options::<ScalarConfig>(yaml, options).unwrap_err();
+
+    match err.without_snippet() {
+        serde_saphyr::Error::Budget {
+            breach: BudgetBreach::PropertyExpansionDepth { depth, max_depth },
+            location,
+        } => {
+            assert_eq!((*depth, *max_depth), (3, 2));
+            assert_ne!(*location, serde_saphyr::Location::UNKNOWN);
+        }
+        other => panic!("unexpected error variant: {other:?}"),
+    }
+    assert!(err.to_string().contains("nesting depth 3 exceeds limit 2"));
+}
+
+#[test]
+fn reader_nested_property_expansion_above_limit_returns_same_error() {
+    let options = serde_saphyr::options! {
+        budget: serde_saphyr::budget! {
+            max_property_expansion_depth: 2,
+        },
+    }
+    .with_properties(HashMap::new());
+    let yaml = b"value: ${MISSING:-${MISSING:-${MISSING:-${MISSING:-value}}}}\n";
+
+    let err = from_reader_with_options::<_, ScalarConfig>(&yaml[..], options).unwrap_err();
+
+    assert!(matches!(
+        err.without_snippet(),
+        serde_saphyr::Error::Budget {
+            breach: BudgetBreach::PropertyExpansionDepth {
+                depth: 3,
+                max_depth: 2,
+            },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn nested_property_expansion_at_limit_still_resolves() {
+    let options = serde_saphyr::options! {
+        budget: serde_saphyr::budget! {
+            max_property_expansion_depth: 2,
+        },
+    }
+    .with_properties(HashMap::new());
+    let yaml = "value: ${MISSING:-${MISSING:-${MISSING:-value}}}\n";
+
+    let parsed: ScalarConfig = from_str_with_options(yaml, options).unwrap();
+
+    assert_eq!(parsed.value, "value");
+}
+
+#[test]
+fn property_work_limit_returns_structured_error() {
+    let options = serde_saphyr::options! {
+        budget: serde_saphyr::budget! {
+            max_total_property_interpolation_work: 0,
+        },
+    }
+    .with_properties(HashMap::from([("SET".to_owned(), "value".to_owned())]));
+
+    let err = from_str_with_options::<ScalarConfig>("value: ${SET}\n", options).unwrap_err();
+
+    assert!(matches!(
+        err.without_snippet(),
+        serde_saphyr::Error::Budget {
+            breach: BudgetBreach::PropertyInterpolationWork {
+                work: 1,
+                max_work: 0,
+            },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn property_limit_breach_is_in_budget_report() {
+    let observed = std::rc::Rc::new(std::cell::RefCell::new(None));
+    let observed_by_callback = std::rc::Rc::clone(&observed);
+    let options = serde_saphyr::options! {
+        budget: serde_saphyr::budget! {
+            max_total_property_interpolation_work: 0,
+        },
+    }
+    .with_budget_report(move |report| {
+        *observed_by_callback.borrow_mut() = report.breached;
+    })
+    .with_properties(HashMap::from([("SET".to_owned(), "value".to_owned())]));
+
+    let _ = from_str_with_options::<ScalarConfig>("value: ${SET}\n", options).unwrap_err();
+
+    assert!(matches!(
+        observed.borrow().as_ref(),
+        Some(BudgetBreach::PropertyInterpolationWork {
+            work: 1,
+            max_work: 0,
+        })
+    ));
+}
+
+#[test]
+fn disabling_budget_disables_property_expansion_limits() {
+    let depth = 100;
+    let nested = format!("{}value{}", "${MISSING:-".repeat(depth), "}".repeat(depth));
+    let yaml = format!("value: {nested}\n");
+    let options = serde_saphyr::options! { budget: None }.with_properties(HashMap::new());
+
+    let parsed: ScalarConfig = from_str_with_options(&yaml, options).unwrap();
+
+    assert_eq!(parsed.value, "value");
+}
+
+#[test]
+fn property_work_limit_is_shared_across_scalars() {
+    let options = serde_saphyr::options! {
+        budget: serde_saphyr::budget! {
+            max_total_property_interpolation_work: 20,
+        },
+    }
+    .with_properties(HashMap::from([("SET".to_owned(), "value".to_owned())]));
+
+    let err = from_str_with_options::<HashMap<String, String>>(
+        "first: ${SET}\nsecond: ${SET}\n",
+        options,
+    )
+    .unwrap_err();
+
+    assert!(matches!(
+        err.without_snippet(),
+        serde_saphyr::Error::Budget {
+            breach: BudgetBreach::PropertyInterpolationWork {
+                work: 21,
+                max_work: 20,
+            },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn property_work_limit_is_shared_with_alias_replay() {
+    let options = serde_saphyr::options! {
+        budget: serde_saphyr::budget! {
+            max_total_property_interpolation_work: 20,
+        },
+    }
+    .with_properties(HashMap::from([("SET".to_owned(), "value".to_owned())]));
+
+    // Deserializing the anchor value reaches exactly 20 units of work.
+    // Replaying it through the alias must use the same counter and exceed the limit.
+    let err = from_str_with_options::<HashMap<String, String>>(
+        "first: &shared ${SET}\nsecond: *shared\n",
+        options,
+    )
+    .unwrap_err();
+
+    let err = err.without_snippet();
+    assert!(
+        matches!(
+            err,
+            serde_saphyr::Error::Budget {
+                breach: BudgetBreach::PropertyInterpolationWork {
+                    work: 21,
+                    max_work: 20,
+                },
+                ..
+            }
+        ) || matches!(
+            err,
+            serde_saphyr::Error::AliasError { msg, .. }
+                if msg.starts_with(
+                    "property interpolation work 21 exceeds limit 20"
+                )
+        ),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
+fn property_work_limit_is_shared_with_merge_replay() {
+    let options = serde_saphyr::options! {
+        budget: serde_saphyr::budget! {
+            max_total_property_interpolation_work: 20,
+        },
+    }
+    .with_properties(HashMap::from([("SET".to_owned(), "value".to_owned())]));
+
+    // The property is first expanded in `defaults`. Expanding the same scalar
+    // while replaying the merged mapping must continue from that counter.
+    let err = from_str_with_options::<HashMap<String, HashMap<String, String>>>(
+        "\
+defaults: &defaults
+  value: ${SET}
+merged:
+  <<: *defaults
+",
+        options,
+    )
+    .unwrap_err();
+
+    let err = err.without_snippet();
+    assert!(
+        matches!(
+            err,
+            serde_saphyr::Error::Budget {
+                breach: BudgetBreach::PropertyInterpolationWork {
+                    work: 21,
+                    max_work: 20,
+                },
+                ..
+            }
+        ) || matches!(
+            err,
+            serde_saphyr::Error::AliasError { msg, .. }
+                if msg.starts_with(
+                    "property interpolation work 21 exceeds limit 20"
+                )
+        ),
+        "unexpected error: {err:?}"
     );
 }
 

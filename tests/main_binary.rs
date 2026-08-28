@@ -74,6 +74,29 @@ fn missing_file_prints_error_and_exits_two() {
 }
 
 #[test]
+fn oversized_file_is_rejected_before_reading() {
+    let tmp = tempfile::NamedTempFile::new().expect("create temp file");
+    let limit = serde_saphyr::Budget::default()
+        .max_reader_input_bytes
+        .expect("default reader input limit");
+    let oversized = u64::try_from(limit).unwrap().checked_add(1).unwrap();
+    tmp.as_file()
+        .set_len(oversized)
+        .expect("create sparse oversized file");
+    let path = tmp.path().to_str().unwrap();
+
+    let (stdout, stderr, code) = run_binary(&[path]);
+
+    assert_eq!(code, 2);
+    assert!(stderr.contains("Failed to read"), "stderr: {stderr}");
+    assert!(
+        stderr.contains(&format!("input size limit of {limit} bytes exceeded")),
+        "stderr: {stderr}"
+    );
+    assert!(!stdout.contains("Budget report"), "stdout: {stdout}");
+}
+
+#[test]
 fn valid_yaml_file_exits_zero() {
     let mut tmp = tempfile::NamedTempFile::new().expect("create temp file");
     writeln!(tmp, "key: value").unwrap();
