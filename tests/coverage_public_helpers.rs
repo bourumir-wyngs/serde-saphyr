@@ -24,6 +24,8 @@ fn budget_deserialization_defaults_new_limits() {
     let mut json = serde_json::to_value(&default).unwrap();
     let object = json.as_object_mut().unwrap();
     object.remove("max_total_comment_bytes");
+    object.remove("max_recorded_anchor_events");
+    object.remove("max_recorded_anchor_bytes");
     object.remove("max_buffered_comment_events");
     object.remove("simple_key_max_lookahead");
     object.remove("flow_nesting_limit");
@@ -32,6 +34,14 @@ fn budget_deserialization_defaults_new_limits() {
     assert_eq!(
         restored.max_total_comment_bytes,
         default.max_total_comment_bytes
+    );
+    assert_eq!(
+        restored.max_recorded_anchor_events,
+        default.max_recorded_anchor_events
+    );
+    assert_eq!(
+        restored.max_recorded_anchor_bytes,
+        default.max_recorded_anchor_bytes
     );
     assert_eq!(
         restored.max_buffered_comment_events,

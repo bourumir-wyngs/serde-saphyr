@@ -21,6 +21,16 @@ fn default_max_total_comment_bytes() -> usize {
 }
 
 #[cfg(feature = "serde_derived_types")]
+fn default_max_recorded_anchor_events() -> usize {
+    1_000_000
+}
+
+#[cfg(feature = "serde_derived_types")]
+fn default_max_recorded_anchor_bytes() -> usize {
+    64 * 1024 * 1024
+}
+
+#[cfg(feature = "serde_derived_types")]
 fn default_max_buffered_comment_events() -> usize {
     DEFAULT_MAX_BUFFERED_COMMENT_EVENTS
 }
@@ -133,6 +143,31 @@ pub struct Budget {
     ///
     /// Default: 50,000
     pub max_anchors: usize,
+    /// Maximum cumulative number of event copies attempted for anchor retention.
+    ///
+    /// An event copied into multiple simultaneously open anchored containers is charged once
+    /// for every destination buffer. Scalar anchor buffers and events recorded while replaying
+    /// aliases are charged by the same limit.
+    ///
+    /// Default: `1_000_000` retained event copies.
+    #[cfg_attr(
+        feature = "serde_derived_types",
+        serde(default = "default_max_recorded_anchor_events")
+    )]
+    pub max_recorded_anchor_events: usize,
+    /// Maximum cumulative bytes of owned string payload attempted for retained anchor events.
+    ///
+    /// This counts owned scalar values and explicit tag spellings before each retained clone.
+    /// Borrowed input text is excluded because cloning its [`std::borrow::Cow`] does not copy
+    /// the referenced bytes. [`Budget::max_recorded_anchor_events`] separately limits the
+    /// fixed-size event storage for both borrowed and owned input.
+    ///
+    /// Default: `67_108_864` bytes (64 MiB).
+    #[cfg_attr(
+        feature = "serde_derived_types",
+        serde(default = "default_max_recorded_anchor_bytes")
+    )]
+    pub max_recorded_anchor_bytes: usize,
     /// Maximum structural nesting depth (sequences + mappings).
     ///
     /// Default: 64
@@ -202,6 +237,8 @@ impl Default for Budget {
             max_events: 1_000_000, // plenty for normal configs
             max_aliases: 50_000,   // liberal absolute cap
             max_anchors: 50_000,
+            max_recorded_anchor_events: 1_000_000,
+            max_recorded_anchor_bytes: 64 * 1024 * 1024,
             max_depth: 64, // protects stack/CPU
             max_inclusion_depth: 24,
             max_documents: 1_024, // doc separator storms
@@ -250,6 +287,19 @@ pub enum BudgetBreach {
     Anchors {
         /// Total distinct anchors observed at the moment of the breach.
         anchors: usize,
+    },
+
+    /// Retained anchor event copies exceeded [`Budget::max_recorded_anchor_events`].
+    RecordedAnchorEvents {
+        /// Cumulative copies attempted at the moment of the breach.
+        recorded_anchor_events: usize,
+    },
+
+    /// Owned payload copied into retained anchor events exceeded
+    /// [`Budget::max_recorded_anchor_bytes`].
+    RecordedAnchorBytes {
+        /// Cumulative owned payload bytes attempted at the moment of the breach.
+        recorded_anchor_bytes: usize,
     },
 
     /// The structural nesting depth exceeded [`Budget::max_depth`].
@@ -342,6 +392,14 @@ pub struct BudgetReport {
     /// Total number of distinct anchors that were defined (by id).
     pub anchors: usize,
 
+    /// Cumulative number of event copies attempted for anchor retention.
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
+    pub recorded_anchor_events: usize,
+
+    /// Cumulative owned string payload bytes attempted for retained anchor events.
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
+    pub recorded_anchor_bytes: usize,
+
     /// Total number of YAML documents in the stream.
     pub documents: usize,
 
@@ -368,6 +426,8 @@ impl BudgetReport {
         self.events = 0;
         self.aliases = 0;
         self.anchors = 0;
+        self.recorded_anchor_events = 0;
+        self.recorded_anchor_bytes = 0;
         self.nodes = 0;
         self.max_depth = 0;
         self.total_scalar_bytes = 0;
@@ -534,6 +594,43 @@ impl BudgetEnforcer {
         let result = self.observe_alias_reference_inner();
         self.remember_breach(&result);
         result
+    }
+
+    /// Charge one event clone that is about to be retained in an anchor buffer.
+    pub(crate) fn observe_recorded_anchor_event(
+        &mut self,
+        owned_bytes: usize,
+    ) -> Result<(), BudgetBreach> {
+        if let Some(breach) = self.report.breached.as_ref() {
+            return Err(breach.clone());
+        }
+        let result = self.observe_recorded_anchor_event_inner(owned_bytes);
+        self.remember_breach(&result);
+        result
+    }
+
+    fn observe_recorded_anchor_event_inner(
+        &mut self,
+        owned_bytes: usize,
+    ) -> Result<(), BudgetBreach> {
+        self.report.recorded_anchor_events = self.report.recorded_anchor_events.saturating_add(1);
+        if self.report.recorded_anchor_events > self.budget.max_recorded_anchor_events {
+            return Err(BudgetBreach::RecordedAnchorEvents {
+                recorded_anchor_events: self.report.recorded_anchor_events,
+            });
+        }
+
+        self.report.recorded_anchor_bytes = self
+            .report
+            .recorded_anchor_bytes
+            .saturating_add(owned_bytes);
+        if self.report.recorded_anchor_bytes > self.budget.max_recorded_anchor_bytes {
+            return Err(BudgetBreach::RecordedAnchorBytes {
+                recorded_anchor_bytes: self.report.recorded_anchor_bytes,
+            });
+        }
+
+        Ok(())
     }
 
     fn observe_alias_reference_inner(&mut self) -> Result<(), BudgetBreach> {

@@ -123,6 +123,28 @@ impl Ev<'_> {
         }
     }
 
+    /// Bytes that an [`Ev::clone`] must allocate for owned string payloads.
+    pub(crate) fn owned_payload_bytes(&self) -> usize {
+        match self {
+            Ev::Scalar { value, raw_tag, .. } => {
+                let value_bytes = match value {
+                    Cow::Borrowed(_) => 0,
+                    Cow::Owned(value) => value.len(),
+                };
+                let raw_tag_bytes = match raw_tag {
+                    Some(Cow::Owned(raw_tag)) => raw_tag.len(),
+                    Some(Cow::Borrowed(_)) | None => 0,
+                };
+                value_bytes.saturating_add(raw_tag_bytes)
+            }
+            Ev::SeqStart { raw_tag, .. } | Ev::MapStart { raw_tag, .. } => match raw_tag {
+                Some(Cow::Owned(raw_tag)) => raw_tag.len(),
+                Some(Cow::Borrowed(_)) | None => 0,
+            },
+            Ev::SeqEnd { .. } | Ev::MapEnd { .. } | Ev::Taken { .. } => 0,
+        }
+    }
+
     /// Clear the YAML tag attached to a scalar or container-start event.
     pub(super) fn strip_node_tag(&mut self) -> bool {
         match self {

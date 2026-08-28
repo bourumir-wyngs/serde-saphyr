@@ -30,6 +30,16 @@ fn format_budget_report(report: &BudgetReport) -> String {
     let _ = writeln!(out, "events: {}", report.events);
     let _ = writeln!(out, "aliases: {}", report.aliases);
     let _ = writeln!(out, "anchors: {}", report.anchors);
+    let _ = writeln!(
+        out,
+        "recorded_anchor_events: {}",
+        report.recorded_anchor_events
+    );
+    let _ = writeln!(
+        out,
+        "recorded_anchor_bytes: {}",
+        report.recorded_anchor_bytes
+    );
     let _ = writeln!(out, "documents: {}", report.documents);
     let _ = writeln!(out, "nodes: {}", report.nodes);
     let _ = writeln!(out, "max_depth: {}", report.max_depth);
@@ -53,6 +63,18 @@ fn format_budget_breach(out: &mut String, breach: &BudgetBreach) {
         BudgetBreach::Anchors { anchors } => {
             out.push_str("breached:\n  Anchors:\n");
             let _ = writeln!(out, "    anchors: {anchors}");
+        }
+        BudgetBreach::RecordedAnchorEvents {
+            recorded_anchor_events,
+        } => {
+            out.push_str("breached:\n  RecordedAnchorEvents:\n");
+            let _ = writeln!(out, "    recorded_anchor_events: {recorded_anchor_events}");
+        }
+        BudgetBreach::RecordedAnchorBytes {
+            recorded_anchor_bytes,
+        } => {
+            out.push_str("breached:\n  RecordedAnchorBytes:\n");
+            let _ = writeln!(out, "    recorded_anchor_bytes: {recorded_anchor_bytes}");
         }
         BudgetBreach::Depth { depth } => {
             out.push_str("breached:\n  Depth:\n");
@@ -232,12 +254,14 @@ mod tests {
             events: 1,
             aliases: 2,
             anchors: 3,
-            documents: 4,
-            nodes: 5,
-            max_depth: 6,
-            total_scalar_bytes: 7,
-            total_comment_bytes: 8,
-            merge_keys: 9,
+            recorded_anchor_events: 4,
+            recorded_anchor_bytes: 5,
+            documents: 6,
+            nodes: 7,
+            max_depth: 8,
+            total_scalar_bytes: 9,
+            total_comment_bytes: 10,
+            merge_keys: 11,
         }
     }
 
@@ -248,17 +272,21 @@ mod tests {
             events: 10,
             aliases: 0,
             anchors: 1,
-            documents: 2,
-            nodes: 3,
-            max_depth: 4,
-            total_scalar_bytes: 5,
-            total_comment_bytes: 6,
-            merge_keys: 7,
+            recorded_anchor_events: 2,
+            recorded_anchor_bytes: 3,
+            documents: 4,
+            nodes: 5,
+            max_depth: 6,
+            total_scalar_bytes: 7,
+            total_comment_bytes: 8,
+            merge_keys: 9,
         });
 
         assert!(formatted.contains("breached: null"));
         assert!(formatted.contains("events: 10"));
-        assert!(formatted.contains("total_comment_bytes: 6"));
+        assert!(formatted.contains("recorded_anchor_events: 2"));
+        assert!(formatted.contains("recorded_anchor_bytes: 3"));
+        assert!(formatted.contains("total_comment_bytes: 8"));
     }
 
     #[test]
@@ -278,6 +306,20 @@ mod tests {
                 report_with_breach(BudgetBreach::Anchors { anchors: 13 }),
                 "  Anchors:",
                 "    anchors: 13",
+            ),
+            (
+                report_with_breach(BudgetBreach::RecordedAnchorEvents {
+                    recorded_anchor_events: 14,
+                }),
+                "  RecordedAnchorEvents:",
+                "    recorded_anchor_events: 14",
+            ),
+            (
+                report_with_breach(BudgetBreach::RecordedAnchorBytes {
+                    recorded_anchor_bytes: 15,
+                }),
+                "  RecordedAnchorBytes:",
+                "    recorded_anchor_bytes: 15",
             ),
             (
                 report_with_breach(BudgetBreach::Depth { depth: 14 }),
@@ -329,7 +371,7 @@ mod tests {
             (
                 report_with_breach(BudgetBreach::SequenceUnbalanced),
                 "breached: SequenceUnbalanced",
-                "nodes: 5",
+                "nodes: 7",
             ),
             (
                 report_with_breach(BudgetBreach::InputBytes { input_bytes: 23 }),
@@ -354,12 +396,14 @@ mod tests {
                 events: 10,
                 aliases: 0,
                 anchors: 1,
-                documents: 2,
-                nodes: 3,
-                max_depth: 4,
-                total_scalar_bytes: 5,
-                total_comment_bytes: 6,
-                merge_keys: 7,
+                recorded_anchor_events: 2,
+                recorded_anchor_bytes: 3,
+                documents: 4,
+                nodes: 5,
+                max_depth: 6,
+                total_scalar_bytes: 7,
+                total_comment_bytes: 8,
+                merge_keys: 9,
             },
             report_with_breach(BudgetBreach::Events { events: 11 }),
             report_with_breach(BudgetBreach::AliasAnchorRatio {
