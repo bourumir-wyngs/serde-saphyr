@@ -205,6 +205,10 @@ pub struct Budget {
     pub max_total_property_interpolation_work: usize,
     /// Maximum structural nesting depth (sequences + mappings).
     ///
+    /// This also raises the parser's block-collection nesting limit as needed.
+    /// The separate [`Self::flow_nesting_limit`] remains an independent cap on
+    /// flow collections.
+    ///
     /// Default: 64
     pub max_depth: usize,
     /// Maximum allowed `!include` nesting depth.
@@ -292,10 +296,18 @@ impl Default for Budget {
 
 impl Budget {
     pub(crate) fn parser_options(&self) -> granit_parser::Options {
+        // Preserve the parser's baseline for smaller budgets. For larger budgets,
+        // allow the first over-limit container through so callers receive
+        // BudgetBreach::Depth rather than a parser error.
+        let block_nesting_limit = granit_parser::Options::default()
+            .block_nesting_limit
+            .max(self.max_depth.saturating_add(1));
+
         granit_parser::options! {
             max_buffered_comment_events: self.max_buffered_comment_events,
             simple_key_max_lookahead: self.simple_key_max_lookahead,
             flow_nesting_limit: self.flow_nesting_limit,
+            block_nesting_limit: block_nesting_limit,
         }
     }
 }
@@ -1053,6 +1065,21 @@ e: *A
 
         let rep = check_yaml_budget(&y, b, EnforcingPolicy::AllContent).unwrap();
         assert!(matches!(rep.breached, Some(BudgetBreach::Depth { .. })));
+    }
+
+    #[test]
+    fn parser_block_nesting_limit_tracks_max_depth() {
+        let parser_default = granit_parser::Options::default().block_nesting_limit;
+        for max_depth in [0, 64, parser_default, parser_default + 1, usize::MAX] {
+            let budget = Budget {
+                max_depth,
+                ..Default::default()
+            };
+            assert_eq!(
+                budget.parser_options().block_nesting_limit,
+                parser_default.max(max_depth.saturating_add(1))
+            );
+        }
     }
 
     #[test]

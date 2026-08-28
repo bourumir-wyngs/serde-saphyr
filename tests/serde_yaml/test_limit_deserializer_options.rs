@@ -1,5 +1,6 @@
 use indoc::indoc;
 use serde_json::Value;
+use serde_saphyr::budget::BudgetBreach;
 use serde_saphyr::granit_parser::ErrorKind;
 use serde_saphyr::{Error, ExternalMessageSource};
 
@@ -50,4 +51,36 @@ fn custom_flow_nesting_limit_is_applied_to_parser() {
             if matches!(source.as_ref(), ExternalMessageSource::Parser(error)
                 if error.kind() == &ErrorKind::RecursionLimitExceeded)
     ));
+}
+
+#[test]
+fn custom_max_depth_raises_the_parser_block_nesting_limit() {
+    std::thread::Builder::new()
+        .stack_size(32 * 1024 * 1024)
+        .spawn(|| {
+            let max_depth = 256;
+            let options = serde_saphyr::options! {
+                budget: serde_saphyr::budget! {
+                    max_depth: max_depth,
+                },
+            };
+
+            let allowed = format!("{}0", "- ".repeat(max_depth));
+            serde_saphyr::from_str_with_options::<Value>(&allowed, options.clone())
+                .expect("configured block depth above the parser default should be accepted");
+
+            let excessive = format!("{}0", "- ".repeat(max_depth + 1));
+            let error =
+                serde_saphyr::from_str_with_options::<Value>(&excessive, options).unwrap_err();
+            assert!(matches!(
+                error.without_snippet(),
+                Error::Budget {
+                    breach: BudgetBreach::Depth { depth },
+                    ..
+                } if *depth == max_depth + 1
+            ));
+        })
+        .expect("deep nesting test thread should spawn")
+        .join()
+        .expect("deep nesting test thread should not panic");
 }
