@@ -1203,13 +1203,20 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     }
 
     fn serialize_bytes(self, v: &[u8]) -> Result<()> {
-        // Two behaviors are required by tests:
+        // Three behaviors are required by tests:
         // - Top-level &[u8] should serialize as a block sequence of integers.
+        // - A captured root !!binary tag must keep the bytes on a base64 scalar;
+        //   attaching that tag to the usual root sequence changes the YAML node kind.
         // - Fields using #[serde(with = "serde_bytes")] should serialize as a tagged !!binary
         //   base64 scalar inline after "key: ". The latter ends up calling serialize_bytes in
         //   value position (mid-line), whereas plain Vec<u8> without serde_bytes goes through
-        //   serialize_seq instead. Distinguish by whether we are at the start of a line.
-        if self.state.at_line_start {
+        //   serialize_seq instead.
+        let has_pending_binary_tag = self
+            .state
+            .pending_tag
+            .as_ref()
+            .is_some_and(|tag| tag.resolved.strip_prefix(YAML_TAG_NAMESPACE) == Some("binary"));
+        if self.state.at_line_start && !has_pending_binary_tag {
             // Top-level or start-of-line: emit as sequence of numbers
             let mut seq = self.serialize_seq(Some(v.len()))?;
             for b in v {
@@ -1218,11 +1225,12 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             return serde_core::ser::SerializeSeq::end(seq);
         }
 
-        // Inline value position: emit !!binary with base64.
+        // Inline value position, or a root value whose captured tag is binary:
+        // emit !!binary with base64.
         self.write_space_if_pending()?;
         self.stage_core_tag("binary")?;
         self.write_scalar_prefix_if_anchor()?;
-        // No indent needed mid-line; mirror serialize_str behavior.
+        // The prefix writer handles root indentation and inline placement.
         let mut s = String::new();
         B64.encode_string(v, &mut s);
         self.out.write_str(&s)?;

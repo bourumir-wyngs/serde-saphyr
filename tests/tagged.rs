@@ -252,6 +252,25 @@ fn unrelated_tag_keeps_the_external_enum_wrapper() {
 }
 
 #[test]
+fn root_tagged_byte_buf_remains_a_binary_scalar() {
+    let value: Tagged<serde_bytes::ByteBuf> = from_str("!!binary AQI=").unwrap();
+
+    assert_eq!(
+        value,
+        Tagged(
+            serde_bytes::ByteBuf::from(vec![1, 2]),
+            Some("tag:yaml.org,2002:binary".into()),
+        )
+    );
+    let yaml = to_string(&value).unwrap();
+    assert_eq!(yaml, "!<tag:yaml.org,2002:binary> AQI=\n");
+    assert_eq!(
+        from_str::<Tagged<serde_bytes::ByteBuf>>(&yaml).unwrap(),
+        value
+    );
+}
+
+#[test]
 fn generated_binary_tag_coalesces_by_resolved_identity() {
     #[derive(Debug, Deserialize, PartialEq, Serialize)]
     struct Doc {
