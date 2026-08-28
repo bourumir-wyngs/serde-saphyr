@@ -248,6 +248,33 @@ fn tag_selected_non_unit_enum_variants_serialize_as_their_payloads() {
 }
 
 #[test]
+fn core_tag_selected_non_unit_enum_variants_serialize_as_their_payloads() {
+    #[derive(Debug, Deserialize, PartialEq, Serialize)]
+    enum Value {
+        Int(i32),
+        Pair(i32, bool),
+        Point { x: i32, y: i32 },
+    }
+
+    for (input, expected) in [
+        ("!!Int 7", "!<tag:yaml.org,2002:Int> 7\n"),
+        (
+            "!!Pair [1, true]",
+            "!<tag:yaml.org,2002:Pair>\n- 1\n- true\n",
+        ),
+        (
+            "!!Point {x: 2, y: 3}",
+            "!<tag:yaml.org,2002:Point>\nx: 2\n\"y\": 3\n",
+        ),
+    ] {
+        let value: Tagged<Value> = from_str(input).unwrap();
+        let yaml = to_string(&value).unwrap();
+        assert_eq!(yaml, expected);
+        assert_eq!(from_str::<Tagged<Value>>(&yaml).unwrap(), value);
+    }
+}
+
+#[test]
 fn unrelated_tag_keeps_the_external_enum_wrapper() {
     #[derive(Debug, Deserialize, PartialEq, Serialize)]
     enum Value {

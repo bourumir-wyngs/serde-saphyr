@@ -843,15 +843,21 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         self.stage_tag_with_token(&resolved, core_tag_token(suffix))
     }
 
-    /// Whether the tag staged for the next node is the local tag that Serde's
-    /// enum deserializer interprets as `variant`.
+    /// Whether the tag staged for the next node is a tag that Serde's enum
+    /// deserializer interprets as `variant`.
     #[inline]
     fn pending_tag_selects_variant(&self, variant: &str) -> bool {
-        self.state
+        let Some(resolved) = self
+            .state
             .pending_tag
             .as_ref()
-            .and_then(|tag| tag.resolved.strip_prefix('!'))
-            == Some(variant)
+            .map(|tag| tag.resolved.as_str())
+        else {
+            return false;
+        };
+
+        resolved.strip_prefix('!') == Some(variant)
+            || resolved.strip_prefix(YAML_TAG_NAMESPACE) == Some(variant)
     }
 
     /// Serialize a tagged scalar of the form `!!Type value` using plain or quoted style for
