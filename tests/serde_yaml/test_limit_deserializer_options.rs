@@ -54,6 +54,10 @@ fn custom_flow_nesting_limit_is_applied_to_parser() {
 }
 
 #[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "wasi", target_env = "p1"),
+    ignore = "wasm32-wasip1 does not support the large-stack thread required by this test"
+)]
 fn custom_max_depth_raises_the_parser_block_nesting_limit() {
     std::thread::Builder::new()
         .stack_size(32 * 1024 * 1024)

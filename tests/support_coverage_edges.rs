@@ -3,7 +3,7 @@
 use serde::Deserialize;
 use serde::de::value::{Error as ValueError, SeqDeserializer};
 use serde_saphyr::{
-    ArcAnchor, ArcRecursion, ArcWeakAnchor, Commented, RcAnchor, RcRecursion, RcWeakAnchor,
+    ArcAnchor, ArcRecursion, ArcWeakAnchor, Commented, RcAnchor, RcRecursion, RcWeakAnchor, Tagged,
 };
 
 #[track_caller]
@@ -23,9 +23,19 @@ fn commented_supports_non_yaml_newtypes_and_rejects_empty_sequences() {
     assert!(Commented::<u8>::deserialize(empty).is_err());
 }
 
+#[test]
+fn tagged_supports_non_yaml_newtypes_and_rejects_empty_sequences() {
+    let value: Tagged<u32> = serde_json::from_str("5").unwrap();
+    assert_eq!(value, Tagged(5, None));
+
+    let empty = SeqDeserializer::<_, ValueError>::new(std::iter::empty::<u8>());
+    let error = Tagged::<u8>::deserialize(empty).unwrap_err();
+    assert!(error.to_string().contains("a tagged YAML value"));
+}
+
 #[cfg(feature = "validator")]
 #[test]
-fn commented_forwards_validator_arguments() {
+fn wrappers_forward_validator_arguments() {
     struct RequiresArgument(i32);
 
     impl<'a> validator::ValidateArgs<'a> for RequiresArgument {
@@ -42,6 +52,9 @@ fn commented_forwards_validator_arguments() {
 
     let value = Commented(RequiresArgument(41), "checked".to_owned());
     validator::ValidateArgs::validate_with_args(&value, 41).unwrap();
+
+    let value = Tagged(RequiresArgument(42), Some("!checked".to_owned()));
+    validator::ValidateArgs::validate_with_args(&value, 42).unwrap();
 }
 
 #[test]

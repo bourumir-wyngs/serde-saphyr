@@ -97,7 +97,60 @@ impl<'de> de::SeqAccess<'de> for TaggedSeqAccess<'de, '_> {
 
 #[cfg(test)]
 mod tests {
+    use serde_core::Deserialize;
+    use serde_core::de::{self, SeqAccess, Visitor};
+    use std::fmt;
+
     use crate::{Commented, Tagged, from_str};
+
+    #[derive(Debug, PartialEq)]
+    struct InspectedTagged {
+        value: u32,
+        tag: Option<String>,
+        size_hints: [Option<usize>; 4],
+    }
+
+    impl<'de> Deserialize<'de> for InspectedTagged {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde_core::Deserializer<'de>,
+        {
+            struct InspectVisitor;
+
+            impl<'de> Visitor<'de> for InspectVisitor {
+                type Value = InspectedTagged;
+
+                fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    formatter.write_str("a tagged value exposed as a sequence")
+                }
+
+                fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+                where
+                    A: SeqAccess<'de>,
+                {
+                    let before_value = seq.size_hint();
+                    let value = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+                    let after_value = seq.size_hint();
+                    let tag = seq.next_element()?;
+                    let after_tag = seq.size_hint();
+                    if seq.next_element::<de::IgnoredAny>()?.is_some() {
+                        return Err(de::Error::invalid_length(3, &self));
+                    }
+                    let after_exhaustion = seq.size_hint();
+
+                    Ok(InspectedTagged {
+                        value,
+                        tag,
+                        size_hints: [before_value, after_value, after_tag, after_exhaustion],
+                    })
+                }
+            }
+
+            deserializer.deserialize_newtype_struct("__yaml_tagged", InspectVisitor)
+        }
+    }
 
     #[test]
     fn captures_resolved_tags_and_none_for_untagged_nodes() {
@@ -118,6 +171,38 @@ mod tests {
 
         let untagged: Tagged<String> = from_str("value").unwrap();
         assert_eq!(untagged, Tagged("value".into(), None));
+    }
+
+    #[test]
+    fn virtual_sequence_reports_remaining_elements_and_stays_exhausted() {
+        let tagged: InspectedTagged = from_str("!number 7").unwrap();
+        assert_eq!(
+            tagged,
+            InspectedTagged {
+                value: 7,
+                tag: Some("!number".into()),
+                size_hints: [Some(2), Some(1), Some(0), Some(0)],
+            }
+        );
+
+        let untagged: InspectedTagged = from_str("7").unwrap();
+        assert_eq!(
+            untagged,
+            InspectedTagged {
+                value: 7,
+                tag: None,
+                size_hints: [Some(1), Some(0), Some(0), Some(0)],
+            }
+        );
+    }
+
+    #[test]
+    fn empty_input_reaches_the_tagged_eof_path() {
+        let error = from_str::<Tagged<String>>("").unwrap_err();
+        assert!(
+            error.to_string().contains("unexpected end of input"),
+            "{error}"
+        );
     }
 
     #[test]

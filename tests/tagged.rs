@@ -77,6 +77,14 @@ fn encoded_global_tag_delimiters_round_trip_contextually() {
             "!<tag:example.com,2026:part%23one%23two> value\n",
             "!<tag:example.com,2026:part#one%23two> value\n",
         ),
+        (
+            "!<http://[2001:db8::1]:8080> value\n",
+            "!<http://[2001:db8::1]:8080> value\n",
+        ),
+        (
+            "!<http://[v1.alpha:beta]:443/path> value\n",
+            "!<http://[v1.alpha:beta]:443/path> value\n",
+        ),
     ] {
         let tagged: Tagged<String> = from_str(input).unwrap();
         let yaml = to_string(&tagged).unwrap();
@@ -503,6 +511,22 @@ fn tags_on_shared_anchors_are_checked_and_do_not_leak() {
     );
 
     assert_eq!(serde_json::to_string(&Tagged(7, None)).unwrap(), "7");
+
+    #[derive(Serialize)]
+    struct ComplexDoc {
+        first: Tagged<RcAnchor<Vec<i32>>>,
+        second: Tagged<RcAnchor<Vec<i32>>>,
+    }
+
+    let shared = Rc::new(vec![1, 2]);
+    let complex = ComplexDoc {
+        first: Tagged(RcAnchor(shared.clone()), Some("!numbers".into())),
+        second: Tagged(RcAnchor(shared), Some("!numbers".into())),
+    };
+    assert_eq!(
+        to_string(&complex).unwrap(),
+        "first: !numbers &a1\n  - 1\n  - 2\nsecond: *a1\n"
+    );
 }
 
 #[test]

@@ -2133,6 +2133,7 @@ mod tests {
             "tag:yaml.org,2002:str",
             "urn:isbn:9780141036144",
             "https://example.com/path?query=yes#section",
+            "https://example.com",
             "git+ssh://user@example.com:22/repository",
             "custom:",
             "http://[2001:db8::1]:8080/path",
@@ -2149,9 +2150,15 @@ mod tests {
             "1scheme:value",
             "bad scheme:value",
             "http://[not-ip]/",
+            "http://[v1]/",
+            "http://[2001:db8::1/",
             "http://example.com:port/",
+            "http://host:name:80/",
+            "http://bad[info@example.com/",
             "http://first@second@third/",
             "http://example.com/path[0]",
+            "tag:value?bad[query]",
+            "tag:value#bad[fragment]",
             "tag:bad%escape",
         ] {
             assert!(

@@ -35,6 +35,12 @@ struct CommentedLeaf {
     value: String,
 }
 
+#[derive(Debug, Deserialize, Validate)]
+struct TaggedRoot {
+    #[validate(nested)]
+    item: serde_saphyr::Tagged<CommentedLeaf>,
+}
+
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 struct NullableTopLevel(Option<String>);
@@ -125,6 +131,26 @@ fn validator_error_inside_commented_subtree_uses_child_location() {
     assert!(
         rendered.contains("for `item.value`"),
         "expected nested commented path in output, got: {rendered}"
+    );
+}
+
+#[test]
+fn validator_error_inside_tagged_subtree_uses_child_location() {
+    let yaml = "item: !leaf\n  value: \"\"\n";
+
+    let err = serde_saphyr::from_str_with_options_validate::<TaggedRoot>(yaml, Options::default())
+        .expect_err("must fail validation");
+
+    let location = err
+        .location()
+        .expect("validator error inside Tagged<T> should expose a location");
+    assert_eq!(location.line(), 2);
+    assert_eq!(location.column(), 10);
+
+    let rendered = err.to_string();
+    assert!(
+        rendered.contains("for `item.value`"),
+        "expected nested tagged path in output, got: {rendered}"
     );
 }
 
