@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 use crate::long_strings::{NAME_FOLD_STR, NAME_LIT_STR};
+use crate::tag::{YAML_TAG_NAMESPACE, simple_enum_variant_name};
 
 use super::options::{CommentPosition, SerializerOptions};
 use super::quoting::{
@@ -66,7 +67,6 @@ impl PendingStrStyle {
 type AnchorId = u32;
 
 const MAX_ANCHOR_NAME_BYTES: usize = 256;
-const YAML_TAG_NAMESPACE: &str = "tag:yaml.org,2002:";
 
 /// A tag staged by a wrapper or by an internal serializer feature.
 ///
@@ -847,17 +847,12 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// deserializer interprets as `variant`.
     #[inline]
     fn pending_tag_selects_variant(&self, variant: &str) -> bool {
-        let Some(resolved) = self
-            .state
+        self.state
             .pending_tag
             .as_ref()
             .map(|tag| tag.resolved.as_str())
-        else {
-            return false;
-        };
-
-        resolved.strip_prefix('!') == Some(variant)
-            || resolved.strip_prefix(YAML_TAG_NAMESPACE) == Some(variant)
+            .and_then(simple_enum_variant_name)
+            == Some(variant)
     }
 
     /// Serialize a tagged scalar of the form `!!Type value` using plain or quoted style for

@@ -5,7 +5,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
 
-const YAML_TAG_NAMESPACE: &str = "tag:yaml.org,2002:";
+use crate::tag::YAML_TAG_NAMESPACE;
 
 const INCLUDE_TAG_PLAIN: [&str; 3] = [
     "!include",

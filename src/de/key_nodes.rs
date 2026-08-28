@@ -12,6 +12,7 @@ use super::options::{DuplicateKeyPolicy, MergeKeyPolicy};
 use super::tags::SfTag;
 use crate::location::Location;
 use crate::parse_scalars::scalar_is_nullish;
+use crate::tag::simple_enum_variant_name;
 
 pub(super) fn simple_tagged_enum_name(
     raw_tag: &Option<Cow<'_, str>>,
@@ -21,25 +22,7 @@ pub(super) fn simple_tagged_enum_name(
         return None;
     }
 
-    let raw = raw_tag.as_deref()?;
-    let mut candidate =
-        if let Some(inner) = raw.strip_prefix("!<").and_then(|s| s.strip_suffix('>')) {
-            inner
-        } else {
-            raw
-        };
-
-    if let Some(stripped) = candidate.strip_prefix("tag:yaml.org,2002:") {
-        candidate = stripped;
-    }
-
-    candidate = candidate.trim_start_matches('!');
-
-    if candidate.is_empty() || candidate.contains([':', '!']) {
-        return None;
-    }
-
-    Some(candidate.to_owned())
+    simple_enum_variant_name(raw_tag.as_deref()?).map(ToOwned::to_owned)
 }
 
 /// Canonical tag identity used by [`KeyFingerprint`].

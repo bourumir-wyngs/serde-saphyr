@@ -108,6 +108,8 @@ pub mod ser;
 mod span;
 mod spanned;
 #[cfg(any(feature = "serialize", feature = "deserialize"))]
+mod tag;
+#[cfg(any(feature = "serialize", feature = "deserialize"))]
 mod wrappers;
 
 #[cfg(all(feature = "deserialize", feature = "include"))]
