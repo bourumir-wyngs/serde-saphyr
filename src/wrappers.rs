@@ -195,10 +195,11 @@ pub struct Commented<T>(pub T, pub String);
 /// Capture and emit the resolved YAML tag attached to a value.
 ///
 /// The first field contains the value and the second contains its resolved tag.
-/// `None` means that the node has no explicit tag. During serialization this is
-/// an explicit requirement: it conflicts when the inner value's serialization
-/// generates a tag and with an alias whose anchor definition is tagged. An
-/// unwrapped `T`, by contrast, places no requirement on an alias's tag.
+/// `Some(tag)` is how an arbitrary tag is put on a node: the serializer emits it
+/// as that node's explicit tag. `None` requests no tag and serializes exactly as
+/// the unwrapped `T` would, which is also what deserializing an untagged node
+/// produces.
+///
 /// Resolution deliberately discards source spelling: for example, `!!str` is
 /// captured as `Some("tag:yaml.org,2002:str")`, while a local tag such as
 /// `!widget` is captured as `Some("!widget")`. Tags resolved through a `%TAG`
@@ -215,6 +216,14 @@ pub struct Commented<T>(pub T, pub String);
 /// `Tagged<Commented<T>>` and `Commented<Tagged<T>>` are both supported. Tag
 /// capture remains subject to the deserializer's normal tag semantics and
 /// `reject_unsupported_tags` option.
+///
+/// # Clashing tags
+///
+/// A YAML node carries at most one tag, and serializing certain values produces
+/// a tag without being asked: `!!binary` for a byte buffer, or the variant tag
+/// emitted under the `tagged_enums` option. Where such a generated tag meets the
+/// wrapper's own on one node, they must match or wrappers' own tag must
+/// be `None`. Otherwise, error is reported.
 ///
 /// Deserializers other than serde-saphyr do not provide YAML tag metadata; when
 /// used with one of them, `Tagged<T>` behaves transparently and gets `None` as

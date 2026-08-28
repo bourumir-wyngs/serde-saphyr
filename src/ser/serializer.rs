@@ -22,9 +22,9 @@ use super::quoting::{
 };
 use super::{
     Error, NAME_DOUBLE_QUOTED, NAME_FLOW_MAP, NAME_FLOW_SEQ, NAME_NULLABLE_TILDE,
-    NAME_SINGLE_QUOTED, NAME_SPACE_AFTER, NAME_TAGGED_UNTAGGED, NAME_TUPLE_ANCHOR,
-    NAME_TUPLE_COMMENTED, NAME_TUPLE_TAGGED, NAME_TUPLE_WEAK, Result, checked_depth_add,
-    checked_indentation, wrapping, zmij_format,
+    NAME_SINGLE_QUOTED, NAME_SPACE_AFTER, NAME_TUPLE_ANCHOR, NAME_TUPLE_COMMENTED,
+    NAME_TUPLE_TAGGED, NAME_TUPLE_WEAK, Result, checked_depth_add, checked_indentation, wrapping,
+    zmij_format,
 };
 
 // ------------------------------------------------------------
@@ -76,14 +76,6 @@ const MAX_ANCHOR_NAME_BYTES: usize = 256;
 struct PendingTag {
     resolved: String,
     emitted: String,
-}
-
-/// A wrapper's requirement for the explicit tag state of the next YAML node.
-/// `None` in [`SerializerState::pending_tag_requirement`] means no wrapper made
-/// a requirement; `Untagged` is the distinct requirement made by `Tagged(_, None)`.
-enum PendingTagRequirement {
-    Untagged,
-    Tagged(PendingTag),
 }
 
 #[inline]
@@ -503,8 +495,8 @@ struct SerializerState {
     in_flow: usize,
     /// Pending explicit or automatically selected block-string style.
     pending_str_style: Option<PendingStrStyle>,
-    /// Explicit tag-state requirement staged for the next node.
-    pending_tag_requirement: Option<PendingTagRequirement>,
+    /// Tag staged for the next node by a wrapper or a serializer feature.
+    pending_tag: Option<PendingTag>,
     /// Inline comment waiting for the next scalar.
     pending_inline_comment: Option<String>,
     /// Short-lived layout signals shared by nested collection serializers.
@@ -527,7 +519,7 @@ impl Default for SerializerState {
             pending_flow: None,
             in_flow: 0,
             pending_str_style: None,
-            pending_tag_requirement: None,
+            pending_tag: None,
             pending_inline_comment: None,
             pending_layout: PendingLayout::default(),
             last_value_was_block: false,
@@ -918,39 +910,21 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     }
 
     /// Stage a tag with a preferred spelling used by built-in serializer
-    /// features. Nested equal tags coalesce by resolved identity; different
-    /// tags cannot both decorate the same YAML node.
+    /// features. A YAML node carries at most one tag, so tags that resolve to
+    /// the same identity coalesce and are emitted once; only two different
+    /// identities competing for one node are a clash.
     fn stage_tag_with_token(&mut self, resolved: &str, emitted: String) -> Result<()> {
-        match self.state.pending_tag_requirement.as_ref() {
-            Some(PendingTagRequirement::Tagged(pending)) if pending.resolved == resolved => Ok(()),
-            Some(PendingTagRequirement::Tagged(pending)) => Err(Error::custom(format_args!(
+        match self.state.pending_tag.as_ref() {
+            Some(pending) if pending.resolved == resolved => Ok(()),
+            Some(pending) => Err(Error::custom(format_args!(
                 "cannot serialize one YAML node with both tag {:?} and tag {:?}",
                 pending.resolved, resolved
             ))),
-            Some(PendingTagRequirement::Untagged) => Err(Error::custom(format_args!(
-                "cannot serialize one YAML node as both untagged and with tag {resolved:?}"
-            ))),
             None => {
-                self.state.pending_tag_requirement =
-                    Some(PendingTagRequirement::Tagged(PendingTag {
-                        resolved: resolved.to_owned(),
-                        emitted,
-                    }));
-                Ok(())
-            }
-        }
-    }
-
-    /// Require that the next node has no explicit YAML tag.
-    fn stage_untagged(&mut self) -> Result<()> {
-        match self.state.pending_tag_requirement.as_ref() {
-            Some(PendingTagRequirement::Untagged) => Ok(()),
-            Some(PendingTagRequirement::Tagged(pending)) => Err(Error::custom(format_args!(
-                "cannot serialize one YAML node as both untagged and with tag {:?}",
-                pending.resolved
-            ))),
-            None => {
-                self.state.pending_tag_requirement = Some(PendingTagRequirement::Untagged);
+                self.state.pending_tag = Some(PendingTag {
+                    resolved: resolved.to_owned(),
+                    emitted,
+                });
                 Ok(())
             }
         }
@@ -968,12 +942,9 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     #[inline]
     fn pending_tag_selects_variant(&self, variant: &str) -> bool {
         self.state
-            .pending_tag_requirement
+            .pending_tag
             .as_ref()
-            .and_then(|requirement| match requirement {
-                PendingTagRequirement::Tagged(tag) => Some(tag.resolved.as_str()),
-                PendingTagRequirement::Untagged => None,
-            })
+            .map(|tag| tag.resolved.as_str())
             .and_then(simple_enum_variant_name)
             == Some(variant)
     }
@@ -1030,10 +1001,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Emit pending YAML node properties before a scalar.
     #[inline]
     fn write_scalar_prefix_if_anchor(&mut self) -> Result<()> {
-        let tag = match self.state.pending_tag_requirement.take() {
-            Some(PendingTagRequirement::Tagged(tag)) => Some(tag),
-            Some(PendingTagRequirement::Untagged) | None => None,
-        };
+        let tag = self.state.pending_tag.take();
         let anchor_id = self.anchors.pending_id.take();
         if tag.is_some() || anchor_id.is_some() {
             if self.state.at_line_start {
@@ -1057,10 +1025,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Emit pending YAML node properties on their own line before a block node.
     #[inline]
     fn write_anchor_for_complex_node(&mut self) -> Result<()> {
-        let tag = match self.state.pending_tag_requirement.take() {
-            Some(PendingTagRequirement::Tagged(tag)) => Some(tag),
-            Some(PendingTagRequirement::Untagged) | None => None,
-        };
+        let tag = self.state.pending_tag.take();
         let anchor_id = self.anchors.pending_id.take();
         if tag.is_some() || anchor_id.is_some() {
             self.write_space_if_pending()?;
@@ -1089,23 +1054,14 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     #[inline]
     fn write_alias_id(&mut self, id: AnchorId) -> Result<()> {
         let anchor_tag = self.anchors.resolved_tag(id);
-        match self.state.pending_tag_requirement.take() {
-            Some(PendingTagRequirement::Tagged(requested))
-                if anchor_tag != Some(requested.resolved.as_str()) =>
-            {
-                return Err(Error::custom(format_args!(
-                    "cannot apply tag {:?} to alias whose anchor was defined with tag {:?}",
-                    requested.resolved,
-                    anchor_tag.unwrap_or("")
-                )));
-            }
-            Some(PendingTagRequirement::Untagged) if anchor_tag.is_some() => {
-                return Err(Error::custom(format_args!(
-                    "cannot require an untagged alias whose anchor was defined with tag {:?}",
-                    anchor_tag.unwrap_or("")
-                )));
-            }
-            _ => {}
+        if let Some(requested) = self.state.pending_tag.take()
+            && anchor_tag != Some(requested.resolved.as_str())
+        {
+            return Err(Error::custom(format_args!(
+                "cannot apply tag {:?} to alias whose anchor was defined with tag {:?}",
+                requested.resolved,
+                anchor_tag.unwrap_or("")
+            )));
         }
         if self.state.at_line_start {
             self.write_indent(self.state.depth)?;
@@ -1120,10 +1076,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
 
     #[inline]
     fn has_pending_node_properties(&self) -> bool {
-        matches!(
-            self.state.pending_tag_requirement,
-            Some(PendingTagRequirement::Tagged(_))
-        ) || self.anchors.pending_id.is_some()
+        self.state.pending_tag.is_some() || self.anchors.pending_id.is_some()
     }
 
     /// Determine whether the next sequence should be emitted in flow style.
@@ -1523,18 +1476,12 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         //   base64 scalar inline after "key: ". The latter ends up calling serialize_bytes in
         //   value position (mid-line), whereas plain Vec<u8> without serde_bytes goes through
         //   serialize_seq instead.
-        let has_pending_binary_tag =
-            self.state
-                .pending_tag_requirement
-                .as_ref()
-                .is_some_and(|requirement| {
-                    matches!(
-                        requirement,
-                        PendingTagRequirement::Tagged(tag)
-                            if tag.resolved.strip_prefix(YAML_TAG_NAMESPACE) == Some("binary")
-                    )
-                });
-        if self.state.at_line_start && !has_pending_binary_tag {
+        //
+        // The untagged sequence is reachable only while no tag is staged at all. Any staged
+        // tag makes this a tagged scalar node, so the base64 branch below both keeps a
+        // requested !!binary on a scalar and lets any other identity clash with the
+        // !!binary that branch stages, exactly as it does in value position.
+        if self.state.at_line_start && self.state.pending_tag.is_none() {
             // Top-level or start-of-line: emit as sequence of numbers
             let mut seq = self.serialize_seq(Some(v.len()))?;
             for b in v {
@@ -1662,10 +1609,6 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             }
             NAME_NULLABLE_TILDE => {
                 return self.serialize_tilde_null();
-            }
-            NAME_TAGGED_UNTAGGED => {
-                self.stage_untagged()?;
-                return value.serialize(self);
             }
             _ => {}
         }

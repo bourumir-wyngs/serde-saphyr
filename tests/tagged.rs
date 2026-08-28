@@ -252,12 +252,12 @@ fn equal_nested_tags_coalesce_and_different_tags_fail() {
         "{error}"
     );
 
-    for conflict in [
-        Tagged(Tagged(7, Some("!inner".into())), None),
-        Tagged(Tagged(7, None), Some("!outer".into())),
+    // `None` states no requirement, so whichever side does name a tag decides.
+    for deferred in [
+        Tagged(Tagged(7, Some("!only".into())), None),
+        Tagged(Tagged(7, None), Some("!only".into())),
     ] {
-        let error = to_string(&conflict).unwrap_err().to_string();
-        assert!(error.contains("untagged") && error.contains('!'), "{error}");
+        assert_eq!(to_string(&deferred).unwrap(), "!only 7\n");
     }
 }
 
@@ -284,13 +284,115 @@ fn generated_enum_tags_coalesce_by_resolved_identity() {
         "{error}"
     );
 
-    let untagged = Tagged(Color::Red, None);
-    let error = to_string_with_options(&untagged, ser_options! { tagged_enums: true })
-        .unwrap_err()
-        .to_string();
+    let deferred = Tagged(Color::Red, None);
+    assert_eq!(
+        to_string_with_options(&deferred, ser_options! { tagged_enums: true }).unwrap(),
+        "!!Color Red\n"
+    );
+}
+
+/// A requested tag and a serializer-generated one meet on the same node in
+/// three ways: only a differing pair is a clash.
+#[test]
+fn only_a_differing_generated_tag_is_a_clash() {
+    #[derive(Serialize)]
+    struct Doc {
+        data: serde_bytes::ByteBuf,
+    }
+    #[derive(Serialize)]
+    struct Wrapped {
+        data: Tagged<serde_bytes::ByteBuf>,
+    }
+
+    let bytes = || serde_bytes::ByteBuf::from(vec![1, 2]);
+    let untagged = to_string(&Doc { data: bytes() }).unwrap();
+    assert_eq!(untagged, "data: !!binary AQI=\n");
+
+    // No requested tag: the generated !!binary stands, exactly as unwrapped.
+    let deferred = Wrapped {
+        data: Tagged(bytes(), None),
+    };
+    assert_eq!(to_string(&deferred).unwrap(), untagged);
+
+    // The same identity requested explicitly: still one tag, spelled as resolved.
+    let agreeing = Wrapped {
+        data: Tagged(bytes(), Some("tag:yaml.org,2002:binary".into())),
+    };
+    assert_eq!(
+        to_string(&agreeing).unwrap(),
+        "data: !<tag:yaml.org,2002:binary> AQI=\n"
+    );
+
+    // Two different identities for one node: YAML has no way to spell that.
+    let clashing = Wrapped {
+        data: Tagged(bytes(), Some("!other".into())),
+    };
+    let error = to_string(&clashing).unwrap_err().to_string();
     assert!(
-        error.contains("untagged") && error.contains("Color"),
+        error.contains("!other") && error.contains("binary"),
         "{error}"
+    );
+}
+
+/// Bytes pick their node kind from position, but the tag rules must not vary
+/// with it: root and value position agree on every combination.
+#[test]
+fn binary_tag_rules_do_not_vary_with_position() {
+    #[derive(Serialize)]
+    struct Field<T> {
+        data: T,
+    }
+
+    let bytes = || serde_bytes::ByteBuf::from(vec![1, 2]);
+
+    // A root byte string stays the untagged integer sequence while no tag is staged.
+    assert_eq!(to_string(&bytes()).unwrap(), "- 1\n- 2\n");
+    assert_eq!(to_string(&Tagged(bytes(), None)).unwrap(), "- 1\n- 2\n");
+    // Requesting the binary identity keeps the bytes on a base64 scalar instead.
+    assert_eq!(
+        to_string(&Tagged(bytes(), Some("tag:yaml.org,2002:binary".into()))).unwrap(),
+        "!<tag:yaml.org,2002:binary> AQI=\n"
+    );
+
+    // A differing identity is a clash in both positions, not a silent change of
+    // node kind at the root.
+    for error in [
+        to_string(&Tagged(bytes(), Some("!other".into()))).unwrap_err(),
+        to_string(&Field {
+            data: Tagged(bytes(), Some("!other".into())),
+        })
+        .unwrap_err(),
+    ] {
+        let error = error.to_string();
+        assert!(
+            error.contains("!other") && error.contains("binary"),
+            "{error}"
+        );
+    }
+}
+
+/// `Tagged(v, None)` imposes nothing, so it cannot change how `v` is emitted.
+#[test]
+fn a_deferred_tag_never_alters_the_unwrapped_encoding() {
+    #[derive(Serialize)]
+    struct Doc<T> {
+        data: T,
+    }
+
+    let bytes = || serde_bytes::ByteBuf::from(vec![1, 2]);
+
+    // Root position: bytes at line start are a sequence of integers either way.
+    assert_eq!(
+        to_string(&Tagged(bytes(), None)).unwrap(),
+        to_string(&bytes()).unwrap(),
+    );
+    // Field position: an inline base64 !!binary scalar either way.
+    assert_eq!(
+        to_string(&Doc {
+            data: Tagged(bytes(), None)
+        })
+        .unwrap(),
+        to_string(&Doc { data: bytes() }).unwrap(),
     );
 }
 
@@ -483,16 +585,16 @@ fn tags_on_shared_anchors_are_checked_and_do_not_leak() {
     assert!(Rc::ptr_eq(&parsed.first.0.0, &parsed.second.0.0));
 
     let shared = Rc::new(7);
-    let conflict = Doc {
+    let deferred = Doc {
         first: Tagged(RcAnchor(shared.clone()), Some("!number".into())),
         second: Tagged(RcAnchor(shared), None),
         after: 9,
     };
-    let error = to_string(&conflict).unwrap_err().to_string();
-    assert!(
-        error.contains("untagged") && error.contains("!number"),
-        "{error}"
-    );
+    let yaml = to_string(&deferred).unwrap();
+    assert_eq!(yaml, "first: !number &a1 7\nsecond: *a1\nafter: 9\n");
+    // The alias carries no tag of its own, so it reports the anchor's on the way back.
+    let parsed: Doc = from_str(&yaml).unwrap();
+    assert_eq!(parsed.second.1.as_deref(), Some("!number"));
 
     #[derive(Serialize)]
     struct UnconstrainedAlias {
