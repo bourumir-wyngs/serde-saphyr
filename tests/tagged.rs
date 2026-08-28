@@ -213,12 +213,23 @@ fn equal_nested_tags_coalesce_and_different_tags_fail() {
     let same = Tagged(Tagged(7, Some("!same".into())), Some("!same".into()));
     assert_eq!(to_string(&same).unwrap(), "!same 7\n");
 
+    let untagged = Tagged(Tagged(7, None), None);
+    assert_eq!(to_string(&untagged).unwrap(), "7\n");
+
     let different = Tagged(Tagged(7, Some("!inner".into())), Some("!outer".into()));
     let error = to_string(&different).unwrap_err().to_string();
     assert!(
         error.contains("!outer") && error.contains("!inner"),
         "{error}"
     );
+
+    for conflict in [
+        Tagged(Tagged(7, Some("!inner".into())), None),
+        Tagged(Tagged(7, None), Some("!outer".into())),
+    ] {
+        let error = to_string(&conflict).unwrap_err().to_string();
+        assert!(error.contains("untagged") && error.contains('!'), "{error}");
+    }
 }
 
 #[test]
@@ -241,6 +252,15 @@ fn generated_enum_tags_coalesce_by_resolved_identity() {
         .to_string();
     assert!(
         error.contains("!other") && error.contains("Color"),
+        "{error}"
+    );
+
+    let untagged = Tagged(Color::Red, None);
+    let error = to_string_with_options(&untagged, ser_options! { tagged_enums: true })
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("untagged") && error.contains("Color"),
         "{error}"
     );
 }
@@ -390,7 +410,7 @@ fn generated_binary_tag_coalesces_by_resolved_identity() {
 
 #[test]
 fn tags_on_shared_anchors_are_checked_and_do_not_leak() {
-    #[derive(Serialize)]
+    #[derive(Deserialize, Serialize)]
     struct Doc {
         first: Tagged<RcAnchor<i32>>,
         second: Tagged<RcAnchor<i32>>,
@@ -419,6 +439,49 @@ fn tags_on_shared_anchors_are_checked_and_do_not_leak() {
         error.contains("!first") && error.contains("!second"),
         "{error}"
     );
+
+    let shared = Rc::new(7);
+    let explicit_untagged = Doc {
+        first: Tagged(RcAnchor(shared.clone()), None),
+        second: Tagged(RcAnchor(shared), None),
+        after: 9,
+    };
+    let yaml = to_string(&explicit_untagged).unwrap();
+    assert_eq!(yaml, "first: &a1 7\nsecond: *a1\nafter: 9\n");
+    let parsed: Doc = from_str(&yaml).unwrap();
+    assert_eq!(parsed.first.1, None);
+    assert_eq!(parsed.second.1, None);
+    assert!(Rc::ptr_eq(&parsed.first.0.0, &parsed.second.0.0));
+
+    let shared = Rc::new(7);
+    let conflict = Doc {
+        first: Tagged(RcAnchor(shared.clone()), Some("!number".into())),
+        second: Tagged(RcAnchor(shared), None),
+        after: 9,
+    };
+    let error = to_string(&conflict).unwrap_err().to_string();
+    assert!(
+        error.contains("untagged") && error.contains("!number"),
+        "{error}"
+    );
+
+    #[derive(Serialize)]
+    struct UnconstrainedAlias {
+        first: Tagged<RcAnchor<i32>>,
+        second: RcAnchor<i32>,
+    }
+
+    let shared = Rc::new(7);
+    let unconstrained = UnconstrainedAlias {
+        first: Tagged(RcAnchor(shared.clone()), Some("!number".into())),
+        second: RcAnchor(shared),
+    };
+    assert_eq!(
+        to_string(&unconstrained).unwrap(),
+        "first: !number &a1 7\nsecond: *a1\n"
+    );
+
+    assert_eq!(serde_json::to_string(&Tagged(7, None)).unwrap(), "7");
 }
 
 #[test]

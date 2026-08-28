@@ -195,13 +195,16 @@ pub struct Commented<T>(pub T, pub String);
 /// Capture and emit the resolved YAML tag attached to a value.
 ///
 /// The first field contains the value and the second contains its resolved tag.
-/// `None` means that the input node had no explicit tag. Resolution deliberately
-/// discards source spelling: for example, `!!str` is captured as
-/// `Some("tag:yaml.org,2002:str")`, while a local tag such as `!widget` is
-/// captured as `Some("!widget")`. Tags resolved through a `%TAG` directive are
-/// captured as their complete URI. A present tag always has a non-empty resolved
-/// identity; `Some("")` is invalid when serializing rather than an alternative
-/// spelling of `None`.
+/// `None` means that the node has no explicit tag. During serialization this is
+/// an explicit requirement: it conflicts when the inner value's serialization
+/// generates a tag and with an alias whose anchor definition is tagged. An
+/// unwrapped `T`, by contrast, places no requirement on an alias's tag.
+/// Resolution deliberately discards source spelling: for example, `!!str` is
+/// captured as `Some("tag:yaml.org,2002:str")`, while a local tag such as
+/// `!widget` is captured as `Some("!widget")`. Tags resolved through a `%TAG`
+/// directive are captured as their complete URI. A present tag always has a
+/// non-empty resolved identity; `Some("")` is invalid when serializing rather
+/// than an alternative spelling of `None`.
 ///
 /// During serialization, a resolved global tag URI is emitted using YAML's
 /// verbatim form (`!<...>`). This preserves the resolved tag identity across a
