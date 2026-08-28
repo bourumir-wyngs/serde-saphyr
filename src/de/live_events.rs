@@ -26,10 +26,10 @@ use crate::budget::{BudgetEnforcer, EnforcingPolicy};
 #[cfg(not(feature = "include"))]
 use crate::buffered_input::ReaderInput;
 
+#[cfg(feature = "properties")]
+use super::events::PropertyInterpolation;
 use super::events::attach_alias_locations_if_missing;
 use crate::buffered_input::buffered_input_from_reader_with_limit;
-#[cfg(feature = "properties")]
-use crate::de::PropertySyntax;
 use crate::de::{AliasLimits, Error, Ev, Events, Location, Options};
 use crate::de_error::budget_error;
 #[cfg(feature = "include")]
@@ -44,9 +44,7 @@ use granit_parser::{Event, Placement, ScalarStyle, ScanError, Span, StructureSty
 use granit_parser::StrInput;
 use smallvec::SmallVec;
 use std::borrow::Cow;
-#[cfg(feature = "properties")]
-use std::collections::HashMap;
-#[cfg(any(feature = "include", feature = "properties"))]
+#[cfg(feature = "include")]
 use std::rc::Rc;
 
 #[cfg(feature = "include")]
@@ -268,11 +266,9 @@ pub(crate) struct LiveEvents<'a> {
     /// Total number of replayed events across the whole stream (enforced by `alias_limits`).
     total_replayed_events: usize,
 
-    /// Property map for interpolation.
+    /// Property interpolation configuration and stream-wide work accounting.
     #[cfg(feature = "properties")]
-    property_map: Option<Rc<HashMap<String, String>>>,
-    #[cfg(feature = "properties")]
-    property_syntax: PropertySyntax,
+    property_interpolation: PropertyInterpolation,
     /// Per-anchor replay expansion counters, indexed by anchor id (dense ids).
     per_anchor_expansions: Vec<usize>,
     /// Indicates whether a `DocumentEnd` was seen for the last parsed document.
@@ -353,9 +349,11 @@ impl<'a> LiveEvents<'a> {
         let angle_conversions = options.angle_conversions;
         let require_indent = options.require_indent;
         #[cfg(feature = "properties")]
-        let property_map = options.property_map.clone();
-        #[cfg(feature = "properties")]
-        let property_syntax = options.property_syntax;
+        let property_interpolation = PropertyInterpolation::new(
+            options.property_map.clone(),
+            options.property_syntax,
+            budget.as_ref(),
+        );
         #[cfg(feature = "include")]
         let resolver = crate::resolver_from_options(&options);
 
@@ -404,9 +402,7 @@ impl<'a> LiveEvents<'a> {
             alias_limits,
             total_replayed_events: 0,
             #[cfg(feature = "properties")]
-            property_map,
-            #[cfg(feature = "properties")]
-            property_syntax,
+            property_interpolation,
             per_anchor_expansions: Vec::new(),
             seen_doc_end: false,
 
@@ -444,9 +440,11 @@ impl<'a> LiveEvents<'a> {
         let angle_conversions = options.angle_conversions;
         let require_indent = options.require_indent;
         #[cfg(feature = "properties")]
-        let property_map = options.property_map.clone();
-        #[cfg(feature = "properties")]
-        let property_syntax = options.property_syntax;
+        let property_interpolation = PropertyInterpolation::new(
+            options.property_map.clone(),
+            options.property_syntax,
+            budget.as_ref(),
+        );
         #[cfg(feature = "include")]
         let resolver = crate::resolver_from_options(&options);
 
@@ -494,9 +492,7 @@ impl<'a> LiveEvents<'a> {
             alias_limits,
             total_replayed_events: 0,
             #[cfg(feature = "properties")]
-            property_map: property_map.clone(),
-            #[cfg(feature = "properties")]
-            property_syntax,
+            property_interpolation,
             per_anchor_expansions: Vec::new(),
             seen_doc_end: false,
 
@@ -1488,6 +1484,13 @@ impl<'a> LiveEvents<'a> {
     /// Finalize and deliver the budget report, taking its state so callbacks run once.
     #[cold]
     fn deliver_budget_report(&mut self) -> Option<crate::budget::BudgetBreach> {
+        #[cfg(feature = "properties")]
+        if let Some(breach) = self.property_interpolation.breach()
+            && let Some(budget) = self.budget.as_mut()
+        {
+            budget.record_external_breach(breach);
+        }
+
         if let Some(budget) = self.budget.take() {
             let report = budget.finalize();
             if let Some(callback) = self.budget_report.take() {
@@ -1608,13 +1611,8 @@ impl<'de> Events<'de> for LiveEvents<'de> {
     }
 
     #[cfg(feature = "properties")]
-    fn property_map(&self) -> Option<&Rc<HashMap<String, String>>> {
-        self.property_map.as_ref()
-    }
-
-    #[cfg(feature = "properties")]
-    fn property_syntax(&self) -> PropertySyntax {
-        self.property_syntax
+    fn property_interpolation(&self) -> &PropertyInterpolation {
+        &self.property_interpolation
     }
 }
 

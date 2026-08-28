@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Folded property-interpolation depth and work limits into `Budget`; property resource-limit
+  failures are now reported through `Error::Budget` and `BudgetBreach`.
 - Added the opt-in `Options::reject_unsupported_tags` strict mode. It rejects explicitly tagged
   scalar, sequence, and mapping nodes when their tag is unknown to serde-saphyr; the default remains
   permissive for compatibility with custom tagged enums. YAML 1.1 `!!merge` and `!!value` are

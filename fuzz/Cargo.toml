@@ -13,6 +13,7 @@ serde = { version = "1.0.218", features = ["derive"] }
 arbitrary = "1"
 [dependencies.serde-saphyr]
 path = ".."
+features = ["properties"]
 
 [[bin]]
 name = "aliases_merges"
@@ -52,6 +53,13 @@ bench = false
 [[bin]]
 name = "serialize"
 path = "fuzz_targets/serialize.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "properties"
+path = "fuzz_targets/properties.rs"
 test = false
 doc = false
 bench = false

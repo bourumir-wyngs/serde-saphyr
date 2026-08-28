@@ -5,6 +5,8 @@ use granit_parser::ScalarStyle;
 #[cfg(feature = "properties")]
 use super::PropertySyntax;
 use super::cfg::Cfg;
+#[cfg(feature = "properties")]
+use super::events::PropertyInterpolation;
 use super::events::{Ev, Events, ReplayEvents, attach_alias_locations_if_missing};
 use super::key_nodes::*;
 use super::tags::SfTag;
@@ -67,8 +69,14 @@ fn replay_events(buf: Vec<Ev<'static>>) -> ReplayEvents<'static> {
 }
 
 #[cfg(feature = "properties")]
+fn empty_property_interpolation() -> PropertyInterpolation {
+    let budget = crate::Budget::default();
+    PropertyInterpolation::new(None, PropertySyntax::Braced, Some(&budget))
+}
+
+#[cfg(feature = "properties")]
 fn replay_events(buf: Vec<Ev<'static>>) -> ReplayEvents<'static> {
-    ReplayEvents::new(buf, None, PropertySyntax::Braced)
+    ReplayEvents::new(buf, empty_property_interpolation())
 }
 
 fn captured_fingerprint(events: Vec<Ev<'static>>) -> KeyFingerprint<'static> {
@@ -90,7 +98,7 @@ fn replay_events_with_reference(
     buf: Vec<Ev<'static>>,
     reference: Location,
 ) -> ReplayEvents<'static> {
-    ReplayEvents::with_reference(buf, reference, None, PropertySyntax::Braced)
+    ReplayEvents::with_reference(buf, reference, empty_property_interpolation())
 }
 
 #[cfg(not(feature = "properties"))]
@@ -120,8 +128,7 @@ fn pending_from_events(
         reference_location,
         MergeKeyPolicy::Merge,
         DuplicateKeyPolicy::Error,
-        None,
-        PropertySyntax::Braced,
+        empty_property_interpolation(),
     )
 }
 

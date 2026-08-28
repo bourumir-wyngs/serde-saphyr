@@ -1,4 +1,5 @@
 use crate::Location;
+use crate::budget::BudgetBreach;
 use crate::de_error::{Error, MessageFormatter, UserMessageFormatter};
 use crate::localizer::{ExternalMessage, Localizer};
 
@@ -96,6 +97,18 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
         Error::PropertyRequiredButEmpty { name, message, .. } => {
             Cow::Owned(format!("empty property `{name}`: {message}"))
         }
+        Error::Budget {
+            breach: BudgetBreach::PropertyExpansionDepth { depth, max_depth },
+            ..
+        } => Cow::Owned(format!(
+            "property expansion nesting depth {depth} exceeds limit {max_depth}"
+        )),
+        Error::Budget {
+            breach: BudgetBreach::PropertyInterpolationWork { work, max_work },
+            ..
+        } => Cow::Owned(format!(
+            "property interpolation work {work} exceeds limit {max_work}"
+        )),
         Error::Eof { .. } => Cow::Borrowed("unexpected end of input"),
         Error::MultipleDocuments { hint, .. } => {
             Cow::Owned(format!("multiple YAML documents detected; {hint}"))
@@ -492,6 +505,18 @@ fn user_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) -> 
             None => Cow::Borrowed("duplicate mapping key not allowed here"),
         },
         Error::QuotingRequired { .. } => Cow::Borrowed("value requires quoting"),
+        Error::Budget {
+            breach: BudgetBreach::PropertyExpansionDepth { depth, max_depth },
+            ..
+        } => Cow::Owned(format!(
+            "YAML document too large or too complex: property expansion nesting depth {depth} exceeds limit {max_depth}"
+        )),
+        Error::Budget {
+            breach: BudgetBreach::PropertyInterpolationWork { work, max_work },
+            ..
+        } => Cow::Owned(format!(
+            "YAML document too large or too complex: property interpolation work {work} exceeds limit {max_work}"
+        )),
         Error::Budget { breach, .. } => Cow::Owned(format!(
             "YAML document too large or too complex: limits breached: {breach:?}"
         )),
@@ -643,6 +668,26 @@ mod tests {
     #[case::invalid_property_name(
         Error::InvalidPropertyName { name: "${ab-cd}".to_owned(), location: loc() },
         "Invalid name: '${ab-cd}'"
+    )]
+    #[case::property_expansion_depth_limit(
+        Error::Budget {
+            breach: BudgetBreach::PropertyExpansionDepth {
+                depth: 65,
+                max_depth: 64,
+            },
+            location: loc(),
+        },
+        "property expansion nesting depth 65 exceeds limit 64"
+    )]
+    #[case::property_expansion_work_limit(
+        Error::Budget {
+            breach: BudgetBreach::PropertyInterpolationWork {
+                work: 101,
+                max_work: 100,
+            },
+            location: loc(),
+        },
+        "property interpolation work 101 exceeds limit 100"
     )]
     fn default_exact_messages(#[case] err: Error, #[case] expected: &str) {
         let formatter = DefaultMessageFormatter;

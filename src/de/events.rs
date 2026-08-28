@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 #[cfg(feature = "properties")]
+use std::cell::{Cell, RefCell};
+#[cfg(feature = "properties")]
 use std::collections::HashMap;
 use std::mem;
 #[cfg(feature = "properties")]
@@ -11,7 +13,79 @@ use super::error::Error;
 #[cfg(feature = "properties")]
 use super::options::PropertySyntax;
 use super::tags::SfTag;
+#[cfg(feature = "properties")]
+use crate::Budget;
+#[cfg(feature = "properties")]
+use crate::budget::BudgetBreach;
 use crate::location::{Location, Locations};
+
+/// Property interpolation configuration and aggregate work shared by live and replay sources.
+#[cfg(feature = "properties")]
+#[derive(Clone)]
+pub(crate) struct PropertyInterpolation {
+    property_map: Option<Rc<HashMap<String, String>>>,
+    syntax: PropertySyntax,
+    max_expansion_depth: usize,
+    max_total_work: usize,
+    total_work: Rc<Cell<usize>>,
+    breach: Rc<RefCell<Option<BudgetBreach>>>,
+}
+
+#[cfg(feature = "properties")]
+impl PropertyInterpolation {
+    pub(super) fn new(
+        property_map: Option<Rc<HashMap<String, String>>>,
+        syntax: PropertySyntax,
+        budget: Option<&Budget>,
+    ) -> Self {
+        let (max_expansion_depth, max_total_work) =
+            budget.map_or((usize::MAX, usize::MAX), |budget| {
+                (
+                    budget.max_property_expansion_depth,
+                    budget.max_total_property_interpolation_work,
+                )
+            });
+        Self {
+            property_map,
+            syntax,
+            max_expansion_depth,
+            max_total_work,
+            total_work: Rc::new(Cell::new(0)),
+            breach: Rc::new(RefCell::new(None)),
+        }
+    }
+
+    pub(super) fn property_map(&self) -> Option<&Rc<HashMap<String, String>>> {
+        self.property_map.as_ref()
+    }
+
+    pub(super) fn syntax(&self) -> PropertySyntax {
+        self.syntax
+    }
+
+    pub(super) fn max_expansion_depth(&self) -> usize {
+        self.max_expansion_depth
+    }
+
+    pub(super) fn max_total_work(&self) -> usize {
+        self.max_total_work
+    }
+
+    pub(super) fn total_work(&self) -> &Cell<usize> {
+        self.total_work.as_ref()
+    }
+
+    pub(super) fn record_breach(&self, breach: BudgetBreach) {
+        let mut recorded = self.breach.borrow_mut();
+        if recorded.is_none() {
+            *recorded = Some(breach);
+        }
+    }
+
+    pub(super) fn breach(&self) -> Option<BudgetBreach> {
+        self.breach.borrow().clone()
+    }
+}
 
 /// Attach both reference and defined locations to an error for alias replay scenarios.
 /// When both locations are known and different, creates an `AliasError` to report both.
@@ -273,12 +347,8 @@ pub(crate) trait Events<'de> {
         None // Default: borrowing not supported
     }
 
-    /// Return the property map used for variable interpolation, if configured.
     #[cfg(feature = "properties")]
-    fn property_map(&self) -> Option<&Rc<HashMap<String, String>>>;
-
-    #[cfg(feature = "properties")]
-    fn property_syntax(&self) -> PropertySyntax;
+    fn property_interpolation(&self) -> &PropertyInterpolation;
 }
 
 #[cold]
@@ -309,10 +379,7 @@ pub(super) struct ReplayEvents<'a> {
     ref_override: Option<Location>,
 
     #[cfg(feature = "properties")]
-    property_map: Option<Rc<HashMap<String, String>>>,
-
-    #[cfg(feature = "properties")]
-    property_syntax: PropertySyntax,
+    property_interpolation: PropertyInterpolation,
 }
 
 impl<'a> ReplayEvents<'a> {
@@ -325,17 +392,14 @@ impl<'a> ReplayEvents<'a> {
     /// - Merge expansion and recorded key/value deserialization.
     pub(super) fn new(
         buf: Vec<Ev<'a>>,
-        #[cfg(feature = "properties")] property_map: Option<Rc<HashMap<String, String>>>,
-        #[cfg(feature = "properties")] property_syntax: PropertySyntax,
+        #[cfg(feature = "properties")] property_interpolation: PropertyInterpolation,
     ) -> Self {
         Self {
             buf,
             idx: 0,
             ref_override: None,
             #[cfg(feature = "properties")]
-            property_map,
-            #[cfg(feature = "properties")]
-            property_syntax,
+            property_interpolation,
         }
     }
 
@@ -354,17 +418,14 @@ impl<'a> ReplayEvents<'a> {
     pub(super) fn with_reference(
         buf: Vec<Ev<'a>>,
         reference: Location,
-        #[cfg(feature = "properties")] property_map: Option<Rc<HashMap<String, String>>>,
-        #[cfg(feature = "properties")] property_syntax: PropertySyntax,
+        #[cfg(feature = "properties")] property_interpolation: PropertyInterpolation,
     ) -> Self {
         Self {
             buf,
             idx: 0,
             ref_override: Some(reference),
             #[cfg(feature = "properties")]
-            property_map,
-            #[cfg(feature = "properties")]
-            property_syntax,
+            property_interpolation,
         }
     }
 }
@@ -415,12 +476,7 @@ impl<'a> Events<'a> for ReplayEvents<'a> {
     }
 
     #[cfg(feature = "properties")]
-    fn property_map(&self) -> Option<&Rc<HashMap<String, String>>> {
-        self.property_map.as_ref()
-    }
-
-    #[cfg(feature = "properties")]
-    fn property_syntax(&self) -> PropertySyntax {
-        self.property_syntax
+    fn property_interpolation(&self) -> &PropertyInterpolation {
+        &self.property_interpolation
     }
 }

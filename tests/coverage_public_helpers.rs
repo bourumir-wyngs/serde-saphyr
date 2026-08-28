@@ -29,6 +29,8 @@ fn budget_deserialization_defaults_new_limits() {
     object.remove("max_buffered_comment_events");
     object.remove("simple_key_max_lookahead");
     object.remove("flow_nesting_limit");
+    object.remove("max_property_expansion_depth");
+    object.remove("max_total_property_interpolation_work");
 
     let restored: budget::Budget = serde_json::from_value(json).unwrap();
     assert_eq!(
@@ -52,6 +54,14 @@ fn budget_deserialization_defaults_new_limits() {
         default.simple_key_max_lookahead
     );
     assert_eq!(restored.flow_nesting_limit, default.flow_nesting_limit);
+    assert_eq!(
+        restored.max_property_expansion_depth,
+        default.max_property_expansion_depth
+    );
+    assert_eq!(
+        restored.max_total_property_interpolation_work,
+        default.max_total_property_interpolation_work
+    );
 }
 
 #[cfg(feature = "serde_derived_types")]
