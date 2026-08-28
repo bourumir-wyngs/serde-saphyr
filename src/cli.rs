@@ -5,7 +5,7 @@ use std::rc::Rc;
 use serde_core::de::IgnoredAny;
 
 use crate::de::budget::{BudgetBreach, BudgetReport};
-use crate::{Error, from_str_with_options};
+use crate::{Budget, Error, from_str_with_options};
 
 fn usage() -> &'static str {
     "Usage: serde-saphyr [--plain] [--include <path>] <path>\n\
@@ -121,6 +121,22 @@ fn format_budget_breach(out: &mut String, breach: &BudgetBreach) {
     }
 }
 
+/// Check the input's filesystem-reported size against the reader byte limit.
+fn check_input_file_size(path: &str, budget: &Budget) -> std::io::Result<()> {
+    let Some(limit) = budget.max_reader_input_bytes else {
+        return Ok(());
+    };
+    let file_size = std::fs::metadata(path)?.len();
+    let limit_u64 = u64::try_from(limit).unwrap_or(u64::MAX);
+    if file_size > limit_u64 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::FileTooLarge,
+            format!("input size limit of {limit} bytes exceeded"),
+        ));
+    }
+    Ok(())
+}
+
 /// Run the serde-saphyr CLI with explicit arguments and output streams.
 pub fn run<I, S, Stdout, Stderr>(args: I, stdout: &mut Stdout, stderr: &mut Stderr) -> i32
 where
@@ -174,17 +190,6 @@ where
         return 1;
     };
 
-    let content = match std::fs::read_to_string(&path) {
-        Ok(content) => content,
-        Err(err) => {
-            let _ = writeln!(stderr, "Failed to read {path}: {err}");
-            return 2;
-        }
-    };
-
-    let buffered_output = Rc::new(RefCell::new(Vec::<String>::new()));
-    let budget_output = Rc::clone(&buffered_output);
-
     let mut options = if plain {
         crate::options! {
             // Plain mode uses serde-saphyr's own snippet rendering.
@@ -196,8 +201,27 @@ where
             // Otherwise, keep serde-saphyr snippets enabled.
             with_snippet: cfg!(feature = "miette") == false,
         }
+    };
+
+    if let Some(budget) = options.budget.as_ref()
+        && let Err(err) = check_input_file_size(&path, budget)
+    {
+        let _ = writeln!(stderr, "Failed to read {path}: {err}");
+        return 2;
     }
-    .with_budget_report(move |report| {
+
+    let content = match std::fs::read_to_string(&path) {
+        Ok(content) => content,
+        Err(err) => {
+            let _ = writeln!(stderr, "Failed to read {path}: {err}");
+            return 2;
+        }
+    };
+
+    let buffered_output = Rc::new(RefCell::new(Vec::<String>::new()));
+    let budget_output = Rc::clone(&buffered_output);
+
+    options = options.with_budget_report(move |report| {
         let formatted = format_budget_report(&report);
         budget_output
             .borrow_mut()
@@ -247,6 +271,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write as _;
 
     fn report_with_breach(breached: BudgetBreach) -> BudgetReport {
         BudgetReport {
@@ -385,6 +410,27 @@ mod tests {
             assert!(formatted.contains(expected_type), "{formatted}");
             assert!(formatted.contains(expected_value), "{formatted}");
         }
+    }
+
+    #[test]
+    fn input_file_size_check_uses_reader_budget_limit() {
+        let mut file = tempfile::NamedTempFile::new().expect("create temp file");
+        write!(file, "1234").expect("write temp file");
+        let mut budget = Budget {
+            max_reader_input_bytes: Some(4),
+            ..Budget::default()
+        };
+        check_input_file_size(file.path().to_str().unwrap(), &budget)
+            .expect("a file at the limit should be accepted");
+
+        budget.max_reader_input_bytes = Some(3);
+        let error = check_input_file_size(file.path().to_str().unwrap(), &budget)
+            .expect_err("a file above the limit should be rejected");
+        assert_eq!(error.kind(), std::io::ErrorKind::FileTooLarge);
+
+        budget.max_reader_input_bytes = None;
+        check_input_file_size(file.path().to_str().unwrap(), &budget)
+            .expect("a disabled reader limit should accept the file");
     }
 
     #[cfg(feature = "serde_derived_types")]
