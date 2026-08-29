@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 use crate::long_strings::{NAME_FOLD_STR, NAME_LIT_STR};
-use crate::tag::{YAML_TAG_NAMESPACE, simple_enum_variant_name};
+use crate::tag::{YAML_TAG_NAMESPACE, simple_enum_variant_name, yaml_core_type_tag_name};
 
 use super::options::{CommentPosition, SerializerOptions};
 use super::quoting::{
@@ -76,6 +76,8 @@ const MAX_ANCHOR_NAME_BYTES: usize = 256;
 struct PendingTag {
     resolved: String,
     emitted: String,
+    /// Whether this tag has already replaced one external enum wrapper.
+    variant_selector_claimed: bool,
 }
 
 #[inline]
@@ -924,6 +926,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
                 self.state.pending_tag = Some(PendingTag {
                     resolved: resolved.to_owned(),
                     emitted,
+                    variant_selector_claimed: false,
                 });
                 Ok(())
             }
@@ -939,14 +942,29 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
 
     /// Whether the tag staged for the next node is a tag that Serde's enum
     /// deserializer interprets as `variant`.
+    ///
+    /// A YAML core type tag whose normalized name equals the variant is
+    /// ambiguous so wrong.
     #[inline]
-    fn pending_tag_selects_variant(&self, variant: &str) -> bool {
-        self.state
-            .pending_tag
-            .as_ref()
-            .map(|tag| tag.resolved.as_str())
-            .and_then(simple_enum_variant_name)
-            == Some(variant)
+    fn pending_tag_selects_variant(&mut self, variant: &str) -> Result<bool> {
+        let Some(tag) = self.state.pending_tag.as_mut() else {
+            return Ok(false);
+        };
+        let resolved = tag.resolved.as_str();
+
+        if yaml_core_type_tag_name(resolved) == Some(variant) {
+            return Err(Error::CoreTypeTagAsEnumVariant {
+                tag: resolved.to_owned(),
+                variant: variant.to_owned(),
+            });
+        }
+
+        if simple_enum_variant_name(resolved) != Some(variant) || tag.variant_selector_claimed {
+            return Ok(false);
+        }
+
+        tag.variant_selector_claimed = true;
+        Ok(true)
     }
 
     /// Serialize a tagged scalar of the form `!!Type value` using plain or quoted style for
@@ -1626,7 +1644,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         // `!Variant payload` already carries the same variant selection as
         // Serde's usual `{Variant: payload}` representation. Keep the tag
         // staged for the payload and omit the redundant external wrapper.
-        if self.pending_tag_selects_variant(variant) {
+        if self.pending_tag_selects_variant(variant)? {
             return value.serialize(self);
         }
 
@@ -1836,7 +1854,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         variant: &'static str,
         len: usize,
     ) -> Result<Self::SerializeTupleVariant> {
-        if self.pending_tag_selects_variant(variant) {
+        if self.pending_tag_selects_variant(variant)? {
             return self.serialize_seq(Some(len));
         }
 
@@ -2009,7 +2027,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         variant: &'static str,
         len: usize,
     ) -> Result<Self::SerializeStructVariant> {
-        if self.pending_tag_selects_variant(variant) {
+        if self.pending_tag_selects_variant(variant)? {
             return Ok(StructVariantSer::payload(self.serialize_map(Some(len))?));
         }
 

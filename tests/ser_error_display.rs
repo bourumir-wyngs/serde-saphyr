@@ -73,6 +73,19 @@ mod ser_error_tests {
     }
 
     #[test]
+    fn display_core_type_tag_as_enum_variant() {
+        let e = Error::CoreTypeTagAsEnumVariant {
+            tag: "tag:yaml.org,2002:int".into(),
+            variant: "int".into(),
+        };
+        assert_eq!(
+            e.to_string(),
+            "cannot use YAML core type tag \"tag:yaml.org,2002:int\" to select enum variant \"int\""
+        );
+        assert!(e.source().is_none());
+    }
+
+    #[test]
     fn source_delegates() {
         let fmt_err = Error::Format {
             error: std::fmt::Error,

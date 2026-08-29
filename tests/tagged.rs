@@ -491,6 +491,83 @@ fn unrelated_tag_keeps_the_external_enum_wrapper() {
 }
 
 #[test]
+fn core_type_tags_cannot_replace_non_unit_enum_wrappers() {
+    #[derive(Debug, Deserialize, PartialEq, Serialize)]
+    enum Value {
+        #[serde(rename = "map")]
+        Map { answer: i32 },
+        #[serde(rename = "seq")]
+        Seq(i32, bool),
+        #[serde(rename = "int")]
+        Int(i32),
+        #[serde(rename = "str")]
+        Str(String),
+    }
+
+    for (value, tag, variant) in [
+        (Value::Map { answer: 7 }, "tag:yaml.org,2002:map", "map"),
+        (Value::Seq(7, true), "tag:yaml.org,2002:seq", "seq"),
+        (Value::Int(7), "tag:yaml.org,2002:int", "int"),
+        (
+            Value::Str("value".to_owned()),
+            "tag:yaml.org,2002:str",
+            "str",
+        ),
+    ] {
+        let error = to_string(&Tagged(value, Some(tag.to_owned()))).unwrap_err();
+        assert!(
+            matches!(
+                error,
+                SerializeError::CoreTypeTagAsEnumVariant {
+                    tag: error_tag,
+                    variant: error_variant,
+                } if error_tag == tag && error_variant == variant
+            ),
+            "tag: {tag}"
+        );
+    }
+}
+
+#[test]
+fn local_map_tag_can_select_enum_variant() {
+    #[derive(Debug, Deserialize, PartialEq, Serialize)]
+    enum Value {
+        #[serde(rename = "map")]
+        Map(BTreeMap<String, i32>),
+    }
+
+    let value = Tagged(
+        Value::Map(BTreeMap::from([("answer".to_owned(), 7)])),
+        Some("!map".to_owned()),
+    );
+    let yaml = to_string(&value).unwrap();
+
+    assert_eq!(yaml, "!map\nanswer: 7\n");
+    assert_eq!(from_str::<Tagged<Value>>(&yaml).unwrap(), value);
+}
+
+#[test]
+fn same_tag_selects_only_one_nested_newtype_variant() {
+    #[derive(Debug, Deserialize, PartialEq, Serialize)]
+    enum Inner {
+        Value(i32),
+        #[serde(other)]
+        Other,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq, Serialize)]
+    enum Outer {
+        Value(Inner),
+    }
+
+    let value = Tagged(Outer::Value(Inner::Value(7)), Some("!Value".to_owned()));
+    let yaml = to_string(&value).unwrap();
+
+    assert_eq!(yaml, "!Value\nValue: 7\n");
+    assert_eq!(from_str::<Tagged<Outer>>(&yaml).unwrap(), value);
+}
+
+#[test]
 fn root_tagged_byte_buf_remains_a_binary_scalar() {
     let value: Tagged<serde_bytes::ByteBuf> = from_str("!!binary AQI=").unwrap();
 

@@ -23,6 +23,8 @@ use std::{fmt, io};
 ///   is empty. Use `None` to represent the absence of a tag.
 /// - `InvalidGlobalTagUri` reports a non-local `Tagged` identity that is not an
 ///   absolute URI.
+/// - `CoreTypeTagAsEnumVariant` reports a YAML core type tag whose
+///   name collides with a non-unit enum variant.
 /// - `Unexpected` is used internally for invariant violations (e.g., around
 ///   anchors). It should not normally surface; if it does, please file a bug.
 #[non_exhaustive]
@@ -47,6 +49,9 @@ pub enum Error {
     EmptyResolvedTag,
     /// A non-local [`crate::Tagged`] identity is not a valid absolute URI.
     InvalidGlobalTagUri { tag: String },
+    /// A YAML core type tag cannot act as the discriminator for a same-named non-unit enum
+    /// variant.
+    CoreTypeTagAsEnumVariant { tag: String, variant: String },
 }
 
 impl serde_core::ser::Error for Error {
@@ -123,6 +128,10 @@ impl fmt::Display for Error {
                 f,
                 "cannot serialize resolved YAML tag {tag:?}: non-local tag identities must be absolute URIs"
             ),
+            Error::CoreTypeTagAsEnumVariant { tag, variant } => write!(
+                f,
+                "cannot use YAML core type tag {tag:?} to select enum variant {variant:?}"
+            ),
         }
     }
 }
@@ -137,7 +146,8 @@ impl std::error::Error for Error {
             | Error::InvalidOptions(_)
             | Error::SingleQuotedRequiresEscaping { .. }
             | Error::EmptyResolvedTag
-            | Error::InvalidGlobalTagUri { .. } => None,
+            | Error::InvalidGlobalTagUri { .. }
+            | Error::CoreTypeTagAsEnumVariant { .. } => None,
         }
     }
 }
