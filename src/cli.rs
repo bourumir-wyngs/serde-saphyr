@@ -199,6 +199,8 @@ where
         let _ = writeln!(stderr, "{}", usage());
         return 1;
     };
+    let safe_path =
+        crate::de_error::sanitize_message_text(std::borrow::Cow::Borrowed(path.as_str()));
 
     let mut options = if plain {
         crate::options! {
@@ -216,14 +218,14 @@ where
     if let Some(budget) = options.budget.as_ref()
         && let Err(err) = check_input_file_size(&path, budget)
     {
-        let _ = writeln!(stderr, "Failed to read {path}: {err}");
+        let _ = writeln!(stderr, "Failed to read {safe_path}: {err}");
         return 2;
     }
 
     let content = match std::fs::read_to_string(&path) {
         Ok(content) => content,
         Err(err) => {
-            let _ = writeln!(stderr, "Failed to read {path}: {err}");
+            let _ = writeln!(stderr, "Failed to read {safe_path}: {err}");
             return 2;
         }
     };
@@ -239,10 +241,15 @@ where
     });
 
     if let Some(path) = include_path {
+        let safe_include_path =
+            crate::de_error::sanitize_message_text(std::borrow::Cow::Borrowed(path.as_str()));
         options = match options.with_filesystem_root(&path) {
             Ok(options) => options,
             Err(err) => {
-                let _ = writeln!(stderr, "Failed to configure include root {path}: {err}");
+                let _ = writeln!(
+                    stderr,
+                    "Failed to configure include root {safe_include_path}: {err}"
+                );
                 return 2;
             }
         };
@@ -256,13 +263,13 @@ where
 
     if let Err(err) = result {
         if plain {
-            let _ = writeln!(stderr, "{path} invalid:\n{err}");
+            let _ = writeln!(stderr, "{safe_path} invalid:\n{err}");
             return 3;
         }
 
         #[cfg(feature = "miette")]
         {
-            let report = crate::miette::to_miette_report(&err, &content, &path);
+            let report = crate::miette::to_miette_report(&err, &content, safe_path.as_ref());
             // `Debug` formatting uses miette's graphical reporter.
             let _ = writeln!(stderr, "{report:?}");
             return 3;
@@ -270,7 +277,7 @@ where
 
         #[cfg(not(feature = "miette"))]
         {
-            let _ = writeln!(stderr, "{path} invalid:\n{err}");
+            let _ = writeln!(stderr, "{safe_path} invalid:\n{err}");
             return 3;
         }
     }

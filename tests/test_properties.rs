@@ -17,10 +17,7 @@ fn assert_redacted_message(message: &str, placeholder: &str, secret: &str) {
         message.contains(placeholder),
         "placeholder `{placeholder}` missing from: {message}"
     );
-    assert!(
-        !message.contains(secret),
-        "secret leaked in message"
-    );
+    assert!(!message.contains(secret), "secret leaked in message");
 }
 
 #[derive(Debug, Deserialize, PartialEq)]

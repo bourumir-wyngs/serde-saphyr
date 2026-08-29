@@ -107,6 +107,11 @@ impl<'a> ExternalMessage<'a> {
 ///
 /// Implementors should typically override *only a few* methods.
 /// Everything else should default to English (via the default method bodies).
+///
+/// [`Error::render`](crate::Error::render) and the other rendering entrypoints neutralize
+/// control characters in returned message and label text. Calling these low-level hooks
+/// directly bypasses that boundary; sanitize their output (for example with
+/// [`str::escape_debug`]) before writing it to a terminal or log.
 pub trait Localizer {
     // ---------------- Common tiny building blocks ----------------
 

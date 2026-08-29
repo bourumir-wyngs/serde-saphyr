@@ -2,7 +2,9 @@
 
 use serde::Deserialize;
 use serde::de::IgnoredAny;
-use serde_saphyr::{Error, from_reader_with_options, from_str, from_str_with_options, options};
+use serde_saphyr::{
+    Error, UserMessageFormatter, from_reader_with_options, from_str, from_str_with_options, options,
+};
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
@@ -116,10 +118,68 @@ fn strict_mode_reports_the_source_tag_spelling() {
             "%TAG !e! tag:example.com,2026:\n--- !e!unknown value",
             "!e!unknown",
         ),
+        ("!snowman%E2%98%83 value", "!snowman☃"),
     ] {
         let error = from_str_with_options::<IgnoredAny>(yaml, strict_options()).unwrap_err();
         assert_unsupported_tag(&error, expected);
     }
+}
+
+#[test]
+fn unsupported_tag_messages_escape_decoded_control_characters() {
+    for (yaml, decoded, escaped) in [
+        ("!evil%0Aforged value", "!evil\nforged", r"!evil\nforged"),
+        (
+            "!evil%1B%5B31m value",
+            "!evil\u{1b}[31m",
+            r"!evil\u{1b}[31m",
+        ),
+        ("!evil%C2%9B31m value", "!evil\u{9b}31m", r"!evil\u{9b}31m"),
+        (
+            "!evil%E2%80%A8forged value",
+            "!evil\u{2028}forged",
+            r"!evil\u{2028}forged",
+        ),
+        (
+            "!evil%E2%80%A9forged value",
+            "!evil\u{2029}forged",
+            r"!evil\u{2029}forged",
+        ),
+    ] {
+        let error = from_str_with_options::<IgnoredAny>(yaml, strict_options()).unwrap_err();
+
+        for rendered in [
+            error.to_string(),
+            error.render_with_formatter(&UserMessageFormatter),
+        ] {
+            assert!(rendered.contains(escaped), "{rendered:?}");
+            assert!(!rendered.contains(decoded), "{rendered:?}");
+        }
+
+        let error = error.without_snippet();
+        assert!(
+            matches!(error, Error::UnsupportedTag { tag, .. } if tag == decoded),
+            "unexpected error: {error:?}"
+        );
+
+        for rendered in [
+            error.to_string(),
+            error.render_with_formatter(&UserMessageFormatter),
+        ] {
+            assert!(rendered.contains(escaped), "{rendered:?}");
+            assert!(!rendered.contains(decoded), "{rendered:?}");
+            assert!(
+                !rendered
+                    .chars()
+                    .any(|ch| ch.is_control() || matches!(ch, '\u{2028}' | '\u{2029}')),
+                "{rendered:?}"
+            );
+        }
+    }
+
+    let error =
+        from_str_with_options::<IgnoredAny>("!evil%250A value", strict_options()).unwrap_err();
+    assert_unsupported_tag(&error, "!evil%0A");
 }
 
 #[derive(Debug, Deserialize)]

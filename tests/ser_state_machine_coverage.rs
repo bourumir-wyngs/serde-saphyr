@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex};
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 use serde_saphyr::{
-    ArcRecursion, ArcRecursive, CommentPosition, Commented, FoldStr, RcAnchor, to_fmt_writer,
-    to_string, to_string_multiple_with_options, to_string_with_options,
+    ArcRecursion, ArcRecursive, CommentPosition, Commented, FoldStr, RcAnchor, SingleQuoted,
+    Tagged, to_fmt_writer, to_string, to_string_multiple_with_options, to_string_with_options,
 };
 
 #[derive(Serialize)]
@@ -219,6 +219,35 @@ impl Serialize for SometimesFails {
             serializer.serialize_u8(1)
         }
     }
+}
+
+#[test]
+fn failed_tagged_value_does_not_tag_next_value_on_serializer_reuse() {
+    let mut output = String::new();
+    let mut serializer = serde_saphyr::Serializer::new(&mut output);
+    let rejected = Tagged(SingleQuoted("line\nbreak"), Some("!attacker".to_owned()));
+
+    let error = rejected.serialize(&mut serializer).unwrap_err();
+    assert!(matches!(
+        error,
+        serde_saphyr::SerializeError::SingleQuotedRequiresEscaping { ch: '\n' }
+    ));
+
+    "safe".serialize(&mut serializer).unwrap();
+    assert_eq!(output, "safe\n");
+}
+
+#[test]
+fn successful_tagged_value_does_not_tag_next_value_on_serializer_reuse() {
+    let mut output = String::new();
+    let mut serializer = serde_saphyr::Serializer::new(&mut output);
+
+    Tagged("first", Some("!expected".to_owned()))
+        .serialize(&mut serializer)
+        .unwrap();
+    "second".serialize(&mut serializer).unwrap();
+
+    assert_eq!(output, "!expected first\nsecond\n");
 }
 
 #[test]

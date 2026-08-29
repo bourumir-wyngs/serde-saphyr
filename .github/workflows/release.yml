@@ -58,6 +58,10 @@ jobs:
         run: |
           cargo test --offline --doc --all-features
 
+      - name: Run example tests (all features)
+        run: |
+          cargo test --offline --all-features --examples
+
       - name: Check formatting (crate)
         run: |
           cargo fmt --all -- --check

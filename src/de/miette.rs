@@ -2,6 +2,7 @@
 //!
 //! This module is feature-gated behind the `miette` feature.
 
+use std::borrow::Cow;
 use std::fmt;
 use std::sync::Arc;
 
@@ -9,7 +10,7 @@ use miette::{Diagnostic, LabeledSpan, NamedSource, SourceSpan};
 
 use crate::Error;
 use crate::Location;
-use crate::de_error::CroppedRegion;
+use crate::de_error::{CroppedRegion, render_message_text, sanitize_message_text};
 use crate::de_snippet::sanitize_terminal_snippet_preserve_len;
 use crate::{MessageFormatter, RenderOptions};
 #[cfg(any(feature = "garde", feature = "validator"))]
@@ -51,7 +52,8 @@ pub fn to_miette_report_with_formatter(
     formatter: &dyn MessageFormatter,
 ) -> miette::Report {
     let sanitized_source = sanitize_terminal_snippet_preserve_len(source.to_owned());
-    let src = Arc::new(NamedSource::new(file, sanitized_source));
+    let sanitized_file = sanitize_message_text(Cow::Borrowed(file)).into_owned();
+    let src = Arc::new(NamedSource::new(sanitized_file, sanitized_source));
     let diag = build_diagnostic(err, src, formatter, &[]);
     miette::Report::new(diag)
 }
@@ -204,7 +206,7 @@ fn build_diagnostic(
             );
 
             ErrorDiagnostic {
-                message: formatter.format_message(err).into_owned(),
+                message: render_message_text(formatter, err).into_owned(),
                 src: actual_src,
                 labels,
                 related: Vec::new(),
@@ -221,13 +223,13 @@ fn build_diagnostic(
 
             if let Some(span) = span {
                 labels.push(LabeledSpan::new_with_span(
-                    Some(formatter.format_message(other).into_owned()),
+                    Some(render_message_text(formatter, other).into_owned()),
                     span,
                 ));
             }
 
             ErrorDiagnostic {
-                message: formatter.format_message(other).into_owned(),
+                message: render_message_text(formatter, other).into_owned(),
                 src: actual_src,
                 labels,
                 related: Vec::new(),
@@ -275,7 +277,10 @@ fn build_validation_entry_diagnostic(
     let def_loc = locs.defined_location;
 
     let resolved_path = format_path_with_resolved_leaf(path_key, &resolved_leaf);
-    let base_msg = format!("validation error: {entry} for `{resolved_path}`");
+    let base_msg = sanitize_message_text(Cow::Owned(format!(
+        "validation error: {entry} for `{resolved_path}`"
+    )))
+    .into_owned();
 
     let (actual_src, labels) =
         build_dual_location_labels(src, ref_loc, def_loc, regions, "defined here");
@@ -380,10 +385,9 @@ fn get_source_and_span(
         padded_text.push_str(&region.text);
         let padded_text = sanitize_terminal_snippet_preserve_len(padded_text);
 
-        let synthetic_src = Arc::new(NamedSource::new(
-            region.source_name.as_str(),
-            padded_text.clone(),
-        ));
+        let source_name =
+            sanitize_message_text(Cow::Borrowed(region.source_name.as_str())).into_owned();
+        let synthetic_src = Arc::new(NamedSource::new(source_name, padded_text.clone()));
 
         let mut byte_off = 0;
         let mut found = false;
@@ -494,6 +498,44 @@ fn to_source_span(src: &NamedSource<String>, location: &Location) -> Option<Sour
 #[cfg(all(test, feature = "miette"))]
 mod tests {
     use super::*;
+
+    #[cfg(any(feature = "garde", feature = "validator"))]
+    #[test]
+    fn validation_message_fields_are_sanitized() {
+        let path = PathKey::empty().join("field\n\u{1b}");
+        let error = Error::ValidationError {
+            source: crate::de_error::ValidationSource::Validator,
+            issues: vec![
+                crate::de_error::ValidationIssue::new(path, "bad")
+                    .with_message("invalid\nvalue\u{1b}]0;owned\u{7}"),
+            ],
+            locations: PathMap::new(),
+        };
+        let src: Arc<NamedSource<String>> =
+            Arc::new(NamedSource::new("input.yaml", "field: bad\n".to_owned()));
+
+        let diagnostic = build_diagnostic(&error, src, RenderOptions::default().formatter, &[]);
+        assert_eq!(diagnostic.related.len(), 1);
+        let message = &diagnostic.related[0].message;
+        assert!(
+            message.contains(r"invalid\nvalue\u{1b}]0;owned\u{7}"),
+            "{message:?}"
+        );
+        assert!(message.contains(r"field\n\u{1b}"), "{message:?}");
+        assert!(!message.contains("invalid\nvalue\u{1b}"), "{message:?}");
+    }
+
+    #[test]
+    fn cropped_region_source_names_are_sanitized() {
+        let src: Arc<NamedSource<String>> =
+            Arc::new(NamedSource::new("input.yaml", "bad\n".to_owned()));
+        let location = Location::new(1, 1);
+        let region =
+            CroppedRegion::new("bad\n", "source\n\u{1b}]0;owned\u{7}.yaml", 1, 1, location);
+
+        let (selected, _) = get_source_and_span(&src, &location, &[region]);
+        assert_eq!(selected.name(), r"source\n\u{1b}]0;owned\u{7}.yaml");
+    }
 
     #[test]
     fn get_source_and_span_prefers_region_with_matching_source_id() {

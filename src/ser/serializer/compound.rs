@@ -389,8 +389,7 @@ impl<W: Write> SpecialTupleSer<'_, '_, W> {
                 }
                 1 => {
                     let tag = self.resolved_tag.take().unwrap_or_default();
-                    self.ser.stage_resolved_tag(&tag)?;
-                    value.serialize(&mut *self.ser)?;
+                    self.ser.serialize_tagged_value(&tag, value)?;
                 }
                 _ => return Err(Error::unexpected("unexpected field in __yaml_tagged")),
             },

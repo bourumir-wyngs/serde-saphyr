@@ -66,6 +66,10 @@ jobs:
         run: |
           cargo test --locked --offline --doc --all-features
 
+      - name: Run example tests (all features)
+        run: |
+          cargo test --locked --offline --all-features --examples
+
       - name: Run tests (default)
         run: |        
           cargo test --locked --offline

@@ -73,6 +73,7 @@ const MAX_ANCHOR_NAME_BYTES: usize = 256;
 /// Equality and anchor compatibility use the resolved identity. `emitted` is
 /// only a presentation choice, retained so existing `!!binary` and tagged-enum
 /// output stays compact when those features stage the tag first.
+#[derive(Clone)]
 struct PendingTag {
     resolved: String,
     emitted: String,
@@ -909,6 +910,23 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
             });
         }
         self.stage_tag_with_token(resolved, emitted)
+    }
+
+    /// Stage `resolved` for `value`, restoring the caller's pending tag if the
+    /// wrapped serialization fails before consuming it.
+    fn serialize_tagged_value<T: ?Sized + Serialize>(
+        &mut self,
+        resolved: &str,
+        value: &T,
+    ) -> Result<()> {
+        let previous = self.state.pending_tag.clone();
+        let result = self
+            .stage_resolved_tag(resolved)
+            .and_then(|()| value.serialize(&mut *self));
+        if result.is_err() {
+            self.state.pending_tag = previous;
+        }
+        result
     }
 
     /// Stage a tag with a preferred spelling used by built-in serializer

@@ -97,7 +97,52 @@ pub trait MessageFormatter {
     ///
     /// The returned string should NOT include location suffixes like
     /// `"at line X, column Y"`; those are added by the renderer.
+    ///
+    /// Rendering entrypoints such as [`Error::render`] neutralize control characters in
+    /// this text before composing their own layout. Implementations should therefore not
+    /// use control characters, including line breaks, for message layout.
+    ///
+    /// Calling this low-level method directly bypasses that rendering boundary. Before
+    /// writing its result to a terminal or log, sanitize it with
+    /// [`str::escape_debug`] or an equivalent encoding.
     fn format_message<'a>(&self, err: &'a Error) -> Cow<'a, str>;
+}
+
+/// Convert control characters in semantic diagnostic text to inert debug escapes.
+///
+/// Renderer-owned layout is added after this boundary and is therefore unaffected.
+/// Ordinary text stays borrowed and is not allocated.
+pub(crate) fn sanitize_message_text(text: Cow<'_, str>) -> Cow<'_, str> {
+    let Some(first_unsafe) = text
+        .char_indices()
+        .find_map(|(offset, ch)| message_char_needs_escape(ch).then_some(offset))
+    else {
+        return text;
+    };
+
+    let mut sanitized = String::with_capacity(text.len());
+    sanitized.push_str(&text[..first_unsafe]);
+    for ch in text[first_unsafe..].chars() {
+        if message_char_needs_escape(ch) {
+            sanitized.extend(ch.escape_debug());
+        } else {
+            sanitized.push(ch);
+        }
+    }
+    Cow::Owned(sanitized)
+}
+
+#[inline]
+fn message_char_needs_escape(ch: char) -> bool {
+    ch.is_control() || matches!(ch, '\u{2028}' | '\u{2029}')
+}
+
+#[inline]
+pub(crate) fn render_message_text<'a>(
+    formatter: &dyn MessageFormatter,
+    err: &'a Error,
+) -> Cow<'a, str> {
+    sanitize_message_text(formatter.format_message(err))
 }
 
 /// User-facing message formatter.
@@ -1656,7 +1701,7 @@ fn fmt_error_plain_with_formatter(
 ) -> fmt::Result {
     let err = err.without_snippet();
 
-    let msg = formatter.format_message(err);
+    let msg = render_message_text(formatter, err);
 
     // Validation errors embed per-issue locations in their formatted message (potentially
     // multiple distinct locations). Do not attach a single top-level location suffix here,
@@ -1718,7 +1763,7 @@ fn writeln_anchor_intro(
     def_loc: Location,
     def_region: &CroppedRegion,
 ) -> fmt::Result {
-    let line = l10n.value_comes_from_the_anchor(def_loc);
+    let line = sanitize_message_text(Cow::Owned(l10n.value_comes_from_the_anchor(def_loc)));
     let Some(prefix) = snippet_window_frame_prefix_offset(
         def_region.text.as_str(),
         def_region.start_line,
@@ -1745,7 +1790,7 @@ fn fmt_error_rendered(
     match err {
         #[cfg(any(feature = "garde", feature = "validator"))]
         Error::ValidationErrors { errors, .. } => {
-            let msg = options.formatter.format_message(err);
+            let msg = render_message_text(options.formatter, err);
             if !msg.is_empty() {
                 writeln!(f, "{msg}")?;
             }
@@ -1796,7 +1841,7 @@ fn fmt_error_rendered(
             }
             #[cfg(any(feature = "garde", feature = "validator"))]
             if let Error::ValidationErrors { errors, .. } = error.as_ref() {
-                let msg = options.formatter.format_message(error);
+                let msg = render_message_text(options.formatter, error);
                 if !msg.is_empty() {
                     writeln!(f, "{msg}")?;
                 }
@@ -1840,7 +1885,7 @@ fn fmt_error_rendered(
                     && locs.reference_location != locs.defined_location
             });
 
-            let mut msg = options.formatter.format_message(error);
+            let mut msg = render_message_text(options.formatter, error);
 
             // Renderer-level de-duplication for AliasError:
             // when we are about to show a secondary “defined here” window, drop the
@@ -1848,8 +1893,10 @@ fn fmt_error_rendered(
             if dual_locations.is_some()
                 && let Error::AliasError { locations, .. } = error.as_ref()
             {
-                let suffix = l10n.alias_defined_at(locations.defined_location);
-                if let Some(stripped) = msg.as_ref().strip_suffix(&suffix) {
+                let suffix = sanitize_message_text(Cow::Owned(
+                    l10n.alias_defined_at(locations.defined_location),
+                ));
+                if let Some(stripped) = msg.as_ref().strip_suffix(suffix.as_ref()) {
                     msg = Cow::Owned(stripped.to_string());
                 }
             }
@@ -1962,7 +2009,9 @@ fn fmt_validation_error_with_snippets_offset(
 
         let resolved_path = format_path_with_resolved_leaf(&issue.path, &resolved_leaf);
         let entry = issue.display_entry_overridden(l10n, (*source).clone());
-        let base_msg = l10n.validation_base_message(&entry, &resolved_path);
+        let base_msg = sanitize_message_text(Cow::Owned(
+            l10n.validation_base_message(&entry, &resolved_path),
+        ));
 
         let mut rendered_regions = Vec::new();
 
@@ -2036,7 +2085,9 @@ fn fmt_validation_error_with_snippets_offset(
                         crop_radius,
                     )?;
                 } else {
-                    writeln!(f, "{}", l10n.value_comes_from_the_anchor(d))?;
+                    let anchor_intro =
+                        sanitize_message_text(Cow::Owned(l10n.value_comes_from_the_anchor(d)));
+                    writeln!(f, "{anchor_intro}")?;
                     fmt_with_location(f, l10n, l10n.defined_window().as_ref(), &d)?;
                 }
             }
@@ -2095,7 +2146,7 @@ fn fmt_error_with_snippets_offset(
         );
     }
 
-    let msg = formatter.format_message(err);
+    let msg = render_message_text(formatter, err);
     let Some(location) = err.location() else {
         return write!(f, "{msg}");
     };
@@ -2278,7 +2329,7 @@ fn fmt_with_location(
     msg: &str,
     location: &Location,
 ) -> fmt::Result {
-    let out = l10n.attach_location(Cow::Borrowed(msg), *location);
+    let out = sanitize_message_text(l10n.attach_location(Cow::Borrowed(msg), *location));
     write!(f, "{out}")
 }
 
@@ -2304,6 +2355,87 @@ pub(crate) fn budget_error(breach: BudgetBreach) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn message_sanitizer_is_selective_and_idempotent() {
+        let clean = Cow::Borrowed("quotes: '\"', slash: \\, Unicode: ☃");
+        let sanitized = sanitize_message_text(clean.clone());
+        assert!(matches!(sanitized, Cow::Borrowed(_)));
+        assert_eq!(sanitized, clean);
+
+        let unsafe_text = Cow::Borrowed(
+            "nul:\0 tab:\t line:\n esc:\u{1b} del:\u{7f} c1:\u{9b} ls:\u{2028} ps:\u{2029}",
+        );
+        let sanitized = sanitize_message_text(unsafe_text);
+        assert_eq!(
+            sanitized,
+            r"nul:\0 tab:\t line:\n esc:\u{1b} del:\u{7f} c1:\u{9b} ls:\u{2028} ps:\u{2029}"
+        );
+        assert_eq!(
+            sanitize_message_text(Cow::Owned(sanitized.clone().into_owned())),
+            sanitized
+        );
+    }
+
+    #[test]
+    fn formatter_newlines_are_semantic_text_not_renderer_layout() {
+        let error = Error::CyclicInclude {
+            id: "child.yaml".to_owned(),
+            stack: vec!["root.yaml".to_owned(), "parent.yaml".to_owned()],
+            location: Location::UNKNOWN,
+        };
+        let formatter = crate::message_formatters::DefaultMessageFormatter;
+
+        assert!(formatter.format_message(&error).contains('\n'));
+        let rendered = error.render_with_formatter(&formatter);
+        assert_eq!(
+            rendered,
+            r"cyclic include detected: child.yaml\nwhile processing include from root.yaml -> parent.yaml"
+        );
+        assert!(!rendered.contains('\n'));
+    }
+
+    #[cfg(any(feature = "garde", feature = "validator"))]
+    #[test]
+    fn validation_messages_cross_the_same_sanitization_boundary() {
+        let path = PathKey::empty().join("field\n\u{1b}");
+        let mut locations = PathMap::new();
+        locations.insert(
+            path.clone(),
+            Locations {
+                reference_location: Location::new(1, 1),
+                defined_location: Location::new(1, 1),
+            },
+        );
+        let error = Error::ValidationError {
+            source: ValidationSource::Validator,
+            issues: vec![
+                ValidationIssue::new(path, "bad\u{9b}")
+                    .with_message("invalid\nvalue\u{1b}]0;owned\u{7}"),
+            ],
+            locations,
+        };
+
+        let plain = error.render();
+        assert!(
+            plain.contains(r"invalid\nvalue\u{1b}]0;owned\u{7}"),
+            "{plain:?}"
+        );
+        assert!(plain.contains(r"field\n\u{1b}"), "{plain:?}");
+        assert!(!plain.contains("invalid\nvalue\u{1b}"), "{plain:?}");
+
+        let snippet = error.with_snippet("field: bad\n", 20).render();
+        assert!(
+            snippet.contains(r"invalid\nvalue\u{1b}]0;owned\u{7}"),
+            "{snippet:?}"
+        );
+        assert!(snippet.contains(r"field\n\u{1b}"), "{snippet:?}");
+        assert!(
+            snippet.contains('\n'),
+            "renderer-owned snippet layout should retain newlines: {snippet:?}"
+        );
+        assert!(!snippet.contains("invalid\nvalue\u{1b}"), "{snippet:?}");
+    }
 
     #[test]
     fn message_only_input_io_scan_error_uses_portable_fallback() {

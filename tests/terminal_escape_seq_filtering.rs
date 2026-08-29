@@ -4,8 +4,14 @@
 //! These tests verify that control characters (ASCII C0, DEL, UTF-8 C1) are properly
 //! sanitized in error output to prevent terminal escape sequence injection.
 
+use std::borrow::Cow;
+use std::collections::BTreeMap;
+
 use serde::Deserialize;
-use serde_saphyr::from_str;
+use serde_saphyr::{
+    CroppedRegion, Error, Localizer, Location, MessageFormatter, SnippetMode, UserMessageFormatter,
+    from_str,
+};
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
@@ -13,9 +19,174 @@ struct TestStruct {
     field: i32, // Expect integer to trigger type errors
 }
 
+#[derive(Debug, Deserialize)]
+enum TestEnum {
+    Known,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[allow(dead_code)]
+struct KnownFields {
+    known: u32,
+}
+
+struct InjectingLocalizer;
+
+impl Localizer for InjectingLocalizer {
+    fn attach_location<'a>(&self, base: Cow<'a, str>, _loc: Location) -> Cow<'a, str> {
+        Cow::Owned(format!("{base} localizer\n\u{1b}]0;owned\u{7}"))
+    }
+
+    fn snippet_location_prefix(&self, _loc: Location) -> String {
+        "prefix\n\u{1b}[31m".to_owned()
+    }
+}
+
+struct InjectingFormatter;
+
+impl MessageFormatter for InjectingFormatter {
+    fn localizer(&self) -> &dyn Localizer {
+        &InjectingLocalizer
+    }
+
+    fn format_message<'a>(&self, _err: &'a Error) -> Cow<'a, str> {
+        Cow::Borrowed("custom\nmessage\u{1b}[31m")
+    }
+}
+
 /// Helper to extract the error message as a string for inspection.
 fn error_to_string(err: &serde_saphyr::Error) -> String {
     format!("{}", err)
+}
+
+#[test]
+fn yaml_derived_message_fields_are_escaped_at_the_render_boundary() {
+    let raw_variant = "bad\u{1b}]0;owned\u{7}";
+    let escaped_variant = r"bad\u{1b}]0;owned\u{7}";
+    let error = from_str::<TestEnum>(r#""bad\e]0;owned\a""#).unwrap_err();
+
+    assert!(
+        matches!(
+            error.without_snippet(),
+            Error::SerdeUnknownVariant { variant, .. } if variant == raw_variant
+        ),
+        "the structured error must retain the decoded identifier: {error:?}"
+    );
+
+    for rendered in [
+        error.to_string(),
+        error.without_snippet().to_string(),
+        error.render_with_formatter(&UserMessageFormatter),
+    ] {
+        assert!(rendered.contains(escaped_variant), "{rendered:?}");
+        assert!(!rendered.contains(raw_variant), "{rendered:?}");
+    }
+}
+
+#[test]
+fn unknown_fields_and_duplicate_keys_use_the_same_render_boundary() {
+    let raw_field = "forged\nrecord\u{1b}";
+    let escaped_field = r"forged\nrecord\u{1b}";
+    let field_error = from_str::<KnownFields>("known: 1\n\"forged\\nrecord\\e\": 2\n").unwrap_err();
+    assert!(
+        matches!(
+            field_error.without_snippet(),
+            Error::SerdeUnknownField { field, .. } if field == raw_field
+        ),
+        "the structured error must retain the decoded field: {field_error:?}"
+    );
+
+    let raw_key = "duplicate\u{1b}";
+    let escaped_key = r"duplicate\u{1b}";
+    let duplicate_error =
+        from_str::<BTreeMap<String, u32>>("\"duplicate\\e\": 1\n\"duplicate\\e\": 2\n")
+            .unwrap_err();
+    assert!(
+        matches!(
+            duplicate_error.without_snippet(),
+            Error::DuplicateMappingKey { key: Some(key), .. } if key == raw_key
+        ),
+        "the structured error must retain the decoded key: {duplicate_error:?}"
+    );
+
+    for (error, raw, escaped) in [
+        (&field_error, raw_field, escaped_field),
+        (&duplicate_error, raw_key, escaped_key),
+    ] {
+        for rendered in [
+            error.to_string(),
+            error.without_snippet().to_string(),
+            error.render_with_formatter(&UserMessageFormatter),
+        ] {
+            assert!(rendered.contains(escaped), "{rendered:?}");
+            assert!(!rendered.contains(raw), "{rendered:?}");
+        }
+    }
+}
+
+#[test]
+fn custom_formatter_and_localizer_text_is_sanitized_before_layout() {
+    let error = from_str::<TestStruct>("field: nope\n").unwrap_err();
+
+    assert_eq!(
+        InjectingFormatter.format_message(error.without_snippet()),
+        "custom\nmessage\u{1b}[31m",
+        "direct formatter calls are intentionally below the rendering boundary"
+    );
+
+    let plain = error.render_with_options(serde_saphyr::render_options! {
+        formatter: &InjectingFormatter,
+        snippets: SnippetMode::Off,
+    });
+    assert_eq!(
+        plain,
+        r"custom\nmessage\u{1b}[31m localizer\n\u{1b}]0;owned\u{7}"
+    );
+
+    let snippet = error.render_with_formatter(&InjectingFormatter);
+    assert!(
+        snippet.contains(r"prefix\n\u{1b}[31m: custom\nmessage\u{1b}[31m"),
+        "{snippet:?}"
+    );
+    assert!(
+        snippet.contains('\n'),
+        "renderer-owned snippet layout should retain real newlines: {snippet:?}"
+    );
+    assert!(!snippet.contains("custom\nmessage\u{1b}"), "{snippet:?}");
+}
+
+#[test]
+fn public_snippet_source_names_are_sanitized_at_render_time() {
+    let source = "field: bad\n";
+    let location = from_str::<TestStruct>(source)
+        .unwrap_err()
+        .location()
+        .expect("type error should have a location");
+    let error = Error::WithSnippet {
+        regions: vec![CroppedRegion::new(
+            source,
+            "source\n\u{1b}]0;owned\u{7}.yaml",
+            1,
+            1,
+            location,
+        )],
+        crop_radius: 2,
+        error: Box::new(Error::Message {
+            msg: "bad value".to_owned(),
+            location,
+        }),
+    };
+
+    let rendered = error.render();
+    assert!(
+        rendered.contains(r"source\n\u{1b}]0;owned\u{7}.yaml"),
+        "{rendered:?}"
+    );
+    assert!(
+        !rendered.contains("source\n\u{1b}]0;owned\u{7}.yaml"),
+        "{rendered:?}"
+    );
 }
 
 #[test]
@@ -178,6 +349,30 @@ fn test_miette_graphical_report_filters_escapes_from_snippet_regions() {
         !report_output.contains('\x07'),
         "Miette graphical report should not contain BEL from OSC sequences: {report_output:?}"
     );
+}
+
+#[cfg(feature = "miette")]
+#[test]
+fn test_miette_filters_controls_from_message_fields() {
+    use serde_saphyr::miette::to_miette_report;
+
+    let raw_variant = "bad\u{1b}]0;owned\u{7}";
+    let escaped_variant = r"bad\u{1b}]0;owned\u{7}";
+    let yaml = r#""bad\e]0;owned\a""#;
+    let error = from_str::<TestEnum>(yaml).unwrap_err();
+    let raw_file = "test\n\u{1b}]0;owned\u{7}.yaml";
+    let escaped_file = r"test\n\u{1b}]0;owned\u{7}.yaml";
+    let report = to_miette_report(error.without_snippet(), yaml, raw_file);
+
+    let displayed = format!("{report}");
+    assert!(displayed.contains(escaped_variant), "{displayed:?}");
+    assert!(!displayed.contains(raw_variant), "{displayed:?}");
+
+    let rendered = format!("{report:?}");
+    for (raw, escaped) in [(raw_variant, escaped_variant), (raw_file, escaped_file)] {
+        assert!(rendered.contains(escaped), "{rendered:?}");
+        assert!(!rendered.contains(raw), "{rendered:?}");
+    }
 }
 
 #[test]

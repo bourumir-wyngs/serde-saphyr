@@ -350,6 +350,13 @@ fn main() {
 mod tests {
     use super::*;
 
+    #[derive(Debug, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    #[allow(dead_code)]
+    struct KnownCargo {
+        rum: bool,
+    }
+
     #[test]
     fn mismatched_flow_collection_uses_pirate_parser_message() {
         let error = serde_saphyr::from_str::<Vec<String>>("[sloop, schooner}")
@@ -370,5 +377,27 @@ mod tests {
             PirateFormatter.format_message(error.without_snippet()),
             "Ye've berthed her wrong!"
         );
+    }
+
+    #[test]
+    fn pirate_formatter_fallback_is_safe_at_the_render_boundary() {
+        let raw_field = "🍾\nof\u{1b}]0;rum!\u{7}";
+        let escaped_field = r"🍾\nof\u{1b}]0;rum!\u{7}";
+        let error = serde_saphyr::from_str::<KnownCargo>(
+            "rum: true\n\"🍾\\nof\\e]0;rum!\\a\": false\n",
+        )
+        .expect_err("unknown field should fail");
+
+        assert!(
+            matches!(
+                error.without_snippet(),
+                Error::SerdeUnknownField { field, .. } if field == raw_field
+            ),
+            "the structured error must retain the decoded field: {error:?}"
+        );
+
+        let rendered = error.render_with_formatter(&PirateFormatter);
+        assert!(rendered.contains(escaped_field), "{rendered:?}");
+        assert!(!rendered.contains(raw_field), "{rendered:?}");
     }
 }

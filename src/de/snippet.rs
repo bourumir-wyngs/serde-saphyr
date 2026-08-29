@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt;
 
 use annotate_snippets::{
@@ -5,6 +6,7 @@ use annotate_snippets::{
 };
 
 use crate::Location;
+use crate::de_error::sanitize_message_text;
 use crate::localizer::Localizer;
 
 /// Borrowed YAML source information used for snippet rendering.
@@ -657,12 +659,16 @@ impl<'a> Snippet<'a> {
         label: &str,
         location: &Location,
     ) -> fmt::Result {
+        let msg = sanitize_message_text(Cow::Borrowed(msg));
+        let label = sanitize_message_text(Cow::Borrowed(label));
+        let source_path = sanitize_message_text(Cow::Borrowed(self.source.path));
+
         if location == &Location::UNKNOWN {
             return write!(f, "{msg}");
         }
 
         let Ok(window) = resolve_render_window(self.source.text, location, self.mapping) else {
-            return fmt_with_location(f, l10n, msg, location);
+            return fmt_with_location(f, l10n, msg.as_ref(), location);
         };
 
         // Horizontal cropping (by character columns) for very long lines.
@@ -680,17 +686,17 @@ impl<'a> Snippet<'a> {
             window.local_end,
         );
 
-        let loc_prefix = l10n.snippet_location_prefix(*location);
+        let loc_prefix = sanitize_message_text(Cow::Owned(l10n.snippet_location_prefix(*location)));
 
         let report = &[level.primary_title(format!("{loc_prefix}: {msg}")).element(
             AnnotateSnippet::source(&window_text)
                 .line_start(window.rows.window_start_absolute_row)
-                .path(self.source.path)
+                .path(source_path.as_ref())
                 .fold(false)
                 .annotation(
                     AnnotationKind::Primary
                         .span(local_start..local_end)
-                        .label(label),
+                        .label(label.as_ref()),
                 ),
         )];
 
@@ -752,6 +758,8 @@ fn fmt_snippet_window_with_mapping_or_fallback(
     msg: &str,
     crop_radius: usize,
 ) -> fmt::Result {
+    let msg = sanitize_message_text(Cow::Borrowed(msg));
+
     if location == &Location::UNKNOWN {
         return Ok(());
     }
@@ -851,7 +859,7 @@ fn fmt_with_location(
     msg: &str,
     location: &Location,
 ) -> fmt::Result {
-    let out = l10n.attach_location(std::borrow::Cow::Borrowed(msg), *location);
+    let out = sanitize_message_text(l10n.attach_location(Cow::Borrowed(msg), *location));
     write!(f, "{out}")
 }
 
