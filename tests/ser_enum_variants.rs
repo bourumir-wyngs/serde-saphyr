@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_saphyr::{to_string, to_string_with_options};
 
 #[test]
@@ -51,6 +51,20 @@ fn struct_variant_serialized() {
         yaml.contains("y: 20") || yaml.contains("\"y\": 20"),
         "expected second field: {yaml}"
     );
+}
+
+#[test]
+fn empty_struct_variant_serializes_as_an_explicit_empty_map_and_round_trips() {
+    #[derive(Debug, Deserialize, PartialEq, Serialize)]
+    enum Event {
+        Empty {},
+    }
+
+    let value = Event::Empty {};
+    let yaml = to_string(&value).unwrap();
+
+    assert_eq!(yaml, "Empty:\n  {}\n");
+    assert_eq!(serde_saphyr::from_str::<Event>(&yaml).unwrap(), value);
 }
 
 #[test]

@@ -328,6 +328,89 @@ fn both_empty_map_access_implementations_reject_value_before_key() {
     }
 }
 
+#[derive(Debug)]
+struct KeyWithoutValue;
+
+impl<'de> Deserialize<'de> for KeyWithoutValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_map(KeyWithoutValueVisitor)
+    }
+}
+
+struct KeyWithoutValueVisitor;
+
+impl<'de> Visitor<'de> for KeyWithoutValueVisitor {
+    type Value = KeyWithoutValue;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a map visitor that leaves a key without consuming its value")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let key = map.next_key::<String>()?;
+        assert_eq!(key.as_deref(), Some("a"));
+        Ok(KeyWithoutValue)
+    }
+}
+
+#[derive(Debug)]
+struct FirstMapEntryOnly;
+
+impl<'de> Deserialize<'de> for FirstMapEntryOnly {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_map(FirstMapEntryOnlyVisitor)
+    }
+}
+
+struct FirstMapEntryOnlyVisitor;
+
+impl<'de> Visitor<'de> for FirstMapEntryOnlyVisitor {
+    type Value = FirstMapEntryOnly;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a map visitor that consumes only its first entry")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let entry = map.next_entry::<String, u8>()?;
+        assert_eq!(entry, Some(("a".to_owned(), 1)));
+        Ok(FirstMapEntryOnly)
+    }
+}
+
+#[test]
+fn map_visitors_cannot_leave_a_value_or_extra_entry_unconsumed() {
+    let key_without_value = serde_saphyr::from_str::<KeyWithoutValue>("{a: 1}").unwrap_err();
+    assert!(matches!(
+        key_without_value.without_snippet(),
+        Error::Unexpected {
+            expected: "mapping end",
+            ..
+        }
+    ));
+
+    let extra_entry = serde_saphyr::from_str::<FirstMapEntryOnly>("{a: 1, b: 2}").unwrap_err();
+    assert!(matches!(
+        extra_entry.without_snippet(),
+        Error::Unexpected {
+            expected: "mapping end",
+            ..
+        }
+    ));
+}
+
 #[derive(Debug, Deserialize, PartialEq)]
 enum EnumEdges {
     Unit,

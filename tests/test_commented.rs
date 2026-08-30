@@ -166,6 +166,15 @@ fn commented_deserialize_captures_inline_comment_and_keeps_value() {
 }
 
 #[test]
+fn commented_deserialize_from_reader_trims_owned_comment_text() {
+    let input = b"5 #   whatever   \n";
+    let value: Commented<i32> =
+        serde_saphyr::from_reader(std::io::Cursor::new(&input[..])).unwrap();
+
+    assert_eq!(value, Commented(5, "whatever".to_owned()));
+}
+
+#[test]
 fn emit_comments_false_disables_capture_for_string_and_reader_inputs() {
     let input = "# leading\n5 # trailing\n";
 

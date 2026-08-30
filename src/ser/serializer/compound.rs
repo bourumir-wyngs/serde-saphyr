@@ -757,6 +757,7 @@ enum StructVariantSerInner<'a, 'b, W: Write> {
     External {
         ser: &'a mut YamlSerializer<'b, W>,
         depth: usize,
+        fields_written: bool,
     },
     /// A YAML tag already selected the variant, so the fields are the root
     /// mapping payload rather than the value of another `Variant:` mapping.
@@ -766,7 +767,11 @@ enum StructVariantSerInner<'a, 'b, W: Write> {
 impl<'a, 'b, W: Write> StructVariantSer<'a, 'b, W> {
     pub(super) fn external(ser: &'a mut YamlSerializer<'b, W>, depth: usize) -> Self {
         Self {
-            inner: StructVariantSerInner::External { ser, depth },
+            inner: StructVariantSerInner::External {
+                ser,
+                depth,
+                fields_written: false,
+            },
         }
     }
 
@@ -787,7 +792,11 @@ impl<W: Write> SerializeStructVariant for StructVariantSer<'_, '_, W> {
         value: &T,
     ) -> Result<()> {
         match &mut self.inner {
-            StructVariantSerInner::External { ser, depth } => {
+            StructVariantSerInner::External {
+                ser,
+                depth,
+                fields_written,
+            } => {
                 let text = scalar_key_to_string(&key, ser.settings.yaml_12)?;
                 ser.write_indent(*depth)?;
                 ser.out.write_str(&text)?;
@@ -799,6 +808,9 @@ impl<W: Write> SerializeStructVariant for StructVariantSer<'_, '_, W> {
                 let prev_map_depth = ser.state.current_map_depth.replace(*depth);
                 let result = value.serialize(&mut **ser);
                 ser.state.current_map_depth = prev_map_depth;
+                if result.is_ok() {
+                    *fields_written = true;
+                }
                 result
             }
             StructVariantSerInner::Payload(map) => {
@@ -809,7 +821,18 @@ impl<W: Write> SerializeStructVariant for StructVariantSer<'_, '_, W> {
 
     fn end(self) -> Result<()> {
         match self.inner {
-            StructVariantSerInner::External { .. } => Ok(()),
+            StructVariantSerInner::External {
+                ser,
+                depth,
+                fields_written,
+            } => {
+                if !fields_written {
+                    ser.write_indent(depth)?;
+                    ser.out.write_str("{}")?;
+                    ser.newline()?;
+                }
+                Ok(())
+            }
             StructVariantSerInner::Payload(map) => SerializeStruct::end(map),
         }
     }

@@ -731,6 +731,174 @@ mod tests {
         }
     }
 
+    #[test]
+    fn default_resolver_messages_preserve_include_context_and_specific_cause() {
+        use crate::input_source::{IncludeResolveError, ResolveProblem};
+
+        let file_problems = [
+            (
+                ResolveProblem::ResolveFailed {
+                    spec: "child.yaml".to_owned(),
+                    base_dir: "/config".to_owned(),
+                    err: std::io::Error::new(std::io::ErrorKind::NotFound, "missing"),
+                },
+                "failed to resolve include 'child.yaml' from '/config': missing",
+            ),
+            (
+                ResolveProblem::TargetNotRegularFile {
+                    target: "/config/child.yaml".to_owned(),
+                },
+                "include target '/config/child.yaml' is not a regular file",
+            ),
+            (
+                ResolveProblem::TargetIsRootFile {
+                    spec: "root.yaml".to_owned(),
+                },
+                "include target 'root.yaml' resolves to the configured root file itself",
+            ),
+            (
+                ResolveProblem::ParentIdNotAbsoluteCanonical {
+                    parent_id: "relative/root.yaml".to_owned(),
+                },
+                "expected parent include id to be an absolute canonical path",
+            ),
+            (
+                ResolveProblem::ParentResolveFailed {
+                    parent_id: "/config/root.yaml".to_owned(),
+                    from_name: "root.yaml".to_owned(),
+                    err: std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+                },
+                "failed to resolve parent include source '/config/root.yaml' (from 'root.yaml'): denied",
+            ),
+            (
+                ResolveProblem::ParentNotRegularFile {
+                    parent: "/config".to_owned(),
+                },
+                "include parent '/config' is not a regular file",
+            ),
+            (
+                ResolveProblem::ParentHasNoDirectory {
+                    parent: "root.yaml".to_owned(),
+                },
+                "include parent 'root.yaml' does not have a parent directory",
+            ),
+            (
+                ResolveProblem::ResolvesOutsideRoot {
+                    spec: "../secret.yaml".to_owned(),
+                    root: "/config".to_owned(),
+                },
+                "include '../secret.yaml' resolves outside the configured root '/config'",
+            ),
+            (
+                ResolveProblem::TraversesSymlink {
+                    spec: "linked.yaml".to_owned(),
+                },
+                "include 'linked.yaml' traverses a symlink",
+            ),
+            (
+                ResolveProblem::AbsolutePathNotAllowed {
+                    spec: "/etc/secret.yaml".to_owned(),
+                },
+                "absolute include paths are not allowed: /etc/secret.yaml",
+            ),
+            (ResolveProblem::EmptyPath, "include path must not be empty"),
+            (
+                ResolveProblem::InvalidExtension {
+                    spec: "child.txt".to_owned(),
+                },
+                "include target 'child.txt' does not have a valid YAML extension",
+            ),
+            (
+                ResolveProblem::HiddenFile {
+                    spec: ".secret.yaml".to_owned(),
+                },
+                "include target '.secret.yaml' is a hidden file",
+            ),
+            (
+                ResolveProblem::EmptyFragment,
+                "include fragment must not be empty",
+            ),
+            (
+                ResolveProblem::FragmentContainsHash {
+                    spec: "child.yaml#one#two".to_owned(),
+                },
+                "include fragment must not contain '#': child.yaml#one#two",
+            ),
+            (
+                ResolveProblem::NonUtf8Path,
+                "include target resolves to a non-UTF-8 path",
+            ),
+        ];
+
+        for (problem, expected_cause) in file_problems {
+            let error = Error::ResolverError {
+                target: "child.yaml".to_owned(),
+                error: IncludeResolveError::FileInclude(Box::new(problem)),
+                stack: vec!["root.yaml".to_owned(), "parent.yaml".to_owned()],
+                location: loc(),
+            };
+            let message = DefaultMessageFormatter.format_message(&error);
+            assert!(
+                message.starts_with("failed to resolve include \"child.yaml\""),
+                "got: {message}"
+            );
+            assert!(
+                message.contains("while processing include from root.yaml -> parent.yaml"),
+                "got: {message}"
+            );
+            assert!(message.contains(expected_cause), "got: {message}");
+        }
+
+        let direct_causes = [
+            (
+                IncludeResolveError::Io(std::io::Error::other("reader failed")),
+                "reader failed",
+            ),
+            (
+                IncludeResolveError::Message("resolver refused".to_owned()),
+                "resolver refused",
+            ),
+            (
+                IncludeResolveError::SizeLimitExceeded(17, 16),
+                "include size 17 bytes exceeds remaining size limit 16 bytes",
+            ),
+        ];
+        for (cause, expected_cause) in direct_causes {
+            let error = Error::ResolverError {
+                target: "child.yaml".to_owned(),
+                error: cause,
+                stack: Vec::new(),
+                location: loc(),
+            };
+            let message = DefaultMessageFormatter.format_message(&error);
+            assert!(message.contains(expected_cause), "got: {message}");
+            assert!(!message.contains("while processing include from"));
+        }
+    }
+
+    #[test]
+    fn default_cyclic_include_message_only_adds_a_nonempty_stack() {
+        let without_stack = Error::CyclicInclude {
+            id: "root.yaml".to_owned(),
+            stack: Vec::new(),
+            location: loc(),
+        };
+        assert_eq!(
+            DefaultMessageFormatter.format_message(&without_stack),
+            "cyclic include detected: root.yaml"
+        );
+
+        let with_stack = Error::CyclicInclude {
+            id: "root.yaml".to_owned(),
+            stack: vec!["root.yaml".to_owned(), "child.yaml".to_owned()],
+            location: loc(),
+        };
+        assert_eq!(
+            DefaultMessageFormatter.format_message(&with_stack),
+            "cyclic include detected: root.yaml\nwhile processing include from root.yaml -> child.yaml"
+        );
+    }
+
     #[rstest::rstest]
     #[case::unset_with_message(
         Error::PropertyRequiredButUnset {

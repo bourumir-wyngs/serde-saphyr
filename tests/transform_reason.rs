@@ -155,4 +155,22 @@ mod tests {
             _ => panic!("Expected CannotBorrowTransformedString variant"),
         }
     }
+
+    #[cfg(feature = "properties")]
+    #[test]
+    fn borrowed_str_reports_variable_interpolation_as_the_transform_reason() {
+        let options = serde_saphyr::Options::default().with_properties(
+            std::collections::HashMap::from([("VALUE".to_owned(), "expanded".to_owned())]),
+        );
+
+        let err = serde_saphyr::from_str_with_options::<&str>("${VALUE}", options).unwrap_err();
+
+        assert!(matches!(
+            err.without_snippet(),
+            Error::CannotBorrowTransformedString {
+                reason: TransformReason::VariableInterpolation,
+                ..
+            }
+        ));
+    }
 }
