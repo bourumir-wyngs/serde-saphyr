@@ -383,10 +383,9 @@ mod tests {
     fn pirate_formatter_fallback_is_safe_at_the_render_boundary() {
         let raw_field = "🍾\nof\u{1b}]0;rum!\u{7}";
         let escaped_field = r"🍾\nof\u{1b}]0;rum!\u{7}";
-        let error = serde_saphyr::from_str::<KnownCargo>(
-            "rum: true\n\"🍾\\nof\\e]0;rum!\\a\": false\n",
-        )
-        .expect_err("unknown field should fail");
+        let error =
+            serde_saphyr::from_str::<KnownCargo>("rum: true\n\"🍾\\nof\\e]0;rum!\\a\": false\n")
+                .expect_err("unknown field should fail");
 
         assert!(
             matches!(
