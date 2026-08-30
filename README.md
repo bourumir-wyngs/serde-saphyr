@@ -42,8 +42,8 @@ See [release history](https://github.com/bourumir-wyngs/serde-saphyr/releases) o
 - **Configurable budgets:** Enforce input limits to mitigate resource exhaustion (e.g., deeply nested structures or very large arrays); see [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
 - Precise error reporting with **snippet rendering**.
 - Optional **!include** support with a custom or default resolver (inclusion of either a complete document or the node referenced by a specified anchor).
+- **Tag support**. Wrapper [Tagged](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Tagged.html) captures and emits a node's resolved YAML tag. 
 - **Comment support**. Wrapper [Commented](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) both captures and emits comments.
-- **Tag support**. Wrapper [Tagged](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Tagged.html) captures and emits a node's resolved YAML tag.
 - **Optional property support**, with redaction (removal) of property values from later crate-generated diagnostics.
 - **Serializer supports emitting anchors** (Rc, Arc, Weak) if they are properly wrapped (see below).
 - **Declarative validation with optional [`validator`](https://crates.io/crates/validator) ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/validator_validate.rs))** or **[`garde`](https://crates.io/crates/garde)** ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/garde_validate.rs)).
@@ -518,8 +518,7 @@ mapping key.
 
 The [`Tagged<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Tagged.html)
 wrapper stores a value and the resolved YAML tag attached to its node. The tag is represented as an
-`Option<String>`: `Some(tag)` contains an explicit tag, while `None` means that the node had no
-explicit tag. An empty string is not a valid tag value; use `None` instead.
+`Option<String>`. An empty string is not a valid tag value; use `None` instead.
 
 Tag handles are resolved while parsing. For example, `!!str` becomes
 `tag:yaml.org,2002:str`, while the local tag `!nanoseconds` remains `!nanoseconds`. Given:
