@@ -16,13 +16,13 @@
 [![crates.io](https://img.shields.io/crates/v/serde-saphyr.svg)](https://crates.io/crates/serde-saphyr)
 [![crates.io](https://img.shields.io/crates/d/serde-saphyr.svg)](https://crates.io/crates/serde-saphyr)
 
-**serde-saphyr** is a strongly typed YAML deserializer built on top of [`granit-parser`](https://crates.io/crates/granit-parser). 
+**serde-saphyr** is a strongly typed YAML deserializer built on top of [`granit-parser`](https://crates.io/crates/granit-parser).
 
-The parser is fuzz-tested and designed not to panic on malformed YAML. This does not cover out-of-memory conditions, 
-panics in user-provided callbacks and cases the like. The library build is configured to deny `unsafe` code. This does
-not extend to transitive dependencies. 
+The parser is fuzz-tested and designed not to panic on malformed YAML. This guarantee does not cover out-of-memory conditions,
+panics in user-provided callbacks, or similar cases. The library build is configured to deny `unsafe` code. This does
+not extend to transitive dependencies.
 
-The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.” Try it online as a WebAssembly application [here](https://verdanta.tech/yva/). 
+The crate deserializes YAML *directly into your Rust types* without constructing an intermediate tree of “abstract values.” Try it online as a WebAssembly application [here](https://verdanta.tech/yva/).
 
 See [release history](https://github.com/bourumir-wyngs/serde-saphyr/releases) on GitHub.
 
@@ -33,16 +33,15 @@ See [release history](https://github.com/bourumir-wyngs/serde-saphyr/releases) o
 - **Light on resources:** Having almost no intermediate data structures should result in more efficient parsing, especially if anchors are used only lightly.
 - **Also, simpler:** No code to support intermediate Values of all kinds.
 - **Type-driven parsing:** YAML that doesn’t match the expected Rust types is rejected early.
-- **Safer by construction:** serde-saphyr avoids the typical YAML remote code execution [vulnerability](https://www.arp242.net/yaml-config.html) because it does not support or implement tag-driven   object construction. If serde-saphyr is used for linting, unknown tags can be explicitly disabled.
-  
-  
+- **Safer by construction:** serde-saphyr avoids the typical YAML remote code execution [vulnerability](https://www.arp242.net/yaml-config.html) because it does not support or implement tag-driven object construction. If serde-saphyr is used for linting, unknown tags can be explicitly disabled.
+
 ### Notable features
 
 - **Configurable budgets:** Enforce input limits to mitigate resource exhaustion (e.g., deeply nested structures or very large arrays); see [`Budget`](https://docs.rs/serde-saphyr/latest/serde_saphyr/budget/struct.Budget.html).
 - Precise error reporting with **snippet rendering**.
 - Optional **!include** support with a custom or default resolver (inclusion of either a complete document or the node referenced by a specified anchor).
-- **Tag support**. Wrapper [Tagged](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Tagged.html) captures and emits a node's resolved YAML tag. 
-- **Comment support**. Wrapper [Commented](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) both captures and emits comments.
+- **Tag support:** The [`Tagged<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Tagged.html) wrapper captures and emits a node's resolved YAML tag.
+- **Comment support**. Wrapper [`Commented<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) both captures and emits comments.
 - **Optional property support**, with redaction (removal) of property values from later crate-generated diagnostics.
 - **Serializer supports emitting anchors** (Rc, Arc, Weak) if they are properly wrapped (see below).
 - **Declarative validation with optional [`validator`](https://crates.io/crates/validator) ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/validator_validate.rs))** or **[`garde`](https://crates.io/crates/garde)** ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/garde_validate.rs)).
@@ -53,7 +52,7 @@ See [release history](https://github.com/bourumir-wyngs/serde-saphyr/releases) o
 - Correct handling for JSON-style Unicode surrogate pairs.
 - **robotic extensions** to support YAML dialect common in robotics (see below).
 
-`serde-saphyr` is compatible with WebAssembly. The CI flow includes builds for both `wasm32-unknown-unknown` (browser / JS) and `wasm32-wasip1` (WASI runtimes) with mostly full test suite running and passing (excluding file access and other similarly unsupported cases). We also wrote [yva](https://github.com/bourumir-wyngs/yva) in [dioxus](https://dioxuslabs.com/) to deploy `serde-saphyr` on the web.
+`serde-saphyr` is compatible with WebAssembly. The CI flow includes builds for both `wasm32-unknown-unknown` (browser / JS) and `wasm32-wasip1` (WASI runtimes), with most of the test suite running and passing (excluding tests that require file access or similarly unsupported functionality). We also wrote [yva](https://github.com/bourumir-wyngs/yva) in [Dioxus](https://dioxuslabs.com/) to deploy `serde-saphyr` on the web.
 
 ### Testing
 
@@ -517,9 +516,9 @@ font: !css!important bold
 When the `font` value is deserialized as `Tagged<String>`, the captured tag is
 `Some("tag:app.styles,2026:important")`.
 
-Serialization round-trips the resolved tag identity, but may normalize its source spelling. 
+Serialization round-trips the resolved tag identity, but may normalize its source spelling.
 When constructing `Tagged<T>` directly, a tag beginning with `!` is local; every other tag identity
-must have valid absolute-URI structure. Characters requiring URI escaping are percent-encoded on
+must have valid absolute URI syntax. Characters requiring URI escaping are percent-encoded on
 output.
 
 By default, unknown application-specific YAML tags remain available for tagged-enum handling and
@@ -533,7 +532,7 @@ accepted only on matching node kinds, even when `reject_unsupported_tags` is fal
 `angle_conversions: true` are both enabled.
 
 Likewise, in strict mode, `!include` is accepted only when the `include` crate feature is enabled
-and an include resolver is configured. Tag capture does not bypass normal YAML tag semantics or 
+and an include resolver is configured. Tag capture does not bypass normal YAML tag semantics or
 the `reject_unsupported_tags` option.
 
 Tagged enums written as `!!EnumName VARIANT` are also supported, but only for single-level scalar variants. Use mapping-based representations (`EnumName: RED`) if you need to embed enums within other enums.
@@ -664,7 +663,6 @@ struct Config {
 
 #[cfg(feature = "properties")]
 fn main() -> Result<(), serde_saphyr::Error> {
-    use serde::Deserialize;
     use serde_saphyr::{PropertySyntax, options, from_str_with_options};
     use std::collections::HashMap;
 
