@@ -18,7 +18,7 @@
 
 **serde-saphyr** is a strongly typed YAML deserializer built on top of [`granit-parser`](https://crates.io/crates/granit-parser).
 
-The parser is fuzz-tested and designed not to panic on malformed YAML. This guarantee does not cover out-of-memory conditions,
+The parser is fuzz-tested and designed not to panic on malformed YAML. This design does not cover out-of-memory conditions,
 panics in user-provided callbacks, or similar cases. The library build is configured to deny `unsafe` code. This does
 not extend to transitive dependencies.
 
@@ -33,7 +33,7 @@ See [release history](https://github.com/bourumir-wyngs/serde-saphyr/releases) o
 - **Light on resources:** Having almost no intermediate data structures should result in more efficient parsing, especially if anchors are used only lightly.
 - **Also, simpler:** No code to support intermediate Values of all kinds.
 - **Type-driven parsing:** YAML that doesn’t match the expected Rust types is rejected early.
-- **Safer by construction:** serde-saphyr avoids the typical YAML remote code execution [vulnerability](https://www.arp242.net/yaml-config.html) because it does not support or implement tag-driven object construction. If serde-saphyr is used for linting, unknown tags can be explicitly disabled.
+- **Safer by construction:** `serde-saphyr` avoids the typical YAML remote code execution [vulnerability](https://www.arp242.net/yaml-config.html) because it does not support or implement tag-driven object construction. When used for linting, it can be configured to reject unknown tags.
 
 ### Notable features
 
@@ -42,7 +42,7 @@ See [release history](https://github.com/bourumir-wyngs/serde-saphyr/releases) o
 - Optional **!include** support with a custom or default resolver (inclusion of either a complete document or the node referenced by a specified anchor).
 - **Tag support:** The [`Tagged<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Tagged.html) wrapper captures and emits a node's resolved YAML tag.
 - **Comment support**. Wrapper [`Commented<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) both captures and emits comments.
-- **Optional property support**, with redaction (removal) of property values from later crate-generated diagnostics.
+- **Optional property support**, with redaction (removal) of property values from crate-generated diagnostics.
 - **Serializer supports emitting anchors** (Rc, Arc, Weak) if they are properly wrapped (see below).
 - **Declarative validation with optional [`validator`](https://crates.io/crates/validator) ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/validator_validate.rs))** or **[`garde`](https://crates.io/crates/garde)** ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/garde_validate.rs)).
 - **Optional [`miette`](https://crates.io/crates/miette)** ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/miette.rs)) integration for more advanced error reporting.
@@ -318,7 +318,7 @@ pub struct Context {
 ```
 `serde_saphyr::from_str::<Context>(yaml)` would take the `value: !Expression 1 + 1` or `value: !Pair [a, 12]`. Both YAML lists and Rust tuples allow their elements to have different types.
 
-To support polymorphism of arbitrary objects, not just enums, Serde-saphyr is also tested against [typetag](https://crates.io/crates/typetag).
+To verify support for polymorphism of arbitrary objects, not just enums, `serde-saphyr` is also tested with [typetag](https://crates.io/crates/typetag).
 
 ### Composite keys
 
