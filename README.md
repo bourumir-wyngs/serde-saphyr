@@ -33,9 +33,8 @@ See [release history](https://github.com/bourumir-wyngs/serde-saphyr/releases) o
 - **Light on resources:** Having almost no intermediate data structures should result in more efficient parsing, especially if anchors are used only lightly.
 - **Also, simpler:** No code to support intermediate Values of all kinds.
 - **Type-driven parsing:** YAML that doesn’t match the expected Rust types is rejected early.
-- **Safer by construction:** serde-saphyr avoids the typical YAML remote code execution [vulnerability](https://www.arp242.net/yaml-config.html) because it does not support or implement tag-driven arbitrary object instantiation.  
-- 
-  serde-saphyr does not implement tag-driven  object construction,
+- **Safer by construction:** serde-saphyr avoids the typical YAML remote code execution [vulnerability](https://www.arp242.net/yaml-config.html) because it does not support or implement tag-driven   object construction. If serde-saphyr is used for linting, unknown tags can be explicitly disabled.
+  
   
 ### Notable features
 
@@ -300,20 +299,6 @@ let yaml = r#"
 There are two variants of the deserialization functions: from_* and from_*_with_options. The latter accepts an [Options](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html)
 object that allows you to configure budget and other aspects of parsing. For larger projects that require consistent parsing behavior, we recommend defining a wrapper function so that all option and budget settings are managed in one place (see examples/wrapper_function.rs).
 
-By default, unknown application-specific YAML tags remain available for tagged-enum handling and
-are otherwise ignored where possible. Set `reject_unsupported_tags: true` in `Options` to reject any
-explicit tag that serde-saphyr does not recognize. This strict mode also rejects custom tags used to
-select enum variants. YAML 1.1 `!!merge` and `!!value` tags remain accepted only on their exact
-scalar mapping keys, `<<` and `=` respectively; using either tag on a value, a collection, or any
-other scalar is rejected in strict mode. Known scalar, sequence, and mapping tags are likewise
-accepted only on matching node kinds, even when `reject_unsupported_tags` is false. Robotics-only
-`!degrees` and `!radians` tags are accepted in strict mode only when the `robotics` crate feature and
-`angle_conversions: true` are both enabled.
-Likewise, in strict mode, `!include` is accepted only when the `include` crate feature is enabled
-and an include resolver is configured.
-
-Tagged enums written as `!!EnumName VARIANT` are also supported, but only for single-level scalar variants. Use mapping-based representations (`EnumName: RED`) if you need to embed enums within other enums.
-
 ### Tuple enum variants
 
 It is possible to deserialize tuple enum variants:
@@ -532,11 +517,26 @@ font: !css!important bold
 When the `font` value is deserialized as `Tagged<String>`, the captured tag is
 `Some("tag:app.styles,2026:important")`.
 
-Serialization round-trips the resolved tag identity, but may normalize its source spelling. Tag
-capture does not bypass normal YAML tag semantics or the `reject_unsupported_tags` option.
+Serialization round-trips the resolved tag identity, but may normalize its source spelling. 
 When constructing `Tagged<T>` directly, a tag beginning with `!` is local; every other tag identity
 must have valid absolute-URI structure. Characters requiring URI escaping are percent-encoded on
 output.
+
+By default, unknown application-specific YAML tags remain available for tagged-enum handling and
+are otherwise ignored where possible. Set `reject_unsupported_tags: true` in `Options` to reject any
+explicit tag that serde-saphyr does not recognize. This strict mode also rejects custom tags used to
+select enum variants. YAML 1.1 `!!merge` and `!!value` tags remain accepted only on their exact
+scalar mapping keys, `<<` and `=` respectively; using either tag on a value, a collection, or any
+other scalar is rejected in strict mode. Known scalar, sequence, and mapping tags are likewise
+accepted only on matching node kinds, even when `reject_unsupported_tags` is false. Robotics-only
+`!degrees` and `!radians` tags are accepted in strict mode only when the `robotics` crate feature and
+`angle_conversions: true` are both enabled.
+
+Likewise, in strict mode, `!include` is accepted only when the `include` crate feature is enabled
+and an include resolver is configured. Tag capture does not bypass normal YAML tag semantics or 
+the `reject_unsupported_tags` option.
+
+Tagged enums written as `!!EnumName VARIANT` are also supported, but only for single-level scalar variants. Use mapping-based representations (`EnumName: RED`) if you need to embed enums within other enums.
 
 ### Comments
 
