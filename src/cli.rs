@@ -446,6 +446,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn input_file_size_check_uses_reader_budget_limit() {
         let mut file = tempfile::NamedTempFile::new().expect("create temp file");
         write!(file, "1234").expect("write temp file");
