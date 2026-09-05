@@ -295,7 +295,9 @@ pub(crate) fn is_plain_safe(s: &str) -> bool {
     }
 
     // In block style, commas are just characters (only flow style treats them as structural).
-    !contains_any_or_is_control(s, &[':', '#'])
+    // `#` inside a plain scalar is allowed as long as it is not preceded by whitespace,
+    // where it would begin a comment.
+    !contains_any_or_is_control(s, &[':']) && !has_comment_start(s)
 }
 
 /// Returns true if `s` can be emitted as a plain scalar in VALUE position without quoting.
@@ -345,11 +347,11 @@ pub(crate) fn is_plain_value_safe(s: &str, yaml_12: bool, in_flow: bool) -> bool
 
     if in_flow {
         // In flow style, commas and brackets/braces are structural.
-        // In values, ':' is allowed, but '#' would start a comment so still disallow '#'.
-        !contains_any_or_is_control(s, &[',', '[', ']', '{', '}', '#'])
+        // In values, ':' is allowed. `#` is only problematic when preceded by whitespace.
+        !contains_any_or_is_control(s, &[',', '[', ']', '{', '}']) && !has_comment_start(s)
     } else {
         // In block style, commas/brackets/braces are ordinary characters.
-        !contains_any_or_is_control(s, &['#'])
+        !contains_any_or_is_control(s, &[]) && !has_comment_start(s)
     }
 }
 
@@ -442,6 +444,14 @@ fn contains_any_or_is_control(string: &str, values: &[char]) -> bool {
     string
         .chars()
         .any(|x| is_controll_which_needs_escaping(x) || values.iter().any(|v| &x == v))
+}
+
+fn has_comment_start(string: &str) -> bool {
+    // In plain style, `#` starts a comment only when separated by whitespace.
+    string
+        .chars()
+        .zip(string.chars().skip(1))
+        .any(|(prev, curr)| prev.is_whitespace() && curr == '#')
 }
 
 #[cfg(test)]

@@ -112,6 +112,7 @@ fn map_keys_support_many_scalar_types_and_escape_when_needed() {
     // should be emitted in double quotes with escapes.
     let mut m: BTreeMap<String, i32> = BTreeMap::new();
     m.insert("plain".to_string(), 1);
+    m.insert("a#b".to_string(), 2);
     m.insert("a:b".to_string(), 2);
     m.insert("line\nbreak".to_string(), 3);
     m.insert("\u{1}".to_string(), 4);
@@ -119,6 +120,10 @@ fn map_keys_support_many_scalar_types_and_escape_when_needed() {
     let yaml = to_string(&m).expect("serialize string-key map");
 
     assert!(yaml.contains("plain: 1\n"), "missing plain key: {yaml}");
+    assert!(
+        yaml.contains("a#b: 2\n"),
+        "missing plain inline '#': {yaml}"
+    );
     assert!(
         yaml.contains("\"a:b\": 2\n"),
         "missing quoted ':' key: {yaml}"

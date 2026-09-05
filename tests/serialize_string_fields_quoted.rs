@@ -8,6 +8,7 @@ struct HasStrings {
     xnan: String,
     colon: String,
     comment: String,
+    inline_hash: String,
     ending_colon: String,
     trim_ending_colon: String,
     trailing_space: String,
@@ -20,6 +21,7 @@ fn strings_that_look_special_are_quoted() -> Result<()> {
         xnan: "nan".to_string(),
         colon: "a: b".to_string(),
         comment: "# hi".to_string(),
+        inline_hash: "a#b".to_string(),
         ending_colon: "hi:".to_string(),
         trim_ending_colon: "hey:\n".to_string(),
         trailing_space: "abc ".to_string(),
@@ -27,11 +29,15 @@ fn strings_that_look_special_are_quoted() -> Result<()> {
 
     let out = serde_saphyr::to_string(&v).expect("serialize");
 
-    // Each of these fields should be quoted or escaped so that they are preserved as strings
+    // Ambiguous fields should be quoted or escaped so that they are preserved as strings
     // and do not get parsed as numbers, special floats, or mapping syntax.
     assert!(out.contains("zero: \"0\""), "'0' must be quoted: {out}");
     assert!(out.contains("xnan: \"nan\""), "'nan' must be quoted: {out}");
     assert!(out.contains("\"# hi\""), "comment must be quoted: {out}");
+    assert!(
+        out.contains("inline_hash: a#b"),
+        "inline hash should stay plain: {out}"
+    );
     assert!(
         out.contains("colon: \"a: b\""),
         "'a: b' must be quoted: {out}"

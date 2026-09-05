@@ -24,6 +24,12 @@
 
 ### Fixes
 
+- Avoided unnecessary quotes around string keys and values containing an inline `#`, such as
+  `a#b`, while retaining quotes for leading or whitespace-separated hashes. Borrowed from
+  [commit 1119a54](https://github.com/bourumir-wyngs/serde-saphyr/commit/1119a54cc184d2151d53089f6be1b311b0f57e5a)
+  under the terms of the Apache/MIT licenses. When property interpolation is configured,
+  newly plain values such as `${NAME}#fragment` can interpolate; use `quote_all` to preserve
+  literal values.
 - Recognized explicit YAML 1.1 `!!merge` keys, including verbatim tags and `%TAG`-expanded
   handles, everywhere implicit `<<` merge keys are supported.
 - Recognized the YAML 1.1 `!!value` tag while intentionally treating it as a no-op annotation.
