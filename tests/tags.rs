@@ -1,4 +1,5 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
+use rstest::rstest;
 use serde_saphyr as yaml;
 use serde_saphyr::Error;
 use std::collections::BTreeMap;
@@ -69,6 +70,45 @@ fn tagged_string_cannot_parse_into_any_integer_type() {
     assert_tagged_string_cannot_parse_into_integer::<u32>();
     assert_tagged_string_cannot_parse_into_integer::<u64>();
     assert_tagged_string_cannot_parse_into_integer::<u128>();
+}
+
+#[rstest]
+#[case::string("!!str 1.5")]
+#[case::quoted_string("!!str '1.5'")]
+#[case::block_string("!!str |-\n  1.5\n")]
+#[case::verbatim_string("!<tag:yaml.org,2002:str> 1.5")]
+#[case::integer("!!int 42")]
+#[case::boolean("!!bool 1.5")]
+#[case::null("!!null 1.5")]
+fn incompatible_core_tags_cannot_parse_into_floats(#[case] yaml: &str) {
+    let f32_error = yaml::from_str::<f32>(yaml).unwrap_err();
+    let f64_error = yaml::from_str::<f64>(yaml).unwrap_err();
+    for error in [f32_error, f64_error] {
+        assert!(
+            matches!(
+                error.without_snippet(),
+                Error::InvalidScalar {
+                    ty: "floating point",
+                    ..
+                }
+            ),
+            "yaml: {yaml}, error: {error}"
+        );
+    }
+}
+
+#[rstest]
+#[case::plain("1.5", 1.5)]
+#[case::quoted("'1.5'", 1.5)]
+#[case::plain_integer("42", 42.0)]
+#[case::tagged_float("!!float 1.5", 1.5)]
+#[case::integer_looking_float("!!float 42", 42.0)]
+#[case::quoted_float("!!float '1.5'", 1.5)]
+#[case::block_float("!!float >-\n  1.5\n", 1.5)]
+#[case::custom_tag("!measurement 1.5", 1.5)]
+fn compatible_scalars_can_parse_into_floats(#[case] yaml: &str, #[case] expected: f64) {
+    assert_eq!(f64::from(yaml::from_str::<f32>(yaml).unwrap()), expected);
+    assert_eq!(yaml::from_str::<f64>(yaml).unwrap(), expected);
 }
 
 #[test]
