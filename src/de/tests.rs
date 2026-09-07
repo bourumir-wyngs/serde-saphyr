@@ -113,6 +113,7 @@ fn pending_from_events(
         reference_location,
         MergeKeyPolicy::Merge,
         DuplicateKeyPolicy::Error,
+        false,
     )
 }
 
@@ -128,6 +129,7 @@ fn pending_from_events(
         reference_location,
         MergeKeyPolicy::Merge,
         DuplicateKeyPolicy::Error,
+        false,
         empty_property_interpolation(),
     )
 }
@@ -348,23 +350,17 @@ fn key_fingerprint_helpers_normalize_string_like_tags() {
         CanonicalKeyTag::Custom(Cow::Borrowed("!Variant"))
     );
 
-    let stringy = KeyFingerprint::Scalar {
-        value: Cow::Borrowed("hello"),
-        tag: CanonicalKeyTag::Custom(Cow::Borrowed("!Variant")),
-    };
+    let stringy = scalar_key_node("hello", SfTag::Other, ScalarStyle::Plain, loc(8, 1));
     assert_eq!(stringy.stringy_scalar_value(), Some("hello"));
 
-    let binary = KeyFingerprint::Scalar {
-        value: Cow::Borrowed("SGVsbG8="),
-        tag: CanonicalKeyTag::Semantic(SfTag::Binary),
-    };
+    let binary = scalar_key_node("SGVsbG8=", SfTag::Binary, ScalarStyle::Plain, loc(8, 2));
     assert_eq!(binary.stringy_scalar_value(), None);
+    let mut replay = replay_events(vec![
+        seq_start(SfTag::None, None, loc(8, 3)),
+        seq_end(loc(8, 4)),
+    ]);
     assert_eq!(
-        KeyFingerprint::Sequence {
-            tag: CanonicalKeyTag::Semantic(SfTag::Seq),
-            elements: vec![],
-        }
-        .stringy_scalar_value(),
+        capture_node(&mut replay).unwrap().stringy_scalar_value(),
         None
     );
 }
@@ -871,6 +867,7 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
             merge_reference,
             MergeKeyPolicy::Merge,
             DuplicateKeyPolicy::Error,
+            false,
         )
         .unwrap()
         .is_empty()
@@ -888,6 +885,7 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
         merge_reference,
         MergeKeyPolicy::Merge,
         DuplicateKeyPolicy::Error,
+        false,
     ));
     assert!(matches!(
         err,
@@ -911,6 +909,7 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
         merge_reference,
         MergeKeyPolicy::Merge,
         DuplicateKeyPolicy::Error,
+        false,
     )
     .unwrap();
     assert_eq!(entries.len(), 2);
@@ -929,6 +928,7 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
         merge_reference,
         MergeKeyPolicy::Merge,
         DuplicateKeyPolicy::Error,
+        false,
     ));
     assert!(matches!(err, Error::Eof { location } if location == Location::UNKNOWN));
 }
@@ -947,6 +947,7 @@ fn collect_entries_from_map_expands_merges_and_preserves_reference_locations() {
         loc(34, 9),
         MergeKeyPolicy::Merge,
         DuplicateKeyPolicy::Error,
+        false,
     ));
     assert!(matches!(
         err,
@@ -972,6 +973,7 @@ fn collect_entries_from_map_expands_merges_and_preserves_reference_locations() {
         outer_reference,
         MergeKeyPolicy::Merge,
         DuplicateKeyPolicy::Error,
+        false,
     )
     .unwrap();
     assert_eq!(entries.len(), 2);
@@ -1000,6 +1002,7 @@ fn collect_entries_from_map_treats_merge_key_as_ordinary_under_policy() {
         reference,
         MergeKeyPolicy::AsOrdinary,
         DuplicateKeyPolicy::Error,
+        false,
     )
     .unwrap();
 
@@ -1024,6 +1027,7 @@ fn collect_entries_from_map_rejects_merge_key_under_error_policy() {
         loc(37, 9),
         MergeKeyPolicy::Error,
         DuplicateKeyPolicy::Error,
+        false,
     ));
 
     assert!(matches!(
@@ -1167,6 +1171,7 @@ fn duplicate_filter_validates_discarded_values_when_merges_are_forbidden() {
         loc(48, 1),
         MergeKeyPolicy::Error,
         DuplicateKeyPolicy::FirstWins,
+        false,
     ));
     assert!(matches!(
         err,

@@ -10,10 +10,10 @@ use super::commented_deser;
 use super::error::{Error, MissingFieldLocationGuard, TransformReason};
 use super::events::{Ev, Events, ReplayEvents, attach_alias_locations_if_missing, eof_with_loc};
 use super::key_nodes::{
-    KeyFingerprint, KeyNode, PendingEntry, apply_duplicate_key_policy_to_entries, capture_node,
-    capture_simple_tagged_node_as_map_events, is_empty_mapping_key_fingerprint, is_merge_key,
-    is_one_entry_nullish_mapping_key_fingerprint, one_entry_map_spans,
-    pending_entries_from_live_events, simple_tagged_enum_name,
+    KeyFingerprint, KeyNode, PendingEntry, apply_duplicate_key_policy_to_entries,
+    capture_node_with_legacy_octal, capture_simple_tagged_node_as_map_events,
+    is_empty_mapping_key_fingerprint, is_merge_key, is_one_entry_nullish_mapping_key_fingerprint,
+    one_entry_map_spans, pending_entries_from_live_events, simple_tagged_enum_name,
     validate_no_merge_keys_in_node_events,
 };
 use super::options::{DuplicateKeyPolicy, MergeKeyPolicy};
@@ -1720,76 +1720,82 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             );
         }
 
-        fn collect_struct_last_wins_entries<'de>(
+        fn collect_last_wins_entries<'de>(
             ev: &mut dyn Events<'de>,
             mut first_key_comments: Vec<Cow<'de, str>>,
-            duplicate_keys: DuplicateKeyPolicy,
-            merge_keys: MergeKeyPolicy,
+            cfg: Cfg,
+            mut first_key: Option<KeyNode<'de>>,
+            prior_seen: &HashSet<KeyFingerprint<'de>>,
+            mut merge_batches: VecDeque<Vec<PendingEntry<'de>>>,
         ) -> Result<VecDeque<PendingEntry<'de>>, Error> {
             let mut explicit_entries = Vec::new();
-            let mut merge_batches = Vec::new();
 
             loop {
-                match ev.peek()? {
-                    Some(Ev::MapEnd { .. }) => {
-                        let _ = ev.next()?;
-                        break;
-                    }
-                    Some(_) => {
-                        let mut key_comments = std::mem::take(&mut first_key_comments);
-                        key_comments.extend(ev.take_leading_comments_for_next_node()?);
-                        let key = capture_node(ev)?;
-
-                        if is_merge_key(&key) {
-                            match merge_keys {
-                                MergeKeyPolicy::Merge => {
-                                    let _ = ev.peek()?;
-                                    let merge_ref_loc = ev.reference_location();
-                                    let entries = pending_entries_from_live_events(
-                                        ev,
-                                        merge_ref_loc,
-                                        merge_keys,
-                                        duplicate_keys,
-                                    )?;
-                                    if !entries.is_empty() {
-                                        merge_batches.push(entries);
-                                    }
-                                    continue;
-                                }
-                                MergeKeyPolicy::AsOrdinary => {}
-                                MergeKeyPolicy::Error => {
-                                    return Err(Error::MergeKeyNotAllowed {
-                                        location: key.location(),
-                                    });
-                                }
-                            }
+                let (key, field_comments) = if let Some(key) = first_key.take() {
+                    (key, std::mem::take(&mut first_key_comments))
+                } else {
+                    match ev.peek()? {
+                        Some(Ev::MapEnd { .. }) => {
+                            let _ = ev.next()?;
+                            break;
                         }
-
-                        let field_comments = key_comments;
-                        let value_separator_comments =
-                            ev.take_separator_comments_before_mapping_value()?;
-                        let value_comments = ev.take_leading_comments_for_next_node()?;
-                        let reference_location = ev.reference_location();
-                        let value = capture_node(ev)?;
-                        explicit_entries.push(PendingEntry {
-                            key,
-                            value,
-                            reference_location,
-                            field_comments,
-                            value_separator_comments,
-                            value_comments,
-                        });
+                        Some(_) => {
+                            let mut key_comments = std::mem::take(&mut first_key_comments);
+                            key_comments.extend(ev.take_leading_comments_for_next_node()?);
+                            let key = capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
+                            (key, key_comments)
+                        }
+                        None => return Err(eof_with_loc(ev)),
                     }
-                    None => return Err(eof_with_loc(ev)),
+                };
+
+                if is_merge_key(&key) {
+                    match cfg.merge_keys {
+                        MergeKeyPolicy::Merge => {
+                            let _ = ev.peek()?;
+                            let merge_ref_loc = ev.reference_location();
+                            let entries = pending_entries_from_live_events(
+                                ev,
+                                merge_ref_loc,
+                                cfg.merge_keys,
+                                cfg.dup_policy,
+                                cfg.legacy_octal_numbers,
+                            )?;
+                            if !entries.is_empty() {
+                                merge_batches.push_back(entries);
+                            }
+                            continue;
+                        }
+                        MergeKeyPolicy::AsOrdinary => {}
+                        MergeKeyPolicy::Error => {
+                            return Err(Error::MergeKeyNotAllowed {
+                                location: key.location(),
+                            });
+                        }
+                    }
                 }
+
+                let value_separator_comments = ev.take_separator_comments_before_mapping_value()?;
+                let value_comments = ev.take_leading_comments_for_next_node()?;
+                let reference_location = ev.reference_location();
+                let value = capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
+                explicit_entries.push(PendingEntry {
+                    key,
+                    value,
+                    reference_location,
+                    field_comments,
+                    value_separator_comments,
+                    value_comments,
+                });
             }
 
             let mut explicit_entries = apply_duplicate_key_policy_to_entries(
                 explicit_entries,
-                duplicate_keys,
-                merge_keys,
+                cfg.dup_policy,
+                cfg.merge_keys,
             )?;
-            let mut seen = HashSet::with_capacity(explicit_entries.len());
+            let mut seen = prior_seen.clone();
+            seen.reserve(explicit_entries.len());
             for entry in &explicit_entries {
                 seen.insert(entry.key.fingerprint().into_owned());
             }
@@ -1844,7 +1850,8 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             /// - `DuplicateKeyPolicy::FirstWins` to discard a later value.
             fn skip_one_node(&mut self) -> Result<(), Error> {
                 if self.cfg.merge_keys == MergeKeyPolicy::Error {
-                    let node = capture_node(self.ev)?;
+                    let node =
+                        capture_node_with_legacy_octal(self.ev, self.cfg.legacy_octal_numbers)?;
                     return validate_no_merge_keys_in_node_events(node.events());
                 }
 
@@ -1990,7 +1997,6 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                         } = entry;
                         let fingerprint = key.take_fingerprint();
                         let location = key.location();
-                        let mut events = key.take_events();
 
                         let is_duplicate = self.seen.contains(&fingerprint);
                         if self.flushing_merges {
@@ -2002,9 +2008,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             match self.cfg.dup_policy {
                                 DuplicateKeyPolicy::Error => {
                                     if is_duplicate {
-                                        let key = fingerprint
-                                            .stringy_scalar_value()
-                                            .map(|s| s.to_owned());
+                                        let key = key.stringy_scalar_value().map(|s| s.to_owned());
                                         return Err(Error::DuplicateMappingKey { key, location });
                                     }
                                 }
@@ -2018,6 +2022,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             }
                         }
 
+                        #[cfg(any(feature = "garde", feature = "validator"))]
+                        let key_path_segment = key.stringy_scalar_value().map(ToOwned::to_owned);
+                        let mut events = key.take_events();
                         let mut value_events = value.take_events();
                         // Special-case: explicit empty key captured as a one-entry mapping { null: V }
                         // In this case, we want key=None and the outer value to be V.
@@ -2087,8 +2094,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
                         #[cfg(any(feature = "garde", feature = "validator"))]
                         {
-                            self.pending_path_segment =
-                                fingerprint.stringy_scalar_value().map(|s| s.to_owned());
+                            self.pending_path_segment = key_path_segment;
                         }
 
                         self.seen.insert(fingerprint);
@@ -2127,7 +2133,10 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             let mut key_comments =
                                 std::mem::take(&mut self.pending_first_key_comments);
                             key_comments.extend(self.ev.take_leading_comments_for_next_node()?);
-                            let mut key_node = capture_node(self.ev)?;
+                            let mut key_node = capture_node_with_legacy_octal(
+                                self.ev,
+                                self.cfg.legacy_octal_numbers,
+                            )?;
                             if is_merge_key(&key_node) {
                                 match self.cfg.merge_keys {
                                     MergeKeyPolicy::Merge => {
@@ -2142,6 +2151,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                                             merge_ref_loc,
                                             self.cfg.merge_keys,
                                             self.cfg.dup_policy,
+                                            self.cfg.legacy_octal_numbers,
                                         )?;
                                         if !entries.is_empty() {
                                             self.merge_stack.push_back(entries);
@@ -2157,16 +2167,31 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                                 }
                             }
 
+                            if matches!(self.cfg.dup_policy, DuplicateKeyPolicy::LastWins)
+                                && key_node.fingerprint().contains_integer()
+                            {
+                                // Integer identity can differ from the key's spelling in the
+                                // target map, so select the winning YAML entries before Serde.
+                                self.pending = collect_last_wins_entries(
+                                    self.ev,
+                                    key_comments,
+                                    self.cfg,
+                                    Some(key_node),
+                                    &self.seen,
+                                    std::mem::take(&mut self.merge_stack),
+                                )?;
+                                self.live_done = true;
+                                continue;
+                            }
+
                             let fingerprint = key_node.fingerprint();
                             let is_duplicate = self.seen.contains(&fingerprint);
                             match self.cfg.dup_policy {
                                 DuplicateKeyPolicy::Error => {
                                     if is_duplicate {
                                         let location = key_node.location();
-                                        let key = key_node
-                                            .fingerprint()
-                                            .stringy_scalar_value()
-                                            .map(|s| s.to_owned());
+                                        let key =
+                                            key_node.stringy_scalar_value().map(|s| s.to_owned());
                                         return Err(Error::DuplicateMappingKey { key, location });
                                     }
                                 }
@@ -2200,7 +2225,10 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                                 let value_comments =
                                     self.ev.take_leading_comments_for_next_node()?;
                                 let reference_location = self.ev.reference_location();
-                                let value_node = capture_node(self.ev)?;
+                                let value_node = capture_node_with_legacy_octal(
+                                    self.ev,
+                                    self.cfg.legacy_octal_numbers,
+                                )?;
                                 self.enqueue_entries(vec![PendingEntry {
                                     key: key_node,
                                     value: value_node,
@@ -2216,6 +2244,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
                             let fingerprint = fingerprint.into_owned();
                             let location = key_node.location();
+                            #[cfg(any(feature = "garde", feature = "validator"))]
+                            let key_path_segment =
+                                key_node.stringy_scalar_value().map(ToOwned::to_owned);
                             let events = key_node.take_events();
                             let Some(key_seed) = seed.take() else {
                                 return Err(Error::InternalSeedReusedForMapKey { location });
@@ -2240,8 +2271,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
                             #[cfg(any(feature = "garde", feature = "validator"))]
                             {
-                                self.pending_path_segment =
-                                    fingerprint.stringy_scalar_value().map(|s| s.to_owned());
+                                self.pending_path_segment = key_path_segment;
                             }
 
                             self.seen.insert(fingerprint);
@@ -2401,11 +2431,13 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         let (pending, pending_first_key_comments, live_done) =
             if self.struct_mode && matches!(self.cfg.dup_policy, DuplicateKeyPolicy::LastWins) {
                 (
-                    collect_struct_last_wins_entries(
+                    collect_last_wins_entries(
                         self.ev,
                         map_start_comments,
-                        self.cfg.dup_policy,
-                        self.cfg.merge_keys,
+                        self.cfg,
+                        None,
+                        &HashSet::new(),
+                        VecDeque::new(),
                     )?,
                     Vec::new(),
                     true,
