@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.1 Maintenance release
+### Fixed
+- A valid composite key can change both the key and its associated value (`{{"null": 1}: 2}` -> `{{}: 1}`).
+- Null detection silently discards string values (`!!str null` becomes `None`).
+- Explicit numeric tags fail in `deserialize_any`
+- Floating-point deserialization ignores incompatible core tags (``from_str::<f64>("!!str 1.5")``).
+- Both `\u{fffe}` and `\u{ffff}` are emitted literally
+
 ## 1.2.0 Maintenance release
 
 ### Changed
