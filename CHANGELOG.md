@@ -1,8 +1,11 @@
 # Changelog
 
 ## 1.2.1 Maintenance release
+
 ### Fixed
-- Integer mapping keys now compare by their parsed value for duplicate detection and merge resolution (`0xB` and `11` are equal), including inside composite keys. String targets preserve the original spelling; “first wins” and “last wins” retain the selected entry's spelling and value.
+- Integer mapping keys now compare by their parsed value for duplicate detection and merge resolution (`0xB` and `11` are equal), 
+- including inside composite keys. String targets preserve the original spelling. “first wins” and “last wins” retain 
+- the selected entry's spelling and value.
 - A valid composite key can change both the key and its associated value (`{{"null": 1}: 2}` -> `{{}: 1}`).
 - Null detection silently discards string values (`!!str null` becomes `None`).
 - Explicit numeric tags fail in `deserialize_any`
