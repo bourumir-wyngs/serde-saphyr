@@ -17,6 +17,34 @@ fn default_rejects_non_finite_typeless_floats() {
 }
 
 #[test]
+fn explicit_float_tags_follow_typeless_non_finite_policy() {
+    for (literal, canonical) in [
+        ("+.NaN", ".nan"),
+        ("+.INF", ".inf"),
+        ("-.inf", "-.inf"),
+        ("1e999", ".inf"),
+        ("-1e999", "-.inf"),
+    ] {
+        for yaml in [format!("!!float {literal}"), format!("!!float '{literal}'")] {
+            let err = serde_saphyr::from_str::<Value>(&yaml).unwrap_err();
+            assert!(
+                matches!(
+                    err.without_snippet(),
+                    serde_saphyr::Error::NonFiniteFloat { value, .. } if value == literal
+                ),
+                "yaml: {yaml}, error: {err}"
+            );
+
+            let opts = serde_saphyr::options! {
+                reject_non_finite_typeless_float: false,
+            };
+            let value: Value = serde_saphyr::from_str_with_options(&yaml, opts).unwrap();
+            assert_eq!(value, Value::String(canonical.to_owned()), "yaml: {yaml}");
+        }
+    }
+}
+
+#[test]
 fn disabled_reject_non_finite_typeless_float_round_trips_non_finite_floats_as_strings() {
     let opts = serde_saphyr::options! {
         reject_non_finite_typeless_float: false,

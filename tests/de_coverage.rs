@@ -945,14 +945,11 @@ fn deserialize_any_str_tag() {
     assert_eq!(v, serde_json::Value::String("42".to_string()));
 }
 
-/// `deserialize_any`: !!int tagged scalar → error (can't deserialize into string)
+/// `deserialize_any`: !!int tagged scalar → integer
 #[test]
-fn deserialize_any_int_tag_error() {
-    let err = serde_saphyr::from_str::<serde_json::Value>("!!int 42\n").unwrap_err();
-    assert!(matches!(
-        err.without_snippet(),
-        Error::TaggedScalarCannotDeserializeIntoString { .. }
-    ));
+fn deserialize_any_int_tag() {
+    let value = serde_saphyr::from_str::<serde_json::Value>("!!int 42\n").unwrap();
+    assert_eq!(value, serde_json::Value::from(42));
 }
 
 // ---------------------------------------------------------------------------

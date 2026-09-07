@@ -531,6 +531,35 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         Ok(value)
     }
 
+    /// Deliver a float to a typeless visitor, applying the configured non-finite policy.
+    fn visit_typeless_float<V: Visitor<'de>>(
+        &self,
+        value: f64,
+        raw: String,
+        location: Location,
+        visitor: V,
+    ) -> Result<V::Value, Error> {
+        if value.is_finite() {
+            return visitor.visit_f64(value);
+        }
+        // Typeless consumers such as serde_json::Value cannot represent non-finite
+        // floats. Reject them by default, or preserve them as canonical strings.
+        if self.cfg.reject_non_finite_typeless_float {
+            return Err(Error::NonFiniteFloat {
+                value: raw,
+                location,
+            });
+        }
+        let canonical = if value.is_nan() {
+            ".nan"
+        } else if value.is_sign_negative() {
+            "-.inf"
+        } else {
+            ".inf"
+        };
+        visitor.visit_string(canonical.to_owned())
+    }
+
     /// Expect a sequence start and consume it, or error otherwise.
     fn expect_seq_start(&mut self) -> Result<(), Error> {
         match self.ev.next()? {
@@ -715,9 +744,10 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     ///   field types.
     ///
     /// Our policy:
-    /// - For scalars, we heuristically interpret plain, untagged values as native YAML scalars
-    ///   (null-like → bool → int → float) before falling back to string. Quoted scalars and scalars
-    ///   with explicit non-string-friendly tags (or !!binary) are treated as strings.
+    /// - Explicit core scalar tags select the corresponding type regardless of scalar style.
+    ///   Plain, untagged scalars are inferred (null-like → bool → int → float) before falling
+    ///   back to string. Quoted scalars without a core type tag remain strings, and !!binary
+    ///   scalars are decoded as strings according to the configured binary-tag policy.
     ///
     /// Flow: We inspect the next event; scalars are parsed with the heuristic above; containers
     /// delegate to `deserialize_seq`/`deserialize_map`.
@@ -737,10 +767,38 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         }
 
         if let Some((value, tag, style, location)) = self.peek_effective_scalar()? {
-            // Tagged nulls map to unit/null regardless of style
-            if tag == SfTag::Null {
-                let _ = self.take_scalar_event()?; // consume
-                return visitor.visit_unit();
+            // Explicit scalar types take precedence over implicit null and string inference,
+            // including for quoted and block scalars buffered by Serde's flatten support.
+            match tag {
+                SfTag::Null => {
+                    let _ = self.take_scalar_event()?;
+                    return visitor.visit_unit();
+                }
+                SfTag::Bool => return self.deserialize_bool(visitor),
+                SfTag::Int if value.trim().starts_with('-') => {
+                    return self.deserialize_i64(visitor);
+                }
+                SfTag::Int => return self.deserialize_u64(visitor),
+                SfTag::Float => {
+                    let view = self.take_scalar_view()?;
+                    let value = try_parse_float_incl_overflow(
+                        &view.effective,
+                        view.location,
+                        view.tag,
+                        self.cfg.angle_conversions,
+                    )
+                    .ok_or(Error::InvalidScalar {
+                        ty: "floating point",
+                        location: view.location,
+                    })?;
+                    return self.visit_typeless_float(
+                        value,
+                        view.raw.into_owned(),
+                        view.location,
+                        visitor,
+                    );
+                }
+                _ => {}
             }
             let is_plain = matches!(style, ScalarStyle::Plain);
             // Explicit string tags preserve null-like text (null, ~, empty).
@@ -818,27 +876,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 view.tag,
                 self.cfg.angle_conversions,
             ) {
-                // Typeless consumers such as serde_json::Value cannot represent non-finite
-                // floats. By default, reject these scalars. When rejection is disabled,
-                // deserialize_any returns a canonical string so these values do not become
-                // null or fail later.
-                if v.is_finite() {
-                    return visitor.visit_f64(v);
-                }
-                if self.cfg.reject_non_finite_typeless_float {
-                    return Err(Error::NonFiniteFloat {
-                        value: raw,
-                        location,
-                    });
-                }
-                let canon = if v.is_nan() {
-                    ".nan".to_string()
-                } else if v.is_sign_negative() {
-                    "-.inf".to_string()
-                } else {
-                    ".inf".to_string()
-                };
-                return visitor.visit_string(canon);
+                return self.visit_typeless_float(v, raw, location, visitor);
             }
 
             // Fallback: treat as string as-is.
