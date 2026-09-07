@@ -15,9 +15,8 @@ use super::events::{
 use super::key_nodes::{
     KeyFingerprint, KeyNode, PendingEntry, apply_duplicate_key_policy_to_entries,
     capture_node_with_legacy_octal, capture_simple_tagged_node_as_map_events,
-    is_empty_mapping_key_fingerprint, is_merge_key, is_one_entry_nullish_mapping_key,
-    one_entry_map_spans, pending_entries_from_live_events, simple_tagged_enum_name,
-    validate_no_merge_keys_in_node_events,
+    is_empty_mapping_key_fingerprint, is_merge_key, pending_entries_from_live_events,
+    simple_tagged_enum_name, validate_no_merge_keys_in_node_events,
 };
 use super::options::{DuplicateKeyPolicy, MergeKeyPolicy};
 #[cfg(any(feature = "garde", feature = "validator"))]
@@ -1286,7 +1285,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     ///
     /// **What is treated as `None`?** End-of-input, container end, an explicitly
     /// tagged null, or a plain empty / `~` / `null` scalar permitting implicit null resolution.
-    /// Explicit non-null core tags are passed to the inner value's deserializer for validation.
+    /// Explicit non-null core tags and binary tags are passed to the inner value's deserializer.
     fn deserialize_option<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Only when Serde asks for Option<T> do we interpret YAML null-like scalars as None.
         // Special-case for map keys: treat an explicit empty key captured as an empty mapping node
@@ -2049,51 +2048,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
                         #[cfg(any(feature = "garde", feature = "validator"))]
                         let key_path_segment = key.stringy_scalar_value().map(ToOwned::to_owned);
-                        let mut events = key.take_events();
-                        let mut value_events = value.take_events();
-                        // Special-case: explicit empty key captured as a one-entry mapping { null: V }
-                        // In this case, we want key=None and the outer value to be V.
-                        let mut kemn = is_empty_mapping_key_fingerprint(&fingerprint);
-                        if !kemn
-                            && is_one_entry_nullish_mapping_key(&fingerprint, &events)
-                            && let Some((_ks, _ke, vs, ve)) = one_entry_map_spans(&events)
-                        {
-                            // Zero-copy probe over recorded events to extract inner key/value spans.
-                            value_events = events.drain(vs..ve).collect();
-                            // Build empty map events using the first and last from original events.
-                            let start = match events.first() {
-                                Some(Ev::MapStart {
-                                    anchor,
-                                    tag,
-                                    raw_tag,
-                                    location,
-                                }) => Ev::MapStart {
-                                    anchor: *anchor,
-                                    tag: *tag,
-                                    raw_tag: raw_tag.clone(),
-                                    location: *location,
-                                },
-                                Some(other) => other.clone(),
-                                None => {
-                                    return Err(
-                                        Error::unexpected("mapping start").with_location(location)
-                                    );
-                                }
-                            };
-                            let end = match events.last() {
-                                Some(Ev::MapEnd { location }) => Ev::MapEnd {
-                                    location: *location,
-                                },
-                                Some(other) => other.clone(),
-                                None => {
-                                    return Err(
-                                        Error::unexpected("mapping end").with_location(location)
-                                    );
-                                }
-                            };
-                            events = vec![start, end];
-                            kemn = true;
-                        }
+                        let events = key.take_events();
+                        let value_events = value.take_events();
+                        let kemn = is_empty_mapping_key_fingerprint(&fingerprint);
                         let Some(key_seed) = seed.take() else {
                             return Err(Error::InternalSeedReusedForMapKey { location });
                         };
@@ -2229,46 +2186,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                                 DuplicateKeyPolicy::LastWins => {}
                             }
 
-                            // Decide whether we need the slow recorded path (only for the tricky
-                            // explicit-empty-key-as-one-entry-map-with-nullish-inner-key case).
                             let kemn_direct =
                                 is_empty_mapping_key_fingerprint(fingerprint.as_ref());
-                            let kemn_one_entry_nullish = is_one_entry_nullish_mapping_key(
-                                fingerprint.as_ref(),
-                                key_node.events(),
-                            );
-
-                            if kemn_one_entry_nullish {
-                                // Slow path needed: capture value and enqueue so pending branch can
-                                // swap inner value to outer and treat key as None.
-                                // IMPORTANT: preserve where the value is *referenced* (use-site).
-                                // If the value is an alias (`*a`), `capture_node` will record events
-                                // from the anchor definition, so `value_node.location()` would point
-                                // at the definition-site. `Spanned<T>` wants the alias token location
-                                // in `referenced`, so take it from `Events::reference_location()`.
-                                let field_comments = key_comments;
-                                let value_separator_comments =
-                                    self.ev.take_separator_comments_before_mapping_value()?;
-                                let value_comments =
-                                    self.ev.take_leading_comments_for_next_node()?;
-                                let reference_location = self.ev.reference_location();
-                                let value_node = capture_node_with_legacy_octal(
-                                    self.ev,
-                                    self.cfg.legacy_octal_numbers,
-                                )?;
-                                self.enqueue_entries(vec![PendingEntry {
-                                    key: key_node,
-                                    value: value_node,
-                                    reference_location,
-                                    field_comments,
-                                    value_separator_comments,
-                                    value_comments,
-                                }]);
-                                continue;
-                            }
-
-                            // Fast path: deserialize key now from recorded events, do not buffer value.
-
+                            // Deserialize the key from recorded events and read the value live.
                             let fingerprint = fingerprint.into_owned();
                             let location = key_node.location();
                             #[cfg(any(feature = "garde", feature = "validator"))]

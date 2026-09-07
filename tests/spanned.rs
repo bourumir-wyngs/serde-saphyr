@@ -260,28 +260,27 @@ base_map: &m
     assert_eq!(cfg.merged_host.defined.column(), 16);
 }
 
-/// KEMN = Key Empty Map Node
 #[derive(Debug, Deserialize)]
-struct KeyEmptyMapNoneAliasCfg {
-    m: std::collections::BTreeMap<Option<String>, Spanned<u64>>,
+struct CompositeNullKeyAliasCfg {
+    m: std::collections::BTreeMap<std::collections::BTreeMap<Option<String>, u64>, Spanned<u64>>,
 }
 
 #[test]
-fn spanned_preserves_use_site_for_alias_values_in_kemn_slow_path() {
-    // This YAML uses a complex mapping key whose shape triggers the “KEMN one-entry nullish”
-    // slow-path in `deserialize_map`.
-    //
-    // The value is also an alias (`*a`). When the value is captured as a node, the captured
-    // events come from the anchor definition (definition-site), but `Spanned<T>.referenced`
-    // must point at the alias token (use-site).
+fn spanned_preserves_alias_locations_and_values_with_composite_null_keys() {
+    // The inner value must not replace the outer alias value, which retains both
+    // its use-site and definition-site locations.
     let yaml = indoc! {"base: &a 123
 m:
-  ? { null: *a }
+  ? { null: 1 }
   : *a
 "};
 
-    let cfg: KeyEmptyMapNoneAliasCfg = serde_saphyr::from_str(yaml).unwrap();
-    let v = cfg.m.get(&None).expect("expected a None key entry");
+    let cfg: CompositeNullKeyAliasCfg = serde_saphyr::from_str(yaml).unwrap();
+    let key = std::collections::BTreeMap::from([(None, 1)]);
+    let v = cfg
+        .m
+        .get(&key)
+        .expect("expected the complete composite key");
 
     assert_eq!(v.value, 123);
 

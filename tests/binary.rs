@@ -1,5 +1,7 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde::Deserialize;
+use serde_bytes::ByteBuf;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct StructureWithBinaries {
@@ -92,4 +94,94 @@ fn binary_tag_rejects_padding_inside_quad() {
         err.without_snippet(),
         serde_saphyr::Error::InvalidBinaryBase64 { .. }
     ));
+}
+
+#[rstest::rstest]
+fn optional_binary_values_preserve_null_like_base64(
+    #[values("!!binary", "!binary", "!<tag:yaml.org,2002:binary>")] tag: &str,
+    #[values("null", "Null", "NULL", "")] payload: &str,
+) {
+    let yaml = format!("{tag} {payload}");
+    let direct: ByteBuf = serde_saphyr::from_str(&yaml).unwrap();
+    let optional: Option<ByteBuf> = serde_saphyr::from_str(&yaml).unwrap();
+
+    if payload == "null" {
+        assert_eq!(direct.as_ref(), [0x9e, 0xe9, 0x65]);
+    } else if payload.is_empty() {
+        assert!(direct.is_empty());
+    }
+    assert_eq!(optional, Some(direct), "{yaml}");
+}
+
+#[test]
+fn optional_binary_rejects_malformed_base64_and_preserves_real_null() {
+    let error = serde_saphyr::from_str::<Option<ByteBuf>>("!!binary ~").unwrap_err();
+    assert!(matches!(
+        error.without_snippet(),
+        serde_saphyr::Error::InvalidBinaryBase64 { .. }
+    ));
+
+    for yaml in ["null", "~", "---\n", "!!null null"] {
+        assert_eq!(
+            serde_saphyr::from_str::<Option<ByteBuf>>(yaml).unwrap(),
+            None
+        );
+    }
+}
+
+#[test]
+fn optional_binary_fields_and_buffered_values_preserve_decoded_bytes() {
+    #[derive(Deserialize)]
+    struct OptionalBinary {
+        value: Option<ByteBuf>,
+    }
+
+    let yaml = "%TAG !bytes! tag:yaml.org,2002:\n---\nvalue: !bytes!binary null\n";
+    let document: OptionalBinary = serde_saphyr::from_str(yaml).unwrap();
+    let expected = ByteBuf::from(vec![0x9e, 0xe9, 0x65]);
+    assert_eq!(document.value, Some(expected.clone()));
+
+    let options = serde_saphyr::options! {
+        duplicate_keys: serde_saphyr::DuplicateKeyPolicy::LastWins,
+    };
+    let buffered: BTreeMap<u32, Option<ByteBuf>> =
+        serde_saphyr::from_str_with_options("1: !!binary null\n2: !!binary\n", options).unwrap();
+    assert_eq!(
+        buffered,
+        BTreeMap::from([(1, Some(expected)), (2, Some(ByteBuf::new()))])
+    );
+}
+
+#[test]
+fn document_streams_preserve_null_like_binary_values() {
+    let yaml = "--- !!binary null\n--- null\n--- !!binary\n--- !!binary AQID\n";
+    let expected = vec![
+        ByteBuf::from(vec![0x9e, 0xe9, 0x65]),
+        ByteBuf::new(),
+        ByteBuf::from(vec![1, 2, 3]),
+    ];
+    let multiple: Vec<ByteBuf> = serde_saphyr::from_multiple(yaml).unwrap();
+    let mut reader = yaml.as_bytes();
+    let streamed = serde_saphyr::read::<_, ByteBuf>(&mut reader)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    assert_eq!((multiple, streamed), (expected.clone(), expected));
+}
+
+#[test]
+fn document_streams_reject_malformed_binary_values() {
+    let yaml = "--- !!binary ~\n";
+    let multiple_error = serde_saphyr::from_multiple::<ByteBuf>(yaml).unwrap_err();
+    let mut reader = yaml.as_bytes();
+    let streamed_error = serde_saphyr::read::<_, ByteBuf>(&mut reader)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap_err();
+
+    for error in [multiple_error, streamed_error] {
+        assert!(matches!(
+            error.without_snippet(),
+            serde_saphyr::Error::InvalidBinaryBase64 { .. }
+        ));
+    }
 }

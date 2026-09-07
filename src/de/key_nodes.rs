@@ -11,9 +11,7 @@ use super::events::{Ev, Events, ReplayEvents, with_deferred_recursive_aliases};
 use super::options::{DuplicateKeyPolicy, MergeKeyPolicy};
 use super::tags::SfTag;
 use crate::location::Location;
-use crate::parse_scalars::{
-    parse_int_signed, parse_int_unsigned, scalar_is_null, scalar_is_nullish,
-};
+use crate::parse_scalars::{parse_int_signed, parse_int_unsigned, scalar_is_null};
 use crate::tag::simple_enum_variant_name;
 
 pub(super) fn simple_tagged_enum_name(
@@ -147,30 +145,6 @@ pub(super) fn is_empty_mapping_key_fingerprint(fingerprint: &KeyFingerprint<'_>)
     )
 }
 
-/// Recognize the empty-key compatibility shape using the original scalar's tag and style.
-/// Fingerprints normalize string tags and omit quoting, so they cannot determine nullness.
-pub(super) fn is_one_entry_nullish_mapping_key(
-    fingerprint: &KeyFingerprint<'_>,
-    events: &[Ev<'_>],
-) -> bool {
-    if !matches!(
-        fingerprint,
-        KeyFingerprint::Mapping {
-            tag: CanonicalKeyTag::Semantic(SfTag::Map),
-            entries,
-        } if entries.len() == 1
-    ) {
-        return false;
-    }
-
-    matches!(
-        events.get(1),
-        Some(Ev::Scalar { value, tag, style, .. })
-            if *tag == SfTag::Null
-                || (*tag == SfTag::None && scalar_is_nullish(value, style))
-    )
-}
-
 /// `from_slice_multiple` captured YAML node used to buffer keys/values and process merge keys.
 ///
 /// Fields:
@@ -273,90 +247,6 @@ pub(super) struct PendingEntry<'a> {
     pub(super) value_separator_comments: Vec<Cow<'a, str>>,
     /// Comments immediately above the value node.
     pub(super) value_comments: Vec<Cow<'a, str>>,
-}
-
-/// Return the span lengths of key and value for a one-entry map encoded in `events`.
-/// The expected layout is: `MapStart`, <key node>, <value node>, `MapEnd`.
-/// On success returns (`key_start`, `key_end`, `val_start`, `val_end`) as indices into events.
-pub(super) fn one_entry_map_spans(events: &[Ev<'_>]) -> Option<(usize, usize, usize, usize)> {
-    if events.len() < 4 {
-        return None;
-    }
-    match events.first()? {
-        Ev::MapStart { .. } => {}
-        _ => return None,
-    }
-    match events.last()? {
-        Ev::MapEnd { .. } => {}
-        _ => return None,
-    }
-    // Cursor over the interior
-    let mut i = 1; // after MapStart
-    let key_start = i;
-    i += skip_one_node_len(events, i)?;
-    let key_end = i;
-    let val_start = i;
-    i += skip_one_node_len(events, i)?;
-    let val_end = i;
-    if i != events.len() - 1 {
-        return None;
-    }
-    Some((key_start, key_end, val_start, val_end))
-}
-
-/// Skip one complete node in `events` starting at index `i`, returning the number of
-/// events consumed. Returns None if the slice is malformed.
-pub(super) fn skip_one_node_len(events: &[Ev<'_>], mut i: usize) -> Option<usize> {
-    match events.get(i)? {
-        Ev::Scalar { .. } | Ev::RecursiveAlias { .. } => Some(1),
-        Ev::SeqStart { .. } => {
-            let start = i;
-            let mut depth = 1i32;
-            i += 1;
-            while i < events.len() {
-                match events.get(i)? {
-                    Ev::SeqStart { .. } | Ev::MapStart { .. } => depth += 1,
-                    Ev::SeqEnd { .. } => {
-                        depth -= 1;
-                        if depth == 0 {
-                            return Some(i - start + 1);
-                        }
-                    }
-                    Ev::MapEnd { .. } => {
-                        depth -= 1;
-                    }
-                    Ev::Scalar { .. } | Ev::RecursiveAlias { .. } => {}
-                    Ev::Taken { .. } => return None,
-                }
-                i += 1;
-            }
-            None
-        }
-        Ev::MapStart { .. } => {
-            let start = i;
-            let mut depth = 1i32;
-            i += 1;
-            while i < events.len() {
-                match events.get(i)? {
-                    Ev::MapStart { .. } | Ev::SeqStart { .. } => depth += 1,
-                    Ev::MapEnd { .. } => {
-                        depth -= 1;
-                        if depth == 0 {
-                            return Some(i - start + 1);
-                        }
-                    }
-                    Ev::SeqEnd { .. } => {
-                        depth -= 1;
-                    }
-                    Ev::Scalar { .. } | Ev::RecursiveAlias { .. } => {}
-                    Ev::Taken { .. } => return None,
-                }
-                i += 1;
-            }
-            None
-        }
-        Ev::SeqEnd { .. } | Ev::MapEnd { .. } | Ev::Taken { .. } => None,
-    }
 }
 
 /// Capture a complete node (scalar/sequence/mapping) from an `Events` source,

@@ -416,11 +416,14 @@ pub(crate) fn scalar_is_nullish(value: &str, style: &ScalarStyle) -> bool {
 
 #[cfg(feature = "deserialize")]
 #[inline]
-/// Resolve null while honoring explicit core types and string-forcing tags.
-/// Non-null core scalars must reach their deserializer even when their text looks null-like.
+/// Resolve null while honoring explicit core types, binary tags, and string-forcing tags.
+/// Non-null typed scalars must reach their deserializer even when their text looks null-like.
 pub(crate) fn scalar_is_null(tag: &SfTag, value: &str, style: &ScalarStyle) -> bool {
     *tag == SfTag::Null
-        || (!tag.is_core() && !tag.forces_string() && scalar_is_nullish(value, style))
+        || (!tag.is_core()
+            && !tag.forces_string()
+            && *tag != SfTag::Binary
+            && scalar_is_nullish(value, style))
 }
 
 #[cfg(feature = "deserialize")]
@@ -458,6 +461,18 @@ mod tests {
             column: 7,
             span: crate::location::Span::UNKNOWN,
             source_id: 0,
+        }
+    }
+
+    #[test]
+    fn null_resolution_preserves_explicit_binary_scalars() {
+        for value in ["null", "Null", "NULL", "~", ""] {
+            assert!(scalar_is_null(&SfTag::None, value, &ScalarStyle::Plain));
+            assert!(scalar_is_null(&SfTag::Null, value, &ScalarStyle::Plain));
+            assert!(
+                !scalar_is_null(&SfTag::Binary, value, &ScalarStyle::Plain),
+                "explicit binary scalar must reach its deserializer: {value:?}"
+            );
         }
     }
 
