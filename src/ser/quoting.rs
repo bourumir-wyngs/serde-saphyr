@@ -397,10 +397,15 @@ pub(crate) fn is_auto_block_scalar_readable(s: &str) -> bool {
 
 /// Characters that cannot survive a round-trip inside a plain or single-quoted
 /// scalar and therefore force double-quoted emission.
-/// `char::is_control` misses BOM (U+FEFF) and the LS/PS separators (U+2028/U+2029), which are not controls.
+/// `char::is_control` misses BOM (U+FEFF), the LS/PS separators (U+2028/U+2029),
+/// and the non-printable U+FFFE/U+FFFF codepoints, which also need escaping.
 #[inline]
 pub(crate) fn is_controll_which_needs_escaping(ch: char) -> bool {
-    ch.is_control() || matches!(ch, '\u{FEFF}' | '\u{2028}' | '\u{2029}')
+    ch.is_control()
+        || matches!(
+            ch,
+            '\u{FEFF}' | '\u{2028}' | '\u{2029}' | '\u{FFFE}' | '\u{FFFF}'
+        )
 }
 
 /// Write the contents of a YAML double-quoted scalar, without surrounding quotes.
@@ -428,9 +433,7 @@ pub(crate) fn escape_double_quoted(s: &str, out: &mut impl Write) -> fmt::Result
             c if (c as u32) <= 0xFF && (c.is_control() || (0x7F..=0x9F).contains(&(c as u32))) => {
                 write!(out, "\\x{:02X}", c as u32)?;
             }
-            c if (c as u32) <= 0xFFFF
-                && (c.is_control() || (0x7F..=0x9F).contains(&(c as u32))) =>
-            {
+            c if (c as u32) <= 0xFFFF && is_controll_which_needs_escaping(c) => {
                 write!(out, "\\u{:04X}", c as u32)?;
             }
             c => out.write_char(c)?,
