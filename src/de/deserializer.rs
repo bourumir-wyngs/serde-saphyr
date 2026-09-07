@@ -37,8 +37,7 @@ use crate::location::Location;
 use crate::location::Locations;
 use crate::parse_scalars::{
     leading_zero_decimal, maybe_not_string, parse_int_signed, parse_int_unsigned,
-    parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish, scalar_is_nullish_for_option,
-    try_parse_float_incl_overflow,
+    parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish, try_parse_float_incl_overflow,
 };
 
 struct TupleLenExpected {
@@ -744,8 +743,8 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 return visitor.visit_unit();
             }
             let is_plain = matches!(style, ScalarStyle::Plain);
-            // Treat all YAML null-like scalars (null, ~, empty) as null when typeless.
-            if scalar_is_nullish(&value, &style) {
+            // Explicit string tags preserve null-like text (null, ~, empty).
+            if tag != SfTag::String && scalar_is_nullish(&value, &style) {
                 let _ = self.ev.next()?; // consume
                 return visitor.visit_unit();
             }
@@ -1231,8 +1230,8 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
     /// Deserialize an `Option<T>`.
     ///
-    /// **What is treated as `None`?** End-of-input, container end, or a scalar
-    /// that is empty-unquoted / `~` / `null` in plain style.
+    /// **What is treated as `None`?** End-of-input, container end, an explicitly
+    /// tagged null, or a plain empty / `~` / `null` scalar without a string tag.
     fn deserialize_option<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Only when Serde asks for Option<T> do we interpret YAML null-like scalars as None.
         // Special-case for map keys: treat an explicit empty key captured as an empty mapping node
@@ -1262,7 +1261,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         }
 
         if let Some((value, tag, style, _location)) = self.peek_effective_scalar()?
-            && (tag == SfTag::Null || scalar_is_nullish_for_option(&value, &style))
+            && (tag == SfTag::Null || (tag != SfTag::String && scalar_is_nullish(&value, &style)))
         {
             let _ = self.ev.next()?; // consume the scalar
             return visitor.visit_none();

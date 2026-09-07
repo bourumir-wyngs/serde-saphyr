@@ -393,7 +393,8 @@ fn maybe_bool(s: &str, strict: bool) -> bool {
     }
 }
 
-/// True if a scalar is a YAML "null-like" value in non-`Option` contexts.
+/// True if a scalar's text and style are YAML "null-like".
+/// Callers must also respect explicit tags such as `!!str` and `!!null`.
 ///
 /// Arguments:
 /// - `value`: scalar text.
@@ -403,7 +404,7 @@ fn maybe_bool(s: &str, strict: bool) -> bool {
 /// - `true` for empty, `~`, or case-insensitive `null`; `false` otherwise.
 ///
 /// Used by:
-/// - Unit handling and some edge cases where absence is tolerated.
+/// - Option, unit, typeless scalar handling, and other cases where absence is tolerated.
 #[cfg(feature = "deserialize")]
 #[inline]
 pub(crate) fn scalar_is_nullish(value: &str, style: &ScalarStyle) -> bool {
@@ -421,25 +422,6 @@ pub(crate) fn scalar_document_is_empty_or_null(
     style: &ScalarStyle,
 ) -> bool {
     *tag == SfTag::Null || (*tag != SfTag::String && scalar_is_nullish(value, style))
-}
-
-/// True if a scalar should be turned into `None` for `Option<T>`.
-///
-/// Arguments:
-/// - `value`: scalar text.
-/// - `style`: scalar style.
-///
-/// Returns:
-/// - `true` for empty unquoted or plain `~`/`null`; `false` otherwise.
-///
-/// Used by:
-/// - `deserialize_option` only (does not affect other types).
-#[cfg(feature = "deserialize")]
-#[inline]
-pub(crate) fn scalar_is_nullish_for_option(value: &str, style: &ScalarStyle) -> bool {
-    // For Option: treat empty unquoted scalar as null, and plain "~"/"null" as null.
-    (value.is_empty() && !matches!(style, ScalarStyle::SingleQuoted | ScalarStyle::DoubleQuoted)) || // empty_unquoted
-    (matches!(style, ScalarStyle::Plain) && (value == "~" || value.eq_ignore_ascii_case("null"))) // plain_nullish
 }
 
 #[cfg(feature = "deserialize")]
