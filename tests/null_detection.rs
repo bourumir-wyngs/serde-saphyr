@@ -10,6 +10,11 @@ use std::collections::BTreeMap;
 #[case::tagged_uppercase_null("!!str NULL", "NULL")]
 #[case::tagged_tilde("!!str ~", "~")]
 #[case::tagged_empty("!!str", "")]
+#[case::non_specific_null("! null", "null")]
+#[case::non_specific_title_case_null("! Null", "Null")]
+#[case::non_specific_uppercase_null("! NULL", "NULL")]
+#[case::non_specific_tilde("! ~", "~")]
+#[case::non_specific_empty("!", "")]
 #[case::verbatim_string_tag("!<tag:yaml.org,2002:str> null", "null")]
 #[case::single_quoted_null("'null'", "null")]
 #[case::double_quoted_null("\"null\"", "null")]
@@ -38,6 +43,36 @@ fn null_like_strings_preserve_their_values(#[case] yaml: &str, #[case] expected:
     );
 }
 
+#[test]
+fn non_specific_null_strings_support_borrowed_strings_and_chars() {
+    for no_schema in [false, true] {
+        let options = serde_saphyr::options! { no_schema: no_schema };
+        for (yaml, expected) in [("! null", "null"), ("! ~", "~")] {
+            let actual: Option<&str> =
+                serde_saphyr::from_str_with_options(yaml, options.clone()).unwrap();
+            assert_eq!(actual, Some(expected), "no_schema={no_schema}: {yaml}");
+        }
+
+        let actual: char = serde_saphyr::from_str_with_options("! ~", options).unwrap();
+        assert_eq!(actual, '~');
+    }
+}
+
+#[test]
+fn no_schema_preserves_explicit_string_and_null_tags() {
+    for (yaml, expected) in [
+        ("! null", Value::String("null".to_owned())),
+        ("! ~", Value::String("~".to_owned())),
+        ("!", Value::String(String::new())),
+        ("!!str null", Value::String("null".to_owned())),
+        ("!!null null", Value::Null),
+    ] {
+        let options = serde_saphyr::options! { no_schema: true };
+        let actual: Value = serde_saphyr::from_str_with_options(yaml, options).unwrap();
+        assert_eq!(actual, expected, "{yaml}");
+    }
+}
+
 #[rstest]
 #[case::plain_null("null")]
 #[case::title_case_null("Null")]
@@ -60,6 +95,8 @@ fn anchored_null_like_strings_preserve_mapping_values() {
     let yaml = "\
 tagged: &tagged !!str null\n\
 tagged_alias: *tagged\n\
+non_specific: &non_specific ! null\n\
+non_specific_alias: *non_specific\n\
 literal: &literal |\n\
 literal_alias: *literal\n\
 folded: &folded >\n\
@@ -71,6 +108,8 @@ absent:\n";
     for (key, expected) in [
         ("tagged", "null"),
         ("tagged_alias", "null"),
+        ("non_specific", "null"),
+        ("non_specific_alias", "null"),
         ("literal", ""),
         ("literal_alias", ""),
         ("folded", ""),
@@ -81,6 +120,46 @@ absent:\n";
     }
     assert_eq!(options["absent"], None);
     assert_eq!(json["absent"], Value::Null);
+}
+
+#[test]
+fn non_specific_null_strings_preserve_flattened_fields() {
+    #[derive(serde::Deserialize)]
+    struct Document {
+        #[serde(flatten)]
+        values: BTreeMap<String, Option<String>>,
+    }
+
+    let yaml = "null_text: ! null\ntilde_text: ! ~\nempty_text: !\nabsent:\n";
+    let document: Document = serde_saphyr::from_str(yaml).unwrap();
+
+    assert_eq!(
+        document.values,
+        BTreeMap::from([
+            ("null_text".to_owned(), Some("null".to_owned())),
+            ("tilde_text".to_owned(), Some("~".to_owned())),
+            ("empty_text".to_owned(), Some(String::new())),
+            ("absent".to_owned(), None),
+        ])
+    );
+}
+
+#[test]
+fn non_specific_null_strings_are_retained_in_document_streams() {
+    let yaml = "--- ! null\n--- ! ~\n--- !\n--- null\n--- kept\n";
+    let expected = vec![
+        "null".to_owned(),
+        "~".to_owned(),
+        String::new(),
+        "kept".to_owned(),
+    ];
+    let multiple: Vec<String> = serde_saphyr::from_multiple(yaml).unwrap();
+    let mut reader = yaml.as_bytes();
+    let streamed: Vec<String> = serde_saphyr::read::<_, String>(&mut reader)
+        .collect::<Result<_, _>>()
+        .unwrap();
+
+    assert_eq!((multiple, streamed), (expected.clone(), expected));
 }
 
 #[test]

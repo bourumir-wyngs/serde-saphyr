@@ -459,21 +459,22 @@ fn captured_fingerprints_include_canonical_root_tag_identity() {
     assert!(is_empty_mapping_key_fingerprint(&implicit_mapping));
     assert!(!is_empty_mapping_key_fingerprint(&local_map_mapping));
 
-    let custom_nullish_inner_key = KeyFingerprint::Mapping {
-        tag: CanonicalKeyTag::Semantic(SfTag::Map),
-        entries: vec![(
-            KeyFingerprint::Scalar {
-                value: Cow::Borrowed("null"),
-                tag: CanonicalKeyTag::Custom(Cow::Borrowed("!First")),
-            },
-            KeyFingerprint::Scalar {
-                value: Cow::Borrowed("value"),
-                tag: CanonicalKeyTag::Semantic(SfTag::String),
-            },
-        )],
-    };
-    assert!(!is_one_entry_nullish_mapping_key_fingerprint(
-        &custom_nullish_inner_key
+    let mut custom_nullish_inner_key = replay_events(vec![
+        map_start(loc(9, 32)),
+        scalar(
+            "null",
+            SfTag::Other,
+            Some("!First"),
+            ScalarStyle::Plain,
+            loc(9, 33),
+        ),
+        scalar("value", SfTag::None, None, ScalarStyle::Plain, loc(9, 34)),
+        map_end(loc(9, 35)),
+    ]);
+    let custom_nullish_inner_key = capture_node(&mut custom_nullish_inner_key).unwrap();
+    assert!(!is_one_entry_nullish_mapping_key(
+        custom_nullish_inner_key.fingerprint().as_ref(),
+        custom_nullish_inner_key.events(),
     ));
 }
 

@@ -8,11 +8,14 @@ use super::base64::decode_base64_yaml;
 use super::cfg::Cfg;
 use super::commented_deser;
 use super::error::{Error, MissingFieldLocationGuard, TransformReason};
-use super::events::{Ev, Events, ReplayEvents, attach_alias_locations_if_missing, eof_with_loc};
+use super::events::{
+    Ev, Events, ReplayEvents, attach_alias_locations_if_missing, eof_with_loc,
+    with_deferred_recursive_aliases,
+};
 use super::key_nodes::{
     KeyFingerprint, KeyNode, PendingEntry, apply_duplicate_key_policy_to_entries,
     capture_node_with_legacy_octal, capture_simple_tagged_node_as_map_events,
-    is_empty_mapping_key_fingerprint, is_merge_key, is_one_entry_nullish_mapping_key_fingerprint,
+    is_empty_mapping_key_fingerprint, is_merge_key, is_one_entry_nullish_mapping_key,
     one_entry_map_spans, pending_entries_from_live_events, simple_tagged_enum_name,
     validate_no_merge_keys_in_node_events,
 };
@@ -37,7 +40,8 @@ use crate::location::Location;
 use crate::location::Locations;
 use crate::parse_scalars::{
     leading_zero_decimal, maybe_not_string, parse_int_signed, parse_int_unsigned,
-    parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish, try_parse_float_incl_overflow,
+    parse_yaml11_bool, parse_yaml12_float, scalar_is_null, scalar_is_nullish,
+    try_parse_float_incl_overflow,
 };
 
 struct TupleLenExpected {
@@ -122,6 +126,9 @@ where
 fn skip_one_node_from_events(ev: &mut dyn Events<'_>) -> Result<(), Error> {
     let mut depth;
     match ev.next()? {
+        Some(Ev::RecursiveAlias { location, .. }) => {
+            return Err(Error::RecursiveReferencesRequireWeakTypes { location });
+        }
         Some(Ev::Scalar { .. }) => return Ok(()),
         Some(Ev::SeqStart { .. } | Ev::MapStart { .. }) => depth = 1usize,
         Some(Ev::SeqEnd { location } | Ev::MapEnd { location }) => {
@@ -135,6 +142,9 @@ fn skip_one_node_from_events(ev: &mut dyn Events<'_>) -> Result<(), Error> {
 
     while depth != 0 {
         match ev.next()? {
+            Some(Ev::RecursiveAlias { location, .. }) => {
+                return Err(Error::RecursiveReferencesRequireWeakTypes { location });
+            }
             Some(Ev::SeqStart { .. } | Ev::MapStart { .. }) => depth += 1,
             Some(Ev::SeqEnd { .. } | Ev::MapEnd { .. }) => depth -= 1,
             Some(Ev::Scalar { .. }) => {}
@@ -801,16 +811,15 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 _ => {}
             }
             let is_plain = matches!(style, ScalarStyle::Plain);
-            // Explicit string tags preserve null-like text (null, ~, empty).
-            if tag != SfTag::String && scalar_is_nullish(&value, &style) {
+            // String tags (!!str and !) preserve null-like text (null, ~, empty).
+            if scalar_is_null(&tag, &value, &style) {
                 let _ = self.ev.next()?; // consume
                 return visitor.visit_unit();
             }
             if !is_plain
                 || !tag.can_parse_into_string()
                 || tag == SfTag::Binary
-                || tag == SfTag::String
-                || tag == SfTag::NonSpecific
+                || tag.forces_string()
             {
                 // For string-ish scalars, rely on the parser's own zero-copy capability:
                 // if the scalar is returned as `Cow::Borrowed`, we can pass it through.
@@ -886,6 +895,11 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         match self.ev.peek()? {
             Some(Ev::SeqStart { .. }) => self.deserialize_seq(visitor),
             Some(Ev::MapStart { .. }) => self.deserialize_map(visitor),
+            Some(Ev::RecursiveAlias { location, .. }) => {
+                Err(Error::RecursiveReferencesRequireWeakTypes {
+                    location: *location,
+                })
+            }
             Some(Ev::SeqEnd { location }) => Err(Error::UnexpectedSequenceEnd {
                 location: *location,
             }),
@@ -1037,7 +1051,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     fn deserialize_char<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Mirror deserialize_string pre-checks to leverage tag/style and maybe_not_string.
         if let Some(view) = self.peek_scalar_view()?
-            && view.tag != SfTag::String
+            && !view.tag.forces_string()
         {
             // Reject YAML null for char (allow quoted values like "null").
             if view.tag == SfTag::Null || scalar_is_nullish(&view.effective, &view.style) {
@@ -1080,14 +1094,14 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 // substituted ${...} that resolved to "" stays a string, not null.
                 if (view.tag == SfTag::Null
                     || (!view.interpolated && scalar_is_nullish(&view.effective, &view.style)))
-                    && view.tag != SfTag::String
+                    && !view.tag.forces_string()
                 {
                     let loc = view.location;
                     let _ = self.ev.next()?;
                     return Err(Error::NullIntoString { location: loc });
                 } else if self.cfg.no_schema
                     && maybe_not_string(&view.effective, &view.style, self.cfg.strict_booleans)
-                    && view.tag != SfTag::String
+                    && !view.tag.forces_string()
                 {
                     let view = self.take_scalar_view()?;
                     return Err(Self::quoting_required_for_scalar(&view));
@@ -1164,14 +1178,14 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             // A ${...} that the user deliberately substituted to "" is a legitimate string.
             if (view.tag == SfTag::Null
                 || (!view.interpolated && scalar_is_nullish(&view.effective, &view.style)))
-                && view.tag != SfTag::String
+                && !view.tag.forces_string()
             {
                 // Consume the scalar to anchor the error at the correct location.
                 let (_value, _tag, location) = self.take_scalar_event()?;
                 return Err(Error::NullIntoString { location });
             } else if self.cfg.no_schema
                 && maybe_not_string(&view.effective, &view.style, self.cfg.strict_booleans)
-                && view.tag != SfTag::String
+                && !view.tag.forces_string()
             {
                 // Consume the scalar to anchor the error at the correct location.
                 let view = self.take_scalar_view()?;
@@ -1271,7 +1285,8 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     /// Deserialize an `Option<T>`.
     ///
     /// **What is treated as `None`?** End-of-input, container end, an explicitly
-    /// tagged null, or a plain empty / `~` / `null` scalar without a string tag.
+    /// tagged null, or a plain empty / `~` / `null` scalar permitting implicit null resolution.
+    /// Explicit non-null core tags are passed to the inner value's deserializer for validation.
     fn deserialize_option<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Only when Serde asks for Option<T> do we interpret YAML null-like scalars as None.
         // Special-case for map keys: treat an explicit empty key captured as an empty mapping node
@@ -1301,7 +1316,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         }
 
         if let Some((value, tag, style, _location)) = self.peek_effective_scalar()?
-            && (tag == SfTag::Null || (tag != SfTag::String && scalar_is_nullish(&value, &style)))
+            && scalar_is_null(&tag, &value, &style)
         {
             let _ = self.ev.next()?; // consume the scalar
             return visitor.visit_none();
@@ -1324,8 +1339,8 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     /// **Accepted YAML forms:** end-of-input, container end, or a null-like
     /// scalar in plain style (`""`, `~`, `null`).
     fn deserialize_unit<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        if let Some((value, _tag, style, _location)) = self.peek_effective_scalar()?
-            && scalar_is_nullish(&value, &style)
+        if let Some((value, tag, style, _location)) = self.peek_effective_scalar()?
+            && scalar_is_null(&tag, &value, &style)
         {
             let _ = self.ev.next()?; // consume the scalar
             return visitor.visit_unit();
@@ -1454,7 +1469,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     fn deserialize_seq<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         if let Some((s, tag, style, _location)) = self.peek_effective_scalar()? {
             // Treat null-like scalar as an empty sequence.
-            if tag == SfTag::Null || scalar_is_nullish(&s, &style) {
+            if scalar_is_null(&tag, &s, &style) {
                 let _ = self.ev.next()?; // consume the null-like scalar
                 struct EmptySeq;
                 impl<'de> de::SeqAccess<'de> for EmptySeq {
@@ -1660,7 +1675,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     fn deserialize_map<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Treat null-like scalar as an empty map/struct.
         if let Some((s, tag, style, location)) = self.peek_effective_scalar()?
-            && (tag == SfTag::Null || scalar_is_nullish(&s, &style))
+            && scalar_is_null(&tag, &s, &style)
         {
             let _ = self.ev.next()?; // consume the null-like scalar
             struct EmptyMap {
@@ -1728,90 +1743,94 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             prior_seen: &HashSet<KeyFingerprint<'de>>,
             mut merge_batches: VecDeque<Vec<PendingEntry<'de>>>,
         ) -> Result<VecDeque<PendingEntry<'de>>, Error> {
-            let mut explicit_entries = Vec::new();
+            with_deferred_recursive_aliases(ev, |ev| {
+                let mut explicit_entries = Vec::new();
 
-            loop {
-                let (key, field_comments) = if let Some(key) = first_key.take() {
-                    (key, std::mem::take(&mut first_key_comments))
-                } else {
-                    match ev.peek()? {
-                        Some(Ev::MapEnd { .. }) => {
-                            let _ = ev.next()?;
-                            break;
-                        }
-                        Some(_) => {
-                            let mut key_comments = std::mem::take(&mut first_key_comments);
-                            key_comments.extend(ev.take_leading_comments_for_next_node()?);
-                            let key = capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
-                            (key, key_comments)
-                        }
-                        None => return Err(eof_with_loc(ev)),
-                    }
-                };
-
-                if is_merge_key(&key) {
-                    match cfg.merge_keys {
-                        MergeKeyPolicy::Merge => {
-                            let _ = ev.peek()?;
-                            let merge_ref_loc = ev.reference_location();
-                            let entries = pending_entries_from_live_events(
-                                ev,
-                                merge_ref_loc,
-                                cfg.merge_keys,
-                                cfg.dup_policy,
-                                cfg.legacy_octal_numbers,
-                            )?;
-                            if !entries.is_empty() {
-                                merge_batches.push_back(entries);
+                loop {
+                    let (key, field_comments) = if let Some(key) = first_key.take() {
+                        (key, std::mem::take(&mut first_key_comments))
+                    } else {
+                        match ev.peek()? {
+                            Some(Ev::MapEnd { .. }) => {
+                                let _ = ev.next()?;
+                                break;
                             }
-                            continue;
+                            Some(_) => {
+                                let mut key_comments = std::mem::take(&mut first_key_comments);
+                                key_comments.extend(ev.take_leading_comments_for_next_node()?);
+                                let key =
+                                    capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
+                                (key, key_comments)
+                            }
+                            None => return Err(eof_with_loc(ev)),
                         }
-                        MergeKeyPolicy::AsOrdinary => {}
-                        MergeKeyPolicy::Error => {
-                            return Err(Error::MergeKeyNotAllowed {
-                                location: key.location(),
-                            });
+                    };
+
+                    if is_merge_key(&key) {
+                        match cfg.merge_keys {
+                            MergeKeyPolicy::Merge => {
+                                let _ = ev.peek()?;
+                                let merge_ref_loc = ev.reference_location();
+                                let entries = pending_entries_from_live_events(
+                                    ev,
+                                    merge_ref_loc,
+                                    cfg.merge_keys,
+                                    cfg.dup_policy,
+                                    cfg.legacy_octal_numbers,
+                                )?;
+                                if !entries.is_empty() {
+                                    merge_batches.push_back(entries);
+                                }
+                                continue;
+                            }
+                            MergeKeyPolicy::AsOrdinary => {}
+                            MergeKeyPolicy::Error => {
+                                return Err(Error::MergeKeyNotAllowed {
+                                    location: key.location(),
+                                });
+                            }
+                        }
+                    }
+
+                    let value_separator_comments =
+                        ev.take_separator_comments_before_mapping_value()?;
+                    let value_comments = ev.take_leading_comments_for_next_node()?;
+                    let reference_location = ev.reference_location();
+                    let value = capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
+                    explicit_entries.push(PendingEntry {
+                        key,
+                        value,
+                        reference_location,
+                        field_comments,
+                        value_separator_comments,
+                        value_comments,
+                    });
+                }
+
+                let mut explicit_entries = apply_duplicate_key_policy_to_entries(
+                    explicit_entries,
+                    cfg.dup_policy,
+                    cfg.merge_keys,
+                )?;
+                let mut seen = prior_seen.clone();
+                seen.reserve(explicit_entries.len());
+                for entry in &explicit_entries {
+                    seen.insert(entry.key.fingerprint().into_owned());
+                }
+
+                let mut merge_entries = Vec::new();
+                for batch in merge_batches {
+                    for entry in batch {
+                        let fingerprint = entry.key.fingerprint().into_owned();
+                        if seen.insert(fingerprint) {
+                            merge_entries.push(entry);
                         }
                     }
                 }
 
-                let value_separator_comments = ev.take_separator_comments_before_mapping_value()?;
-                let value_comments = ev.take_leading_comments_for_next_node()?;
-                let reference_location = ev.reference_location();
-                let value = capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
-                explicit_entries.push(PendingEntry {
-                    key,
-                    value,
-                    reference_location,
-                    field_comments,
-                    value_separator_comments,
-                    value_comments,
-                });
-            }
-
-            let mut explicit_entries = apply_duplicate_key_policy_to_entries(
-                explicit_entries,
-                cfg.dup_policy,
-                cfg.merge_keys,
-            )?;
-            let mut seen = prior_seen.clone();
-            seen.reserve(explicit_entries.len());
-            for entry in &explicit_entries {
-                seen.insert(entry.key.fingerprint().into_owned());
-            }
-
-            let mut merge_entries = Vec::new();
-            for batch in merge_batches {
-                for entry in batch {
-                    let fingerprint = entry.key.fingerprint().into_owned();
-                    if seen.insert(fingerprint) {
-                        merge_entries.push(entry);
-                    }
-                }
-            }
-
-            explicit_entries.extend(merge_entries);
-            Ok(explicit_entries.into_iter().collect())
+                explicit_entries.extend(merge_entries);
+                Ok(explicit_entries.into_iter().collect())
+            })
         }
 
         /// Streaming `MapAccess` over the underlying `Events`.
@@ -1857,6 +1876,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
                 let mut depth; // assigned later
                 match self.ev.next()? {
+                    Some(Ev::RecursiveAlias { location, .. }) => {
+                        return Err(Error::RecursiveReferencesRequireWeakTypes { location });
+                    }
                     Some(Ev::Scalar { .. }) => return Ok(()),
                     Some(Ev::SeqStart { .. } | Ev::MapStart { .. }) => depth = 1,
                     Some(Ev::SeqEnd { location } | Ev::MapEnd { location }) => {
@@ -1869,6 +1891,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 }
                 while depth != 0 {
                     match self.ev.next()? {
+                        Some(Ev::RecursiveAlias { location, .. }) => {
+                            return Err(Error::RecursiveReferencesRequireWeakTypes { location });
+                        }
                         Some(Ev::SeqStart { .. } | Ev::MapStart { .. }) => depth += 1,
                         Some(Ev::SeqEnd { .. } | Ev::MapEnd { .. }) => depth -= 1,
                         Some(Ev::Scalar { .. }) => {}
@@ -2030,7 +2055,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                         // In this case, we want key=None and the outer value to be V.
                         let mut kemn = is_empty_mapping_key_fingerprint(&fingerprint);
                         if !kemn
-                            && is_one_entry_nullish_mapping_key_fingerprint(&fingerprint)
+                            && is_one_entry_nullish_mapping_key(&fingerprint, &events)
                             && let Some((_ks, _ke, vs, ve)) = one_entry_map_spans(&events)
                         {
                             // Zero-copy probe over recorded events to extract inner key/value spans.
@@ -2208,8 +2233,10 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             // explicit-empty-key-as-one-entry-map-with-nullish-inner-key case).
                             let kemn_direct =
                                 is_empty_mapping_key_fingerprint(fingerprint.as_ref());
-                            let kemn_one_entry_nullish =
-                                is_one_entry_nullish_mapping_key_fingerprint(fingerprint.as_ref());
+                            let kemn_one_entry_nullish = is_one_entry_nullish_mapping_key(
+                                fingerprint.as_ref(),
+                                key_node.events(),
+                            );
 
                             if kemn_one_entry_nullish {
                                 // Slow path needed: capture value and enqueue so pending branch can
@@ -2517,6 +2544,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
         let peeked_ev = self.ev.peek()?.cloned();
         let mode = match peeked_ev {
+            Some(Ev::RecursiveAlias { location, .. }) => {
+                return Err(Error::RecursiveReferencesRequireWeakTypes { location });
+            }
             Some(Ev::Scalar {
                 tag,
                 style,
@@ -2532,7 +2562,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     return Err(eof_with_loc(self.ev));
                 };
                 if self.cfg.no_schema
-                    && tag != SfTag::String
+                    && !tag.forces_string()
                     && maybe_not_string(&view.effective, &style, self.cfg.strict_booleans)
                 {
                     let view = self.take_scalar_view()?;
@@ -2620,7 +2650,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 key_de.in_key = true;
                 if let Some(view) = key_de.peek_scalar_view()? {
                     if self.cfg.no_schema
-                        && view.tag != SfTag::String
+                        && !view.tag.forces_string()
                         && maybe_not_string(&view.raw, &view.style, self.cfg.strict_booleans)
                     {
                         let view = key_de.take_scalar_view()?;
@@ -2792,8 +2822,11 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             Ok(())
                         }
                         Some(Ev::Scalar {
-                            value: s, style, ..
-                        }) if scalar_is_nullish(s, style) => {
+                            value: s,
+                            tag,
+                            style,
+                            ..
+                        }) if scalar_is_null(tag, s, style) => {
                             let _ = self.ev.next()?; // consume the null-like scalar
                             self.expect_map_end()
                         }

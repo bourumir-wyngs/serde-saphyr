@@ -394,7 +394,7 @@ fn maybe_bool(s: &str, strict: bool) -> bool {
 }
 
 /// True if a scalar's text and style are YAML "null-like".
-/// Callers must also respect explicit tags such as `!!str` and `!!null`.
+/// Callers must also respect tags such as `!!str`, `!`, and `!!null`.
 ///
 /// Arguments:
 /// - `value`: scalar text.
@@ -416,12 +416,11 @@ pub(crate) fn scalar_is_nullish(value: &str, style: &ScalarStyle) -> bool {
 
 #[cfg(feature = "deserialize")]
 #[inline]
-pub(crate) fn scalar_document_is_empty_or_null(
-    tag: &SfTag,
-    value: &str,
-    style: &ScalarStyle,
-) -> bool {
-    *tag == SfTag::Null || (*tag != SfTag::String && scalar_is_nullish(value, style))
+/// Resolve null while honoring explicit core types and string-forcing tags.
+/// Non-null core scalars must reach their deserializer even when their text looks null-like.
+pub(crate) fn scalar_is_null(tag: &SfTag, value: &str, style: &ScalarStyle) -> bool {
+    *tag == SfTag::Null
+        || (!tag.is_core() && !tag.forces_string() && scalar_is_nullish(value, style))
 }
 
 #[cfg(feature = "deserialize")]

@@ -7,11 +7,13 @@ use granit_parser::ScalarStyle;
 use super::error::Error;
 #[cfg(feature = "properties")]
 use super::events::PropertyInterpolation;
-use super::events::{Ev, Events, ReplayEvents};
+use super::events::{Ev, Events, ReplayEvents, with_deferred_recursive_aliases};
 use super::options::{DuplicateKeyPolicy, MergeKeyPolicy};
 use super::tags::SfTag;
 use crate::location::Location;
-use crate::parse_scalars::{parse_int_signed, parse_int_unsigned, scalar_is_nullish};
+use crate::parse_scalars::{
+    parse_int_signed, parse_int_unsigned, scalar_is_null, scalar_is_nullish,
+};
 use crate::tag::simple_enum_variant_name;
 
 pub(super) fn simple_tagged_enum_name(
@@ -37,6 +39,8 @@ pub(super) enum CanonicalKeyTag<'a> {
 /// Canonical fingerprint of a YAML node for duplicate-key detection.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub(super) enum KeyFingerprint<'a> {
+    /// A buffered recursive reference retains its anchor identity.
+    RecursiveAlias { anchor: usize },
     /// Parsed integer identity, independent of spelling. Zero is never negative.
     Integer { negative: bool, magnitude: u128 },
     /// Scalar fingerprint (value plus tag identity).
@@ -68,7 +72,7 @@ impl KeyFingerprint<'_> {
             Self::Mapping { entries, .. } => entries
                 .iter()
                 .any(|(key, value)| key.contains_integer() || value.contains_integer()),
-            Self::Scalar { .. } | Self::Default => false,
+            Self::Scalar { .. } | Self::RecursiveAlias { .. } | Self::Default => false,
         }
     }
 }
@@ -143,30 +147,28 @@ pub(super) fn is_empty_mapping_key_fingerprint(fingerprint: &KeyFingerprint<'_>)
     )
 }
 
-fn is_nullish_scalar_key_fingerprint(fingerprint: &KeyFingerprint<'_>) -> bool {
-    match fingerprint {
-        KeyFingerprint::Scalar {
-            tag: CanonicalKeyTag::Semantic(SfTag::Null),
-            ..
-        } => true,
-        KeyFingerprint::Scalar {
-            value,
-            tag: CanonicalKeyTag::Semantic(SfTag::String),
-        } => value.is_empty() || value == "~" || value.eq_ignore_ascii_case("null"),
-        _ => false,
-    }
-}
-
-pub(super) fn is_one_entry_nullish_mapping_key_fingerprint(
+/// Recognize the empty-key compatibility shape using the original scalar's tag and style.
+/// Fingerprints normalize string tags and omit quoting, so they cannot determine nullness.
+pub(super) fn is_one_entry_nullish_mapping_key(
     fingerprint: &KeyFingerprint<'_>,
+    events: &[Ev<'_>],
 ) -> bool {
-    match fingerprint {
+    if !matches!(
+        fingerprint,
         KeyFingerprint::Mapping {
             tag: CanonicalKeyTag::Semantic(SfTag::Map),
             entries,
-        } if entries.len() == 1 => is_nullish_scalar_key_fingerprint(&entries[0].0),
-        _ => false,
+        } if entries.len() == 1
+    ) {
+        return false;
     }
+
+    matches!(
+        events.get(1),
+        Some(Ev::Scalar { value, tag, style, .. })
+            if *tag == SfTag::Null
+                || (*tag == SfTag::None && scalar_is_nullish(value, style))
+    )
 }
 
 /// `from_slice_multiple` captured YAML node used to buffer keys/values and process merge keys.
@@ -306,7 +308,7 @@ pub(super) fn one_entry_map_spans(events: &[Ev<'_>]) -> Option<(usize, usize, us
 /// events consumed. Returns None if the slice is malformed.
 pub(super) fn skip_one_node_len(events: &[Ev<'_>], mut i: usize) -> Option<usize> {
     match events.get(i)? {
-        Ev::Scalar { .. } => Some(1),
+        Ev::Scalar { .. } | Ev::RecursiveAlias { .. } => Some(1),
         Ev::SeqStart { .. } => {
             let start = i;
             let mut depth = 1i32;
@@ -323,7 +325,7 @@ pub(super) fn skip_one_node_len(events: &[Ev<'_>], mut i: usize) -> Option<usize
                     Ev::MapEnd { .. } => {
                         depth -= 1;
                     }
-                    Ev::Scalar { .. } => {}
+                    Ev::Scalar { .. } | Ev::RecursiveAlias { .. } => {}
                     Ev::Taken { .. } => return None,
                 }
                 i += 1;
@@ -346,7 +348,7 @@ pub(super) fn skip_one_node_len(events: &[Ev<'_>], mut i: usize) -> Option<usize
                     Ev::SeqEnd { .. } => {
                         depth -= 1;
                     }
-                    Ev::Scalar { .. } => {}
+                    Ev::Scalar { .. } | Ev::RecursiveAlias { .. } => {}
                     Ev::Taken { .. } => return None,
                 }
                 i += 1;
@@ -383,11 +385,23 @@ pub(super) fn capture_node_with_legacy_octal<'a>(
     ev: &mut dyn Events<'a>,
     legacy_octal_numbers: bool,
 ) -> Result<KeyNode<'a>, Error> {
+    with_deferred_recursive_aliases(ev, |ev| capture_node_inner(ev, legacy_octal_numbers))
+}
+
+fn capture_node_inner<'a>(
+    ev: &mut dyn Events<'a>,
+    legacy_octal_numbers: bool,
+) -> Result<KeyNode<'a>, Error> {
     let Some(event) = ev.next()? else {
         return Err(Error::eof().with_location(ev.last_location()));
     };
 
     match event {
+        Ev::RecursiveAlias { anchor, location } => Ok(KeyNode::Fingerprinted {
+            fingerprint: KeyFingerprint::RecursiveAlias { anchor },
+            events: vec![event],
+            location,
+        }),
         Ev::Scalar {
             value,
             tag,
@@ -441,7 +455,7 @@ pub(super) fn capture_node_with_legacy_octal<'a>(
                         break;
                     }
                     Some(_) => {
-                        let mut child = capture_node_with_legacy_octal(ev, legacy_octal_numbers)?;
+                        let mut child = capture_node_inner(ev, legacy_octal_numbers)?;
                         let fp = child.take_fingerprint();
                         let child_events = child.take_events();
                         elements.push(fp);
@@ -485,9 +499,9 @@ pub(super) fn capture_node_with_legacy_octal<'a>(
                         break;
                     }
                     Some(_) => {
-                        let mut key = capture_node_with_legacy_octal(ev, legacy_octal_numbers)?;
+                        let mut key = capture_node_inner(ev, legacy_octal_numbers)?;
                         let key_fp = key.take_fingerprint();
-                        let mut value = capture_node_with_legacy_octal(ev, legacy_octal_numbers)?;
+                        let mut value = capture_node_inner(ev, legacy_octal_numbers)?;
                         let value_fp = value.take_fingerprint();
                         entries.push((key_fp, value_fp));
                         let key_events = key.take_events();
@@ -643,7 +657,7 @@ pub(super) fn validate_no_merge_keys_in_node_events(events: &[Ev<'_>]) -> Result
 
     fn visit_node(events: &[Ev<'_>], mut index: usize) -> Result<usize, Error> {
         match events.get(index) {
-            Some(Ev::Scalar { .. }) => Ok(index + 1),
+            Some(Ev::Scalar { .. } | Ev::RecursiveAlias { .. }) => Ok(index + 1),
             Some(Ev::SeqStart { .. }) => {
                 index += 1;
                 loop {
@@ -769,9 +783,9 @@ pub(super) fn pending_entries_from_events(
         property_interpolation.clone(),
     );
     match replay.peek()? {
-        Some(Ev::Scalar { value, style, .. }) if scalar_is_nullish(value.as_ref(), style) => {
-            Ok(Vec::new())
-        }
+        Some(Ev::Scalar {
+            value, tag, style, ..
+        }) if scalar_is_null(tag, value, style) => Ok(Vec::new()),
         Some(Ev::Scalar { location, .. }) => Err(Error::MergeValueNotMapOrSeqOfMaps {
             location: *location,
         }),
@@ -851,7 +865,16 @@ pub(super) fn pending_entries_from_live_events<'a>(
     #[cfg(feature = "properties")]
     let property_interpolation = ev.property_interpolation().clone();
     match ev.peek()? {
-        Some(Ev::Scalar { value, style, .. }) if scalar_is_nullish(value.as_ref(), style) => {
+        Some(event @ Ev::RecursiveAlias { .. }) => {
+            // A supported recursive merge is the same empty placeholder as on the live
+            // typed path. Validate it even when the enclosing collector defers aliases.
+            event.clone().resolve_recursive_alias()?;
+            let _ = ev.next()?;
+            Ok(Vec::new())
+        }
+        Some(Ev::Scalar {
+            value, tag, style, ..
+        }) if scalar_is_null(tag, value, style) => {
             let _ = ev.next()?;
             Ok(Vec::new())
         }

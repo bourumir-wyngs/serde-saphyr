@@ -21,7 +21,10 @@ where
             | Ev::SeqStart { raw_tag, .. }
             | Ev::MapStart { raw_tag, .. },
         ) => raw_tag.as_deref().map(str::to_owned),
-        Some(Ev::SeqEnd { .. } | Ev::MapEnd { .. } | Ev::Taken { .. }) | None => None,
+        Some(
+            Ev::SeqEnd { .. } | Ev::MapEnd { .. } | Ev::RecursiveAlias { .. } | Ev::Taken { .. },
+        )
+        | None => None,
     };
 
     visitor.visit_seq(TaggedSeqAccess { de, tag, state: 0 })

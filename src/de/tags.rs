@@ -248,6 +248,11 @@ impl SfTag {
         }
     }
 
+    /// Tags that preserve scalar text instead of allowing implicit type resolution.
+    pub(crate) fn forces_string(&self) -> bool {
+        matches!(self, SfTag::String | SfTag::NonSpecific)
+    }
+
     pub(crate) fn can_parse_into_string(&self) -> bool {
         match self {
             SfTag::None

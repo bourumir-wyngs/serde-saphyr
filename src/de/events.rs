@@ -164,6 +164,9 @@ pub(crate) enum Ev<'a> {
     },
     /// End of a mapping.
     MapEnd { location: Location },
+    /// A reference into an anchor whose definition is still being recorded.
+    /// Buffering preserves this event until a recursive wrapper can register its placeholder.
+    RecursiveAlias { anchor: usize, location: Location },
     /// The event has been taken from the array, with only its location remaining.
     /// This should not appear in the event stream and is reserved for internal container state.
     Taken { location: Location },
@@ -193,6 +196,7 @@ impl Ev<'_> {
             | Ev::SeqEnd { location }
             | Ev::MapStart { location, .. }
             | Ev::MapEnd { location }
+            | Ev::RecursiveAlias { location, .. }
             | Ev::Taken { location } => *location,
         }
     }
@@ -215,7 +219,10 @@ impl Ev<'_> {
                 Some(Cow::Owned(raw_tag)) => raw_tag.len(),
                 Some(Cow::Borrowed(_)) | None => 0,
             },
-            Ev::SeqEnd { .. } | Ev::MapEnd { .. } | Ev::Taken { .. } => 0,
+            Ev::SeqEnd { .. }
+            | Ev::MapEnd { .. }
+            | Ev::RecursiveAlias { .. }
+            | Ev::Taken { .. } => 0,
         }
     }
 
@@ -229,14 +236,42 @@ impl Ev<'_> {
                 *raw_tag = None;
                 true
             }
-            Ev::SeqEnd { .. } | Ev::MapEnd { .. } | Ev::Taken { .. } => false,
+            Ev::SeqEnd { .. }
+            | Ev::MapEnd { .. }
+            | Ev::RecursiveAlias { .. }
+            | Ev::Taken { .. } => false,
         }
+    }
+
+    /// Resolve a recursive reference only when consuming events for a typed value.
+    pub(super) fn resolve_recursive_alias(&mut self) -> Result<(), Error> {
+        if let Self::RecursiveAlias { anchor, location } = *self {
+            if !crate::anchor_store::recursive_anchor_in_progress(anchor)
+                && !crate::anchor_store::recursive_anchor_registered(anchor)
+            {
+                return Err(Error::RecursiveReferencesRequireWeakTypes { location });
+            }
+            // Weak recursion wrappers only need the anchor id and consume this placeholder.
+            *self = Self::Scalar {
+                value: Cow::Borrowed(""),
+                tag: SfTag::Null,
+                raw_tag: None,
+                style: ScalarStyle::Plain,
+                anchor,
+                location,
+            };
+        }
+        Ok(())
     }
 }
 
 /// `from_slice_multiple` location-free representation of events for duplicate-key comparison.
 /// Source of events with lookahead and alias-injection.
 pub(crate) trait Events<'de> {
+    /// Switch between recording recursive references and resolving them for typed values.
+    /// Returns the previous mode so nested captures can restore it.
+    fn defer_recursive_aliases(&mut self, defer: bool) -> bool;
+
     /// Pull the next event from the stream.
     ///
     /// Returns:
@@ -351,6 +386,17 @@ pub(crate) trait Events<'de> {
     fn property_interpolation(&self) -> &PropertyInterpolation;
 }
 
+/// Keep recursive aliases intact while buffering, including lookahead and comment hooks.
+pub(super) fn with_deferred_recursive_aliases<'de, T>(
+    ev: &mut dyn Events<'de>,
+    capture: impl FnOnce(&mut dyn Events<'de>) -> Result<T, Error>,
+) -> Result<T, Error> {
+    let previous = ev.defer_recursive_aliases(true);
+    let result = capture(ev);
+    ev.defer_recursive_aliases(previous);
+    result
+}
+
 #[cold]
 pub(super) fn eof_with_loc(events: &dyn Events<'_>) -> Error {
     Error::eof().with_location(events.last_location())
@@ -363,6 +409,7 @@ pub(super) fn eof_with_loc(events: &dyn Events<'_>) -> Error {
 /// around separately by the map/sequence access code.
 pub(super) struct ReplayEvents<'a> {
     buf: Vec<Ev<'a>>,
+    defer_recursive_aliases: bool,
     /// Index of the next event to yield (`0..=buf.len()`).
     idx: usize,
     /// Optional override for the reference location (use-site) of the next node.
@@ -396,6 +443,7 @@ impl<'a> ReplayEvents<'a> {
     ) -> Self {
         Self {
             buf,
+            defer_recursive_aliases: false,
             idx: 0,
             ref_override: None,
             #[cfg(feature = "properties")]
@@ -422,6 +470,7 @@ impl<'a> ReplayEvents<'a> {
     ) -> Self {
         Self {
             buf,
+            defer_recursive_aliases: false,
             idx: 0,
             ref_override: Some(reference),
             #[cfg(feature = "properties")]
@@ -431,10 +480,17 @@ impl<'a> ReplayEvents<'a> {
 }
 
 impl<'a> Events<'a> for ReplayEvents<'a> {
+    fn defer_recursive_aliases(&mut self, defer: bool) -> bool {
+        mem::replace(&mut self.defer_recursive_aliases, defer)
+    }
+
     /// See [`Events::next`]. Replays and advances the internal index.
     fn next(&mut self) -> Result<Option<Ev<'a>>, Error> {
         if self.idx >= self.buf.len() {
             return Ok(None);
+        }
+        if !self.defer_recursive_aliases {
+            self.buf[self.idx].resolve_recursive_alias()?;
         }
         let location = self.buf[self.idx].location();
         // Flag as taken to avoid unexpected reuse.
@@ -444,6 +500,11 @@ impl<'a> Events<'a> for ReplayEvents<'a> {
     }
 
     fn peek(&mut self) -> Result<Option<&Ev<'a>>, Error> {
+        if !self.defer_recursive_aliases
+            && let Some(ev) = self.buf.get_mut(self.idx)
+        {
+            ev.resolve_recursive_alias()?;
+        }
         Ok(self.buf.get(self.idx))
     }
 
