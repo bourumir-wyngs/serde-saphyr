@@ -66,16 +66,28 @@ cargo test --test test_block_str newline_only_strings_roundtrip
 
 Both commands must pass; the normal regression and fuzz assertion remain active.
 
-### Separate open enum-indentation finding
+### Enum-indentation regression
 
-A follow-up campaign found an unrelated nested-enum round-trip failure with
-`indent_step: 1`. The minimized input is saved in
+A follow-up campaign found a nested-enum round-trip failure with
+`indent_step: 1`. The serializer now accounts for the two-column `- ` prefix
+when indenting enum payloads. The original crash input
+`crash-c22b1997aa76cea333b69ac9e77d1e4a3a5d6e69` is retained byte-for-byte in
+`fuzz/seeds/serialize/enum_indent.txt`. Another minimized input is saved in
 `fuzz/reproducers/serialize_enum_indent.hex` as two hex-encoded bytes (`1c 65`);
-decode it to a binary file before passing it to `cargo +nightly fuzz run serialize`.
-It generates `EnumTuple(EnumStruct { field: Null }, Null)` and emits an
-under-indented `field`, causing a missing-field error. This finding remains open;
-the newline-only fix does not change enum layout, and fuzz assertions still
-report the failure.
+it generates `EnumTuple(EnumStruct { field: Null }, Null)`.
+
+The serializer target also supports normal tests, reusing its complete round-trip
+checks for the original input and both minimized inputs (`F%%` and `1c 65`):
+
+```sh
+cargo test --manifest-path fuzz/Cargo.toml --bin serialize
+cargo test --test en_structs
+cargo +nightly fuzz run serialize fuzz/seeds/serialize/enum_indent.txt
+```
+
+The main crate's tests cover the generated enum shapes, empty variants, nested
+sequences, and compact/non-compact layouts with one-, two-, and four-space
+indentation.
 
 ## Input formats
 

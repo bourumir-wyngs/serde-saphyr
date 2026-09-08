@@ -837,6 +837,23 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         Ok(())
     }
 
+    /// Depth used as the base for a variant's payload after a sequence dash.
+    fn variant_depth_after_dash(
+        &self,
+        dash_depth: usize,
+        anchor_broke_line: bool,
+    ) -> Result<usize> {
+        // An inline variant follows the two-column "- " prefix, even when one
+        // indentation level is only one space. Node properties instead move
+        // the variant onto its own line, one level below the dash.
+        let levels = if anchor_broke_line {
+            1
+        } else {
+            2usize.div_ceil(self.settings.indent_step)
+        };
+        checked_depth_add(dash_depth, levels)
+    }
+
     /// Emit a newline and mark the next write position as line start.
     /// Internal utility used after finishing a top-level token.
     #[inline]
@@ -1726,7 +1743,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         // value indents under the variant label rather than aligning with the list indentation.
         // SeqSer stores the dash's indentation depth in `after_dash_depth`.
         if let Some(d) = self.state.after_dash_depth.take() {
-            let nested_depth = checked_depth_add(d, 1)?;
+            let nested_depth = self.variant_depth_after_dash(d, anchor_broke_line)?;
             let prev_map_depth = self.state.current_map_depth.replace(nested_depth);
             let res = value.serialize(&mut *self);
             self.state.current_map_depth = prev_map_depth;
@@ -1922,7 +1939,8 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         self.state.at_line_start = true;
         let mut depth_next = checked_depth_add(self.state.depth, 1)?;
         if let Some(d) = self.state.after_dash_depth.take() {
-            depth_next = checked_depth_add(d, 2)?;
+            depth_next =
+                checked_depth_add(self.variant_depth_after_dash(d, anchor_broke_line)?, 1)?;
             self.state.pending_layout.pending_inline_map = false;
         }
         Ok(SeqSer {
@@ -2093,9 +2111,10 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         self.state.at_line_start = true;
         // Default indentation for fields under a plain variant line.
         let mut depth_next = checked_depth_add(self.state.depth, 1)?;
-        // If this variant follows a list dash, indent two levels under the dash (one for the element, one for the mapping).
+        // Fields must be deeper than the variant label, including the "- " prefix.
         if let Some(d) = self.state.after_dash_depth.take() {
-            depth_next = checked_depth_add(d, 2)?;
+            depth_next =
+                checked_depth_add(self.variant_depth_after_dash(d, anchor_broke_line)?, 1)?;
             self.state.pending_layout.pending_inline_map = false;
         }
         Ok(StructVariantSer::external(self, depth_next))

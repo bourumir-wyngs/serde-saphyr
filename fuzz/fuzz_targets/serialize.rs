@@ -1,8 +1,9 @@
-#![no_main]
+#![cfg_attr(not(test), no_main)]
 
 use std::collections::BTreeMap;
 
 use arbitrary::{Arbitrary, Unstructured};
+#[cfg(not(test))]
 use libfuzzer_sys::fuzz_target;
 use serde::{Deserialize, Serialize};
 use serde_saphyr::{DoubleQuoted, FlowMap, FlowSeq, LitString, SerializerOptions};
@@ -173,7 +174,7 @@ where
     );
 }
 
-fuzz_target!(|data: &[u8]| {
+fn check_input(data: &[u8]) {
     if data.len() > MAX_INPUT_BYTES {
         return;
     }
@@ -211,4 +212,25 @@ fuzz_target!(|data: &[u8]| {
             roundtrip(node, &opts);
         }
     }
-});
+}
+
+#[cfg(not(test))]
+fuzz_target!(|data: &[u8]| check_input(data));
+
+#[cfg(test)]
+mod tests {
+    use super::check_input;
+
+    #[test]
+    fn enum_indentation_original_input() {
+        // crash-c22b1997aa76cea333b69ac9e77d1e4a3a5d6e69, retained byte-for-byte.
+        check_input(include_bytes!("../seeds/serialize/enum_indent.txt"));
+    }
+
+    #[test]
+    fn enum_indentation_minimized_inputs() {
+        check_input(b"F%%");
+        // Decoded fuzz/reproducers/serialize_enum_indent.hex.
+        check_input(&[0x1c, 0x65]);
+    }
+}

@@ -57,10 +57,11 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
 
-      # Prefetch once (for BOTH feature sets), then run offline to avoid a second network touch.
-      - name: Prefetch deps (both feature sets)
+      # Prefetch both manifests so the crate and fuzz regression tests can run offline.
+      - name: Prefetch crate and fuzz dependencies
         run: |         
           cargo fetch --locked
+          cargo fetch --locked --manifest-path fuzz/Cargo.toml
 
       - name: Compile documentation examples
         run: |
@@ -73,6 +74,9 @@ jobs:
       - name: Run tests (default)
         run: |        
           cargo test --locked --offline
+
+      - name: Replay serializer fuzz regressions
+        run: cargo test --locked --offline --manifest-path fuzz/Cargo.toml --bin serialize
 
       - name: Run tests with miette feature only
         run: |       

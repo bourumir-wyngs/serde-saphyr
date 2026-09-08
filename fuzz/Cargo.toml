@@ -54,7 +54,7 @@ bench = false
 [[bin]]
 name = "serialize"
 path = "fuzz_targets/serialize.rs"
-test = false
+test = true
 doc = false
 bench = false
 
