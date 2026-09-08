@@ -56,3 +56,16 @@ fn case_2() {
 
     run_flow_collections_fuzzer_entrypoints(&data);
 }
+
+#[test]
+fn plain_scalar_dash_before_flow_delimiter() {
+    for (yaml, expected) in [
+        ("[a -, after]", ["a -", "after"]),
+        ("[\u{fffd} -, after]", ["\u{fffd} -", "after"]),
+    ] {
+        let values: Vec<String> = serde_saphyr::from_str(yaml).unwrap();
+        assert_eq!(values, expected);
+        let from_reader: Vec<String> = serde_saphyr::from_reader(yaml.as_bytes()).unwrap();
+        assert_eq!(from_reader, values);
+    }
+}
