@@ -204,6 +204,12 @@ You can require the number of indentation columns to be consistent throughout th
 
 Duplicate key handling is configurable. By default it’s an error; “first wins” and “last wins” strategies are available via [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). The duplicate key policy applies not just to strings but also to other types (if used as keys when deserializing into a map).
 
+YAML integer keys are parsed to their numeric meaning before checking for duplicates, regardless of the target Rust type. For example, `0xB` and `11` are the same integer key, even in a `HashMap<String, _>`. This comparison uses exact integer values within the supported `i128`/`u128` range and respects `legacy_octal_numbers`; values outside that range retain text-based comparison. The same rule applies inside composite keys and when resolving merge keys.
+
+Deserialization into a string still preserves the original scalar spelling: `0xB` becomes `"0xB"`. “First wins” and “last wins” retain the selected entry's spelling and value; when integer keys require numeric comparison, “last wins” buffers the remaining mapping to select entries before passing them to Serde. Quoted keys and keys tagged `!!str` remain strings, so `"0xB"` and `"11"` are distinct keys. Duplicate checking uses YAML key identity; the target Rust map can still combine distinct YAML keys if they become equal after deserialization.
+
+Buffered “last wins” entries use the same replay mechanism as struct fields: trailing comments and comments nested inside buffered values are not preserved, and nested `Spanned::referenced` locations use the buffered value's reference location. The default error policy and “first wins” do not require this additional buffering.
+
 ### Booleans
 
 By default, if the target field is boolean, serde-saphyr will attempt to interpret standard YAML 1.1 values as boolean (not just `false` but also `no`, etc.).
@@ -213,7 +219,7 @@ If you do not want this (or if you are parsing into a JSON Value where it might 
 
 ### Rust types as schema
 
-To address the “Norway problem,” the target Rust types serve as an explicit schema. Because the parser knows whether a field expects a string or a boolean, it can correctly accept `1.2` either as a number or as the string `"1.2"`, and interpret the common YAML boolean shorthands (`y`, `on`, `n`, `off`) as actual booleans when appropriate (can be disabled). Likewise, `0x2A` is parsed as a hexadecimal integer when the target field is numeric, and as a string when the target is `String`. As with [StrictYAML](https://hitchdev.com/strictyaml/why/implicit-typing-removed/), **serde-saphyr** avoids inferring types from values — one of the most heavily criticized aspects of YAML. The Rust type system already provides all the necessary schema information.
+To address the “Norway problem,” the target Rust types serve as an explicit schema. Because the parser knows whether a field expects a string or a boolean, it can correctly accept `1.2` either as a number or as the string `"1.2"`, and interpret the common YAML boolean shorthands (`y`, `on`, `n`, `off`) as actual booleans when appropriate (can be disabled). Likewise, `0x2A` is parsed as a hexadecimal integer when the target field is numeric, and as a string when the target is `String`. As with [StrictYAML](https://hitchdev.com/strictyaml/why/implicit-typing-removed/), **serde-saphyr** uses the Rust type system as the schema for typed deserialization. Integer key comparison is an exception: [duplicate checking](#duplicate-keys) uses the integer's numeric meaning while preserving its original spelling for string targets.
 
 Schema-based parsing can be disabled by setting `no_schema` to true in [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). In this case all *unquoted* values that are parsed into strings, but can be understood as something else, are rejected. This can be used for enforcing compatibility with another YAML parser that reads the same content and requires this quoting. Default setting is false.
 

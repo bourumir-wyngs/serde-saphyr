@@ -222,11 +222,8 @@ fn map_key_with_control_char() {
     assert!(yaml.contains("\\x01"), "Expected escape in key: {}", yaml);
 }
 
-// ~725: The \u{:04X} branch in write_quoted is dead code.
-// It requires a char in 0x100..=0xFFFF where is_control() is true,
-// but Unicode has no Cc (control) characters above U+009F.
 // C1 controls (0x7F-0x9F) are all <= 0xFF and hit the \x{:02X} branch first.
-// This test documents that C1 controls use \x escapes (or named escapes).
+// Higher codepoints requiring escaping, such as U+FFFE/U+FFFF, use \uXXXX.
 #[test]
 fn c1_control_char_uses_hex_escape() {
     // \u{0085} = NEL has named escape \N

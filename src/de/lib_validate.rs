@@ -10,7 +10,7 @@ use crate::de_error::collect_garde_issues;
 use crate::de_error::collect_validator_issues;
 use crate::de_error::redact_issue;
 use crate::live_events::LiveEvents;
-use crate::parse_scalars::scalar_document_is_empty_or_null;
+use crate::parse_scalars::scalar_is_null;
 use crate::path_map::PathMap;
 use serde_core::de::DeserializeOwned;
 use std::io::Read;
@@ -181,7 +181,7 @@ where
                 style,
                 tag,
                 ..
-            }) if scalar_document_is_empty_or_null(tag, s, style) => {
+            }) if scalar_is_null(tag, s, style) => {
                 let _ = src.next()?; // consume the null scalar document
                 continue;
             }
@@ -407,7 +407,7 @@ where
                 match self.src.peek() {
                     Ok(Some(Ev::Scalar {
                         value, style, tag, ..
-                    })) if scalar_document_is_empty_or_null(tag, value, style) => {
+                    })) if scalar_is_null(tag, value, style) => {
                         let _ = self.src.next();
                     }
                     Ok(Some(_)) => {

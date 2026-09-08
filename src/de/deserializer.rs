@@ -8,13 +8,15 @@ use super::base64::decode_base64_yaml;
 use super::cfg::Cfg;
 use super::commented_deser;
 use super::error::{Error, MissingFieldLocationGuard, TransformReason};
-use super::events::{Ev, Events, ReplayEvents, attach_alias_locations_if_missing, eof_with_loc};
+use super::events::{
+    Ev, Events, ReplayEvents, attach_alias_locations_if_missing, eof_with_loc,
+    with_deferred_recursive_aliases,
+};
 use super::key_nodes::{
-    KeyFingerprint, KeyNode, PendingEntry, apply_duplicate_key_policy_to_entries, capture_node,
-    capture_simple_tagged_node_as_map_events, is_empty_mapping_key_fingerprint, is_merge_key,
-    is_one_entry_nullish_mapping_key_fingerprint, one_entry_map_spans,
-    pending_entries_from_live_events, simple_tagged_enum_name,
-    validate_no_merge_keys_in_node_events,
+    KeyFingerprint, KeyNode, PendingEntry, apply_duplicate_key_policy_to_entries,
+    capture_node_with_legacy_octal, capture_simple_tagged_node_as_map_events,
+    is_empty_mapping_key_fingerprint, is_merge_key, pending_entries_from_live_events,
+    simple_tagged_enum_name, validate_no_merge_keys_in_node_events,
 };
 use super::options::{DuplicateKeyPolicy, MergeKeyPolicy};
 #[cfg(any(feature = "garde", feature = "validator"))]
@@ -37,7 +39,7 @@ use crate::location::Location;
 use crate::location::Locations;
 use crate::parse_scalars::{
     leading_zero_decimal, maybe_not_string, parse_int_signed, parse_int_unsigned,
-    parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish, scalar_is_nullish_for_option,
+    parse_yaml11_bool, parse_yaml12_float, scalar_is_null, scalar_is_nullish,
     try_parse_float_incl_overflow,
 };
 
@@ -123,6 +125,9 @@ where
 fn skip_one_node_from_events(ev: &mut dyn Events<'_>) -> Result<(), Error> {
     let mut depth;
     match ev.next()? {
+        Some(Ev::RecursiveAlias { location, .. }) => {
+            return Err(Error::RecursiveReferencesRequireWeakTypes { location });
+        }
         Some(Ev::Scalar { .. }) => return Ok(()),
         Some(Ev::SeqStart { .. } | Ev::MapStart { .. }) => depth = 1usize,
         Some(Ev::SeqEnd { location } | Ev::MapEnd { location }) => {
@@ -136,6 +141,9 @@ fn skip_one_node_from_events(ev: &mut dyn Events<'_>) -> Result<(), Error> {
 
     while depth != 0 {
         match ev.next()? {
+            Some(Ev::RecursiveAlias { location, .. }) => {
+                return Err(Error::RecursiveReferencesRequireWeakTypes { location });
+            }
             Some(Ev::SeqStart { .. } | Ev::MapStart { .. }) => depth += 1,
             Some(Ev::SeqEnd { .. } | Ev::MapEnd { .. }) => depth -= 1,
             Some(Ev::Scalar { .. }) => {}
@@ -532,6 +540,35 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         Ok(value)
     }
 
+    /// Deliver a float to a typeless visitor, applying the configured non-finite policy.
+    fn visit_typeless_float<V: Visitor<'de>>(
+        &self,
+        value: f64,
+        raw: String,
+        location: Location,
+        visitor: V,
+    ) -> Result<V::Value, Error> {
+        if value.is_finite() {
+            return visitor.visit_f64(value);
+        }
+        // Typeless consumers such as serde_json::Value cannot represent non-finite
+        // floats. Reject them by default, or preserve them as canonical strings.
+        if self.cfg.reject_non_finite_typeless_float {
+            return Err(Error::NonFiniteFloat {
+                value: raw,
+                location,
+            });
+        }
+        let canonical = if value.is_nan() {
+            ".nan"
+        } else if value.is_sign_negative() {
+            "-.inf"
+        } else {
+            ".inf"
+        };
+        visitor.visit_string(canonical.to_owned())
+    }
+
     /// Expect a sequence start and consume it, or error otherwise.
     fn expect_seq_start(&mut self) -> Result<(), Error> {
         match self.ev.next()? {
@@ -716,9 +753,10 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     ///   field types.
     ///
     /// Our policy:
-    /// - For scalars, we heuristically interpret plain, untagged values as native YAML scalars
-    ///   (null-like → bool → int → float) before falling back to string. Quoted scalars and scalars
-    ///   with explicit non-string-friendly tags (or !!binary) are treated as strings.
+    /// - Explicit core scalar tags select the corresponding type regardless of scalar style.
+    ///   Plain, untagged scalars are inferred (null-like → bool → int → float) before falling
+    ///   back to string. Quoted scalars without a core type tag remain strings, and !!binary
+    ///   scalars are decoded as strings according to the configured binary-tag policy.
     ///
     /// Flow: We inspect the next event; scalars are parsed with the heuristic above; containers
     /// delegate to `deserialize_seq`/`deserialize_map`.
@@ -738,22 +776,49 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         }
 
         if let Some((value, tag, style, location)) = self.peek_effective_scalar()? {
-            // Tagged nulls map to unit/null regardless of style
-            if tag == SfTag::Null {
-                let _ = self.take_scalar_event()?; // consume
-                return visitor.visit_unit();
+            // Explicit scalar types take precedence over implicit null and string inference,
+            // including for quoted and block scalars buffered by Serde's flatten support.
+            match tag {
+                SfTag::Null => {
+                    let _ = self.take_scalar_event()?;
+                    return visitor.visit_unit();
+                }
+                SfTag::Bool => return self.deserialize_bool(visitor),
+                SfTag::Int if value.trim().starts_with('-') => {
+                    return self.deserialize_i64(visitor);
+                }
+                SfTag::Int => return self.deserialize_u64(visitor),
+                SfTag::Float => {
+                    let view = self.take_scalar_view()?;
+                    let value = try_parse_float_incl_overflow(
+                        &view.effective,
+                        view.location,
+                        view.tag,
+                        self.cfg.angle_conversions,
+                    )
+                    .ok_or(Error::InvalidScalar {
+                        ty: "floating point",
+                        location: view.location,
+                    })?;
+                    return self.visit_typeless_float(
+                        value,
+                        view.raw.into_owned(),
+                        view.location,
+                        visitor,
+                    );
+                }
+                _ => {}
             }
             let is_plain = matches!(style, ScalarStyle::Plain);
-            // Treat all YAML null-like scalars (null, ~, empty) as null when typeless.
-            if scalar_is_nullish(&value, &style) {
+            // String tags (!!str and !) preserve null-like text (null, ~, empty).
+            if scalar_is_null(&tag, &value, &style) {
                 let _ = self.ev.next()?; // consume
                 return visitor.visit_unit();
             }
             if !is_plain
                 || !tag.can_parse_into_string()
                 || tag == SfTag::Binary
-                || tag == SfTag::String
-                || tag == SfTag::NonSpecific
+                || tag.forces_string()
             {
                 // For string-ish scalars, rely on the parser's own zero-copy capability:
                 // if the scalar is returned as `Cow::Borrowed`, we can pass it through.
@@ -819,27 +884,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 view.tag,
                 self.cfg.angle_conversions,
             ) {
-                // Typeless consumers such as serde_json::Value cannot represent non-finite
-                // floats. By default, reject these scalars. When rejection is disabled,
-                // deserialize_any returns a canonical string so these values do not become
-                // null or fail later.
-                if v.is_finite() {
-                    return visitor.visit_f64(v);
-                }
-                if self.cfg.reject_non_finite_typeless_float {
-                    return Err(Error::NonFiniteFloat {
-                        value: raw,
-                        location,
-                    });
-                }
-                let canon = if v.is_nan() {
-                    ".nan".to_string()
-                } else if v.is_sign_negative() {
-                    "-.inf".to_string()
-                } else {
-                    ".inf".to_string()
-                };
-                return visitor.visit_string(canon);
+                return self.visit_typeless_float(v, raw, location, visitor);
             }
 
             // Fallback: treat as string as-is.
@@ -849,6 +894,11 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         match self.ev.peek()? {
             Some(Ev::SeqStart { .. }) => self.deserialize_seq(visitor),
             Some(Ev::MapStart { .. }) => self.deserialize_map(visitor),
+            Some(Ev::RecursiveAlias { location, .. }) => {
+                Err(Error::RecursiveReferencesRequireWeakTypes {
+                    location: *location,
+                })
+            }
             Some(Ev::SeqEnd { location }) => Err(Error::UnexpectedSequenceEnd {
                 location: *location,
             }),
@@ -978,12 +1028,14 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     /// Parse a 32-bit float (supports YAML 1.2 `+.inf`, `-.inf`, `.nan`).
     fn deserialize_f32<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, tag, location) = self.take_scalar_cow_event()?;
+        validate_core_scalar_tag(tag, SfTag::Float, "floating point", location)?;
         let v: f32 = parse_yaml12_float(s.as_ref(), location, tag, self.cfg.angle_conversions)?;
         visitor.visit_f32(v)
     }
     /// Parse a 64-bit float (supports YAML 1.2 `+.inf`, `-.inf`, `.nan`).
     fn deserialize_f64<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, tag, location) = self.take_scalar_cow_event()?;
+        validate_core_scalar_tag(tag, SfTag::Float, "floating point", location)?;
         let v: f64 = parse_yaml12_float(s.as_ref(), location, tag, self.cfg.angle_conversions)?;
         visitor.visit_f64(v)
     }
@@ -998,7 +1050,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     fn deserialize_char<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Mirror deserialize_string pre-checks to leverage tag/style and maybe_not_string.
         if let Some(view) = self.peek_scalar_view()?
-            && view.tag != SfTag::String
+            && !view.tag.forces_string()
         {
             // Reject YAML null for char (allow quoted values like "null").
             if view.tag == SfTag::Null || scalar_is_nullish(&view.effective, &view.style) {
@@ -1041,14 +1093,14 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 // substituted ${...} that resolved to "" stays a string, not null.
                 if (view.tag == SfTag::Null
                     || (!view.interpolated && scalar_is_nullish(&view.effective, &view.style)))
-                    && view.tag != SfTag::String
+                    && !view.tag.forces_string()
                 {
                     let loc = view.location;
                     let _ = self.ev.next()?;
                     return Err(Error::NullIntoString { location: loc });
                 } else if self.cfg.no_schema
                     && maybe_not_string(&view.effective, &view.style, self.cfg.strict_booleans)
-                    && view.tag != SfTag::String
+                    && !view.tag.forces_string()
                 {
                     let view = self.take_scalar_view()?;
                     return Err(Self::quoting_required_for_scalar(&view));
@@ -1125,14 +1177,14 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             // A ${...} that the user deliberately substituted to "" is a legitimate string.
             if (view.tag == SfTag::Null
                 || (!view.interpolated && scalar_is_nullish(&view.effective, &view.style)))
-                && view.tag != SfTag::String
+                && !view.tag.forces_string()
             {
                 // Consume the scalar to anchor the error at the correct location.
                 let (_value, _tag, location) = self.take_scalar_event()?;
                 return Err(Error::NullIntoString { location });
             } else if self.cfg.no_schema
                 && maybe_not_string(&view.effective, &view.style, self.cfg.strict_booleans)
-                && view.tag != SfTag::String
+                && !view.tag.forces_string()
             {
                 // Consume the scalar to anchor the error at the correct location.
                 let view = self.take_scalar_view()?;
@@ -1231,8 +1283,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
     /// Deserialize an `Option<T>`.
     ///
-    /// **What is treated as `None`?** End-of-input, container end, or a scalar
-    /// that is empty-unquoted / `~` / `null` in plain style.
+    /// **What is treated as `None`?** End-of-input, container end, an explicitly
+    /// tagged null, or a plain empty / `~` / `null` scalar permitting implicit null resolution.
+    /// Explicit non-null core tags and binary tags are passed to the inner value's deserializer.
     fn deserialize_option<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Only when Serde asks for Option<T> do we interpret YAML null-like scalars as None.
         // Special-case for map keys: treat an explicit empty key captured as an empty mapping node
@@ -1262,7 +1315,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         }
 
         if let Some((value, tag, style, _location)) = self.peek_effective_scalar()?
-            && (tag == SfTag::Null || scalar_is_nullish_for_option(&value, &style))
+            && scalar_is_null(&tag, &value, &style)
         {
             let _ = self.ev.next()?; // consume the scalar
             return visitor.visit_none();
@@ -1285,8 +1338,8 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     /// **Accepted YAML forms:** end-of-input, container end, or a null-like
     /// scalar in plain style (`""`, `~`, `null`).
     fn deserialize_unit<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        if let Some((value, _tag, style, _location)) = self.peek_effective_scalar()?
-            && scalar_is_nullish(&value, &style)
+        if let Some((value, tag, style, _location)) = self.peek_effective_scalar()?
+            && scalar_is_null(&tag, &value, &style)
         {
             let _ = self.ev.next()?; // consume the scalar
             return visitor.visit_unit();
@@ -1415,7 +1468,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     fn deserialize_seq<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         if let Some((s, tag, style, _location)) = self.peek_effective_scalar()? {
             // Treat null-like scalar as an empty sequence.
-            if tag == SfTag::Null || scalar_is_nullish(&s, &style) {
+            if scalar_is_null(&tag, &s, &style) {
                 let _ = self.ev.next()?; // consume the null-like scalar
                 struct EmptySeq;
                 impl<'de> de::SeqAccess<'de> for EmptySeq {
@@ -1621,7 +1674,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     fn deserialize_map<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Treat null-like scalar as an empty map/struct.
         if let Some((s, tag, style, location)) = self.peek_effective_scalar()?
-            && (tag == SfTag::Null || scalar_is_nullish(&s, &style))
+            && scalar_is_null(&tag, &s, &style)
         {
             let _ = self.ev.next()?; // consume the null-like scalar
             struct EmptyMap {
@@ -1681,92 +1734,102 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             );
         }
 
-        fn collect_struct_last_wins_entries<'de>(
+        fn collect_last_wins_entries<'de>(
             ev: &mut dyn Events<'de>,
             mut first_key_comments: Vec<Cow<'de, str>>,
-            duplicate_keys: DuplicateKeyPolicy,
-            merge_keys: MergeKeyPolicy,
+            cfg: Cfg,
+            mut first_key: Option<KeyNode<'de>>,
+            prior_seen: &HashSet<KeyFingerprint<'de>>,
+            mut merge_batches: VecDeque<Vec<PendingEntry<'de>>>,
         ) -> Result<VecDeque<PendingEntry<'de>>, Error> {
-            let mut explicit_entries = Vec::new();
-            let mut merge_batches = Vec::new();
+            with_deferred_recursive_aliases(ev, |ev| {
+                let mut explicit_entries = Vec::new();
 
-            loop {
-                match ev.peek()? {
-                    Some(Ev::MapEnd { .. }) => {
-                        let _ = ev.next()?;
-                        break;
-                    }
-                    Some(_) => {
-                        let mut key_comments = std::mem::take(&mut first_key_comments);
-                        key_comments.extend(ev.take_leading_comments_for_next_node()?);
-                        let key = capture_node(ev)?;
+                loop {
+                    let (key, field_comments) = if let Some(key) = first_key.take() {
+                        (key, std::mem::take(&mut first_key_comments))
+                    } else {
+                        match ev.peek()? {
+                            Some(Ev::MapEnd { .. }) => {
+                                let _ = ev.next()?;
+                                break;
+                            }
+                            Some(_) => {
+                                let mut key_comments = std::mem::take(&mut first_key_comments);
+                                key_comments.extend(ev.take_leading_comments_for_next_node()?);
+                                let key =
+                                    capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
+                                (key, key_comments)
+                            }
+                            None => return Err(eof_with_loc(ev)),
+                        }
+                    };
 
-                        if is_merge_key(&key) {
-                            match merge_keys {
-                                MergeKeyPolicy::Merge => {
-                                    let _ = ev.peek()?;
-                                    let merge_ref_loc = ev.reference_location();
-                                    let entries = pending_entries_from_live_events(
-                                        ev,
-                                        merge_ref_loc,
-                                        merge_keys,
-                                        duplicate_keys,
-                                    )?;
-                                    if !entries.is_empty() {
-                                        merge_batches.push(entries);
-                                    }
-                                    continue;
+                    if is_merge_key(&key) {
+                        match cfg.merge_keys {
+                            MergeKeyPolicy::Merge => {
+                                let _ = ev.peek()?;
+                                let merge_ref_loc = ev.reference_location();
+                                let entries = pending_entries_from_live_events(
+                                    ev,
+                                    merge_ref_loc,
+                                    cfg.merge_keys,
+                                    cfg.dup_policy,
+                                    cfg.legacy_octal_numbers,
+                                )?;
+                                if !entries.is_empty() {
+                                    merge_batches.push_back(entries);
                                 }
-                                MergeKeyPolicy::AsOrdinary => {}
-                                MergeKeyPolicy::Error => {
-                                    return Err(Error::MergeKeyNotAllowed {
-                                        location: key.location(),
-                                    });
-                                }
+                                continue;
+                            }
+                            MergeKeyPolicy::AsOrdinary => {}
+                            MergeKeyPolicy::Error => {
+                                return Err(Error::MergeKeyNotAllowed {
+                                    location: key.location(),
+                                });
                             }
                         }
-
-                        let field_comments = key_comments;
-                        let value_separator_comments =
-                            ev.take_separator_comments_before_mapping_value()?;
-                        let value_comments = ev.take_leading_comments_for_next_node()?;
-                        let reference_location = ev.reference_location();
-                        let value = capture_node(ev)?;
-                        explicit_entries.push(PendingEntry {
-                            key,
-                            value,
-                            reference_location,
-                            field_comments,
-                            value_separator_comments,
-                            value_comments,
-                        });
                     }
-                    None => return Err(eof_with_loc(ev)),
+
+                    let value_separator_comments =
+                        ev.take_separator_comments_before_mapping_value()?;
+                    let value_comments = ev.take_leading_comments_for_next_node()?;
+                    let reference_location = ev.reference_location();
+                    let value = capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
+                    explicit_entries.push(PendingEntry {
+                        key,
+                        value,
+                        reference_location,
+                        field_comments,
+                        value_separator_comments,
+                        value_comments,
+                    });
                 }
-            }
 
-            let mut explicit_entries = apply_duplicate_key_policy_to_entries(
-                explicit_entries,
-                duplicate_keys,
-                merge_keys,
-            )?;
-            let mut seen = HashSet::with_capacity(explicit_entries.len());
-            for entry in &explicit_entries {
-                seen.insert(entry.key.fingerprint().into_owned());
-            }
+                let mut explicit_entries = apply_duplicate_key_policy_to_entries(
+                    explicit_entries,
+                    cfg.dup_policy,
+                    cfg.merge_keys,
+                )?;
+                let mut seen = prior_seen.clone();
+                seen.reserve(explicit_entries.len());
+                for entry in &explicit_entries {
+                    seen.insert(entry.key.fingerprint().into_owned());
+                }
 
-            let mut merge_entries = Vec::new();
-            for batch in merge_batches {
-                for entry in batch {
-                    let fingerprint = entry.key.fingerprint().into_owned();
-                    if seen.insert(fingerprint) {
-                        merge_entries.push(entry);
+                let mut merge_entries = Vec::new();
+                for batch in merge_batches {
+                    for entry in batch {
+                        let fingerprint = entry.key.fingerprint().into_owned();
+                        if seen.insert(fingerprint) {
+                            merge_entries.push(entry);
+                        }
                     }
                 }
-            }
 
-            explicit_entries.extend(merge_entries);
-            Ok(explicit_entries.into_iter().collect())
+                explicit_entries.extend(merge_entries);
+                Ok(explicit_entries.into_iter().collect())
+            })
         }
 
         /// Streaming `MapAccess` over the underlying `Events`.
@@ -1805,12 +1868,16 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             /// - `DuplicateKeyPolicy::FirstWins` to discard a later value.
             fn skip_one_node(&mut self) -> Result<(), Error> {
                 if self.cfg.merge_keys == MergeKeyPolicy::Error {
-                    let node = capture_node(self.ev)?;
+                    let node =
+                        capture_node_with_legacy_octal(self.ev, self.cfg.legacy_octal_numbers)?;
                     return validate_no_merge_keys_in_node_events(node.events());
                 }
 
                 let mut depth; // assigned later
                 match self.ev.next()? {
+                    Some(Ev::RecursiveAlias { location, .. }) => {
+                        return Err(Error::RecursiveReferencesRequireWeakTypes { location });
+                    }
                     Some(Ev::Scalar { .. }) => return Ok(()),
                     Some(Ev::SeqStart { .. } | Ev::MapStart { .. }) => depth = 1,
                     Some(Ev::SeqEnd { location } | Ev::MapEnd { location }) => {
@@ -1823,6 +1890,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 }
                 while depth != 0 {
                     match self.ev.next()? {
+                        Some(Ev::RecursiveAlias { location, .. }) => {
+                            return Err(Error::RecursiveReferencesRequireWeakTypes { location });
+                        }
                         Some(Ev::SeqStart { .. } | Ev::MapStart { .. }) => depth += 1,
                         Some(Ev::SeqEnd { .. } | Ev::MapEnd { .. }) => depth -= 1,
                         Some(Ev::Scalar { .. }) => {}
@@ -1951,7 +2021,6 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                         } = entry;
                         let fingerprint = key.take_fingerprint();
                         let location = key.location();
-                        let mut events = key.take_events();
 
                         let is_duplicate = self.seen.contains(&fingerprint);
                         if self.flushing_merges {
@@ -1963,9 +2032,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             match self.cfg.dup_policy {
                                 DuplicateKeyPolicy::Error => {
                                     if is_duplicate {
-                                        let key = fingerprint
-                                            .stringy_scalar_value()
-                                            .map(|s| s.to_owned());
+                                        let key = key.stringy_scalar_value().map(|s| s.to_owned());
                                         return Err(Error::DuplicateMappingKey { key, location });
                                     }
                                 }
@@ -1979,50 +2046,11 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             }
                         }
 
-                        let mut value_events = value.take_events();
-                        // Special-case: explicit empty key captured as a one-entry mapping { null: V }
-                        // In this case, we want key=None and the outer value to be V.
-                        let mut kemn = is_empty_mapping_key_fingerprint(&fingerprint);
-                        if !kemn
-                            && is_one_entry_nullish_mapping_key_fingerprint(&fingerprint)
-                            && let Some((_ks, _ke, vs, ve)) = one_entry_map_spans(&events)
-                        {
-                            // Zero-copy probe over recorded events to extract inner key/value spans.
-                            value_events = events.drain(vs..ve).collect();
-                            // Build empty map events using the first and last from original events.
-                            let start = match events.first() {
-                                Some(Ev::MapStart {
-                                    anchor,
-                                    tag,
-                                    raw_tag,
-                                    location,
-                                }) => Ev::MapStart {
-                                    anchor: *anchor,
-                                    tag: *tag,
-                                    raw_tag: raw_tag.clone(),
-                                    location: *location,
-                                },
-                                Some(other) => other.clone(),
-                                None => {
-                                    return Err(
-                                        Error::unexpected("mapping start").with_location(location)
-                                    );
-                                }
-                            };
-                            let end = match events.last() {
-                                Some(Ev::MapEnd { location }) => Ev::MapEnd {
-                                    location: *location,
-                                },
-                                Some(other) => other.clone(),
-                                None => {
-                                    return Err(
-                                        Error::unexpected("mapping end").with_location(location)
-                                    );
-                                }
-                            };
-                            events = vec![start, end];
-                            kemn = true;
-                        }
+                        #[cfg(any(feature = "garde", feature = "validator"))]
+                        let key_path_segment = key.stringy_scalar_value().map(ToOwned::to_owned);
+                        let events = key.take_events();
+                        let value_events = value.take_events();
+                        let kemn = is_empty_mapping_key_fingerprint(&fingerprint);
                         let Some(key_seed) = seed.take() else {
                             return Err(Error::InternalSeedReusedForMapKey { location });
                         };
@@ -2048,8 +2076,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
                         #[cfg(any(feature = "garde", feature = "validator"))]
                         {
-                            self.pending_path_segment =
-                                fingerprint.stringy_scalar_value().map(|s| s.to_owned());
+                            self.pending_path_segment = key_path_segment;
                         }
 
                         self.seen.insert(fingerprint);
@@ -2088,7 +2115,10 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             let mut key_comments =
                                 std::mem::take(&mut self.pending_first_key_comments);
                             key_comments.extend(self.ev.take_leading_comments_for_next_node()?);
-                            let mut key_node = capture_node(self.ev)?;
+                            let mut key_node = capture_node_with_legacy_octal(
+                                self.ev,
+                                self.cfg.legacy_octal_numbers,
+                            )?;
                             if is_merge_key(&key_node) {
                                 match self.cfg.merge_keys {
                                     MergeKeyPolicy::Merge => {
@@ -2103,6 +2133,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                                             merge_ref_loc,
                                             self.cfg.merge_keys,
                                             self.cfg.dup_policy,
+                                            self.cfg.legacy_octal_numbers,
                                         )?;
                                         if !entries.is_empty() {
                                             self.merge_stack.push_back(entries);
@@ -2118,16 +2149,31 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                                 }
                             }
 
+                            if matches!(self.cfg.dup_policy, DuplicateKeyPolicy::LastWins)
+                                && key_node.fingerprint().contains_integer()
+                            {
+                                // Integer identity can differ from the key's spelling in the
+                                // target map, so select the winning YAML entries before Serde.
+                                self.pending = collect_last_wins_entries(
+                                    self.ev,
+                                    key_comments,
+                                    self.cfg,
+                                    Some(key_node),
+                                    &self.seen,
+                                    std::mem::take(&mut self.merge_stack),
+                                )?;
+                                self.live_done = true;
+                                continue;
+                            }
+
                             let fingerprint = key_node.fingerprint();
                             let is_duplicate = self.seen.contains(&fingerprint);
                             match self.cfg.dup_policy {
                                 DuplicateKeyPolicy::Error => {
                                     if is_duplicate {
                                         let location = key_node.location();
-                                        let key = key_node
-                                            .fingerprint()
-                                            .stringy_scalar_value()
-                                            .map(|s| s.to_owned());
+                                        let key =
+                                            key_node.stringy_scalar_value().map(|s| s.to_owned());
                                         return Err(Error::DuplicateMappingKey { key, location });
                                     }
                                 }
@@ -2140,43 +2186,14 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                                 DuplicateKeyPolicy::LastWins => {}
                             }
 
-                            // Decide whether we need the slow recorded path (only for the tricky
-                            // explicit-empty-key-as-one-entry-map-with-nullish-inner-key case).
                             let kemn_direct =
                                 is_empty_mapping_key_fingerprint(fingerprint.as_ref());
-                            let kemn_one_entry_nullish =
-                                is_one_entry_nullish_mapping_key_fingerprint(fingerprint.as_ref());
-
-                            if kemn_one_entry_nullish {
-                                // Slow path needed: capture value and enqueue so pending branch can
-                                // swap inner value to outer and treat key as None.
-                                // IMPORTANT: preserve where the value is *referenced* (use-site).
-                                // If the value is an alias (`*a`), `capture_node` will record events
-                                // from the anchor definition, so `value_node.location()` would point
-                                // at the definition-site. `Spanned<T>` wants the alias token location
-                                // in `referenced`, so take it from `Events::reference_location()`.
-                                let field_comments = key_comments;
-                                let value_separator_comments =
-                                    self.ev.take_separator_comments_before_mapping_value()?;
-                                let value_comments =
-                                    self.ev.take_leading_comments_for_next_node()?;
-                                let reference_location = self.ev.reference_location();
-                                let value_node = capture_node(self.ev)?;
-                                self.enqueue_entries(vec![PendingEntry {
-                                    key: key_node,
-                                    value: value_node,
-                                    reference_location,
-                                    field_comments,
-                                    value_separator_comments,
-                                    value_comments,
-                                }]);
-                                continue;
-                            }
-
-                            // Fast path: deserialize key now from recorded events, do not buffer value.
-
+                            // Deserialize the key from recorded events and read the value live.
                             let fingerprint = fingerprint.into_owned();
                             let location = key_node.location();
+                            #[cfg(any(feature = "garde", feature = "validator"))]
+                            let key_path_segment =
+                                key_node.stringy_scalar_value().map(ToOwned::to_owned);
                             let events = key_node.take_events();
                             let Some(key_seed) = seed.take() else {
                                 return Err(Error::InternalSeedReusedForMapKey { location });
@@ -2201,8 +2218,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
                             #[cfg(any(feature = "garde", feature = "validator"))]
                             {
-                                self.pending_path_segment =
-                                    fingerprint.stringy_scalar_value().map(|s| s.to_owned());
+                                self.pending_path_segment = key_path_segment;
                             }
 
                             self.seen.insert(fingerprint);
@@ -2362,11 +2378,13 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         let (pending, pending_first_key_comments, live_done) =
             if self.struct_mode && matches!(self.cfg.dup_policy, DuplicateKeyPolicy::LastWins) {
                 (
-                    collect_struct_last_wins_entries(
+                    collect_last_wins_entries(
                         self.ev,
                         map_start_comments,
-                        self.cfg.dup_policy,
-                        self.cfg.merge_keys,
+                        self.cfg,
+                        None,
+                        &HashSet::new(),
+                        VecDeque::new(),
                     )?,
                     Vec::new(),
                     true,
@@ -2446,6 +2464,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
         let peeked_ev = self.ev.peek()?.cloned();
         let mode = match peeked_ev {
+            Some(Ev::RecursiveAlias { location, .. }) => {
+                return Err(Error::RecursiveReferencesRequireWeakTypes { location });
+            }
             Some(Ev::Scalar {
                 tag,
                 style,
@@ -2461,7 +2482,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     return Err(eof_with_loc(self.ev));
                 };
                 if self.cfg.no_schema
-                    && tag != SfTag::String
+                    && !tag.forces_string()
                     && maybe_not_string(&view.effective, &style, self.cfg.strict_booleans)
                 {
                     let view = self.take_scalar_view()?;
@@ -2549,7 +2570,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 key_de.in_key = true;
                 if let Some(view) = key_de.peek_scalar_view()? {
                     if self.cfg.no_schema
-                        && view.tag != SfTag::String
+                        && !view.tag.forces_string()
                         && maybe_not_string(&view.raw, &view.style, self.cfg.strict_booleans)
                     {
                         let view = key_de.take_scalar_view()?;
@@ -2721,8 +2742,11 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             Ok(())
                         }
                         Some(Ev::Scalar {
-                            value: s, style, ..
-                        }) if scalar_is_nullish(s, style) => {
+                            value: s,
+                            tag,
+                            style,
+                            ..
+                        }) if scalar_is_null(tag, s, style) => {
                             let _ = self.ev.next()?; // consume the null-like scalar
                             self.expect_map_end()
                         }

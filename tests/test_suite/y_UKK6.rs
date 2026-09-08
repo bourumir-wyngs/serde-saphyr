@@ -33,8 +33,8 @@ fn y_ukk6_syntax_character_edge_cases() {
         "expected null value for key ':'"
     );
 
-    // Case 3: "!" -> null
+    // Case 3: "!" forces the empty scalar to remain a string.
     let yaml3 = "!\n";
     let v3: J = serde_saphyr::from_str(yaml3).expect("UKK6 part 3 should parse");
-    assert!(v3.is_null(), "expected null for '!' but got: {:?}", v3);
+    assert_eq!(v3, J::String(String::new()));
 }

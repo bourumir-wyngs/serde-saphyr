@@ -113,6 +113,7 @@ fn pending_from_events(
         reference_location,
         MergeKeyPolicy::Merge,
         DuplicateKeyPolicy::Error,
+        false,
     )
 }
 
@@ -128,6 +129,7 @@ fn pending_from_events(
         reference_location,
         MergeKeyPolicy::Merge,
         DuplicateKeyPolicy::Error,
+        false,
         empty_property_interpolation(),
     )
 }
@@ -348,23 +350,17 @@ fn key_fingerprint_helpers_normalize_string_like_tags() {
         CanonicalKeyTag::Custom(Cow::Borrowed("!Variant"))
     );
 
-    let stringy = KeyFingerprint::Scalar {
-        value: Cow::Borrowed("hello"),
-        tag: CanonicalKeyTag::Custom(Cow::Borrowed("!Variant")),
-    };
+    let stringy = scalar_key_node("hello", SfTag::Other, ScalarStyle::Plain, loc(8, 1));
     assert_eq!(stringy.stringy_scalar_value(), Some("hello"));
 
-    let binary = KeyFingerprint::Scalar {
-        value: Cow::Borrowed("SGVsbG8="),
-        tag: CanonicalKeyTag::Semantic(SfTag::Binary),
-    };
+    let binary = scalar_key_node("SGVsbG8=", SfTag::Binary, ScalarStyle::Plain, loc(8, 2));
     assert_eq!(binary.stringy_scalar_value(), None);
+    let mut replay = replay_events(vec![
+        seq_start(SfTag::None, None, loc(8, 3)),
+        seq_end(loc(8, 4)),
+    ]);
     assert_eq!(
-        KeyFingerprint::Sequence {
-            tag: CanonicalKeyTag::Semantic(SfTag::Seq),
-            elements: vec![],
-        }
-        .stringy_scalar_value(),
+        capture_node(&mut replay).unwrap().stringy_scalar_value(),
         None
     );
 }
@@ -462,83 +458,6 @@ fn captured_fingerprints_include_canonical_root_tag_identity() {
     assert_ne!(local_map_mapping, core_mapping);
     assert!(is_empty_mapping_key_fingerprint(&implicit_mapping));
     assert!(!is_empty_mapping_key_fingerprint(&local_map_mapping));
-
-    let custom_nullish_inner_key = KeyFingerprint::Mapping {
-        tag: CanonicalKeyTag::Semantic(SfTag::Map),
-        entries: vec![(
-            KeyFingerprint::Scalar {
-                value: Cow::Borrowed("null"),
-                tag: CanonicalKeyTag::Custom(Cow::Borrowed("!First")),
-            },
-            KeyFingerprint::Scalar {
-                value: Cow::Borrowed("value"),
-                tag: CanonicalKeyTag::Semantic(SfTag::String),
-            },
-        )],
-    };
-    assert!(!is_one_entry_nullish_mapping_key_fingerprint(
-        &custom_nullish_inner_key
-    ));
-}
-
-#[test]
-fn one_entry_map_spans_and_skip_one_node_len_handle_nested_and_malformed_inputs() {
-    let events = vec![
-        map_start(loc(10, 1)),
-        scalar("key", SfTag::None, None, ScalarStyle::Plain, loc(10, 2)),
-        seq_start(SfTag::None, None, loc(10, 3)),
-        scalar("item", SfTag::None, None, ScalarStyle::Plain, loc(10, 4)),
-        map_start(loc(10, 5)),
-        scalar("nested", SfTag::None, None, ScalarStyle::Plain, loc(10, 6)),
-        scalar("value", SfTag::None, None, ScalarStyle::Plain, loc(10, 7)),
-        map_end(loc(10, 8)),
-        seq_end(loc(10, 9)),
-        map_end(loc(10, 10)),
-    ];
-
-    assert_eq!(skip_one_node_len(&events, 1), Some(1));
-    assert_eq!(skip_one_node_len(&events, 2), Some(7));
-    assert_eq!(one_entry_map_spans(&events), Some((1, 2, 2, 9)));
-
-    assert_eq!(
-        skip_one_node_len(
-            &[Ev::SeqEnd {
-                location: loc(11, 1)
-            }],
-            0
-        ),
-        None
-    );
-    assert_eq!(
-        skip_one_node_len(
-            &[Ev::Taken {
-                location: loc(12, 1)
-            }],
-            0
-        ),
-        None
-    );
-
-    let malformed = vec![
-        seq_start(SfTag::None, None, loc(13, 1)),
-        scalar(
-            "unterminated",
-            SfTag::None,
-            None,
-            ScalarStyle::Plain,
-            loc(13, 2),
-        ),
-    ];
-    assert_eq!(skip_one_node_len(&malformed, 0), None);
-
-    let extra = vec![
-        map_start(loc(14, 1)),
-        scalar("key", SfTag::None, None, ScalarStyle::Plain, loc(14, 2)),
-        scalar("value", SfTag::None, None, ScalarStyle::Plain, loc(14, 3)),
-        scalar("extra", SfTag::None, None, ScalarStyle::Plain, loc(14, 4)),
-        map_end(loc(14, 5)),
-    ];
-    assert_eq!(one_entry_map_spans(&extra), None);
 }
 
 #[test]
@@ -871,6 +790,7 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
             merge_reference,
             MergeKeyPolicy::Merge,
             DuplicateKeyPolicy::Error,
+            false,
         )
         .unwrap()
         .is_empty()
@@ -888,6 +808,7 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
         merge_reference,
         MergeKeyPolicy::Merge,
         DuplicateKeyPolicy::Error,
+        false,
     ));
     assert!(matches!(
         err,
@@ -911,6 +832,7 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
         merge_reference,
         MergeKeyPolicy::Merge,
         DuplicateKeyPolicy::Error,
+        false,
     )
     .unwrap();
     assert_eq!(entries.len(), 2);
@@ -929,6 +851,7 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
         merge_reference,
         MergeKeyPolicy::Merge,
         DuplicateKeyPolicy::Error,
+        false,
     ));
     assert!(matches!(err, Error::Eof { location } if location == Location::UNKNOWN));
 }
@@ -947,6 +870,7 @@ fn collect_entries_from_map_expands_merges_and_preserves_reference_locations() {
         loc(34, 9),
         MergeKeyPolicy::Merge,
         DuplicateKeyPolicy::Error,
+        false,
     ));
     assert!(matches!(
         err,
@@ -972,6 +896,7 @@ fn collect_entries_from_map_expands_merges_and_preserves_reference_locations() {
         outer_reference,
         MergeKeyPolicy::Merge,
         DuplicateKeyPolicy::Error,
+        false,
     )
     .unwrap();
     assert_eq!(entries.len(), 2);
@@ -1000,6 +925,7 @@ fn collect_entries_from_map_treats_merge_key_as_ordinary_under_policy() {
         reference,
         MergeKeyPolicy::AsOrdinary,
         DuplicateKeyPolicy::Error,
+        false,
     )
     .unwrap();
 
@@ -1024,51 +950,13 @@ fn collect_entries_from_map_rejects_merge_key_under_error_policy() {
         loc(37, 9),
         MergeKeyPolicy::Error,
         DuplicateKeyPolicy::Error,
+        false,
     ));
 
     assert!(matches!(
         err,
         Error::MergeKeyNotAllowed { location } if location == loc(37, 2)
     ));
-}
-
-#[test]
-fn key_node_span_helpers_cover_map_roots_and_rejected_boundaries() {
-    assert_eq!(one_entry_map_spans(&[]), None);
-
-    let not_a_map = vec![
-        seq_start(SfTag::None, None, loc(38, 1)),
-        scalar("key", SfTag::None, None, ScalarStyle::Plain, loc(38, 2)),
-        scalar("value", SfTag::None, None, ScalarStyle::Plain, loc(38, 3)),
-        seq_end(loc(38, 4)),
-    ];
-    assert_eq!(one_entry_map_spans(&not_a_map), None);
-
-    let wrong_end = vec![
-        map_start(loc(39, 1)),
-        scalar("key", SfTag::None, None, ScalarStyle::Plain, loc(39, 2)),
-        scalar("value", SfTag::None, None, ScalarStyle::Plain, loc(39, 3)),
-        seq_end(loc(39, 4)),
-    ];
-    assert_eq!(one_entry_map_spans(&wrong_end), None);
-
-    let nested_map = vec![
-        map_start(loc(40, 1)),
-        scalar("key", SfTag::None, None, ScalarStyle::Plain, loc(40, 2)),
-        seq_start(SfTag::None, None, loc(40, 3)),
-        scalar("item", SfTag::None, None, ScalarStyle::Plain, loc(40, 4)),
-        seq_end(loc(40, 5)),
-        map_end(loc(40, 6)),
-    ];
-    assert_eq!(skip_one_node_len(&nested_map, 0), Some(6));
-
-    let taken_inside_map = vec![
-        map_start(loc(41, 1)),
-        Ev::Taken {
-            location: loc(41, 2),
-        },
-    ];
-    assert_eq!(skip_one_node_len(&taken_inside_map, 0), None);
 }
 
 #[test]
@@ -1167,6 +1055,7 @@ fn duplicate_filter_validates_discarded_values_when_merges_are_forbidden() {
         loc(48, 1),
         MergeKeyPolicy::Error,
         DuplicateKeyPolicy::FirstWins,
+        false,
     ));
     assert!(matches!(
         err,

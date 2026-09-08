@@ -6,7 +6,7 @@ use super::with_deserializer::{deserialize_with_scope_and_null_policy, normalize
 use super::{Error, Ev, Events, Options, ring_reader};
 use crate::budget::EnforcingPolicy;
 use crate::live_events::LiveEvents;
-use crate::parse_scalars::scalar_document_is_empty_or_null;
+use crate::parse_scalars::scalar_is_null;
 
 #[cfg(all(feature = "deserialize", feature = "include"))]
 pub(crate) fn resolver_from_options<'a>(
@@ -465,7 +465,7 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
                 style,
                 tag,
                 ..
-            })) if scalar_document_is_empty_or_null(tag, s, style) => {
+            })) if scalar_is_null(tag, s, style) => {
                 let _ = src.next()?; // consume the null scalar document
                 // Do not push anything for this document; move to the next one.
                 continue;
@@ -934,7 +934,7 @@ where
                 match self.src.peek() {
                     Ok(Some(Ev::Scalar {
                         value, style, tag, ..
-                    })) if scalar_document_is_empty_or_null(tag, value, style) => {
+                    })) if scalar_is_null(tag, value, style) => {
                         let _ = self.src.next();
                         continue;
                     }

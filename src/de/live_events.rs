@@ -231,6 +231,8 @@ pub(crate) struct LiveEvents<'a> {
     synthesized_null_emitted: bool,
     /// Single-item lookahead buffer (peeked event not yet consumed).
     look: Option<Ev<'a>>,
+    /// Captures retain recursive alias events until typed deserialization can resolve them.
+    defer_recursive_aliases: bool,
     /// Comments immediately above the lookahead event.
     look_leading_comments: Vec<Cow<'a, str>>,
     /// Comments gathered while scanning before the next data event.
@@ -383,6 +385,7 @@ impl<'a> LiveEvents<'a> {
             parser: GranitParser::StreamParser(parser),
             input: None, // Reader-based input cannot support zero-copy borrowing
             look: None,
+            defer_recursive_aliases: false,
             look_leading_comments: Vec::new(),
             pending_leading_comments: Vec::new(),
             pending_trailing_comments: Vec::new(),
@@ -472,6 +475,7 @@ impl<'a> LiveEvents<'a> {
             parser: GranitParser::StringParser(parser),
             input: Some(input),
             look: None,
+            defer_recursive_aliases: false,
             look_leading_comments: Vec::new(),
             pending_leading_comments: Vec::new(),
             pending_trailing_comments: Vec::new(),
@@ -698,6 +702,9 @@ impl<'a> LiveEvents<'a> {
             .last()
             .map_or(defined_location, |frame| frame.reference_location);
         let result = match ev {
+            Ev::RecursiveAlias { location, .. } => {
+                self.validate_scalar_tag(SfTag::Null, String::new, "", *location)
+            }
             Ev::Scalar {
                 value,
                 tag,
@@ -752,7 +759,7 @@ impl<'a> LiveEvents<'a> {
 
     fn event_kind(ev: &Ev<'_>) -> Option<ConsumedEventKind> {
         match ev {
-            Ev::Scalar { .. } => Some(ConsumedEventKind::Scalar),
+            Ev::Scalar { .. } | Ev::RecursiveAlias { .. } => Some(ConsumedEventKind::Scalar),
             Ev::SeqStart { .. } => Some(ConsumedEventKind::SeqStart),
             Ev::SeqEnd { .. } => Some(ConsumedEventKind::SeqEnd),
             Ev::MapStart { .. } => Some(ConsumedEventKind::MapStart),
@@ -883,6 +890,7 @@ impl<'a> LiveEvents<'a> {
                 | Ev::MapStart { .. }
                 | Ev::SeqEnd { .. }
                 | Ev::MapEnd { .. }
+                | Ev::RecursiveAlias { .. }
                 | Ev::Scalar { .. } => {}
                 Ev::Taken { location } => {
                     return Err(Error::unexpected("consumed event").with_location(location));
@@ -1188,23 +1196,18 @@ impl<'a> LiveEvents<'a> {
                     }
 
                     if self.rec_stack.iter().any(|frame| frame.id == anchor_id) {
-                        if crate::anchor_store::recursive_anchor_in_progress(anchor_id) {
-                            let ev = Ev::Scalar {
-                                value: String::new().into(),
-                                tag: SfTag::Null,
-                                raw_tag: None,
-                                style: ScalarStyle::Plain,
-                                anchor: anchor_id,
-                                location,
-                            };
-                            self.validate_replayed_event(&ev)?;
-                            self.record(&ev, false, false)?;
-                            self.attach_leading_comments_to_next_event();
-                            self.last_location = location;
-                            self.produced_any_in_doc = true;
-                            return Ok(Some(ev));
-                        }
-                        return Err(Error::RecursiveReferencesRequireWeakTypes { location });
+                        // Record the reference itself: buffering may precede registration of
+                        // the recursive wrapper's placeholder. next/peek resolve it when used.
+                        let ev = Ev::RecursiveAlias {
+                            anchor: anchor_id,
+                            location,
+                        };
+                        self.validate_replayed_event(&ev)?;
+                        self.record(&ev, false, false)?;
+                        self.attach_leading_comments_to_next_event();
+                        self.last_location = location;
+                        self.produced_any_in_doc = true;
+                        return Ok(Some(ev));
                     }
 
                     // Ensure the anchor exists now (fail fast); store only id + idx.
@@ -1340,6 +1343,11 @@ impl<'a> LiveEvents<'a> {
             Ev::SeqEnd { .. } => Event::SequenceEnd,
             Ev::MapStart { .. } => Event::MappingStart(StructureStyle::Block, 0, None),
             Ev::MapEnd { .. } => Event::MappingEnd,
+            // A recursive reference replays the same scalar placeholder as before; the
+            // alias reference itself was already charged when reading the parser event.
+            Ev::RecursiveAlias { .. } => {
+                Event::Scalar(Cow::Borrowed(""), ScalarStyle::Plain, 0, None)
+            }
             Ev::Taken { location } => {
                 return Err(Error::unexpected("consumed event").with_location(*location));
             }
@@ -1515,6 +1523,10 @@ impl Drop for LiveEvents<'_> {
 }
 
 impl<'de> Events<'de> for LiveEvents<'de> {
+    fn defer_recursive_aliases(&mut self, defer: bool) -> bool {
+        std::mem::replace(&mut self.defer_recursive_aliases, defer)
+    }
+
     /// Get the next event, using a single-item lookahead buffer if present.
     /// Updates `last_location` to the yielded event's location.
     fn next(&mut self) -> Result<Option<Ev<'de>>, Error> {
@@ -1522,13 +1534,21 @@ impl<'de> Events<'de> for LiveEvents<'de> {
             return Err(err);
         }
 
-        if let Some(ev) = self.look.take() {
+        if let Some(mut ev) = self.look.take() {
+            if !self.defer_recursive_aliases {
+                ev.resolve_recursive_alias()?;
+            }
             self.clear_comments_for_consumed_event();
             self.last_location = ev.location();
             self.remember_consumed_event(&ev);
             return Ok(Some(ev));
         }
-        let event = self.next_impl()?;
+        let mut event = self.next_impl()?;
+        if !self.defer_recursive_aliases
+            && let Some(ev) = event.as_mut()
+        {
+            ev.resolve_recursive_alias()?;
+        }
         self.clear_comments_for_consumed_event();
         if let Some(ev) = event.as_ref() {
             self.remember_consumed_event(ev);
@@ -1544,6 +1564,11 @@ impl<'de> Events<'de> for LiveEvents<'de> {
         if self.look.is_none() {
             self.look = self.next_impl()?;
             self.look_leading_comments = std::mem::take(&mut self.produced_leading_comments);
+        }
+        if !self.defer_recursive_aliases
+            && let Some(ev) = self.look.as_mut()
+        {
+            ev.resolve_recursive_alias()?;
         }
         if let Some(ev) = self.look.as_ref() {
             self.last_location = ev.location();

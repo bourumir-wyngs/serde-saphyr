@@ -211,6 +211,14 @@ pub(crate) fn recursive_anchor_in_progress(id: usize) -> bool {
     })
 }
 
+/// A completed recursive definition may be replayed after its wrapper context has ended.
+pub(crate) fn recursive_anchor_registered(id: usize) -> bool {
+    STATE.with(|state| {
+        let s = state.borrow();
+        s.store.rc_recursive.contains_key(&id) || s.store.arc_recursive.contains_key(&id)
+    })
+}
+
 pub(crate) fn store_rc<T: Any>(id: usize, rc: Rc<T>) {
     STATE.with(|state| {
         let mut s = state.borrow_mut();

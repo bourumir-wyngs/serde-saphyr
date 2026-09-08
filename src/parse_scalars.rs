@@ -393,7 +393,8 @@ fn maybe_bool(s: &str, strict: bool) -> bool {
     }
 }
 
-/// True if a scalar is a YAML "null-like" value in non-`Option` contexts.
+/// True if a scalar's text and style are YAML "null-like".
+/// Callers must also respect tags such as `!!str`, `!`, and `!!null`.
 ///
 /// Arguments:
 /// - `value`: scalar text.
@@ -403,7 +404,7 @@ fn maybe_bool(s: &str, strict: bool) -> bool {
 /// - `true` for empty, `~`, or case-insensitive `null`; `false` otherwise.
 ///
 /// Used by:
-/// - Unit handling and some edge cases where absence is tolerated.
+/// - Option, unit, typeless scalar handling, and other cases where absence is tolerated.
 #[cfg(feature = "deserialize")]
 #[inline]
 pub(crate) fn scalar_is_nullish(value: &str, style: &ScalarStyle) -> bool {
@@ -415,31 +416,14 @@ pub(crate) fn scalar_is_nullish(value: &str, style: &ScalarStyle) -> bool {
 
 #[cfg(feature = "deserialize")]
 #[inline]
-pub(crate) fn scalar_document_is_empty_or_null(
-    tag: &SfTag,
-    value: &str,
-    style: &ScalarStyle,
-) -> bool {
-    *tag == SfTag::Null || (*tag != SfTag::String && scalar_is_nullish(value, style))
-}
-
-/// True if a scalar should be turned into `None` for `Option<T>`.
-///
-/// Arguments:
-/// - `value`: scalar text.
-/// - `style`: scalar style.
-///
-/// Returns:
-/// - `true` for empty unquoted or plain `~`/`null`; `false` otherwise.
-///
-/// Used by:
-/// - `deserialize_option` only (does not affect other types).
-#[cfg(feature = "deserialize")]
-#[inline]
-pub(crate) fn scalar_is_nullish_for_option(value: &str, style: &ScalarStyle) -> bool {
-    // For Option: treat empty unquoted scalar as null, and plain "~"/"null" as null.
-    (value.is_empty() && !matches!(style, ScalarStyle::SingleQuoted | ScalarStyle::DoubleQuoted)) || // empty_unquoted
-    (matches!(style, ScalarStyle::Plain) && (value == "~" || value.eq_ignore_ascii_case("null"))) // plain_nullish
+/// Resolve null while honoring explicit core types, binary tags, and string-forcing tags.
+/// Non-null typed scalars must reach their deserializer even when their text looks null-like.
+pub(crate) fn scalar_is_null(tag: &SfTag, value: &str, style: &ScalarStyle) -> bool {
+    *tag == SfTag::Null
+        || (!tag.is_core()
+            && !tag.forces_string()
+            && *tag != SfTag::Binary
+            && scalar_is_nullish(value, style))
 }
 
 #[cfg(feature = "deserialize")]
@@ -477,6 +461,18 @@ mod tests {
             column: 7,
             span: crate::location::Span::UNKNOWN,
             source_id: 0,
+        }
+    }
+
+    #[test]
+    fn null_resolution_preserves_explicit_binary_scalars() {
+        for value in ["null", "Null", "NULL", "~", ""] {
+            assert!(scalar_is_null(&SfTag::None, value, &ScalarStyle::Plain));
+            assert!(scalar_is_null(&SfTag::Null, value, &ScalarStyle::Plain));
+            assert!(
+                !scalar_is_null(&SfTag::Binary, value, &ScalarStyle::Plain),
+                "explicit binary scalar must reach its deserializer: {value:?}"
+            );
         }
     }
 

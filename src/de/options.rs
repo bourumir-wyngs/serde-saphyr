@@ -14,6 +14,10 @@ const fn default_emit_comments() -> bool {
 }
 
 /// Duplicate key handling policy for mappings.
+///
+/// YAML integer keys are compared by their parsed integer value, so `0xB` and
+/// `11` are duplicates even when the target key type is `String`. The retained
+/// key preserves its original spelling when deserialized into a string.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(
@@ -26,9 +30,10 @@ pub enum DuplicateKeyPolicy {
     Error,
     /// First key wins: later duplicate pairs are skipped (key+value are consumed and ignored).
     FirstWins,
-    /// Last key wins: duplicate pairs are passed through when deserializing maps
-    /// so overwriting map targets can keep the later value; duplicate struct fields
-    /// are collapsed before Serde sees them.
+    /// Last key wins: retain the later value. Struct fields are buffered and
+    /// collapsed before Serde sees them. Maps stream until an integer-containing
+    /// key requires numeric comparison, then buffer the remaining entries to
+    /// retain the last key's original spelling and value.
     LastWins,
 }
 
