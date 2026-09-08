@@ -1,0 +1,4 @@
+base: &base {0xB: first}
+merged: {<<: *base, 11: last}
+? [null, 'null', '~', '']
+: [1, 2]

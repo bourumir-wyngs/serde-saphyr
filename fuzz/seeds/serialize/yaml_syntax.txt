@@ -1,0 +1,3 @@
+null ~ !!str 'quoted' "double quoted" [a, {b: c}]
+---
+...

@@ -1399,7 +1399,8 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 StrStyle::Literal => {
                     // Determine trailing newline count to select chomp indicator:
                     //  - 0 → "|-" (strip)
-                    //  - 1 → "|" (clip)
+                    //  - 1 with non-empty content → "|" (clip)
+                    //  - newline-only content → "|+" (keep)
                     //  - >=2 → "|+" (keep)
                     let content = v.trim_end_matches('\n');
                     let trailing_nl = v.len() - content.len();
@@ -1411,7 +1412,8 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                     }
                     match trailing_nl {
                         0 => self.out.write_char('-')?,
-                        1 => {} // clip is the default, no indicator needed
+                        // Clip chomping discards every newline in an empty block.
+                        1 if !content.is_empty() => {}
                         _ => self.out.write_char('+')?,
                     }
                     self.write_pending_inline_comment()?;
@@ -1419,8 +1421,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
 
                     // Emit body lines. For non-empty content, write each line exactly once.
                     // For keep chomping (>=2), append (trailing_nl - 1) visual empty lines.
-                    // Special case: empty original content with at least one trailing newline
-                    // should produce a single empty content line (tests expect this for "\n").
+                    // Newline-only content needs one empty line per original newline.
                     // Precompute body indent string once for the entire block
                     let mut indent_buf: String = String::new();
                     let spaces = checked_indentation(self.settings.indent_step, body_base)?;
@@ -1433,10 +1434,9 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                     let indent_str = indent_buf.as_str();
 
                     if content.is_empty() {
-                        if trailing_nl >= 1 {
+                        for _ in 0..trailing_nl {
                             self.out.write_str(indent_str)?;
                             self.state.at_line_start = false;
-                            // write a single empty content line
                             self.newline()?;
                         }
                     } else {

@@ -19,6 +19,8 @@
 - Floating-point deserialization now rejects incompatible core tags; for example,
   `from_str::<f64>("!!str 1.5")` now returns an error.
 - Serialization now escapes U+FFFE and U+FFFF as `\uFFFE` and `\uFFFF`.
+- Serialization now preserves newline-only strings in literal block scalars, including
+  `LitStr` and `LitString`, by using keep chomping and retaining every empty line.
 - Updated the granit-parser revision to preserve document boundaries after zero-indented root
   literal and folded block scalars, including empty strings.
 

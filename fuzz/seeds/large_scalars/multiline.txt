@@ -1,0 +1,3 @@
+first line
+--- marker-like content
+  indented line

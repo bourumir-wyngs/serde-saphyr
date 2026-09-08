@@ -1,0 +1,1 @@
+[null, !!str null, !!int '0xB', !!float '1.5'], {a: &a [1, 2], b: *a}

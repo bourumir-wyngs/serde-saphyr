@@ -5,20 +5,14 @@ use libfuzzer_sys::fuzz_target;
 // This fuzzer stresses large scalar handling, both plain and block scalars.
 // We cap constructed sizes to avoid pathological memory usage.
 fuzz_target!(|data: &[u8]| {
-    if data.len() < 256 {
+    if data.is_empty() || data.len() > 64 * 1024 {
         return;
     }
-    // Cap to 1 MiB generated content.
-    let cap: usize = 1 << 20;
-
-    // Repeat the fuzz input to build a long line.
-    let mut plain = String::new();
-    while plain.len() < cap {
-        if plain.len() + data.len() > cap {
-            break;
-        }
-        plain.push_str(&String::from_utf8_lossy(data));
-    }
+    // Small inputs must reach the parser too, so an empty corpus can grow.
+    // Vary the generated size from 256 bytes to 1 MiB and decode UTF-8 only once.
+    let cap: usize = 1 << (8 + data[0] % 13);
+    let fragment = String::from_utf8_lossy(&data[..data.len().min(4096)]);
+    let plain = fragment.repeat((cap / fragment.len()).max(1));
 
     // 1) Plain scalar
     let yaml_plain = format!("{plain}\n");

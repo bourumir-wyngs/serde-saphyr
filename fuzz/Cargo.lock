@@ -98,13 +98,18 @@ dependencies = [
 
 [[package]]
 name = "granit-parser"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c92814c286f45b5ed1498ce9547bc9637b473eba7037f8aee6a4d5a3c1e051c"
+version = "1.2.0"
+source = "git+https://github.com/bourumir-wyngs/granit-parser#9a04a6c81c66838fddf51442f5a1aa63b1ecfb9f"
 dependencies = [
  "arraydeque",
  "smallvec",
 ]
+
+[[package]]
+name = "itoa"
+version = "1.0.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "jobserver"
@@ -189,7 +194,7 @@ dependencies = [
 
 [[package]]
 name = "serde-saphyr"
-version = "1.0.0"
+version = "1.2.1"
 dependencies = [
  "annotate-snippets",
  "base64",
@@ -223,6 +228,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_json"
+version = "1.0.151"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
+dependencies = [
+ "itoa",
+ "memchr",
+ "serde",
+ "serde_core",
+ "zmij",
+]
+
+[[package]]
 name = "serde_yaml_bw-fuzz"
 version = "0.0.0"
 dependencies = [
@@ -230,6 +248,7 @@ dependencies = [
  "libfuzzer-sys",
  "serde",
  "serde-saphyr",
+ "serde_json",
 ]
 
 [[package]]

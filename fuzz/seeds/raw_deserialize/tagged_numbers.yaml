@@ -1,0 +1,5 @@
+integer: &integer !!int '0xB'
+float: &float !!float |
+  -0.0
+aliases: [*integer, *float]
+invalid: !!float ''

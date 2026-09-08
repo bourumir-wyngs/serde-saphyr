@@ -11,6 +11,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 serde = { version = "1.0.218", features = ["derive"] }
 arbitrary = "1"
+serde_json = "1"
 [dependencies.serde-saphyr]
 path = ".."
 features = ["properties"]
@@ -60,6 +61,13 @@ bench = false
 [[bin]]
 name = "properties"
 path = "fuzz_targets/properties.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "document_streams"
+path = "fuzz_targets/document_streams.rs"
 test = false
 doc = false
 bench = false

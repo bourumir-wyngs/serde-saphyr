@@ -74,9 +74,92 @@ fn litstr_only_newline() {
     };
     let out = to_string(&d).unwrap();
 
-    // One empty content line, clip chomping.
-    // Value: "\n"
-    assert_eq!(out, "note: |\n  \nother: 0\n");
+    // Contentless literal blocks need keep chomping to preserve the newline.
+    assert_eq!(out, "note: |+\n  \nother: 0\n");
+    let back: std::collections::BTreeMap<String, serde_json::Value> =
+        serde_saphyr::from_str(&out).unwrap();
+    assert_eq!(back["note"], "\n");
+    assert_eq!(back["other"], 0);
+}
+
+#[test]
+fn newline_only_strings_roundtrip() {
+    #[derive(Debug, Deserialize, PartialEq, Serialize)]
+    struct Doc<T> {
+        note: T,
+        other: usize,
+    }
+
+    fn check<T: Serialize>(
+        value: &T,
+        expected: &str,
+        style: &str,
+        options: serde_saphyr::SerializerOptions,
+    ) {
+        let yaml = to_string_with_options(value, options.clone()).unwrap();
+        let back: String = serde_saphyr::from_str(&yaml).unwrap();
+        assert_eq!(back, expected, "{style} root: {yaml:?}");
+
+        let yaml = to_string_with_options(
+            &Doc {
+                note: value,
+                other: 7,
+            },
+            options.clone(),
+        )
+        .unwrap();
+        let back: Doc<String> = serde_saphyr::from_str(&yaml).unwrap();
+        assert_eq!(
+            back,
+            Doc {
+                note: expected.to_owned(),
+                other: 7,
+            },
+            "{style} mapping: {yaml:?}"
+        );
+
+        let yaml = to_string_with_options(&(value, "kept"), options.clone()).unwrap();
+        let back: Vec<String> = serde_saphyr::from_str(&yaml).unwrap();
+        assert_eq!(back, [expected, "kept"], "{style} sequence: {yaml:?}");
+
+        // Nesting the sequence also exercises compact_list_indent.
+        let yaml = to_string_with_options(
+            &Doc {
+                note: (value, "kept"),
+                other: 7,
+            },
+            options,
+        )
+        .unwrap();
+        let back: Doc<Vec<String>> = serde_saphyr::from_str(&yaml).unwrap();
+        assert_eq!(
+            back,
+            Doc {
+                note: vec![expected.to_owned(), "kept".to_owned()],
+                other: 7,
+            },
+            "{style} nested sequence: {yaml:?}"
+        );
+    }
+
+    for value in ["", "\n", "\n\n", "\n\n\n", "text", "text\n", "text\n\n"] {
+        for indent_step in [1, 2, 4, 9, 10, 64] {
+            for compact_list_indent in [false, true] {
+                let options = serde_saphyr::ser_options! {
+                    indent_step: indent_step,
+                    compact_list_indent: compact_list_indent,
+                };
+                check(&value, value, "automatic", options.clone());
+                check(&LitStr(value), value, "borrowed literal", options.clone());
+                check(
+                    &LitString(value.to_owned()),
+                    value,
+                    "owned literal",
+                    options,
+                );
+            }
+        }
+    }
 }
 
 #[test]
