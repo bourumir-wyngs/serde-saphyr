@@ -11,7 +11,9 @@ use std::collections::BTreeMap;
 #[case::minimum_signed_integer("!!int -9223372036854775808", json!(i64::MIN))]
 #[case::maximum_unsigned_integer("!!int 18446744073709551615", json!(u64::MAX))]
 #[case::quoted_integer("!!int \"42\"", json!(42))]
+#[case::quoted_signed_hexadecimal("!!int ' -0x2a '", json!(-42))]
 #[case::block_integer("!!int |-\n  42", json!(42))]
+#[case::folded_integer_with_newline("!!int >\n  42\n", json!(42))]
 #[case::hexadecimal_integer("!!int 0x2a", json!(42))]
 #[case::octal_integer("!!int 0o52", json!(42))]
 #[case::binary_integer("!!int 0b101010", json!(42))]
@@ -19,6 +21,8 @@ use std::collections::BTreeMap;
 #[case::integer_looking_float("!!float 42", json!(42.0))]
 #[case::quoted_float("!!float '4.25'", json!(4.25))]
 #[case::block_float("!!float >-\n  42", json!(42.0))]
+#[case::literal_float_with_newline("!!float |\n  4.25\n", json!(4.25))]
+#[case::quoted_float_exponent("!!float \"4.25e+2\"", json!(425.0))]
 #[case::boolean("!!bool true", json!(true))]
 #[case::quoted_boolean("!!bool 'false'", json!(false))]
 #[case::block_boolean("!!bool |-\n  true", json!(true))]
@@ -27,6 +31,76 @@ fn explicit_scalar_tags_dispatch_to_json_types(#[case] scalar: &str, #[case] exp
     let yaml = format!("answer: {scalar}\n");
     let value: Value = serde_saphyr::from_str(&yaml).unwrap();
     assert_eq!(value["answer"], expected);
+}
+
+#[rstest]
+#[case::verbatim_integer("!<tag:yaml.org,2002:int> '0x2a'", json!(42))]
+#[case::verbatim_float("!<tag:yaml.org,2002:float> '42'", json!(42.0))]
+#[case::named_integer("%TAG !number! tag:yaml.org,2002:\n--- !number!int '0x2a'", json!(42))]
+#[case::named_float("%TAG !number! tag:yaml.org,2002:\n--- !number!float '42'", json!(42.0))]
+fn explicit_numeric_tags_resolve_handles(#[case] yaml: &str, #[case] expected: Value) {
+    let options = serde_saphyr::options! { reject_unsupported_tags: true };
+    let value: Value = serde_saphyr::from_str_with_options(yaml, options).unwrap();
+    assert_eq!(value, expected);
+}
+
+#[test]
+fn explicit_numeric_tags_survive_alias_and_merge_replay() {
+    let yaml = "\
+defaults: &defaults
+  integer: &integer !!int '-0x2a'
+  float: &float !!float |
+    42
+aliases: [*integer, *float]
+merged:
+  <<: *defaults
+";
+    let expected = json!({
+        "defaults": { "integer": -42, "float": 42.0 },
+        "aliases": [-42, 42.0],
+        "merged": { "integer": -42, "float": 42.0 },
+    });
+    let from_str: Value = serde_saphyr::from_str(yaml).unwrap();
+    let from_reader: Value = serde_saphyr::from_reader(yaml.as_bytes()).unwrap();
+    assert_eq!(from_str, expected);
+    assert_eq!(from_reader, expected);
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(untagged)]
+enum NumberOrText {
+    Integer(u64),
+    Float(f64),
+    Text(String),
+}
+
+#[rstest]
+#[case::integer("!!int '42'", NumberOrText::Integer(42))]
+#[case::float("!!float '42'", NumberOrText::Float(42.0))]
+#[case::block_integer("!!int >\n  42\n", NumberOrText::Integer(42))]
+#[case::block_float("!!float |\n  42\n", NumberOrText::Float(42.0))]
+#[case::quoted_text("'42'", NumberOrText::Text("42".to_owned()))]
+fn numeric_tags_select_the_matching_untagged_variant(
+    #[case] yaml: &str,
+    #[case] expected: NumberOrText,
+) {
+    assert_eq!(
+        serde_saphyr::from_str::<NumberOrText>(yaml).unwrap(),
+        expected
+    );
+}
+
+#[rstest]
+#[case::plain("!!float -0")]
+#[case::quoted("!!float '-0'")]
+#[case::block("!!float |\n  -0\n")]
+fn explicitly_tagged_floats_preserve_negative_zero(#[case] yaml: &str) {
+    let value: Value = serde_saphyr::from_str(yaml).unwrap();
+    assert!(
+        value.is_f64(),
+        "the explicit float must stay a float: {value}"
+    );
+    assert_eq!(value.as_f64().unwrap().to_bits(), (-0.0_f64).to_bits());
 }
 
 #[derive(Debug, Deserialize)]
@@ -80,9 +154,17 @@ fn strict_mode_rejects_explicit_legacy_boolean() {
 #[case::integer_missing("!!int")]
 #[case::integer_empty("!!int ''")]
 #[case::integer_out_of_range("!!int 18446744073709551616")]
+#[case::negative_integer_out_of_range("!!int '-9223372036854775809'")]
+#[case::quoted_integer_fraction("!!int '1.5'")]
+#[case::block_integer_fraction("!!int |\n  1.5\n")]
+#[case::integer_exponent("!!int '1e2'")]
 #[case::float_boolean("!!float true")]
 #[case::float_null("!!float null")]
 #[case::float_text("!!float text")]
+#[case::float_missing("!!float")]
+#[case::float_empty("!!float ''")]
+#[case::quoted_float_text("!!float 'text'")]
+#[case::block_float_text("!!float >\n  text\n")]
 #[case::boolean_number("!!bool 42")]
 #[case::boolean_null("!!bool null")]
 #[case::boolean_text("!!bool text")]

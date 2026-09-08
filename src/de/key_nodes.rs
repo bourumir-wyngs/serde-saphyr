@@ -183,11 +183,19 @@ impl<'a> KeyNode<'a> {
                     tag,
                     raw_tag,
                     value,
+                    style,
                     ..
                 }) = events.first()
                 {
+                    // Resolve implicit nulls before normalizing string-like tags. The
+                    // recorded scalar keeps its original text and style for replay.
+                    let tag = if *tag == SfTag::None && scalar_is_null(tag, value, style) {
+                        SfTag::Null
+                    } else {
+                        *tag
+                    };
                     Cow::Owned(KeyFingerprint::Scalar {
-                        tag: canonical_scalar_key_tag(*tag, raw_tag),
+                        tag: canonical_scalar_key_tag(tag, raw_tag),
                         value: value.clone(),
                     })
                 } else {

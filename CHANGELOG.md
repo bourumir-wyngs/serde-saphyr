@@ -10,6 +10,8 @@
   and associated value.
 - Composite keys containing null-like strings now preserve both the key and its associated value;
   for example, `{{"null": 1}: 2}` now round-trips correctly.
+- Null mapping keys now remain distinct from null-like string keys during duplicate detection
+  and merge resolution, including inside composite keys.
 - Null detection now respects string tags and scalar styles, preserving null-like strings such as
   `!!str null`, including when deserializing to `Option<String>`.
 - Explicit numeric tags (`!!int` and `!!float`) now deserialize correctly through `deserialize_any`,
@@ -17,6 +19,8 @@
 - Floating-point deserialization now rejects incompatible core tags; for example,
   `from_str::<f64>("!!str 1.5")` now returns an error.
 - Serialization now escapes U+FFFE and U+FFFF as `\uFFFE` and `\uFFFF`.
+- Updated the granit-parser revision to preserve document boundaries after zero-indented root
+  literal and folded block scalars, including empty strings.
 
 ## 1.2.0 Maintenance release
 

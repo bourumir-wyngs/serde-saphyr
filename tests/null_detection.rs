@@ -162,6 +162,128 @@ fn non_specific_null_strings_are_retained_in_document_streams() {
     assert_eq!((multiple, streamed), (expected.clone(), expected));
 }
 
+#[rstest]
+#[case::tagged_null("!!str null", "null")]
+#[case::tagged_empty("!!str", "")]
+#[case::quoted_null("'null'", "null")]
+#[case::quoted_tilde("\"~\"", "~")]
+#[case::quoted_empty("''", "")]
+#[case::literal_empty_implicit_indent("|\n", "")]
+#[case::folded_empty_implicit_indent(">\n", "")]
+#[case::literal_empty("|2\n", "")]
+#[case::folded_empty(">2\n", "")]
+#[case::literal_null("|-\n  null\n", "null")]
+#[case::folded_null(">-\n  null\n", "null")]
+fn styled_null_strings_survive_document_stream_filtering(
+    #[case] scalar: &str,
+    #[case] expected: &str,
+) {
+    let yaml = format!("--- null\n--- {scalar}\n--- !!null\n--- kept\n--- ~\n");
+    let expected = vec![Some(expected.to_owned()), Some("kept".to_owned())];
+    let multiple: Vec<Option<String>> = serde_saphyr::from_multiple(&yaml).unwrap();
+    let mut reader = yaml.as_bytes();
+    let streamed: Vec<Option<String>> = serde_saphyr::read(&mut reader)
+        .collect::<Result<_, _>>()
+        .unwrap();
+
+    assert_eq!(multiple, expected, "from_multiple: {yaml}");
+    assert_eq!(streamed, expected, "read: {yaml}");
+}
+
+#[rstest]
+#[case::literal("|")]
+#[case::folded(">")]
+fn empty_block_string_documents_preserve_document_boundaries(#[case] style: &str) {
+    let yaml = format!("--- {style}\n\n--- kept\n");
+    let expected = vec![Some(String::new()), Some("kept".to_owned())];
+    let multiple: Vec<Option<String>> = serde_saphyr::from_multiple(&yaml).unwrap();
+    let mut reader = yaml.as_bytes();
+    let streamed: Vec<Option<String>> = serde_saphyr::read(&mut reader)
+        .collect::<Result<_, _>>()
+        .unwrap();
+
+    assert_eq!(multiple, expected, "from_multiple: {yaml}");
+    assert_eq!(streamed, expected, "read: {yaml}");
+}
+
+#[rstest]
+#[case::literal("|")]
+#[case::folded(">")]
+fn single_document_apis_reject_documents_after_root_block_strings(#[case] style: &str) {
+    for content in ["", "text\n"] {
+        let yaml = format!("{style}\n{content}--- kept\n");
+        let errors = [
+            serde_saphyr::from_str::<String>(&yaml).unwrap_err(),
+            serde_saphyr::from_reader::<_, String>(yaml.as_bytes()).unwrap_err(),
+        ];
+        for error in errors {
+            assert!(
+                matches!(
+                    error.without_snippet(),
+                    serde_saphyr::Error::MultipleDocuments { .. }
+                ),
+                "{yaml}: {error:?}"
+            );
+        }
+    }
+}
+
+#[rstest]
+#[case::literal("|")]
+#[case::folded(">")]
+fn root_block_strings_preserve_content_and_chomping_before_document_markers(#[case] style: &str) {
+    for (chomping, expected) in [("-", "text"), ("", "text\n"), ("+", "text\n\n")] {
+        for next_document in ["--- kept\n", "...\n--- kept\n", "---\tkept\n"] {
+            let yaml = format!("--- {style}{chomping}\ntext\n\n{next_document}");
+            let expected = vec![expected.to_owned(), "kept".to_owned()];
+            let multiple: Vec<String> = serde_saphyr::from_multiple(&yaml).unwrap();
+            let mut reader = yaml.as_bytes();
+            let streamed: Vec<String> = serde_saphyr::read(&mut reader)
+                .collect::<Result<_, _>>()
+                .unwrap();
+
+            assert_eq!(multiple, expected, "from_multiple: {yaml}");
+            assert_eq!(streamed, expected, "read: {yaml}");
+        }
+    }
+}
+
+#[rstest]
+#[case::tagged_null("!!str null")]
+#[case::non_specific_null("! null")]
+#[case::quoted_null("'null'")]
+#[case::quoted_tilde("\"~\"")]
+#[case::quoted_empty("''")]
+#[case::literal_empty("|\n")]
+#[case::folded_empty(">\n")]
+fn null_like_strings_are_rejected_as_merge_sources(#[case] scalar: &str) {
+    use serde_saphyr::{DuplicateKeyPolicy, Error};
+
+    for policy in [
+        DuplicateKeyPolicy::Error,
+        DuplicateKeyPolicy::FirstWins,
+        DuplicateKeyPolicy::LastWins,
+    ] {
+        // Exercise both direct merges and scalar nodes replayed inside a merge sequence.
+        for yaml in [
+            format!("<<: {scalar}\nkept: 7\n"),
+            format!("<<:\n  - {scalar}\nkept: 7\n"),
+        ] {
+            let options = serde_saphyr::options! { duplicate_keys: policy };
+            let error =
+                serde_saphyr::from_str_with_options::<BTreeMap<String, u32>>(&yaml, options)
+                    .unwrap_err();
+            assert!(
+                matches!(
+                    error.without_snippet(),
+                    Error::MergeValueNotMapOrSeqOfMaps { .. }
+                ),
+                "{policy:?}: {yaml}: {error:?}"
+            );
+        }
+    }
+}
+
 #[test]
 #[cfg(feature = "serialize")]
 fn optional_empty_literal_string_round_trips() {

@@ -25,7 +25,13 @@ fn explicit_float_tags_follow_typeless_non_finite_policy() {
         ("1e999", ".inf"),
         ("-1e999", "-.inf"),
     ] {
-        for yaml in [format!("!!float {literal}"), format!("!!float '{literal}'")] {
+        for yaml in [
+            format!("!!float {literal}"),
+            format!("!!float '{literal}'"),
+            format!("!!float \"{literal}\""),
+            format!("!!float |-\n  {literal}\n"),
+            format!("!!float >-\n  {literal}\n"),
+        ] {
             let err = serde_saphyr::from_str::<Value>(&yaml).unwrap_err();
             assert!(
                 matches!(

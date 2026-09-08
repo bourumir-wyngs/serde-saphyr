@@ -60,6 +60,45 @@ fn duplicate_policy_keeps_the_winning_integer_key_spelling() {
 }
 
 #[test]
+fn integer_duplicate_policy_preserves_nested_values_and_anchored_copies() {
+    let yaml = "before: {items: [0]}\n\
+                0xB: &first {items: [1, 2]}\n\
+                middle: {items: [3]}\n\
+                0o13: &second {items: [4]}\n\
+                11: &last {items: [5, 6, 7]}\n\
+                first_copy: *first\n\
+                second_copy: *second\n\
+                last_copy: *last\n\
+                after: {items: [8]}\n";
+    type Mapping = BTreeMap<String, BTreeMap<String, Vec<i32>>>;
+    for (policy, spelling, items) in [
+        (DuplicateKeyPolicy::FirstWins, "0xB", vec![1, 2]),
+        (DuplicateKeyPolicy::LastWins, "11", vec![5, 6, 7]),
+    ] {
+        let options = serde_saphyr::options! { duplicate_keys: policy };
+        let actual: Mapping = from_str_with_options(yaml, options).unwrap();
+        let expected = [
+            ("before", vec![0]),
+            ("middle", vec![3]),
+            ("first_copy", vec![1, 2]),
+            ("second_copy", vec![4]),
+            ("last_copy", vec![5, 6, 7]),
+            ("after", vec![8]),
+            (spelling, items),
+        ]
+        .into_iter()
+        .map(|(key, items)| {
+            (
+                key.to_owned(),
+                BTreeMap::from([("items".to_owned(), items)]),
+            )
+        })
+        .collect::<Mapping>();
+        assert_eq!(actual, expected, "wrong mapping under {policy:?}");
+    }
+}
+
+#[test]
 fn equivalent_integer_keys_are_duplicates_for_numeric_targets() {
     let error = from_str::<BTreeMap<i32, String>>("0xB: first\n11: second\n")
         .expect_err("numeric targets must also receive duplicate-key checking");
@@ -143,6 +182,43 @@ fn integer_equality_applies_inside_sequence_and_mapping_keys() {
 }
 
 #[test]
+fn integer_equality_in_composite_key_values_keeps_the_winning_node() {
+    // All integers occur in mapping values inside the outer key.
+    // Comparing just the inner mapping keys would miss these duplicates.
+    let yaml = "? {ids: [0xB, -0]}\n\
+                : [1, 2]\n\
+                ? {ids: [11, +0]}\n\
+                : [3, 4, 5]\n\
+                ? {ids: [12, 0]}\n\
+                : [6]\n";
+    type Mapping = BTreeMap<BTreeMap<String, Vec<String>>, Vec<i32>>;
+    let error = from_str::<Mapping>(yaml).unwrap_err();
+    assert!(matches!(
+        error.without_snippet(),
+        Error::DuplicateMappingKey { .. }
+    ));
+
+    for (policy, spellings, value) in [
+        (DuplicateKeyPolicy::FirstWins, ["0xB", "-0"], vec![1, 2]),
+        (DuplicateKeyPolicy::LastWins, ["11", "+0"], vec![3, 4, 5]),
+    ] {
+        let options = serde_saphyr::options! { duplicate_keys: policy };
+        let actual: Mapping = from_str_with_options(yaml, options).unwrap();
+        let expected = BTreeMap::from([
+            (
+                BTreeMap::from([("ids".to_owned(), spellings.map(str::to_owned).to_vec())]),
+                value,
+            ),
+            (
+                BTreeMap::from([("ids".to_owned(), vec!["12".to_owned(), "0".to_owned()])]),
+                vec![6],
+            ),
+        ]);
+        assert_eq!(actual, expected, "wrong composite key under {policy:?}");
+    }
+}
+
+#[test]
 fn aliased_integer_keys_use_integer_equality() {
     let yaml = "? &integer 0xB\n: first\n? *integer\n: second\n11: third\n";
     let options = serde_saphyr::options! { duplicate_keys: DuplicateKeyPolicy::LastWins };
@@ -188,6 +264,54 @@ fn equivalent_merged_integer_keys_keep_the_earlier_source_spelling() {
             actual,
             BTreeMap::from([("0xB".to_owned(), "first".to_owned())])
         );
+    }
+}
+
+#[test]
+fn explicit_composite_keys_override_equivalent_merged_keys() {
+    type Mapping = BTreeMap<BTreeMap<String, Vec<String>>, Vec<i32>>;
+    let merged = "<<:\n  ? {ids: [0xB, -0]}\n  : [1, 2]\n";
+    let explicit = "? {ids: [11, +0]}\n: [3, 4, 5]\n";
+    let expected = BTreeMap::from([(
+        BTreeMap::from([("ids".to_owned(), vec!["11".to_owned(), "+0".to_owned()])]),
+        vec![3, 4, 5],
+    )]);
+    for policy in [
+        DuplicateKeyPolicy::Error,
+        DuplicateKeyPolicy::FirstWins,
+        DuplicateKeyPolicy::LastWins,
+    ] {
+        for yaml in [format!("{merged}{explicit}"), format!("{explicit}{merged}")] {
+            let options = serde_saphyr::options! { duplicate_keys: policy };
+            let actual: Mapping = from_str_with_options(&yaml, options).unwrap();
+            assert_eq!(actual, expected, "wrong merge under {policy:?}: {yaml}");
+        }
+    }
+}
+
+#[test]
+fn merged_composite_keys_keep_the_earlier_source_spelling_and_value() {
+    let yaml = "\
+<<:
+  - ? [0xB, -0]
+    : [1, 2]
+  - ? [11, +0]
+    : [3, 4, 5]
+    ? [12, 0]
+    : [6]
+";
+    let expected = BTreeMap::from([
+        (vec!["0xB".to_owned(), "-0".to_owned()], vec![1, 2]),
+        (vec!["12".to_owned(), "0".to_owned()], vec![6]),
+    ]);
+    for policy in [
+        DuplicateKeyPolicy::Error,
+        DuplicateKeyPolicy::FirstWins,
+        DuplicateKeyPolicy::LastWins,
+    ] {
+        let options = serde_saphyr::options! { duplicate_keys: policy };
+        let actual: BTreeMap<Vec<String>, Vec<i32>> = from_str_with_options(yaml, options).unwrap();
+        assert_eq!(actual, expected, "wrong merged source under {policy:?}");
     }
 }
 

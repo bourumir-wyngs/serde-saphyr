@@ -1,4 +1,4 @@
-#![cfg(all(feature = "serialize", feature = "deserialize"))]
+#![cfg(feature = "deserialize")]
 use rstest::rstest;
 use serde_saphyr as yaml;
 use serde_saphyr::Error;
@@ -75,9 +75,15 @@ fn tagged_string_cannot_parse_into_any_integer_type() {
 #[rstest]
 #[case::string("!!str 1.5")]
 #[case::quoted_string("!!str '1.5'")]
+#[case::double_quoted_string("!!str \"1.5\"")]
 #[case::block_string("!!str |-\n  1.5\n")]
 #[case::verbatim_string("!<tag:yaml.org,2002:str> 1.5")]
+#[case::named_string("%TAG !core! tag:yaml.org,2002:\n--- !core!str 1.5")]
+#[case::non_finite_string("!!str .inf")]
 #[case::integer("!!int 42")]
+#[case::quoted_integer("!!int '42'")]
+#[case::block_integer("!!int |\n  42\n")]
+#[case::named_integer("%TAG !core! tag:yaml.org,2002:\n--- !core!int 42")]
 #[case::boolean("!!bool 1.5")]
 #[case::null("!!null 1.5")]
 fn incompatible_core_tags_cannot_parse_into_floats(#[case] yaml: &str) {
@@ -98,6 +104,28 @@ fn incompatible_core_tags_cannot_parse_into_floats(#[case] yaml: &str) {
 }
 
 #[rstest]
+#[case::string("!!str '1.5'")]
+#[case::integer("!!int 42")]
+fn aliases_preserve_incompatible_core_tags_for_floats(#[case] scalar: &str) {
+    let yaml = format!("- &number {scalar}\n- *number\n");
+    // Accept the definition as a generic value, then request a float from its alias.
+    let f32_error = yaml::from_reader::<_, (serde_json::Value, f32)>(yaml.as_bytes()).unwrap_err();
+    let f64_error = yaml::from_str::<(serde_json::Value, f64)>(&yaml).unwrap_err();
+    for error in [f32_error, f64_error] {
+        assert!(
+            matches!(
+                error.without_snippet(),
+                Error::AliasError { msg, .. } if msg.contains("invalid floating point")
+            ),
+            "yaml: {yaml}, error: {error}"
+        );
+        let locations = error.locations().unwrap();
+        assert_eq!(locations.reference_location.line(), 2);
+        assert_eq!(locations.defined_location.line(), 1);
+    }
+}
+
+#[rstest]
 #[case::plain("1.5", 1.5)]
 #[case::quoted("'1.5'", 1.5)]
 #[case::plain_integer("42", 42.0)]
@@ -105,6 +133,7 @@ fn incompatible_core_tags_cannot_parse_into_floats(#[case] yaml: &str) {
 #[case::integer_looking_float("!!float 42", 42.0)]
 #[case::quoted_float("!!float '1.5'", 1.5)]
 #[case::block_float("!!float >-\n  1.5\n", 1.5)]
+#[case::named_float("%TAG !core! tag:yaml.org,2002:\n--- !core!float '1.5'", 1.5)]
 #[case::custom_tag("!measurement 1.5", 1.5)]
 fn compatible_scalars_can_parse_into_floats(#[case] yaml: &str, #[case] expected: f64) {
     assert_eq!(f64::from(yaml::from_str::<f32>(yaml).unwrap()), expected);
