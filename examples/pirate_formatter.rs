@@ -45,7 +45,9 @@ impl Localizer for PirateLocalizer {
                 ErrorKind::MismatchedFlowCollectionEnd { .. } => {
                     Some(Cow::Borrowed("Hey, more ships in than out!"))
                 }
-                ErrorKind::InvalidIndentation => Some(Cow::Borrowed("Ye've berthed her wrong!")),
+                ErrorKind::InvalidIndentation | ErrorKind::InvalidBlockScalarIndent => {
+                    Some(Cow::Borrowed("Ye've berthed her wrong!"))
+                }
                 _ => None,
             },
             _ => None,
@@ -369,8 +371,9 @@ mod tests {
     }
 
     #[test]
-    fn invalid_indentation_uses_pirate_parser_message() {
-        let error = serde_saphyr::from_str::<serde_json::Value>("a:\n  [\nfoo]\n")
+    fn invalid_block_scalar_indentation_uses_pirate_parser_message() {
+        // Unlike relaxed flow indentation, this scalar requires two spaces of indentation.
+        let error = serde_saphyr::from_str::<serde_json::Value>("|2\nfoo\n")
             .expect_err("invalid indentation should fail");
 
         assert_eq!(
