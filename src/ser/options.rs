@@ -145,9 +145,11 @@ pub struct SerializerOptions {
     /// at the beginning of the document, and use YAML 1.2 rules for certain
     /// compatibility heuristics.
     ///
-    /// In particular, YAML 1.1 boolean spellings like `yes`/`no`/`on`/`off`/`y`/`n`
-    /// will **not** be treated as booleans for the purpose of auto-quoting. In cases
-    /// like multiple x, y coordinates quoting y may be very annoying.
+    /// With the default `false`, strings matching YAML 1.1 numeric, boolean,
+    /// null, timestamp, and reserved-token spellings are quoted to preserve their
+    /// type across readers. With `true`, YAML 1.1-specific quoting checks are
+    /// disabled, including boolean spellings like `yes`/`no`/`on`/`off`/`y`/`n`,
+    /// sexagesimal numbers, and timestamps. YAML syntax safety checks still apply.
     /// Default: false.
     pub yaml_12: bool,
 }

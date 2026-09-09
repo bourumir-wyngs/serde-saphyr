@@ -1,161 +1,101 @@
 use crate::parse_scalars::parse_yaml11_bool;
 use std::fmt::{self, Write};
 
-#[inline]
-// Match a broad set of YAML numeric tokens (integer / float) even if they would overflow
-// when parsed into Rust numeric types.
-fn is_numeric_looking(s: &str) -> bool {
-    let bytes = s.as_bytes();
-    let len = bytes.len();
-
-    if len == 0 {
+/// Check numeric syntax without constructing a value: overflow and resolver errors
+/// must not turn a serialized string into a number or an unreadable document.
+fn is_numeric(s: &str, yaml_12: bool) -> bool {
+    if !matches!(
+        s.as_bytes().first(),
+        Some(b'0'..=b'9' | b'+' | b'-' | b'.' | b'_')
+    ) {
         return false;
     }
-
-    #[inline]
-    fn consume_digit_run<F>(bytes: &[u8], mut p: usize, is_digit: F) -> Result<(usize, bool), ()>
-    where
-        F: Fn(u8) -> bool,
-    {
-        let start = p;
-        let mut saw_digit = false;
-
-        while p < bytes.len() {
-            if is_digit(bytes[p]) {
-                saw_digit = true;
-                p += 1;
-                continue;
-            }
-
-            if bytes[p] == b'_' {
-                let prev_is_digit = p > start && is_digit(bytes[p - 1]);
-                let next_is_digit = match bytes.get(p + 1) {
-                    Some(&next) => is_digit(next),
-                    None => false,
-                };
-
-                if !prev_is_digit || !next_is_digit {
-                    return Err(());
-                }
-
-                p += 1;
-                continue;
-            }
-
-            break;
-        }
-
-        Ok((p, saw_digit))
-    }
-
-    #[inline]
-    fn consume_exponent(bytes: &[u8], mut p: usize) -> Option<usize> {
-        if p >= bytes.len() || (bytes[p] != b'e' && bytes[p] != b'E') {
-            return None;
-        }
-
-        p += 1;
-
-        if p < bytes.len() && (bytes[p] == b'+' || bytes[p] == b'-') {
-            p += 1;
-        }
-
-        let (p, saw_digit) = consume_digit_run(bytes, p, |b| b.is_ascii_digit()).ok()?;
-        saw_digit.then_some(p)
-    }
-
-    let mut p = 0;
-    if bytes[0] == b'+' || bytes[0] == b'-' {
-        p = 1;
-        if p == len {
-            return false;
-        }
-    }
-
-    // Match the integer spellings accepted by the deserializer, including signed and
-    // uppercase radix prefixes, so string round-tripping stays stable.
-    if len.saturating_sub(p) >= 3 && bytes[p] == b'0' {
-        match bytes[p + 1] {
-            b'b' | b'B' => {
-                let Ok((end, saw_digit)) =
-                    consume_digit_run(bytes, p + 2, |b| matches!(b, b'0' | b'1'))
-                else {
-                    return false;
-                };
-                return saw_digit && end == len;
-            }
-            b'o' | b'O' => {
-                let Ok((end, saw_digit)) =
-                    consume_digit_run(bytes, p + 2, |b| (b'0'..=b'7').contains(&b))
-                else {
-                    return false;
-                };
-                return saw_digit && end == len;
-            }
-            b'x' | b'X' => {
-                let Ok((end, saw_digit)) =
-                    consume_digit_run(bytes, p + 2, |b| b.is_ascii_hexdigit())
-                else {
-                    return false;
-                };
-                return saw_digit && end == len;
-            }
-            _ => {}
-        }
-    }
-
-    // Dot-leading float: .5, +.5, -.5
-    if bytes[p] == b'.' {
-        p += 1;
-        let Ok((end, saw_digit)) = consume_digit_run(bytes, p, |b| b.is_ascii_digit()) else {
-            return false;
-        };
-        p = end;
-
-        if !saw_digit {
-            return false;
-        }
-
-        return match consume_exponent(bytes, p) {
-            Some(end) => end == len,
-            None => p == len,
-        };
-    }
-
-    // Decimal integer / float / scientific notation.
-    if !bytes[p].is_ascii_digit() {
-        return false;
-    }
-
-    let Ok((end, saw_digit)) = consume_digit_run(bytes, p, |b| b.is_ascii_digit()) else {
-        return false;
-    };
-    p = end;
-
-    debug_assert!(saw_digit, "decimal branch always starts on a digit");
-
-    if p == len {
+    let unsigned = s.strip_prefix(['+', '-']).unwrap_or(s);
+    if unsigned.eq_ignore_ascii_case(".inf") || unsigned.eq_ignore_ascii_case(".nan") {
         return true;
     }
-
-    if bytes[p] == b'.' {
-        p += 1;
-        let Ok((end, _)) = consume_digit_run(bytes, p, |b| b.is_ascii_digit()) else {
-            return false;
-        };
-        p = end;
-
-        return match consume_exponent(bytes, p) {
-            Some(end) => end == len,
-            None => p == len,
-        };
+    if !yaml_12 {
+        if is_yaml11_sexagesimal(s) {
+            return true;
+        }
+        // YAML 1.1 radix productions accept [digits_]+, even an all-underscore
+        // suffix that a resolver tags as numeric but cannot construct.
+        if let Some((radix, digits)) = radix_digits(unsigned)
+            && is_digit_run(digits, radix, false)
+        {
+            return true;
+        }
     }
 
-    if bytes[p] == b'e' || bytes[p] == b'E' {
-        return matches!(consume_exponent(bytes, p), Some(end) if end == len);
+    // Go YAML removes underscores before numeric resolution, including around
+    // radix prefixes and exponents. YAML 1.2 output keeps the stricter spelling.
+    let normalized;
+    let s = if !yaml_12 && s.contains('_') {
+        normalized = s.replace('_', "");
+        normalized.as_str()
+    } else {
+        s
+    };
+    let unsigned = s.strip_prefix(['+', '-']).unwrap_or(s);
+    if let Some((radix, digits)) = radix_digits(unsigned) {
+        // Go YAML's binary fallback accepts a sign after an unsigned 0b prefix.
+        let digits = if !yaml_12 && s.starts_with("0b") {
+            digits.strip_prefix(['+', '-']).unwrap_or(digits)
+        } else {
+            digits
+        };
+        return is_digit_run(digits, radix, true);
     }
+    let mantissa = match unsigned.split_once(['e', 'E']) {
+        Some((mantissa, exponent)) => {
+            let exponent = exponent.strip_prefix(['+', '-']).unwrap_or(exponent);
+            if !is_digit_run(exponent, 10, true) {
+                return false;
+            }
+            mantissa
+        }
+        None => unsigned,
+    };
+    match mantissa.split_once('.') {
+        Some((whole, fraction)) => {
+            if !whole.is_empty() && !is_digit_run(whole, 10, true) {
+                return false;
+            }
+            if !yaml_12 {
+                // The YAML 1.1 float production allows an empty integer part
+                // and [0-9.]* after the dot, including unconstructible spellings.
+                fraction.bytes().all(|b| b.is_ascii_digit() || b == b'.')
+            } else if fraction.is_empty() {
+                !whole.is_empty()
+            } else {
+                is_digit_run(fraction, 10, true)
+            }
+        }
+        None => is_digit_run(mantissa, 10, true),
+    }
+}
 
-    false
+fn radix_digits(s: &str) -> Option<(u32, &str)> {
+    match s.as_bytes() {
+        [b'0', b'b' | b'B', ..] => Some((2, &s[2..])),
+        [b'0', b'o' | b'O', ..] => Some((8, &s[2..])),
+        [b'0', b'x' | b'X', ..] => Some((16, &s[2..])),
+        _ => None,
+    }
+}
+
+fn is_digit_run(s: &str, radix: u32, strict_underscores: bool) -> bool {
+    let is_digit = |b: u8| b.is_ascii() && char::from(b).is_digit(radix);
+    let bytes = s.as_bytes();
+    !bytes.is_empty()
+        && bytes.iter().enumerate().all(|(i, &b)| {
+            is_digit(b)
+                || (b == b'_'
+                    && (!strict_underscores
+                        || (i > 0
+                            && is_digit(bytes[i - 1])
+                            && bytes.get(i + 1).is_some_and(|&next| is_digit(next)))))
+        })
 }
 
 /// Recognize YAML 1.1 base-60 integers and floats without parsing their magnitude.
@@ -188,63 +128,88 @@ fn is_yaml11_sexagesimal(s: &str) -> bool {
     fraction.is_none_or(|part| part.bytes().all(|b| b.is_ascii_digit() || b == b'_'))
 }
 
-/// Returns true if `s` is a special YAML token or looks like a number/boolean,
-/// which means it should be quoted to be treated as a string.
-fn is_ambiguous(s: &str) -> bool {
+/// Match timestamp syntax without calendar validation: a reader can assign a
+/// timestamp tag even when constructing the date would fail.
+fn is_yaml11_timestamp(mut s: &str) -> bool {
+    fn digits(s: &mut &str, min: usize, max: usize) -> bool {
+        let len = s.bytes().take_while(u8::is_ascii_digit).count();
+        if !(min..=max).contains(&len) {
+            return false;
+        }
+        *s = &s[len..];
+        true
+    }
+    fn prefix(s: &mut &str, ch: char) -> bool {
+        if let Some(rest) = s.strip_prefix(ch) {
+            *s = rest;
+            true
+        } else {
+            false
+        }
+    }
+    if !digits(&mut s, 4, 4)
+        || !prefix(&mut s, '-')
+        || !digits(&mut s, 1, 2)
+        || !prefix(&mut s, '-')
+        || !digits(&mut s, 1, 2)
+    {
+        return false;
+    }
+    // Go YAML also accepts single-digit date and time components.
     if s.is_empty() {
         return true;
     }
-    if s == "~"
+    if let Some(rest) = s.strip_prefix(['T', 't']) {
+        s = rest;
+    } else {
+        let rest = s.trim_start_matches([' ', '\t']);
+        if rest.len() == s.len() {
+            return false;
+        }
+        s = rest;
+    }
+    if !digits(&mut s, 1, 2)
+        || !prefix(&mut s, ':')
+        || !digits(&mut s, 1, 2)
+        || !prefix(&mut s, ':')
+        || !digits(&mut s, 1, 2)
+    {
+        return false;
+    }
+    // Go's time parser also accepts a comma as the fractional separator.
+    if prefix(&mut s, '.') || prefix(&mut s, ',') {
+        digits(&mut s, 0, usize::MAX);
+    }
+    s = s.trim_start_matches([' ', '\t']);
+    if s.is_empty() || s == "Z" {
+        return true;
+    }
+    if !(prefix(&mut s, '+') || prefix(&mut s, '-')) || !digits(&mut s, 1, 2) {
+        return false;
+    }
+    if prefix(&mut s, ':') && !digits(&mut s, 2, 2) {
+        return false;
+    }
+    s.is_empty()
+}
+
+/// Whether implicit scalar resolution can change a string's type or reject it.
+fn is_ambiguous(s: &str, yaml_12: bool) -> bool {
+    s.is_empty()
+        || s == "~"
         || s.eq_ignore_ascii_case("null")
         || s.eq_ignore_ascii_case("true")
         || s.eq_ignore_ascii_case("false")
-    {
-        return true;
-    }
-
-    // Special float tokens (ASCII case-insensitive) should not be plain, to avoid
-    // being interpreted as floats during parse. Quote these as strings.
-    // Accept common forms with optional leading sign and optional leading dot.
-    // Examples: "NaN", ".nan", ".inf", "-.inf", "+inf". No allocation.
-    #[inline]
-    fn is_ascii_lower(b: u8) -> u8 {
-        b | 0x20
-    }
-    #[inline]
-    fn is_special_inf_nan_ascii(s: &str) -> bool {
-        let bytes = s.as_bytes();
-        let mut i = 0usize;
-        if let Some(&c) = bytes.first()
-            && (c == b'+' || c == b'-')
-        {
-            i = 1;
-        }
-        if let Some(&c) = bytes.get(i)
-            && c == b'.'
-        {
-            i += 1;
-        } else {
-            return false;
-        }
-        if bytes.len() == i + 3 {
-            let a = is_ascii_lower(bytes[i]);
-            let b = is_ascii_lower(bytes[i + 1]);
-            let c = is_ascii_lower(bytes[i + 2]);
-            return (a == b'n' && b == b'a' && c == b'n') || (a == b'i' && b == b'n' && c == b'f');
-        }
-        false
-    }
-    if is_special_inf_nan_ascii(s) {
-        return true;
-    }
-
-    // Numeric-looking tokens: quote them to preserve strings even if they would overflow
-    // our numeric parsers.
-    if is_numeric_looking(s) {
-        return true;
-    }
-
-    false
+        || is_numeric(s, yaml_12)
+        // Preserve compatibility with readers accepting undotted float tokens.
+        || s.eq_ignore_ascii_case("nan")
+        || s.eq_ignore_ascii_case("inf")
+        || s.eq_ignore_ascii_case("+inf")
+        || s.eq_ignore_ascii_case("-inf")
+        || (!yaml_12
+            && (parse_yaml11_bool(s).is_ok()
+                || is_yaml11_timestamp(s)
+                || matches!(s, "<<" | "=")))
 }
 
 #[inline]
@@ -256,49 +221,13 @@ fn starts_with_document_marker(s: &str) -> bool {
     rest.is_empty() || rest.as_bytes().first().is_some_and(u8::is_ascii_whitespace)
 }
 
-/// Like `is_ambiguous`, but used for VALUE position.
-///
-/// For values we are more conservative: quote additional spellings that many YAML
-/// parsers accept as floats even if YAML 1.2 requires the leading-dot form.
-#[inline]
-fn is_ambiguous_value(s: &str, yaml_12: bool) -> bool {
-    if is_ambiguous(s) {
-        return true;
-    }
-
-    // YAML 1.1 boolean spellings: quote them as strings for compatibility and
-    // round-tripping (e.g. "YES", "no", "On", "off", "y", "n").
-    if !yaml_12 && parse_yaml11_bool(s).is_ok() {
-        return true;
-    }
-
-    // Base-60 strings are numeric in YAML 1.1, with or without underscores.
-    if !yaml_12 && is_yaml11_sexagesimal(s) {
-        return true;
-    }
-
-    // YAML 1.1 integer resolution ignores underscores, including consecutive,
-    // trailing, and radix-prefix-adjacent underscores. Quote these spellings
-    // even when our own numeric parser treats them as strings.
-    if !yaml_12 && s.contains('_') && is_numeric_looking(&s.replace('_', "")) {
-        return true;
-    }
-
-    // Quote non-YAML-1.2 float spellings too (e.g. "nan", "inf").
-    // This preserves round-tripping of strings and matches tests.
-    s.eq_ignore_ascii_case("nan")
-        || s.eq_ignore_ascii_case("inf")
-        || s.eq_ignore_ascii_case("+inf")
-        || s.eq_ignore_ascii_case("-inf")
-}
-
 /// Controls quoting behavior of the serializer.
 ///
 /// Returns true if `s` can be emitted as a plain scalar without quoting.
 /// Internal heuristic used by `write_plain_or_quoted`.
 #[inline]
 pub(crate) fn is_plain_safe(s: &str) -> bool {
-    if is_ambiguous(s) {
+    if is_ambiguous(s, true) {
         return false;
     }
     // A plain, untagged "<<" key would be a YAML merge key, not the literal string "<<".
@@ -352,7 +281,7 @@ pub(crate) fn is_plain_safe(s: &str) -> bool {
 /// could be misinterpreted as a number or boolean.
 #[inline]
 pub(crate) fn is_plain_value_safe(s: &str, yaml_12: bool, in_flow: bool) -> bool {
-    if is_ambiguous_value(s, yaml_12) {
+    if is_ambiguous(s, yaml_12) {
         return false;
     }
     if starts_with_document_marker(s) {
@@ -501,12 +430,12 @@ fn has_comment_start(string: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        is_controll_which_needs_escaping, is_numeric_looking, is_plain_safe, is_plain_value_safe,
-    };
+    use super::{is_controll_which_needs_escaping, is_numeric, is_plain_safe, is_plain_value_safe};
     use rstest::rstest;
 
     #[rstest]
+    #[case::inf(".inf")]
+    #[case::nan(".nan")]
     #[case::zero("0")]
     #[case::neg_int("-19")]
     #[case::pos_int("+12")]
@@ -536,7 +465,7 @@ mod tests {
     #[case::leading_dot_exponent(".5e+1")]
     #[case::neg_leading_dot_exponent("-.5E-2")]
     fn numeric_looking_matches(#[case] input: &str) {
-        assert!(is_numeric_looking(input), "{input:?} should match");
+        assert!(is_numeric(input, true), "{input:?} should match");
     }
 
     #[rstest]
@@ -560,11 +489,9 @@ mod tests {
     #[case::hex_inner_sign("-0x-1")]
     #[case::exponent_no_digits("12e")]
     #[case::dot_exponent_no_mantissa(".e5")]
-    #[case::inf(".inf")]
-    #[case::nan(".nan")]
     #[case::fractional_inner_underscore("1._0")]
     fn numeric_looking_non_matches(#[case] input: &str) {
-        assert!(!is_numeric_looking(input), "{input:?} should not match");
+        assert!(!is_numeric(input, true), "{input:?} should not match");
     }
 
     #[rstest]
