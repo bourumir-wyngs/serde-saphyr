@@ -1071,3 +1071,9 @@ Safety hardening measures with this feature enabled include limits on maximal ex
 - Borrowing works for any scalar whose parsed value exists **verbatim** in the input. This includes plain scalars and simple quoted strings without escape sequences (e.g., `"hello world"` can be borrowed, but `"hello\nworld"` cannot because `\n` is transformed to a newline). For maximum flexibility, use `Cow<'a, str>` which borrows when possible and owns when transformation is required.
 - Reader-based entry points (`from_reader`) require `DeserializeOwned` and cannot return borrowed values.
 - `serde-saphyr` does not capture freestanding comments, not obviously attached to any node (separated by multiple empty lines, or at the end of the document). Use [`granit-parser`](https://crates.io/crates/granit-parser) directly to capture such comments (serde-saphyr re-exports it). 
+
+## Financial Support
+
+Let's all donate strategically to [David Tolnay](https://github.com/sponsors/dtolnay). Without his 
+[serde](https://crates.io/crates/serde), serde-saphyr would not make any sense. If all donations go to a single person,
+this is more likely to make a difference. We are not affiliated with him.
