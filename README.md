@@ -56,7 +56,7 @@ See [release history](https://github.com/bourumir-wyngs/serde-saphyr/releases) o
 
 ### Testing
 
-The test suite currently includes over 3000 passing tests. For [YAML Test Suite v2022-01-17](https://github.com/yaml/yaml-test-suite/releases/tag/v2022-01-17), all 350 active test IDs and all 402 active cases from the [`data-2022-01-17` release](https://github.com/yaml/yaml-test-suite/releases/tag/data-2022-01-17) are represented. Although we made a reasonable effort, accidental omissions or conversion errors remain possible. Some additional cases are taken from the original serde-yaml tests.
+The test suite currently includes over 3000 passing tests. For [YAML Test Suite v2022-01-17](https://github.com/yaml/yaml-test-suite/releases/tag/v2022-01-17), all 350 active test IDs and all 402 active cases from the [`data-2022-01-17` release](https://github.com/yaml/yaml-test-suite/releases/tag/data-2022-01-17) are represented (9C9N is intentionally relaxed to keep the library compatible with PyYAML and ruamel.yaml). Although we made a reasonable effort, accidental omissions or conversion errors remain possible. Some additional cases are taken from the original serde-yaml tests.
 
 ### Project relationship
 
