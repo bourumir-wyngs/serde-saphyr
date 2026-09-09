@@ -158,6 +158,36 @@ fn is_numeric_looking(s: &str) -> bool {
     false
 }
 
+/// Recognize YAML 1.1 base-60 integers and floats without parsing their magnitude.
+fn is_yaml11_sexagesimal(s: &str) -> bool {
+    let unsigned = s.strip_prefix(['+', '-']).unwrap_or(s);
+    let (integer, fraction) = match unsigned.split_once('.') {
+        Some((integer, fraction)) => (integer, Some(fraction)),
+        None => (unsigned, None),
+    };
+    let Some((first, rest)) = integer.split_once(':') else {
+        return false;
+    };
+    let Some(first_digit) = first.as_bytes().first() else {
+        return false;
+    };
+    if !first_digit.is_ascii_digit()
+        || (fraction.is_none() && *first_digit == b'0')
+        || !first.bytes().all(|b| b.is_ascii_digit() || b == b'_')
+    {
+        return false;
+    }
+    // Every subsequent base-60 component is one or two digits in 0..=59.
+    if !rest.split(':').all(|part| match part.as_bytes() {
+        [digit] => digit.is_ascii_digit(),
+        [tens, units] => matches!(tens, b'0'..=b'5') && units.is_ascii_digit(),
+        _ => false,
+    }) {
+        return false;
+    }
+    fraction.is_none_or(|part| part.bytes().all(|b| b.is_ascii_digit() || b == b'_'))
+}
+
 /// Returns true if `s` is a special YAML token or looks like a number/boolean,
 /// which means it should be quoted to be treated as a string.
 fn is_ambiguous(s: &str) -> bool {
@@ -239,6 +269,11 @@ fn is_ambiguous_value(s: &str, yaml_12: bool) -> bool {
     // YAML 1.1 boolean spellings: quote them as strings for compatibility and
     // round-tripping (e.g. "YES", "no", "On", "off", "y", "n").
     if !yaml_12 && parse_yaml11_bool(s).is_ok() {
+        return true;
+    }
+
+    // Base-60 strings are numeric in YAML 1.1, with or without underscores.
+    if !yaml_12 && is_yaml11_sexagesimal(s) {
         return true;
     }
 
