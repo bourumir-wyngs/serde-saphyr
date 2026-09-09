@@ -242,6 +242,13 @@ fn is_ambiguous_value(s: &str, yaml_12: bool) -> bool {
         return true;
     }
 
+    // YAML 1.1 integer resolution ignores underscores, including consecutive,
+    // trailing, and radix-prefix-adjacent underscores. Quote these spellings
+    // even when our own numeric parser treats them as strings.
+    if !yaml_12 && s.contains('_') && is_numeric_looking(&s.replace('_', "")) {
+        return true;
+    }
+
     // Quote non-YAML-1.2 float spellings too (e.g. "nan", "inf").
     // This preserves round-tripping of strings and matches tests.
     s.eq_ignore_ascii_case("nan")
