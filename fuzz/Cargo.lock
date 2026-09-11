@@ -111,7 +111,8 @@ dependencies = [
 [[package]]
 name = "granit-parser"
 version = "1.2.1"
-source = "git+https://github.com/bourumir-wyngs/granit-parser#ba0e600fd71d90414c1546a4c66bcd0e3f6fd808"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48aa83cc6ac4dc610adf5501a5392b4bcc543b2c1f24eaf77469a96e31ec9abe"
 dependencies = [
  "arraydeque",
  "smallvec",
@@ -316,9 +317,9 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "smallvec"
-version = "1.16.0"
+version = "1.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9be42f50aa861c555654aa3a37f52f4b1074bacf4e48fe0ef7fa584e80f1f0f"
+checksum = "ba467056f1b547ed52077911161fc86985becbc60e8e1857c8a144dab0def891"
 
 [[package]]
 name = "syn"
