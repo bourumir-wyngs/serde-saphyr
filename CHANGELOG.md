@@ -23,6 +23,7 @@
   `LitStr` and `LitString`, by using keep chomping and retaining every empty line.
 - Updated the granit-parser revision to preserve document boundaries after zero-indented root
   literal and folded block scalars, including empty strings.
+- Preserve string scalars across YAML 1.1 readers (PR #90, thanks @NiklasRosenstein)- 
 
 ## 1.2.0 Maintenance release
 
