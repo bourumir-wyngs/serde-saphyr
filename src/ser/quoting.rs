@@ -38,8 +38,9 @@ fn is_numeric(s: &str, yaml_12: bool) -> bool {
     };
     let unsigned = s.strip_prefix(['+', '-']).unwrap_or(s);
     if let Some((radix, digits)) = radix_digits(unsigned) {
-        // Go YAML's binary fallback accepts a sign after an unsigned 0b prefix.
-        let digits = if !yaml_12 && s.starts_with("0b") {
+        // Go YAML's binary fallback (and octal fallback in v3.0.1) accepts
+        // a sign after an unsigned lowercase 0b or 0o prefix.
+        let digits = if !yaml_12 && (s.starts_with("0b") || s.starts_with("0o")) {
             digits.strip_prefix(['+', '-']).unwrap_or(digits)
         } else {
             digits
