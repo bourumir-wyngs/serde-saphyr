@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.1 Maintenance release
+## 1.3.0 Maintenance and performance release
 
 ### Fixed
 
@@ -23,7 +23,11 @@
   `LitStr` and `LitString`, by using keep chomping and retaining every empty line.
 - Updated the granit-parser revision to preserve document boundaries after zero-indented root
   literal and folded block scalars, including empty strings.
-- Preserve string scalars across YAML 1.1 readers (PR #90, thanks @NiklasRosenstein)- 
+- Preserve string scalars across YAML 1.1 readers (PR #90, thanks @NiklasRosenstein)
+- The version increased to 1.3 because it uses granit-parser 1.3, and that is because granit-parser
+  added two methods to `Input` for performance improvements. As serde-saphyr re-exports it,
+   the version number must be increased to 1.3 as well, even if no new features are added to 
+   this crate itself.
 
 ## 1.2.0 Maintenance release
 
