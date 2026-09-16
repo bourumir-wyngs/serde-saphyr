@@ -45,9 +45,9 @@ checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "cc"
-version = "1.4.5"
+version = "1.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "005ec2760ca554fae18df7a11195552ec576cd665632a881bc011d5bb2fd4d80"
+checksum = "a3eb0f42d6c360dc3f8a821f6bf2fdea7f72bfd36b3076eb0e6d1e9e0752fff4"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -111,7 +111,8 @@ dependencies = [
 [[package]]
 name = "granit-parser"
 version = "1.3.0"
-source = "git+https://github.com/bourumir-wyngs/granit-parser#2f7f9c7dc3791c2bb669f0fa340b0a183de2ba3f"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e20f99e46474f56bd905c56e817ebddcf377a611f94c53ac4649e4d3fa3c0cd0"
 dependencies = [
  "arraydeque",
  "smallvec",
@@ -245,7 +246,7 @@ dependencies = [
 
 [[package]]
 name = "serde-saphyr"
-version = "1.2.1"
+version = "1.3.0"
 dependencies = [
  "annotate-snippets",
  "base64",
