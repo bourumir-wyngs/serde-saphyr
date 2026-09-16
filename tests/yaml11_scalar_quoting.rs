@@ -168,7 +168,20 @@ fn implicit_scalar() -> impl Strategy<Value = String> {
     ]
 }
 
+fn implicit_scalar_config() -> ProptestConfig {
+    let mut config = ProptestConfig::default();
+
+    if cfg!(miri) {
+        // File persistence requires host filesystem access, blocked by Miri isolation.
+        config.failure_persistence = None;
+    }
+
+    config
+}
+
 proptest! {
+    #![proptest_config(implicit_scalar_config())]
+
     #[test]
     fn yaml11_implicit_grammar_strings_preserve_their_type(text in implicit_scalar()) {
         assert_quoted_in_keys_and_values(&text);
