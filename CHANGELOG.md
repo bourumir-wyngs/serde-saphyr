@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.1 Unreleased
+
+### Fixed
+
+- Made `huge_documents` and `serde_derived_types` enable `deserialize`, fixing isolated feature
+  builds with `--no-default-features`, including autopkgtests of Debian team (as [observed](https://dfsg-new-queue.debian.org/reviews/rust-serde-saphyr)).
+
 ## 1.3.0 Maintenance and performance release
 
 ### Fixed

@@ -45,7 +45,7 @@ deserialize = ["dep:num-traits", "dep:annotate-snippets", "dep:granit-parser", "
 
 # Enables Serde Serialize/Deserialize impls for serde-saphyr's own configuration,
 # budget, and report types. Disabled by default to avoid compiling serde_derive.
-serde_derived_types = ["dep:serde"]
+serde_derived_types = ["dep:serde", "deserialize"]
 
 # Enables `${VAR}` property interpolation in plain scalar values.
 properties = ["deserialize"]
@@ -78,7 +78,7 @@ robotics = ["deserialize"]
 # Enables byte-span reporting for YAML documents > 4 GiB using packed 48-bit internal indices
 # instead of the default `u32` representation. Public getters still return `u64`, and values
 # beyond the packed range saturate instead of wrapping.
-huge_documents = []
+huge_documents = ["deserialize"]
 
 [dev-dependencies]
 indoc = { version = ">= 2.0.6, < 2.1"}
