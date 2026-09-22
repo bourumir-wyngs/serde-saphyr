@@ -12,8 +12,8 @@
 //! - Duplicate key policy: Error (default), `FirstWins` (skip later pairs), or `LastWins` (let later override).
 //!
 //! Multiple documents:
-//! - `from_str*` rejects multiple docs.
-//! - `from_multiple*` collects non-empty docs; empty docs are skipped.
+//! - `from_str` and `from_str_with_options` reject multiple docs.
+//! - `from_str_multiple*` collects non-empty docs; empty docs are skipped.
 
 #[cfg(feature = "deserialize")]
 pub(crate) mod base64;

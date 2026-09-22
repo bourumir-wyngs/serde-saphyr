@@ -14,6 +14,18 @@ struct Person {
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
+struct BorrowedPerson<'a> {
+    name: &'a str,
+}
+
+fn assert_borrows_from(value: &str, input: &str) {
+    let input_start = input.as_ptr() as usize;
+    let value_start = value.as_ptr() as usize;
+    assert!(value_start >= input_start);
+    assert!(value_start + value.len() <= input_start + input.len());
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
 enum Document {
     #[serde(rename = "person")]
     Person { name: String, age: u8 },
@@ -25,7 +37,7 @@ enum Document {
 fn multiple_documents_one_no_markers() {
     // Single document without any explicit --- or ... markers
     let y = "name: John\n";
-    let docs: Vec<Person> = serde_saphyr::from_multiple(y).expect("parse single doc as multi");
+    let docs: Vec<Person> = serde_saphyr::from_str_multiple(y).expect("parse single doc as multi");
     assert_eq!(docs.len(), 1);
     assert_eq!(docs[0].name, "John");
 }
@@ -44,7 +56,7 @@ fn single_document_entrypoint_rejects_multiple_documents() {
 fn multiple_documents_one_with_markers() {
     // Single document delimited by --- and ... markers
     let y = "---\nname: Jane\n...\n";
-    let docs: Vec<Person> = serde_saphyr::from_multiple(y).expect("parse single doc delimited");
+    let docs: Vec<Person> = serde_saphyr::from_str_multiple(y).expect("parse single doc delimited");
     assert_eq!(docs.len(), 1);
     assert_eq!(docs[0].name, "Jane");
 }
@@ -53,17 +65,92 @@ fn multiple_documents_one_with_markers() {
 fn multiple_documents_two_documents() {
     // Two documents separated by ---
     let y = "name: A\n---\nname: B\n";
-    let docs: Vec<Person> = serde_saphyr::from_multiple(y).expect("parse two docs");
+    let docs: Vec<Person> = serde_saphyr::from_str_multiple(y).expect("parse two docs");
     assert_eq!(docs.len(), 2);
     assert_eq!(docs[0].name, "A");
     assert_eq!(docs[1].name, "B");
 }
 
 #[test]
+fn str_multiple_documents_borrow_from_input_and_skip_empty_documents() {
+    let yaml = String::from("\u{FEFF}---\n---\nname: First\n---\nnull\n---\nname: 'Second'\n");
+    let docs: Vec<BorrowedPerson<'_>> = serde_saphyr::from_str_multiple(&yaml).unwrap();
+    assert_eq!(
+        docs,
+        vec![
+            BorrowedPerson { name: "First" },
+            BorrowedPerson { name: "Second" },
+        ]
+    );
+    for doc in docs {
+        assert_borrows_from(doc.name, &yaml);
+    }
+}
+
+#[test]
+fn str_multiple_documents_with_options_borrow_and_honor_duplicate_key_policy() {
+    let yaml = String::from("name: First\nname: Ignored\n---\nname: Second\nname: Also ignored\n");
+    let options = serde_saphyr::options! {
+        duplicate_keys: serde_saphyr::DuplicateKeyPolicy::FirstWins,
+    };
+    let docs: Vec<BorrowedPerson<'_>> =
+        serde_saphyr::from_str_multiple_with_options(&yaml, options).unwrap();
+    assert_eq!(
+        docs,
+        vec![
+            BorrowedPerson { name: "First" },
+            BorrowedPerson { name: "Second" },
+        ]
+    );
+    for doc in docs {
+        assert_borrows_from(doc.name, &yaml);
+    }
+}
+
+#[test]
+fn str_multiple_documents_reject_borrowing_transformed_strings() {
+    let yaml = String::from("name: First\n---\nname: \"hello\\nworld\"\n");
+    let err = serde_saphyr::from_str_multiple::<BorrowedPerson<'_>>(&yaml).unwrap_err();
+    assert!(matches!(
+        err.without_snippet(),
+        serde_saphyr::Error::CannotBorrowTransformedString { .. }
+    ));
+}
+
+#[test]
+fn str_multiple_documents_support_callback_adapters_and_owned_output() {
+    // Forwarding closures let callbacks accept any input lifetime while returning owned values.
+    let parse: for<'a> fn(&'a str) -> Result<Vec<String>, serde_saphyr::Error> =
+        |input| serde_saphyr::from_str_multiple::<String>(input);
+    let parse_with_options: for<'a> fn(
+        &'a str,
+        serde_saphyr::Options,
+    ) -> Result<Vec<String>, serde_saphyr::Error> =
+        |input, options| serde_saphyr::from_str_multiple_with_options::<String>(input, options);
+
+    let results = {
+        let yaml = String::from("First\n---\nSecond\n");
+        [
+            parse(&yaml).unwrap(),
+            parse_with_options(&yaml, serde_saphyr::Options::default()).unwrap(),
+            serde_saphyr::from_str_multiple::<String>(&yaml).unwrap(),
+            serde_saphyr::from_str_multiple_with_options::<String>(
+                &yaml,
+                serde_saphyr::Options::default(),
+            )
+            .unwrap(),
+        ]
+    };
+    for docs in results {
+        assert_eq!(docs, ["First", "Second"]);
+    }
+}
+
+#[test]
 fn multiple_documents_cross_document_anchor_error() {
     // Anchors must not leak across document boundaries.
     let y = "name: &a John\n---\nname: *a\n";
-    let err = serde_saphyr::from_multiple::<Person>(y)
+    let err = serde_saphyr::from_str_multiple::<Person>(y)
         .expect_err("expected cross-document alias to fail");
     match &err {
         serde_saphyr::Error::UnknownAnchor { .. } => {}
@@ -77,7 +164,7 @@ fn multiple_documents_cross_document_anchor_error() {
 fn multiple_documents_empty_document_cases() {
     // Case 1: explicitly empty document
     let y1 = "---\n...\n";
-    let docs1: Vec<Person> = serde_saphyr::from_multiple(y1).expect("parse empty doc 1");
+    let docs1: Vec<Person> = serde_saphyr::from_str_multiple(y1).expect("parse empty doc 1");
     assert!(
         docs1.is_empty(),
         "expected empty vec for explicit empty document, got: {:?}",
@@ -86,7 +173,7 @@ fn multiple_documents_empty_document_cases() {
 
     // Case 2: just document start without content
     let y2 = "---\n";
-    let docs2: Vec<Person> = serde_saphyr::from_multiple(y2).expect("parse empty doc 2");
+    let docs2: Vec<Person> = serde_saphyr::from_str_multiple(y2).expect("parse empty doc 2");
     assert!(
         docs2.is_empty(),
         "expected empty vec for start-only empty document, got: {:?}",
@@ -95,7 +182,8 @@ fn multiple_documents_empty_document_cases() {
 
     // Case 3: multiple empties
     let y3 = "---\n---\n...\n";
-    let docs3: Vec<Person> = serde_saphyr::from_multiple(y3).expect("parse multiple empty docs");
+    let docs3: Vec<Person> =
+        serde_saphyr::from_str_multiple(y3).expect("parse multiple empty docs");
     assert!(
         docs3.is_empty(),
         "expected empty vec when only empty documents present, got: {:?}",
@@ -105,7 +193,7 @@ fn multiple_documents_empty_document_cases() {
     // Case 4: completely empty stream
     let y4 = "";
     let docs4: Vec<Person> =
-        serde_saphyr::from_multiple(y4).expect("parse completely empty stream");
+        serde_saphyr::from_str_multiple(y4).expect("parse completely empty stream");
     assert!(
         docs4.is_empty(),
         "expected empty vec for empty stream, got: {:?}",
@@ -116,16 +204,17 @@ fn multiple_documents_empty_document_cases() {
 #[test]
 fn multiple_documents_preserve_quoted_null_like_scalars() {
     let y = "\"\"\n---\n\"~\"\n---\n\"null\"\n";
-    let docs: Vec<String> = serde_saphyr::from_multiple(y).expect("parse quoted null-like docs");
+    let docs: Vec<String> =
+        serde_saphyr::from_str_multiple(y).expect("parse quoted null-like docs");
     assert_eq!(docs, vec![String::new(), "~".to_owned(), "null".to_owned()]);
 }
 
 #[test]
-fn reader_matches_from_multiple_for_tagged_null_like_scalars() {
+fn reader_matches_from_str_multiple_for_tagged_null_like_scalars() {
     let y = "--- !!str null\n--- !!null not-null\n--- kept\n";
     let expected = vec!["null".to_owned(), "kept".to_owned()];
 
-    let docs: Vec<String> = serde_saphyr::from_multiple(y).expect("parse tagged docs");
+    let docs: Vec<String> = serde_saphyr::from_str_multiple(y).expect("parse tagged docs");
     assert_eq!(docs, expected);
 
     let mut reader = std::io::Cursor::new(y.as_bytes());
@@ -139,7 +228,7 @@ fn reader_matches_from_multiple_for_tagged_null_like_scalars() {
 #[test]
 fn multiple_documents_strips_bom_and_skips_plain_null_like_documents() {
     let y = "\u{FEFF}~\n---\nname: Bom\n---\nnull\n---\nname: Done\n";
-    let docs: Vec<Person> = serde_saphyr::from_multiple(y).expect("parse documents with BOM");
+    let docs: Vec<Person> = serde_saphyr::from_str_multiple(y).expect("parse documents with BOM");
     assert_eq!(
         docs,
         vec![
@@ -166,7 +255,7 @@ fn from_slice_multiple_with_options_rejects_invalid_utf8() {
 #[test]
 fn multiple_documents_enum_variants() {
     let y = "person:\n  name: Alice\n  age: 30\n---\npet:\n  kind: cat\n---\nperson:\n  name: Bob\n  age: 25\n";
-    let docs: Vec<Document> = serde_saphyr::from_multiple(y).expect("parse enum documents");
+    let docs: Vec<Document> = serde_saphyr::from_str_multiple(y).expect("parse enum documents");
     assert_eq!(
         docs,
         vec![
@@ -198,7 +287,7 @@ fn from_str_multiple_documents_error() {
 #[test]
 fn read_multiple_documents() {
     let yaml = "---\nhello\n---\nworld\n";
-    let docs: Vec<String> = serde_saphyr::from_multiple(yaml).unwrap();
+    let docs: Vec<String> = serde_saphyr::from_str_multiple(yaml).unwrap();
     assert_eq!(docs.len(), 2);
     assert_eq!(docs[0], "hello");
     assert_eq!(docs[1], "world");

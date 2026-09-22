@@ -160,7 +160,7 @@ fn document_streams_preserve_null_like_binary_values() {
         ByteBuf::new(),
         ByteBuf::from(vec![1, 2, 3]),
     ];
-    let multiple: Vec<ByteBuf> = serde_saphyr::from_multiple(yaml).unwrap();
+    let multiple: Vec<ByteBuf> = serde_saphyr::from_str_multiple(yaml).unwrap();
     let mut reader = yaml.as_bytes();
     let streamed = serde_saphyr::read::<_, ByteBuf>(&mut reader)
         .collect::<Result<Vec<_>, _>>()
@@ -172,7 +172,7 @@ fn document_streams_preserve_null_like_binary_values() {
 #[test]
 fn document_streams_reject_malformed_binary_values() {
     let yaml = "--- !!binary ~\n";
-    let multiple_error = serde_saphyr::from_multiple::<ByteBuf>(yaml).unwrap_err();
+    let multiple_error = serde_saphyr::from_str_multiple::<ByteBuf>(yaml).unwrap_err();
     let mut reader = yaml.as_bytes();
     let streamed_error = serde_saphyr::read::<_, ByteBuf>(&mut reader)
         .collect::<Result<Vec<_>, _>>()

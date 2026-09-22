@@ -1,6 +1,20 @@
 # Changelog
 
-## 1.3.1 Unreleased
+## 1.4.0 Unreleased
+
+### Added
+
+- Added `from_str_multiple` and `from_str_multiple_with_options` to deserialize multiple YAML
+  documents into values that can borrow from the input string. The existing `from_multiple`
+  and `from_multiple_with_options` APIs retain their `DeserializeOwned` bounds for compatibility.
+
+### Deprecated
+
+- Deprecated `from_multiple` and `from_multiple_with_options` in favor of `from_str_multiple`
+  and `from_str_multiple_with_options`, which support both owned and borrowed values. The old
+  functions remain available with their original signatures for compatibility. When migrating
+  function pointers or callbacks, wrap the new functions in forwarding closures if needed.
+- Updated internal callers, examples, tests, fuzz targets, and error hints to use the new APIs.
 
 ### Fixed
 

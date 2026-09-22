@@ -10,7 +10,7 @@ fn parse(require: RequireIndent, yaml: &str) -> Result<Value, Error> {
 
 fn parse_multiple(require: RequireIndent, yaml: &str) -> Result<Vec<Value>, Error> {
     let options = serde_saphyr::options! { require_indent: require };
-    serde_saphyr::from_multiple_with_options::<Value>(yaml, options)
+    serde_saphyr::from_str_multiple_with_options::<Value>(yaml, options)
 }
 
 #[rstest]

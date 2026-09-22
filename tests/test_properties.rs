@@ -4,8 +4,8 @@
 use rstest::rstest;
 use serde::Deserialize;
 use serde_saphyr::{
-    Options, PropertySyntax, budget::BudgetBreach, from_multiple_with_options,
-    from_reader_with_options, from_str_with_options,
+    Options, PropertySyntax, budget::BudgetBreach, from_reader_with_options,
+    from_str_multiple_with_options, from_str_with_options,
 };
 use std::collections::HashMap;
 #[cfg(feature = "validator")]
@@ -1022,11 +1022,11 @@ fn from_reader_top_level_custom_error_does_not_leak_interpolated_value() {
 }
 
 #[test]
-fn from_multiple_top_level_custom_error_does_not_leak_interpolated_value() {
+fn from_str_multiple_top_level_custom_error_does_not_leak_interpolated_value() {
     let mut props = HashMap::new();
     props.insert("BAD".to_string(), "zz-secret".to_string());
 
-    let err = from_multiple_with_options::<CustomHexByte>(
+    let err = from_str_multiple_with_options::<CustomHexByte>(
         "${BAD}\n---\n01\n",
         property_options_with_map(Some(props)),
     )

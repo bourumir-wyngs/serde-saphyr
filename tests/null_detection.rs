@@ -153,7 +153,7 @@ fn non_specific_null_strings_are_retained_in_document_streams() {
         String::new(),
         "kept".to_owned(),
     ];
-    let multiple: Vec<String> = serde_saphyr::from_multiple(yaml).unwrap();
+    let multiple: Vec<String> = serde_saphyr::from_str_multiple(yaml).unwrap();
     let mut reader = yaml.as_bytes();
     let streamed: Vec<String> = serde_saphyr::read::<_, String>(&mut reader)
         .collect::<Result<_, _>>()
@@ -180,13 +180,13 @@ fn styled_null_strings_survive_document_stream_filtering(
 ) {
     let yaml = format!("--- null\n--- {scalar}\n--- !!null\n--- kept\n--- ~\n");
     let expected = vec![Some(expected.to_owned()), Some("kept".to_owned())];
-    let multiple: Vec<Option<String>> = serde_saphyr::from_multiple(&yaml).unwrap();
+    let multiple: Vec<Option<String>> = serde_saphyr::from_str_multiple(&yaml).unwrap();
     let mut reader = yaml.as_bytes();
     let streamed: Vec<Option<String>> = serde_saphyr::read(&mut reader)
         .collect::<Result<_, _>>()
         .unwrap();
 
-    assert_eq!(multiple, expected, "from_multiple: {yaml}");
+    assert_eq!(multiple, expected, "from_str_multiple: {yaml}");
     assert_eq!(streamed, expected, "read: {yaml}");
 }
 
@@ -196,13 +196,13 @@ fn styled_null_strings_survive_document_stream_filtering(
 fn empty_block_string_documents_preserve_document_boundaries(#[case] style: &str) {
     let yaml = format!("--- {style}\n\n--- kept\n");
     let expected = vec![Some(String::new()), Some("kept".to_owned())];
-    let multiple: Vec<Option<String>> = serde_saphyr::from_multiple(&yaml).unwrap();
+    let multiple: Vec<Option<String>> = serde_saphyr::from_str_multiple(&yaml).unwrap();
     let mut reader = yaml.as_bytes();
     let streamed: Vec<Option<String>> = serde_saphyr::read(&mut reader)
         .collect::<Result<_, _>>()
         .unwrap();
 
-    assert_eq!(multiple, expected, "from_multiple: {yaml}");
+    assert_eq!(multiple, expected, "from_str_multiple: {yaml}");
     assert_eq!(streamed, expected, "read: {yaml}");
 }
 
@@ -236,13 +236,13 @@ fn root_block_strings_preserve_content_and_chomping_before_document_markers(#[ca
         for next_document in ["--- kept\n", "...\n--- kept\n", "---\tkept\n"] {
             let yaml = format!("--- {style}{chomping}\ntext\n\n{next_document}");
             let expected = vec![expected.to_owned(), "kept".to_owned()];
-            let multiple: Vec<String> = serde_saphyr::from_multiple(&yaml).unwrap();
+            let multiple: Vec<String> = serde_saphyr::from_str_multiple(&yaml).unwrap();
             let mut reader = yaml.as_bytes();
             let streamed: Vec<String> = serde_saphyr::read(&mut reader)
                 .collect::<Result<_, _>>()
                 .unwrap();
 
-            assert_eq!(multiple, expected, "from_multiple: {yaml}");
+            assert_eq!(multiple, expected, "from_str_multiple: {yaml}");
             assert_eq!(streamed, expected, "read: {yaml}");
         }
     }

@@ -2,7 +2,7 @@
 use serde::Deserialize;
 use serde_saphyr::budget::{BudgetBreach, BudgetReport};
 use serde_saphyr::{
-    Error, from_multiple_with_options, from_reader, from_reader_with_options, read_with_options,
+    Error, from_reader, from_reader_with_options, from_str_multiple_with_options, read_with_options,
 };
 use std::cell::RefCell;
 use std::fmt::Write as _;
@@ -234,7 +234,7 @@ fn read_limits_are_per_document() {
         },
     };
 
-    let deserialized: Result<Vec<Simple>, Error> = from_multiple_with_options(&yaml, opts);
+    let deserialized: Result<Vec<Simple>, Error> = from_str_multiple_with_options(&yaml, opts);
     match deserialized {
         Ok(_) => panic!("limit should have been hit and produced an error"),
         Err(error) => match unwrap_snippet(&error) {
@@ -253,7 +253,7 @@ fn read_limits_are_per_document() {
 // Same 5 documents and same budget limit
 fn from_reader_limits_are_per_all_content() {
     let (opts, yaml) = yaml_and_options();
-    let deserialized: Result<Vec<Simple>, Error> = from_multiple_with_options(&yaml, opts);
+    let deserialized: Result<Vec<Simple>, Error> = from_str_multiple_with_options(&yaml, opts);
     match deserialized {
         Ok(_) => panic!("limit should have been hit and produced an error"),
         Err(error) => match unwrap_snippet(&error) {

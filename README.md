@@ -229,7 +229,7 @@ The concept that “Rust code is the schema” naturally extends to implemented 
 
 ### Multiple documents
 
-YAML streams can contain several documents separated by `---`/`...` markers. When deserializing with [`serde_saphyr::from_multiple`](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.from_multiple.html), you still need to supply the vector element type up front (`Vec<T>`). That does **not** lock you into a single shape: make the element an enum and each document will deserialize into the matching variant. This lets you mix different payloads in one stream while retaining strong typing on the Rust side.
+YAML streams can contain several documents separated by `---`/`...` markers. When deserializing with [`serde_saphyr::from_str_multiple`](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.from_str_multiple.html), you still need to supply the vector element type up front (`Vec<T>`). That does **not** lock you into a single shape: make the element an enum and each document will deserialize into the matching variant. This lets you mix different payloads in one stream while retaining strong typing on the Rust side.
 
 ```rust
 use serde::Deserialize;
@@ -256,7 +256,7 @@ fn main() {
    age: 25
 "#;
     let docs: Vec<Document> =
-        serde_saphyr::from_multiple(input).expect("valid YAML stream");
+        serde_saphyr::from_str_multiple(input).expect("valid YAML stream");
 }
 ```
 
@@ -405,7 +405,7 @@ If you must work with abstract types, you can also deserialize YAML into [`serde
 
 ### Borrowed string deserialization
 
-serde-saphyr supports zero-copy deserialization for string fields when using `from_str` or `from_slice`. This allows deserializing into `&str` fields that borrow directly from the input, avoiding allocation overhead.
+serde-saphyr supports zero-copy deserialization for string fields when using `from_str`, `from_slice`, or `from_str_multiple` (including their `_with_options` variants). This allows deserializing into `&str` fields that borrow directly from the input, avoiding allocation overhead. For multiple documents, use `from_str_multiple` or `from_str_multiple_with_options`; both also support owned values. The older `from_multiple` and `from_multiple_with_options` functions require owned values and are deprecated since 1.4.0, with their signatures retained for compatibility.
 
 ```rust
 use serde::Deserialize;

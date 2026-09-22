@@ -1,9 +1,10 @@
-// 6XDY: Two document start markers — empty documents may be skipped by from_multiple
+// 6XDY: Two document start markers — empty documents may be skipped by from_str_multiple
 // or represented as `None` when deserializing into Option<String>.
 #[test]
 fn yaml_6xdy_two_null_documents() {
     let y = "---\n---\n";
-    let docs: Vec<Option<String>> = serde_saphyr::from_multiple(y).expect("failed to parse 6XDY");
+    let docs: Vec<Option<String>> =
+        serde_saphyr::from_str_multiple(y).expect("failed to parse 6XDY");
     if docs.is_empty() {
         // Parser skipped empty documents — acceptable behavior per policy.
         return;

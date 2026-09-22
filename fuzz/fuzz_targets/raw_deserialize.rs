@@ -168,6 +168,6 @@ fuzz_target!(|data: &[u8]| {
 
     if let Ok(text) = std::str::from_utf8(data) {
         let _ = serde_saphyr::from_str_with_options::<IgnoredAny>(text, options.clone());
-        let _ = serde_saphyr::from_multiple_with_options::<IgnoredAny>(text, options);
+        let _ = serde_saphyr::from_str_multiple_with_options::<IgnoredAny>(text, options);
     }
 });

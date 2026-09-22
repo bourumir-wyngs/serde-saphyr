@@ -1,5 +1,5 @@
 // JHB9: Two Documents in a Stream — two sequences of strings
-// Assert we can parse both documents using from_multiple.
+// Assert we can parse both documents using from_str_multiple.
 
 #[test]
 fn yaml_jhb9_two_documents_in_stream() {
@@ -15,7 +15,7 @@ fn yaml_jhb9_two_documents_in_stream() {
 - St Louis Cardinals
 "#;
 
-    let docs: Vec<Vec<String>> = serde_saphyr::from_multiple(y).expect("failed to parse JHB9");
+    let docs: Vec<Vec<String>> = serde_saphyr::from_str_multiple(y).expect("failed to parse JHB9");
     assert_eq!(docs.len(), 2);
     assert_eq!(
         docs[0],

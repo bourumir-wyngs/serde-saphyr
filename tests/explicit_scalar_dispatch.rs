@@ -252,7 +252,7 @@ fn optional_mapping_values_validate_explicit_tags(#[case] scalar: &str) {
 #[case::boolean_missing("!!bool")]
 fn document_streams_reject_invalid_explicit_scalars(#[case] scalar: &str) {
     let yaml = format!("--- {scalar}\n--- !!int 42\n");
-    let multiple = serde_saphyr::from_multiple::<Option<Value>>(&yaml);
+    let multiple = serde_saphyr::from_str_multiple::<Option<Value>>(&yaml);
     let mut reader = yaml.as_bytes();
     let streamed =
         serde_saphyr::read::<_, Option<Value>>(&mut reader).collect::<Result<Vec<_>, _>>();

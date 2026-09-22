@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 // 6ZKB: Spec Example 9.6. Stream — three documents in a stream
 // Expect: "Document", an empty document (may be skipped), and a mapping {"matches %": 20}.
-// Our from_multiple() skips empty documents by design, so we assert we get the two non-empty docs.
+// Our from_str_multiple() skips empty documents by design, so we assert we get the two non-empty docs.
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(untagged)]
 enum Doc {
@@ -21,7 +21,7 @@ fn yaml_6zkb_stream_multiple_documents() {
     // mixed document types (string, optional empty, mapping).
     let y = "Document\n---\n# Empty\n...\n%YAML 1.2\n---\nmatches %: 20\n";
     let docs: Vec<Doc> =
-        serde_saphyr::from_multiple(y).expect("failed to parse 6ZKB without directive");
+        serde_saphyr::from_str_multiple(y).expect("failed to parse 6ZKB without directive");
 
     // Empty document may be skipped; accept 2 docs, or 3 if the empty doc surfaces.
     assert!(

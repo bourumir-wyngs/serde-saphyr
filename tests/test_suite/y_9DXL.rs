@@ -2,7 +2,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 // 9DXL: Spec Example 9.6. Stream [1.3] — three documents: mapping, empty, mapping
-// Our from_multiple may skip empty docs; accept either 2 or 3 with an explicit None.
+// Our from_str_multiple may skip empty docs; accept either 2 or 3 with an explicit None.
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(untagged)]
 enum Doc {
@@ -16,7 +16,7 @@ fn yaml_9dxl_stream_three_documents_no_directive() {
     // Same as 9DXL but without the %YAML directive between documents.
     let y = "Mapping: Document\n---\n# Empty\n...\n%YAML 1.2\n---\nmatches %: 20\n";
     let docs: Vec<Doc> =
-        serde_saphyr::from_multiple(y).expect("failed to parse 9DXL without directive");
+        serde_saphyr::from_str_multiple(y).expect("failed to parse 9DXL without directive");
 
     // Either two non-empty docs (empty one skipped) or three with None in the middle.
     assert!(
