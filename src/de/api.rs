@@ -406,7 +406,9 @@ pub(crate) fn maybe_with_snippet_from_events(
 /// assert_eq!(cfgs[0].name, "First");
 /// ```
 #[cfg(feature = "deserialize")]
-pub fn from_multiple<T: DeserializeOwned>(input: &str) -> Result<Vec<T>, Error> {
+pub fn from_multiple<'de, T: serde_core::de::Deserialize<'de>>(
+    input: &'de str,
+) -> Result<Vec<T>, Error> {
     from_multiple_with_options(input, Options::default())
 }
 
@@ -446,8 +448,8 @@ pub fn from_multiple<T: DeserializeOwned>(input: &str) -> Result<Vec<T>, Error> 
 /// assert!(!cfgs[1].enabled);
 /// ```
 #[cfg(feature = "deserialize")]
-pub fn from_multiple_with_options<T: DeserializeOwned>(
-    input: &str,
+pub fn from_multiple_with_options<'de, T: serde_core::de::Deserialize<'de>>(
+    input: &'de str,
     options: Options,
 ) -> Result<Vec<T>, Error> {
     let input = normalize_str_input(input);
@@ -604,7 +606,9 @@ where
 /// assert_eq!(cfgs[0].name, "First");
 /// ```
 #[cfg(feature = "deserialize")]
-pub fn from_slice_multiple<T: DeserializeOwned>(bytes: &[u8]) -> Result<Vec<T>, Error> {
+pub fn from_slice_multiple<'de, T: serde_core::de::Deserialize<'de>>(
+    bytes: &'de [u8],
+) -> Result<Vec<T>, Error> {
     from_slice_multiple_with_options(bytes, Options::default())
 }
 
@@ -645,8 +649,8 @@ pub fn from_slice_multiple<T: DeserializeOwned>(bytes: &[u8]) -> Result<Vec<T>, 
 /// assert!(!cfgs[1].enabled);
 /// ```
 #[cfg(feature = "deserialize")]
-pub fn from_slice_multiple_with_options<T: DeserializeOwned>(
-    bytes: &[u8],
+pub fn from_slice_multiple_with_options<'de, T: serde_core::de::Deserialize<'de>>(
+    bytes: &'de [u8],
     options: Options,
 ) -> Result<Vec<T>, Error> {
     let s = std::str::from_utf8(bytes).map_err(|_| Error::InvalidUtf8Input)?;
