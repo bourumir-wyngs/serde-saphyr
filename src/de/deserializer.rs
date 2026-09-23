@@ -842,8 +842,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             // Consume the scalar and attempt typed parses in order: bool -> int -> float.
             // Parse the effective value, but keep the raw source text for diagnostics.
             let view = self.take_scalar_view()?;
-            let raw = view.raw.into_owned();
-            let effective = view.effective.into_owned();
+            let effective = view.effective;
             let location = view.location;
 
             // Try booleans.
@@ -884,11 +883,15 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 view.tag,
                 self.cfg.angle_conversions,
             ) {
-                return self.visit_typeless_float(v, raw, location, visitor);
+                return self.visit_typeless_float(v, view.raw.into_owned(), location, visitor);
             }
 
-            // Fallback: treat as string as-is.
-            return visitor.visit_string(effective);
+            // Fallback: treat as string as-is, preserving zero-copy borrowing when the
+            // parser handed us a slice of the original input.
+            return match effective {
+                Cow::Borrowed(b) => visitor.visit_borrowed_str(b),
+                Cow::Owned(s) => visitor.visit_string(s),
+            };
         }
 
         match self.ev.peek()? {

@@ -897,4 +897,37 @@ second: *name
             assert_eq!(result.text, "\u{1F980}");
         }
     }
+
+    mod borrow_with_untagged_enum {
+        use serde::Deserialize;
+
+        #[test]
+        fn plain_scalar_borrows_through_deserialize_any() {
+            #[derive(Debug, Deserialize)]
+            #[serde(untagged)]
+            enum Untagged<'a> {
+                #[serde(borrow)]
+                Borrowed(&'a str),
+            }
+
+            let Untagged::Borrowed(s) = serde_saphyr::from_str::<Untagged>("hello").unwrap();
+            assert_eq!(s, "hello");
+        }
+
+        #[test]
+        fn plain_map_keys_borrow_through_deserialize_any() {
+            use std::collections::BTreeMap;
+
+            #[derive(Debug, Deserialize)]
+            #[serde(untagged)]
+            enum Search<'a> {
+                #[serde(borrow)]
+                Map(BTreeMap<&'a str, u32>),
+            }
+
+            assert!(serde_saphyr::from_str::<BTreeMap<&str, u32>>("EventID: 20").is_ok());
+            let Search::Map(map) = serde_saphyr::from_str::<Search>("EventID: 20").unwrap();
+            assert_eq!(map["EventID"], 20);
+        }
+    }
 }
