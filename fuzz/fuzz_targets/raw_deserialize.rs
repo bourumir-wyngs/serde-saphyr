@@ -132,7 +132,8 @@ fuzz_target!(|data: &[u8]| {
     exercise_slice_type!(data, options, BTreeMap<String, IgnoredAny>);
     exercise_slice_type!(data, options, BTreeMap<Vec<Option<String>>, IgnoredAny>);
 
-    let _ = serde_saphyr::from_slice_multiple_with_options::<IgnoredAny>(data, options.clone());
+    let _ =
+        serde_saphyr::from_bytes_multiple_with_options::<IgnoredAny, Vec<_>>(data, options.clone());
 
     let _ =
         serde_saphyr::from_reader_with_options::<_, IgnoredAny>(Cursor::new(data), options.clone());
@@ -168,6 +169,6 @@ fuzz_target!(|data: &[u8]| {
 
     if let Ok(text) = std::str::from_utf8(data) {
         let _ = serde_saphyr::from_str_with_options::<IgnoredAny>(text, options.clone());
-        let _ = serde_saphyr::from_str_multiple_with_options::<IgnoredAny>(text, options);
+        let _ = serde_saphyr::from_str_multiple_with_options::<IgnoredAny, Vec<_>>(text, options);
     }
 });

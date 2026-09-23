@@ -7,6 +7,13 @@
 - Added `from_str_multiple` and `from_str_multiple_with_options` to deserialize multiple YAML
   documents into values that can borrow from the input string. The existing `from_multiple`
   and `from_multiple_with_options` APIs retain their `DeserializeOwned` bounds for compatibility.
+- Added `from_bytes_multiple` and `from_bytes_multiple_with_options` to deserialize multiple YAML
+  documents into values that can borrow from a UTF-8 byte slice. The existing `from_slice_multiple`
+  and `from_slice_multiple_with_options` APIs retain their `DeserializeOwned` bounds for compatibility.
+- The new string and byte multi-document APIs collect into any `C: Default + Extend<T>`,
+  including vectors, queues, sets, and custom accumulators. Explicit type arguments now specify
+  both the document and collection types, for example `from_str_multiple::<String, Vec<_>>(input)`.
+  The deprecated APIs continue returning `Vec<T>` with their original signatures.
 
 ### Deprecated
 
@@ -14,6 +21,9 @@
   and `from_str_multiple_with_options`, which support both owned and borrowed values. The old
   functions remain available with their original signatures for compatibility. When migrating
   function pointers or callbacks, wrap the new functions in forwarding closures if needed.
+- Deprecated `from_slice_multiple` and `from_slice_multiple_with_options` in favor of
+  `from_bytes_multiple` and `from_bytes_multiple_with_options`, which support both owned and borrowed
+  values. The old signatures remain available; the same callback migration guidance applies.
 - Updated internal callers, examples, tests, fuzz targets, and error hints to use the new APIs.
 
 ### Fixed

@@ -47,9 +47,9 @@ fn test_from_slice_map() {
 }
 
 #[test]
-fn test_from_slice_multi_map() {
+fn test_from_bytes_multi_map() {
     let yaml = b"---\nx: 1\n---\nx: 2\n";
-    let vals: Vec<HashMap<String, i32>> = serde_saphyr::from_slice_multiple(yaml).unwrap();
+    let vals: Vec<HashMap<String, i32>> = serde_saphyr::from_bytes_multiple(yaml).unwrap();
     assert_eq!(vals.len(), 2);
     assert_eq!(vals[0].get("x"), Some(&1));
     assert_eq!(vals[1].get("x"), Some(&2));

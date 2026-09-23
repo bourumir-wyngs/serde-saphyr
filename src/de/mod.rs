@@ -13,7 +13,7 @@
 //!
 //! Multiple documents:
 //! - `from_str` and `from_str_with_options` reject multiple docs.
-//! - `from_str_multiple*` collects non-empty docs; empty docs are skipped.
+//! - `from_str_multiple*` and `from_bytes_multiple*` collect non-empty docs; empty docs are skipped.
 
 #[cfg(feature = "deserialize")]
 pub(crate) mod base64;

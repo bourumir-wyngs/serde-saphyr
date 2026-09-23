@@ -131,7 +131,7 @@ fn yaml12_multiple_documents_use_valid_directive_boundaries() {
 
     assert_eq!(out, "%YAML 1.2\n---\nx: 1\n...\n%YAML 1.2\n---\nx: 2\n");
     assert_eq!(
-        serde_saphyr::from_str_multiple::<Point>(&out).unwrap(),
+        serde_saphyr::from_str_multiple::<Point, Vec<_>>(&out).unwrap(),
         docs
     );
 }

@@ -166,9 +166,9 @@ fuzz_target!(|data: &[u8]| {
     assert_eq!(multiple, expected, "from_str_multiple: {yaml}");
 
     let slices: Vec<Option<String>> =
-        serde_saphyr::from_slice_multiple_with_options(yaml.as_bytes(), options.clone())
-            .unwrap_or_else(|error| panic!("from_slice_multiple: {error:?}\n{yaml}"));
-    assert_eq!(slices, expected, "from_slice_multiple: {yaml}");
+        serde_saphyr::from_bytes_multiple_with_options(yaml.as_bytes(), options.clone())
+            .unwrap_or_else(|error| panic!("from_bytes_multiple: {error:?}\n{yaml}"));
+    assert_eq!(slices, expected, "from_bytes_multiple: {yaml}");
 
     let chunk_size = usize::from(byte(data, 0) >> 3) + 1;
     let mut reader = Chunked {

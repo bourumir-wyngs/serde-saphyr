@@ -1026,7 +1026,7 @@ fn from_str_multiple_top_level_custom_error_does_not_leak_interpolated_value() {
     let mut props = HashMap::new();
     props.insert("BAD".to_string(), "zz-secret".to_string());
 
-    let err = from_str_multiple_with_options::<CustomHexByte>(
+    let err = from_str_multiple_with_options::<CustomHexByte, Vec<_>>(
         "${BAD}\n---\n01\n",
         property_options_with_map(Some(props)),
     )

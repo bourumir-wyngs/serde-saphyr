@@ -12,7 +12,7 @@ fn test_from_slice_and_multi() {
     assert_eq!(point, Point { x: 1 });
 
     let multi = b"---\nx: 1\n---\nx: 2\n";
-    let points: Vec<Point> = serde_saphyr::from_slice_multiple(multi).unwrap();
+    let points: Vec<Point> = serde_saphyr::from_bytes_multiple(multi).unwrap();
     assert_eq!(points, vec![Point { x: 1 }, Point { x: 2 }]);
 }
 

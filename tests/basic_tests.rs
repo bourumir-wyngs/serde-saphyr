@@ -181,8 +181,8 @@ plain
         };
 
         let yaml = "a: 1\n---\nb: 2\n";
-        let err =
-            from_str_multiple_with_options::<HashMap<String, String>>(yaml, options).unwrap_err();
+        let err = from_str_multiple_with_options::<HashMap<String, String>, Vec<_>>(yaml, options)
+            .unwrap_err();
         assert!(matches!(
             unwrap_snippet(&err),
             Error::Budget {
@@ -194,7 +194,8 @@ plain
 
     #[test]
     fn multiple_documents_peek_scan_error_has_snippet() {
-        let err = from_str_multiple::<String>("@\n").expect_err("reserved indicator should fail");
+        let err =
+            from_str_multiple::<String, Vec<_>>("@\n").expect_err("reserved indicator should fail");
 
         assert!(
             matches!(err, Error::WithSnippet { .. }),
