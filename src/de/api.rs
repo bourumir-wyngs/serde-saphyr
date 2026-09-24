@@ -22,7 +22,7 @@ pub(crate) fn resolver_from_options<'a>(
 ///
 /// This is the simplest entry point; it parses a single YAML document. If the
 /// input contains multiple documents, this returns an error advising to use
-/// [`from_multiple`] or [`from_multiple_with_options`].
+/// [`from_str_multiple`] or [`from_str_multiple_with_options`].
 ///
 /// This function supports both owned types (like `String`) and borrowed types
 /// (like `&str`). For borrowed types, the deserialized value's lifetime is tied
@@ -379,7 +379,12 @@ pub(crate) fn maybe_with_snippet_from_events(
 /// Deserialize multiple YAML documents from a single string into a vector of `T`.
 /// Completely empty documents are ignored and not included in the returned vector.
 ///
-/// Example: read two `Config` documents separated by `---`.
+/// Deprecated in favor of [`from_str_multiple`], which supports both owned and borrowed values.
+/// This compatibility wrapper requires [`DeserializeOwned`], so results cannot borrow from the input.
+/// Its signature is retained for compatibility with existing function pointers and callbacks.
+/// When migrating a callback, use a forwarding closure such as `|input| from_str_multiple(input)`.
+///
+/// Example using the replacement: read two `Config` documents separated by `---`.
 ///
 /// ```rust
 /// use serde::Deserialize;
@@ -401,18 +406,28 @@ pub(crate) fn maybe_with_snippet_from_events(
 /// retries: 2
 /// "#;
 ///
-/// let cfgs: Vec<Config> = serde_saphyr::from_multiple(yaml).unwrap();
+/// let cfgs: Vec<Config> = serde_saphyr::from_str_multiple(yaml).unwrap();
 /// assert_eq!(cfgs.len(), 2);
 /// assert_eq!(cfgs[0].name, "First");
 /// ```
 #[cfg(feature = "deserialize")]
+#[deprecated(
+    since = "1.4.0",
+    note = "use from_str_multiple, which supports both owned and borrowed values"
+)]
 pub fn from_multiple<T: DeserializeOwned>(input: &str) -> Result<Vec<T>, Error> {
-    from_multiple_with_options(input, Options::default())
+    from_str_multiple::<T, Vec<T>>(input)
 }
 
 /// Deserialize multiple YAML documents into a vector with configurable [`Options`].
 ///
-/// Example: two `Config` documents with a custom budget.
+/// Deprecated in favor of [`from_str_multiple_with_options`], which supports both owned and borrowed values.
+/// This compatibility wrapper requires [`DeserializeOwned`], so results cannot borrow from the input.
+/// Its signature is retained for compatibility with existing function pointers and callbacks.
+/// When migrating a callback, use a forwarding closure such as
+/// `|input, options| from_str_multiple_with_options(input, options)`.
+///
+/// Example using the replacement: two `Config` documents with a custom budget.
 ///
 /// ```rust
 /// use serde::Deserialize;
@@ -441,20 +456,96 @@ pub fn from_multiple<T: DeserializeOwned>(input: &str) -> Result<Vec<T>, Error> 
 ///     },
 ///     duplicate_keys: DuplicateKeyPolicy::FirstWins,
 /// };
-/// let cfgs: Vec<Config> = serde_saphyr::from_multiple_with_options(yaml, options).unwrap();
+/// let cfgs: Vec<Config> = serde_saphyr::from_str_multiple_with_options(yaml, options).unwrap();
 /// assert_eq!(cfgs.len(), 2);
 /// assert!(!cfgs[1].enabled);
 /// ```
 #[cfg(feature = "deserialize")]
+#[deprecated(
+    since = "1.4.0",
+    note = "use from_str_multiple_with_options, which supports both owned and borrowed values"
+)]
 pub fn from_multiple_with_options<T: DeserializeOwned>(
     input: &str,
     options: Options,
 ) -> Result<Vec<T>, Error> {
+    from_str_multiple_with_options::<T, Vec<T>>(input, options)
+}
+
+/// Deserialize multiple YAML documents from a string into a collection, supporting borrowed values.
+/// Completely empty and plain null-like documents are skipped, as with [`from_multiple`].
+///
+/// The collection is initialized with [`Default`] and extended with each document in input
+/// order. Any `C: Default + Extend<T>` is supported, including `Vec<T>`, `VecDeque<T>`,
+/// and sets. The collection determines how ordering and duplicate values are handled.
+/// Specify both types when using turbofish syntax, for example `::<String, Vec<_>>`.
+/// If the collection implements `Extend` for multiple item types, specify `T` explicitly
+/// to resolve ambiguity, for example `::<i32, Vec<_>>`.
+///
+/// This function supports both owned types (like `String`) and borrowed types (like `&str`).
+/// Borrowed values refer to the input string and cannot outlive it. Unlike [`from_multiple`],
+/// this function does not require [`DeserializeOwned`].
+///
+/// Strings can be borrowed when their parsed value exists verbatim in the input, including
+/// plain scalars and simple quoted strings. Strings requiring escape processing, folding,
+/// or other transformations cannot be deserialized into `&str`; use `String` or a
+/// `#[serde(borrow)]`-annotated `Cow<'a, str>` field to handle those values.
+///
+/// ```rust
+/// use serde::Deserialize;
+///
+/// #[derive(Debug, Deserialize)]
+/// struct Person<'a> {
+///     name: &'a str,
+/// }
+///
+/// let yaml = String::from("name: Alice\n---\nname: Bob\n");
+/// let people: Vec<Person<'_>> = serde_saphyr::from_str_multiple(&yaml)?;
+/// assert_eq!(people[0].name, "Alice");
+/// assert_eq!(people[1].name, "Bob");
+/// # Ok::<(), serde_saphyr::Error>(())
+/// ```
+#[cfg(feature = "deserialize")]
+pub fn from_str_multiple<'de, T, C>(input: &'de str) -> Result<C, Error>
+where
+    T: serde_core::Deserialize<'de>,
+    C: Default + Extend<T>,
+{
+    from_str_multiple_with_options::<T, C>(input, Options::default())
+}
+
+/// Deserialize multiple YAML documents into a collection with configurable [`Options`], supporting borrowed values.
+/// Completely empty and plain null-like documents are skipped, as with [`from_multiple_with_options`].
+///
+/// Like [`from_str_multiple`], this function supports both owned values and values borrowing
+/// from the input string, collected into any `C: Default + Extend<T>`.
+/// Borrowed values cannot outlive the input, and strings requiring
+/// transformation cannot be borrowed as `&str`. Unlike [`from_multiple_with_options`], this
+/// function does not require [`DeserializeOwned`].
+///
+/// ```rust
+/// use std::collections::BTreeSet;
+///
+/// let yaml = String::from("first\n---\nsecond\n---\nfirst\n");
+/// let options = serde_saphyr::options! { with_snippet: false };
+/// let values = serde_saphyr::from_str_multiple_with_options::<&str, BTreeSet<_>>(&yaml, options)?;
+/// assert_eq!(values, BTreeSet::from(["first", "second"]));
+/// # Ok::<(), serde_saphyr::Error>(())
+/// ```
+#[cfg(feature = "deserialize")]
+pub fn from_str_multiple_with_options<'de, T, C>(
+    input: &'de str,
+    options: Options,
+) -> Result<C, Error>
+where
+    T: serde_core::Deserialize<'de>,
+    C: Default + Extend<T>,
+{
     let input = normalize_str_input(input);
     let snippet_ctx = StrSnippetContext::new(input, options.with_snippet, options.crop_radius);
     let cfg = crate::de::Cfg::from_options(&options);
     let mut src = LiveEvents::from_str(input, options);
-    let mut values = Vec::new();
+    let mut values = C::default();
     let wrap_err = |e, src: &LiveEvents<'_>| snippet_ctx.attach_snippet(e, src);
 
     loop {
@@ -467,7 +558,7 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
                 ..
             })) if scalar_is_null(tag, s, style) => {
                 let _ = src.next()?; // consume the null scalar document
-                // Do not push anything for this document; move to the next one.
+                // Do not add anything for this document; move to the next one.
                 continue;
             }
             Ok(Some(_)) => {
@@ -478,7 +569,7 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
                     wrap_err,
                     |_| false,
                 )?;
-                values.push(value);
+                values.extend(std::iter::once(value));
             }
             Ok(None) => break,
             Err(e) => {
@@ -577,7 +668,12 @@ where
 
 /// Deserialize multiple YAML documents from a UTF-8 byte slice into a vector of `T`.
 ///
-/// Example: read two `Config` documents separated by `---` from bytes.
+/// Deprecated in favor of [`from_bytes_multiple`], which supports both owned and borrowed values.
+/// This compatibility wrapper requires [`DeserializeOwned`], so results cannot borrow from the input.
+/// Its signature is retained for compatibility with existing function pointers and callbacks.
+/// When migrating a callback, use a forwarding closure such as `|bytes| from_bytes_multiple(bytes)`.
+///
+/// Example using the replacement: read two `Config` documents separated by `---` from bytes.
 ///
 /// ```rust
 /// use serde::Deserialize;
@@ -599,19 +695,29 @@ where
 /// retries: 2
 /// "#;
 /// let bytes = yaml.as_bytes();
-/// let cfgs: Vec<Config> = serde_saphyr::from_slice_multiple(bytes).unwrap();
+/// let cfgs: Vec<Config> = serde_saphyr::from_bytes_multiple(bytes).unwrap();
 /// assert_eq!(cfgs.len(), 2);
 /// assert_eq!(cfgs[0].name, "First");
 /// ```
 #[cfg(feature = "deserialize")]
+#[deprecated(
+    since = "1.4.0",
+    note = "use from_bytes_multiple, which supports both owned and borrowed values"
+)]
 pub fn from_slice_multiple<T: DeserializeOwned>(bytes: &[u8]) -> Result<Vec<T>, Error> {
-    from_slice_multiple_with_options(bytes, Options::default())
+    from_bytes_multiple::<T, Vec<T>>(bytes)
 }
 
 /// Deserialize multiple YAML documents from bytes with configurable [`Options`].
 /// Completely empty documents are ignored and not included in the returned vector.
 ///
-/// Example: two `Config` documents with a custom budget from bytes.
+/// Deprecated in favor of [`from_bytes_multiple_with_options`], which supports both owned and borrowed values.
+/// This compatibility wrapper requires [`DeserializeOwned`], so results cannot borrow from the input.
+/// Its signature is retained for compatibility with existing function pointers and callbacks.
+/// When migrating a callback, use a forwarding closure such as
+/// `|bytes, options| from_bytes_multiple_with_options(bytes, options)`.
+///
+/// Example using the replacement: two `Config` documents with a custom budget from bytes.
 ///
 /// ```rust
 /// use serde::Deserialize;
@@ -640,17 +746,92 @@ pub fn from_slice_multiple<T: DeserializeOwned>(bytes: &[u8]) -> Result<Vec<T>, 
 ///     },
 ///     duplicate_keys: DuplicateKeyPolicy::FirstWins,
 /// };
-/// let cfgs: Vec<Config> = serde_saphyr::from_slice_multiple_with_options(bytes, options).unwrap();
+/// let cfgs: Vec<Config> = serde_saphyr::from_bytes_multiple_with_options(bytes, options).unwrap();
 /// assert_eq!(cfgs.len(), 2);
 /// assert!(!cfgs[1].enabled);
 /// ```
 #[cfg(feature = "deserialize")]
+#[deprecated(
+    since = "1.4.0",
+    note = "use from_bytes_multiple_with_options, which supports both owned and borrowed values"
+)]
 pub fn from_slice_multiple_with_options<T: DeserializeOwned>(
     bytes: &[u8],
     options: Options,
 ) -> Result<Vec<T>, Error> {
+    from_bytes_multiple_with_options::<T, Vec<T>>(bytes, options)
+}
+
+/// Deserialize multiple YAML documents from a UTF-8 byte slice into a collection, supporting borrowed values.
+/// Completely empty and plain null-like documents are skipped, as with [`from_str_multiple`].
+///
+/// This is equivalent to [`from_str_multiple`], but validates that the bytes are UTF-8
+/// before parsing. Invalid UTF-8 returns [`Error::InvalidUtf8Input`]. For UTF-16 streams,
+/// use [`read`] or [`read_with_options`] instead.
+///
+/// Any `C: Default + Extend<T>` is supported. Documents extend the collection in input
+/// order; the collection determines how ordering and duplicate values are handled.
+/// Specify both types when using turbofish syntax, for example `::<String, Vec<_>>`.
+///
+/// This function supports both owned types (like `String`) and borrowed types (like `&str`).
+/// Borrowed values refer to the input byte slice and cannot outlive it. Unlike
+/// [`from_slice_multiple`], this function does not require [`DeserializeOwned`].
+/// Strings requiring escape processing, folding, or other transformations cannot be
+/// borrowed as `&str`; see [`from_str_multiple`] for details.
+///
+/// ```rust
+/// use serde::Deserialize;
+///
+/// #[derive(Debug, Deserialize)]
+/// struct Person<'a> {
+///     name: &'a str,
+/// }
+///
+/// let bytes = b"name: Alice\n---\nname: Bob\n".to_vec();
+/// let people: Vec<Person<'_>> = serde_saphyr::from_bytes_multiple(&bytes)?;
+/// assert_eq!(people[0].name, "Alice");
+/// assert_eq!(people[1].name, "Bob");
+/// # Ok::<(), serde_saphyr::Error>(())
+/// ```
+#[cfg(feature = "deserialize")]
+pub fn from_bytes_multiple<'de, T, C>(bytes: &'de [u8]) -> Result<C, Error>
+where
+    T: serde_core::Deserialize<'de>,
+    C: Default + Extend<T>,
+{
+    from_bytes_multiple_with_options::<T, C>(bytes, Options::default())
+}
+
+/// Deserialize multiple YAML documents from UTF-8 bytes into a collection with configurable [`Options`],
+/// supporting borrowed values.
+/// Completely empty and plain null-like documents are skipped, as with [`from_str_multiple_with_options`].
+///
+/// Like [`from_bytes_multiple`], this function supports owned values and values borrowing
+/// from the input byte slice, collected into any `C: Default + Extend<T>`.
+/// Borrowed values cannot outlive the input, and strings requiring
+/// transformation cannot be borrowed as `&str`. Invalid UTF-8 returns [`Error::InvalidUtf8Input`].
+/// Unlike [`from_slice_multiple_with_options`], this function does not require [`DeserializeOwned`].
+///
+/// ```rust
+/// use std::collections::VecDeque;
+///
+/// let bytes = b"first\n---\nsecond\n".to_vec();
+/// let options = serde_saphyr::options! { with_snippet: false };
+/// let values = serde_saphyr::from_bytes_multiple_with_options::<&str, VecDeque<_>>(&bytes, options)?;
+/// assert_eq!(values, VecDeque::from(["first", "second"]));
+/// # Ok::<(), serde_saphyr::Error>(())
+/// ```
+#[cfg(feature = "deserialize")]
+pub fn from_bytes_multiple_with_options<'de, T, C>(
+    bytes: &'de [u8],
+    options: Options,
+) -> Result<C, Error>
+where
+    T: serde_core::Deserialize<'de>,
+    C: Default + Extend<T>,
+{
     let s = std::str::from_utf8(bytes).map_err(|_| Error::InvalidUtf8Input)?;
-    from_multiple_with_options(s, options)
+    from_str_multiple_with_options::<T, C>(s, options)
 }
 
 /// Deserialize a single YAML document from any `std::io::Read`.

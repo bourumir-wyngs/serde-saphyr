@@ -58,7 +58,7 @@ enabled: false
 retries: 4
 "#;
 
-    let configs = serde_saphyr::from_multiple(yaml_input)?;
+    let configs = serde_saphyr::from_str_multiple(yaml_input)?;
     Ok(configs) // Ok on successful parsing or would be error on failure
 }
 /// Test nested enum example given in README

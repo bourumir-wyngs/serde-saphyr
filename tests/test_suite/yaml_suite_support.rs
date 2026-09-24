@@ -15,7 +15,7 @@ pub(super) fn assert_json_case(yaml: &str, expected_json: &str) {
                 .expect("YAML must deserialize as one JSON-compatible document"),
         ]
     } else {
-        serde_saphyr::from_multiple::<Value>(yaml)
+        serde_saphyr::from_str_multiple::<Value, Vec<_>>(yaml)
             .expect("YAML stream must deserialize as JSON-compatible documents")
     };
 
@@ -29,7 +29,7 @@ pub(super) fn assert_invalid_case(yaml: &str) {
         "granit-parser unexpectedly accepted invalid YAML"
     );
 
-    match serde_saphyr::from_multiple::<IgnoredAny>(yaml) {
+    match serde_saphyr::from_str_multiple::<IgnoredAny, Vec<_>>(yaml) {
         Err(_) => {}
         Ok(documents) => panic!(
             "serde_saphyr unexpectedly accepted invalid YAML as {} document(s)",
@@ -47,7 +47,7 @@ pub(super) fn assert_valid_events_with_options(
     expected_events: &str,
     options: serde_saphyr::Options,
 ) {
-    serde_saphyr::from_multiple_with_options::<IgnoredAny>(yaml, options)
+    serde_saphyr::from_str_multiple_with_options::<IgnoredAny, Vec<_>>(yaml, options)
         .expect("event-only YAML case must be valid through serde_saphyr");
 
     let actual = Parser::new_from_str(yaml)

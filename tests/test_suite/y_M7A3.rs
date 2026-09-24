@@ -12,7 +12,7 @@ document
 %!PS-Adobe-2.0 # Not the first line
 "#;
 
-    let docs: Vec<String> = serde_saphyr::from_multiple(y).expect("failed to parse M7A3");
+    let docs: Vec<String> = serde_saphyr::from_str_multiple(y).expect("failed to parse M7A3");
     assert_eq!(docs.len(), 2);
     assert_eq!(docs[0].as_str(), "Bare document");
     assert_eq!(docs[1].as_str(), "%!PS-Adobe-2.0 # Not the first line\n");

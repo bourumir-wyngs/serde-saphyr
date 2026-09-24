@@ -20,7 +20,7 @@ key: value
 "#;
 
     type Map = HashMap<Option<String>, Option<String>>;
-    let docs: Vec<Map> = serde_saphyr::from_multiple(y).expect("failed to parse NKF9");
+    let docs: Vec<Map> = serde_saphyr::from_str_multiple(y).expect("failed to parse NKF9");
     assert_eq!(docs.len(), 4);
 
     // Doc 1: block mapping with one normal and one empty key

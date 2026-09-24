@@ -9,7 +9,7 @@ use serde_json::Value;
 fn yaml_9hcy_need_document_footer_before_directives() {
     let y = indoc::indoc!("!foo \"bar\"\n%TAG ! tag:example.com,2000:app/\n---\n!foo \"bar\"\n");
 
-    let result: Result<Vec<Value>, serde_saphyr::Error> = serde_saphyr::from_multiple(y);
+    let result: Result<Vec<Value>, serde_saphyr::Error> = serde_saphyr::from_str_multiple(y);
 
     assert!(
         result.is_err(),

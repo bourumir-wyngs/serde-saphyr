@@ -133,7 +133,7 @@ fn readme_multiple_documents_stream_example_compiles() {
    age: 25
 "#;
 
-    let docs: Vec<Document> = serde_saphyr::from_multiple(input).expect("valid YAML stream");
+    let docs: Vec<Document> = serde_saphyr::from_str_multiple(input).expect("valid YAML stream");
 
     assert_eq!(
         docs,

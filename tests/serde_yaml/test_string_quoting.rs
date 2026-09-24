@@ -42,7 +42,7 @@ fn document_marker_strings_are_quoted_in_multiple_documents() {
         "first\n---\n\"---\"\n---\n\"...\"\n---\n\"--- value\"\n---\n\"... value\"\n"
     );
 
-    let decoded: Vec<String> = serde_saphyr::from_multiple(&serialized).unwrap();
+    let decoded: Vec<String> = serde_saphyr::from_str_multiple(&serialized).unwrap();
     let expected = values.iter().map(ToString::to_string).collect::<Vec<_>>();
     assert_eq!(decoded, expected);
 }

@@ -4,7 +4,7 @@ mod tests {
     use serde_saphyr::budget::{BudgetBreach, BudgetReport};
     use serde_saphyr::{DuplicateKeyPolicy, Error, from_reader};
     use serde_saphyr::{
-        from_multiple, from_multiple_with_options, from_str, from_str_with_options,
+        from_str, from_str_multiple, from_str_multiple_with_options, from_str_with_options,
     };
     use std::cell::RefCell;
     use std::collections::HashMap;
@@ -80,7 +80,7 @@ mod tests {
     #[test]
     fn multiple_documents_deserialize_into_vec() {
         let yaml = "---\nname: John\nage: 80\ndetails:\n  city: Paris\n---\nname: Jane\nage: 42\ndetails:\n  city: London\n";
-        let people: Vec<Person> = from_multiple(yaml).unwrap();
+        let people: Vec<Person> = from_str_multiple(yaml).unwrap();
         assert_eq!(people.len(), 2);
         assert_eq!(people[0].name, "John");
         assert_eq!(people[1].name, "Jane");
@@ -92,7 +92,7 @@ mod tests {
 ---
 plain
 ";
-        let values: Vec<String> = from_multiple(yaml).unwrap();
+        let values: Vec<String> = from_str_multiple(yaml).unwrap();
         assert_eq!(values, vec!["null", "plain"]);
     }
 
@@ -102,7 +102,7 @@ plain
 ---
 plain
 ";
-        let values: Vec<String> = from_multiple(yaml).unwrap();
+        let values: Vec<String> = from_str_multiple(yaml).unwrap();
         assert_eq!(values, vec!["plain"]);
     }
 
@@ -181,7 +181,8 @@ plain
         };
 
         let yaml = "a: 1\n---\nb: 2\n";
-        let err = from_multiple_with_options::<HashMap<String, String>>(yaml, options).unwrap_err();
+        let err = from_str_multiple_with_options::<HashMap<String, String>, Vec<_>>(yaml, options)
+            .unwrap_err();
         assert!(matches!(
             unwrap_snippet(&err),
             Error::Budget {
@@ -193,7 +194,8 @@ plain
 
     #[test]
     fn multiple_documents_peek_scan_error_has_snippet() {
-        let err = from_multiple::<String>("@\n").expect_err("reserved indicator should fail");
+        let err =
+            from_str_multiple::<String, Vec<_>>("@\n").expect_err("reserved indicator should fail");
 
         assert!(
             matches!(err, Error::WithSnippet { .. }),

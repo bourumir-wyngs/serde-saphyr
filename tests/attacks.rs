@@ -200,7 +200,7 @@ user: []
     assert!(matches!(
         err.without_snippet(),
         serde_saphyr::Error::MultipleDocuments {
-            hint: "use from_multiple or from_multiple_with_options",
+            hint: "use from_str_multiple or from_str_multiple_with_options",
             ..
         }
     ));

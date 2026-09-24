@@ -77,9 +77,15 @@ pub use wrappers::{
 pub(crate) use self::de::api::resolver_from_options;
 #[cfg(feature = "deserialize")]
 pub use self::de::api::{
-    from_multiple, from_multiple_with_options, from_reader, from_reader_with_options, from_slice,
-    from_slice_multiple, from_slice_multiple_with_options, from_slice_with_options, from_str,
-    from_str_with_options, read, read_with_options,
+    from_bytes_multiple, from_bytes_multiple_with_options, from_reader, from_reader_with_options,
+    from_slice, from_slice_with_options, from_str, from_str_multiple,
+    from_str_multiple_with_options, from_str_with_options, read, read_with_options,
+};
+#[cfg(feature = "deserialize")]
+#[allow(deprecated)] // Preserve the public exports of the legacy compatibility wrappers.
+pub use self::de::api::{
+    from_multiple, from_multiple_with_options, from_slice_multiple,
+    from_slice_multiple_with_options,
 };
 #[cfg(feature = "serialize")]
 pub use self::ser::api::{

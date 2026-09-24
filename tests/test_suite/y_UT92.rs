@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 // UT92: Spec Example 9.4. Explicit Documents
 // Stream with an explicit document containing a mapping, followed by an empty document.
-// We parse with from_multiple() and assert the non-empty mapping content.
+// We parse with from_str_multiple() and assert the non-empty mapping content.
 
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(untagged)]
@@ -17,9 +17,9 @@ enum Doc {
 fn yaml_ut92_explicit_documents() {
     let y = indoc::indoc!("---\n{ matches\n% : 20 }\n...\n---\n# Empty\n...\n");
 
-    let docs: Vec<Doc> = serde_saphyr::from_multiple(y).expect("failed to parse UT92");
+    let docs: Vec<Doc> = serde_saphyr::from_str_multiple(y).expect("failed to parse UT92");
 
-    // from_multiple() may skip empty docs; accept either 1 (only mapping) or 2 (mapping + Null)
+    // from_str_multiple() may skip empty docs; accept either 1 (only mapping) or 2 (mapping + Null)
     assert!(
         docs.len() == 1 || docs.len() == 2,
         "unexpected docs: {:?}",

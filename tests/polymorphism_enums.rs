@@ -3,7 +3,7 @@ use serde::Deserialize;
 
 // This test suite verifies that variable (polymorphic) documents can be
 // deserialized using enums, both from a streaming reader iterator (read/read_with_options)
-// and from a multi-document string (from_multiple/from_multiple_with_options).
+// and from a multi-document string (from_str_multiple/from_str_multiple_with_options).
 //
 // The shapes follow the patterns demonstrated in examples/polymorphism_tree_planting_robot.rs
 // and README.md.
@@ -98,7 +98,7 @@ fn read_iterator_over_polymorphic_enum_documents() {
 }
 
 #[test]
-fn from_multiple_string_with_polymorphic_enum_documents() {
+fn from_str_multiple_with_polymorphic_enum_documents() {
     // Three documents: go, turn, plant(with default birch because args omitted)
     let yaml = r#"go: { distance: 42 }
 ---
@@ -107,7 +107,8 @@ turn: { direction: Right }
 plant:
 "#;
 
-    let cmds: Vec<Command> = serde_saphyr::from_multiple(yaml).expect("from_multiple failed");
+    let cmds: Vec<Command> =
+        serde_saphyr::from_str_multiple(yaml).expect("from_str_multiple failed");
     assert_eq!(cmds.len(), 3);
     assert_eq!(cmds[0], Command::Go { distance: 42 });
     assert_eq!(
