@@ -227,6 +227,36 @@ Legacy octal notation such as `0052` can be enabled via `Options`, but it is dis
 
 The concept that “Rust code is the schema” naturally extends to implemented support for [`validator`](https://crates.io/crates/validator) and [`garde`](https://crates.io/crates/garde), as these crates allow annotations to be added directly to Rust types, providing even stricter control over permissible values.
 
+### Scalar resolution for custom value types
+
+`scalar::resolve` classifies decoded scalar text without a Serde visitor or an intermediate
+YAML value tree. Choose `Schema::Strings`, `Json`, `Yaml12`, or `Yaml11` explicitly, and pass
+the scalar's style and expanded tag URI (or `None`). The result borrows the original text:
+
+```rust
+use serde_saphyr::scalar::{resolve, ScalarKind, ScalarStyle, Schema};
+
+let scalar = resolve("0x2a", ScalarStyle::Plain, None, Schema::Yaml12)?;
+assert_eq!(scalar.kind(), ScalarKind::Integer);
+assert_eq!(scalar.to_u128()?, 42);
+assert_eq!(scalar.text(), "0x2a");
+# Ok::<(), serde_saphyr::scalar::ScalarError>(())
+```
+
+Classification is independent of numeric range. Checked `to_i128`, `to_u128`, `to_f32`,
+and `to_f64` conversions report overflow; callers can instead feed `text()` to their own
+numeric types. Explicit `.inf`/`.nan` are distinct from overflowing finite literals.
+Float conversion permits normal rounding and underflow. Timestamp classification under
+`Yaml11` is lexical only; the caller's date type must validate calendar and timezone values.
+
+Untagged quoted and block scalars remain strings. Explicit supported tags override style
+and validate their content; unsupported tags return an error for the caller to handle.
+Text is matched in full without trimming. These schema policies are independent of the
+existing Serde compatibility options; see the [`scalar` module documentation](https://docs.rs/serde-saphyr/latest/serde_saphyr/scalar/)
+for exact syntax and schema differences. The module is available with either `serialize`
+or `deserialize`; with `deserialize`, parser styles convert using `.into()` and parsed
+tags supply expanded URIs using `.to_string()`.
+
 ### Multiple documents
 
 Multiple documents can be deserialized into a collection.

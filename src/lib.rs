@@ -109,6 +109,7 @@ mod de;
 mod location;
 mod long_strings;
 mod parse_scalars;
+pub mod scalar;
 #[cfg(feature = "serialize")]
 pub mod ser;
 mod span;
