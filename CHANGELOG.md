@@ -43,7 +43,8 @@
 ### Testing
 
 - Added a downstream CI job that runs a pinned Nushell revision's YAML tests against the local
-  serde-saphyr checkout, checking dependency selection, API compatibility, and YAML behavior.
+  serde-saphyr checkout, checking dependency selection, API compatibility, and YAML behavior. 
+  [Nushell](https://github.com/nushell/nushell) uses serde-saphyr and has many useful YAML tests.
 
 ## 1.3.0 Maintenance and performance release
 
