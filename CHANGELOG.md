@@ -4,6 +4,13 @@
 
 ### Added
 
+- Added `scalar::resolve` for reusable scalar classification below Serde, using decoded text,
+  scalar style, an expanded tag, and an explicit `Strings`, `Json`, `Yaml12`, or `Yaml11` schema.
+  Results borrow the original text and offer checked boolean, `i128`, `u128`, `f32`, and `f64`
+  conversions without a value tree. Classification is independent of numeric range; integer
+  overflow never falls back to float, and finite float overflow is distinct from explicit
+  infinity/NaN. YAML 1.1 timestamps are recognized lexically for conversion by caller-owned
+  date types. Existing Serde scalar behavior is unchanged.
 - Added `SerializerOptions::no_lang_directive` (default `false`) to suppress the
   `%YAML 1.2` directive and its leading `---` marker independently of `yaml_12`'s quoting. 
 - Added `from_str_multiple` and `from_str_multiple_with_options` to deserialize multiple YAML

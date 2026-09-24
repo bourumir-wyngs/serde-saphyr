@@ -36,18 +36,26 @@ pub(crate) fn parse_yaml11_bool(s: &str) -> Result<bool, String> {
 
 #[cfg(feature = "deserialize")]
 fn parse_digits_u128(digits: &str, radix: u32) -> Option<u128> {
-    let mut val: u128 = 0;
-    let mut saw = false;
     let bytes = digits.as_bytes();
     for (i, &b) in bytes.iter().enumerate() {
-        match b {
-            b'_' => {
-                let prev_ok = i > 0 && bytes[i - 1] != b'_';
-                let next_ok = i + 1 < bytes.len() && bytes[i + 1] != b'_';
-                if !prev_ok || !next_ok {
-                    return None;
-                }
+        if b == b'_' {
+            let prev_ok = i > 0 && bytes[i - 1] != b'_';
+            let next_ok = i + 1 < bytes.len() && bytes[i + 1] != b'_';
+            if !prev_ok || !next_ok {
+                return None;
             }
+        }
+    }
+    checked_digits_u128(digits.bytes().filter(|&b| b != b'_'), radix)
+}
+
+/// Accumulate digits with checked arithmetic, independently of scalar syntax policy.
+/// Callers validate and remove any separators allowed by their own schema first.
+pub(crate) fn checked_digits_u128(digits: impl Iterator<Item = u8>, radix: u32) -> Option<u128> {
+    let mut val: u128 = 0;
+    let mut saw = false;
+    for b in digits {
+        match b {
             b'0'..=b'9' => {
                 let d = u32::from(b - b'0');
                 if d >= radix {
