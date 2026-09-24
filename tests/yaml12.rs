@@ -1,6 +1,6 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Point {
@@ -130,6 +130,61 @@ fn yaml12_multiple_documents_use_valid_directive_boundaries() {
     let out = serde_saphyr::to_string_multiple_with_options(&docs, options).unwrap();
 
     assert_eq!(out, "%YAML 1.2\n---\nx: 1\n...\n%YAML 1.2\n---\nx: 2\n");
+    assert_eq!(
+        serde_saphyr::from_str_multiple::<Point, Vec<_>>(&out).unwrap(),
+        docs
+    );
+}
+
+#[test]
+fn language_directive_option_is_independent_of_string_quoting() {
+    assert!(!serde_saphyr::SerializerOptions::default().no_lang_directive);
+    let map = BTreeMap::from([("0", "42"), ("true", "false"), ("yes", "on")]);
+
+    for (yaml_12, no_lang_directive, expected) in [
+        (
+            false,
+            false,
+            "\"0\": \"42\"\n\"true\": \"false\"\n\"yes\": \"on\"\n",
+        ),
+        (
+            false,
+            true,
+            "\"0\": \"42\"\n\"true\": \"false\"\n\"yes\": \"on\"\n",
+        ),
+        (
+            true,
+            false,
+            "%YAML 1.2\n---\n\"0\": \"42\"\n\"true\": \"false\"\nyes: on\n",
+        ),
+        (true, true, "\"0\": \"42\"\n\"true\": \"false\"\nyes: on\n"),
+    ] {
+        let options =
+            serde_saphyr::ser_options! { yaml_12: yaml_12, no_lang_directive: no_lang_directive };
+        let out = serde_saphyr::to_string_with_options(&map, options).unwrap();
+        assert_eq!(
+            out, expected,
+            "yaml_12={yaml_12}, no_lang_directive={no_lang_directive}"
+        );
+    }
+}
+
+#[test]
+fn yaml12_scalar_without_language_directive_has_no_prolog() {
+    let options = serde_saphyr::ser_options! { yaml_12: true, no_lang_directive: true };
+    let out = serde_saphyr::to_string_with_options(&42, options).unwrap();
+
+    assert_eq!(out, "42\n");
+    assert_eq!(serde_saphyr::from_str::<i32>(&out).unwrap(), 42);
+}
+
+#[test]
+fn yaml12_multiple_documents_without_language_directive_keep_document_separators() {
+    let docs = vec![Point { x: 1 }, Point { x: 2 }];
+    let options = serde_saphyr::ser_options! { yaml_12: true, no_lang_directive: true };
+    let out = serde_saphyr::to_string_multiple_with_options(&docs, options).unwrap();
+
+    assert_eq!(out, "x: 1\n---\nx: 2\n");
     assert_eq!(
         serde_saphyr::from_str_multiple::<Point, Vec<_>>(&out).unwrap(),
         docs

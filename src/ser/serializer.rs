@@ -444,8 +444,10 @@ struct SerializerSettings {
     prefer_block_scalars: bool,
     /// Quote all string scalars.
     quote_all: bool,
-    /// Emit a YAML 1.2 directive and use YAML 1.2-friendly heuristics.
+    /// Use YAML 1.2-friendly heuristics and emit a directive unless suppressed.
     yaml_12: bool,
+    /// Suppress the language directive and its document start marker.
+    no_lang_directive: bool,
 }
 
 impl From<&SerializerOptions> for SerializerSettings {
@@ -461,6 +463,7 @@ impl From<&SerializerOptions> for SerializerSettings {
             prefer_block_scalars: options.prefer_block_scalars,
             quote_all: options.quote_all,
             yaml_12: options.yaml_12,
+            no_lang_directive: options.no_lang_directive,
         }
     }
 }
@@ -816,7 +819,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         if self.state.at_line_start {
             if !self.state.doc_started {
                 self.state.doc_started = true;
-                if self.settings.yaml_12 {
+                if self.settings.yaml_12 && !self.settings.no_lang_directive {
                     self.out.write_str("%YAML 1.2\n---\n")?;
                     // Still at start of a line after the directive and document start marker.
                     self.state.at_line_start = true;

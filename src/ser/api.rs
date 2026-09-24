@@ -155,10 +155,12 @@ pub fn to_string_multiple<T: serde_core::Serialize>(
 ///
 /// Serializes each value in the provided slice as an individual YAML document.
 /// Documents are separated by a standard YAML document start marker ("---\n").
-/// No marker is emitted before the first document.
-/// When `options.yaml_12` is enabled, each document emits its own `%YAML 1.2`
-/// directive and document start marker, and later documents are preceded by an
-/// explicit document end marker ("...\n") so the following directive is valid.
+/// By default, no marker is emitted before the first document.
+/// When `options.yaml_12` is enabled and `options.no_lang_directive` is false,
+/// each document emits its own `%YAML 1.2` directive and document start marker,
+/// and later documents are preceded by an explicit document end marker ("...\n")
+/// so the following directive is valid. With `options.no_lang_directive` enabled,
+/// only the separators between documents are emitted.
 ///
 /// Example
 ///
@@ -184,10 +186,10 @@ pub fn to_string_multiple_with_options<T: serde_core::Serialize>(
     options.consistent()?;
     let mut out = String::new();
     let mut first = true;
-    let yaml_12 = options.yaml_12;
+    let emit_directive = options.yaml_12 && !options.no_lang_directive;
     for v in values {
         if !first {
-            if yaml_12 {
+            if emit_directive {
                 out.push_str("...\n");
             } else {
                 out.push_str("---\n");

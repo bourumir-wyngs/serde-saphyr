@@ -143,7 +143,9 @@ pub struct SerializerOptions {
 
     /// When enabled, emit `%YAML 1.2` and the required document start marker
     /// at the beginning of the document, and use YAML 1.2 rules for certain
-    /// compatibility heuristics.
+    /// compatibility heuristics. Set [`no_lang_directive`](Self::no_lang_directive)
+    /// to suppress the directive and its document start marker while keeping
+    /// these heuristics.
     ///
     /// With the default `false`, strings matching YAML 1.1 numeric, boolean,
     /// null, timestamp, and reserved-token spellings are quoted to preserve their
@@ -152,6 +154,12 @@ pub struct SerializerOptions {
     /// sexagesimal numbers, and timestamps. YAML syntax safety checks still apply.
     /// Default: false.
     pub yaml_12: bool,
+
+    /// Suppress the `%YAML 1.2` directive and its leading `---` document start
+    /// marker when [`yaml_12`](Self::yaml_12) is enabled, without changing string
+    /// quoting heuristics. Document separators between multiple documents are
+    /// still emitted. Has no effect when `yaml_12` is false. Default: false.
+    pub no_lang_directive: bool,
 }
 
 // Below this length, block-string wrappers serialize as regular scalars
@@ -193,6 +201,7 @@ impl Default for SerializerOptions {
             quote_all: false,
             comment_position: CommentPosition::Inline,
             yaml_12: false,
+            no_lang_directive: false,
         }
     }
 }

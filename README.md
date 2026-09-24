@@ -1037,6 +1037,7 @@ Serde-saphyr supports recursive structures, but Rust requires being very explici
 - The wrapper [SpaceAfter](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.SpaceAfter.html) adds an empty line after the wrapped value, useful for visually separating sections in the output YAML.
 - It is possible to request that all strings be **quoted** — using single quotes when no escape sequences are present, and double quotes otherwise. This is very explicit and unambiguous, but such YAML may be less readable for humans. Line wrapping is disabled in this mode.
 - YAML 1.1 booleans (`y`, `yes`, `on`, etc.) are normally quoted as both keys and values. If this is undesired (y is a coordinate), set `yaml_12` to true.
+- Set `no_lang_directive` to omit the `%YAML 1.2` directive. 
 
 These settings can be changed in [SerializerOptions](https://docs.rs/serde-saphyr/latest/serde_saphyr/ser/options/struct.SerializerOptions.html).
 
