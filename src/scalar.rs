@@ -61,8 +61,9 @@ pub enum Schema {
     // Deserialization replaces it with Specific using strict_booleans and
     // legacy_octal_numbers from Options. Each omitted flag retains its own
     // default (false), including when only the other flag is supplied.
-    // Serialization derives Yaml11/Yaml12 from its deprecated yaml_12 flag
-    // and independently retains the deprecated quote_all presentation flag.
+    // Serialization uses the same legacy quoting policy as Specific, deriving
+    // Yaml11/Yaml12 from its deprecated yaml_12 flag and independently retaining
+    // the deprecated quote_all presentation flag.
     // An explicit schema takes precedence over deprecated flags. Direct calls
     // to resolve have no Options, so Legacy uses both default boolean values.
     #[doc(hidden)]
@@ -98,6 +99,13 @@ pub enum Schema {
     /// independent of numeric range. Serde adapters retain their existing
     /// whitespace handling, target-type conversions, and overflow policies.
     ///
+    /// Serialization reactivates the legacy conservative quoting policy, not
+    /// the scalar vocabulary described above. `yaml_12_quoting` selects that
+    /// policy independently of the deserialization flags, while `quote_all`
+    /// controls ordinary string presentation. Move deprecated option flags
+    /// into this variant to retain their behavior, renaming `yaml_12` to
+    /// `yaml_12_quoting`; omitted fields retain their default of `false`.
+    ///
     /// Construct with [`specific!`](crate::specific), supplying only the fields
     /// you want to change from their defaults. This variant is non-exhaustive
     /// so additional options can be introduced without breaking callers.
@@ -105,22 +113,32 @@ pub enum Schema {
     Specific {
         /// Accept only `true`/`false` as booleans when enabled; otherwise also
         /// accept `y`/`yes`/`on` and `n`/`no`/`off`, all case-insensitively.
-        /// Also controls ambiguity checks when serializing string keys and
-        /// ordinary string values that are not already forced to be quoted.
+        /// Only affects scalar resolution and deserialization, not serialization.
         strict_booleans: bool,
         /// Interpret leading-zero integers as octal and allow one underscore
         /// after a radix prefix. When disabled, leading-zero decimals do not
         /// resolve as integers (but may resolve as floats).
-        /// Also controls the serializer's string ambiguity checks.
+        /// Only affects scalar resolution and deserialization, not serialization.
+        /// For compatibility, `no_schema` string validation ignores this flag.
         legacy_octal_numbers: bool,
+        /// Reactivate legacy serializer quoting: `false` uses conservative
+        /// YAML 1.1-compatible quoting; `true` uses YAML 1.2-compatible quoting
+        /// and emits a `%YAML 1.2` directive unless `no_lang_directive` is set.
+        /// Both policies retain the legacy safeguards for other YAML readers.
+        /// This replaces the deprecated serializer `yaml_12` flag.
+        ///
+        /// Only affects serialization; scalar resolution and deserialization
+        /// ignore this flag. The parsing flags do not affect string quoting.
+        #[cfg_attr(feature = "serde_derived_types", serde(default))]
+        yaml_12_quoting: bool,
         /// Quote all ordinary string values when serializing. Prefer single
         /// quotes, using double quotes when escaping is needed, and disable
-        /// automatic block styles. Mapping keys keep schema-based quoting;
-        /// explicit block-style wrappers retain their requested style.
+        /// automatic block styles. Mapping keys keep the legacy quoting policy
+        /// selected by `yaml_12_quoting`; explicit block-style wrappers retain
+        /// their requested style.
         ///
         /// Only affects serialization: scalar resolution and deserialization
-        /// ignore this flag. When enabled, the other two fields still control
-        /// deserialization and string-key quoting, but not ordinary value quoting.
+        /// ignore this flag. Independent of `yaml_12_quoting` and the parsing flags.
         #[cfg_attr(feature = "serde_derived_types", serde(default))]
         quote_all: bool,
     },
@@ -131,12 +149,12 @@ impl Schema {
     ///
     /// Use [`specific!`](crate::specific) to override individual options while
     /// retaining defaults for omitted fields, including fields added in future.
-    /// This does not select the legacy serializer policy: [`Schema::Specific`]
-    /// uses its own scalar vocabulary for string quoting.
+    /// This preserves the default legacy parsing and serializer quoting policies.
     pub const fn specific() -> Self {
         Self::Specific {
             strict_booleans: false,
             legacy_octal_numbers: false,
+            yaml_12_quoting: false,
             quote_all: false,
         }
     }
@@ -150,6 +168,7 @@ impl Schema {
             Self::Legacy => Self::Specific {
                 strict_booleans,
                 legacy_octal_numbers,
+                yaml_12_quoting: false,
                 quote_all: false,
             },
             schema => schema,
@@ -158,10 +177,19 @@ impl Schema {
 
     #[cfg(feature = "serialize")]
     pub(crate) fn for_serializer(self, yaml_12: bool) -> Self {
-        match self {
-            Self::Legacy if yaml_12 => Self::Yaml12,
-            Self::Legacy => Self::Yaml11,
-            schema => schema,
+        // Both option representations reactivate the same legacy quoting path.
+        // quote_all is extracted separately, before this normalization.
+        let yaml_12_quoting = match self {
+            Self::Legacy => yaml_12,
+            Self::Specific {
+                yaml_12_quoting, ..
+            } => yaml_12_quoting,
+            schema => return schema,
+        };
+        if yaml_12_quoting {
+            Self::Yaml12
+        } else {
+            Self::Yaml11
         }
     }
 }

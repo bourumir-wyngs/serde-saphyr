@@ -145,6 +145,7 @@ mod tests {
                     strict_booleans: false,
                     legacy_octal_numbers: false,
                     quote_all: false,
+                    yaml_12_quoting: false,
                 },
             )
         };

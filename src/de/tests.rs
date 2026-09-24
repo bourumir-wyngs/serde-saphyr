@@ -191,11 +191,14 @@ fn cfg_and_replay_events_follow_options_and_reference_overrides() {
     assert!(matches!(cfg.merge_keys, MergeKeyPolicy::AsOrdinary));
     assert_eq!(
         cfg.schema,
-        crate::scalar::Schema::Specific {
+        crate::specific! {
             strict_booleans: true,
             legacy_octal_numbers: true,
-            quote_all: false,
         }
+    );
+    assert_eq!(
+        cfg.string_schema,
+        crate::specific! { strict_booleans: true }
     );
     assert!(cfg.angle_conversions);
     assert!(cfg.ignore_binary_tag_for_string);
@@ -234,7 +237,7 @@ fn cfg_and_replay_events_follow_options_and_reference_overrides() {
 
 #[test]
 #[allow(deprecated)] // Verify the legacy no_schema policy stays unchanged.
-fn legacy_string_checks_preserve_independent_octal_behavior() {
+fn specific_and_legacy_string_checks_preserve_independent_octal_behavior() {
     let legacy = Options {
         legacy_octal_numbers: true,
         no_schema: true,
@@ -246,16 +249,41 @@ fn legacy_string_checks_preserve_independent_octal_behavior() {
             text,
         );
         let specific = Options {
-            schema: crate::scalar::Schema::Specific {
-                strict_booleans: false,
+            schema: crate::specific! {
                 legacy_octal_numbers: true,
-                quote_all: false,
             },
             no_schema: true,
             ..Options::default()
         };
-        assert!(crate::from_str_with_options::<String>(text, specific).is_err());
+        assert_eq!(
+            crate::from_str_with_options::<String>(text, specific).unwrap(),
+            text,
+        );
     }
+}
+
+#[test]
+fn specific_string_checks_only_clear_the_octal_flag() {
+    let schema = crate::specific! {
+        strict_booleans: true,
+        legacy_octal_numbers: true,
+        quote_all: true,
+        yaml_12_quoting: true,
+    };
+    let cfg = Cfg::from_options(&Options {
+        schema,
+        no_schema: true,
+        ..Options::default()
+    });
+    assert_eq!(cfg.schema, schema);
+    assert_eq!(
+        cfg.string_schema,
+        crate::specific! {
+            strict_booleans: true,
+            quote_all: true,
+            yaml_12_quoting: true,
+        },
+    );
 }
 
 #[test]

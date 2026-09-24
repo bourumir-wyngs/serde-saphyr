@@ -34,6 +34,7 @@ pub(crate) fn is_ambiguous(text: &str, schema: Schema) -> bool {
                     strict_booleans: false,
                     legacy_octal_numbers: false,
                     quote_all: false,
+                    yaml_12_quoting: false,
                 },
             )
             .is_some()

@@ -136,6 +136,8 @@ pub struct SerializerOptions {
     /// wrappers retain their requested style. Off by default.
     ///
     /// Use [`schema`](Self::schema) with `specific! { quote_all: true }` instead.
+    /// If migrating [`yaml_12`](Self::yaml_12) too, set `yaml_12_quoting` in the
+    /// same `specific!` configuration to preserve both old settings.
     /// This option is only consulted when no schema is selected.
     /// Explicit schemas, including [`Schema::Json`], use their own string-emission
     /// rules and ignore this compatibility option.
@@ -161,8 +163,13 @@ pub struct SerializerOptions {
     /// directive without changing quoting. Both standard YAML schemas retain
     /// conservative checks for spellings recognized by other readers.
     ///
-    /// [`Schema::Specific`] follows the configured scalar vocabulary; its
-    /// `quote_all` flag additionally requests quoted ordinary string values.
+    /// [`Schema::Specific`] reactivates the legacy quoting policy: its
+    /// `yaml_12_quoting` flag selects YAML 1.1-compatible quoting (false, the
+    /// default) or YAML 1.2-compatible quoting and directives (true). Its
+    /// `quote_all` flag independently requests quoted ordinary string values.
+    /// The `strict_booleans` and `legacy_octal_numbers` fields only affect
+    /// deserialization, not output quoting. To retain both deprecated flags,
+    /// migrate them together into `specific! { yaml_12_quoting: ..., quote_all: ... }`.
     /// [`Schema::Strings`] only requires quotes for YAML syntax safety.
     /// [`Schema::Json`] prevents plain string emission so strings are valid
     /// JSON-schema scalars. This is YAML's JSON scalar schema, not JSON output:
@@ -174,19 +181,24 @@ pub struct SerializerOptions {
 
     /// Compatibility option for YAML 1.2-compatible quoting and directives.
     ///
-    /// Use [`schema`](Self::schema) with [`Schema::Yaml12`] for `true` or
-    /// [`Schema::Yaml11`] for `false`. This option is only consulted when no
-    /// schema is selected. Default: false.
+    /// Use [`schema`](Self::schema) with `specific! { yaml_12_quoting: value }`
+    /// to reactivate the legacy quoting policy. If also using
+    /// [`quote_all`](Self::quote_all), move it into the same `specific!`
+    /// configuration to retain both settings. Alternatively, select
+    /// [`Schema::Yaml12`] for `true` or [`Schema::Yaml11`] for `false` when
+    /// `quote_all` is not needed. This option is only consulted when no schema
+    /// is selected. Default: false.
     #[deprecated(
         since = "1.4.0",
-        note = "use schema: Schema::Yaml12 or Schema::Yaml11 instead"
+        note = "use schema: serde_saphyr::specific! { yaml_12_quoting: value }; also move quote_all into Specific if used"
     )]
     pub yaml_12: bool,
 
     /// Suppress the `%YAML 1.2` directive and its leading `---` document start
-    /// marker when the effective [`schema`](Self::schema) is [`Schema::Yaml12`],
-    /// without changing string quoting. Document separators between multiple
-    /// documents are still emitted. Has no effect for other schemas. Default: false.
+    /// marker when the effective [`schema`](Self::schema) is [`Schema::Yaml12`]
+    /// or [`Schema::Specific`] has `yaml_12_quoting: true`, without changing
+    /// string quoting. Document separators between multiple documents are still
+    /// emitted. Has no effect for other schemas. Default: false.
     pub no_lang_directive: bool,
 }
 

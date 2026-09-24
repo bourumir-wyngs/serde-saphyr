@@ -6,9 +6,12 @@
 /// Construct [`Schema::Specific`](crate::scalar::Schema::Specific) with selected options.
 ///
 /// Omitted fields default to `false`: `strict_booleans`, `legacy_octal_numbers`,
-/// and `quote_all`. Fields can appear in any order, and a trailing comma is allowed.
+/// `yaml_12_quoting`, and `quote_all`. Fields can appear in any order, and a trailing
+/// comma is allowed.
 /// Expressions are evaluated once in the supplied order; repeated fields use
 /// their last supplied value, as with [`options!`](crate::options!).
+/// Parsing uses the first two flags; serialization reactivates legacy quoting
+/// using `yaml_12_quoting` (formerly `yaml_12`) and `quote_all` independently.
 ///
 /// The variant is non-exhaustive. This macro obtains its defaults through
 /// [`Schema::specific`](crate::scalar::Schema::specific) and then updates the
@@ -21,6 +24,7 @@
 /// assert!(matches!(schema, Schema::Specific {
 ///     strict_booleans: true,
 ///     legacy_octal_numbers: false,
+///     yaml_12_quoting: false,
 ///     quote_all: false,
 ///     ..
 /// }));

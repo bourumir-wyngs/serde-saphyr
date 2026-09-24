@@ -11,6 +11,12 @@
   overflow never falls back to float, and finite float overflow is distinct from explicit
   infinity/NaN. YAML 1.1 timestamps are recognized lexically for conversion by caller-owned
   date types. Existing Serde scalar behavior is unchanged.
+- Added `specific!` to configure the compatibility schema. Move `strict_booleans`,
+  `legacy_octal_numbers`, and `quote_all` into it, and rename the serializer's `yaml_12`
+  flag to `yaml_12_quoting`, to preserve the old behavior. All four flags default to
+  `false`; serialization reactivates legacy conservative quoting independently of
+  the parsing flags. Deserialization retains the historical `no_schema` string-validation
+  policy, which ignores the legacy-octal flag.
 - Added `SerializerOptions::no_lang_directive` (default `false`) to suppress the
   `%YAML 1.2` directive and its leading `---` marker independently of `yaml_12`'s quoting. 
 - Added `from_str_multiple` and `from_str_multiple_with_options` to deserialize multiple YAML

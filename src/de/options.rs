@@ -222,6 +222,8 @@ pub struct Options {
     /// Use [`specific!`](crate::specific) to configure serde-saphyr's compatibility syntax,
     /// or choose a standard schema. An explicit schema takes precedence over
     /// the deprecated boolean flags. When omitted, their existing defaults apply.
+    /// Moving the deprecated flags into `specific!` preserves their behavior;
+    /// omitted fields retain their old defaults.
     #[cfg_attr(feature = "serde_derived_types", serde(default = "default_schema"))]
     pub schema: Schema,
     /// Enable legacy octal parsing where values starting with `0` are treated as base-8.
@@ -256,6 +258,8 @@ pub struct Options {
     /// requiring such strings to be explicitly quoted.
     /// The default is false (a number or boolean will be stored in the string
     /// field exactly as provided, without quoting).
+    /// For the compatibility schema, these string checks honor `strict_booleans`
+    /// but ignore `legacy_octal_numbers`, preserving the historical policy.
     pub no_schema: bool,
 
     /// Reject explicitly specified YAML tags that `serde-saphyr` does not recognize.

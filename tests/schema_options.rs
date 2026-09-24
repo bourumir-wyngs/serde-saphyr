@@ -276,6 +276,7 @@ mod deserialize {
             Schema::Yaml11,
             serde_saphyr::specific! { strict_booleans: true, legacy_octal_numbers: true },
             serde_saphyr::specific! { strict_booleans: true, legacy_octal_numbers: true, quote_all: true },
+            serde_saphyr::specific! { strict_booleans: true, legacy_octal_numbers: true, quote_all: true, yaml_12_quoting: true },
         ] {
             let mut encoded = serde_json::to_value(options! { schema: schema }).unwrap();
             let object = encoded.as_object_mut().unwrap();
@@ -295,6 +296,27 @@ mod deserialize {
             .as_object_mut()
             .unwrap()
             .remove("quote_all");
+        let restored: Options = serde_json::from_value(encoded).unwrap();
+        assert_eq!(restored.schema, schema);
+        assert_eq!(
+            from_str_with_options::<Value>("[yes, 010]", restored).unwrap(),
+            json!(["yes", 8])
+        );
+    }
+
+    #[cfg(feature = "serde_derived_types")]
+    #[test]
+    fn older_specific_configurations_default_yaml_12_quoting_to_false() {
+        let schema = serde_saphyr::specific! {
+            strict_booleans: true,
+            legacy_octal_numbers: true,
+            quote_all: true,
+        };
+        let mut encoded = serde_json::to_value(options! { schema: schema }).unwrap();
+        encoded["schema"]["specific"]
+            .as_object_mut()
+            .unwrap()
+            .remove("yaml_12_quoting");
         let restored: Options = serde_json::from_value(encoded).unwrap();
         assert_eq!(restored.schema, schema);
         assert_eq!(
@@ -355,7 +377,7 @@ mod serialize {
     }
 
     #[test]
-    fn explicit_specific_schema_controls_string_quoting() {
+    fn specific_deserializer_flags_do_not_change_legacy_string_quoting() {
         for strict_booleans in [false, true] {
             for legacy_octal_numbers in [false, true] {
                 let options = ser_options! {
@@ -363,19 +385,11 @@ mod serialize {
                 };
                 assert_eq!(
                     to_string_with_options(&"yes", options.clone()).unwrap(),
-                    if strict_booleans {
-                        "yes\n"
-                    } else {
-                        "\"yes\"\n"
-                    }
+                    "\"yes\"\n"
                 );
                 assert_eq!(
                     to_string_with_options(&"0x_10", options.clone()).unwrap(),
-                    if legacy_octal_numbers {
-                        "\"0x_10\"\n"
-                    } else {
-                        "0x_10\n"
-                    }
+                    "\"0x_10\"\n"
                 );
                 assert_eq!(
                     to_string_with_options(&"true", options).unwrap(),
@@ -398,7 +412,7 @@ mod serialize {
             );
             assert_eq!(
                 to_string_with_options(&"yes", options.clone()).unwrap(),
-                if quote_all { "'yes'\n" } else { "yes\n" }
+                if quote_all { "'yes'\n" } else { "\"yes\"\n" }
             );
             let multiline =
                 to_string_with_options(&"line one\nline two\n", options.clone()).unwrap();

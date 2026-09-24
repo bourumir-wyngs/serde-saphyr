@@ -127,7 +127,7 @@ fn public_macros_report_missing_features() {
 use renamed::scalar::Schema;
 
 const DEFAULT: Schema = Schema::specific();
-const CUSTOM: Schema = renamed::specific! {{ strict_booleans: true, quote_all: true }};
+const CUSTOM: Schema = renamed::specific! {{ strict_booleans: true, yaml_12_quoting: true, quote_all: true }};
 
 fn main() {{
     let options = renamed::{options_macro}! {{
@@ -150,7 +150,7 @@ fn main() {{
     for (name, source, diagnostic) in [
         (
             "literal",
-            "fn main() { let _ = serde_saphyr::scalar::Schema::Specific { strict_booleans: false, legacy_octal_numbers: false, quote_all: false }; }",
+            "fn main() { let _ = serde_saphyr::scalar::Schema::Specific { strict_booleans: false, legacy_octal_numbers: false, yaml_12_quoting: false, quote_all: false }; }",
             "non-exhaustive variant",
         ),
         (

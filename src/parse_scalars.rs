@@ -17,10 +17,8 @@ fn resolve_typed<'a>(
 pub(crate) fn parse_bool(text: &str, strict: bool) -> Option<bool> {
     parse_bool_with_schema(
         text,
-        Schema::Specific {
+        crate::specific! {
             strict_booleans: strict,
-            legacy_octal_numbers: false,
-            quote_all: false,
         },
     )
 }
@@ -50,10 +48,8 @@ where
         s,
         ty,
         location,
-        Schema::Specific {
-            strict_booleans: false,
+        crate::specific! {
             legacy_octal_numbers: legacy_octal,
-            quote_all: false,
         },
     )
 }
@@ -88,10 +84,8 @@ where
         s,
         ty,
         location,
-        Schema::Specific {
-            strict_booleans: false,
+        crate::specific! {
             legacy_octal_numbers: legacy_octal,
-            quote_all: false,
         },
     )
 }
@@ -134,17 +128,7 @@ pub(crate) fn parse_yaml12_float<T>(
 where
     T: FromStr + num_traits::Float + FloatFromF64,
 {
-    parse_float_with_schema(
-        s,
-        location,
-        tag,
-        angle_conversions,
-        Schema::Specific {
-            strict_booleans: false,
-            legacy_octal_numbers: false,
-            quote_all: false,
-        },
-    )
+    parse_float_with_schema(s, location, tag, angle_conversions, Schema::specific())
 }
 
 #[cfg(feature = "robotics")]
@@ -230,15 +214,7 @@ pub(crate) fn maybe_not_string(s: &str, style: &ScalarStyle, schema: Schema) -> 
 /// Explicit tag policy is applied separately by `scalar_is_null`.
 #[inline]
 pub(crate) fn scalar_is_nullish(value: &str, style: &ScalarStyle) -> bool {
-    scalar_is_nullish_with_schema(
-        value,
-        style,
-        Schema::Specific {
-            strict_booleans: false,
-            legacy_octal_numbers: false,
-            quote_all: false,
-        },
-    )
+    scalar_is_nullish_with_schema(value, style, Schema::specific())
 }
 
 #[inline]

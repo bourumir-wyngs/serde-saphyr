@@ -156,7 +156,8 @@ pub fn to_string_multiple<T: serde_core::Serialize>(
 /// Serializes each value in the provided slice as an individual YAML document.
 /// Documents are separated by a standard YAML document start marker ("---\n").
 /// By default, no marker is emitted before the first document.
-/// When `options.schema` is [`crate::scalar::Schema::Yaml12`] and
+/// When `options.schema` is [`crate::scalar::Schema::Yaml12`] or
+/// [`crate::scalar::Schema::Specific`] with `yaml_12_quoting: true`, and
 /// `options.no_lang_directive` is false,
 /// each document emits its own `%YAML 1.2` directive and document start marker,
 /// and later documents are preceded by an explicit document end marker ("...\n")

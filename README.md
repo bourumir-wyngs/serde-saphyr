@@ -254,7 +254,7 @@ Untagged quoted and block scalars remain strings. Explicit supported tags overri
 and validate their content; unsupported tags return an error for the caller to handle.
 Text is matched in full without trimming. `Schema::Specific` exposes the grammar used by Serde
 deserialization, with two independent compatibility options (`strict_booleans` and
-`legacy_octal_numbers`) and a serializer-only presentation flag (`quote_all`).
+`legacy_octal_numbers`) and two serializer-only flags (`yaml_12_quoting` and `quote_all`).
 Serde's adapters retain their whitespace handling,
 target-type conversions, and overflow behavior. Serializer quoting also uses the resolver,
 with additional conservative checks for other readers' scalar spellings. The standard
@@ -287,6 +287,14 @@ allows future fields to be added without requiring callers to update their const
 When `schema` is omitted, the deprecated deserializer flags `strict_booleans` and
 `legacy_octal_numbers`, or the serializer's `yaml_12` and `quote_all` flags, keep working. Each omitted
 flag retains its default (`false`). An explicitly selected schema overrides these flags.
+To migrate without changing behavior, move those flags into `specific!`, renaming
+`yaml_12` to `yaml_12_quoting`, and retain all other options. For compatibility,
+`no_schema` string validation continues to ignore `legacy_octal_numbers`.
+
+`Specific` serialization reactivates the legacy conservative quoting policy:
+`yaml_12_quoting: false` uses YAML 1.1-compatible quoting; `true` uses YAML 1.2-compatible
+quoting and emits the `%YAML 1.2` directive unless `no_lang_directive` is set.
+The parsing flags do not change serializer quoting.
 
 For serialization, `Schema::Strings` quotes only when YAML syntax requires it: plain
 `true` and `42` are already strings under that schema. `Schema::Json` has its own rules,
@@ -297,8 +305,9 @@ Serializer schema selection controls string presentation, not typed numeric emis
 Use `specific! { quote_all: true }`
 to force quoting of ordinary string values and disable automatic block styles. Explicit
 block-style wrappers still retain their requested style. The `quote_all` field is ignored
-by scalar resolution and deserialization. The other two fields still govern string-key
-quoting, and also value quoting when `quote_all` is false.
+by scalar resolution and deserialization, as is `yaml_12_quoting`. Mapping keys,
+and ordinary values when `quote_all` is false, follow the legacy quoting policy
+selected by `yaml_12_quoting`.
 
 ### Multiple documents
 

@@ -107,20 +107,47 @@ fn specific_schema_respects_styles_and_validates_explicit_tags() {
 }
 
 #[test]
-fn specific_quote_all_has_no_effect_on_resolution_or_conversions() {
+fn specific_serializer_flags_have_no_effect_on_resolution_or_conversions() {
     for strict_booleans in [false, true] {
         for legacy_octal_numbers in [false, true] {
             for text in [
-                "word", "", "TrUe", "yes", "010", "0x_10", "null", "1.5", "1e999",
+                "word",
+                "",
+                "TrUe",
+                "yes",
+                "010",
+                "0x_10",
+                "null",
+                "1.5",
+                "1e999",
+                "1e+",
+                "0b2",
+                ".NaN",
+                ".inf",
+                "2001-12-15",
             ] {
                 for style in [ScalarStyle::Plain, ScalarStyle::DoubleQuoted] {
-                    for tag in [None, Some("tag:yaml.org,2002:int")] {
-                        let result = |quote_all| {
+                    for tag in [
+                        None,
+                        Some("tag:yaml.org,2002:int"),
+                        Some("tag:yaml.org,2002:float"),
+                        Some("tag:yaml.org,2002:bool"),
+                        Some("tag:yaml.org,2002:null"),
+                        Some("tag:yaml.org,2002:str"),
+                        Some("tag:yaml.org,2002:timestamp"),
+                        Some("!unsupported"),
+                    ] {
+                        let result = |quote_all, yaml_12_quoting| {
                             resolve(
                                 text,
                                 style,
                                 tag,
-                                serde_saphyr::specific! { strict_booleans: strict_booleans, legacy_octal_numbers: legacy_octal_numbers, quote_all: quote_all },
+                                serde_saphyr::specific! {
+                                    strict_booleans: strict_booleans,
+                                    legacy_octal_numbers: legacy_octal_numbers,
+                                    quote_all: quote_all,
+                                    yaml_12_quoting: yaml_12_quoting,
+                                },
                             )
                             .map(|scalar| {
                                 (
@@ -129,11 +156,23 @@ fn specific_quote_all_has_no_effect_on_resolution_or_conversions() {
                                     scalar.to_bool(),
                                     scalar.to_i128(),
                                     scalar.to_u128(),
-                                    scalar.to_f64(),
+                                    scalar.to_f64().map(f64::to_bits),
+                                    scalar.to_f32().map(f32::to_bits),
                                 )
                             })
                         };
-                        assert_eq!(result(false), result(true), "{text:?}, {style:?}, {tag:?}");
+                        let expected = result(false, false);
+                        for quote_all in [false, true] {
+                            for yaml_12_quoting in [false, true] {
+                                assert_eq!(
+                                    result(quote_all, yaml_12_quoting),
+                                    expected,
+                                    "{text:?}, {style:?}, {tag:?}, strict_booleans={strict_booleans}, \
+                                     legacy_octal_numbers={legacy_octal_numbers}, quote_all={quote_all}, \
+                                     yaml_12_quoting={yaml_12_quoting}"
+                                );
+                            }
+                        }
                     }
                 }
             }
