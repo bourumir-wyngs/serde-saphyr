@@ -915,6 +915,22 @@ second: *name
         }
 
         #[test]
+        fn multiline_plain_scalar_owns_through_deserialize_any() {
+            #[derive(Debug, Deserialize, PartialEq)]
+            #[serde(untagged)]
+            enum Untagged<'a> {
+                #[serde(borrow)]
+                Borrowed(&'a str),
+                Owned(String),
+            }
+
+            // Folding a plain scalar requires the Cow::Owned string fallback.
+            let yaml = "hello\n  world\n";
+            let result = serde_saphyr::from_str::<Untagged>(yaml).unwrap();
+            assert_eq!(result, Untagged::Owned("hello world".to_owned()));
+        }
+
+        #[test]
         fn plain_map_keys_borrow_through_deserialize_any() {
             use std::collections::BTreeMap;
 
