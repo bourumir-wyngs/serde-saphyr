@@ -40,6 +40,11 @@
 - Made `huge_documents` and `serde_derived_types` enable `deserialize`, fixing isolated feature
   builds with `--no-default-features`, including autopkgtests of Debian team (as [observed](https://dfsg-new-queue.debian.org/reviews/rust-serde-saphyr)).
 
+### Testing
+
+- Added a downstream CI job that runs a pinned Nushell revision's YAML tests against the local
+  serde-saphyr checkout, checking dependency selection, API compatibility, and YAML behavior.
+
 ## 1.3.0 Maintenance and performance release
 
 ### Fixed
