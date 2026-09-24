@@ -65,13 +65,16 @@ jobs:
 
             version=$(python3 -c 'import tomllib; print(tomllib.load(open("../serde-saphyr/Cargo.toml", "rb"))["package"]["version"])')
 
-            # Update the targeted dependency while retaining Nushell's lockfile.
+            # Update the targeted dependency and resolve any new transitive
+            # dependencies while retaining Nushell's lockfile as a starting point.
             cargo --config "$patch" update \
               -p serde-saphyr --precise "$version"
 
-            # Fail if Nushell did not select our local checkout.
+            # Fail if Nushell did not select our local checkout. This command
+            # must remain unlocked because resolving the path patch may update
+            # Nushell's disposable lockfile.
             cargo --config "$patch" tree \
-              --locked --color never \
+              --color never \
               -p nu-heavy-utils --depth 1 --edges normal |
               grep -F -- \
                 "serde-saphyr v$version ($library_path)"
