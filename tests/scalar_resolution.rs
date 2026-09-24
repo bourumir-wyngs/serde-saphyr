@@ -24,6 +24,93 @@ fn resolution_borrows_the_original_text() {
     assert_eq!(scalar.to_i128(), Ok(42));
 }
 
+#[test]
+fn scalar_kinds_have_readable_display_names() {
+    for (kind, expected) in [
+        (ScalarKind::String, "string"),
+        (ScalarKind::Null, "null"),
+        (ScalarKind::Boolean, "boolean"),
+        (ScalarKind::Integer, "integer"),
+        (ScalarKind::Float, "float"),
+        (ScalarKind::Timestamp, "timestamp"),
+    ] {
+        assert_eq!(kind.to_string(), expected);
+    }
+}
+
+#[test]
+fn scalar_errors_describe_resolution_and_conversion_failures() {
+    let integer = resolve("42", ScalarStyle::Plain, None, Schema::Yaml12).unwrap();
+    let overflow = resolve(
+        "340282366920938463463374607431768211456",
+        ScalarStyle::Plain,
+        None,
+        Schema::Yaml12,
+    )
+    .unwrap();
+    for (error, expected_kind, expected_message) in [
+        (
+            resolve("word", ScalarStyle::Plain, Some(BOOL_TAG), Schema::Yaml12).unwrap_err(),
+            ScalarError::InvalidValue {
+                kind: ScalarKind::Boolean,
+            },
+            "invalid boolean scalar for selected schema",
+        ),
+        (
+            resolve("word", ScalarStyle::Plain, Some("!custom"), Schema::Yaml12).unwrap_err(),
+            ScalarError::UnsupportedTag,
+            "unsupported scalar tag for selected schema",
+        ),
+        (
+            resolve("word", ScalarStyle::Plain, None, Schema::Json).unwrap_err(),
+            ScalarError::UnresolvedPlainScalar,
+            "plain scalar does not match the JSON schema",
+        ),
+        (
+            integer.to_bool().unwrap_err(),
+            ScalarError::TypeMismatch {
+                expected: ScalarKind::Boolean,
+                actual: ScalarKind::Integer,
+            },
+            "expected boolean, found integer",
+        ),
+        (
+            overflow.to_u128().unwrap_err(),
+            ScalarError::OutOfRange,
+            "scalar is outside the requested numeric range",
+        ),
+    ] {
+        assert_eq!(error, expected_kind);
+        assert_eq!(error.to_string(), expected_message);
+    }
+}
+
+#[cfg(feature = "deserialize")]
+#[test]
+fn parser_style_conversion_preserves_every_scalar_style() {
+    use serde_saphyr::granit_parser::ScalarStyle as ParserStyle;
+
+    for (parser_style, expected) in [
+        (ParserStyle::Plain, ScalarStyle::Plain),
+        (ParserStyle::SingleQuoted, ScalarStyle::SingleQuoted),
+        (ParserStyle::DoubleQuoted, ScalarStyle::DoubleQuoted),
+        (ParserStyle::Literal, ScalarStyle::Literal),
+        (ParserStyle::Folded, ScalarStyle::Folded),
+    ] {
+        let style = ScalarStyle::from(parser_style);
+        assert_eq!(style, expected);
+        let scalar = resolve("42", style, None, Schema::Yaml12).unwrap();
+        assert_eq!(
+            scalar.kind(),
+            if expected == ScalarStyle::Plain {
+                ScalarKind::Integer
+            } else {
+                ScalarKind::String
+            },
+        );
+    }
+}
+
 #[cfg(feature = "deserialize")]
 #[test]
 fn parser_events_supply_decoded_text_style_and_expanded_tag() {
@@ -372,6 +459,44 @@ fn yaml12_float_syntax_and_conversion() {
         ".iNF",
     ] {
         assert_kind(text, Schema::Yaml12, ScalarKind::String);
+    }
+}
+
+#[test]
+fn yaml12_and_json_exponent_signs_are_optional() {
+    // YAML 1.2.2 sections 10.2.2 and 10.3.2 both use [eE] [-+]? [0-9]+.
+    for schema in [Schema::Yaml12, Schema::Json] {
+        for (text, expected) in [
+            ("1e2", 100.0),
+            ("1E2", 100.0),
+            ("1e+2", 100.0),
+            ("1E-2", 0.01),
+        ] {
+            for tag in [None, Some(FLOAT_TAG)] {
+                let scalar = resolve(text, ScalarStyle::Plain, tag, schema).unwrap();
+                assert_eq!(scalar.kind(), ScalarKind::Float, "{schema:?}: {text}");
+                assert_eq!(scalar.to_f64(), Ok(expected), "{schema:?}: {text}");
+                assert_eq!(scalar.to_f32(), Ok(expected as f32), "{schema:?}: {text}");
+            }
+        }
+        for text in ["1e", "1E+", "1e-", "1e++2", "1e+-2", "1e2e3"] {
+            assert_eq!(
+                resolve(text, ScalarStyle::Plain, Some(FLOAT_TAG), schema).unwrap_err(),
+                ScalarError::InvalidValue {
+                    kind: ScalarKind::Float,
+                },
+                "{schema:?}: {text}",
+            );
+            if schema == Schema::Json {
+                assert_eq!(
+                    resolve(text, ScalarStyle::Plain, None, schema).unwrap_err(),
+                    ScalarError::UnresolvedPlainScalar,
+                    "{text}",
+                );
+            } else {
+                assert_kind(text, schema, ScalarKind::String);
+            }
+        }
     }
 }
 
