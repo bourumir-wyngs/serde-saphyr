@@ -1,173 +1,42 @@
-#[cfg(feature = "deserialize")]
 use crate::de::{Error, Location};
-#[cfg(feature = "deserialize")]
+use crate::scalar::{self, ResolvedScalar, ScalarError, ScalarKind, Schema};
 use crate::tags::SfTag;
-#[cfg(feature = "deserialize")]
 use granit_parser::ScalarStyle;
-#[cfg(feature = "deserialize")]
 use std::str::FromStr;
 
-/// Parse a YAML 1.1 boolean from a &str (handles the "Norway problem").
-///
-/// Accepted TRUE literals (case-insensitive): "y", "yes", "true", "on"
-/// Accepted FALSE literals (case-insensitive): "n", "no", "false", "off"
-///
-/// Returns:
-/// - Ok(true/false) on success
-/// - Err(...) if the input is not a YAML 1.1 boolean literal
+/// Resolve a typed scalar under the selected scalar vocabulary.
+/// Trimming belongs to the Serde adapter; the public resolver preserves text.
+fn resolve_typed<'a>(
+    text: &'a str,
+    tag: &str,
+    schema: Schema,
+) -> Result<ResolvedScalar<'a>, ScalarError> {
+    scalar::resolve(text.trim(), scalar::ScalarStyle::Plain, Some(tag), schema)
+}
+
+pub(crate) fn parse_bool(text: &str, strict: bool) -> Option<bool> {
+    parse_bool_with_schema(
+        text,
+        Schema::Specific {
+            strict_booleans: strict,
+            legacy_octal_numbers: false,
+            quote_all: false,
+        },
+    )
+}
+
+pub(crate) fn parse_bool_with_schema(text: &str, schema: Schema) -> Option<bool> {
+    resolve_typed(text, "tag:yaml.org,2002:bool", schema)
+        .and_then(|scalar| scalar.to_bool())
+        .ok()
+}
+
+/// Parse the case-insensitive, whitespace-trimming YAML 1.1 boolean forms
+/// historically accepted by the Serde APIs.
 pub(crate) fn parse_yaml11_bool(s: &str) -> Result<bool, String> {
-    let t = s.trim();
-    if t.eq_ignore_ascii_case("true")
-        || t.eq_ignore_ascii_case("yes")
-        || t.eq_ignore_ascii_case("y")
-        || t.eq_ignore_ascii_case("on")
-    {
-        Ok(true)
-    } else if t.eq_ignore_ascii_case("false")
-        || t.eq_ignore_ascii_case("no")
-        || t.eq_ignore_ascii_case("n")
-        || t.eq_ignore_ascii_case("off")
-    {
-        Ok(false)
-    } else {
-        Err(format!("invalid YAML 1.1 bool: `{s}`"))
-    }
+    parse_bool(s, false).ok_or_else(|| format!("invalid YAML 1.1 bool: `{s}`"))
 }
 
-#[cfg(feature = "deserialize")]
-fn parse_digits_u128(digits: &str, radix: u32) -> Option<u128> {
-    let bytes = digits.as_bytes();
-    for (i, &b) in bytes.iter().enumerate() {
-        if b == b'_' {
-            let prev_ok = i > 0 && bytes[i - 1] != b'_';
-            let next_ok = i + 1 < bytes.len() && bytes[i + 1] != b'_';
-            if !prev_ok || !next_ok {
-                return None;
-            }
-        }
-    }
-    checked_digits_u128(digits.bytes().filter(|&b| b != b'_'), radix)
-}
-
-/// Accumulate digits with checked arithmetic, independently of scalar syntax policy.
-/// Callers validate and remove any separators allowed by their own schema first.
-pub(crate) fn checked_digits_u128(digits: impl Iterator<Item = u8>, radix: u32) -> Option<u128> {
-    let mut val: u128 = 0;
-    let mut saw = false;
-    for b in digits {
-        match b {
-            b'0'..=b'9' => {
-                let d = u32::from(b - b'0');
-                if d >= radix {
-                    return None;
-                }
-                val = val.checked_mul(u128::from(radix))?;
-                val = val.checked_add(u128::from(d))?;
-                saw = true;
-            }
-            b'a'..=b'f' if radix > 10 => {
-                let d = 10 + u32::from(b - b'a');
-                if d >= radix {
-                    return None;
-                }
-                val = val.checked_mul(u128::from(radix))?;
-                val = val.checked_add(u128::from(d))?;
-                saw = true;
-            }
-            b'A'..=b'F' if radix > 10 => {
-                let d = 10 + u32::from(b - b'A');
-                if d >= radix {
-                    return None;
-                }
-                val = val.checked_mul(u128::from(radix))?;
-                val = val.checked_add(u128::from(d))?;
-                saw = true;
-            }
-            _ => return None,
-        }
-    }
-    if saw { Some(val) } else { None }
-}
-
-#[cfg(feature = "deserialize")]
-fn parse_decimal_unsigned_u128(digits: &str) -> Option<u128> {
-    let mut val: u128 = 0;
-    let mut saw = false;
-    let bytes = digits.as_bytes();
-    for (i, &b) in bytes.iter().enumerate() {
-        match b {
-            b'_' => {
-                let prev_ok = i > 0 && bytes[i - 1] != b'_';
-                let next_ok = i + 1 < bytes.len() && bytes[i + 1] != b'_';
-                if !prev_ok || !next_ok {
-                    return None;
-                }
-            }
-            b'0'..=b'9' => {
-                let d = u128::from(b - b'0');
-                val = val.checked_mul(10)?;
-                val = val.checked_add(d)?;
-                saw = true;
-            }
-            _ => return None,
-        }
-    }
-    if saw { Some(val) } else { None }
-}
-
-#[cfg(feature = "deserialize")]
-fn parse_decimal_signed_i128(digits: &str, neg: bool) -> Option<i128> {
-    if neg {
-        // Accumulate as negative to allow i128::MIN
-        let mut val: i128 = 0;
-        let mut saw = false;
-        let bytes = digits.as_bytes();
-        for (i, &b) in bytes.iter().enumerate() {
-            match b {
-                b'_' => {
-                    let prev_ok = i > 0 && bytes[i - 1] != b'_';
-                    let next_ok = i + 1 < bytes.len() && bytes[i + 1] != b'_';
-                    if !prev_ok || !next_ok {
-                        return None;
-                    }
-                }
-                b'0'..=b'9' => {
-                    let d = i128::from(b - b'0');
-                    val = val.checked_mul(10)?;
-                    val = val.checked_sub(d)?;
-                    saw = true;
-                }
-                _ => return None,
-            }
-        }
-        if saw { Some(val) } else { None }
-    } else {
-        let mut val: i128 = 0;
-        let mut saw = false;
-        let bytes = digits.as_bytes();
-        for (i, &b) in bytes.iter().enumerate() {
-            match b {
-                b'_' => {
-                    let prev_ok = i > 0 && bytes[i - 1] != b'_';
-                    let next_ok = i + 1 < bytes.len() && bytes[i + 1] != b'_';
-                    if !prev_ok || !next_ok {
-                        return None;
-                    }
-                }
-                b'0'..=b'9' => {
-                    let d = i128::from(b - b'0');
-                    val = val.checked_mul(10)?;
-                    val = val.checked_add(d)?;
-                    saw = true;
-                }
-                _ => return None,
-            }
-        }
-        if saw { Some(val) } else { None }
-    }
-}
-
-#[cfg(feature = "deserialize")]
 pub(crate) fn parse_int_signed<T>(
     s: &str,
     ty: &'static str,
@@ -177,42 +46,35 @@ pub(crate) fn parse_int_signed<T>(
 where
     T: TryFrom<i128>,
 {
-    let invalid = || Error::InvalidScalar { ty, location };
-
-    let t = s.trim();
-    let (neg, rest) = match t.strip_prefix('+') {
-        Some(r) => (false, r),
-        None => match t.strip_prefix('-') {
-            Some(r) => (true, r),
-            None => (false, t),
+    parse_int_signed_with_schema(
+        s,
+        ty,
+        location,
+        Schema::Specific {
+            strict_booleans: false,
+            legacy_octal_numbers: legacy_octal,
+            quote_all: false,
         },
-    };
-
-    let (radix, digits) = radix_and_digits(legacy_octal, rest);
-    if radix == 10 {
-        // Yaml 1.2 forbids decimal integer literals starting with zero.
-        if digits.starts_with('0') && digits != "0" {
-            return Err(invalid());
-        }
-        let val_i128 = parse_decimal_signed_i128(digits, neg).ok_or_else(invalid)?;
-        return T::try_from(val_i128).map_err(|_| invalid());
-    }
-
-    let mag = parse_digits_u128(digits, radix).ok_or_else(invalid)?;
-    let val_i128: i128 = if neg {
-        if mag == (i128::MAX as u128) + 1 {
-            i128::MIN
-        } else {
-            let mag_i128: i128 = mag.try_into().map_err(|_| invalid())?;
-            mag_i128.checked_neg().ok_or_else(invalid)?
-        }
-    } else {
-        mag.try_into().map_err(|_| invalid())?
-    };
-    T::try_from(val_i128).map_err(|_| invalid())
+    )
 }
 
-#[cfg(feature = "deserialize")]
+pub(crate) fn parse_int_signed_with_schema<T>(
+    s: &str,
+    ty: &'static str,
+    location: Location,
+    schema: Schema,
+) -> Result<T, Error>
+where
+    T: TryFrom<i128>,
+{
+    let invalid = || Error::InvalidScalar { ty, location };
+    let value = resolve_typed(s, "tag:yaml.org,2002:int", schema)
+        .and_then(|scalar| scalar.to_i128())
+        .map_err(|_| invalid())?;
+    T::try_from(value).map_err(|_| invalid())
+}
+
+#[cfg(test)]
 pub(crate) fn parse_int_unsigned<T>(
     s: &str,
     ty: &'static str,
@@ -222,81 +84,47 @@ pub(crate) fn parse_int_unsigned<T>(
 where
     T: TryFrom<u128>,
 {
-    let invalid = || Error::InvalidScalar { ty, location };
-
-    let t = s.trim();
-    if t.starts_with('-') {
-        return Err(invalid());
-    }
-    let rest = t.strip_prefix('+').unwrap_or(t);
-    let (radix, digits) = radix_and_digits(legacy_octal, rest);
-
-    if radix == 10 {
-        // Yaml 1.2 forbids decimal integer literals starting with zero.
-        if digits.starts_with('0') && digits != "0" {
-            return Err(invalid());
-        }
-        let val_u128 = parse_decimal_unsigned_u128(digits).ok_or_else(invalid)?;
-        return T::try_from(val_u128).map_err(|_| invalid());
-    }
-
-    let mag = parse_digits_u128(digits, radix).ok_or_else(invalid)?;
-    T::try_from(mag).map_err(|_| invalid())
-}
-
-#[cfg(feature = "deserialize")]
-fn radix_and_digits(legacy_octal: bool, rest: &str) -> (u32, &str) {
-    let (radix, digits) =
-        if let Some(r) = rest.strip_prefix("0x").or_else(|| rest.strip_prefix("0X")) {
-            (16u32, normalize_prefixed_digits(legacy_octal, r))
-        } else if let Some(r) = rest.strip_prefix("0o").or_else(|| rest.strip_prefix("0O")) {
-            (8u32, normalize_prefixed_digits(legacy_octal, r))
-        } else if let Some(r) = rest.strip_prefix("0b").or_else(|| rest.strip_prefix("0B")) {
-            (2u32, normalize_prefixed_digits(legacy_octal, r))
-        } else if legacy_octal && rest.starts_with('0') {
-            if rest == "0" {
-                // 0 is 0 and not empty string
-                (8u32, "0")
-            } else {
-                (8u32, normalize_prefixed_digits(legacy_octal, &rest[1..]))
-            }
-        } else {
-            (10u32, rest)
-        };
-    (radix, digits)
-}
-
-#[cfg(feature = "deserialize")]
-fn normalize_prefixed_digits(legacy_octal: bool, digits: &str) -> &str {
-    if legacy_octal {
-        digits.strip_prefix('_').unwrap_or(digits)
-    } else {
-        digits
-    }
-}
-
-#[cfg(feature = "deserialize")]
-fn parse_yaml12_finite_float_fallback<T>(t: &str, location: Location) -> Result<T, Error>
-where
-    T: FromStr,
-    T: num_traits::Float,
-{
-    let value = t.parse::<T>().map_err(|_| Error::InvalidScalar {
-        ty: "floating point",
+    parse_int_unsigned_with_schema(
+        s,
+        ty,
         location,
-    })?;
+        Schema::Specific {
+            strict_booleans: false,
+            legacy_octal_numbers: legacy_octal,
+            quote_all: false,
+        },
+    )
+}
 
-    if value.is_finite() {
-        Ok(value)
-    } else {
-        Err(Error::InvalidScalar {
+pub(crate) fn parse_int_unsigned_with_schema<T>(
+    s: &str,
+    ty: &'static str,
+    location: Location,
+    schema: Schema,
+) -> Result<T, Error>
+where
+    T: TryFrom<u128>,
+{
+    let invalid = || Error::InvalidScalar { ty, location };
+    let value = resolve_typed(s, "tag:yaml.org,2002:int", schema)
+        .and_then(|scalar| scalar.to_u128())
+        .map_err(|_| invalid())?;
+    T::try_from(value).map_err(|_| invalid())
+}
+
+fn parse_float<T: num_traits::Float + FromStr>(
+    s: &str,
+    location: Location,
+    schema: Schema,
+) -> Result<T, Error> {
+    resolve_typed(s, "tag:yaml.org,2002:float", schema)
+        .and_then(|scalar| scalar.convert_float())
+        .map_err(|_| Error::InvalidScalar {
             ty: "floating point",
             location,
         })
-    }
 }
 
-#[cfg(all(feature = "deserialize", feature = "robotics"))]
 pub(crate) fn parse_yaml12_float<T>(
     s: &str,
     location: Location,
@@ -304,67 +132,76 @@ pub(crate) fn parse_yaml12_float<T>(
     angle_conversions: bool,
 ) -> Result<T, Error>
 where
-    T: FromStr + crate::robotics::FromF64,
-    T: num_traits::Float,
+    T: FromStr + num_traits::Float + FloatFromF64,
 {
+    parse_float_with_schema(
+        s,
+        location,
+        tag,
+        angle_conversions,
+        Schema::Specific {
+            strict_booleans: false,
+            legacy_octal_numbers: false,
+            quote_all: false,
+        },
+    )
+}
+
+#[cfg(feature = "robotics")]
+pub(crate) use crate::robotics::FromF64 as FloatFromF64;
+#[cfg(not(feature = "robotics"))]
+pub(crate) trait FloatFromF64 {}
+#[cfg(not(feature = "robotics"))]
+impl<T> FloatFromF64 for T {}
+
+pub(crate) fn parse_float_with_schema<T>(
+    s: &str,
+    location: Location,
+    tag: SfTag,
+    angle_conversions: bool,
+    schema: Schema,
+) -> Result<T, Error>
+where
+    T: FromStr + num_traits::Float + FloatFromF64,
+{
+    #[cfg(feature = "robotics")]
     if angle_conversions {
         return crate::robotics::parse_yaml12_float_angle_converting(s, location, tag);
     }
-    let t = s.trim();
-    let lower = t.to_ascii_lowercase();
-    match lower.as_str() {
-        ".nan" | "+.nan" | "-.nan" => Ok(T::nan()),
-        ".inf" | "+.inf" => Ok(T::infinity()),
-        "-.inf" => Ok(T::neg_infinity()),
-        _ => parse_yaml12_finite_float_fallback(t, location),
-    }
+    #[cfg(not(feature = "robotics"))]
+    let _ = (tag, angle_conversions);
+    parse_float(s, location, schema)
 }
 
-#[cfg(all(feature = "deserialize", not(feature = "robotics")))]
-pub(crate) fn parse_yaml12_float<T>(
-    s: &str,
-    location: Location,
-    _tag: SfTag,
-    _angle_conversions: bool,
-) -> Result<T, Error>
-where
-    T: FromStr,
-    T: num_traits::Float,
-{
-    let t = s.trim();
-    let lower = t.to_ascii_lowercase();
-    match lower.as_str() {
-        ".nan" | "+.nan" | "-.nan" => Ok(T::nan()),
-        ".inf" | "+.inf" => Ok(T::infinity()),
-        "-.inf" => Ok(T::neg_infinity()),
-        _ => parse_yaml12_finite_float_fallback(t, location),
-    }
-}
-
-#[cfg(feature = "deserialize")]
-/// Like [`parse_yaml12_float`], but a decimal/exponential literal that overflows `f64` to
-/// infinity (e.g. `1e999`, `9e400`) is treated as a successful non-finite parse instead of
-/// an error.
-///
-/// This is used only by `deserialize_any`'s typeless path (e.g. `serde_json::Value`), where
-/// non-finite floats are rejected by default, or represented as canonical strings when
-/// `reject_non_finite_typeless_float` is disabled, rather than causing an "invalid floating
-/// point" parse error. Elsewhere, overflowing literals continue to be rejected as invalid
-/// floats via [`parse_yaml12_float`], so this function must not replace it as the general
-/// entry point.
-///
-/// Deliberately narrower than a bare `str::parse::<f64>()`: Rust's parser also accepts
-/// alphabetic spellings (`inf`, `infinity`, `nan`) that YAML/serde-saphyr correctly keep as
-/// plain strings, so only numeral-shaped literals (optional sign, then a leading digit) are
-/// considered here.
+/// Preserve typeless Serde's overflow handling separately from checked scalar
+/// conversion: decimal/exponential overflow can become a non-finite value here.
+/// Rust's undotted inf/nan spellings must still remain strings.
 pub(crate) fn try_parse_float_incl_overflow(
     s: &str,
     location: Location,
     tag: SfTag,
     angle_conversions: bool,
+    schema: Schema,
 ) -> Option<f64> {
-    if let Ok(v) = parse_yaml12_float::<f64>(s, location, tag, angle_conversions) {
+    if let Ok(v) = parse_float_with_schema::<f64>(s, location, tag, angle_conversions, schema) {
         return Some(v);
+    }
+
+    // An overflow fallback must still match the selected scalar vocabulary.
+    let resolved = resolve_typed(s, "tag:yaml.org,2002:float", schema).ok()?;
+    if !matches!(schema, Schema::Specific { .. } | Schema::Legacy) {
+        // The standard schemas include spellings (such as YAML 1.1 numeric
+        // underscores and base-60 floats) that primitive parsing cannot read.
+        // Checked conversion already distinguishes overflow from invalid syntax.
+        return match resolved.to_f64() {
+            Ok(value) => Some(value),
+            Err(ScalarError::OutOfRange) => Some(if s.trim().starts_with('-') {
+                f64::NEG_INFINITY
+            } else {
+                f64::INFINITY
+            }),
+            Err(_) => None,
+        };
     }
 
     let t = s.trim();
@@ -379,83 +216,58 @@ pub(crate) fn try_parse_float_incl_overflow(
     }
 }
 
-#[cfg(feature = "deserialize")]
 /// If we are not using Rust struct as schema, check if we should not be quoting the value.
-pub(crate) fn maybe_not_string(s: &str, style: &ScalarStyle, strict_booleans: bool) -> bool {
+pub(crate) fn maybe_not_string(s: &str, style: &ScalarStyle, schema: Schema) -> bool {
     let location = Location::UNKNOWN;
     style == &ScalarStyle::Plain
-        && (parse_yaml12_float::<f64>(s, location, SfTag::None, false).is_ok()
-            || parse_int_signed::<i128>(s, "i128", location, false).is_ok()
-            || maybe_bool(s, strict_booleans)
-            || scalar_is_nullish(s, &ScalarStyle::Plain))
+        && (parse_float_with_schema::<f64>(s, location, SfTag::None, false, schema).is_ok()
+            || parse_int_signed_with_schema::<i128>(s, "i128", location, schema).is_ok()
+            || parse_bool_with_schema(s, schema).is_some()
+            || scalar_is_nullish_with_schema(s, &ScalarStyle::Plain, schema))
 }
 
-/// Check if a scalar looks like a YAML boolean, respecting `strict_booleans`.
-#[cfg(feature = "deserialize")]
-#[inline]
-fn maybe_bool(s: &str, strict: bool) -> bool {
-    if strict {
-        s.trim().eq_ignore_ascii_case("true") || s.trim().eq_ignore_ascii_case("false")
-    } else {
-        parse_yaml11_bool(s).is_ok()
-    }
-}
-
-/// True if a scalar's text and style are YAML "null-like".
-/// Callers must also respect tags such as `!!str`, `!`, and `!!null`.
-///
-/// Arguments:
-/// - `value`: scalar text.
-/// - `style`: YAML scalar style; only plain form participates.
-///
-/// Returns:
-/// - `true` for empty, `~`, or case-insensitive `null`; `false` otherwise.
-///
-/// Used by:
-/// - Option, unit, typeless scalar handling, and other cases where absence is tolerated.
-#[cfg(feature = "deserialize")]
+/// Check null syntax without trimming, while respecting scalar style.
+/// Explicit tag policy is applied separately by `scalar_is_null`.
 #[inline]
 pub(crate) fn scalar_is_nullish(value: &str, style: &ScalarStyle) -> bool {
-    if !matches!(style, ScalarStyle::Plain) {
-        return false;
-    }
-    value.is_empty() || value == "~" || value.eq_ignore_ascii_case("null")
+    scalar_is_nullish_with_schema(
+        value,
+        style,
+        Schema::Specific {
+            strict_booleans: false,
+            legacy_octal_numbers: false,
+            quote_all: false,
+        },
+    )
 }
 
-#[cfg(feature = "deserialize")]
+#[inline]
+pub(crate) fn scalar_is_nullish_with_schema(
+    value: &str,
+    style: &ScalarStyle,
+    schema: Schema,
+) -> bool {
+    matches!(style, ScalarStyle::Plain)
+        && scalar::resolve(value, scalar::ScalarStyle::Plain, None, schema)
+            .is_ok_and(|scalar| scalar.kind() == ScalarKind::Null)
+}
+
 #[inline]
 /// Resolve null while honoring explicit core types, binary tags, and string-forcing tags.
 /// Non-null typed scalars must reach their deserializer even when their text looks null-like.
-pub(crate) fn scalar_is_null(tag: &SfTag, value: &str, style: &ScalarStyle) -> bool {
-    *tag == SfTag::Null
+pub(crate) fn scalar_is_null(
+    tag: &SfTag,
+    value: &str,
+    style: &ScalarStyle,
+    schema: Schema,
+) -> bool {
+    (*tag == SfTag::Null
+        && (matches!(schema, Schema::Specific { .. } | Schema::Legacy)
+            || resolve_typed(value, "tag:yaml.org,2002:null", schema).is_ok()))
         || (!tag.is_core()
             && !tag.forces_string()
             && *tag != SfTag::Binary
-            && scalar_is_nullish(value, style))
-}
-
-#[cfg(feature = "deserialize")]
-/// Returns `true` if the string represents a decimal number with a redundant leading zero,
-/// such as `0127`, `+0127`, or `-0127`.
-/// Explicit radices (`0x`, `0o`, `0b`) are excluded.
-/// A `true` result means this token should be avoided as an integer.
-pub(crate) fn leading_zero_decimal(t: &str) -> bool {
-    let s = t.trim();
-
-    // Handle optional sign
-    let digits = s.strip_prefix(['+', '-']).unwrap_or(s);
-
-    // Must start with 0 but not just "0"
-    if let Some(rest) = digits.strip_prefix('0') {
-        if let Some(next) = rest.chars().next() {
-            // If next char denotes radix, then allow
-            !matches!(next, 'x' | 'X' | 'o' | 'O' | 'b' | 'B')
-        } else {
-            false // "0", "+0", "-0"
-        }
-    } else {
-        false
-    }
+            && scalar_is_nullish_with_schema(value, style, schema))
 }
 
 #[cfg(all(test, feature = "deserialize"))]
@@ -475,10 +287,20 @@ mod tests {
     #[test]
     fn null_resolution_preserves_explicit_binary_scalars() {
         for value in ["null", "Null", "NULL", "~", ""] {
-            assert!(scalar_is_null(&SfTag::None, value, &ScalarStyle::Plain));
-            assert!(scalar_is_null(&SfTag::Null, value, &ScalarStyle::Plain));
+            assert!(scalar_is_null(
+                &SfTag::None,
+                value,
+                &ScalarStyle::Plain,
+                Schema::Legacy
+            ));
+            assert!(scalar_is_null(
+                &SfTag::Null,
+                value,
+                &ScalarStyle::Plain,
+                Schema::Legacy
+            ));
             assert!(
-                !scalar_is_null(&SfTag::Binary, value, &ScalarStyle::Plain),
+                !scalar_is_null(&SfTag::Binary, value, &ScalarStyle::Plain, Schema::Legacy),
                 "explicit binary scalar must reach its deserializer: {value:?}"
             );
         }

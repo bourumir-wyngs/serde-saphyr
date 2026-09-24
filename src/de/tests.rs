@@ -113,7 +113,7 @@ fn pending_from_events(
         reference_location,
         MergeKeyPolicy::Merge,
         DuplicateKeyPolicy::Error,
-        false,
+        crate::scalar::Schema::Legacy,
     )
 }
 
@@ -129,7 +129,7 @@ fn pending_from_events(
         reference_location,
         MergeKeyPolicy::Merge,
         DuplicateKeyPolicy::Error,
-        false,
+        crate::scalar::Schema::Legacy,
         empty_property_interpolation(),
     )
 }
@@ -167,10 +167,12 @@ fn scalar_key_node(
     KeyNode::Scalar {
         events: vec![scalar(value, tag, None, style, location)],
         location,
+        schema: crate::scalar::Schema::Legacy,
     }
 }
 
 #[test]
+#[allow(deprecated)] // Verify that legacy flags populate the effective schema.
 fn cfg_and_replay_events_follow_options_and_reference_overrides() {
     let options = Options {
         duplicate_keys: DuplicateKeyPolicy::LastWins,
@@ -187,8 +189,14 @@ fn cfg_and_replay_events_follow_options_and_reference_overrides() {
     let cfg = Cfg::from_options(&options);
     assert!(matches!(cfg.dup_policy, DuplicateKeyPolicy::LastWins));
     assert!(matches!(cfg.merge_keys, MergeKeyPolicy::AsOrdinary));
-    assert!(cfg.legacy_octal_numbers);
-    assert!(cfg.strict_booleans);
+    assert_eq!(
+        cfg.schema,
+        crate::scalar::Schema::Specific {
+            strict_booleans: true,
+            legacy_octal_numbers: true,
+            quote_all: false,
+        }
+    );
     assert!(cfg.angle_conversions);
     assert!(cfg.ignore_binary_tag_for_string);
     assert!(cfg.no_schema);
@@ -222,6 +230,32 @@ fn cfg_and_replay_events_follow_options_and_reference_overrides() {
     let empty = replay_events(Vec::new());
     assert_eq!(empty.last_location(), Location::UNKNOWN);
     assert_eq!(empty.reference_location(), Location::UNKNOWN);
+}
+
+#[test]
+#[allow(deprecated)] // Verify the legacy no_schema policy stays unchanged.
+fn legacy_string_checks_preserve_independent_octal_behavior() {
+    let legacy = Options {
+        legacy_octal_numbers: true,
+        no_schema: true,
+        ..Options::default()
+    };
+    for text in ["0_10", "0x_10"] {
+        assert_eq!(
+            crate::from_str_with_options::<String>(text, legacy.clone()).unwrap(),
+            text,
+        );
+        let specific = Options {
+            schema: crate::scalar::Schema::Specific {
+                strict_booleans: false,
+                legacy_octal_numbers: true,
+                quote_all: false,
+            },
+            no_schema: true,
+            ..Options::default()
+        };
+        assert!(crate::from_str_with_options::<String>(text, specific).is_err());
+    }
 }
 
 #[test]
@@ -790,7 +824,7 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
             merge_reference,
             MergeKeyPolicy::Merge,
             DuplicateKeyPolicy::Error,
-            false,
+            crate::scalar::Schema::Legacy,
         )
         .unwrap()
         .is_empty()
@@ -808,7 +842,7 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
         merge_reference,
         MergeKeyPolicy::Merge,
         DuplicateKeyPolicy::Error,
-        false,
+        crate::scalar::Schema::Legacy,
     ));
     assert!(matches!(
         err,
@@ -832,7 +866,7 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
         merge_reference,
         MergeKeyPolicy::Merge,
         DuplicateKeyPolicy::Error,
-        false,
+        crate::scalar::Schema::Legacy,
     )
     .unwrap();
     assert_eq!(entries.len(), 2);
@@ -851,7 +885,7 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
         merge_reference,
         MergeKeyPolicy::Merge,
         DuplicateKeyPolicy::Error,
-        false,
+        crate::scalar::Schema::Legacy,
     ));
     assert!(matches!(err, Error::Eof { location } if location == Location::UNKNOWN));
 }
@@ -870,7 +904,7 @@ fn collect_entries_from_map_expands_merges_and_preserves_reference_locations() {
         loc(34, 9),
         MergeKeyPolicy::Merge,
         DuplicateKeyPolicy::Error,
-        false,
+        crate::scalar::Schema::Legacy,
     ));
     assert!(matches!(
         err,
@@ -896,7 +930,7 @@ fn collect_entries_from_map_expands_merges_and_preserves_reference_locations() {
         outer_reference,
         MergeKeyPolicy::Merge,
         DuplicateKeyPolicy::Error,
-        false,
+        crate::scalar::Schema::Legacy,
     )
     .unwrap();
     assert_eq!(entries.len(), 2);
@@ -925,7 +959,7 @@ fn collect_entries_from_map_treats_merge_key_as_ordinary_under_policy() {
         reference,
         MergeKeyPolicy::AsOrdinary,
         DuplicateKeyPolicy::Error,
-        false,
+        crate::scalar::Schema::Legacy,
     )
     .unwrap();
 
@@ -950,7 +984,7 @@ fn collect_entries_from_map_rejects_merge_key_under_error_policy() {
         loc(37, 9),
         MergeKeyPolicy::Error,
         DuplicateKeyPolicy::Error,
-        false,
+        crate::scalar::Schema::Legacy,
     ));
 
     assert!(matches!(
@@ -1055,7 +1089,7 @@ fn duplicate_filter_validates_discarded_values_when_merges_are_forbidden() {
         loc(48, 1),
         MergeKeyPolicy::Error,
         DuplicateKeyPolicy::FirstWins,
-        false,
+        crate::scalar::Schema::Legacy,
     ));
     assert!(matches!(
         err,

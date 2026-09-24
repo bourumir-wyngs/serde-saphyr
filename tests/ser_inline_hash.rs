@@ -56,7 +56,8 @@ fn hashes_in_maps_and_sequences(
 
 #[rstest]
 fn quote_all_quotes_inline_hash_values(#[values(false, true)] flow: bool) {
-    let options = serde_saphyr::ser_options! { quote_all: true };
+    let options =
+        serde_saphyr::ser_options! { schema: serde_saphyr::specific! { quote_all: true } };
     let map = BTreeMap::from([("a#b".to_owned(), "a#b".to_owned())]);
     let yaml = if flow {
         to_string_with_options(&FlowMap(&map), options).unwrap()
@@ -81,7 +82,8 @@ fn long_inline_hash_values_can_auto_fold(#[values(false, true)] quote_all: bool)
     let input = std::iter::repeat_n("word#fragment", 12)
         .collect::<Vec<_>>()
         .join(" ");
-    let options = serde_saphyr::ser_options! { quote_all: quote_all };
+    let options =
+        serde_saphyr::ser_options! { schema: serde_saphyr::specific! { quote_all: quote_all } };
     let yaml = to_string_with_options(&input, options).unwrap();
 
     if quote_all {
@@ -97,8 +99,11 @@ fn long_inline_hash_values_can_auto_fold(#[values(false, true)] quote_all: bool)
 #[rstest]
 fn inline_hash_property_interpolation_depends_on_quoting(#[values(false, true)] quote_all: bool) {
     let input = "${NAME}#fragment";
-    let yaml = to_string_with_options(&input, serde_saphyr::ser_options! { quote_all: quote_all })
-        .unwrap();
+    let yaml = to_string_with_options(
+        &input,
+        serde_saphyr::ser_options! { schema: serde_saphyr::specific! { quote_all: quote_all } },
+    )
+    .unwrap();
     assert_eq!(
         yaml,
         if quote_all {

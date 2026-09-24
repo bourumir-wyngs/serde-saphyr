@@ -170,7 +170,7 @@ serde-saphyr --include path/to/root path/to/file.yaml
 
 Serde-saphyr provides control over serialization and deserialization behavior. We generally welcome feature requests, but we also recognize that not every user wants every feature enabled by default.
 
-To support different use cases, most behavior can be enabled, disabled, or tuned via [Options](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html) (deserializers) and [SerializerOptions](https://docs.rs/serde-saphyr/latest/serde_saphyr/ser/options/struct.SerializerOptions.html) (serializers). Serde-saphyr uses a macro-driven approach based on the [`options!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.options.html), [`budget!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.budget.html), and [`ser_options!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.ser_options.html) macros.
+To support different use cases, most behavior can be enabled, disabled, or tuned via [Options](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html) (deserializers) and [SerializerOptions](https://docs.rs/serde-saphyr/latest/serde_saphyr/ser/options/struct.SerializerOptions.html) (serializers). Serde-saphyr uses a macro-driven approach based on the [`options!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.options.html), [`budget!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.budget.html), [`ser_options!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.ser_options.html), and [`specific!`](https://docs.rs/serde-saphyr/latest/serde_saphyr/macro.specific.html) macros.
 
 ```rust
 use serde_saphyr::DuplicateKeyPolicy;
@@ -204,7 +204,7 @@ You can require the number of indentation columns to be consistent throughout th
 
 Duplicate key handling is configurable. By default it’s an error; “first wins” and “last wins” strategies are available via [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). The duplicate key policy applies not just to strings but also to other types (if used as keys when deserializing into a map).
 
-YAML integer keys are parsed to their numeric meaning before checking for duplicates, regardless of the target Rust type. For example, `0xB` and `11` are the same integer key, even in a `HashMap<String, _>`. This comparison uses exact integer values within the supported `i128`/`u128` range and respects `legacy_octal_numbers`; values outside that range retain text-based comparison. The same rule applies inside composite keys and when resolving merge keys.
+YAML integer keys are parsed to their numeric meaning before checking for duplicates, regardless of the target Rust type. For example, `0xB` and `11` are the same integer key under the default schema, even in a `HashMap<String, _>`. This comparison uses exact integer values within the supported `i128`/`u128` range and respects the selected `schema`; values outside that range retain text-based comparison. The same rule applies inside composite keys and when resolving merge keys.
 
 Deserialization into a string still preserves the original scalar spelling: `0xB` becomes `"0xB"`. “First wins” and “last wins” retain the selected entry's spelling and value; when integer keys require numeric comparison, “last wins” buffers the remaining mapping to select entries before passing them to Serde. Quoted keys and keys tagged `!!str` remain strings, so `"0xB"` and `"11"` are distinct keys. Duplicate checking uses YAML key identity; the target Rust map can still combine distinct YAML keys if they become equal after deserialization.
 
@@ -213,7 +213,7 @@ Buffered “last wins” entries use the same replay mechanism as struct fields:
 ### Booleans
 
 By default, if the target field is boolean, serde-saphyr will attempt to interpret standard YAML 1.1 values as boolean (not just `false` but also `no`, etc.).
-If you do not want this (or if you are parsing into a JSON Value where it might be incorrectly inferred), enclose the value in quotes or set `strict_booleans` to true in [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html).
+If you do not want this (or if you are parsing into a JSON Value where it might be incorrectly inferred), enclose the value in quotes or select `specific! { strict_booleans: true }` through `Options::schema`.
 
 ## Deserialization patterns and YAML types
 
@@ -223,15 +223,16 @@ To address the “Norway problem,” the target Rust types serve as an explicit 
 
 Schema-based parsing can be disabled by setting `no_schema` to true in [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). In this case all *unquoted* values that are parsed into strings, but can be understood as something else, are rejected. This can be used for enforcing compatibility with another YAML parser that reads the same content and requires this quoting. Default setting is false.
 
-Legacy octal notation such as `0052` can be enabled via `Options`, but it is disabled by default.
+Legacy octal notation such as `0052` can be enabled with `specific! { legacy_octal_numbers: true }`, but it is disabled by default.
 
 The concept that “Rust code is the schema” naturally extends to implemented support for [`validator`](https://crates.io/crates/validator) and [`garde`](https://crates.io/crates/garde), as these crates allow annotations to be added directly to Rust types, providing even stricter control over permissible values.
 
 ### Scalar resolution for custom value types
 
 `scalar::resolve` classifies decoded scalar text without a Serde visitor or an intermediate
-YAML value tree. Choose `Schema::Strings`, `Json`, `Yaml12`, or `Yaml11` explicitly, and pass
-the scalar's style and expanded tag URI (or `None`). The result borrows the original text:
+YAML value tree. Choose `Schema::Strings`, `Json`, `Yaml12`, `Yaml11`, or the configurable
+`Specific` policy, and pass the scalar's style and expanded tag URI (or `None`). The result
+borrows the original text:
 
 ```rust
 use serde_saphyr::scalar::{resolve, ScalarKind, ScalarStyle, Schema};
@@ -251,11 +252,53 @@ Float conversion permits normal rounding and underflow. Timestamp classification
 
 Untagged quoted and block scalars remain strings. Explicit supported tags override style
 and validate their content; unsupported tags return an error for the caller to handle.
-Text is matched in full without trimming. These schema policies are independent of the
-existing Serde compatibility options; see the [`scalar` module documentation](https://docs.rs/serde-saphyr/latest/serde_saphyr/scalar/)
+Text is matched in full without trimming. `Schema::Specific` exposes the grammar used by Serde
+deserialization, with two independent compatibility options (`strict_booleans` and
+`legacy_octal_numbers`) and a serializer-only presentation flag (`quote_all`).
+Serde's adapters retain their whitespace handling,
+target-type conversions, and overflow behavior. Serializer quoting also uses the resolver,
+with additional conservative checks for other readers' scalar spellings. The standard
+`Yaml11` and `Yaml12` schemas keep their own rules; see the
+[`scalar` module documentation](https://docs.rs/serde-saphyr/latest/serde_saphyr/scalar/)
 for exact syntax and schema differences. The module is available with either `serialize`
 or `deserialize`; with `deserialize`, parser styles convert using `.into()` and parsed
 tags supply expanded URIs using `.to_string()`.
+
+Select the policy for the Serde APIs with the `schema` option:
+
+```rust
+use serde_saphyr::scalar::Schema;
+
+let input_options = serde_saphyr::options! {
+    schema: serde_saphyr::specific! {
+        strict_booleans: true,
+    },
+};
+let output_options = serde_saphyr::ser_options! {
+    schema: Schema::Yaml12,
+};
+# let _ = (input_options, output_options);
+```
+
+`specific!` constructs the non-exhaustive `Schema::Specific` variant. Omitted flags default
+to `false`; `specific! {}` (or `Schema::specific()`) selects all those defaults. The macro
+allows future fields to be added without requiring callers to update their construction.
+
+When `schema` is omitted, the deprecated deserializer flags `strict_booleans` and
+`legacy_octal_numbers`, or the serializer's `yaml_12` and `quote_all` flags, keep working. Each omitted
+flag retains its default (`false`). An explicitly selected schema overrides these flags.
+
+For serialization, `Schema::Strings` quotes only when YAML syntax requires it: plain
+`true` and `42` are already strings under that schema. `Schema::Json` has its own rules,
+which override the deprecated `quote_all` option: strings use quoted or block styles,
+never untagged plain scalars. This is YAML's JSON scalar schema, not a JSON output mode.
+Serializer schema selection controls string presentation, not typed numeric emission.
+
+Use `specific! { quote_all: true }`
+to force quoting of ordinary string values and disable automatic block styles. Explicit
+block-style wrappers still retain their requested style. The `quote_all` field is ignored
+by scalar resolution and deserialization. The other two fields still govern string-key
+quoting, and also value quoting when `quote_all` is false.
 
 ### Multiple documents
 
@@ -1066,7 +1109,7 @@ Serde-saphyr supports recursive structures, but Rust requires being very explici
 - Indentation is configurable.
 - The wrapper [SpaceAfter](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.SpaceAfter.html) adds an empty line after the wrapped value, useful for visually separating sections in the output YAML.
 - It is possible to request that all strings be **quoted** — using single quotes when no escape sequences are present, and double quotes otherwise. This is very explicit and unambiguous, but such YAML may be less readable for humans. Line wrapping is disabled in this mode.
-- YAML 1.1 booleans (`y`, `yes`, `on`, etc.) are normally quoted as both keys and values. If this is undesired (y is a coordinate), set `yaml_12` to true.
+- YAML 1.1 booleans (`y`, `yes`, `on`, etc.) are normally quoted as both keys and values. If this is undesired (y is a coordinate), select `schema: Schema::Yaml12`.
 - Set `no_lang_directive` to omit the `%YAML 1.2` directive. 
 
 These settings can be changed in [SerializerOptions](https://docs.rs/serde-saphyr/latest/serde_saphyr/ser/options/struct.SerializerOptions.html).

@@ -1,4 +1,6 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
+// Retain coverage for callers using the deprecated quote_all compatibility field.
+#![allow(deprecated)]
 use serde::Serialize;
 
 #[test]

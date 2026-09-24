@@ -5,14 +5,27 @@
 ### Added
 
 - Added `scalar::resolve` for reusable scalar classification below Serde, using decoded text,
-  scalar style, an expanded tag, and an explicit `Strings`, `Json`, `Yaml12`, or `Yaml11` schema.
+  scalar style, an expanded tag, and an explicit `Strings`, `Json`, `Yaml12`, `Yaml11`, or
+  `Specific { strict_booleans, legacy_octal_numbers, quote_all }` schema.
   Results borrow the original text and offer checked boolean, `i128`, `u128`, `f32`, and `f64`
   conversions without a value tree. Classification is independent of numeric range; integer
   overflow never falls back to float, and finite float overflow is distinct from explicit
   infinity/NaN. YAML 1.1 timestamps are recognized lexically for conversion by caller-owned
-  date types. Existing Serde scalar behavior is unchanged.
+  date types. Serde deserialization now uses the shared resolver with `Specific`, while serializer
+  quoting uses the selected YAML schema plus conservative checks for other readers. Existing
+  Serde scalar behavior, overflow handling, and string quoting are unchanged.
+- Added `schema` to deserializer `Options` and `SerializerOptions`. An explicit schema takes
+  precedence over the deprecated boolean flags. When omitted, those flags retain their existing
+  behavior, and each unspecified flag keeps its default value.
+- Added `specific!` to construct the non-exhaustive `Schema::Specific` variant with optional
+  named fields. Omitted flags default to `false`; `Schema::specific()` provides the same defaults.
+  The macro supports future fields without requiring downstream construction changes.
+- Added serializer-only `quote_all` to `Schema::Specific`, ignored by scalar resolution and
+  deserialization. `Strings` retains syntax-only quoting; `Json` uses its own rules, overriding
+  the deprecated standalone `quote_all` while permitting quoted and block strings. Serializer
+  schema selection controls string presentation, not JSON output syntax or typed numeric emission.
 - Added `SerializerOptions::no_lang_directive` (default `false`) to suppress the
-  `%YAML 1.2` directive and its leading `---` marker independently of `yaml_12`'s quoting. 
+  `%YAML 1.2` directive and its leading `---` marker independently of the selected schema's quoting.
 - Added `from_str_multiple` and `from_str_multiple_with_options` to deserialize multiple YAML
   documents into values that can borrow from the input string. The existing `from_multiple`
   and `from_multiple_with_options` APIs retain their `DeserializeOwned` bounds for compatibility.
@@ -26,6 +39,14 @@
 
 ### Deprecated
 
+- Deprecated deserializer `Options::strict_booleans` and `Options::legacy_octal_numbers`.
+  Use `schema: specific! { strict_booleans: ..., legacy_octal_numbers: ... }` instead, or select
+  a standard schema explicitly. Omitted compatibility flags default to `false`.
+- Deprecated `SerializerOptions::yaml_12`. Use `schema: Schema::Yaml12` or `Schema::Yaml11`
+  instead; `no_lang_directive` still independently controls YAML 1.2 directive emission.
+- Deprecated `SerializerOptions::quote_all`. Use `schema: specific! { quote_all: true }`
+  instead. As before, it controls ordinary string values, not mapping keys or explicit block-style
+  wrappers. The standalone flag remains effective when no schema is selected.
 - Deprecated `from_multiple` and `from_multiple_with_options` in favor of `from_str_multiple`
   and `from_str_multiple_with_options`, which support both owned and borrowed values. The old
   functions remain available with their original signatures for compatibility. When migrating

@@ -11,7 +11,11 @@ use super::events::{Ev, Events, ReplayEvents, with_deferred_recursive_aliases};
 use super::options::{DuplicateKeyPolicy, MergeKeyPolicy};
 use super::tags::SfTag;
 use crate::location::Location;
-use crate::parse_scalars::{parse_int_signed, parse_int_unsigned, scalar_is_null};
+use crate::parse_scalars::{
+    parse_int_signed_with_schema as parse_int_signed,
+    parse_int_unsigned_with_schema as parse_int_unsigned, scalar_is_null,
+};
+use crate::scalar::Schema;
 use crate::tag::simple_enum_variant_name;
 
 pub(super) fn simple_tagged_enum_name(
@@ -111,7 +115,7 @@ fn integer_key_fingerprint(
     value: &str,
     tag: SfTag,
     style: ScalarStyle,
-    legacy_octal_numbers: bool,
+    schema: Schema,
 ) -> Option<KeyFingerprint<'static>> {
     if tag != SfTag::Int && !(tag == SfTag::None && style == ScalarStyle::Plain) {
         return None;
@@ -119,14 +123,10 @@ fn integer_key_fingerprint(
 
     let value = value.trim();
     let (negative, magnitude) = if value.starts_with('-') {
-        let parsed =
-            parse_int_signed::<i128>(value, "i128", Location::UNKNOWN, legacy_octal_numbers)
-                .ok()?;
+        let parsed = parse_int_signed::<i128>(value, "i128", Location::UNKNOWN, schema).ok()?;
         (parsed < 0, parsed.unsigned_abs())
     } else {
-        let parsed =
-            parse_int_unsigned::<u128>(value, "u128", Location::UNKNOWN, legacy_octal_numbers)
-                .ok()?;
+        let parsed = parse_int_unsigned::<u128>(value, "u128", Location::UNKNOWN, schema).ok()?;
         (false, parsed)
     };
     Some(KeyFingerprint::Integer {
@@ -163,6 +163,7 @@ pub(super) enum KeyNode<'a> {
     Scalar {
         events: Vec<Ev<'a>>,
         location: Location,
+        schema: Schema,
     },
 }
 
@@ -178,7 +179,7 @@ impl<'a> KeyNode<'a> {
     pub(super) fn fingerprint(&self) -> Cow<'_, KeyFingerprint<'a>> {
         match self {
             KeyNode::Fingerprinted { fingerprint, .. } => Cow::Borrowed(fingerprint),
-            KeyNode::Scalar { events, .. } => {
+            KeyNode::Scalar { events, schema, .. } => {
                 if let Some(Ev::Scalar {
                     tag,
                     raw_tag,
@@ -189,7 +190,7 @@ impl<'a> KeyNode<'a> {
                 {
                     // Resolve implicit nulls before normalizing string-like tags. The
                     // recorded scalar keeps its original text and style for replay.
-                    let tag = if *tag == SfTag::None && scalar_is_null(tag, value, style) {
+                    let tag = if *tag == SfTag::None && scalar_is_null(tag, value, style, *schema) {
                         SfTag::Null
                     } else {
                         *tag
@@ -275,21 +276,18 @@ pub(super) struct PendingEntry<'a> {
 /// Called by:
 /// - Mapping deserialization to stage keys and values, and by merge processing.
 pub(super) fn capture_node<'a>(ev: &mut dyn Events<'a>) -> Result<KeyNode<'a>, Error> {
-    capture_node_with_legacy_octal(ev, false)
+    capture_node_with_schema(ev, Schema::Legacy)
 }
 
 /// Capture a node using the configured integer syntax for key comparisons.
-pub(super) fn capture_node_with_legacy_octal<'a>(
+pub(super) fn capture_node_with_schema<'a>(
     ev: &mut dyn Events<'a>,
-    legacy_octal_numbers: bool,
+    schema: Schema,
 ) -> Result<KeyNode<'a>, Error> {
-    with_deferred_recursive_aliases(ev, |ev| capture_node_inner(ev, legacy_octal_numbers))
+    with_deferred_recursive_aliases(ev, |ev| capture_node_inner(ev, schema))
 }
 
-fn capture_node_inner<'a>(
-    ev: &mut dyn Events<'a>,
-    legacy_octal_numbers: bool,
-) -> Result<KeyNode<'a>, Error> {
+fn capture_node_inner<'a>(ev: &mut dyn Events<'a>, schema: Schema) -> Result<KeyNode<'a>, Error> {
     let Some(event) = ev.next()? else {
         return Err(Error::eof().with_location(ev.last_location()));
     };
@@ -308,8 +306,7 @@ fn capture_node_inner<'a>(
             anchor,
             location,
         } => {
-            let integer_fingerprint =
-                integer_key_fingerprint(&value, tag, style, legacy_octal_numbers);
+            let integer_fingerprint = integer_key_fingerprint(&value, tag, style, schema);
             let scalar_ev = Ev::Scalar {
                 value,
                 tag,
@@ -328,6 +325,7 @@ fn capture_node_inner<'a>(
             Ok(KeyNode::Scalar {
                 events: vec![scalar_ev],
                 location,
+                schema,
             })
         }
         Ev::SeqStart {
@@ -353,7 +351,7 @@ fn capture_node_inner<'a>(
                         break;
                     }
                     Some(_) => {
-                        let mut child = capture_node_inner(ev, legacy_octal_numbers)?;
+                        let mut child = capture_node_inner(ev, schema)?;
                         let fp = child.take_fingerprint();
                         let child_events = child.take_events();
                         elements.push(fp);
@@ -397,9 +395,9 @@ fn capture_node_inner<'a>(
                         break;
                     }
                     Some(_) => {
-                        let mut key = capture_node_inner(ev, legacy_octal_numbers)?;
+                        let mut key = capture_node_inner(ev, schema)?;
                         let key_fp = key.take_fingerprint();
-                        let mut value = capture_node_inner(ev, legacy_octal_numbers)?;
+                        let mut value = capture_node_inner(ev, schema)?;
                         let value_fp = value.take_fingerprint();
                         entries.push((key_fp, value_fp));
                         let key_events = key.take_events();
@@ -671,7 +669,7 @@ pub(super) fn pending_entries_from_events(
     reference_location: Location,
     merge_keys: MergeKeyPolicy,
     duplicate_keys: DuplicateKeyPolicy,
-    legacy_octal_numbers: bool,
+    schema: Schema,
     #[cfg(feature = "properties")] property_interpolation: PropertyInterpolation,
 ) -> Result<Vec<PendingEntry<'_>>, Error> {
     let mut replay = ReplayEvents::with_reference(
@@ -683,7 +681,7 @@ pub(super) fn pending_entries_from_events(
     match replay.peek()? {
         Some(Ev::Scalar {
             value, tag, style, ..
-        }) if scalar_is_null(tag, value, style) => Ok(Vec::new()),
+        }) if scalar_is_null(tag, value, style, schema) => Ok(Vec::new()),
         Some(Ev::Scalar { location, .. }) => Err(Error::MergeValueNotMapOrSeqOfMaps {
             location: *location,
         }),
@@ -692,7 +690,7 @@ pub(super) fn pending_entries_from_events(
             reference_location,
             merge_keys,
             duplicate_keys,
-            legacy_octal_numbers,
+            schema,
         ),
         Some(Ev::SeqStart { .. }) => {
             let mut batches = Vec::new();
@@ -709,15 +707,14 @@ pub(super) fn pending_entries_from_events(
                         // point at the alias token.
                         let _ = replay.peek()?;
                         let element_ref_loc = replay.reference_location();
-                        let mut element =
-                            capture_node_with_legacy_octal(&mut replay, legacy_octal_numbers)?;
+                        let mut element = capture_node_with_schema(&mut replay, schema)?;
                         batches.push(pending_entries_from_events(
                             element.take_events(),
                             element.location(),
                             element_ref_loc,
                             merge_keys,
                             duplicate_keys,
-                            legacy_octal_numbers,
+                            schema,
                             #[cfg(feature = "properties")]
                             property_interpolation.clone(),
                         )?); // recursive
@@ -758,7 +755,7 @@ pub(super) fn pending_entries_from_live_events<'a>(
     merge_reference_location: Location,
     merge_keys: MergeKeyPolicy,
     duplicate_keys: DuplicateKeyPolicy,
-    legacy_octal_numbers: bool,
+    schema: Schema,
 ) -> Result<Vec<PendingEntry<'a>>, Error> {
     #[cfg(feature = "properties")]
     let property_interpolation = ev.property_interpolation().clone();
@@ -772,7 +769,7 @@ pub(super) fn pending_entries_from_live_events<'a>(
         }
         Some(Ev::Scalar {
             value, tag, style, ..
-        }) if scalar_is_null(tag, value, style) => {
+        }) if scalar_is_null(tag, value, style, schema) => {
             let _ = ev.next()?;
             Ok(Vec::new())
         }
@@ -780,14 +777,14 @@ pub(super) fn pending_entries_from_live_events<'a>(
             location: *location,
         }),
         Some(Ev::MapStart { .. }) => {
-            let mut node = capture_node_with_legacy_octal(ev, legacy_octal_numbers)?;
+            let mut node = capture_node_with_schema(ev, schema)?;
             pending_entries_from_events(
                 node.take_events(),
                 node.location(),
                 merge_reference_location,
                 merge_keys,
                 duplicate_keys,
-                legacy_octal_numbers,
+                schema,
                 #[cfg(feature = "properties")]
                 property_interpolation,
             )
@@ -804,14 +801,14 @@ pub(super) fn pending_entries_from_live_events<'a>(
                     Some(_) => {
                         let _ = ev.peek()?;
                         let element_ref_loc = ev.reference_location();
-                        let mut element = capture_node_with_legacy_octal(ev, legacy_octal_numbers)?;
+                        let mut element = capture_node_with_schema(ev, schema)?;
                         batches.push(pending_entries_from_events(
                             element.take_events(),
                             element.location(),
                             element_ref_loc,
                             merge_keys,
                             duplicate_keys,
-                            legacy_octal_numbers,
+                            schema,
                             #[cfg(feature = "properties")]
                             property_interpolation.clone(),
                         )?);
@@ -847,7 +844,7 @@ pub(super) fn collect_entries_from_map<'a>(
     reference_location: Location,
     merge_keys: MergeKeyPolicy,
     duplicate_keys: DuplicateKeyPolicy,
-    legacy_octal_numbers: bool,
+    schema: Schema,
 ) -> Result<Vec<PendingEntry<'a>>, Error> {
     let Some(Ev::MapStart { .. }) = ev.next()? else {
         return Err(Error::MergeValueNotMapOrSeqOfMaps {
@@ -866,7 +863,7 @@ pub(super) fn collect_entries_from_map<'a>(
             }
             Some(_) => {
                 let key_comments = ev.take_leading_comments_for_next_node()?;
-                let key = capture_node_with_legacy_octal(ev, legacy_octal_numbers)?;
+                let key = capture_node_with_schema(ev, schema)?;
                 if is_merge_key(&key) {
                     match merge_keys {
                         MergeKeyPolicy::Merge => {
@@ -880,7 +877,7 @@ pub(super) fn collect_entries_from_map<'a>(
                                 merge_ref_loc,
                                 merge_keys,
                                 duplicate_keys,
-                                legacy_octal_numbers,
+                                schema,
                             )?);
                             continue;
                         }
@@ -895,7 +892,7 @@ pub(super) fn collect_entries_from_map<'a>(
                 let field_comments = key_comments;
                 let value_separator_comments = ev.take_separator_comments_before_mapping_value()?;
                 let value_comments = ev.take_leading_comments_for_next_node()?;
-                let value = capture_node_with_legacy_octal(ev, legacy_octal_numbers)?;
+                let value = capture_node_with_schema(ev, schema)?;
                 fields.push(PendingEntry {
                     key,
                     value,

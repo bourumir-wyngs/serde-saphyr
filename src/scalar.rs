@@ -5,10 +5,12 @@
 //! integer or floating-point range. Callers can use their own arbitrary-precision
 //! or date types, or request the checked primitive conversions on [`ResolvedScalar`].
 //!
-//! These policies are separate from typed Serde deserialization and its
-//! compatibility options. In particular, [`Schema::Yaml12`] accepts leading-zero decimal
+//! [`Schema::Specific`] supplies the configurable scalar policy used by Serde
+//! deserialization. The standard schemas retain their own rules:
+//! [`Schema::Yaml12`] accepts leading-zero decimal
 //! integers, but not binary integers, underscores, or YAML 1.1 booleans.
 //! No whitespace is trimmed, including in explicitly tagged quoted/block scalars.
+//! Serde's typed conversions trim their input before calling this resolver.
 //! Supply decoded content, without source quotes, tag syntax, or block indicators.
 //!
 //! The [YAML 1.2.2 schemas](https://yaml.org/spec/1.2.2/#chapter-10-recommended-schemas)
@@ -33,23 +35,48 @@
 //! # Ok::<(), serde_saphyr::scalar::ScalarError>(())
 //! ```
 
-use crate::parse_scalars::checked_digits_u128;
 use std::{borrow::Cow, fmt, str::FromStr};
 
 mod legacy;
+#[cfg(feature = "serialize")]
+mod quoting;
+mod serde_compat;
+
+#[cfg(feature = "serialize")]
+pub(crate) use quoting::is_ambiguous as resolve_for_quoting;
 
 /// The scalar vocabulary used for resolution and validation of supported tags.
 ///
-/// Choose a policy explicitly; this type deliberately has no default. Only
-/// scalar types are covered, not collection tags, merge keys, or document syntax.
+/// Choose a policy explicitly. Only scalar types are covered, not collection
+/// tags, merge keys, or document syntax.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(
+    feature = "serde_derived_types",
+    derive(serde::Serialize, serde::Deserialize)
+)]
+#[cfg_attr(feature = "serde_derived_types", serde(rename_all = "snake_case"))]
 #[non_exhaustive]
 pub enum Schema {
+    // Compatibility sentinel used by option defaults when no schema is supplied.
+    // Deserialization replaces it with Specific using strict_booleans and
+    // legacy_octal_numbers from Options. Each omitted flag retains its own
+    // default (false), including when only the other flag is supplied.
+    // Serialization derives Yaml11/Yaml12 from its deprecated yaml_12 flag
+    // and independently retains the deprecated quote_all presentation flag.
+    // An explicit schema takes precedence over deprecated flags. Direct calls
+    // to resolve have no Options, so Legacy uses both default boolean values.
+    #[doc(hidden)]
+    Legacy,
     /// All implicit scalars are strings. Only the string tag is supported.
+    /// Serializer string quoting is needed only for YAML syntax safety.
+    /// This schema will not deserialize values into ints, booleans, floats, and the like.
     Strings,
     /// YAML 1.2 JSON schema: lowercase booleans/null and decimal numbers.
     /// Unmatched plain scalars are errors, including empty scalars. As specified
     /// by YAML 1.2.2, `1.` is accepted (unlike the JSON file format).
+    /// This selects YAML's JSON scalar schema, not JSON output syntax.
+    /// Serialized strings use quoted or block styles; this schema's own rules
+    /// override the `quote_all` option.
     Json,
     /// YAML 1.2 Core schema, including decimal, `0o` octal, `0x` hexadecimal,
     /// dotted infinities/NaN, and the prescribed boolean/null case variants.
@@ -59,6 +86,84 @@ pub enum Schema {
     /// numeric underscores, base-60 numbers, and lexical timestamps.
     /// See the module documentation for treatment of draft inconsistencies.
     Yaml11,
+    /// Configurable scalar syntax and serializer string presentation.
+    ///
+    /// Nulls and booleans are ASCII case-insensitive. Integers accept signed
+    /// binary, octal, and hexadecimal prefixes (in either case) and single
+    /// underscores between digits. Floats accept decimal/exponential syntax
+    /// and case-insensitive, optionally signed `.inf` and `.nan`.
+    /// Timestamps and base-60 numbers remain strings.
+    ///
+    /// Like the standard schemas, resolution does not trim input and is
+    /// independent of numeric range. Serde adapters retain their existing
+    /// whitespace handling, target-type conversions, and overflow policies.
+    ///
+    /// Construct with [`specific!`](crate::specific), supplying only the fields
+    /// you want to change from their defaults. This variant is non-exhaustive
+    /// so additional options can be introduced without breaking callers.
+    #[non_exhaustive]
+    Specific {
+        /// Accept only `true`/`false` as booleans when enabled; otherwise also
+        /// accept `y`/`yes`/`on` and `n`/`no`/`off`, all case-insensitively.
+        /// Also controls ambiguity checks when serializing string keys and
+        /// ordinary string values that are not already forced to be quoted.
+        strict_booleans: bool,
+        /// Interpret leading-zero integers as octal and allow one underscore
+        /// after a radix prefix. When disabled, leading-zero decimals do not
+        /// resolve as integers (but may resolve as floats).
+        /// Also controls the serializer's string ambiguity checks.
+        legacy_octal_numbers: bool,
+        /// Quote all ordinary string values when serializing. Prefer single
+        /// quotes, using double quotes when escaping is needed, and disable
+        /// automatic block styles. Mapping keys keep schema-based quoting;
+        /// explicit block-style wrappers retain their requested style.
+        ///
+        /// Only affects serialization: scalar resolution and deserialization
+        /// ignore this flag. When enabled, the other two fields still control
+        /// deserialization and string-key quoting, but not ordinary value quoting.
+        #[cfg_attr(feature = "serde_derived_types", serde(default))]
+        quote_all: bool,
+    },
+}
+
+impl Schema {
+    /// Construct [`Schema::Specific`] with every option set to `false`.
+    ///
+    /// Use [`specific!`](crate::specific) to override individual options while
+    /// retaining defaults for omitted fields, including fields added in future.
+    /// This does not select the legacy serializer policy: [`Schema::Specific`]
+    /// uses its own scalar vocabulary for string quoting.
+    pub const fn specific() -> Self {
+        Self::Specific {
+            strict_booleans: false,
+            legacy_octal_numbers: false,
+            quote_all: false,
+        }
+    }
+
+    pub(crate) fn for_deserializer(
+        self,
+        strict_booleans: bool,
+        legacy_octal_numbers: bool,
+    ) -> Self {
+        match self {
+            Self::Legacy => Self::Specific {
+                strict_booleans,
+                legacy_octal_numbers,
+                quote_all: false,
+            },
+            schema => schema,
+        }
+    }
+
+    #[cfg(feature = "serialize")]
+    pub(crate) fn for_serializer(self, yaml_12: bool) -> Self {
+        match self {
+            Self::Legacy if yaml_12 => Self::Yaml12,
+            Self::Legacy => Self::Yaml11,
+            schema => schema,
+        }
+    }
 }
 
 /// Presentation style of the decoded scalar.
@@ -264,6 +369,17 @@ impl<'a> ResolvedScalar<'a> {
             checked_digits_u128(digits.bytes().filter(|&b| b != b'_'), radix)
                 .ok_or(ScalarError::OutOfRange)
         };
+        if let Schema::Specific {
+            legacy_octal_numbers,
+            ..
+        } = self.schema
+        {
+            let (_, radix, digits) = serde_compat::integer_parts(self.text, legacy_octal_numbers)
+                .ok_or(ScalarError::InvalidValue {
+                kind: ScalarKind::Integer,
+            })?;
+            return parse(digits, radix);
+        }
         if self.schema == Schema::Yaml11 && unsigned.contains(':') {
             let mut value = 0u128;
             for part in unsigned.split(':') {
@@ -288,7 +404,7 @@ impl<'a> ResolvedScalar<'a> {
         parse(digits, radix)
     }
 
-    fn convert_float<T: num_traits::Float + FromStr>(&self) -> Result<T, ScalarError> {
+    pub(crate) fn convert_float<T: num_traits::Float + FromStr>(&self) -> Result<T, ScalarError> {
         self.require(ScalarKind::Float)?;
         let unsigned = self.text.strip_prefix(['+', '-']).unwrap_or(self.text);
         // Syntax was validated by resolve; these comparisons cannot accept substrings.
@@ -357,6 +473,7 @@ pub fn resolve<'a>(
     resolved_tag: Option<&str>,
     schema: Schema,
 ) -> Result<ResolvedScalar<'a>, ScalarError> {
+    let schema = schema.for_deserializer(false, false);
     let kind = match resolved_tag {
         Some("!") | Some("tag:yaml.org,2002:str") => ScalarKind::String,
         None | Some("?") if style != ScalarStyle::Plain || schema == Schema::Strings => {
@@ -415,6 +532,7 @@ fn is_null(text: &str, schema: Schema) -> bool {
         Schema::Strings => false,
         Schema::Json => text == "null",
         Schema::Yaml12 | Schema::Yaml11 => matches!(text, "" | "~" | "null" | "Null" | "NULL"),
+        Schema::Specific { .. } | Schema::Legacy => serde_compat::is_null(text),
     }
 }
 
@@ -432,6 +550,10 @@ fn bool_value(text: &str, schema: Schema) -> Option<bool> {
             "false" | "False" | "FALSE" => Some(false),
             _ => None,
         },
+        Schema::Specific {
+            strict_booleans, ..
+        } => serde_compat::bool_value(text, strict_booleans),
+        Schema::Legacy => serde_compat::bool_value(text, false),
     }
 }
 
@@ -453,6 +575,11 @@ fn is_integer(text: &str, schema: Schema) -> bool {
                 digits(text.strip_prefix(['+', '-']).unwrap_or(text), 10)
             }
         }
+        Schema::Specific {
+            legacy_octal_numbers,
+            ..
+        } => serde_compat::integer_parts(text, legacy_octal_numbers).is_some(),
+        Schema::Legacy => serde_compat::integer_parts(text, false).is_some(),
     }
 }
 
@@ -473,11 +600,14 @@ fn is_explicit_float(text: &str, schema: Schema) -> bool {
             unsigned.as_bytes().first().is_some_and(u8::is_ascii_digit)
                 && unsigned.bytes().all(|b| b.is_ascii_digit() || b == b'_')
         }
-        Schema::Strings | Schema::Yaml12 => false,
+        Schema::Strings | Schema::Yaml12 | Schema::Specific { .. } | Schema::Legacy => false,
     }
 }
 
 fn is_float(text: &str, schema: Schema) -> bool {
+    if matches!(schema, Schema::Specific { .. } | Schema::Legacy) {
+        return serde_compat::is_float(text);
+    }
     if schema == Schema::Yaml11 {
         return legacy::is_float(text);
     }
@@ -513,4 +643,14 @@ fn is_float(text: &str, schema: Schema) -> bool {
     } else {
         digits(whole, 10) || (whole.is_empty() && fraction.is_some_and(|f| digits(f, 10)))
     }
+}
+
+/// Accumulate already validated digits, independently of scalar syntax policy.
+fn checked_digits_u128(mut digits: impl Iterator<Item = u8>, radix: u32) -> Option<u128> {
+    let first = u128::from(char::from(digits.next()?).to_digit(radix)?);
+    digits.try_fold(first, |value, byte| {
+        value
+            .checked_mul(u128::from(radix))?
+            .checked_add(u128::from(char::from(byte).to_digit(radix)?))
+    })
 }

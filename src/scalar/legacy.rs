@@ -53,11 +53,7 @@ pub(super) fn is_float(text: &str) -> bool {
         return true;
     }
     if unsigned.contains(':') {
-        let Some((whole, fraction)) = unsigned.split_once('.') else {
-            return false;
-        };
-        return sexagesimal_integer_part(whole, true)
-            && fraction.bytes().all(|b| b.is_ascii_digit() || b == b'_');
+        return unsigned.contains('.') && is_sexagesimal(text);
     }
     let mantissa = match unsigned.split_once(['e', 'E']) {
         Some((mantissa, exponent)) => {
@@ -82,7 +78,17 @@ pub(super) fn is_float(text: &str) -> bool {
 }
 
 /// Recognize timestamps lexically, without checking calendar or clock ranges.
-pub(super) fn is_timestamp(mut text: &str) -> bool {
+pub(super) fn is_timestamp(text: &str) -> bool {
+    timestamp(text, false)
+}
+
+/// Quoting also protects timestamp spellings accepted by Go YAML readers.
+#[cfg(feature = "serialize")]
+pub(super) fn is_quoting_timestamp(text: &str) -> bool {
+    timestamp(text, true)
+}
+
+fn timestamp(mut text: &str, conservative: bool) -> bool {
     if take_digits(&mut text, 4, 4).is_none() || !take_prefix(&mut text, '-') {
         return false;
     }
@@ -97,7 +103,7 @@ pub(super) fn is_timestamp(mut text: &str) -> bool {
     };
     if text.is_empty() {
         // The date-only alternative requires two-digit month and day fields.
-        return month_width == 2 && day_width == 2;
+        return conservative || (month_width == 2 && day_width == 2);
     }
     if let Some(rest) = text.strip_prefix(['T', 't']) {
         text = rest;
@@ -110,13 +116,13 @@ pub(super) fn is_timestamp(mut text: &str) -> bool {
     }
     if take_digits(&mut text, 1, 2).is_none()
         || !take_prefix(&mut text, ':')
-        || take_digits(&mut text, 2, 2).is_none()
+        || take_digits(&mut text, if conservative { 1 } else { 2 }, 2).is_none()
         || !take_prefix(&mut text, ':')
-        || take_digits(&mut text, 2, 2).is_none()
+        || take_digits(&mut text, if conservative { 1 } else { 2 }, 2).is_none()
     {
         return false;
     }
-    if take_prefix(&mut text, '.') {
+    if take_prefix(&mut text, '.') || (conservative && take_prefix(&mut text, ',')) {
         take_digits(&mut text, 0, usize::MAX);
     }
     if text.is_empty() {
@@ -124,7 +130,7 @@ pub(super) fn is_timestamp(mut text: &str) -> bool {
     }
     // Follow the space-separated offset in the draft's timestamp examples.
     text = text.trim_start_matches([' ', '\t']);
-    if text == "Z" {
+    if text == "Z" || (conservative && text.is_empty()) {
         return true;
     }
     if !(take_prefix(&mut text, '+') || take_prefix(&mut text, '-'))
@@ -143,6 +149,18 @@ fn digit_run(text: &str, radix: u32) -> bool {
         && text
             .bytes()
             .all(|b| b == b'_' || char::from(b).is_digit(radix))
+}
+
+/// Recognize base-60 integers and floats without constructing their magnitude.
+pub(super) fn is_sexagesimal(text: &str) -> bool {
+    let unsigned = text.strip_prefix(['+', '-']).unwrap_or(text);
+    let (whole, fraction) = unsigned
+        .split_once('.')
+        .map_or((unsigned, None), |(whole, fraction)| {
+            (whole, Some(fraction))
+        });
+    sexagesimal_integer_part(whole, fraction.is_some())
+        && fraction.is_none_or(|part| part.bytes().all(|b| b.is_ascii_digit() || b == b'_'))
 }
 
 fn sexagesimal_integer_part(text: &str, allow_leading_zero: bool) -> bool {

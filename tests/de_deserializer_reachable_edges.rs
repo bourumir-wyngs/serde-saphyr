@@ -157,7 +157,8 @@ fn typeless_plus_prefixed_integer_is_numeric() {
 
 #[test]
 fn strict_boolean_false_takes_the_false_branch() {
-    let options = serde_saphyr::options! { strict_booleans: true };
+    let options =
+        serde_saphyr::options! { schema: serde_saphyr::specific! { strict_booleans: true } };
     assert!(!serde_saphyr::from_str_with_options::<bool>("false", options).unwrap());
 }
 

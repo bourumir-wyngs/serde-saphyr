@@ -188,7 +188,8 @@ fn robotics_number_parser_reports_deep_and_malformed_sexagesimal_inputs() {
 
 #[test]
 fn scalar_number_edges_cover_legacy_zero_and_signed_underscore_validation() {
-    let legacy = serde_saphyr::options! { legacy_octal_numbers: true };
+    let legacy =
+        serde_saphyr::options! { schema: serde_saphyr::specific! { legacy_octal_numbers: true } };
     assert_eq!(
         serde_saphyr::from_str_with_options::<u64>("0", legacy).unwrap(),
         0

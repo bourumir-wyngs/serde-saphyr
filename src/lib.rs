@@ -108,6 +108,7 @@ pub mod cli;
 mod de;
 mod location;
 mod long_strings;
+#[cfg(feature = "deserialize")]
 mod parse_scalars;
 pub mod scalar;
 #[cfg(feature = "serialize")]

@@ -4,7 +4,7 @@ use serde::de::DeserializeOwned;
 pub fn from_str<T: DeserializeOwned>(s: &str) -> Result<T, serde_saphyr::Error> {
     let options = serde_saphyr::options! {
         duplicate_keys: serde_saphyr::DuplicateKeyPolicy::LastWins,
-        strict_booleans: true,
+        schema: serde_saphyr::specific! { strict_booleans: true },
         ignore_binary_tag_for_string: true,
         budget: serde_saphyr::budget! {
             max_total_scalar_bytes: 65536,

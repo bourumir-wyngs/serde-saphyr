@@ -1,5 +1,6 @@
 use crate::budget::Budget;
 use crate::indentation::RequireIndent;
+use crate::scalar::Schema;
 #[cfg(feature = "properties")]
 use std::collections::HashMap;
 #[cfg(feature = "include_fs")]
@@ -11,6 +12,11 @@ use std::rc::Rc;
 #[cfg(feature = "serde_derived_types")]
 const fn default_emit_comments() -> bool {
     true
+}
+
+#[cfg(feature = "serde_derived_types")]
+const fn default_schema() -> Schema {
+    Schema::Legacy
 }
 
 /// Duplicate key handling policy for mappings.
@@ -211,12 +217,29 @@ pub struct Options {
     pub merge_keys: MergeKeyPolicy,
     /// Limits for alias replay to harden against alias bombs.
     pub alias_limits: AliasLimits,
+    /// Scalar vocabulary used for inference and typed scalar conversion.
+    ///
+    /// Use [`specific!`](crate::specific) to configure serde-saphyr's compatibility syntax,
+    /// or choose a standard schema. An explicit schema takes precedence over
+    /// the deprecated boolean flags. When omitted, their existing defaults apply.
+    #[cfg_attr(feature = "serde_derived_types", serde(default = "default_schema"))]
+    pub schema: Schema,
     /// Enable legacy octal parsing where values starting with `0` are treated as base-8.
     /// They are deprecated in YAML 1.2. Default: false.
+    #[deprecated(
+        since = "1.4.0",
+        note = "use schema: serde_saphyr::specific! { legacy_octal_numbers: value } instead"
+    )]
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub legacy_octal_numbers: bool,
-    /// If true, interpret only the exact literals `true` and `false` as booleans.
+    /// If true, interpret only `true` and `false` as booleans, case-insensitively.
     /// YAML 1.1 forms like `yes`/`no`/`on`/`off` will be rejected and not inferred.
     /// Default: false (accept YAML 1.1 boolean forms).
+    #[deprecated(
+        since = "1.4.0",
+        note = "use schema: serde_saphyr::specific! { strict_booleans: value } instead"
+    )]
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub strict_booleans: bool,
     /// When a field marked with the `!!binary` tag is deserialized into a `String`,
     /// `serde-saphyr` normally expects the value to be base64-encoded UTF-8.
@@ -501,6 +524,7 @@ impl Options {
 }
 
 impl Default for Options {
+    #[allow(deprecated)] // Preserve the defaults of the compatibility flags.
     fn default() -> Self {
         Self {
             budget: Some(Budget::default()),
@@ -510,6 +534,7 @@ impl Default for Options {
             duplicate_keys: DuplicateKeyPolicy::Error,
             merge_keys: MergeKeyPolicy::Merge,
             alias_limits: AliasLimits::default(),
+            schema: Schema::Legacy,
             legacy_octal_numbers: false,
             strict_booleans: false,
             angle_conversions: false,
@@ -532,6 +557,7 @@ impl Default for Options {
 }
 
 impl std::fmt::Debug for Options {
+    #[allow(deprecated)] // Include compatibility flags in diagnostic output.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Options")
             .field("budget", &self.budget)
@@ -548,6 +574,7 @@ impl std::fmt::Debug for Options {
             .field("duplicate_keys", &self.duplicate_keys)
             .field("merge_keys", &self.merge_keys)
             .field("alias_limits", &self.alias_limits)
+            .field("schema", &self.schema)
             .field("legacy_octal_numbers", &self.legacy_octal_numbers)
             .field("strict_booleans", &self.strict_booleans)
             .field(
@@ -618,6 +645,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
+    #[allow(deprecated)] // Verify backward-compatible defaults.
     fn test_options_default() {
         let opts = Options::default();
         assert!(opts.budget.is_some());
@@ -627,6 +655,7 @@ mod tests {
         assert!(matches!(opts.duplicate_keys, DuplicateKeyPolicy::Error));
         assert!(matches!(opts.merge_keys, MergeKeyPolicy::Merge));
         assert_eq!(opts.alias_limits.max_total_replayed_events, 1_000_000);
+        assert_eq!(opts.schema, Schema::Legacy);
         assert!(!opts.legacy_octal_numbers);
         assert!(!opts.strict_booleans);
         assert!(!opts.ignore_binary_tag_for_string);

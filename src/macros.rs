@@ -1,7 +1,47 @@
-//! Public macros for constructing option structs without relying on struct literal syntax.
+//! Public macros for constructing options without relying on struct literal syntax.
 //!
 //! These macros exist to keep call sites ergonomic while allowing the crate to evolve
-//! its option structs over time (e.g., adding fields) without forcing breaking changes.
+//! its options over time (e.g., adding fields) without forcing breaking changes.
+
+/// Construct [`Schema::Specific`](crate::scalar::Schema::Specific) with selected options.
+///
+/// Omitted fields default to `false`: `strict_booleans`, `legacy_octal_numbers`,
+/// and `quote_all`. Fields can appear in any order, and a trailing comma is allowed.
+/// Expressions are evaluated once in the supplied order; repeated fields use
+/// their last supplied value, as with [`options!`](crate::options!).
+///
+/// The variant is non-exhaustive. This macro obtains its defaults through
+/// [`Schema::specific`](crate::scalar::Schema::specific) and then updates the
+/// supplied fields, allowing new fields to be added without changing callers.
+///
+/// ```rust
+/// use serde_saphyr::{scalar::Schema, specific};
+///
+/// let schema = specific! { strict_booleans: true };
+/// assert!(matches!(schema, Schema::Specific {
+///     strict_booleans: true,
+///     legacy_octal_numbers: false,
+///     quote_all: false,
+///     ..
+/// }));
+/// assert_eq!(specific! {}, Schema::specific());
+/// ```
+#[macro_export]
+macro_rules! specific {
+    () => { $crate::scalar::Schema::specific() };
+    ( $( $field:ident : $value:expr ),+ $(,)? ) => {{
+        let mut schema = $crate::scalar::Schema::specific();
+        $(
+            match &mut schema {
+                $crate::scalar::Schema::Specific { $field: field, .. } => {
+                    *field = $value;
+                }
+                _ => ::core::panic!("Schema::specific() must return Specific"),
+            }
+        )+
+        schema
+    }};
+}
 
 /// Construct [`crate::Options`] from `Default` and a list of field assignments.
 ///
@@ -14,7 +54,9 @@
 ///
 /// let options = serde_saphyr::options! {
 ///     duplicate_keys: DuplicateKeyPolicy::LastWins,
-///     strict_booleans: true,
+///     schema: serde_saphyr::specific! {
+///         strict_booleans: true,
+///     },
 /// };
 /// # }
 /// ```
@@ -63,7 +105,9 @@ macro_rules! __serde_saphyr_options_apply {
 /// # {
 /// let opts = serde_saphyr::ser_options! {
 ///     indent_step: 4,
-///     quote_all: true,
+///     schema: serde_saphyr::specific! {
+///         quote_all: true,
+///     },
 /// };
 /// # }
 /// ```

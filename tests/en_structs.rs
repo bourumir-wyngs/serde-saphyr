@@ -167,6 +167,8 @@ fn fuzz_enum_indentation_round_trips(
     #[case] tagged_enums: bool,
     #[case] yaml_12: bool,
 ) -> anyhow::Result<()> {
+    // Preserve the original fuzz regression's legacy quoting and directive settings.
+    #[allow(deprecated)]
     let opts = serde_saphyr::ser_options! {
         indent_step: 1,
         compact_list_indent: false,

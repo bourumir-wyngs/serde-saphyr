@@ -8,7 +8,7 @@ use serde_saphyr::{LitStr, from_str, to_string, to_string_with_options};
 #[test]
 fn quote_all_mode_single_quotes_plain_strings() {
     let opts = serde_saphyr::ser_options! {
-        quote_all: true,
+        schema: serde_saphyr::specific! { quote_all: true },
     };
     let yaml = to_string_with_options(&"hello", opts).unwrap();
     assert!(yaml.contains("'hello'"), "expected single-quoted: {yaml}");
@@ -17,7 +17,7 @@ fn quote_all_mode_single_quotes_plain_strings() {
 #[test]
 fn quote_all_mode_double_quotes_special_strings() {
     let opts = serde_saphyr::ser_options! {
-        quote_all: true,
+        schema: serde_saphyr::specific! { quote_all: true },
     };
     // String with backslash requires double quotes
     let yaml = to_string_with_options(&"back\\slash", opts).unwrap();
@@ -27,7 +27,7 @@ fn quote_all_mode_double_quotes_special_strings() {
 #[test]
 fn quote_all_mode_map_values_quoted() {
     let opts = serde_saphyr::ser_options! {
-        quote_all: true,
+        schema: serde_saphyr::specific! { quote_all: true },
     };
     let mut m = BTreeMap::new();
     m.insert("key", "value");
@@ -38,7 +38,7 @@ fn quote_all_mode_map_values_quoted() {
 #[test]
 fn quote_all_single_quote_in_string_escaped() {
     let opts = serde_saphyr::ser_options! {
-        quote_all: true,
+        schema: serde_saphyr::specific! { quote_all: true },
     };
     let yaml = to_string_with_options(&"it's", opts).unwrap();
     // "it's" contains a single quote; in quote_all mode it may use double quotes
@@ -74,7 +74,7 @@ fn write_quoted_named_escapes_in_value() {
     // Values with control chars go through write_quoted which uses named escapes
     // Use quote_all to force quoting of a value containing control chars
     let opts = serde_saphyr::ser_options! {
-        quote_all: true,
+        schema: serde_saphyr::specific! { quote_all: true },
     };
     // BEL \x07 -> \a, BS \x08 -> \b, VT \x0b -> \v, FF \x0c -> \f, ESC \x1b -> \e
     for (ch, expected) in [
@@ -168,7 +168,7 @@ fn key_with_double_quote_gets_escaped() {
 fn quote_all_string_with_single_quote_uses_double_quotes_or_doubles() {
     // "it's" has a single quote; quote_all should handle it
     let opts = serde_saphyr::ser_options! {
-        quote_all: true,
+        schema: serde_saphyr::specific! { quote_all: true },
     };
     // A string with ONLY a single quote and no backslash/control chars
     // needs_double_quotes returns true for single quote, so it uses double quotes
@@ -180,7 +180,7 @@ fn quote_all_string_with_single_quote_uses_double_quotes_or_doubles() {
 fn quote_all_plain_string_uses_single_quotes() {
     // A plain string with no special chars uses single-quoted style
     let opts = serde_saphyr::ser_options! {
-        quote_all: true,
+        schema: serde_saphyr::specific! { quote_all: true },
     };
     let yaml = to_string_with_options(&"hello world", opts).unwrap();
     // Should be single-quoted since no special chars
@@ -230,14 +230,14 @@ fn deep_nesting_with_leading_spaces_falls_back_to_quoted() {
 
 #[test]
 fn quote_all_uses_single_quotes_for_simple_strings() {
-    let opts = serde_saphyr::ser_options! { quote_all: true };
+    let opts = serde_saphyr::ser_options! { schema: serde_saphyr::specific! { quote_all: true } };
     let yaml = to_string_with_options(&"hello", opts).unwrap();
     assert_eq!(yaml, "'hello'\n");
 }
 
 #[test]
 fn quote_all_uses_double_quotes_for_strings_with_escapes() {
-    let opts = serde_saphyr::ser_options! { quote_all: true };
+    let opts = serde_saphyr::ser_options! { schema: serde_saphyr::specific! { quote_all: true } };
     let yaml = to_string_with_options(&"line\nbreak", opts).unwrap();
     assert!(yaml.starts_with('"'), "expected double quotes: {yaml}");
     assert!(yaml.contains("\\n"), "expected escaped newline: {yaml}");
@@ -245,7 +245,7 @@ fn quote_all_uses_double_quotes_for_strings_with_escapes() {
 
 #[test]
 fn quote_all_single_quote_inside_string() {
-    let opts = serde_saphyr::ser_options! { quote_all: true };
+    let opts = serde_saphyr::ser_options! { schema: serde_saphyr::specific! { quote_all: true } };
     let yaml = to_string_with_options(&"it's", opts).unwrap();
     // Contains single quote → must use double quotes
     assert!(yaml.starts_with('"'), "expected double quotes: {yaml}");
@@ -253,7 +253,7 @@ fn quote_all_single_quote_inside_string() {
 
 #[test]
 fn quote_all_value_position() {
-    let opts = serde_saphyr::ser_options! { quote_all: true };
+    let opts = serde_saphyr::ser_options! { schema: serde_saphyr::specific! { quote_all: true } };
     let mut m = BTreeMap::new();
     m.insert("key", "value");
     let yaml = to_string_with_options(&m, opts).unwrap();
@@ -266,7 +266,7 @@ fn quote_all_value_position() {
 
 #[test]
 fn single_quoted_escapes_embedded_quote() {
-    let opts = serde_saphyr::ser_options! { quote_all: true };
+    let opts = serde_saphyr::ser_options! { schema: serde_saphyr::specific! { quote_all: true } };
     // A string with a backslash needs double quotes
     let yaml = to_string_with_options(&"back\\slash", opts).unwrap();
     assert!(

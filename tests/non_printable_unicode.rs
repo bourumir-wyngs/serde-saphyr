@@ -26,7 +26,8 @@ fn non_printable_strings_and_chars_are_escaped(#[case] ch: char, #[case] expecte
 #[rstest]
 fn quoting_modes_escape_non_printable_unicode(#[values('\u{FFFE}', '\u{FFFF}')] ch: char) {
     let text = ch.to_string();
-    let options = serde_saphyr::ser_options! { quote_all: true };
+    let options =
+        serde_saphyr::ser_options! { schema: serde_saphyr::specific! { quote_all: true } };
     for yaml in [
         to_string(&DoubleQuoted(&text)).unwrap(),
         serde_saphyr::to_string_with_options(&text, options).unwrap(),

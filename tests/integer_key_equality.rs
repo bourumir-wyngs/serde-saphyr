@@ -323,7 +323,7 @@ fn integer_key_equality_honors_legacy_octal_configuration() {
 
     for legacy in ["013", "0_13", "0x_B", "+0o_13", "0b_1011"] {
         let yaml = format!("{legacy}: first\n11: second\n");
-        let options = serde_saphyr::options! { legacy_octal_numbers: true };
+        let options = serde_saphyr::options! { schema: serde_saphyr::specific! { legacy_octal_numbers: true } };
         let error = from_str_with_options::<BTreeMap<String, String>>(&yaml, options).unwrap_err();
         assert!(matches!(
             error.without_snippet(),
@@ -404,7 +404,7 @@ fn legacy_octal_equality_applies_inside_composite_keys() {
     for policy in [DuplicateKeyPolicy::Error, DuplicateKeyPolicy::LastWins] {
         let options = serde_saphyr::options! {
             duplicate_keys: policy,
-            legacy_octal_numbers: true,
+            schema: serde_saphyr::specific! { legacy_octal_numbers: true },
         };
         let result = from_str_with_options::<Mapping>(yaml, options);
         if matches!(policy, DuplicateKeyPolicy::Error) {
@@ -433,7 +433,7 @@ fn legacy_octal_equality_applies_to_merge_precedence() {
         ] {
             let options = serde_saphyr::options! {
                 duplicate_keys: policy,
-                legacy_octal_numbers: true,
+                schema: serde_saphyr::specific! { legacy_octal_numbers: true },
             };
             let actual: BTreeMap<String, String> = from_str_with_options(yaml, options).unwrap();
             assert_eq!(
