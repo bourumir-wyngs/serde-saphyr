@@ -1,0 +1,88 @@
+name: Downstream Nushell
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: downstream-nushell-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  yaml-compatibility:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    env:
+      # Keep the consumer fixed so failures track changes in serde-saphyr.
+      NUSHELL_REV: d7cb4e589ea53bd1a0bb29dd78d63b76fcb59862
+      CARGO_BUILD_JOBS: "2"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: nushell
+
+    steps:
+      - name: Checkout serde-saphyr under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: serde-saphyr
+          persist-credentials: false
+
+      - name: Checkout pinned Nushell
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: nushell/nushell
+          ref: ${{ env.NUSHELL_REV }}
+          path: nushell
+          persist-credentials: false
+
+      - name: Install Nushell's Rust toolchain
+        run: |
+          nu_toolchain=$(python3 -c 'import tomllib; print(tomllib.load(open("rust-toolchain.toml", "rb"))["toolchain"]["channel"])')
+          rustup toolchain install "$nu_toolchain" --profile minimal
+          echo "RUSTUP_TOOLCHAIN=$nu_toolchain" >> "$GITHUB_ENV"
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: nushell -> target
+
+      - name: Test Nushell against this serde-saphyr checkout
+        run: |
+          set -o pipefail
+
+          test_downstream() {
+            local library_path="$GITHUB_WORKSPACE/serde-saphyr"
+            local patch="patch.crates-io.serde-saphyr.path=\"$library_path\""
+            local version
+
+            version=$(python3 -c 'import tomllib; print(tomllib.load(open("../serde-saphyr/Cargo.toml", "rb"))["package"]["version"])')
+
+            # Update the targeted dependency while retaining Nushell's lockfile.
+            cargo --config "$patch" update \
+              -p serde-saphyr --precise "$version"
+
+            # Fail if Nushell did not select our local checkout.
+            cargo --config "$patch" tree \
+              --locked --color never \
+              -p nu-heavy-utils --depth 1 --edges normal |
+              grep -F -- \
+                "serde-saphyr v$version ($library_path)"
+
+            # Parser, serializer, tagged values and roundtrip tests.
+            cargo --config "$patch" test --locked \
+              -p nu-heavy-utils --lib 'yaml::'
+
+            # Tests exercising YAML through Nushell commands.
+            cargo --config "$patch" test --locked \
+              -p nu-command --test tests 'format_conversions::yaml::'
+          }
+
+          test_downstream
