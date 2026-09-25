@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 use crate::long_strings::{NAME_FOLD_STR, NAME_LIT_STR};
+use crate::scalar::Schema;
 use crate::tag::{YAML_TAG_NAMESPACE, simple_enum_variant_name, yaml_core_type_tag_name};
 
 use super::options::{CommentPosition, SerializerOptions};
@@ -442,10 +443,10 @@ struct SerializerSettings {
     compact_list_indent: bool,
     /// Automatically prefer block scalars for eligible strings.
     prefer_block_scalars: bool,
-    /// Quote all string scalars.
+    /// Quote ordinary string values instead of plain or automatic block styles.
     quote_all: bool,
-    /// Use YAML 1.2-friendly heuristics and emit a directive unless suppressed.
-    yaml_12: bool,
+    /// Resolved schema for string ambiguity checks and language directives.
+    schema: Schema,
     /// Suppress the language directive and its document start marker.
     no_lang_directive: bool,
 }
@@ -461,8 +462,8 @@ impl From<&SerializerOptions> for SerializerSettings {
             empty_as_braces: options.empty_as_braces,
             compact_list_indent: options.compact_list_indent,
             prefer_block_scalars: options.prefer_block_scalars,
-            quote_all: options.quote_all,
-            yaml_12: options.yaml_12,
+            quote_all: options.effective_quote_all(),
+            schema: options.effective_schema(),
             no_lang_directive: options.no_lang_directive,
         }
     }
@@ -819,7 +820,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         if self.state.at_line_start {
             if !self.state.doc_started {
                 self.state.doc_started = true;
-                if self.settings.yaml_12 && !self.settings.no_lang_directive {
+                if self.settings.schema == Schema::Yaml12 && !self.settings.no_lang_directive {
                     self.out.write_str("%YAML 1.2\n---\n")?;
                     // Still at start of a line after the directive and document start marker.
                     self.state.at_line_start = true;
@@ -886,7 +887,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// (`Variant: ...`), so they need the same ambiguity checks as regular
     /// map and struct keys.
     fn write_key_scalar(&mut self, s: &str) -> Result<()> {
-        let text = scalar_key_to_string(&s, self.settings.yaml_12)?;
+        let text = scalar_key_to_string(&s, self.settings.schema)?;
         self.out.write_str(&text)?;
         Ok(())
     }
@@ -909,7 +910,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
             } else {
                 self.write_single_quoted(s)
             }
-        } else if is_plain_value_safe(s, self.settings.yaml_12, self.state.in_flow > 0) {
+        } else if is_plain_value_safe(s, self.settings.schema, self.state.in_flow > 0) {
             self.out.write_str(s)?;
             Ok(())
         } else {
@@ -1328,7 +1329,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 // scalars, so ignore only those spaces for the eligibility probe.
                 let auto_fold_probe = v.trim_end_matches(' ');
                 let can_auto_fold = !auto_fold_probe.is_empty()
-                    && is_plain_value_safe(auto_fold_probe, self.settings.yaml_12, false);
+                    && is_plain_value_safe(auto_fold_probe, self.settings.schema, false);
                 if can_auto_fold {
                     // Measure in characters, not bytes.
                     if v.chars().count() > self.settings.folded_wrap_col {

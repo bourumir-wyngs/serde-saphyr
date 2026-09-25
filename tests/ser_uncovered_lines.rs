@@ -248,7 +248,7 @@ fn c1_control_char_uses_hex_escape() {
 #[test]
 fn quote_all_with_single_quote_uses_double_quotes() {
     let opts = serde_saphyr::ser_options! {
-        quote_all: true,
+        schema: serde_saphyr::specific! { quote_all: true },
     };
     let yaml = serde_saphyr::to_string_with_options(&"it's", opts).unwrap();
     // Should be double-quoted because single-quote triggers needs_double_quotes

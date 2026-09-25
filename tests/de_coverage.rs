@@ -285,7 +285,7 @@ struct WithBool {
 /// Strict booleans: "true" accepted.
 #[test]
 fn bool_strict_true() {
-    let opts = serde_saphyr::options! { strict_booleans: true };
+    let opts = serde_saphyr::options! { schema: serde_saphyr::specific! { strict_booleans: true } };
     let v: WithBool = serde_saphyr::from_str_with_options("b: true\n", opts).unwrap();
     assert!(v.b);
 }
@@ -293,7 +293,7 @@ fn bool_strict_true() {
 /// Strict booleans: "yes" rejected.
 #[test]
 fn bool_strict_yes_rejected() {
-    let opts = serde_saphyr::options! { strict_booleans: true };
+    let opts = serde_saphyr::options! { schema: serde_saphyr::specific! { strict_booleans: true } };
     let err = serde_saphyr::from_str_with_options::<WithBool>("b: yes\n", opts).unwrap_err();
     assert!(matches!(
         err.without_snippet(),
@@ -604,7 +604,7 @@ fn deserialize_any_float() {
 #[case::bool_true("true\n", true)]
 #[case::bool_false("false\n", false)]
 fn deserialize_any_strict_bool(#[case] yaml: &str, #[case] expected: bool) {
-    let opts = serde_saphyr::options! { strict_booleans: true };
+    let opts = serde_saphyr::options! { schema: serde_saphyr::specific! { strict_booleans: true } };
     let v: serde_json::Value = serde_saphyr::from_str_with_options(yaml, opts).unwrap();
     assert_eq!(v, serde_json::Value::Bool(expected));
 }
@@ -612,7 +612,7 @@ fn deserialize_any_strict_bool(#[case] yaml: &str, #[case] expected: bool) {
 /// In strict mode, "yes" is not a bool → treated as string.
 #[test]
 fn deserialize_any_strict_bool_yes_as_string() {
-    let opts = serde_saphyr::options! { strict_booleans: true };
+    let opts = serde_saphyr::options! { schema: serde_saphyr::specific! { strict_booleans: true } };
     let v: serde_json::Value = serde_saphyr::from_str_with_options("yes\n", opts).unwrap();
     assert_eq!(v, serde_json::Value::String("yes".to_string()));
 }
@@ -748,7 +748,8 @@ fn merge_key_invalid_scalar_error() {
 
 #[test]
 fn deserialize_any_legacy_octal() {
-    let opts = serde_saphyr::options! { legacy_octal_numbers: true };
+    let opts =
+        serde_saphyr::options! { schema: serde_saphyr::specific! { legacy_octal_numbers: true } };
     let v: serde_json::Value = serde_saphyr::from_str_with_options("0777\n", opts.clone()).unwrap();
     // 0777 legacy octal = 511 decimal
     assert_eq!(

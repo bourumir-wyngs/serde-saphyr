@@ -19,6 +19,7 @@
 //! assert!(buf.contains("a: 1"));
 //! ```
 
+use crate::scalar::Schema;
 use crate::ser_error::Error;
 
 /// Placement style for comments emitted by [`crate::Commented`].
@@ -54,10 +55,12 @@ pub enum CommentPosition {
 ///     values: vec![1, 2, 3],
 /// };
 ///
-/// // Use 4-space indentation and quote all strings
+/// // Use 4-space indentation and quote all ordinary string values
 /// let options = ser_options! {
 ///     indent_step: 4,
-///     quote_all: true,
+///     schema: serde_saphyr::specific! {
+///         quote_all: true,
+///     },
 /// };
 ///
 /// let yaml = to_string_with_options(&config, options).unwrap();
@@ -126,11 +129,22 @@ pub struct SerializerOptions {
     /// On by default.
     pub prefer_block_scalars: bool,
 
-    /// When enabled, quote all string scalars. Uses single quotes by default,
+    /// Compatibility option to quote all ordinary string values. Uses single quotes by default,
     /// but switches to double quotes when the string contains escape sequences
     /// (control characters like `\n`, `\t`, `\r`, backslash) or single quotes.
-    /// Disables block scalar styles (`|` and `>`) for quoted strings when active.
-    /// Off by default.
+    /// Disables automatic block scalar styles (`|` and `>`), but explicit block-style
+    /// wrappers retain their requested style. Off by default.
+    ///
+    /// Use [`schema`](Self::schema) with `specific! { quote_all: true }` instead.
+    /// If migrating [`yaml_12`](Self::yaml_12) too, set `yaml_12_quoting` in the
+    /// same `specific!` configuration to preserve both old settings.
+    /// This option is only consulted when no schema is selected.
+    /// Explicit schemas, including [`Schema::Json`], use their own string-emission
+    /// rules and ignore this compatibility option.
+    #[deprecated(
+        since = "1.4.0",
+        note = "use schema: serde_saphyr::specific! { quote_all: value } instead"
+    )]
     pub quote_all: bool,
 
     /// Controls where [`crate::Commented`] comments are emitted in block style.
@@ -141,24 +155,50 @@ pub struct SerializerOptions {
     /// collections in both modes.
     pub comment_position: CommentPosition,
 
-    /// When enabled, emit `%YAML 1.2` and the required document start marker
-    /// at the beginning of the document, and use YAML 1.2 rules for certain
-    /// compatibility heuristics. Set [`no_lang_directive`](Self::no_lang_directive)
-    /// to suppress the directive and its document start marker while keeping
-    /// these heuristics.
+    /// Scalar schema used to decide which strings require quoting.
     ///
-    /// With the default `false`, strings matching YAML 1.1 numeric, boolean,
-    /// null, timestamp, and reserved-token spellings are quoted to preserve their
-    /// type across readers. With `true`, YAML 1.1-specific quoting checks are
-    /// disabled, including boolean spellings like `yes`/`no`/`on`/`off`/`y`/`n`,
-    /// sexagesimal numbers, and timestamps. YAML syntax safety checks still apply.
-    /// Default: false.
+    /// By default, strings use YAML 1.1-compatible quoting. Select
+    /// [`Schema::Yaml12`] for YAML 1.2-compatible quoting and a `%YAML 1.2`
+    /// directive; [`no_lang_directive`](Self::no_lang_directive) suppresses the
+    /// directive without changing quoting. Both standard YAML schemas retain
+    /// conservative checks for spellings recognized by other readers.
+    ///
+    /// [`Schema::Specific`] reactivates the legacy quoting policy: its
+    /// `yaml_12_quoting` flag selects YAML 1.1-compatible quoting (false, the
+    /// default) or YAML 1.2-compatible quoting and directives (true). Its
+    /// `quote_all` flag independently requests quoted ordinary string values.
+    /// The `strict_booleans` and `legacy_octal_numbers` fields only affect
+    /// deserialization, not output quoting. To retain both deprecated flags,
+    /// migrate them together into `specific! { yaml_12_quoting: ..., quote_all: ... }`.
+    /// [`Schema::Strings`] only requires quotes for YAML syntax safety.
+    /// [`Schema::Json`] prevents plain string emission so strings are valid
+    /// JSON-schema scalars. This is YAML's JSON scalar schema, not JSON output:
+    /// quoted strings and YAML block styles remain available. Its own string
+    /// rules override the deprecated [`quote_all`](Self::quote_all) option.
+    /// An explicitly selected schema takes precedence over the deprecated
+    /// [`yaml_12`](Self::yaml_12) and [`quote_all`](Self::quote_all) options.
+    pub schema: Schema,
+
+    /// Compatibility option for YAML 1.2-compatible quoting and directives.
+    ///
+    /// Use [`schema`](Self::schema) with `specific! { yaml_12_quoting: value }`
+    /// to reactivate the legacy quoting policy. If also using
+    /// [`quote_all`](Self::quote_all), move it into the same `specific!`
+    /// configuration to retain both settings. Alternatively, select
+    /// [`Schema::Yaml12`] for `true` or [`Schema::Yaml11`] for `false` when
+    /// `quote_all` is not needed. This option is only consulted when no schema
+    /// is selected. Default: false.
+    #[deprecated(
+        since = "1.4.0",
+        note = "use schema: serde_saphyr::specific! { yaml_12_quoting: value }; also move quote_all into Specific if used"
+    )]
     pub yaml_12: bool,
 
     /// Suppress the `%YAML 1.2` directive and its leading `---` document start
-    /// marker when [`yaml_12`](Self::yaml_12) is enabled, without changing string
-    /// quoting heuristics. Document separators between multiple documents are
-    /// still emitted. Has no effect when `yaml_12` is false. Default: false.
+    /// marker when the effective [`schema`](Self::schema) is [`Schema::Yaml12`]
+    /// or [`Schema::Specific`] has `yaml_12_quoting: true`, without changing
+    /// string quoting. Document separators between multiple documents are still
+    /// emitted. Has no effect for other schemas. Default: false.
     pub no_lang_directive: bool,
 }
 
@@ -175,6 +215,20 @@ impl SerializerOptions {
     // Keep this value in sync with the literal compile-time check in `ser_options!`.
     pub(crate) const MAX_INDENT_STEP: usize = 64;
 
+    #[allow(deprecated)] // Adapt the old flag only when no schema was selected.
+    pub(crate) fn effective_schema(&self) -> Schema {
+        self.schema.for_serializer(self.yaml_12)
+    }
+
+    #[allow(deprecated)] // Adapt the old flag only when no schema was selected.
+    pub(crate) fn effective_quote_all(&self) -> bool {
+        match self.schema {
+            Schema::Legacy => self.quote_all,
+            Schema::Specific { quote_all, .. } => quote_all,
+            Schema::Strings | Schema::Json | Schema::Yaml11 | Schema::Yaml12 => false,
+        }
+    }
+
     pub(crate) fn consistent(&self) -> Result<(), Error> {
         if self.indent_step == 0 || self.indent_step > Self::MAX_INDENT_STEP {
             return Err(Error::InvalidOptions(format!(
@@ -187,6 +241,7 @@ impl SerializerOptions {
 }
 
 impl Default for SerializerOptions {
+    #[allow(deprecated)] // Keep the compatibility field at its historical default.
     fn default() -> Self {
         // Defaults mirror internal constants used by the serializer.
         Self {
@@ -200,6 +255,7 @@ impl Default for SerializerOptions {
             prefer_block_scalars: true,
             quote_all: false,
             comment_position: CommentPosition::Inline,
+            schema: Schema::Legacy,
             yaml_12: false,
             no_lang_directive: false,
         }

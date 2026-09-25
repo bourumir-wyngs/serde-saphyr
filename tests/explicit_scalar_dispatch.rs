@@ -131,14 +131,16 @@ fn flattened_boolean_map_accepts_explicit_boolean_tags() {
 #[case::canonical("!!bool true", true)]
 #[case::quoted("!!bool 'false'", false)]
 fn explicit_boolean_tags_respect_strict_mode(#[case] yaml: &str, #[case] expected: bool) {
-    let options = serde_saphyr::options! { strict_booleans: true };
+    let options =
+        serde_saphyr::options! { schema: serde_saphyr::specific! { strict_booleans: true } };
     let value: Value = serde_saphyr::from_str_with_options(yaml, options).unwrap();
     assert_eq!(value, Value::Bool(expected));
 }
 
 #[test]
 fn strict_mode_rejects_explicit_legacy_boolean() {
-    let options = serde_saphyr::options! { strict_booleans: true };
+    let options =
+        serde_saphyr::options! { schema: serde_saphyr::specific! { strict_booleans: true } };
     let error = serde_saphyr::from_str_with_options::<Value>("!!bool yes", options).unwrap_err();
     assert!(matches!(
         error.without_snippet(),

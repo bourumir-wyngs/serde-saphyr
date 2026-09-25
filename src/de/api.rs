@@ -556,7 +556,7 @@ where
                 style,
                 tag,
                 ..
-            })) if scalar_is_null(tag, s, style) => {
+            })) if scalar_is_null(tag, s, style, cfg.schema) => {
                 let _ = src.next()?; // consume the null scalar document
                 // Do not add anything for this document; move to the next one.
                 continue;
@@ -1115,7 +1115,7 @@ where
                 match self.src.peek() {
                     Ok(Some(Ev::Scalar {
                         value, style, tag, ..
-                    })) if scalar_is_null(tag, value, style) => {
+                    })) if scalar_is_null(tag, value, style, self.cfg.schema) => {
                         let _ = self.src.next();
                         continue;
                     }

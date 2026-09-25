@@ -66,6 +66,20 @@ fn assert_missing_feature_diagnostics(
     }
 }
 
+fn assert_specific_fixture(output: &Output, should_compile: bool, diagnostic: &str) {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.success(),
+        should_compile,
+        "unexpected specific! fixture result\nstdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains(diagnostic),
+        "missing diagnostic {diagnostic:?}:\n{stderr}",
+    );
+}
+
 #[test]
 fn public_macros_report_missing_features() {
     let root = tempfile::tempdir().expect("create fixture root");
@@ -104,4 +118,58 @@ fn public_macros_report_missing_features() {
         &["ser_options"],
         "serialize",
     );
+
+    // Reuse the dependency builds above for successful, feature-isolated macro
+    // expansions and external-crate diagnostics for the non-exhaustive variant.
+    for (feature, options_macro) in [("serialize", "ser_options"), ("deserialize", "options")] {
+        let source = format!(
+            r#"use serde_saphyr as renamed;
+use renamed::scalar::Schema;
+
+const DEFAULT: Schema = Schema::specific();
+const CUSTOM: Schema = renamed::specific! {{ strict_booleans: true, yaml_12_quoting: true, quote_all: true }};
+
+fn main() {{
+    let options = renamed::{options_macro}! {{
+        schema: renamed::specific! {{ legacy_octal_numbers: true }},
+    }};
+    assert!(matches!(options.schema, Schema::Specific {{ legacy_octal_numbers: true, .. }}));
+    let _ = (DEFAULT, CUSTOM, renamed::specific! {{}});
+}}
+"#,
+        );
+        let fixture = write_fixture(
+            root.path(),
+            &format!("serde-saphyr-{feature}-specific-pass"),
+            feature,
+            &source,
+        );
+        assert_specific_fixture(&cargo_check(&fixture, &target_dir), true, "");
+    }
+
+    for (name, source, diagnostic) in [
+        (
+            "literal",
+            "fn main() { let _ = serde_saphyr::scalar::Schema::Specific { strict_booleans: false, legacy_octal_numbers: false, yaml_12_quoting: false, quote_all: false }; }",
+            "non-exhaustive variant",
+        ),
+        (
+            "unknown-field",
+            "fn main() { let _ = serde_saphyr::specific! { unknown_field: true }; }",
+            "unknown_field",
+        ),
+        (
+            "wrong-type",
+            "fn main() { let _ = serde_saphyr::specific! { quote_all: 42 }; }",
+            "expected `bool`",
+        ),
+    ] {
+        let fixture = write_fixture(
+            root.path(),
+            &format!("serde-saphyr-specific-{name}-fail"),
+            "deserialize",
+            source,
+        );
+        assert_specific_fixture(&cargo_check(&fixture, &target_dir), false, diagnostic);
+    }
 }

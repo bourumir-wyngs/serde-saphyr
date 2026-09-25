@@ -193,6 +193,8 @@ fn check_input(data: &[u8]) {
     let flags = data.first().copied().unwrap_or(0);
     let width = data.get(1).copied().unwrap_or(0) as usize;
     let threshold = data.get(2).copied().unwrap_or(0) as usize;
+    // Keep exercising legacy quote-all behavior together with YAML-version directives.
+    #[allow(deprecated)]
     let varied = serde_saphyr::ser_options! {
         indent_step: [1, 2, 4, 8, 9, 10, 64][usize::from(flags) % 7],
         compact_list_indent: flags & 1 != 0,

@@ -4,6 +4,19 @@
 
 ### Added
 
+- Added `scalar::resolve` for reusable scalar classification below Serde, using decoded text,
+  scalar style, an expanded tag, and an explicit `Strings`, `Json`, `Yaml12`, or `Yaml11` schema.
+  Results borrow the original text and offer checked boolean, `i128`, `u128`, `f32`, and `f64`
+  conversions without a value tree. Classification is independent of numeric range; integer
+  overflow never falls back to float, and finite float overflow is distinct from explicit
+  infinity/NaN. YAML 1.1 timestamps are recognized lexically for conversion by caller-owned
+  date types. Existing Serde scalar behavior is unchanged.
+- Added `specific!` to configure the compatibility schema. Move `strict_booleans`,
+  `legacy_octal_numbers`, and `quote_all` into it, and rename the serializer's `yaml_12`
+  flag to `yaml_12_quoting`, to preserve the old behavior. All four flags default to
+  `false`; serialization reactivates legacy conservative quoting independently of
+  the parsing flags. Deserialization retains the historical `no_schema` string-validation
+  policy, which ignores the legacy-octal flag.
 - Added `SerializerOptions::no_lang_directive` (default `false`) to suppress the
   `%YAML 1.2` directive and its leading `---` marker independently of `yaml_12`'s quoting. 
 - Added `from_str_multiple` and `from_str_multiple_with_options` to deserialize multiple YAML
@@ -32,6 +45,11 @@
 
 - Made `huge_documents` and `serde_derived_types` enable `deserialize`, fixing isolated feature
   builds with `--no-default-features`, including autopkgtests of Debian team (as [observed](https://dfsg-new-queue.debian.org/reviews/rust-serde-saphyr)).
+
+### Testing
+
+- Added a downstream CI job that runs a pinned Nushell revision's YAML tests against the local
+  serde-saphyr checkout, checking dependency selection, API compatibility, and YAML behavior.
 
 ## 1.3.0 Maintenance and performance release
 

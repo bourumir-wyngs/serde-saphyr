@@ -85,7 +85,7 @@ fn assert_quoted_in_keys_and_values(text: &str) {
 fn yaml12_keeps_non_numeric_underscore_spellings_plain() {
     let yaml = to_string_with_options(
         &BTreeMap::from([("1__0", "1_")]),
-        ser_options! { yaml_12: true },
+        ser_options! { schema: serde_saphyr::scalar::Schema::Yaml12 },
     )
     .unwrap();
     assert!(yaml.contains("1__0: 1_"), "{yaml}");
@@ -103,7 +103,11 @@ fn ordinary_underscore_strings_stay_plain() {
 #[case("10:20.5")]
 #[case("1_0:20.5_0")]
 fn yaml12_keeps_sexagesimal_strings_plain(#[case] text: &str) {
-    let yaml = to_string_with_options(&text, ser_options! { yaml_12: true }).unwrap();
+    let yaml = to_string_with_options(
+        &text,
+        ser_options! { schema: serde_saphyr::scalar::Schema::Yaml12 },
+    )
+    .unwrap();
     assert!(yaml.lines().any(|line| line == text), "{yaml}");
 }
 
@@ -134,7 +138,11 @@ fn non_numeric_colon_strings_stay_plain(#[case] text: &str) {
 #[case("<<")]
 #[case("=")]
 fn yaml12_keeps_yaml11_implicit_strings_plain(#[case] text: &str) {
-    let yaml = to_string_with_options(&text, ser_options! { yaml_12: true }).unwrap();
+    let yaml = to_string_with_options(
+        &text,
+        ser_options! { schema: serde_saphyr::scalar::Schema::Yaml12 },
+    )
+    .unwrap();
     assert!(yaml.lines().any(|line| line == text), "{yaml}");
 }
 

@@ -156,7 +156,9 @@ pub fn to_string_multiple<T: serde_core::Serialize>(
 /// Serializes each value in the provided slice as an individual YAML document.
 /// Documents are separated by a standard YAML document start marker ("---\n").
 /// By default, no marker is emitted before the first document.
-/// When `options.yaml_12` is enabled and `options.no_lang_directive` is false,
+/// When `options.schema` is [`crate::scalar::Schema::Yaml12`] or
+/// [`crate::scalar::Schema::Specific`] with `yaml_12_quoting: true`, and
+/// `options.no_lang_directive` is false,
 /// each document emits its own `%YAML 1.2` directive and document start marker,
 /// and later documents are preceded by an explicit document end marker ("...\n")
 /// so the following directive is valid. With `options.no_lang_directive` enabled,
@@ -186,7 +188,8 @@ pub fn to_string_multiple_with_options<T: serde_core::Serialize>(
     options.consistent()?;
     let mut out = String::new();
     let mut first = true;
-    let emit_directive = options.yaml_12 && !options.no_lang_directive;
+    let emit_directive =
+        options.effective_schema() == crate::scalar::Schema::Yaml12 && !options.no_lang_directive;
     for v in values {
         if !first {
             if emit_directive {

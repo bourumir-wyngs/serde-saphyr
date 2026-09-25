@@ -1,217 +1,5 @@
-use crate::parse_scalars::parse_yaml11_bool;
+use crate::scalar::{Schema, resolve_for_quoting};
 use std::fmt::{self, Write};
-
-/// Check numeric syntax without constructing a value: overflow and resolver errors
-/// must not turn a serialized string into a number or an unreadable document.
-fn is_numeric(s: &str, yaml_12: bool) -> bool {
-    if !matches!(
-        s.as_bytes().first(),
-        Some(b'0'..=b'9' | b'+' | b'-' | b'.' | b'_')
-    ) {
-        return false;
-    }
-    let unsigned = s.strip_prefix(['+', '-']).unwrap_or(s);
-    if unsigned.eq_ignore_ascii_case(".inf") || unsigned.eq_ignore_ascii_case(".nan") {
-        return true;
-    }
-    if !yaml_12 {
-        if is_yaml11_sexagesimal(s) {
-            return true;
-        }
-        // YAML 1.1 radix productions accept [digits_]+, even an all-underscore
-        // suffix that a resolver tags as numeric but cannot construct.
-        if let Some((radix, digits)) = radix_digits(unsigned)
-            && is_digit_run(digits, radix, false)
-        {
-            return true;
-        }
-    }
-
-    // Go YAML removes underscores before numeric resolution, including around
-    // radix prefixes and exponents. YAML 1.2 output keeps the stricter spelling.
-    let normalized;
-    let s = if !yaml_12 && s.contains('_') {
-        normalized = s.replace('_', "");
-        normalized.as_str()
-    } else {
-        s
-    };
-    let unsigned = s.strip_prefix(['+', '-']).unwrap_or(s);
-    if let Some((radix, digits)) = radix_digits(unsigned) {
-        // Go YAML's binary fallback (and octal fallback in v3.0.1) accepts
-        // a sign after an unsigned lowercase 0b or 0o prefix.
-        let digits = if !yaml_12 && (s.starts_with("0b") || s.starts_with("0o")) {
-            digits.strip_prefix(['+', '-']).unwrap_or(digits)
-        } else {
-            digits
-        };
-        return is_digit_run(digits, radix, true);
-    }
-    let mantissa = match unsigned.split_once(['e', 'E']) {
-        Some((mantissa, exponent)) => {
-            let exponent = exponent.strip_prefix(['+', '-']).unwrap_or(exponent);
-            if !is_digit_run(exponent, 10, true) {
-                return false;
-            }
-            mantissa
-        }
-        None => unsigned,
-    };
-    match mantissa.split_once('.') {
-        Some((whole, fraction)) => {
-            if !whole.is_empty() && !is_digit_run(whole, 10, true) {
-                return false;
-            }
-            if !yaml_12 {
-                // The YAML 1.1 float production allows an empty integer part
-                // and [0-9.]* after the dot, including unconstructible spellings.
-                fraction.bytes().all(|b| b.is_ascii_digit() || b == b'.')
-            } else if fraction.is_empty() {
-                !whole.is_empty()
-            } else {
-                is_digit_run(fraction, 10, true)
-            }
-        }
-        None => is_digit_run(mantissa, 10, true),
-    }
-}
-
-fn radix_digits(s: &str) -> Option<(u32, &str)> {
-    match s.as_bytes() {
-        [b'0', b'b' | b'B', ..] => Some((2, &s[2..])),
-        [b'0', b'o' | b'O', ..] => Some((8, &s[2..])),
-        [b'0', b'x' | b'X', ..] => Some((16, &s[2..])),
-        _ => None,
-    }
-}
-
-fn is_digit_run(s: &str, radix: u32, strict_underscores: bool) -> bool {
-    let is_digit = |b: u8| b.is_ascii() && char::from(b).is_digit(radix);
-    let bytes = s.as_bytes();
-    !bytes.is_empty()
-        && bytes.iter().enumerate().all(|(i, &b)| {
-            is_digit(b)
-                || (b == b'_'
-                    && (!strict_underscores
-                        || (i > 0
-                            && is_digit(bytes[i - 1])
-                            && bytes.get(i + 1).is_some_and(|&next| is_digit(next)))))
-        })
-}
-
-/// Recognize YAML 1.1 base-60 integers and floats without parsing their magnitude.
-fn is_yaml11_sexagesimal(s: &str) -> bool {
-    let unsigned = s.strip_prefix(['+', '-']).unwrap_or(s);
-    let (integer, fraction) = match unsigned.split_once('.') {
-        Some((integer, fraction)) => (integer, Some(fraction)),
-        None => (unsigned, None),
-    };
-    let Some((first, rest)) = integer.split_once(':') else {
-        return false;
-    };
-    let Some(first_digit) = first.as_bytes().first() else {
-        return false;
-    };
-    if !first_digit.is_ascii_digit()
-        || (fraction.is_none() && *first_digit == b'0')
-        || !first.bytes().all(|b| b.is_ascii_digit() || b == b'_')
-    {
-        return false;
-    }
-    // Every subsequent base-60 component is one or two digits in 0..=59.
-    if !rest.split(':').all(|part| match part.as_bytes() {
-        [digit] => digit.is_ascii_digit(),
-        [tens, units] => matches!(tens, b'0'..=b'5') && units.is_ascii_digit(),
-        _ => false,
-    }) {
-        return false;
-    }
-    fraction.is_none_or(|part| part.bytes().all(|b| b.is_ascii_digit() || b == b'_'))
-}
-
-/// Match timestamp syntax without calendar validation: a reader can assign a
-/// timestamp tag even when constructing the date would fail.
-fn is_yaml11_timestamp(mut s: &str) -> bool {
-    fn digits(s: &mut &str, min: usize, max: usize) -> bool {
-        let len = s.bytes().take_while(u8::is_ascii_digit).count();
-        if !(min..=max).contains(&len) {
-            return false;
-        }
-        *s = &s[len..];
-        true
-    }
-    fn prefix(s: &mut &str, ch: char) -> bool {
-        if let Some(rest) = s.strip_prefix(ch) {
-            *s = rest;
-            true
-        } else {
-            false
-        }
-    }
-    if !digits(&mut s, 4, 4)
-        || !prefix(&mut s, '-')
-        || !digits(&mut s, 1, 2)
-        || !prefix(&mut s, '-')
-        || !digits(&mut s, 1, 2)
-    {
-        return false;
-    }
-    // Go YAML also accepts single-digit date and time components.
-    if s.is_empty() {
-        return true;
-    }
-    if let Some(rest) = s.strip_prefix(['T', 't']) {
-        s = rest;
-    } else {
-        let rest = s.trim_start_matches([' ', '\t']);
-        if rest.len() == s.len() {
-            return false;
-        }
-        s = rest;
-    }
-    if !digits(&mut s, 1, 2)
-        || !prefix(&mut s, ':')
-        || !digits(&mut s, 1, 2)
-        || !prefix(&mut s, ':')
-        || !digits(&mut s, 1, 2)
-    {
-        return false;
-    }
-    // Go's time parser also accepts a comma as the fractional separator.
-    if prefix(&mut s, '.') || prefix(&mut s, ',') {
-        digits(&mut s, 0, usize::MAX);
-    }
-    s = s.trim_start_matches([' ', '\t']);
-    if s.is_empty() || s == "Z" {
-        return true;
-    }
-    if !(prefix(&mut s, '+') || prefix(&mut s, '-')) || !digits(&mut s, 1, 2) {
-        return false;
-    }
-    if prefix(&mut s, ':') && !digits(&mut s, 2, 2) {
-        return false;
-    }
-    s.is_empty()
-}
-
-/// Whether implicit scalar resolution can change a string's type or reject it.
-fn is_ambiguous(s: &str, yaml_12: bool) -> bool {
-    s.is_empty()
-        || s == "~"
-        || s.eq_ignore_ascii_case("null")
-        || s.eq_ignore_ascii_case("true")
-        || s.eq_ignore_ascii_case("false")
-        || is_numeric(s, yaml_12)
-        // Preserve compatibility with readers accepting undotted float tokens.
-        || s.eq_ignore_ascii_case("nan")
-        || s.eq_ignore_ascii_case("inf")
-        || s.eq_ignore_ascii_case("+inf")
-        || s.eq_ignore_ascii_case("-inf")
-        || (!yaml_12
-            && (parse_yaml11_bool(s).is_ok()
-                || is_yaml11_timestamp(s)
-                || matches!(s, "<<" | "=")))
-}
 
 #[inline]
 fn starts_with_document_marker(s: &str) -> bool {
@@ -227,8 +15,8 @@ fn starts_with_document_marker(s: &str) -> bool {
 /// Returns true if `s` can be emitted as a plain scalar without quoting.
 /// Internal heuristic used by `write_plain_or_quoted`.
 #[inline]
-pub(crate) fn is_plain_safe(s: &str) -> bool {
-    if is_ambiguous(s, true) {
+pub(crate) fn is_plain_safe(s: &str, schema: Schema) -> bool {
+    if s.is_empty() || resolve_for_quoting(s, schema) {
         return false;
     }
     // A plain, untagged "<<" key would be a YAML merge key, not the literal string "<<".
@@ -281,8 +69,11 @@ pub(crate) fn is_plain_safe(s: &str) -> bool {
 /// where certain characters would break parsing (e.g., commas and brackets) or where the token
 /// could be misinterpreted as a number or boolean.
 #[inline]
-pub(crate) fn is_plain_value_safe(s: &str, yaml_12: bool, in_flow: bool) -> bool {
-    if is_ambiguous(s, yaml_12) {
+pub(crate) fn is_plain_value_safe(s: &str, schema: Schema, in_flow: bool) -> bool {
+    if s.is_empty()
+        || resolve_for_quoting(s, schema)
+        || (schema == Schema::Yaml11 && matches!(s, "<<" | "="))
+    {
         return false;
     }
     if starts_with_document_marker(s) {
@@ -431,69 +222,9 @@ fn has_comment_start(string: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_controll_which_needs_escaping, is_numeric, is_plain_safe, is_plain_value_safe};
+    use super::{is_controll_which_needs_escaping, is_plain_safe, is_plain_value_safe};
+    use crate::scalar::Schema;
     use rstest::rstest;
-
-    #[rstest]
-    #[case::inf(".inf")]
-    #[case::nan(".nan")]
-    #[case::zero("0")]
-    #[case::neg_int("-19")]
-    #[case::pos_int("+12")]
-    #[case::leading_zero("01")]
-    #[case::underscore_sep("1_0")]
-    #[case::multi_underscore("1000_1000_1000")]
-    #[case::binary("0b10")]
-    #[case::pos_binary("+0b10")]
-    #[case::neg_binary_upper("-0B10")]
-    #[case::binary_underscore("0b1010_1010")]
-    #[case::octal("0o7")]
-    #[case::pos_octal_upper("+0O7")]
-    #[case::octal_underscore("0o7_1")]
-    #[case::hex("0x3A")]
-    #[case::pos_hex_upper("+0X3A")]
-    #[case::hex_underscore("0x3_A")]
-    #[case::leading_dot(".5")]
-    #[case::pos_leading_dot("+.5")]
-    #[case::neg_leading_dot("-.5")]
-    #[case::trailing_dot("0.")]
-    #[case::pos_zero_float("+0.0")]
-    #[case::neg_zero_float("-0.0")]
-    #[case::exponent("12e03")]
-    #[case::exponent_underscore("12e0_3")]
-    #[case::neg_exponent_upper("-2E+05")]
-    #[case::float_neg_exponent("12.34e-5")]
-    #[case::leading_dot_exponent(".5e+1")]
-    #[case::neg_leading_dot_exponent("-.5E-2")]
-    fn numeric_looking_matches(#[case] input: &str) {
-        assert!(is_numeric(input, true), "{input:?} should match");
-    }
-
-    #[rstest]
-    #[case::empty("")]
-    #[case::lone_plus("+")]
-    #[case::lone_minus("-")]
-    #[case::lone_dot(".")]
-    #[case::leading_underscore("_1000")]
-    #[case::trailing_underscore("1000_")]
-    #[case::double_underscore("1__0")]
-    #[case::exponent_leading_underscore("1e_2")]
-    #[case::underscore_before_dot("_.5")]
-    #[case::underscore_after_dot("._5")]
-    #[case::empty_binary("0b")]
-    #[case::binary_trailing_underscore("0b10_")]
-    #[case::octal_leading_underscore("0o_7")]
-    #[case::hex_trailing_underscore("0x3A_")]
-    #[case::empty_octal("0o")]
-    #[case::empty_hex("0x")]
-    #[case::hex_with_sign("0x+1")]
-    #[case::hex_inner_sign("-0x-1")]
-    #[case::exponent_no_digits("12e")]
-    #[case::dot_exponent_no_mantissa(".e5")]
-    #[case::fractional_inner_underscore("1._0")]
-    fn numeric_looking_non_matches(#[case] input: &str) {
-        assert!(!is_numeric(input, true), "{input:?} should not match");
-    }
 
     #[rstest]
     #[case::dash_no_space("-value")]
@@ -502,7 +233,7 @@ mod tests {
     #[case::document_end_prefix_no_separation("...value")]
     #[case::interior_space("a b")]
     fn plain_keys_allow_safe_inputs(#[case] input: &str) {
-        assert!(is_plain_safe(input), "{input:?}");
+        assert!(is_plain_safe(input, Schema::Yaml12), "{input:?}");
     }
 
     #[rstest]
@@ -517,7 +248,7 @@ mod tests {
     #[case::document_start_marker_with_value("--- value")]
     #[case::document_end_marker_with_value("... value")]
     fn plain_keys_reject_unsafe_inputs(#[case] input: &str) {
-        assert!(!is_plain_safe(input), "{input:?}");
+        assert!(!is_plain_safe(input, Schema::Yaml12), "{input:?}");
     }
 
     #[rstest]
@@ -530,11 +261,25 @@ mod tests {
     #[case::document_start_marker_with_value("--- value")]
     #[case::document_end_marker_with_value("... value")]
     fn plain_values_reject_lossy_surrounding_whitespace(#[case] input: &str) {
-        assert!(!is_plain_value_safe(input, false, false), "{input:?}");
         assert!(
-            !is_plain_value_safe(input, true, true),
+            !is_plain_value_safe(input, Schema::Yaml11, false),
+            "{input:?}"
+        );
+        assert!(
+            !is_plain_value_safe(input, Schema::Yaml12, true),
             "flow value {input:?}"
         );
+    }
+
+    #[test]
+    fn legacy_value_indicators_remain_quoted() {
+        for text in ["<<", "="] {
+            assert!(
+                !is_plain_value_safe(text, Schema::Yaml11, false),
+                "{text:?}"
+            );
+            assert!(is_plain_value_safe(text, Schema::Yaml12, false), "{text:?}");
+        }
     }
 
     #[rstest]
@@ -568,10 +313,13 @@ mod tests {
     #[case::line_sep("a\u{2028}b")]
     #[case::para_sep("a\u{2029}b")]
     fn format_chars_are_not_plain_safe(#[case] input: &str) {
-        assert!(!is_plain_safe(input), "key {input:?}");
-        assert!(!is_plain_value_safe(input, false, false), "value {input:?}");
+        assert!(!is_plain_safe(input, Schema::Yaml12), "key {input:?}");
         assert!(
-            !is_plain_value_safe(input, true, true),
+            !is_plain_value_safe(input, Schema::Yaml11, false),
+            "value {input:?}"
+        );
+        assert!(
+            !is_plain_value_safe(input, Schema::Yaml12, true),
             "flow value {input:?}"
         );
     }

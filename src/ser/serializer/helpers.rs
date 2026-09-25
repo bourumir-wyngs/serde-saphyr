@@ -1,6 +1,8 @@
 use serde_core::ser::{self, Serialize, Serializer};
 use std::fmt::{self, Write};
 
+use crate::scalar::Schema;
+
 use super::super::quoting::{escape_double_quoted, is_plain_safe, is_plain_value_safe};
 use super::super::zmij_format;
 use super::super::{Error, NAME_NULLABLE_TILDE, Result};
@@ -473,11 +475,11 @@ impl StrCapture {
 /// Called by map/struct serializers to ensure YAML keys are scalars.
 pub(super) fn scalar_key_to_string<K: Serialize + ?Sized>(
     key: &K,
-    yaml_12: bool,
+    schema: Schema,
 ) -> Result<String> {
     let mut s = String::new();
     {
-        let mut ks = KeyScalarSink { s: &mut s, yaml_12 };
+        let mut ks = KeyScalarSink { s: &mut s, schema };
         key.serialize(&mut ks)?;
     }
     Ok(s)
@@ -485,7 +487,7 @@ pub(super) fn scalar_key_to_string<K: Serialize + ?Sized>(
 
 struct KeyScalarSink<'a> {
     s: &'a mut String,
-    yaml_12: bool,
+    schema: Schema,
 }
 
 impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
@@ -557,7 +559,7 @@ impl<'a> Serializer for &'a mut KeyScalarSink<'a> {
         // like y/n/yes/no) to preserve intended string keys.
         // Be conservative here: keys may be emitted in both block and flow mappings,
         // and flow mappings treat characters like ','/[]/{} as structural.
-        if is_plain_safe(v) && is_plain_value_safe(v, self.yaml_12, true) {
+        if is_plain_safe(v, self.schema) && is_plain_value_safe(v, self.schema, true) {
             self.s.push_str(v);
         } else {
             self.s.push('"');

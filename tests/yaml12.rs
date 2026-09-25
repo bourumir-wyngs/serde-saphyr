@@ -1,3 +1,5 @@
+// These tests deliberately exercise the deprecated flags for backward compatibility.
+#![allow(deprecated)]
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};

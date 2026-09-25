@@ -135,7 +135,7 @@ fn enum_variant_mapping_keys_quote_yaml11_boolean_spellings() {
 fn yaml12_enum_variant_mapping_keys_leave_yaml11_only_bools_plain() {
     let yaml = serde_saphyr::to_string_with_options(
         &BoolishVariant::Newtype(1),
-        serde_saphyr::ser_options! { yaml_12: true },
+        serde_saphyr::ser_options! { schema: serde_saphyr::scalar::Schema::Yaml12 },
     )
     .expect("serialize yaml 1.2 newtype variant");
 
