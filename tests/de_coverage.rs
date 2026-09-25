@@ -228,7 +228,7 @@ const OVERFLOWING_INTEGER_SCALAR: &str = concat!(
     "9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999",
 );
 
-/// `deserialize_any` rejects non-finite floats and overflowed numeric scalars by default.
+/// `deserialize_any` rejects non-finite floats and overflowed numeric scalars when requested.
 #[rstest]
 #[case::nan(".nan", ".nan")]
 #[case::inf(".inf", ".inf")]
@@ -236,11 +236,14 @@ const OVERFLOWING_INTEGER_SCALAR: &str = concat!(
 #[case::float_overflow("1e999", "1e999")]
 #[case::neg_float_overflow("-1e999", "-1e999")]
 #[case::integer_overflow(OVERFLOWING_INTEGER_SCALAR, OVERFLOWING_INTEGER_SCALAR)]
-fn deserialize_any_rejects_non_finite_float_by_default(
+fn deserialize_any_rejects_non_finite_float_when_requested(
     #[case] yaml: &str,
     #[case] expected_value: &str,
 ) {
-    let err = serde_saphyr::from_str::<serde_json::Value>(yaml).unwrap_err();
+    let options = serde_saphyr::options! {
+        reject_non_finite_typeless_float: true,
+    };
+    let err = serde_saphyr::from_str_with_options::<serde_json::Value>(yaml, options).unwrap_err();
     match err.without_snippet() {
         serde_saphyr::Error::NonFiniteFloat { value, .. } => {
             assert_eq!(value, expected_value);

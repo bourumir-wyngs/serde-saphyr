@@ -891,7 +891,7 @@ pub enum Error {
     /// scalar resolved to a non-finite float — NaN, ±Inf, or a decimal literal that
     /// overflows `f64` to infinity (e.g. `1e999`) — and
     /// [`Options::reject_non_finite_typeless_float`](crate::options::Options::reject_non_finite_typeless_float)
-    /// is enabled, rejecting it instead of converting it to a canonical string.
+    /// is enabled, rejecting it before passing it to the visitor.
     NonFiniteFloat {
         /// The offending scalar text as it appeared in the source (e.g. `.nan`, `1e999`).
         value: String,

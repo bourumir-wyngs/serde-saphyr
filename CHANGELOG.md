@@ -17,6 +17,15 @@
   both the document and collection types, for example `from_str_multiple::<String, Vec<_>>(input)`.
   The deprecated APIs continue returning `Vec<T>` with their original signatures.
 
+### Changed
+
+- `deserialize_any` now passes NaN and positive/negative infinity to the visitor by default,
+  including overflowing literals such as `1e999`. This supports float-capable visitors,
+  untagged enums, and flattened float fields. `serde_json::Value` converts these values to
+  `Null` without an error; set `Options::reject_non_finite_typeless_float` to `true` to reject
+  them. The existing boolean now defaults to `false`, which passes floats to the visitor
+  instead of converting them to strings. Direct `f32`/`f64` deserialization is unchanged.
+
 ### Deprecated
 
 - Deprecated `from_multiple` and `from_multiple_with_options` in favor of `from_str_multiple`

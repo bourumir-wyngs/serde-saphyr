@@ -19,8 +19,8 @@ pub(crate) struct Cfg {
     pub(crate) ignore_binary_tag_for_string: bool,
     /// Do not take into String type that looks like number or boolean (require quoting)
     pub(crate) no_schema: bool,
-    /// If true, `deserialize_any` errors on a non-finite float instead of converting it to a
-    /// canonical string.
+    /// If true, `deserialize_any` errors on a non-finite float instead of passing it to
+    /// the visitor.
     pub(crate) reject_non_finite_typeless_float: bool,
     /// Maximum container depth from the configured budget. `None` means budget enforcement
     /// is disabled for deserializer recursion.

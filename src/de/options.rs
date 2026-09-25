@@ -252,19 +252,17 @@ pub struct Options {
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub reject_unsupported_tags: bool,
 
-    /// If true, `deserialize_any` (typeless targets like `serde_json::Value`) errors on a
-    /// non-finite float (NaN, ±Inf, or a decimal literal that overflows `f64` to infinity,
-    /// e.g. `1e999`) instead of converting it to a string.
+    /// If true, `deserialize_any` errors on NaN, positive/negative infinity, and decimal
+    /// literals that overflow `f64` (e.g. `1e999`) before passing them to the visitor.
     ///
-    /// Concrete `f32`/`f64` targets are unaffected by this flag for YAML non-finite
-    /// spellings such as `.nan`, `.inf`, and `-.inf`; those spellings continue to
-    /// deserialize as non-finite floats.
+    /// Default: false, which passes the float to the receiving visitor. This preserves
+    /// non-finite values for visitors that support them, including Serde's buffering for
+    /// untagged enums and flattened float fields. `serde_json::Value` instead converts
+    /// them to `Null` without an error; set this flag to true to reject them explicitly.
     ///
-    /// Decimal/exponential literals that overflow `f64`, such as `1e999`, remain
-    /// invalid for concrete `f32`/`f64` targets.
-    ///
-    /// Default: true (reject non-finite floats in typeless positions). Set this to false
-    /// to round-trip non-finite floats as canonical strings: `.nan`, `.inf`, `-.inf`.
+    /// Untagged quoted scalars and `!!str` scalars remain strings with either setting.
+    /// Direct `f32`/`f64` targets are unaffected: YAML non-finite spellings remain
+    /// accepted, while overflowing decimal/exponential literals remain invalid.
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub reject_non_finite_typeless_float: bool,
 
@@ -516,7 +514,7 @@ impl Default for Options {
             ignore_binary_tag_for_string: false,
             no_schema: false,
             reject_unsupported_tags: false,
-            reject_non_finite_typeless_float: true,
+            reject_non_finite_typeless_float: false,
             with_snippet: true,
             crop_radius: 64,
             require_indent: RequireIndent::Unchecked,
@@ -633,7 +631,7 @@ mod tests {
         assert!(!opts.angle_conversions);
         assert!(!opts.no_schema);
         assert!(!opts.reject_unsupported_tags);
-        assert!(opts.reject_non_finite_typeless_float);
+        assert!(!opts.reject_non_finite_typeless_float);
         assert!(opts.with_snippet);
         assert_eq!(opts.crop_radius, 64);
         assert_eq!(opts.require_indent, RequireIndent::Unchecked);
@@ -670,6 +668,7 @@ mod tests {
         assert!(debug_str.contains("budget_report_cb: \"none\""));
         assert!(debug_str.contains("emit_comments: true"));
         assert!(debug_str.contains("reject_unsupported_tags: false"));
+        assert!(debug_str.contains("reject_non_finite_typeless_float: false"));
 
         #[cfg(feature = "include")]
         assert!(debug_str.contains("include_resolver: \"none\""));

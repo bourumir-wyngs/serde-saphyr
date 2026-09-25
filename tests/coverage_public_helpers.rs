@@ -71,10 +71,28 @@ fn options_deserialization_defaults_new_fields() {
     let object = json.as_object_mut().unwrap();
     object.remove("emit_comments");
     object.remove("reject_unsupported_tags");
+    object.remove("reject_non_finite_typeless_float");
 
     let restored: serde_saphyr::Options = serde_json::from_value(json).unwrap();
     assert!(restored.emit_comments);
     assert!(!restored.reject_unsupported_tags);
+    assert!(!restored.reject_non_finite_typeless_float);
+}
+
+#[cfg(feature = "serde_derived_types")]
+#[test]
+fn options_deserialization_preserves_explicit_non_finite_rejection() {
+    let mut json = serde_json::to_value(serde_saphyr::Options::default()).unwrap();
+    let object = json.as_object_mut().unwrap();
+    object.insert("reject_non_finite_typeless_float".to_owned(), true.into());
+
+    let restored: serde_saphyr::Options = serde_json::from_value(json).unwrap();
+    let error = serde_saphyr::from_str_with_options::<serde_json::Value>(".nan", restored)
+        .expect_err("a configuration requesting rejection must reject");
+    assert!(matches!(
+        error.without_snippet(),
+        Error::NonFiniteFloat { .. }
+    ));
 }
 
 #[test]

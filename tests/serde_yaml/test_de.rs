@@ -393,22 +393,20 @@ fn test_numbers() {
         ("127", "127"),
         ("+127", "127"),
         ("-127", "-127"),
-        (".inf", ".inf"),
-        (".Inf", ".inf"),
-        (".INF", ".inf"),
-        ("-.inf", "-.inf"),
-        ("-.Inf", "-.inf"),
-        ("-.INF", "-.inf"),
-        (".nan", ".nan"),
-        (".NaN", ".nan"),
-        (".NAN", ".nan"),
+        // JSON's visitor converts non-finite floats to null.
+        (".inf", "null"),
+        (".Inf", "null"),
+        (".INF", "null"),
+        ("-.inf", "null"),
+        ("-.Inf", "null"),
+        ("-.INF", "null"),
+        (".nan", "null"),
+        (".NaN", "null"),
+        (".NAN", "null"),
         ("0.1", "0.1"),
     ];
-    let options = serde_saphyr::options! {
-        reject_non_finite_typeless_float: false,
-    };
     for &(yaml, expected) in &cases {
-        let value = serde_saphyr::from_str_with_options::<Value>(yaml, options.clone()).unwrap();
+        let value = serde_saphyr::from_str::<Value>(yaml).unwrap();
         assert_eq!(
             value.to_string().trim_matches('"'),
             expected,

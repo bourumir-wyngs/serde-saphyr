@@ -548,25 +548,13 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         location: Location,
         visitor: V,
     ) -> Result<V::Value, Error> {
-        if value.is_finite() {
-            return visitor.visit_f64(value);
-        }
-        // Typeless consumers such as serde_json::Value cannot represent non-finite
-        // floats. Reject them by default, or preserve them as canonical strings.
-        if self.cfg.reject_non_finite_typeless_float {
+        if self.cfg.reject_non_finite_typeless_float && !value.is_finite() {
             return Err(Error::NonFiniteFloat {
                 value: raw,
                 location,
             });
         }
-        let canonical = if value.is_nan() {
-            ".nan"
-        } else if value.is_sign_negative() {
-            "-.inf"
-        } else {
-            ".inf"
-        };
-        visitor.visit_string(canonical.to_owned())
+        visitor.visit_f64(value)
     }
 
     /// Expect a sequence start and consume it, or error otherwise.
