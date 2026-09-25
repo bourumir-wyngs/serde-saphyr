@@ -4,6 +4,9 @@
 
 ### Added
 
+- Added the `borrowed_context` example showing recursive `Serialize` adapters that borrow
+  an existing value tree and per-call formatting context, composing with `Tagged<T>` and
+  style wrappers without building a second container tree or using thread-local state.
 - Added `SerializerOptions::no_lang_directive` (default `false`) to suppress the
   `%YAML 1.2` directive and its leading `---` marker independently of `yaml_12`'s quoting. 
 - Added `from_str_multiple` and `from_str_multiple_with_options` to deserialize multiple YAML

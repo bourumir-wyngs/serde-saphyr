@@ -144,6 +144,10 @@ name = "benchmark"
 required-features = ["serialize", "deserialize"]
 
 [[example]]
+name = "borrowed_context"
+required-features = ["serialize"]
+
+[[example]]
 name = "commented"
 required-features = ["serialize", "deserialize"]
 
