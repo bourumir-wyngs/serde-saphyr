@@ -1,4 +1,4 @@
-name: Downstream Nushell
+name: Nushell
 
 on:
   push:
