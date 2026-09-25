@@ -18,7 +18,7 @@ use super::key_nodes::{
     is_empty_mapping_key_fingerprint, is_merge_key, pending_entries_from_live_events,
     simple_tagged_enum_name, validate_no_merge_keys_in_node_events,
 };
-use super::options::{DuplicateKeyPolicy, MergeKeyPolicy};
+use super::options::{DuplicateKeyPolicy, MergeKeyPolicy, NonFiniteFloatPolicy};
 #[cfg(any(feature = "garde", feature = "validator"))]
 use super::path_map::PathRecorder;
 #[cfg(feature = "properties")]
@@ -548,13 +548,30 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         location: Location,
         visitor: V,
     ) -> Result<V::Value, Error> {
-        if self.cfg.reject_non_finite_typeless_float && !value.is_finite() {
-            return Err(Error::NonFiniteFloat {
-                value: raw,
-                location,
-            });
+        if value.is_finite() {
+            return visitor.visit_f64(value);
         }
-        visitor.visit_f64(value)
+        match self.cfg.non_finite_float_policy {
+            NonFiniteFloatPolicy::PassThrough => visitor.visit_f64(value),
+            // Cfg resolves the compatibility default; an unconfigured policy otherwise
+            // has the same behavior as Reject.
+            NonFiniteFloatPolicy::Default | NonFiniteFloatPolicy::Reject => {
+                Err(Error::NonFiniteFloat {
+                    value: raw,
+                    location,
+                })
+            }
+            NonFiniteFloatPolicy::AsString => {
+                let canonical = if value.is_nan() {
+                    ".nan"
+                } else if value.is_sign_negative() {
+                    "-.inf"
+                } else {
+                    ".inf"
+                };
+                visitor.visit_string(canonical.to_owned())
+            }
+        }
     }
 
     /// Expect a sequence start and consume it, or error otherwise.

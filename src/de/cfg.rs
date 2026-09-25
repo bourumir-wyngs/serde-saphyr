@@ -1,4 +1,4 @@
-use super::options::{DuplicateKeyPolicy, MergeKeyPolicy, Options};
+use super::options::{DuplicateKeyPolicy, MergeKeyPolicy, NonFiniteFloatPolicy, Options};
 use super::{Error, Location};
 use crate::budget::BudgetBreach;
 
@@ -19,9 +19,9 @@ pub(crate) struct Cfg {
     pub(crate) ignore_binary_tag_for_string: bool,
     /// Do not take into String type that looks like number or boolean (require quoting)
     pub(crate) no_schema: bool,
-    /// If true, `deserialize_any` errors on a non-finite float instead of passing it to
-    /// the visitor.
-    pub(crate) reject_non_finite_typeless_float: bool,
+    /// Effective handling of non-finite floats in `deserialize_any`, with the legacy
+    /// boolean already resolved.
+    pub(crate) non_finite_float_policy: NonFiniteFloatPolicy,
     /// Maximum container depth from the configured budget. `None` means budget enforcement
     /// is disabled for deserializer recursion.
     pub(crate) max_depth: Option<usize>,
@@ -31,6 +31,7 @@ pub(crate) struct Cfg {
 
 impl Cfg {
     #[inline]
+    #[allow(deprecated)] // Resolve the compatibility default using the legacy flag.
     pub(crate) fn from_options(options: &Options) -> Self {
         Self {
             dup_policy: options.duplicate_keys,
@@ -40,7 +41,13 @@ impl Cfg {
             angle_conversions: options.angle_conversions,
             ignore_binary_tag_for_string: options.ignore_binary_tag_for_string,
             no_schema: options.no_schema,
-            reject_non_finite_typeless_float: options.reject_non_finite_typeless_float,
+            non_finite_float_policy: match options.non_finite_float_policy {
+                NonFiniteFloatPolicy::Default if options.reject_non_finite_typeless_float => {
+                    NonFiniteFloatPolicy::Reject
+                }
+                NonFiniteFloatPolicy::Default => NonFiniteFloatPolicy::AsString,
+                policy => policy,
+            },
             max_depth: options.budget.as_ref().map(|budget| budget.max_depth),
             depth: 0,
         }

@@ -4,6 +4,9 @@
 
 ### Added
 
+- Added `Options::non_finite_float_policy` with `NonFiniteFloatPolicy::{PassThrough, Reject, AsString}`
+  to configure non-finite floats delivered through `deserialize_any`. Explicit policies override
+  the legacy boolean; leaving the field unconfigured preserves its behavior.
 - Added the `borrowed_context` example showing recursive `Serialize` adapters that borrow
   an existing value tree and per-call formatting context, composing with `Tagged<T>` and
   style wrappers without building a second container tree or using thread-local state.
@@ -22,15 +25,19 @@
 
 ### Changed
 
-- `deserialize_any` now passes NaN and positive/negative infinity to the visitor by default,
-  including overflowing literals such as `1e999`. This supports float-capable visitors,
-  untagged enums, and flattened float fields. `serde_json::Value` converts these values to
-  `Null` without an error; set `Options::reject_non_finite_typeless_float` to `true` to reject
-  them. The existing boolean now defaults to `false`, which passes floats to the visitor
-  instead of converting them to strings. Direct `f32`/`f64` deserialization is unchanged.
+- Non-finite floats remain rejected by default in `deserialize_any`, including overflowing
+  literals such as `1e999`. Opt into `PassThrough` to preserve them in float-capable visitors,
+  untagged enums, and flattened float fields, or `AsString` to receive canonical strings.
+  With `PassThrough`, `serde_json::Value` converts them to `Null` without an error.
+  Direct `f32`/`f64` deserialization is unchanged.
 
 ### Deprecated
 
+- Deprecated `Options::reject_non_finite_typeless_float` in favor of `non_finite_float_policy`.
+  When the new field is unconfigured, the boolean retains its original behavior: `true`
+  (the default) rejects and `false` converts to strings. Use `Reject` or `AsString`, respectively,
+  when migrating. Explicit policies override the boolean. Missing fields in serialized options
+  use the same rejection default as `Options::default()`.
 - Deprecated `from_multiple` and `from_multiple_with_options` in favor of `from_str_multiple`
   and `from_str_multiple_with_options`, which support both owned and borrowed values. The old
   functions remain available with their original signatures for compatibility. When migrating

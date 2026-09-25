@@ -339,8 +339,8 @@ where
 /// an error.
 ///
 /// This is used only by `deserialize_any`'s typeless path (e.g. `serde_json::Value`), where
-/// non-finite floats are passed to the visitor by default. Setting
-/// `reject_non_finite_typeless_float` to true rejects them before visiting.
+/// non-finite floats are rejected by default. `NonFiniteFloatPolicy` can instead pass
+/// them to the visitor as floats or represent them as canonical strings.
 /// Elsewhere, overflowing literals continue to be rejected as invalid floats via
 /// [`parse_yaml12_float`], so this function must not replace it as the general entry point.
 ///

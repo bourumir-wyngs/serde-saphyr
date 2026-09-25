@@ -10,7 +10,7 @@ use super::events::PropertyInterpolation;
 use super::events::{Ev, Events, ReplayEvents, attach_alias_locations_if_missing};
 use super::key_nodes::*;
 use super::tags::SfTag;
-use super::{DuplicateKeyPolicy, Error, Location, MergeKeyPolicy, Options};
+use super::{DuplicateKeyPolicy, Error, Location, MergeKeyPolicy, NonFiniteFloatPolicy, Options};
 
 fn loc(line: usize, column: usize) -> Location {
     Location::new(line, column)
@@ -180,7 +180,7 @@ fn cfg_and_replay_events_follow_options_and_reference_overrides() {
         angle_conversions: true,
         ignore_binary_tag_for_string: true,
         no_schema: true,
-        reject_non_finite_typeless_float: true,
+        non_finite_float_policy: NonFiniteFloatPolicy::Reject,
         ..Options::default()
     };
 
@@ -192,7 +192,7 @@ fn cfg_and_replay_events_follow_options_and_reference_overrides() {
     assert!(cfg.angle_conversions);
     assert!(cfg.ignore_binary_tag_for_string);
     assert!(cfg.no_schema);
-    assert!(cfg.reject_non_finite_typeless_float);
+    assert_eq!(cfg.non_finite_float_policy, NonFiniteFloatPolicy::Reject);
 
     assert_eq!(Ev::default().location(), Location::UNKNOWN);
 

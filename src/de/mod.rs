@@ -87,7 +87,9 @@ pub use self::deserializer::YamlDeserializer;
 pub use self::error::Error;
 #[cfg(feature = "properties")]
 pub use self::options::PropertySyntax;
-pub use self::options::{AliasLimits, DuplicateKeyPolicy, MergeKeyPolicy, Options};
+pub use self::options::{
+    AliasLimits, DuplicateKeyPolicy, MergeKeyPolicy, NonFiniteFloatPolicy, Options,
+};
 pub use crate::location::Location;
 
 pub(crate) use self::cfg::Cfg;

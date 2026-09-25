@@ -26,8 +26,8 @@ pub use self::ser::{
 #[cfg(feature = "deserialize")]
 pub use self::{
     de::{
-        Budget, DuplicateKeyPolicy, Error, Error as DeserializeError, MergeKeyPolicy, Options,
-        budget, localizer, options,
+        Budget, DuplicateKeyPolicy, Error, Error as DeserializeError, MergeKeyPolicy,
+        NonFiniteFloatPolicy, Options, budget, localizer, options,
     },
     de_error::{
         CroppedRegion, MessageFormatter, RenderOptions, SnippetMode, TransformReason,

@@ -13,6 +13,11 @@ const fn default_emit_comments() -> bool {
     true
 }
 
+#[cfg(feature = "serde_derived_types")]
+const fn default_reject_non_finite_typeless_float() -> bool {
+    true
+}
+
 /// Duplicate key handling policy for mappings.
 ///
 /// YAML integer keys are compared by their parsed integer value, so `0xB` and
@@ -35,6 +40,35 @@ pub enum DuplicateKeyPolicy {
     /// key requires numeric comparison, then buffer the remaining entries to
     /// retain the last key's original spelling and value.
     LastWins,
+}
+
+/// Handling of non-finite floats in `deserialize_any`.
+///
+/// By default, non-finite floats are rejected. This policy applies to inferred values,
+/// including Serde's buffering for untagged enums and flattened fields. Direct `f32`/`f64`
+/// deserialization is unaffected.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "serde_derived_types",
+    derive(serde::Serialize, serde::Deserialize)
+)]
+#[cfg_attr(feature = "serde_derived_types", serde(rename_all = "snake_case"))]
+pub enum NonFiniteFloatPolicy {
+    // Compatibility sentinel: defer to the deprecated boolean until it is removed,
+    // then use the unconfigured policy (Reject).
+    #[doc(hidden)]
+    #[default]
+    Default,
+    /// Pass NaN and positive/negative infinity to the visitor as `f64` values.
+    ///
+    /// The receiving visitor determines how to represent them. For example,
+    /// `serde_json::Value` converts them to `Null` without returning an error.
+    PassThrough,
+    /// Return [`crate::Error::NonFiniteFloat`] before calling the visitor.
+    Reject,
+    /// Pass canonical strings (`.nan`, `.inf`, `-.inf`) to the visitor.
+    AsString,
 }
 
 /// Recognized syntaxes for `${NAME}` / `$NAME` property interpolation.
@@ -252,18 +286,38 @@ pub struct Options {
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub reject_unsupported_tags: bool,
 
-    /// If true, `deserialize_any` errors on NaN, positive/negative infinity, and decimal
-    /// literals that overflow `f64` (e.g. `1e999`) before passing them to the visitor.
+    /// Handling of NaN, positive/negative infinity, and decimal literals that overflow
+    /// `f64` (e.g. `1e999`) in `deserialize_any`.
     ///
-    /// Default: false, which passes the float to the receiving visitor. This preserves
-    /// non-finite values for visitors that support them, including Serde's buffering for
+    /// If left at its default, this uses [`Self::reject_non_finite_typeless_float`],
+    /// preserving rejection by default and string conversion when that legacy flag is
+    /// false. Explicit [`NonFiniteFloatPolicy::PassThrough`], [`NonFiniteFloatPolicy::Reject`],
+    /// and [`NonFiniteFloatPolicy::AsString`] values override the legacy flag.
+    ///
+    /// `PassThrough` lets float-capable visitors preserve non-finite values, including
     /// untagged enums and flattened float fields. `serde_json::Value` instead converts
-    /// them to `Null` without an error; set this flag to true to reject them explicitly.
+    /// them to `Null` without an error. `Reject` prevents that loss; `AsString` passes
+    /// canonical strings (`.nan`, `.inf`, `-.inf`) to the visitor.
     ///
-    /// Untagged quoted scalars and `!!str` scalars remain strings with either setting.
+    /// Untagged quoted scalars and `!!str` scalars remain strings under every policy.
     /// Direct `f32`/`f64` targets are unaffected: YAML non-finite spellings remain
     /// accepted, while overflowing decimal/exponential literals remain invalid.
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
+    pub non_finite_float_policy: NonFiniteFloatPolicy,
+
+    /// Legacy handling of non-finite floats in `deserialize_any`.
+    ///
+    /// When [`Self::non_finite_float_policy`] is left at its default, true (the default)
+    /// rejects non-finite floats and false converts them to canonical strings.
+    /// An explicit policy overrides this flag.
+    ///
+    /// Use [`Self::non_finite_float_policy`] with [`NonFiniteFloatPolicy::Reject`] instead
+    /// of true, or [`NonFiniteFloatPolicy::AsString`] instead of false.
+    #[deprecated(since = "1.4.0", note = "use non_finite_float_policy instead")]
+    #[cfg_attr(
+        feature = "serde_derived_types",
+        serde(default = "default_reject_non_finite_typeless_float")
+    )]
     pub reject_non_finite_typeless_float: bool,
 
     /// If true (default), public APIs that have access to the original YAML input
@@ -498,6 +552,7 @@ impl Options {
     }
 }
 
+#[allow(deprecated)] // Preserve the legacy default while the new field is unconfigured.
 impl Default for Options {
     fn default() -> Self {
         Self {
@@ -514,7 +569,8 @@ impl Default for Options {
             ignore_binary_tag_for_string: false,
             no_schema: false,
             reject_unsupported_tags: false,
-            reject_non_finite_typeless_float: false,
+            non_finite_float_policy: NonFiniteFloatPolicy::default(),
+            reject_non_finite_typeless_float: true,
             with_snippet: true,
             crop_radius: 64,
             require_indent: RequireIndent::Unchecked,
@@ -529,6 +585,7 @@ impl Default for Options {
     }
 }
 
+#[allow(deprecated)] // Include the legacy setting in diagnostics.
 impl std::fmt::Debug for Options {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Options")
@@ -555,6 +612,7 @@ impl std::fmt::Debug for Options {
             .field("angle_conversions", &self.angle_conversions)
             .field("no_schema", &self.no_schema)
             .field("reject_unsupported_tags", &self.reject_unsupported_tags)
+            .field("non_finite_float_policy", &self.non_finite_float_policy)
             .field(
                 "reject_non_finite_typeless_float",
                 &self.reject_non_finite_typeless_float,
@@ -631,7 +689,10 @@ mod tests {
         assert!(!opts.angle_conversions);
         assert!(!opts.no_schema);
         assert!(!opts.reject_unsupported_tags);
-        assert!(!opts.reject_non_finite_typeless_float);
+        assert_eq!(
+            opts.non_finite_float_policy,
+            NonFiniteFloatPolicy::default()
+        );
         assert!(opts.with_snippet);
         assert_eq!(opts.crop_radius, 64);
         assert_eq!(opts.require_indent, RequireIndent::Unchecked);
@@ -659,6 +720,25 @@ mod tests {
         assert!(serde_json::from_str::<DuplicateKeyPolicy>("\"FirstWins\"").is_err());
     }
 
+    #[cfg(feature = "serde_derived_types")]
+    #[test]
+    fn non_finite_float_policy_serde_uses_snake_case() {
+        for (policy, name) in [
+            (NonFiniteFloatPolicy::Default, "default"),
+            (NonFiniteFloatPolicy::PassThrough, "pass_through"),
+            (NonFiniteFloatPolicy::Reject, "reject"),
+            (NonFiniteFloatPolicy::AsString, "as_string"),
+        ] {
+            let json = serde_json::to_string(&policy).unwrap();
+            assert_eq!(json, format!("\"{name}\""));
+            assert_eq!(
+                serde_json::from_str::<NonFiniteFloatPolicy>(&json).unwrap(),
+                policy
+            );
+        }
+        assert!(serde_json::from_str::<NonFiniteFloatPolicy>("\"PassThrough\"").is_err());
+    }
+
     #[test]
     fn test_options_debug_format() {
         let opts = Options::default();
@@ -668,7 +748,8 @@ mod tests {
         assert!(debug_str.contains("budget_report_cb: \"none\""));
         assert!(debug_str.contains("emit_comments: true"));
         assert!(debug_str.contains("reject_unsupported_tags: false"));
-        assert!(debug_str.contains("reject_non_finite_typeless_float: false"));
+        assert!(debug_str.contains("non_finite_float_policy: Default"));
+        assert!(debug_str.contains("reject_non_finite_typeless_float: true"));
 
         #[cfg(feature = "include")]
         assert!(debug_str.contains("include_resolver: \"none\""));

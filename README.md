@@ -46,7 +46,7 @@ See [release history](https://github.com/bourumir-wyngs/serde-saphyr/releases) o
 - **Serializer supports emitting anchors** (Rc, Arc, Weak) if they are properly wrapped (see below).
 - **Declarative validation with optional [`validator`](https://crates.io/crates/validator) ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/validator_validate.rs))** or **[`garde`](https://crates.io/crates/garde)** ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/garde_validate.rs)).
 - **Optional [`miette`](https://crates.io/crates/miette)** ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/miette.rs)) integration for more advanced error reporting.
-- **serde_json::Value** is supported when parsing without a target structure (NaN and infinity become `Null` by default; set `reject_non_finite_typeless_float: true` to reject them).
+- **serde_json::Value** is supported when parsing without a target structure (non-finite floats are rejected by default; `NonFiniteFloatPolicy` can instead preserve them as strings or pass them to the visitor).
 - **[Serializer](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Serializer.html)** and **[Deserializer](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Deserializer.html)** are public (due to how it's implemented, Deserializer is available in the closure only).
 - Serialized floats are official YAML floats.
 - Correct handling for JSON-style Unicode surrogate pairs.
@@ -423,21 +423,31 @@ fn main() -> Result<(), serde_saphyr::Error> {
 
 If you must work with abstract types, you can also deserialize YAML into [`serde_json::Value`](https://docs.rs/serde_json/latest/serde_json/value/index.html). Serde will drive the process through [`deserialize_any`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Deserializer.html#method.deserialize_any) because `Value` does not fix a Rust primitive type ahead of time. You lose the strict type control provided by Rust `struct` data types. Also, unlike YAML, JSON does not allow composite keys; keys must be strings. Mapping entries are presented to Serde in source order. Whether the target retains that order depends on its implementation.
 
-By default, `deserialize_any` passes `.nan`, `.inf`, and `-.inf` to the visitor as floating-point
-values. Visitors that support non-finite floats can preserve them. JSON's `Value` visitor instead produces `Null` without
-an error. To reject these inputs explicitly, receiving error with location:
+By default, `deserialize_any` rejects `.nan`, `.inf`, and `-.inf` with an error and source location.
+Set `Options::non_finite_float_policy` to choose how these values are delivered:
+
+| Policy | Behavior |
+| --- | --- |
+| `Reject` | Rejects non-finite floats; this is the default behavior. |
+| `AsString` | Passes canonical strings (`".nan"`, `".inf"`, `"-.inf"`) to the visitor. |
+| `PassThrough` | Passes actual non-finite floats to the visitor. JSON's `Value` visitor converts them to `Null` without an error. |
+
+For example, to preserve non-finite values as strings in JSON:
 
 ```rust
-use serde_saphyr::{from_str_with_options, options};
+use serde_saphyr::{NonFiniteFloatPolicy, from_str_with_options, options};
 
 let options = options! {
-    reject_non_finite_typeless_float: true, // defaults to `false`
+    non_finite_float_policy: NonFiniteFloatPolicy::AsString,
 };
-assert!(from_str_with_options::<serde_json::Value>("value: .nan", options).is_err());
+let value: serde_json::Value = from_str_with_options("value: .NaN", options).unwrap();
+assert_eq!(value["value"], ".nan");
 ```
 
-The same option applies to overflowing literals such as `1e999` (if `reject_non_finite_typeless_float`, they are rejected as errors).
-Untagged quoted scalars and `!!str` scalars remain strings. Direct `f32`/`f64` targets are unaffected by this option.
+Overflowing literals such as `1e999` follow the same policy: `Reject` returns an error,
+`AsString` produces `".inf"`, and `PassThrough` sends infinity to the visitor. Untagged quoted
+scalars and `!!str` scalars remain strings. Direct `f32`/`f64` targets are unaffected: they accept
+YAML non-finite spellings and reject overflowing decimal literals.
 
 ### Borrowed string deserialization
 

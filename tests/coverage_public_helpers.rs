@@ -3,7 +3,8 @@
 use serde::Deserialize;
 use serde::de::value::{MapDeserializer, U64Deserializer, UnitDeserializer};
 use serde_saphyr::{
-    Error, ExternalMessage, ExternalMessageSource, IncludeRequest, Location, Span, Spanned, budget,
+    Error, ExternalMessage, ExternalMessageSource, IncludeRequest, Location, NonFiniteFloatPolicy,
+    Span, Spanned, budget,
 };
 
 #[test]
@@ -71,28 +72,100 @@ fn options_deserialization_defaults_new_fields() {
     let object = json.as_object_mut().unwrap();
     object.remove("emit_comments");
     object.remove("reject_unsupported_tags");
+    object.remove("non_finite_float_policy");
     object.remove("reject_non_finite_typeless_float");
 
     let restored: serde_saphyr::Options = serde_json::from_value(json).unwrap();
     assert!(restored.emit_comments);
     assert!(!restored.reject_unsupported_tags);
-    assert!(!restored.reject_non_finite_typeless_float);
+    assert_eq!(
+        restored.non_finite_float_policy,
+        NonFiniteFloatPolicy::Default
+    );
+    assert_non_finite_json_result(restored, None);
+}
+
+// None means rejection; strings are the expected JSON representation of `.nan`.
+const NON_FINITE_OPTION_CASES: [(NonFiniteFloatPolicy, bool, Option<&str>); 8] = [
+    (NonFiniteFloatPolicy::Default, true, None),
+    (NonFiniteFloatPolicy::Default, false, Some("\".nan\"")),
+    (NonFiniteFloatPolicy::PassThrough, true, Some("null")),
+    (NonFiniteFloatPolicy::PassThrough, false, Some("null")),
+    (NonFiniteFloatPolicy::Reject, true, None),
+    (NonFiniteFloatPolicy::Reject, false, None),
+    (NonFiniteFloatPolicy::AsString, true, Some("\".nan\"")),
+    (NonFiniteFloatPolicy::AsString, false, Some("\".nan\"")),
+];
+
+fn assert_non_finite_json_result(options: serde_saphyr::Options, expected_json: Option<&str>) {
+    let result = serde_saphyr::from_str_with_options::<serde_json::Value>(".nan", options);
+    match expected_json {
+        Some(expected) => assert_eq!(result.unwrap().to_string(), expected),
+        None => {
+            let error = result.expect_err("the effective policy must reject non-finite floats");
+            assert!(matches!(
+                error.without_snippet(),
+                Error::NonFiniteFloat { .. }
+            ));
+        }
+    }
+}
+
+#[test]
+fn default_options_reject_non_finite_values() {
+    assert_non_finite_json_result(serde_saphyr::Options::default(), None);
+}
+
+#[test]
+#[allow(deprecated)]
+fn explicit_non_finite_policies_override_legacy_boolean() {
+    for (policy, legacy_reject, expected) in NON_FINITE_OPTION_CASES {
+        let mut options = serde_saphyr::options! {
+            reject_non_finite_typeless_float: legacy_reject,
+        };
+        if policy != NonFiniteFloatPolicy::Default {
+            options.non_finite_float_policy = policy;
+        }
+        assert_non_finite_json_result(options, expected);
+    }
 }
 
 #[cfg(feature = "serde_derived_types")]
 #[test]
-fn options_deserialization_preserves_explicit_non_finite_rejection() {
-    let mut json = serde_json::to_value(serde_saphyr::Options::default()).unwrap();
-    let object = json.as_object_mut().unwrap();
-    object.insert("reject_non_finite_typeless_float".to_owned(), true.into());
+fn options_deserialization_preserves_legacy_non_finite_behavior() {
+    for (legacy_reject, expected) in [(true, None), (false, Some("\".nan\""))] {
+        let mut json = serde_json::to_value(serde_saphyr::Options::default()).unwrap();
+        let object = json.as_object_mut().unwrap();
+        object.remove("non_finite_float_policy");
+        object.insert(
+            "reject_non_finite_typeless_float".to_owned(),
+            legacy_reject.into(),
+        );
 
-    let restored: serde_saphyr::Options = serde_json::from_value(json).unwrap();
-    let error = serde_saphyr::from_str_with_options::<serde_json::Value>(".nan", restored)
-        .expect_err("a configuration requesting rejection must reject");
-    assert!(matches!(
-        error.without_snippet(),
-        Error::NonFiniteFloat { .. }
-    ));
+        let restored: serde_saphyr::Options = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            restored.non_finite_float_policy,
+            NonFiniteFloatPolicy::Default
+        );
+        assert_non_finite_json_result(restored, expected);
+    }
+}
+
+#[cfg(feature = "serde_derived_types")]
+#[test]
+#[allow(deprecated)]
+fn options_serde_round_trip_preserves_non_finite_policies_and_legacy_flag() {
+    for (policy, legacy_reject, expected) in NON_FINITE_OPTION_CASES {
+        let options = serde_saphyr::options! {
+            non_finite_float_policy: policy,
+            reject_non_finite_typeless_float: legacy_reject,
+        };
+        let restored: serde_saphyr::Options =
+            serde_json::from_value(serde_json::to_value(options).unwrap()).unwrap();
+        assert_eq!(restored.non_finite_float_policy, policy);
+        assert_eq!(restored.reject_non_finite_typeless_float, legacy_reject);
+        assert_non_finite_json_result(restored, expected);
+    }
 }
 
 #[test]

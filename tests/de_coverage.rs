@@ -241,7 +241,7 @@ fn deserialize_any_rejects_non_finite_float_when_requested(
     #[case] expected_value: &str,
 ) {
     let options = serde_saphyr::options! {
-        reject_non_finite_typeless_float: true,
+        non_finite_float_policy: serde_saphyr::NonFiniteFloatPolicy::Reject,
     };
     let err = serde_saphyr::from_str_with_options::<serde_json::Value>(yaml, options).unwrap_err();
     match err.without_snippet() {

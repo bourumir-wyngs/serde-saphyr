@@ -406,7 +406,10 @@ fn test_numbers() {
         ("0.1", "0.1"),
     ];
     for &(yaml, expected) in &cases {
-        let value = serde_saphyr::from_str::<Value>(yaml).unwrap();
+        let options = serde_saphyr::options! {
+            non_finite_float_policy: serde_saphyr::NonFiniteFloatPolicy::PassThrough,
+        };
+        let value = serde_saphyr::from_str_with_options::<Value>(yaml, options).unwrap();
         assert_eq!(
             value.to_string().trim_matches('"'),
             expected,
