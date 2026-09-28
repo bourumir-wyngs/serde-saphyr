@@ -73,7 +73,6 @@ fn options_deserialization_defaults_new_fields() {
     object.remove("emit_comments");
     object.remove("reject_unsupported_tags");
     object.remove("non_finite_float_policy");
-    object.remove("reject_non_finite_typeless_float");
 
     let restored: serde_saphyr::Options = serde_json::from_value(json).unwrap();
     assert!(restored.emit_comments);
@@ -83,6 +82,38 @@ fn options_deserialization_defaults_new_fields() {
         NonFiniteFloatPolicy::Default
     );
     assert_non_finite_json_result(restored, None);
+}
+
+#[cfg(feature = "serde_derived_types")]
+#[test]
+fn options_deserialization_without_non_finite_flags_preserves_legacy_strings() {
+    let mut json = serde_json::to_value(serde_saphyr::Options::default()).unwrap();
+    let object = json.as_object_mut().unwrap();
+    object.remove("non_finite_float_policy");
+    object.remove("reject_non_finite_typeless_float");
+
+    // In 1.3.0, a missing serialized flag defaulted to false, even though
+    // Options::default() set it to true. Preserve that distinction for old configs.
+    let yaml = json.to_string(); // JSON mappings are also valid YAML.
+    for restored in [
+        serde_json::from_value::<serde_saphyr::Options>(json).unwrap(),
+        serde_saphyr::from_str::<serde_saphyr::Options>(&yaml).unwrap(),
+    ] {
+        for (literal, canonical) in [
+            (".nan", ".nan"),
+            ("+.NaN", ".nan"),
+            (".inf", ".inf"),
+            ("+.INF", ".inf"),
+            ("-.inf", "-.inf"),
+            ("1e999", ".inf"),
+            ("-1e999", "-.inf"),
+        ] {
+            let value =
+                serde_saphyr::from_str_with_options::<serde_json::Value>(literal, restored.clone())
+                    .unwrap();
+            assert_eq!(value, serde_json::Value::String(canonical.to_owned()));
+        }
+    }
 }
 
 // None means rejection; strings are the expected JSON representation of `.nan`.

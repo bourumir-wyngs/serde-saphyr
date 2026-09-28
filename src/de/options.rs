@@ -13,11 +13,6 @@ const fn default_emit_comments() -> bool {
     true
 }
 
-#[cfg(feature = "serde_derived_types")]
-const fn default_reject_non_finite_typeless_float() -> bool {
-    true
-}
-
 /// Duplicate key handling policy for mappings.
 ///
 /// YAML integer keys are compared by their parsed integer value, so `0xB` and
@@ -311,13 +306,14 @@ pub struct Options {
     /// rejects non-finite floats and false converts them to canonical strings.
     /// An explicit policy overrides this flag.
     ///
+    /// [`Options::default()`] sets this to true. When deserializing options with
+    /// `serde_derived_types`, an omitted flag defaults to false for compatibility
+    /// with 1.3.0. If the policy is also omitted, non-finite values become strings.
+    ///
     /// Use [`Self::non_finite_float_policy`] with [`NonFiniteFloatPolicy::Reject`] instead
     /// of true, or [`NonFiniteFloatPolicy::AsString`] instead of false.
     #[deprecated(since = "1.4.0", note = "use non_finite_float_policy instead")]
-    #[cfg_attr(
-        feature = "serde_derived_types",
-        serde(default = "default_reject_non_finite_typeless_float")
-    )]
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub reject_non_finite_typeless_float: bool,
 
     /// If true (default), public APIs that have access to the original YAML input

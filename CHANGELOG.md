@@ -36,8 +36,9 @@
 - Deprecated `Options::reject_non_finite_typeless_float` in favor of `non_finite_float_policy`.
   When the new field is unconfigured, the boolean retains its original behavior: `true`
   (the default) rejects and `false` converts to strings. Use `Reject` or `AsString`, respectively,
-  when migrating. Explicit policies override the boolean. Missing fields in serialized options
-  use the same rejection default as `Options::default()`.
+  when migrating. Explicit policies override the boolean. Serialized options that omit both
+  fields retain the 1.3.0 behavior of converting non-finite floats to strings;
+  `Options::default()` continues to reject them.
 - Deprecated `from_multiple` and `from_multiple_with_options` in favor of `from_str_multiple`
   and `from_str_multiple_with_options`, which support both owned and borrowed values. The old
   functions remain available with their original signatures for compatibility. When migrating
