@@ -565,7 +565,6 @@ impl Default for Options {
             ignore_binary_tag_for_string: false,
             no_schema: false,
             reject_unsupported_tags: false,
-            non_finite_float_policy: NonFiniteFloatPolicy::default(),
             reject_non_finite_typeless_float: true,
             with_snippet: true,
             crop_radius: 64,
@@ -577,6 +576,7 @@ impl Default for Options {
             property_map: None,
             #[cfg(feature = "properties")]
             property_syntax: PropertySyntax::Braced,
+            non_finite_float_policy: NonFiniteFloatPolicy::default(),
         }
     }
 }
