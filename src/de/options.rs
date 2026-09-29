@@ -83,6 +83,29 @@ pub enum PropertySyntax {
     /// Both `${NAME}` and the unbraced shorthand `$NAME` are interpolated.
     /// The unbraced form uses Required semantics (missing values error).
     BracedOrBare,
+
+    /// Full compatibility with [Docker Compose] property-interpolation syntax and semantics.
+    ///
+    /// - Both `${NAME}` and `$NAME` are recognized, with names matching
+    ///   `[_a-zA-Z][_a-zA-Z0-9]*`.
+    /// - `${NAME-default}` uses the default when unset; `${NAME:-default}` also uses it
+    ///   when empty.
+    /// - `${NAME+replacement}` uses the replacement when set; `${NAME:+replacement}`
+    ///   additionally requires a non-empty value. Otherwise, the result is empty.
+    /// - `${NAME?error}` fails when unset; `${NAME:?error}` also fails when empty.
+    ///   An unset direct reference (`${NAME}` or `$NAME`) produces a warning and an empty
+    ///   string instead of failing.
+    /// - Selected default, replacement, and error text recursively expands both reference
+    ///   forms and `$$` escapes. Property-map values are final and are not re-expanded.
+    /// - `$$` produces a literal `$` and prevents that dollar from starting a reference.
+    ///   Dollar signs that do not start a reference or escape remain literal.
+    /// - Interpolation applies to YAML string values, including quoted and block scalars,
+    ///   but never to mapping keys.
+    /// - Malformed or unclosed `${...}` references are errors. Literal braces in operator
+    ///   text are balanced, so `${NAME:-{json}}` leaves no extra `}` when `NAME` is set.
+    ///
+    /// [Docker Compose]: https://docs.docker.com/reference/compose-file/interpolation/
+    DockerCompose,
 }
 
 /// Merge key handling policy for YAML mappings.
