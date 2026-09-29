@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added `PropertySyntax::DockerCompose` for Compose-compatible property interpolation.
 - Added `Options::non_finite_float_policy` with `NonFiniteFloatPolicy::{PassThrough, Reject, AsString}`
   to configure non-finite floats delivered through `deserialize_any`. Explicit policies override
   the legacy boolean; leaving the field unconfigured preserves its behavior.

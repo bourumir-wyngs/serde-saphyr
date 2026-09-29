@@ -615,7 +615,7 @@ Many configuration formats contain secret values that should not live in checked
 The optional `properties` feature adds docker-compose-style `${NAME}` interpolation for that use case, with values supplied through [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html).
 It is also useful for generated values or values that change between releases or deployments.
 
-Interpolation is intentionally narrow:
+By default, interpolation is intentionally narrow:
 
 - it only applies to **plain scalars**; quoted and block scalars stay literal,
 - the supported forms are listed in the table below,
@@ -735,8 +735,16 @@ fn main() -> Result<(), serde_saphyr::Error> {
 # fn main() {}
 ```
 
-A bare `${NAME}` with no value in the map (and no `-`/`:-` default), a `${NAME?msg}` / `${NAME:?msg}` that triggers its error condition, or a malformed `${...}` candidate (invalid name, unsupported modifier), fails deserialization with a dedicated error pointing at the YAML source location.
+In the `Braced` and `BracedOrBare` modes, a bare `${NAME}` with no value in the map (and no `-`/`:-` default), a `${NAME?msg}` / `${NAME:?msg}` that triggers its error condition, or a malformed `${...}` candidate (invalid name, unsupported modifier), fails deserialization with a dedicated error pointing at the YAML source location.
 Configuration mistakes fail closed rather than silently producing partial values.
+
+Select `PropertySyntax::DockerCompose` for [Docker Compose interpolation semantics](https://docs.docker.com/reference/compose-file/interpolation/):
+
+- Both `$NAME` and `${NAME}` expand in plain, single-quoted, double-quoted, and block string values. Mapping keys and `!!binary` scalars are not interpolated.
+- Unset direct references silently produce an empty string, not an error. The default, alternative, and required operators use the conditions in the table above.
+- Selected default, replacement, and error text recursively expands both reference forms and `$$` escapes. Property-map values are not expanded again.
+- Malformed or unclosed braced references fail. Each braced reference must fit on one line, and literal braces inside operator text follow Compose's delimiter matching.
+- Expanded strings remain strings when deserializing generic values, even when they contain `null`, `true`, or a number. Explicitly requested numeric types can still parse expanded values.
 
 When the property values are secrets, interpolation resolves the final value before Serde finishes deserializing the surrounding type, so a downstream custom deserializer or validation path could otherwise echo the resolved secret.
 `serde-saphyr` tracks interpolated values and redacts them back to their `${...}` form in later error messages.

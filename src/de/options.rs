@@ -66,7 +66,7 @@ pub enum NonFiniteFloatPolicy {
     AsString,
 }
 
-/// Recognized syntaxes for `${NAME}` / `$NAME` property interpolation.
+/// Syntax and expansion rules for `${NAME}` / `$NAME` property interpolation.
 #[cfg(feature = "properties")]
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -84,25 +84,31 @@ pub enum PropertySyntax {
     /// The unbraced form uses Required semantics (missing values error).
     BracedOrBare,
 
-    /// Full compatibility with [Docker Compose] property-interpolation syntax and semantics.
+    /// Property interpolation compatible with [Docker Compose]'s syntax and value expansion.
     ///
-    /// - Both `${NAME}` and `$NAME` are recognized, with names matching
-    ///   `[_a-zA-Z][_a-zA-Z0-9]*`.
+    /// - Both `${NAME}` and `$NAME` are recognized, using Compose's case-insensitive
+    ///   `[_a-z][_a-z0-9]*` name pattern (including Unicode `K` and `ſ`). Property lookup
+    ///   remains case-sensitive.
     /// - `${NAME-default}` uses the default when unset; `${NAME:-default}` also uses it
     ///   when empty.
     /// - `${NAME+replacement}` uses the replacement when set; `${NAME:+replacement}`
     ///   additionally requires a non-empty value. Otherwise, the result is empty.
     /// - `${NAME?error}` fails when unset; `${NAME:?error}` also fails when empty.
-    ///   An unset direct reference (`${NAME}` or `$NAME`) produces a warning and an empty
+    ///   An unset direct reference (`${NAME}` or `$NAME`) silently produces an empty
     ///   string instead of failing.
     /// - Selected default, replacement, and error text recursively expands both reference
     ///   forms and `$$` escapes. Property-map values are final and are not re-expanded.
     /// - `$$` produces a literal `$` and prevents that dollar from starting a reference.
     ///   Dollar signs that do not start a reference or escape remain literal.
     /// - Interpolation applies to YAML string values, including quoted and block scalars,
-    ///   but never to mapping keys.
-    /// - Malformed or unclosed `${...}` references are errors. Literal braces in operator
-    ///   text are balanced, so `${NAME:-{json}}` leaves no extra `}` when `NAME` is set.
+    ///   but never to mapping keys or `!!binary` scalars.
+    /// - Malformed or unclosed `${...}` references are errors; a braced reference cannot
+    ///   span a line break. Literal braces in operator text follow Compose's delimiter
+    ///   matching, so `${NAME:-{json}}` leaves no extra `}` when `NAME` is set.
+    ///
+    /// Values come from [`Options::property_map`]; an absent map is treated as empty.
+    /// This mode does not load environment variables or `.env` files. Expansion budgets
+    /// still apply.
     ///
     /// [Docker Compose]: https://docs.docker.com/reference/compose-file/interpolation/
     DockerCompose,
@@ -427,7 +433,10 @@ impl Options {
         self
     }
 
-    /// Installs a property map used for `${NAME}` interpolation in plain scalars.
+    /// Installs a property map used for `${NAME}` interpolation.
+    ///
+    /// [`PropertySyntax::DockerCompose`] also interpolates quoted and block string values;
+    /// the other modes interpolate only plain scalars.
     ///
     /// This is the intended public API for the `properties` feature. It consumes the provided
     /// [`HashMap`] and stores it in the internal shared representation used by nested

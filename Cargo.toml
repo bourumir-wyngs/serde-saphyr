@@ -47,7 +47,7 @@ deserialize = ["dep:num-traits", "dep:annotate-snippets", "dep:granit-parser", "
 # budget, and report types. Disabled by default to avoid compiling serde_derive.
 serde_derived_types = ["dep:serde", "deserialize"]
 
-# Enables `${VAR}` property interpolation in plain scalar values.
+# Enables configurable `${VAR}` / `$VAR` property interpolation in scalar values.
 properties = ["deserialize"]
 
 # Enables !include tag processing (also resolver must be set)

@@ -421,18 +421,25 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
     }
 
     fn interpolation_possible(&self, tag: SfTag, style: ScalarStyle) -> bool {
-        if self.in_key || tag == SfTag::Binary || style != ScalarStyle::Plain {
+        if self.in_key || tag == SfTag::Binary {
             return false;
         }
 
         #[cfg(not(feature = "properties"))]
         {
+            let _ = style;
             false
         }
 
         #[cfg(feature = "properties")]
         {
-            self.ev.property_interpolation().property_map().is_some()
+            let properties = self.ev.property_interpolation();
+            properties.property_map().is_some()
+                && if properties.syntax() == super::options::PropertySyntax::DockerCompose {
+                    tag.can_parse_into_string()
+                } else {
+                    style == ScalarStyle::Plain
+                }
         }
     }
 
@@ -629,6 +636,21 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
             raw.clone()
         };
         let interpolated = raw.as_ref() != effective.as_ref();
+        #[cfg(feature = "properties")]
+        let tag = if interpolated
+            && self.ev.property_interpolation().syntax()
+                == super::options::PropertySyntax::DockerCompose
+            && tag.can_parse_into_string()
+            && !tag.forces_string()
+        {
+            // Compose parses YAML before interpolation. An expanded string stays a
+            // string even when its contents look like null, a boolean, or a number.
+            // The non-specific tag preserves this for generic visitors while still
+            // allowing explicitly requested numeric types to parse the result.
+            SfTag::NonSpecific
+        } else {
+            tag
+        };
         Ok(ScalarView {
             raw,
             effective,
@@ -646,7 +668,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         style: ScalarStyle,
         location: Location,
     ) -> Result<Cow<'de, str>, Error> {
-        if self.in_key || tag == SfTag::Binary || style != ScalarStyle::Plain {
+        if !self.interpolation_possible(tag, style) {
             return Ok(value);
         }
 
@@ -1937,7 +1959,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 let mut replay = ReplayEvents::new(
                     events,
                     #[cfg(feature = "properties")]
-                    self.ev.property_interpolation().clone(),
+                    self.ev.property_interpolation().for_key(),
                 );
 
                 // Get location from replay events for error reporting.
@@ -2490,7 +2512,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     return Err(eof_with_loc(self.ev));
                 };
                 if self.cfg.no_schema
-                    && !tag.forces_string()
+                    && !view.tag.forces_string()
                     && maybe_not_string(&view.effective, &style, self.cfg.strict_booleans)
                 {
                     let view = self.take_scalar_view()?;
