@@ -50,7 +50,6 @@ fn cargo_check(dir: &Path, target_dir: &Path) -> Output {
         .arg("check")
         .arg("--offline")
         .arg("--quiet")
-        .arg("--offline")
         .env("CARGO_TARGET_DIR", target_dir)
         .output()
         .expect("run cargo check")
