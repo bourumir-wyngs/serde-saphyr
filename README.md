@@ -10,6 +10,7 @@
 [![Fuzz & Audit](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/ci.yml/badge.svg)](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/l/serde-saphyr.svg)](https://crates.io/crates/serde-saphyr)
 [![1.3 API compatibility](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/api-compat.yml/badge.svg)](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/api-compat.yml)
+[![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://app.codspeed.io/bourumir-wyngs/serde-saphyr?utm_source=badge)
 
 [![Socket](https://socket.dev/api/badge/cargo/package/serde-saphyr)](https://socket.dev/cargo/package/serde-saphyr)
 [![dependency status](https://deps.rs/crate/serde-saphyr/latest/status.svg)](https://deps.rs/crate/serde-saphyr/latest)
