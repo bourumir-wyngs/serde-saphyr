@@ -371,8 +371,7 @@ checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
 [[package]]
 name = "granit-parser"
 version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e20f99e46474f56bd905c56e817ebddcf377a611f94c53ac4649e4d3fa3c0cd0"
+source = "git+https://github.com/bourumir-wyngs/granit-parser?branch=bw%2Fstrict_indentation#a5ef202aa04a3e660071896957611286f4115b90"
 dependencies = [
  "arraydeque",
  "smallvec",
