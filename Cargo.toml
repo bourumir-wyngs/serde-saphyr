@@ -99,6 +99,7 @@ tempfile = "3.27"
 rstest = { version = ">=0.26,<0.28" }
 proptest = { version = "1", default-features = false, features = ["std"] }
 typetag = "0.2"
+divan = { version = "5.0.2", package = "codspeed-divan-compat" }
 
 [package.metadata]
 status = "actively developed"
@@ -213,6 +214,11 @@ required-features = ["serialize"]
 
 [[example]]
 name = "wrapper_function"
+required-features = ["serialize", "deserialize"]
+
+[[bench]]
+name = "yaml"
+harness = false
 required-features = ["serialize", "deserialize"]
 
 [lints.rust]
