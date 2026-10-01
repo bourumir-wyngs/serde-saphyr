@@ -1,13 +1,15 @@
 use crate::Location;
 use crate::budget::BudgetBreach;
-use crate::de_error::{Error, MessageFormatter, UserMessageFormatter};
+use crate::de_error::{
+    Error, MessageFormatter, UserMessageFormatter, render_message_text, sanitize_message_text,
+};
 use crate::localizer::{ExternalMessage, Localizer};
+use crate::location::Locations;
 
 use std::borrow::Cow;
 
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::{
-    Locations,
     de_error::ValidationIssue,
     localizer::ExternalMessageSource,
     path_map::{PathMap, format_path_with_resolved_leaf},
@@ -58,6 +60,21 @@ fn format_validation_issues(
         ));
     }
     l10n.join_validation_issues(&lines)
+}
+
+/// Append where the anchor is defined, unless the alias is used at the same place.
+fn alias_message<'a>(
+    l10n: &dyn Localizer,
+    msg: Cow<'a, str>,
+    locations: Locations,
+) -> Cow<'a, str> {
+    let ref_loc = locations.reference_location;
+    let def_loc = locations.defined_location;
+    match (ref_loc, def_loc) {
+        (Location::UNKNOWN, Location::UNKNOWN) => msg,
+        (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => msg,
+        (_r, d) => Cow::Owned(format!("{msg}{}", l10n.alias_defined_at(d))),
+    }
 }
 
 fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) -> Cow<'a, str> {
@@ -367,17 +384,21 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
             "indentation error: expected {required}, found {actual} spaces"
         )),
         Error::IOError { cause } => Cow::Owned(format!("IO error: {cause}")),
-        Error::AliasError { msg, locations } => {
-            let l10n = formatter.localizer();
-            let ref_loc = locations.reference_location;
-            let def_loc = locations.defined_location;
-            match (ref_loc, def_loc) {
-                (Location::UNKNOWN, Location::UNKNOWN) => Cow::Borrowed(msg.as_str()),
-                (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
-                    Cow::Borrowed(msg.as_str())
+        #[allow(deprecated)] // Errors built with the legacy variant still render.
+        Error::AliasError { msg, locations } => alias_message(
+            formatter.localizer(),
+            Cow::Borrowed(msg.as_str()),
+            *locations,
+        ),
+        Error::Aliased { error, locations } => {
+            let inner = render_message_text(formatter, error);
+            let inner = match error.location() {
+                Some(loc) => {
+                    sanitize_message_text(formatter.localizer().attach_location(inner, loc))
                 }
-                (_r, d) => Cow::Owned(format!("{msg}{}", l10n.alias_defined_at(d))),
-            }
+                None => inner,
+            };
+            alias_message(formatter.localizer(), inner, *locations)
         }
 
         #[cfg(any(feature = "garde", feature = "validator"))]
@@ -938,6 +959,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)] // Covers errors built with the legacy variant.
     fn default_alias_error_both_unknown() {
         let formatter = DefaultMessageFormatter;
         let err = Error::AliasError {
@@ -948,6 +970,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)] // Covers errors built with the legacy variant.
     fn default_alias_error_ref_known_def_unknown() {
         let formatter = DefaultMessageFormatter;
         let ref_loc = Location::new(1, 0);
@@ -963,6 +986,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)] // Covers errors built with the legacy variant.
     fn default_alias_error_both_known_different() {
         let formatter = DefaultMessageFormatter;
         let ref_loc = Location::new(1, 0);

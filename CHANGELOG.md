@@ -22,6 +22,9 @@
   including vectors, queues, sets, and custom accumulators. Explicit type arguments now specify
   both the document and collection types, for example `from_str_multiple::<String, Vec<_>>(input)`.
   The deprecated APIs continue returning `Vec<T>` with their original signatures.
+- Added `Error::Aliased`, which keeps the original error when an aliased value fails to
+  deserialize. A custom `MessageFormatter` or `Localizer` now applies to that error, and
+  `std::error::Error::source` returns it ([#199](https://github.com/bourumir-wyngs/serde-saphyr/issues/199)).
 
 ### Changed
 
@@ -30,6 +33,9 @@
   untagged enums, and flattened float fields, or `AsString` to receive canonical strings.
   With `PassThrough`, `serde_json::Value` converts them to `Null` without an error.
   Direct `f32`/`f64` deserialization is unchanged.
+- Errors inside aliased values are reported as `Error::Aliased` instead of `Error::AliasError`.
+  The default rendered message is unchanged. Code that matches `Error::AliasError` should match
+  `Error::Aliased`, whose `error` field holds the original error.
 
 ### Deprecated
 
@@ -47,6 +53,8 @@
   `from_bytes_multiple` and `from_bytes_multiple_with_options`, which support both owned and borrowed
   values. The old signatures remain available; the same callback migration guidance applies.
 - Updated internal callers, examples, tests, fuzz targets, and error hints to use the new APIs.
+- Deprecated `Error::AliasError` in favor of `Error::Aliased`. The deserializer no longer
+  produces it; errors built with it still render as before.
 
 ### Fixed
 

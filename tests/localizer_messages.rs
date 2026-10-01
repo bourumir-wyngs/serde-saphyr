@@ -147,3 +147,63 @@ mod localizer_tests {
         let _ = l2;
     }
 }
+
+mod aliased_error_tests {
+    use super::*;
+    use serde::Deserialize;
+    use serde_saphyr::localizer::Localizer;
+    use serde_saphyr::{DefaultMessageFormatter, Error, Location};
+
+    #[derive(Debug, Deserialize)]
+    struct Config {
+        #[allow(dead_code)]
+        name: String,
+        #[allow(dead_code)]
+        port: u16,
+    }
+
+    struct Bracketed;
+
+    impl Localizer for Bracketed {
+        fn attach_location<'a>(&self, base: Cow<'a, str>, loc: Location) -> Cow<'a, str> {
+            Cow::Owned(format!("{base} [{}:{}]", loc.line(), loc.column()))
+        }
+    }
+
+    /// An error inside an aliased value keeps the inner error (issue #199), so a custom
+    /// localizer formats the inner location and `source()` returns the inner error.
+    #[test]
+    fn aliased_error_keeps_the_inner_error() {
+        let yaml = "name: &n eighty\nport: *n\n";
+        let outer = serde_saphyr::from_str::<Config>(yaml).unwrap_err();
+        let error = outer.without_snippet();
+
+        let Error::Aliased {
+            error: inner,
+            locations,
+        } = error
+        else {
+            panic!("expected Error::Aliased, got {error:?}");
+        };
+        let reference = locations.reference_location;
+        let defined = locations.defined_location;
+        assert_eq!((reference.line(), reference.column()), (2, 7));
+        assert_eq!((defined.line(), defined.column()), (1, 10));
+
+        let source = std::error::Error::source(error).expect("source() returns the inner error");
+        assert_eq!(source.to_string(), inner.to_string());
+
+        assert_eq!(
+            error.to_string(),
+            "invalid u16 at line 1, column 10 (defined at line 1, column 10) at line 2, column 7",
+            "the default rendering must not change"
+        );
+
+        let rendered =
+            error.render_with_formatter(&DefaultMessageFormatter.with_localizer(&Bracketed));
+        assert_eq!(
+            rendered,
+            "invalid u16 [1:10] (defined at line 1, column 10) [2:7]"
+        );
+    }
+}

@@ -196,7 +196,8 @@ fn build_diagnostic(
             diag
         }
 
-        Error::AliasError { msg: _, locations } => {
+        #[allow(deprecated)] // Errors built with the legacy variant render the same way.
+        Error::AliasError { locations, .. } | Error::Aliased { locations, .. } => {
             let (actual_src, labels) = build_dual_location_labels(
                 &src,
                 locations.reference_location,
@@ -1202,6 +1203,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)] // Covers errors built with the legacy variant.
     fn alias_error_has_use_and_definition_labels() {
         use crate::location::Locations;
 
@@ -1262,6 +1264,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)] // Covers errors built with the legacy variant.
     fn alias_error_with_same_locations_has_single_label() {
         use crate::location::Locations;
 
