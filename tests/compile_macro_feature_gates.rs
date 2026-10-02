@@ -38,6 +38,15 @@ serde-saphyr = {{ path = "{manifest_dir}", default-features = false, features = 
     .expect("write fixture manifest");
     fs::write(dir.join("src/main.rs"), source).expect("write fixture source");
 
+    // CI prefetches the Git revision pinned by the project lockfile. A fresh
+    // lockfile would resolve branch heads again, but an offline Git cache may
+    // contain only the pinned commit, without the branch's remote-tracking ref.
+    fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.lock"),
+        dir.join("Cargo.lock"),
+    )
+    .expect("seed fixture with project dependency revisions");
+
     dir
 }
 
