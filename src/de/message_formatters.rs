@@ -1,15 +1,15 @@
-use crate::Location;
 use crate::budget::BudgetBreach;
-use crate::de_error::{Error, MessageFormatter, UserMessageFormatter};
+use crate::de_error::{Error, MessageFormatter, UserMessageFormatter, render_message_text};
 use crate::localizer::{ExternalMessage, Localizer};
 
 use std::borrow::Cow;
 
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::{
-    Locations,
+    Location,
     de_error::ValidationIssue,
     localizer::ExternalMessageSource,
+    location::Locations,
     path_map::{PathMap, format_path_with_resolved_leaf},
 };
 
@@ -367,18 +367,7 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
             "indentation error: expected {required}, found {actual} spaces"
         )),
         Error::IOError { cause } => Cow::Owned(format!("IO error: {cause}")),
-        Error::AliasError { msg, locations } => {
-            let l10n = formatter.localizer();
-            let ref_loc = locations.reference_location;
-            let def_loc = locations.defined_location;
-            match (ref_loc, def_loc) {
-                (Location::UNKNOWN, Location::UNKNOWN) => Cow::Borrowed(msg.as_str()),
-                (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
-                    Cow::Borrowed(msg.as_str())
-                }
-                (_r, d) => Cow::Owned(format!("{msg}{}", l10n.alias_defined_at(d))),
-            }
-        }
+        Error::AliasError { error, .. } => render_message_text(formatter, error),
 
         #[cfg(any(feature = "garde", feature = "validator"))]
         Error::ValidationError {
@@ -938,45 +927,49 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)] // Populates the legacy msg field when constructing an alias error.
     fn default_alias_error_both_unknown() {
         let formatter = DefaultMessageFormatter;
         let err = Error::AliasError {
             msg: "alias msg".to_owned(),
+            error: Box::new(Error::msg("alias msg")),
             locations: Locations::UNKNOWN,
         };
         assert_eq!(formatter.format_message(&err), "alias msg");
     }
 
     #[test]
+    #[allow(deprecated)] // Populates the legacy msg field when constructing an alias error.
     fn default_alias_error_ref_known_def_unknown() {
         let formatter = DefaultMessageFormatter;
         let ref_loc = Location::new(1, 0);
         let err = Error::AliasError {
             msg: "alias msg".to_owned(),
+            error: Box::new(Error::msg("alias msg")),
             locations: Locations {
                 reference_location: ref_loc,
                 defined_location: Location::UNKNOWN,
             },
         };
-        // r != UNKNOWN and d == UNKNOWN → returns msg as-is
         assert_eq!(formatter.format_message(&err), "alias msg");
     }
 
     #[test]
+    #[allow(deprecated)] // Populates the legacy msg field when constructing an alias error.
     fn default_alias_error_both_known_different() {
         let formatter = DefaultMessageFormatter;
         let ref_loc = Location::new(1, 0);
         let def_loc = Location::new(5, 0);
         let err = Error::AliasError {
             msg: "alias msg".to_owned(),
+            error: Box::new(Error::msg("alias msg")),
             locations: Locations {
                 reference_location: ref_loc,
                 defined_location: def_loc,
             },
         };
-        // _r != UNKNOWN, d != UNKNOWN, d != r → appends defined-at suffix
-        let msg = formatter.format_message(&err);
-        assert!(msg.starts_with("alias msg"), "got: {msg}");
+        // Locations belong to the renderer, not the core message.
+        assert_eq!(formatter.format_message(&err), "alias msg");
     }
 
     // -----------------------------------------------------------------------

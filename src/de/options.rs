@@ -312,7 +312,7 @@ pub struct Options {
     ///
     /// Use [`Self::non_finite_float_policy`] with [`NonFiniteFloatPolicy::Reject`] instead
     /// of true, or [`NonFiniteFloatPolicy::AsString`] instead of false.
-    #[deprecated(since = "1.4.0", note = "use non_finite_float_policy instead")]
+    #[deprecated(since = "2.0.0", note = "use non_finite_float_policy instead")]
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub reject_non_finite_typeless_float: bool,
 

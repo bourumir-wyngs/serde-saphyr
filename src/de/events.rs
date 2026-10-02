@@ -88,19 +88,20 @@ impl PropertyInterpolation {
 }
 
 /// Attach both reference and defined locations to an error for alias replay scenarios.
-/// When both locations are known and different, creates an `AliasError` to report both.
+/// When both locations are known and different, wraps the error in `Error::AliasError` to report both.
 /// This is used for errors occurring when deserializing aliased values.
 ///
 /// During alias replay, errors may already have a location attached (the anchor's definition
-/// location from the replayed events). We still want to create an `AliasError` with both
+/// location from the replayed events). We still want to create an `Error::AliasError` with both
 /// locations when the reference (alias) and defined (anchor) locations differ.
 #[inline]
+#[allow(deprecated)] // Keep populating msg for existing message-based alias handlers.
 pub(super) fn attach_alias_locations_if_missing(
     err: Error,
     reference_location: Location,
     defined_location: Location,
 ) -> Error {
-    // If both locations are known and different, create an AliasError to show both.
+    // If both locations are known and different, wrap the error in AliasError to show both.
     // This applies even if the error already has a location (from replayed anchor events),
     // because we want to show where the alias was used, not just where the anchor was defined.
     if reference_location != Location::UNKNOWN
@@ -109,6 +110,7 @@ pub(super) fn attach_alias_locations_if_missing(
     {
         Error::AliasError {
             msg: err.to_string(),
+            error: Box::new(err),
             locations: Locations {
                 reference_location,
                 defined_location,

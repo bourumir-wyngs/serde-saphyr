@@ -82,8 +82,8 @@ fn test_smaller() {
 fn assert_budget_error(err: &Error) {
     match err.without_snippet() {
         Error::Budget { .. } => {}
-        // Alias replay preserves dual locations by storing the inner error as text.
-        Error::AliasError { msg, .. } if msg.starts_with("budget breached") => {}
+        // Alias replay wraps the inner error to report both locations.
+        Error::AliasError { error, .. } if error.to_string().starts_with("budget breached") => {}
         other => panic!("expected budget error, got {other:?}"),
     }
 }

@@ -13,9 +13,12 @@ fn assert_recursive_error<T: Debug>(result: Result<T, Error>) {
     let error = result.expect_err("recursive merge aliases must return an error");
     match error.without_snippet() {
         Error::RecursiveReferencesRequireWeakTypes { .. } => {}
-        // Buffered values currently wrap the error as a formatted alias message.
-        Error::AliasError { msg, .. } => assert!(
-            msg.starts_with("recursive references require weak recursion types"),
+        // Buffered values wrap the error with the alias locations.
+        Error::AliasError { error: inner, .. } => assert!(
+            matches!(
+                inner.as_ref(),
+                Error::RecursiveReferencesRequireWeakTypes { .. }
+            ),
             "{error:?}"
         ),
         _ => panic!("unexpected error: {error:?}"),

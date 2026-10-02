@@ -98,6 +98,10 @@ pub trait MessageFormatter {
     /// The returned string should NOT include location suffixes like
     /// `"at line X, column Y"`; those are added by the renderer.
     ///
+    /// Rendering entrypoints unwrap [`Error::AliasError`] and [`Error::WithSnippet`] before
+    /// calling this method, so the formatter receives the original error. Alias locations
+    /// are composed separately by the renderer.
+    ///
     /// Rendering entrypoints such as [`Error::render`] neutralize control characters in
     /// this text before composing their own layout. Implementations should therefore not
     /// use control characters, including line breaks, for message layout.
@@ -138,11 +142,35 @@ fn message_char_needs_escape(ch: char) -> bool {
 }
 
 #[inline]
+fn original_error(mut err: &Error) -> &Error {
+    while let Error::AliasError { error, .. } | Error::WithSnippet { error, .. } = err {
+        err = error;
+    }
+    err
+}
+
+#[inline]
 pub(crate) fn render_message_text<'a>(
     formatter: &dyn MessageFormatter,
     err: &'a Error,
 ) -> Cow<'a, str> {
-    sanitize_message_text(formatter.format_message(err))
+    sanitize_message_text(formatter.format_message(original_error(err)))
+}
+
+/// The failing value can be distinct from both the beginning of the anchor and its use.
+/// Keep that location even when the original error is behind several alias wrappers.
+pub(crate) fn distinct_alias_error_location(mut err: &Error) -> Option<Location> {
+    while let Error::WithSnippet { error, .. } = err {
+        err = error;
+    }
+    let Error::AliasError { locations, .. } = err else {
+        return None;
+    };
+    original_error(err).location().filter(|location| {
+        *location != Location::UNKNOWN
+            && *location != locations.reference_location
+            && *location != locations.defined_location
+    })
 }
 
 /// User-facing message formatter.
@@ -435,6 +463,17 @@ fn collect_snippet_regions(
         } else if let Some(loc) = inner.location() {
             push_region_for_location(&mut regions, text, source_name, &loc, mapping, crop_radius);
         }
+    }
+
+    if let Some(location) = distinct_alias_error_location(inner) {
+        push_region_for_location(
+            &mut regions,
+            text,
+            source_name,
+            &location,
+            mapping,
+            crop_radius,
+        );
     }
 
     regions
@@ -990,10 +1029,16 @@ pub enum Error {
     },
     /// Error related to an alias, with both reference (use-site) and defined (anchor) locations.
     ///
-    /// This variant allows reporting both where an alias is used and where the anchor is defined,
-    /// which is useful for errors that occur when deserializing aliased values.
+    /// `error` keeps the original error, so it renders with the active [`MessageFormatter`] and
+    /// [`Localizer`], and [`std::error::Error::source`] returns it.
     AliasError {
+        /// Default-rendered inner error retained for existing message-based handlers.
+        ///
+        /// The deserializer still populates this field, but renderers use `error` instead.
+        #[deprecated(since = "2.0.0", note = "use error to access the original error")]
         msg: String,
+        /// Original error, including its type and source location.
+        error: Box<Error>,
         locations: Locations,
     },
     /// Error when parsing robotic and other extensions beyond standard YAML.
@@ -1699,9 +1744,34 @@ fn fmt_error_plain_with_formatter(
     err: &Error,
     formatter: &dyn MessageFormatter,
 ) -> fmt::Result {
-    let err = err.without_snippet();
+    let mut err = err;
+    while let Error::WithSnippet { error, .. } = err {
+        err = error;
+    }
 
     let msg = render_message_text(formatter, err);
+
+    let msg = if let Some(location) = distinct_alias_error_location(err) {
+        sanitize_message_text(formatter.localizer().attach_location(msg, location))
+    } else {
+        msg
+    };
+
+    // Preserve the outer use and definition as context for the original failing value.
+    let msg = if let Error::AliasError { locations, .. } = err
+        && locations.reference_location != Location::UNKNOWN
+        && locations.defined_location != Location::UNKNOWN
+        && locations.defined_location != locations.reference_location
+    {
+        let suffix = sanitize_message_text(Cow::Owned(
+            formatter
+                .localizer()
+                .alias_defined_at(locations.defined_location),
+        ));
+        Cow::Owned(format!("{msg}{suffix}"))
+    } else {
+        msg
+    };
 
     // Validation errors embed per-issue locations in their formatted message (potentially
     // multiple distinct locations). Do not attach a single top-level location suffix here,
@@ -1733,6 +1803,10 @@ fn pick_cropped_region<'a>(
     regions: &'a [CroppedRegion],
     location: &Location,
 ) -> Option<&'a CroppedRegion> {
+    // Different locations may share a vertical window but have different horizontal crops.
+    if let Some(region) = regions.iter().find(|region| region.location == *location) {
+        return Some(region);
+    }
     let source_id = location.source_id();
 
     if source_id != 0 {
@@ -1885,21 +1959,8 @@ fn fmt_error_rendered(
                     && locs.reference_location != locs.defined_location
             });
 
-            let mut msg = render_message_text(options.formatter, error);
-
-            // Renderer-level de-duplication for AliasError:
-            // when we are about to show a secondary “defined here” window, drop the
-            // default message suffix " (defined at …)" if present.
-            if dual_locations.is_some()
-                && let Error::AliasError { locations, .. } = error.as_ref()
-            {
-                let suffix = sanitize_message_text(Cow::Owned(
-                    l10n.alias_defined_at(locations.defined_location),
-                ));
-                if let Some(stripped) = msg.as_ref().strip_suffix(suffix.as_ref()) {
-                    msg = Cow::Owned(stripped.to_string());
-                }
-            }
+            let msg = render_message_text(options.formatter, error);
+            let failing_location = distinct_alias_error_location(error);
 
             if let Some(locs) = dual_locations {
                 let ref_loc = locs.reference_location;
@@ -1934,7 +1995,6 @@ fn fmt_error_rendered(
                     l10n.defined_window().as_ref(),
                     *crop_radius,
                 )?;
-                Ok(())
             } else {
                 // Single location rendering.
                 let ctx = crate::de_snippet::Snippet::new(
@@ -1946,7 +2006,9 @@ fn fmt_error_rendered(
                 ctx.fmt_or_fallback(f, Level::ERROR, l10n, msg.as_ref(), &location)?;
 
                 for extra_region in regions {
-                    if std::ptr::eq(extra_region, region) {
+                    if std::ptr::eq(extra_region, region)
+                        || failing_location == Some(extra_region.location)
+                    {
                         continue;
                     }
                     writeln!(f)?;
@@ -1959,8 +2021,24 @@ fn fmt_error_rendered(
                     .with_offset(extra_region.start_line);
                     extra_ctx.fmt_or_fallback(f, Level::NOTE, l10n, "", &extra_region.location)?;
                 }
-                Ok(())
             }
+
+            if let Some(location) = failing_location {
+                writeln!(f)?;
+                let label = l10n.error_here();
+                if let Some(region) = pick_cropped_region(regions, &location) {
+                    let ctx = crate::de_snippet::Snippet::new(
+                        region.text.as_str(),
+                        region.source_name.as_str(),
+                        *crop_radius,
+                    )
+                    .with_offset(region.start_line);
+                    ctx.fmt_or_fallback(f, Level::NOTE, l10n, label.as_ref(), &location)?;
+                } else {
+                    fmt_with_location(f, l10n, label.as_ref(), &location)?;
+                }
+            }
+            Ok(())
         }
         _ => fmt_error_plain_with_formatter(f, err, options.formatter),
     }
@@ -2230,7 +2308,16 @@ pub(crate) fn collect_garde_issues(report: &garde::Report) -> Vec<ValidationIssu
     }
     out
 }
-impl std::error::Error for Error {}
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::AliasError { error, .. } | Error::WithSnippet { error, .. } => {
+                Some(error.as_ref())
+            }
+            _ => None,
+        }
+    }
+}
 
 /// Attach the current [`MISSING_FIELD_FALLBACK`] location to `err`, if available.
 #[cold]
@@ -2560,11 +2647,13 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)] // Populates the legacy msg field when constructing an alias error.
     fn alias_error_returns_both_locations() {
         let ref_loc = Location::new(5, 10);
         let def_loc = Location::new(2, 3);
         let err = Error::AliasError {
             msg: "test error".to_owned(),
+            error: Box::new(Error::msg("test error")),
             locations: Locations {
                 reference_location: ref_loc,
                 defined_location: def_loc,
@@ -2585,11 +2674,35 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)] // Populates the legacy msg field when constructing an alias error.
+    fn alias_error_keeps_its_locations_and_returns_the_inner_error_as_source() {
+        let locations = Locations {
+            reference_location: Location::new(5, 10),
+            defined_location: Location::new(2, 3),
+        };
+        let err = Error::AliasError {
+            msg: "inner".to_owned(),
+            error: Box::new(Error::msg("inner")),
+            locations,
+        }
+        .with_location(Location::new(9, 9));
+
+        // with_location() must not replace the dual locations.
+        assert_eq!(err.locations(), Some(locations));
+
+        let source = std::error::Error::source(&err).expect("AliasError has a source");
+        assert_eq!(source.to_string(), "inner");
+        assert!(std::error::Error::source(&Error::msg("plain")).is_none());
+    }
+
+    #[test]
+    #[allow(deprecated)] // Populates the legacy msg field when constructing an alias error.
     fn alias_error_display_shows_both_locations() {
         let ref_loc = Location::new(5, 10);
         let def_loc = Location::new(2, 3);
         let err = Error::AliasError {
             msg: "invalid value".to_owned(),
+            error: Box::new(Error::msg("invalid value")),
             locations: Locations {
                 reference_location: ref_loc,
                 defined_location: def_loc,
@@ -2605,10 +2718,12 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)] // Populates the legacy msg field when constructing an alias error.
     fn alias_error_display_with_same_locations() {
         let loc = Location::new(3, 7);
         let err = Error::AliasError {
             msg: "test".to_owned(),
+            error: Box::new(Error::msg("test")),
             locations: Locations {
                 reference_location: loc,
                 defined_location: loc,
@@ -2621,6 +2736,83 @@ mod tests {
         assert!(display.contains("column 7"));
         // Should not contain "defined at" since locations are the same
         assert!(!display.contains("defined at"));
+    }
+
+    #[test]
+    #[allow(deprecated)] // Populates the legacy msg field when constructing an alias error.
+    fn alias_error_with_unknown_reference_reports_definition_once() {
+        let err = Error::AliasError {
+            msg: "test error".to_owned(),
+            error: Box::new(Error::msg("test error")),
+            locations: Locations {
+                reference_location: Location::UNKNOWN,
+                defined_location: Location::new(2, 3),
+            },
+        };
+
+        assert_eq!(err.to_string(), "test error at line 2, column 3");
+    }
+
+    #[test]
+    #[allow(deprecated)] // Populates the legacy msg field when constructing an alias error.
+    fn alias_error_deduplicates_a_failure_at_either_alias_location() {
+        let reference_location = Location::new(3, 7);
+        let defined_location = Location::new(1, 10);
+        for location in [reference_location, defined_location, Location::UNKNOWN] {
+            let err = Error::AliasError {
+                msg: "invalid u16".to_owned(),
+                error: Box::new(Error::InvalidScalar {
+                    ty: "u16",
+                    location,
+                }),
+                locations: Locations {
+                    reference_location,
+                    defined_location,
+                },
+            };
+            assert_eq!(
+                err.render(),
+                "invalid u16 (defined at line 1, column 10) at line 3, column 7"
+            );
+            let rendered = err
+                .with_snippet("base: &b\n  port: eighty\ncopy: *b\n", 64)
+                .render();
+            assert!(!rendered.contains("the error occurred here"), "{rendered}");
+        }
+    }
+
+    #[test]
+    #[allow(deprecated)] // Populates the legacy msg field when constructing an alias error.
+    fn alias_error_preserves_a_known_failure_when_alias_locations_are_unknown() {
+        let failure = Location::new(2, 9);
+        for defined_location in [Location::new(2, 3), Location::UNKNOWN] {
+            let err = Error::AliasError {
+                msg: "invalid u16".to_owned(),
+                error: Box::new(Error::InvalidScalar {
+                    ty: "u16",
+                    location: failure,
+                }),
+                locations: Locations {
+                    reference_location: Location::UNKNOWN,
+                    defined_location,
+                },
+            };
+            let expected = if defined_location == Location::UNKNOWN {
+                "invalid u16 at line 2, column 9"
+            } else {
+                "invalid u16 at line 2, column 9 at line 2, column 3"
+            };
+            assert_eq!(err.render(), expected);
+            let wrapped = err.with_snippet("base: &b\n  port: eighty\ncopy: *b\n", 64);
+            let rendered = wrapped.render();
+            if defined_location == Location::UNKNOWN {
+                assert_eq!(rendered, expected);
+            } else {
+                assert!(rendered.contains("<input>:2:9"), "{rendered}");
+                assert!(rendered.contains("the error occurred here"), "{rendered}");
+                assert!(!rendered.contains("included from here"), "{rendered}");
+            }
+        }
     }
 
     #[test]
@@ -2785,6 +2977,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)] // Populates the legacy msg field when constructing an alias error.
     fn alias_error_dual_snippet_rendering() {
         // YAML with anchor on line 2 and alias usage on line 5
         let yaml = r#"config:
@@ -2800,6 +2993,7 @@ mod tests {
 
         let err = Error::AliasError {
             msg: "invalid value type".to_owned(),
+            error: Box::new(Error::msg("invalid value type")),
             locations: Locations {
                 reference_location: ref_loc,
                 defined_location: def_loc,
@@ -2850,12 +3044,14 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)] // Populates the legacy msg field when constructing an alias error.
     fn alias_error_same_location_single_snippet() {
         let yaml = "value: &anchor 42\n";
         let loc = Location::new(1, 8);
 
         let err = Error::AliasError {
             msg: "test error".to_owned(),
+            error: Box::new(Error::msg("test error")),
             locations: Locations {
                 reference_location: loc,
                 defined_location: loc,

@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.4.0 Unreleased
+## 2.0.0 Unreleased
 
 ### Added
 
@@ -22,6 +22,10 @@
   including vectors, queues, sets, and custom accumulators. Explicit type arguments now specify
   both the document and collection types, for example `from_str_multiple::<String, Vec<_>>(input)`.
   The deprecated APIs continue returning `Vec<T>` with their original signatures.
+- Added an `error: Box<Error>` field to `Error::AliasError`, which keeps the original error
+  when an aliased value fails to deserialize. A custom `MessageFormatter` or `Localizer`
+  now applies to that error, and `std::error::Error::source` returns it
+  ([#199](https://github.com/bourumir-wyngs/serde-saphyr/issues/199)).
 
 ### Changed
 
@@ -30,6 +34,10 @@
   untagged enums, and flattened float fields, or `AsString` to receive canonical strings.
   With `PassThrough`, `serde_json::Value` converts them to `Null` without an error.
   Direct `f32`/`f64` deserialization is unchanged.
+- **Breaking:** `Error::AliasError` has a new mandatory `error: Box<Error>` field.
+  Manual constructors must supply it, and patterns listing every field must add `error` or `..`.
+  The variant name is unchanged. Rendering and `source()` use the original error; the
+  deserializer still populates `msg` with an `error.to_string()` snapshot for existing handlers.
 
 ### Deprecated
 
@@ -47,9 +55,22 @@
   `from_bytes_multiple` and `from_bytes_multiple_with_options`, which support both owned and borrowed
   values. The old signatures remain available; the same callback migration guidance applies.
 - Updated internal callers, examples, tests, fuzz targets, and error hints to use the new APIs.
+- Deprecated the `msg` field of `Error::AliasError` in favor of its structured `error` field.
+  Existing `Error::AliasError { msg, .. }` patterns still work with a deprecation warning.
 
 ### Fixed
 
+- Alias diagnostics preserve the precise location of a failing value inside an anchored mapping,
+  including fields outside the anchor's snippet window. Plain messages, snippets, and `miette`
+  reports include the distinct failing location; equal locations are not repeated.
+- Alias error rendering passes the original error to the active `MessageFormatter`, including
+  formatters that delegate other variants to the built-in formatter. Plain messages report
+  the alias definition and use locations once through the active `Localizer`; snippet and
+  `miette` diagnostics use location labels without embedding plain-text location suffixes.
+  Custom location formatting and suppression now apply throughout aliased values
+  ([#199](https://github.com/bourumir-wyngs/serde-saphyr/issues/199)).
+- `std::error::Error::source` exposes the inner error for both `Error::AliasError` and
+  `Error::WithSnippet`, preserving the source chain through the default snippet wrapper.
 - Made `huge_documents` and `serde_derived_types` enable `deserialize`, fixing isolated feature
   builds with `--no-default-features`, including autopkgtests of Debian team (as [observed](https://dfsg-new-queue.debian.org/reviews/rust-serde-saphyr)).
 
