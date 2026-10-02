@@ -1,4 +1,4 @@
-// `cargo check` is spawned to verify feature-specific macro diagnostics.
+// `cargo check` is spawned to verify feature-specific API and macro diagnostics.
 // WebAssembly targets cannot launch it, and Miri cannot run process-spawning tests.
 #![cfg(not(target_family = "wasm"))]
 #![cfg(not(miri))]
@@ -7,11 +7,21 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-fn write_fixture(root: &Path, package_name: &str, enabled_feature: &str, source: &str) -> PathBuf {
+fn write_fixture(
+    root: &Path,
+    package_name: &str,
+    enabled_features: &[&str],
+    source: &str,
+) -> PathBuf {
     let dir = root.join(package_name);
     fs::create_dir_all(dir.join("src")).expect("create fixture source directory");
 
     let manifest_dir = env!("CARGO_MANIFEST_DIR").replace('\\', "\\\\");
+    let enabled_features = enabled_features
+        .iter()
+        .map(|feature| format!("\"{feature}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
     fs::write(
         dir.join("Cargo.toml"),
         format!(
@@ -21,7 +31,7 @@ version = "0.0.0"
 edition = "2021"
 
 [dependencies]
-serde-saphyr = {{ path = "{manifest_dir}", default-features = false, features = ["{enabled_feature}"] }}
+serde-saphyr = {{ path = "{manifest_dir}", default-features = false, features = [{enabled_features}] }}
 "#
         ),
     )
@@ -40,6 +50,7 @@ fn cargo_check(dir: &Path, target_dir: &Path) -> Output {
         .arg("check")
         .arg("--offline")
         .arg("--quiet")
+        .arg("--offline")
         .env("CARGO_TARGET_DIR", target_dir)
         .output()
         .expect("run cargo check")
@@ -77,7 +88,7 @@ fn public_macros_report_missing_features() {
     let serialize_only = write_fixture(
         root.path(),
         "serde-saphyr-serialize-only-macro-gates",
-        "serialize",
+        &["serialize"],
         r#"fn main() {
     let _ = serde_saphyr::options! {};
     let _ = serde_saphyr::budget! {};
@@ -97,7 +108,7 @@ fn public_macros_report_missing_features() {
     let deserialize_only = write_fixture(
         root.path(),
         "serde-saphyr-deserialize-only-macro-gates",
-        "deserialize",
+        &["deserialize"],
         "fn main() { let _ = serde_saphyr::ser_options! {}; }\n",
     );
     let output = cargo_check(&deserialize_only, &target_dir);
@@ -106,5 +117,66 @@ fn public_macros_report_missing_features() {
         "deserialize-only macro fixture",
         &["ser_options"],
         "serialize",
+    );
+}
+
+#[test]
+fn comment_apis_require_parser_comments() {
+    let root = tempfile::tempdir().expect("create fixture root");
+    let target_dir = root.path().join("target");
+    let source = r#"use serde_saphyr::{CommentPosition, Commented};
+
+fn main() {
+    let _ = Commented(42, String::from("answer"));
+    let _ = serde_saphyr::ser_options! { comment_position: CommentPosition::Above };
+    let _ = serde_saphyr::options! { emit_comments: false };
+    let _ = serde_saphyr::budget! {
+        max_total_comment_bytes: 0,
+        max_buffered_comment_events: 0,
+    };
+    let _ = serde_saphyr::budget::BudgetReport::default().total_comment_bytes;
+    let _ = serde_saphyr::budget::BudgetBreach::CommentBytes { total_comment_bytes: 1 };
+}
+"#;
+
+    let without_comments = write_fixture(
+        root.path(),
+        "serde-saphyr-without-comment-apis",
+        &["serialize", "deserialize"],
+        source,
+    );
+    let output = cargo_check(&without_comments, &target_dir);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "comment APIs unexpectedly compiled without parser-comments"
+    );
+    for missing_api in [
+        "Commented",
+        "CommentPosition",
+        "comment_position",
+        "emit_comments",
+        "max_total_comment_bytes",
+        "max_buffered_comment_events",
+        "total_comment_bytes",
+        "CommentBytes",
+    ] {
+        assert!(
+            stderr.contains(missing_api),
+            "missing compile error for {missing_api}:\n{stderr}"
+        );
+    }
+
+    let with_comments = write_fixture(
+        root.path(),
+        "serde-saphyr-with-comment-apis",
+        &["serialize", "deserialize", "parser-comments"],
+        source,
+    );
+    let output = cargo_check(&with_comments, &target_dir);
+    assert!(
+        output.status.success(),
+        "comment APIs should compile with parser-comments:\n{}",
+        String::from_utf8_lossy(&output.stderr)
     );
 }
