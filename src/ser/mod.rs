@@ -72,6 +72,7 @@ const NAME_TUPLE_ANCHOR: &str = "__yaml_anchor";
 const NAME_TUPLE_WEAK: &str = "__yaml_weak_anchor";
 const NAME_FLOW_SEQ: &str = "__yaml_flow_seq";
 const NAME_FLOW_MAP: &str = "__yaml_flow_map";
+#[cfg(feature = "parser-comments")]
 const NAME_TUPLE_COMMENTED: &str = "__yaml_commented";
 const NAME_TUPLE_TAGGED: &str = "__yaml_tagged";
 const NAME_SPACE_AFTER: &str = "__yaml_space_after";

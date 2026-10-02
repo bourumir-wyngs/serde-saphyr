@@ -44,6 +44,7 @@ fn format_budget_report(report: &BudgetReport) -> String {
     let _ = writeln!(out, "nodes: {}", report.nodes);
     let _ = writeln!(out, "max_depth: {}", report.max_depth);
     let _ = writeln!(out, "total_scalar_bytes: {}", report.total_scalar_bytes);
+    #[cfg(feature = "parser-comments")]
     let _ = writeln!(out, "total_comment_bytes: {}", report.total_comment_bytes);
     let _ = writeln!(out, "merge_keys: {}", report.merge_keys);
 
@@ -96,6 +97,7 @@ fn format_budget_breach(out: &mut String, breach: &BudgetBreach) {
             out.push_str("breached:\n  ScalarBytes:\n");
             let _ = writeln!(out, "    total_scalar_bytes: {total_scalar_bytes}");
         }
+        #[cfg(feature = "parser-comments")]
         BudgetBreach::CommentBytes {
             total_comment_bytes,
         } => {
@@ -302,6 +304,7 @@ mod tests {
             nodes: 7,
             max_depth: 8,
             total_scalar_bytes: 9,
+            #[cfg(feature = "parser-comments")]
             total_comment_bytes: 10,
             merge_keys: 11,
         }
@@ -320,6 +323,7 @@ mod tests {
             nodes: 5,
             max_depth: 6,
             total_scalar_bytes: 7,
+            #[cfg(feature = "parser-comments")]
             total_comment_bytes: 8,
             merge_keys: 9,
         });
@@ -328,6 +332,7 @@ mod tests {
         assert!(formatted.contains("events: 10"));
         assert!(formatted.contains("recorded_anchor_events: 2"));
         assert!(formatted.contains("recorded_anchor_bytes: 3"));
+        #[cfg(feature = "parser-comments")]
         assert!(formatted.contains("total_comment_bytes: 8"));
     }
 
@@ -390,6 +395,7 @@ mod tests {
                 "  ScalarBytes:",
                 "    total_scalar_bytes: 18",
             ),
+            #[cfg(feature = "parser-comments")]
             (
                 report_with_breach(BudgetBreach::CommentBytes {
                     total_comment_bytes: 19,
@@ -482,6 +488,7 @@ mod tests {
                 nodes: 5,
                 max_depth: 6,
                 total_scalar_bytes: 7,
+                #[cfg(feature = "parser-comments")]
                 total_comment_bytes: 8,
                 merge_keys: 9,
             },

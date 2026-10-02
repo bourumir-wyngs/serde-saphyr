@@ -412,7 +412,7 @@ pub(crate) fn maybe_with_snippet_from_events(
 /// ```
 #[cfg(feature = "deserialize")]
 #[deprecated(
-    since = "1.4.0",
+    since = "2.0.0",
     note = "use from_str_multiple, which supports both owned and borrowed values"
 )]
 pub fn from_multiple<T: DeserializeOwned>(input: &str) -> Result<Vec<T>, Error> {
@@ -462,7 +462,7 @@ pub fn from_multiple<T: DeserializeOwned>(input: &str) -> Result<Vec<T>, Error> 
 /// ```
 #[cfg(feature = "deserialize")]
 #[deprecated(
-    since = "1.4.0",
+    since = "2.0.0",
     note = "use from_str_multiple_with_options, which supports both owned and borrowed values"
 )]
 pub fn from_multiple_with_options<T: DeserializeOwned>(
@@ -701,7 +701,7 @@ where
 /// ```
 #[cfg(feature = "deserialize")]
 #[deprecated(
-    since = "1.4.0",
+    since = "2.0.0",
     note = "use from_bytes_multiple, which supports both owned and borrowed values"
 )]
 pub fn from_slice_multiple<T: DeserializeOwned>(bytes: &[u8]) -> Result<Vec<T>, Error> {
@@ -752,7 +752,7 @@ pub fn from_slice_multiple<T: DeserializeOwned>(bytes: &[u8]) -> Result<Vec<T>, 
 /// ```
 #[cfg(feature = "deserialize")]
 #[deprecated(
-    since = "1.4.0",
+    since = "2.0.0",
     note = "use from_bytes_multiple_with_options, which supports both owned and borrowed values"
 )]
 pub fn from_slice_multiple_with_options<T: DeserializeOwned>(

@@ -393,6 +393,7 @@ struct AnchorExpansionState<'a> {
 }
 
 /// Adds one expanded event's retained comment bytes to the include-fragment budget.
+#[cfg(feature = "parser-comments")]
 fn observe_expanded_comment_budget(
     event: &Event<'_>,
     total_expanded_comment_bytes: &mut usize,
@@ -513,6 +514,7 @@ fn collect_anchor_events_with_parser_options_and_state(
     let mut events = Vec::new();
     let mut current_depth: usize = 0;
     let mut total_scalar_bytes: usize = 0;
+    #[cfg(feature = "parser-comments")]
     let mut total_comment_bytes: usize = 0;
     while let Some(event) = parser.next_event() {
         let (event, span) = event.map_err(|err| {
@@ -550,6 +552,7 @@ fn collect_anchor_events_with_parser_options_and_state(
                 ));
             }
         }
+        #[cfg(feature = "parser-comments")]
         if let Event::Comment(ref text, _) = event {
             total_comment_bytes = total_comment_bytes.saturating_add(text.len());
             if total_comment_bytes > budget.max_total_comment_bytes {
@@ -590,10 +593,13 @@ fn collect_anchor_events_with_parser_options_and_state(
             break;
         }
 
+        #[cfg(feature = "parser-comments")]
         let start = events[event_cursor..node_start]
             .iter()
             .position(|(event, _)| matches!(event, Event::Comment(_, _)))
             .map_or(node_start, |comment_offset| event_cursor + comment_offset);
+        #[cfg(not(feature = "parser-comments"))]
+        let start = node_start;
         let mut end = node_start;
         let mut depth = anchored_event_initial_depth(&events[node_start].0);
         if depth == 0 {
@@ -652,6 +658,7 @@ fn collect_anchor_events_with_parser_options_and_state(
         active_anchor_ids.insert(anchor_id);
     }
     let mut expanded_scalar_bytes = 0usize;
+    #[cfg(feature = "parser-comments")]
     let mut expanded_comment_bytes = 0usize;
 
     while !frames.is_empty() {
@@ -754,6 +761,7 @@ fn collect_anchor_events_with_parser_options_and_state(
         }
 
         observe_expanded_scalar_budget(event, &mut expanded_scalar_bytes, budget)?;
+        #[cfg(feature = "parser-comments")]
         observe_expanded_comment_budget(event, &mut expanded_comment_bytes, budget)?;
         let attempted_events = expanded_events.len().saturating_add(1);
         if attempted_events > budget.max_events {
@@ -794,6 +802,7 @@ fn own_event(event: Event<'_>) -> Result<Event<'static>, CollectAnchorEventsErro
             tag.map(|tag| Cow::Owned(tag.into_owned())),
         ),
         Event::MappingEnd => Event::MappingEnd,
+        #[cfg(feature = "parser-comments")]
         Event::Comment(text, placement) => Event::Comment(Cow::Owned(text.into_owned()), placement),
         _ => {
             return Err(CollectAnchorEventsError::Message(
@@ -1114,6 +1123,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "parser-comments")]
     #[test]
     fn emit_comments_false_suppresses_anchor_collection_comments() {
         let budget = crate::Budget::default();
@@ -1137,6 +1147,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "parser-comments")]
     #[test]
     fn emit_comments_false_suppresses_comments_from_pushed_parsers() {
         let reader_bytes_read = Rc::new(Cell::new(0));
@@ -1274,6 +1285,7 @@ mod tests {
         ));
     }
 
+    #[cfg(feature = "parser-comments")]
     #[test]
     fn collect_anchor_events_enforces_max_total_comment_bytes() {
         let budget = crate::Budget {
@@ -1289,6 +1301,7 @@ mod tests {
         ));
     }
 
+    #[cfg(feature = "parser-comments")]
     #[test]
     fn collect_anchor_events_enforces_expanded_comment_bytes() {
         let budget = crate::Budget {

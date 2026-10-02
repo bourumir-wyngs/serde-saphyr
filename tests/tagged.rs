@@ -4,9 +4,11 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "parser-comments")]
+use serde_saphyr::Commented;
 use serde_saphyr::{
-    Commented, FlowMap, FlowSeq, RcAnchor, SerializeError, Tagged, from_str, ser_options,
-    to_string, to_string_with_options,
+    FlowMap, FlowSeq, RcAnchor, SerializeError, Tagged, from_str, ser_options, to_string,
+    to_string_with_options,
 };
 
 #[test]
@@ -195,6 +197,7 @@ fn tagged_empty_collections_remain_nodes_when_empty_markers_are_disabled() {
 }
 
 #[test]
+#[cfg(feature = "parser-comments")]
 fn tagged_and_commented_compose_in_both_orders() {
     let tagged_comment = Tagged(Commented(7, "note".into()), Some("!number".into()));
     let commented_tag = Commented(Tagged(7, Some("!number".into())), "note".into());
@@ -212,6 +215,7 @@ fn tagged_and_commented_compose_in_both_orders() {
 }
 
 #[test]
+#[cfg(feature = "parser-comments")]
 fn tag_selected_enum_and_commented_compose_in_both_orders() {
     #[derive(Debug, Deserialize, PartialEq, Serialize)]
     enum Value {

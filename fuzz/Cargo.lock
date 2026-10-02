@@ -109,8 +109,7 @@ dependencies = [
 
 [[package]]
 name = "granit-parser"
-version = "1.3.0"
-source = "git+https://github.com/bourumir-wyngs/granit-parser?branch=bw%2Fstrict_indentation#a5ef202aa04a3e660071896957611286f4115b90"
+version = "2.0.0"
 dependencies = [
  "arraydeque",
  "smallvec",
@@ -223,7 +222,7 @@ dependencies = [
 
 [[package]]
 name = "serde-saphyr"
-version = "1.4.0"
+version = "2.0.0"
 dependencies = [
  "annotate-snippets",
  "base64",
