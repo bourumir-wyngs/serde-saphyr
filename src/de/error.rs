@@ -2754,6 +2754,68 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)] // Populates the legacy msg field when constructing an alias error.
+    fn alias_error_deduplicates_a_failure_at_either_alias_location() {
+        let reference_location = Location::new(3, 7);
+        let defined_location = Location::new(1, 10);
+        for location in [reference_location, defined_location, Location::UNKNOWN] {
+            let err = Error::AliasError {
+                msg: "invalid u16".to_owned(),
+                error: Box::new(Error::InvalidScalar {
+                    ty: "u16",
+                    location,
+                }),
+                locations: Locations {
+                    reference_location,
+                    defined_location,
+                },
+            };
+            assert_eq!(
+                err.render(),
+                "invalid u16 (defined at line 1, column 10) at line 3, column 7"
+            );
+            let rendered = err
+                .with_snippet("base: &b\n  port: eighty\ncopy: *b\n", 64)
+                .render();
+            assert!(!rendered.contains("the error occurred here"), "{rendered}");
+        }
+    }
+
+    #[test]
+    #[allow(deprecated)] // Populates the legacy msg field when constructing an alias error.
+    fn alias_error_preserves_a_known_failure_when_alias_locations_are_unknown() {
+        let failure = Location::new(2, 9);
+        for defined_location in [Location::new(2, 3), Location::UNKNOWN] {
+            let err = Error::AliasError {
+                msg: "invalid u16".to_owned(),
+                error: Box::new(Error::InvalidScalar {
+                    ty: "u16",
+                    location: failure,
+                }),
+                locations: Locations {
+                    reference_location: Location::UNKNOWN,
+                    defined_location,
+                },
+            };
+            let expected = if defined_location == Location::UNKNOWN {
+                "invalid u16 at line 2, column 9"
+            } else {
+                "invalid u16 at line 2, column 9 at line 2, column 3"
+            };
+            assert_eq!(err.render(), expected);
+            let wrapped = err.with_snippet("base: &b\n  port: eighty\ncopy: *b\n", 64);
+            let rendered = wrapped.render();
+            if defined_location == Location::UNKNOWN {
+                assert_eq!(rendered, expected);
+            } else {
+                assert!(rendered.contains("<input>:2:9"), "{rendered}");
+                assert!(rendered.contains("the error occurred here"), "{rendered}");
+                assert!(!rendered.contains("included from here"), "{rendered}");
+            }
+        }
+    }
+
+    #[test]
     fn with_snippet_counts_trailing_empty_line_for_end_line() {
         // `"a\n"` has two logical lines: "a" and a trailing empty line.
         let text = "a\n";

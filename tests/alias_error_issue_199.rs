@@ -371,6 +371,52 @@ fn mapping_alias_snippet_retains_a_failing_field_far_from_the_anchor() {
 }
 
 #[test]
+fn mapping_alias_snippet_retains_a_failing_field_far_along_the_anchor_line() {
+    let yaml = format!(
+        "base: &b {{padding: {}, port: eighty}}\ncopy: *b\n",
+        "x".repeat(10_000)
+    );
+    let failing_column = yaml.find("eighty").expect("invalid value in fixture") as u64 + 1;
+    let error = from_str::<MappingConfig>(&yaml).unwrap_err();
+    let Error::WithSnippet { regions, .. } = &error else {
+        panic!("expected a snippet wrapper, got {error:?}");
+    };
+    let failing_region = regions
+        .iter()
+        .find(|region| region.location.line() == 1 && region.location.column() == failing_column)
+        .expect("the distant value on the anchor line must retain its own source window");
+    assert!(failing_region.text.contains("port: eighty"));
+    assert!(
+        regions
+            .iter()
+            .filter(|region| region.location != failing_region.location)
+            .all(|region| !region.text.contains("eighty")),
+        "alias windows sharing the same source line must exclude the distant failing value"
+    );
+
+    let rendered = error.to_string();
+    assert!(
+        rendered.contains(&format!(
+            "note: line 1 column {failing_column}: the error occurred here"
+        )),
+        "{rendered}"
+    );
+    assert!(rendered.contains("the error occurred here"), "{rendered}");
+    let mut lines = rendered.lines();
+    let value_line = lines
+        .find(|line| line.contains("port: eighty"))
+        .expect("the failing value is shown despite horizontal snippet cropping");
+    let marker_line = lines.next().expect("the failing value has a marker");
+    assert_eq!(
+        marker_line.chars().position(|character| character == '^'),
+        value_line
+            .find("eighty")
+            .map(|offset| value_line[..offset].chars().count()),
+        "the marker must point to the distant invalid value:\n{rendered}"
+    );
+}
+
+#[test]
 fn mapping_alias_snippet_localizes_the_failing_value_label() {
     struct Localized;
 
