@@ -234,7 +234,9 @@ fn attach_alias_locations_prefers_dual_locations_and_existing_errors() {
     let expected_message = err.to_string();
     let attached = attach_alias_locations_if_missing(err, reference, defined);
     match attached {
-        Error::Aliased { error, locations } => {
+        Error::AliasError {
+            error, locations, ..
+        } => {
             assert_eq!(error.to_string(), expected_message);
             assert_eq!(locations.reference_location, reference);
             assert_eq!(locations.defined_location, defined);
@@ -247,7 +249,7 @@ fn attach_alias_locations_prefers_dual_locations_and_existing_errors() {
         Location::UNKNOWN,
         Location::UNKNOWN,
     );
-    assert!(!matches!(&preserved, Error::Aliased { .. }));
+    assert!(!matches!(&preserved, Error::AliasError { .. }));
     assert_eq!(preserved.location(), Some(existing));
 
     let preferred_reference =

@@ -115,7 +115,7 @@ fn aliases_preserve_incompatible_core_tags_for_floats(#[case] scalar: &str) {
         assert!(
             matches!(
                 error.without_snippet(),
-                Error::Aliased { error, .. }
+                Error::AliasError { error, .. }
                     if error.to_string().contains("invalid floating point")
             ),
             "yaml: {yaml}, error: {error}"

@@ -85,6 +85,59 @@ fn yaml_derived_message_fields_are_escaped_at_the_render_boundary() {
 }
 
 #[test]
+fn alias_messages_are_sanitized_after_unwrapping_the_original_error() {
+    let raw_variant = "bad\u{1b}]0;owned\u{7}";
+    let escaped_variant = r"bad\u{1b}]0;owned\u{7}";
+    let yaml = "- &bad \"bad\\e]0;owned\\a\"\n- *bad\n";
+    let error = from_str::<(String, TestEnum)>(yaml).unwrap_err();
+    let Error::AliasError { error: inner, .. } = error.without_snippet() else {
+        panic!("expected an alias error, got {error:?}");
+    };
+    assert!(matches!(
+        inner.as_ref(),
+        Error::SerdeUnknownVariant { variant, .. } if variant == raw_variant
+    ));
+
+    for rendered in [
+        error.to_string(),
+        error.without_snippet().to_string(),
+        error.render_with_formatter(&UserMessageFormatter),
+    ] {
+        assert!(rendered.contains(escaped_variant), "{rendered:?}");
+        assert!(!rendered.contains(raw_variant), "{rendered:?}");
+    }
+
+    let plain = error.render_with_options(serde_saphyr::render_options! {
+        formatter: &InjectingFormatter,
+        snippets: SnippetMode::Off,
+    });
+    assert!(plain.contains(r"custom\nmessage\u{1b}[31m"), "{plain:?}");
+    assert!(
+        plain.contains(r"localizer\n\u{1b}]0;owned\u{7}"),
+        "{plain:?}"
+    );
+    assert!(!plain.contains('\n'), "{plain:?}");
+    assert!(!plain.contains('\u{1b}'), "{plain:?}");
+    assert!(!plain.contains('\u{7}'), "{plain:?}");
+
+    let snippet = error.render_with_formatter(&InjectingFormatter);
+    assert!(
+        snippet.contains(r"prefix\n\u{1b}[31m: custom\nmessage\u{1b}[31m"),
+        "{snippet:?}"
+    );
+    assert!(!snippet.contains('\u{1b}'), "{snippet:?}");
+    assert!(!snippet.contains('\u{7}'), "{snippet:?}");
+
+    #[cfg(feature = "miette")]
+    {
+        let report = serde_saphyr::miette::to_miette_report(&error, yaml, "test.yaml");
+        let rendered = report.to_string();
+        assert!(rendered.contains(escaped_variant), "{rendered:?}");
+        assert!(!rendered.contains(raw_variant), "{rendered:?}");
+    }
+}
+
+#[test]
 fn unknown_fields_and_duplicate_keys_use_the_same_render_boundary() {
     let raw_field = "forged\nrecord\u{1b}";
     let escaped_field = r"forged\nrecord\u{1b}";

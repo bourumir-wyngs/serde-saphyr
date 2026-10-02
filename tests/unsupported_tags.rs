@@ -346,7 +346,7 @@ fn strict_mode_rechecks_key_only_tags_when_aliases_are_replayed() {
     assert!(
         matches!(
             error.without_snippet(),
-            Error::Aliased { error, .. }
+            Error::AliasError { error, .. }
                 if error.to_string().contains("unsupported tag")
                     && error.to_string().contains("value")
         ),

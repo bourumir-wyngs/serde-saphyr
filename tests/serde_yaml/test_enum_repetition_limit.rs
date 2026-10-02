@@ -83,7 +83,7 @@ fn assert_budget_error(err: &Error) {
     match err.without_snippet() {
         Error::Budget { .. } => {}
         // Alias replay wraps the inner error to report both locations.
-        Error::Aliased { error, .. } if error.to_string().starts_with("budget breached") => {}
+        Error::AliasError { error, .. } if error.to_string().starts_with("budget breached") => {}
         other => panic!("expected budget error, got {other:?}"),
     }
 }

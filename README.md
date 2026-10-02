@@ -9,7 +9,7 @@
 
 [![Fuzz & Audit](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/ci.yml/badge.svg)](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/l/serde-saphyr.svg)](https://crates.io/crates/serde-saphyr)
-[![1.3 API compatibility](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/api-compat.yml/badge.svg)](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/api-compat.yml)
+[![API compatibility](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/api-compat.yml/badge.svg)](https://github.com/bourumir-wyngs/serde-saphyr/actions/workflows/api-compat.yml)
 [![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://app.codspeed.io/bourumir-wyngs/serde-saphyr?utm_source=badge)
 
 [![Socket](https://socket.dev/api/badge/cargo/package/serde-saphyr)](https://socket.dev/cargo/package/serde-saphyr)
@@ -107,15 +107,44 @@ To speed up compilation, you can link only the deserializer or only the serializ
 If you only need one side, you can disable default features and enable only the API surface you use:
 
 ```toml
-serde-saphyr = { version = "1", default-features = false, features = ["deserialize"] }
+serde-saphyr = { version = "2", default-features = false, features = ["deserialize"] }
 ```
 or
 ```toml
-serde-saphyr = { version = "1", default-features = false, features = ["serialize"] }
+serde-saphyr = { version = "2", default-features = false, features = ["serialize"] }
 ```
 Disabling both will produce a "Invalid feature configuration" error (such configuration makes no sense).
 
 The optional `huge_documents` feature switches span storage from `u32` indices to a packed 48-bit internal representation so spans can cover YAML inputs far beyond 4 GiB without widening every coordinate to a full `u64`. Public getters still return `u64`, and values beyond the packed range saturate instead of wrapping.
+
+### Migrating from 1.x
+
+Version 2.0 keeps `Error::AliasError` and adds a mandatory `error: Box<Error>` field containing
+the original error. Manual constructors must supply it, and patterns listing every field
+must add `error` or `..`. The `msg` field remains available as a deprecated compatibility
+string populated from `error.to_string()`.
+
+Rendering passes the original error through alias and snippet wrappers to the active
+formatter. Plain messages compose the alias definition and use locations once using the
+active localizer; snippet and `miette` diagnostics use their location labels without
+embedding plain-text location suffixes. Both `Error::AliasError` and `Error::WithSnippet`
+expose their inner errors through `std::error::Error::source`.
+
+```rust
+use serde_saphyr::Error;
+
+fn report(err: &Error) {
+    // Existing matches still work, with a deprecation warning for `msg`.
+    if let Error::AliasError { msg, .. } = err.without_snippet() {
+        eprintln!("{msg}");
+    }
+
+    // Use the original error for formatting or inspecting its variant.
+    if let Error::AliasError { error, .. } = err.without_snippet() {
+        eprintln!("{error}");
+    }
+}
+```
 
 ### Migrating from 0.0.x
 
@@ -454,7 +483,7 @@ YAML non-finite spellings and reject overflowing decimal literals.
 
 serde-saphyr supports zero-copy deserialization for string fields when using `from_str`, `from_slice`, `from_str_multiple`, or `from_bytes_multiple` (including their `_with_options` variants). This allows deserializing into `&str` fields that borrow directly from the input, avoiding allocation overhead. For multiple documents, use `from_str_multiple` for strings or `from_bytes_multiple` for UTF-8 byte slices, with their `_with_options` variants for custom options; all also support owned values.
 
-The older `from_multiple`, `from_multiple_with_options`, `from_slice_multiple`, and `from_slice_multiple_with_options` functions require owned values and are deprecated since 1.4.0, with their signatures retained for compatibility. When migrating function pointers or callbacks, wrap the new functions in forwarding closures if needed.
+The older `from_multiple`, `from_multiple_with_options`, `from_slice_multiple`, and `from_slice_multiple_with_options` functions require owned values and are deprecated since 2.0.0, with their signatures retained for compatibility. When migrating function pointers or callbacks, wrap the new functions in forwarding closures if needed.
 
 ```rust
 use serde::Deserialize;
@@ -923,7 +952,7 @@ error: line 3 column 23: invalid here, validation error: length is lower than 2 
 4 |  
 ```
 
-The integration of garde is feature-gated and disabled by default. Use `serde-saphyr = { version = "1", features = ["garde"] }` (or `features = ["validator"]`) in `Cargo.toml` to enable it.
+The integration of garde is feature-gated and disabled by default. Use `serde-saphyr = { version = "2", features = ["garde"] }` (or `features = ["validator"]`) in `Cargo.toml` to enable it.
 
 If you prefer to validate without validation crates and want to ensure that location information is always available, use the heavier approach with [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html) wrapper instead.
 

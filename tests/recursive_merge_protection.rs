@@ -14,7 +14,7 @@ fn assert_recursive_error<T: Debug>(result: Result<T, Error>) {
     match error.without_snippet() {
         Error::RecursiveReferencesRequireWeakTypes { .. } => {}
         // Buffered values wrap the error with the alias locations.
-        Error::Aliased { error: inner, .. } => assert!(
+        Error::AliasError { error: inner, .. } => assert!(
             matches!(
                 inner.as_ref(),
                 Error::RecursiveReferencesRequireWeakTypes { .. }

@@ -148,7 +148,7 @@ mod localizer_tests {
     }
 }
 
-mod aliased_error_tests {
+mod alias_error_tests {
     use super::*;
     use serde::Deserialize;
     use serde_saphyr::localizer::Localizer;
@@ -171,19 +171,20 @@ mod aliased_error_tests {
     }
 
     /// An error inside an aliased value keeps the inner error (issue #199), so a custom
-    /// localizer formats the inner location and `source()` returns the inner error.
+    /// localizer formats the alias location and `source()` returns the inner error.
     #[test]
-    fn aliased_error_keeps_the_inner_error() {
+    fn alias_error_keeps_the_inner_error() {
         let yaml = "name: &n eighty\nport: *n\n";
         let outer = serde_saphyr::from_str::<Config>(yaml).unwrap_err();
         let error = outer.without_snippet();
 
-        let Error::Aliased {
+        let Error::AliasError {
             error: inner,
             locations,
+            ..
         } = error
         else {
-            panic!("expected Error::Aliased, got {error:?}");
+            panic!("expected Error::AliasError, got {error:?}");
         };
         let reference = locations.reference_location;
         let defined = locations.defined_location;
@@ -191,19 +192,28 @@ mod aliased_error_tests {
         assert_eq!((defined.line(), defined.column()), (1, 10));
 
         let source = std::error::Error::source(error).expect("source() returns the inner error");
+        let source = source
+            .downcast_ref::<Error>()
+            .expect("the source retains its concrete Error type");
+        assert!(matches!(source, Error::InvalidScalar { ty: "u16", .. }));
+        assert!(std::ptr::eq(source, inner.as_ref()));
         assert_eq!(source.to_string(), inner.to_string());
+
+        // Existing handlers that inspect the legacy message still match alias errors.
+        #[allow(deprecated)]
+        match error {
+            Error::AliasError { msg, .. } => assert_eq!(msg, &inner.to_string()),
+            other => panic!("the existing AliasError handler must run, got {other:?}"),
+        }
 
         assert_eq!(
             error.to_string(),
-            "invalid u16 at line 1, column 10 (defined at line 1, column 10) at line 2, column 7",
-            "the default rendering must not change"
+            "invalid u16 (defined at line 1, column 10) at line 2, column 7",
+            "the anchor definition and alias use must each be reported once"
         );
 
         let rendered =
             error.render_with_formatter(&DefaultMessageFormatter.with_localizer(&Bracketed));
-        assert_eq!(
-            rendered,
-            "invalid u16 [1:10] (defined at line 1, column 10) [2:7]"
-        );
+        assert_eq!(rendered, "invalid u16 (defined at line 1, column 10) [2:7]");
     }
 }

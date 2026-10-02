@@ -36,6 +36,7 @@ fn cargo_check(dir: &Path, target_dir: &Path) -> Output {
     Command::new(cargo)
         .current_dir(dir)
         .arg("check")
+        .arg("--offline")
         .arg("--quiet")
         .env("CARGO_TARGET_DIR", target_dir)
         .output()

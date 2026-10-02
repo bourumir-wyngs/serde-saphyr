@@ -611,7 +611,7 @@ target:
                 matches!(err, Error::AliasReplayLimitExceeded { .. })
                     || matches!(
                         err,
-                        Error::Aliased { error, .. }
+                        Error::AliasError { error, .. }
                             if error.to_string().starts_with("alias replay limit exceeded")
                     )
             );
@@ -664,7 +664,7 @@ target:
                 matches!(err, Error::Budget { .. })
                     || matches!(
                         err,
-                        Error::Aliased { error, .. }
+                        Error::AliasError { error, .. }
                             if error.to_string().starts_with("budget breached")
                     )
             );
@@ -727,7 +727,7 @@ target:
             assert!(
                 matches!(
                     unwrap_snippet(&err),
-                    Error::Aliased { error, .. }
+                    Error::AliasError { error, .. }
                         if error.to_string().starts_with("budget breached")
                 ),
                 "unexpected error: {err:?}"

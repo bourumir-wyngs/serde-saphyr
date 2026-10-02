@@ -196,8 +196,7 @@ fn build_diagnostic(
             diag
         }
 
-        #[allow(deprecated)] // Errors built with the legacy variant render the same way.
-        Error::AliasError { locations, .. } | Error::Aliased { locations, .. } => {
+        Error::AliasError { locations, .. } => {
             let (actual_src, labels) = build_dual_location_labels(
                 &src,
                 locations.reference_location,
@@ -1203,7 +1202,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(deprecated)] // Covers errors built with the legacy variant.
+    #[allow(deprecated)] // Populates the legacy msg field when constructing an alias error.
     fn alias_error_has_use_and_definition_labels() {
         use crate::location::Locations;
 
@@ -1232,6 +1231,7 @@ mod tests {
 
         let err = Error::AliasError {
             msg: "invalid value for alias".to_owned(),
+            error: Box::new(Error::msg("invalid value for alias")),
             locations: Locations {
                 reference_location: referenced_loc,
                 defined_location: defined_loc,
@@ -1244,10 +1244,7 @@ mod tests {
             RenderOptions::default().formatter,
             &[],
         );
-        assert_eq!(
-            diag.message,
-            "invalid value for alias (defined at line 1, column 13)"
-        );
+        assert_eq!(diag.message, "invalid value for alias");
 
         let labels = &diag.labels;
         assert_eq!(labels.len(), 2, "expected 2 labels, got: {labels:?}");
@@ -1264,7 +1261,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(deprecated)] // Covers errors built with the legacy variant.
+    #[allow(deprecated)] // Populates the legacy msg field when constructing an alias error.
     fn alias_error_with_same_locations_has_single_label() {
         use crate::location::Locations;
 
@@ -1282,6 +1279,7 @@ mod tests {
 
         let err = Error::AliasError {
             msg: "invalid value".to_owned(),
+            error: Box::new(Error::msg("invalid value")),
             locations: Locations {
                 reference_location: loc,
                 defined_location: loc,

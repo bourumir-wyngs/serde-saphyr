@@ -173,11 +173,11 @@ fn weak_anchor_types_distinguish_recursive_and_unknown_strong_targets() {
     let arc_error = expect_error(serde_saphyr::from_str::<ArcUnknownDoc>(unknown));
     assert!(matches!(
         rc_error.without_snippet(),
-        serde_saphyr::Error::Aliased { .. }
+        serde_saphyr::Error::AliasError { .. }
     ));
     assert!(matches!(
         arc_error.without_snippet(),
-        serde_saphyr::Error::Aliased { .. }
+        serde_saphyr::Error::AliasError { .. }
     ));
 }
 
@@ -220,12 +220,12 @@ fn recursion_alias_types_require_recursive_anchor_context_and_storage() {
     let rc_error = expect_error(serde_saphyr::from_str::<RcDoc>(yaml));
     assert!(matches!(
         rc_error.without_snippet(),
-        serde_saphyr::Error::Aliased { .. }
+        serde_saphyr::Error::AliasError { .. }
     ));
     let arc_error = expect_error(serde_saphyr::from_str::<ArcDoc>(yaml));
     assert!(matches!(
         arc_error.without_snippet(),
-        serde_saphyr::Error::Aliased { .. }
+        serde_saphyr::Error::AliasError { .. }
     ));
 }
 
