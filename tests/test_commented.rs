@@ -1,4 +1,5 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
+#![cfg(feature = "parser-comments")]
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 

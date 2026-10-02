@@ -6,6 +6,7 @@ use std::fmt::Write;
 
 use super::helpers::{BoolCapture, StrCapture, UsizeCapture, scalar_key_to_string};
 use super::{AnchorId, YamlSerializer};
+#[cfg(feature = "parser-comments")]
 use crate::ser::options::CommentPosition;
 use crate::ser::{Error, Result};
 
@@ -187,6 +188,7 @@ struct SpecialTupleSer<'a, 'b, W: Write> {
     /// For weak anchors: hold alias id if value should be emitted as alias in field #3.
     weak_alias_id: Option<AnchorId>,
     /// For commented wrapper: captured comment text from field #0.
+    #[cfg(feature = "parser-comments")]
     comment_text: Option<String>,
     /// For tagged wrapper: resolved tag identity captured from field #0.
     resolved_tag: Option<String>,
@@ -194,7 +196,8 @@ struct SpecialTupleSer<'a, 'b, W: Write> {
 enum TupleKind {
     AnchorStrong, // [ptr, value]
     AnchorWeak,   // [ptr, present, value]
-    Commented,    // [comment, value]
+    #[cfg(feature = "parser-comments")]
+    Commented, // [comment, value]
     Tagged,       // [resolved tag, value]
 }
 impl<'a, 'b, W: Write> TupleSer<'a, 'b, W> {
@@ -217,6 +220,7 @@ impl<'a, 'b, W: Write> TupleSer<'a, 'b, W> {
         }
     }
     /// Create a tuple serializer for internal commented wrapper.
+    #[cfg(feature = "parser-comments")]
     pub(super) fn commented(ser: &'a mut YamlSerializer<'b, W>) -> Self {
         Self {
             inner: TupleSerInner::Special(SpecialTupleSer::new(ser, TupleKind::Commented)),
@@ -241,6 +245,7 @@ impl<'a, 'b, W: Write> SpecialTupleSer<'a, 'b, W> {
             weak_present: false,
             skip_third: false,
             weak_alias_id: None,
+            #[cfg(feature = "parser-comments")]
             comment_text: None,
             resolved_tag: None,
         }
@@ -343,6 +348,7 @@ impl<W: Write> SpecialTupleSer<'_, '_, W> {
                     _ => return Err(Error::unexpected("unexpected field in __yaml_weak_anchor")),
                 }
             }
+            #[cfg(feature = "parser-comments")]
             TupleKind::Commented => {
                 match self.idx {
                     0 => {

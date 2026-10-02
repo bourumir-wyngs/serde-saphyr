@@ -3,15 +3,19 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "parser-comments")]
+use crate::Commented;
 use crate::{
-    ArcAnchor, ArcRecursion, ArcRecursive, ArcWeakAnchor, Commented, DoubleQuoted, FlowMap,
-    FlowSeq, NullableTilde, RcAnchor, RcRecursion, RcRecursive, RcWeakAnchor, SingleQuoted,
-    SpaceAfter, Tagged,
+    ArcAnchor, ArcRecursion, ArcRecursive, ArcWeakAnchor, DoubleQuoted, FlowMap, FlowSeq,
+    NullableTilde, RcAnchor, RcRecursion, RcRecursive, RcWeakAnchor, SingleQuoted, SpaceAfter,
+    Tagged,
 };
 
+#[cfg(feature = "parser-comments")]
+use super::NAME_TUPLE_COMMENTED;
 use super::{
     NAME_DOUBLE_QUOTED, NAME_FLOW_MAP, NAME_FLOW_SEQ, NAME_NULLABLE_TILDE, NAME_SINGLE_QUOTED,
-    NAME_SPACE_AFTER, NAME_TUPLE_ANCHOR, NAME_TUPLE_COMMENTED, NAME_TUPLE_TAGGED, NAME_TUPLE_WEAK,
+    NAME_SPACE_AFTER, NAME_TUPLE_ANCHOR, NAME_TUPLE_TAGGED, NAME_TUPLE_WEAK,
 };
 
 // ------------------------------------------------------------
@@ -197,6 +201,7 @@ impl<T: Serialize> Serialize for NullableTilde<T> {
     }
 }
 
+#[cfg(feature = "parser-comments")]
 impl<T: Serialize> Serialize for Commented<T> {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
         // Represent as a special tuple-struct with two fields: (comment, value)

@@ -120,6 +120,8 @@ pub struct NullableTilde<T>(pub Option<T>);
 
 /// Attach an inline YAML comment to a value when serializing.
 ///
+/// Requires the `parser-comments` feature, which is enabled by default.
+///
 /// This wrapper lets you annotate a scalar with an inline YAML comment that is
 /// emitted after the value when using block style. The typical form is:
 /// `value # comment`. This is the most useful when deserializing the anchor
@@ -190,6 +192,7 @@ pub struct NullableTilde<T>(pub Option<T>);
 /// first child key or element, remain available to that child. The same applies
 /// to leading comments above a nested alias whose target is a container.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg(feature = "parser-comments")]
 pub struct Commented<T>(pub T, pub String);
 
 /// Capture and emit the resolved YAML tag attached to a value.
@@ -213,9 +216,9 @@ pub struct Commented<T>(pub T, pub String);
 /// tags are emitted directly. A non-local identity must have valid absolute-URI
 /// structure; characters requiring URI escaping are percent-encoded on output.
 ///
-/// `Tagged<Commented<T>>` and `Commented<Tagged<T>>` are both supported. Tag
-/// capture remains subject to the deserializer's normal tag semantics and
-/// `reject_unsupported_tags` option.
+/// With the `parser-comments` feature, `Tagged<Commented<T>>` and
+/// `Commented<Tagged<T>>` are both supported. Tag capture remains subject to the
+/// deserializer's normal tag semantics and `reject_unsupported_tags` option.
 ///
 /// # Clashing tags
 ///
@@ -232,7 +235,7 @@ pub struct Commented<T>(pub T, pub String);
 /// ```rust
 /// # #[cfg(all(feature = "serialize", feature = "deserialize"))]
 /// # {
-/// use serde_saphyr::{Commented, Tagged, from_str, to_string};
+/// use serde_saphyr::{Tagged, from_str, to_string};
 ///
 /// let value: Tagged<String> = from_str("!!str value").unwrap();
 /// assert_eq!(
@@ -243,6 +246,10 @@ pub struct Commented<T>(pub T, pub String);
 ///     to_string(&value).unwrap(),
 ///     "!<tag:yaml.org,2002:str> value\n",
 /// );
+///
+/// # #[cfg(feature = "parser-comments")]
+/// # {
+/// use serde_saphyr::Commented;
 ///
 /// let tagged_comment: Tagged<Commented<String>> =
 ///     from_str("!widget value # note").unwrap();
@@ -264,11 +271,12 @@ pub struct Commented<T>(pub T, pub String);
 ///     ),
 /// );
 /// # }
+/// # }
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Tagged<T>(pub T, pub Option<String>);
 
-#[cfg(feature = "garde")]
+#[cfg(all(feature = "garde", feature = "parser-comments"))]
 impl<T: garde::Validate> garde::Validate for Commented<T> {
     type Context = T::Context;
 
@@ -296,7 +304,7 @@ impl<T: garde::Validate> garde::Validate for Tagged<T> {
     }
 }
 
-#[cfg(feature = "validator")]
+#[cfg(all(feature = "validator", feature = "parser-comments"))]
 impl<T: validator::Validate> validator::Validate for Commented<T> {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         self.0.validate()
@@ -310,7 +318,7 @@ impl<T: validator::Validate> validator::Validate for Tagged<T> {
     }
 }
 
-#[cfg(feature = "validator")]
+#[cfg(all(feature = "validator", feature = "parser-comments"))]
 impl<'v_a, T: validator::ValidateArgs<'v_a>> validator::ValidateArgs<'v_a> for Commented<T> {
     type Args = T::Args;
 
@@ -358,6 +366,7 @@ where
     }
 }
 
+#[cfg(feature = "parser-comments")]
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for Commented<T> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
         struct CommentedVisitor<T>(PhantomData<T>);
@@ -448,9 +457,9 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for NullableTilde<T> {
 mod tests {
     use serde::Deserialize;
 
-    use crate::{
-        Commented, DoubleQuoted, FlowMap, FlowSeq, NullableTilde, SingleQuoted, SpaceAfter, Tagged,
-    };
+    #[cfg(feature = "parser-comments")]
+    use crate::Commented;
+    use crate::{DoubleQuoted, FlowMap, FlowSeq, NullableTilde, SingleQuoted, SpaceAfter, Tagged};
 
     #[derive(Debug, Deserialize, PartialEq)]
     struct WrappersDoc {
@@ -459,6 +468,7 @@ mod tests {
         after: SpaceAfter<String>,
         nullable_tilde_none: NullableTilde<String>,
         nullable_tilde_some: NullableTilde<String>,
+        #[cfg(feature = "parser-comments")]
         commented: Commented<bool>,
         double_quoted: DoubleQuoted<String>,
         single_quoted: SingleQuoted<String>,
@@ -478,6 +488,7 @@ mod tests {
             value.nullable_tilde_some,
             NullableTilde(Some("value".to_string()))
         );
+        #[cfg(feature = "parser-comments")]
         assert_eq!(value.commented, Commented(true, String::new()));
         assert_eq!(value.double_quoted, DoubleQuoted("value".to_string()));
         assert_eq!(value.single_quoted, SingleQuoted("value".to_string()));

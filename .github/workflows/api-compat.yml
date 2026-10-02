@@ -1,4 +1,4 @@
-name: API 1.3.0 compatibility
+name: API 2.0.0 compatibility
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  BASELINE_REF: "1.3.0"
+  BASELINE_REF: "2.0.0"
 
 jobs:
   semver:

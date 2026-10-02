@@ -4,8 +4,10 @@
 mod serialize_tests {
     use serde::Serialize;
     use serde::ser::{self, SerializeMap, Serializer};
+    #[cfg(feature = "parser-comments")]
+    use serde_saphyr::Commented;
     use serde_saphyr::{
-        Commented, DoubleQuoted, FlowMap, FlowSeq, NullableTilde, RcAnchor, SpaceAfter, to_string,
+        DoubleQuoted, FlowMap, FlowSeq, NullableTilde, RcAnchor, SpaceAfter, to_string,
     };
     use std::collections::BTreeMap;
     use std::fmt;
@@ -259,6 +261,7 @@ mod serialize_tests {
     fn combines_with_other_wrappers() {
         #[derive(Serialize)]
         struct Doc {
+            #[cfg(feature = "parser-comments")]
             commented: Commented<NullableTilde<i32>>,
             spaced: SpaceAfter<NullableTilde<i32>>,
             flow: FlowSeq<Vec<NullableTilde<i32>>>,
@@ -267,6 +270,7 @@ mod serialize_tests {
         }
 
         let doc = Doc {
+            #[cfg(feature = "parser-comments")]
             commented: Commented(NullableTilde(None), "absent".to_string()),
             spaced: SpaceAfter(NullableTilde(None)),
             flow: FlowSeq(vec![
@@ -278,10 +282,11 @@ mod serialize_tests {
             quoted_some: NullableTilde(Some(DoubleQuoted("plain"))),
         };
 
-        assert_eq!(
-            to_string(&doc).unwrap(),
-            "commented: ~ # absent\nspaced: ~\n\nflow: [1, ~, 3]\nflow_some: [4, 5]\nquoted_some: \"plain\"\n"
-        );
+        #[cfg(feature = "parser-comments")]
+        let expected = "commented: ~ # absent\nspaced: ~\n\nflow: [1, ~, 3]\nflow_some: [4, 5]\nquoted_some: \"plain\"\n";
+        #[cfg(not(feature = "parser-comments"))]
+        let expected = "spaced: ~\n\nflow: [1, ~, 3]\nflow_some: [4, 5]\nquoted_some: \"plain\"\n";
+        assert_eq!(to_string(&doc).unwrap(), expected);
     }
 
     #[test]
@@ -373,7 +378,9 @@ mod serialize_tests {
 #[cfg(feature = "deserialize")]
 mod deserialize_tests {
     use serde::Deserialize;
-    use serde_saphyr::{Commented, FlowSeq, NullableTilde, RcAnchor, from_str};
+    #[cfg(feature = "parser-comments")]
+    use serde_saphyr::Commented;
+    use serde_saphyr::{FlowSeq, NullableTilde, RcAnchor, from_str};
     use std::rc::Rc;
 
     #[test]
@@ -394,6 +401,7 @@ mod deserialize_tests {
             empty: NullableTilde<String>,
             value: NullableTilde<String>,
             flow_some: NullableTilde<FlowSeq<Vec<i32>>>,
+            #[cfg(feature = "parser-comments")]
             commented: Commented<NullableTilde<bool>>,
         }
 
@@ -407,6 +415,7 @@ mod deserialize_tests {
         assert_eq!(doc.empty, NullableTilde(None));
         assert_eq!(doc.value, NullableTilde(Some("hello".to_string())));
         assert_eq!(doc.flow_some, NullableTilde(Some(FlowSeq(vec![1, 2]))));
+        #[cfg(feature = "parser-comments")]
         assert_eq!(
             doc.commented,
             Commented(NullableTilde(Some(true)), String::new())

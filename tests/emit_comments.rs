@@ -1,4 +1,5 @@
 #![cfg(feature = "deserialize")]
+#![cfg(feature = "parser-comments")]
 
 use serde_saphyr::budget::{BudgetBreach, BudgetReport};
 use serde_saphyr::granit_parser::ErrorKind;

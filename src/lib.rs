@@ -18,11 +18,10 @@ compile_error!(
 pub use self::de::PropertySyntax;
 #[cfg(all(feature = "deserialize", any(feature = "garde", feature = "validator")))]
 pub use self::de_error::{ValidationIssue, ValidationSource};
+#[cfg(all(feature = "serialize", feature = "parser-comments"))]
+pub use self::ser::options::CommentPosition;
 #[cfg(feature = "serialize")]
-pub use self::ser::{
-    Error as SerializeError, error as ser_error,
-    options::{CommentPosition, SerializerOptions},
-};
+pub use self::ser::{Error as SerializeError, error as ser_error, options::SerializerOptions};
 #[cfg(feature = "deserialize")]
 pub use self::{
     de::{
@@ -68,9 +67,14 @@ pub use location::{Location, Locations};
 pub use long_strings::{FoldStr, FoldString, LitStr, LitString};
 pub use span::Span;
 pub use spanned::Spanned;
+#[cfg(all(
+    feature = "parser-comments",
+    any(feature = "serialize", feature = "deserialize")
+))]
+pub use wrappers::Commented;
 #[cfg(any(feature = "serialize", feature = "deserialize"))]
 pub use wrappers::{
-    Commented, DoubleQuoted, FlowMap, FlowSeq, NullableTilde, SingleQuoted, SpaceAfter, Tagged,
+    DoubleQuoted, FlowMap, FlowSeq, NullableTilde, SingleQuoted, SpaceAfter, Tagged,
 };
 
 #[cfg(all(feature = "deserialize", feature = "include"))]

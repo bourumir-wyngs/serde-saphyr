@@ -10,14 +10,16 @@ use smallvec::SmallVec;
 use std::collections::HashSet;
 
 const DEFAULT_MAX_SCALAR_BYTES: usize = 64 * 1024 * 1024;
+#[cfg(feature = "parser-comments")]
 const DEFAULT_MAX_TOTAL_COMMENT_BYTES: usize = 64 * 1024 * 1024;
+#[cfg(feature = "parser-comments")]
 const DEFAULT_MAX_BUFFERED_COMMENT_EVENTS: usize = 32;
 const DEFAULT_SIMPLE_KEY_MAX_LOOKAHEAD: usize = 1024;
 const DEFAULT_FLOW_NESTING_LIMIT: usize = 255;
 const DEFAULT_MAX_PROPERTY_EXPANSION_DEPTH: usize = 64;
 const DEFAULT_MAX_TOTAL_PROPERTY_INTERPOLATION_WORK: usize = 256 * 1024 * 1024;
 
-#[cfg(feature = "serde_derived_types")]
+#[cfg(all(feature = "serde_derived_types", feature = "parser-comments"))]
 fn default_max_total_comment_bytes() -> usize {
     DEFAULT_MAX_TOTAL_COMMENT_BYTES
 }
@@ -32,7 +34,7 @@ fn default_max_recorded_anchor_bytes() -> usize {
     64 * 1024 * 1024
 }
 
-#[cfg(feature = "serde_derived_types")]
+#[cfg(all(feature = "serde_derived_types", feature = "parser-comments"))]
 fn default_max_buffered_comment_events() -> usize {
     DEFAULT_MAX_BUFFERED_COMMENT_EVENTS
 }
@@ -121,6 +123,7 @@ pub struct Budget {
         feature = "serde_derived_types",
         serde(default = "default_max_buffered_comment_events")
     )]
+    #[cfg(feature = "parser-comments")]
     pub max_buffered_comment_events: usize,
     /// Maximum number of characters the scanner may inspect while resolving a simple key.
     ///
@@ -240,6 +243,7 @@ pub struct Budget {
         feature = "serde_derived_types",
         serde(default = "default_max_total_comment_bytes")
     )]
+    #[cfg(feature = "parser-comments")]
     pub max_total_comment_bytes: usize,
     /// Maximum number of merge keys (`<<`) allowed across the stream when merge-key
     /// expansion is enabled.
@@ -270,6 +274,7 @@ impl Default for Budget {
     fn default() -> Self {
         Self {
             max_reader_input_bytes: Some(256 * 1024 * 1024), // 256 Mb
+            #[cfg(feature = "parser-comments")]
             max_buffered_comment_events: DEFAULT_MAX_BUFFERED_COMMENT_EVENTS,
             simple_key_max_lookahead: DEFAULT_SIMPLE_KEY_MAX_LOOKAHEAD,
             flow_nesting_limit: DEFAULT_FLOW_NESTING_LIMIT,
@@ -285,6 +290,7 @@ impl Default for Budget {
             max_documents: 1_024, // doc separator storms
             max_nodes: 250_000,   // sequences + maps + scalars
             max_total_scalar_bytes: DEFAULT_MAX_SCALAR_BYTES, // 64 MiB of scalar text
+            #[cfg(feature = "parser-comments")]
             max_total_comment_bytes: DEFAULT_MAX_TOTAL_COMMENT_BYTES, // 64 MiB of comment text
             max_merge_keys: 10_000, // generous cap for merge keys
             enforce_alias_anchor_ratio: true,
@@ -303,12 +309,20 @@ impl Budget {
             .block_nesting_limit
             .max(self.max_depth.saturating_add(1));
 
-        granit_parser::options! {
-            max_buffered_comment_events: self.max_buffered_comment_events,
+        let mut options = granit_parser::options! {
             simple_key_max_lookahead: self.simple_key_max_lookahead,
             flow_nesting_limit: self.flow_nesting_limit,
             block_nesting_limit: block_nesting_limit,
+        };
+        #[cfg(feature = "parser-comments")]
+        {
+            options.max_buffered_comment_events = self.max_buffered_comment_events;
         }
+        #[cfg(not(feature = "parser-comments"))]
+        {
+            options.emit_comments = false;
+        }
+        options
     }
 }
 
@@ -373,6 +387,7 @@ pub enum BudgetBreach {
     },
 
     /// The cumulative size of comment contents exceeded [`Budget::max_total_comment_bytes`].
+    #[cfg(feature = "parser-comments")]
     CommentBytes {
         /// Sum of comment text lengths over all comments seen so far.
         total_comment_bytes: usize,
@@ -480,6 +495,7 @@ pub struct BudgetReport {
 
     /// Sum of bytes across all comment values, saturating on overflow.
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
+    #[cfg(feature = "parser-comments")]
     pub total_comment_bytes: usize,
 
     /// Total number of merge keys (`<<`) encountered while merge-key expansion was enabled.
@@ -497,7 +513,10 @@ impl BudgetReport {
         self.nodes = 0;
         self.max_depth = 0;
         self.total_scalar_bytes = 0;
-        self.total_comment_bytes = 0;
+        #[cfg(feature = "parser-comments")]
+        {
+            self.total_comment_bytes = 0;
+        }
         self.merge_keys = 0;
     }
 }
@@ -633,6 +652,7 @@ impl BudgetEnforcer {
                     }
                 }
             }
+            #[cfg(feature = "parser-comments")]
             Event::Comment(text, _) => {
                 self.report.total_comment_bytes =
                     self.report.total_comment_bytes.saturating_add(text.len());
@@ -1305,6 +1325,7 @@ e: *A
     }
 
     #[test]
+    #[cfg(feature = "parser-comments")]
     fn comment_budget_counts_comment_bytes() {
         let yaml = "#abcdef\nroot: ok\n";
         let budget = Budget {
