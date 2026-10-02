@@ -1,4 +1,4 @@
-name: API compatibility
+name: API 2.0.0 compatibility
 
 on:
   push:
