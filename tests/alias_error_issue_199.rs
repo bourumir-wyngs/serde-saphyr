@@ -327,43 +327,47 @@ fn mapping_alias_snippet_has_no_embedded_plain_text_locations() {
 #[test]
 fn mapping_alias_snippet_retains_a_failing_field_far_from_the_anchor() {
     let yaml = distant_mapping_alias_yaml();
-    let error = from_str::<MappingConfig>(&yaml).unwrap_err();
-    let Error::WithSnippet { regions, .. } = &error else {
-        panic!("expected a snippet wrapper, got {error:?}");
-    };
-    let failing_region = regions
-        .iter()
-        .find(|region| region.location.line() == 32 && region.location.column() == 9)
-        .expect("the distinct failing value must have a retained source window");
-    assert!(failing_region.text.contains("  port: eighty\n"));
-    assert!(
-        regions
+    for error in [
+        from_str::<MappingConfig>(&yaml).unwrap_err(),
+        serde_saphyr::from_reader::<_, MappingConfig>(yaml.as_bytes()).unwrap_err(),
+    ] {
+        let Error::WithSnippet { regions, .. } = &error else {
+            panic!("expected a snippet wrapper, got {error:?}");
+        };
+        let failing_region = regions
             .iter()
-            .filter(|region| region.location.line() == 2 || region.location.line() == 63)
-            .all(|region| !region.text.contains("port: eighty")),
-        "the failing field must be outside both alias snippet windows"
-    );
-    assert_eq!(
-        error.without_snippet().to_string(),
-        "invalid u16 at line 32, column 9 (defined at line 2, column 3) at line 63, column 7"
-    );
+            .find(|region| region.location.line() == 32 && region.location.column() == 9)
+            .expect("the distinct failing value must have a retained source window");
+        assert!(failing_region.text.contains("  port: eighty\n"));
+        assert!(
+            regions
+                .iter()
+                .filter(|region| region.location.line() == 2 || region.location.line() == 63)
+                .all(|region| !region.text.contains("port: eighty")),
+            "the failing field must be outside both alias snippet windows"
+        );
+        assert_eq!(
+            error.without_snippet().to_string(),
+            "invalid u16 at line 32, column 9 (defined at line 2, column 3) at line 63, column 7"
+        );
 
-    let rendered = error.to_string();
-    assert!(rendered.contains("port: eighty"), "{rendered}");
-    assert!(rendered.contains("<input>:32:9"), "{rendered}");
-    assert!(rendered.contains("the error occurred here"), "{rendered}");
-    assert!(rendered.contains("the value is used here"), "{rendered}");
-    assert!(rendered.contains("defined here"), "{rendered}");
-    let mut lines = rendered.lines();
-    let value_line = lines
-        .find(|line| line.contains("port: eighty"))
-        .expect("the failing value is shown");
-    let marker_line = lines.next().expect("the failing value has a marker");
-    assert_eq!(
-        marker_line.find('^'),
-        value_line.find("eighty"),
-        "the marker must point to the invalid value, not the beginning of the anchor:\n{rendered}"
-    );
+        let rendered = error.to_string();
+        assert!(rendered.contains("port: eighty"), "{rendered}");
+        assert!(rendered.contains(":32:9"), "{rendered}");
+        assert!(rendered.contains("the error occurred here"), "{rendered}");
+        assert!(rendered.contains("the value is used here"), "{rendered}");
+        assert!(rendered.contains("defined here"), "{rendered}");
+        let mut lines = rendered.lines();
+        let value_line = lines
+            .find(|line| line.contains("port: eighty"))
+            .expect("the failing value is shown");
+        let marker_line = lines.next().expect("the failing value has a marker");
+        assert_eq!(
+            marker_line.find('^'),
+            value_line.find("eighty"),
+            "the marker must point to the invalid value, not the beginning of the anchor:\n{rendered}"
+        );
+    }
 }
 
 #[test]

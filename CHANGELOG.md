@@ -62,7 +62,7 @@
 
 - Alias diagnostics preserve the precise location of a failing value inside an anchored mapping,
   including fields outside the anchor's snippet window. Plain messages, snippets, and `miette`
-  reports show each distinct error, definition, and use location through the active `Localizer`.
+  reports include the distinct failing location; equal locations are not repeated.
 - Alias error rendering passes the original error to the active `MessageFormatter`, including
   formatters that delegate other variants to the built-in formatter. Plain messages report
   the alias definition and use locations once through the active `Localizer`; snippet and
