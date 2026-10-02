@@ -142,14 +142,35 @@ fn message_char_needs_escape(ch: char) -> bool {
 }
 
 #[inline]
-pub(crate) fn render_message_text<'a>(
-    formatter: &dyn MessageFormatter,
-    mut err: &'a Error,
-) -> Cow<'a, str> {
+fn original_error(mut err: &Error) -> &Error {
     while let Error::AliasError { error, .. } | Error::WithSnippet { error, .. } = err {
         err = error;
     }
-    sanitize_message_text(formatter.format_message(err))
+    err
+}
+
+#[inline]
+pub(crate) fn render_message_text<'a>(
+    formatter: &dyn MessageFormatter,
+    err: &'a Error,
+) -> Cow<'a, str> {
+    sanitize_message_text(formatter.format_message(original_error(err)))
+}
+
+/// The failing value can be distinct from both the beginning of the anchor and its use.
+/// Keep that location even when the original error is behind several alias wrappers.
+pub(crate) fn distinct_alias_error_location(mut err: &Error) -> Option<Location> {
+    while let Error::WithSnippet { error, .. } = err {
+        err = error;
+    }
+    let Error::AliasError { locations, .. } = err else {
+        return None;
+    };
+    original_error(err).location().filter(|location| {
+        *location != Location::UNKNOWN
+            && *location != locations.reference_location
+            && *location != locations.defined_location
+    })
 }
 
 /// User-facing message formatter.
@@ -442,6 +463,17 @@ fn collect_snippet_regions(
         } else if let Some(loc) = inner.location() {
             push_region_for_location(&mut regions, text, source_name, &loc, mapping, crop_radius);
         }
+    }
+
+    if let Some(location) = distinct_alias_error_location(inner) {
+        push_region_for_location(
+            &mut regions,
+            text,
+            source_name,
+            &location,
+            mapping,
+            crop_radius,
+        );
     }
 
     regions
@@ -1719,8 +1751,13 @@ fn fmt_error_plain_with_formatter(
 
     let msg = render_message_text(formatter, err);
 
-    // Alias locations describe the outer use and definition, rather than becoming part
-    // of the inner message. Nested wrappers remain available through source().
+    let msg = if let Some(location) = distinct_alias_error_location(err) {
+        sanitize_message_text(formatter.localizer().attach_location(msg, location))
+    } else {
+        msg
+    };
+
+    // Preserve the outer use and definition as context for the original failing value.
     let msg = if let Error::AliasError { locations, .. } = err
         && locations.reference_location != Location::UNKNOWN
         && locations.defined_location != Location::UNKNOWN
@@ -1766,6 +1803,10 @@ fn pick_cropped_region<'a>(
     regions: &'a [CroppedRegion],
     location: &Location,
 ) -> Option<&'a CroppedRegion> {
+    // Different locations may share a vertical window but have different horizontal crops.
+    if let Some(region) = regions.iter().find(|region| region.location == *location) {
+        return Some(region);
+    }
     let source_id = location.source_id();
 
     if source_id != 0 {
@@ -1919,6 +1960,7 @@ fn fmt_error_rendered(
             });
 
             let msg = render_message_text(options.formatter, error);
+            let failing_location = distinct_alias_error_location(error);
 
             if let Some(locs) = dual_locations {
                 let ref_loc = locs.reference_location;
@@ -1953,7 +1995,6 @@ fn fmt_error_rendered(
                     l10n.defined_window().as_ref(),
                     *crop_radius,
                 )?;
-                Ok(())
             } else {
                 // Single location rendering.
                 let ctx = crate::de_snippet::Snippet::new(
@@ -1965,7 +2006,9 @@ fn fmt_error_rendered(
                 ctx.fmt_or_fallback(f, Level::ERROR, l10n, msg.as_ref(), &location)?;
 
                 for extra_region in regions {
-                    if std::ptr::eq(extra_region, region) {
+                    if std::ptr::eq(extra_region, region)
+                        || failing_location == Some(extra_region.location)
+                    {
                         continue;
                     }
                     writeln!(f)?;
@@ -1978,8 +2021,24 @@ fn fmt_error_rendered(
                     .with_offset(extra_region.start_line);
                     extra_ctx.fmt_or_fallback(f, Level::NOTE, l10n, "", &extra_region.location)?;
                 }
-                Ok(())
             }
+
+            if let Some(location) = failing_location {
+                writeln!(f)?;
+                let label = l10n.error_here();
+                if let Some(region) = pick_cropped_region(regions, &location) {
+                    let ctx = crate::de_snippet::Snippet::new(
+                        region.text.as_str(),
+                        region.source_name.as_str(),
+                        *crop_radius,
+                    )
+                    .with_offset(region.start_line);
+                    ctx.fmt_or_fallback(f, Level::NOTE, l10n, label.as_ref(), &location)?;
+                } else {
+                    fmt_with_location(f, l10n, label.as_ref(), &location)?;
+                }
+            }
+            Ok(())
         }
         _ => fmt_error_plain_with_formatter(f, err, options.formatter),
     }

@@ -10,7 +10,9 @@ use miette::{Diagnostic, LabeledSpan, NamedSource, SourceSpan};
 
 use crate::Error;
 use crate::Location;
-use crate::de_error::{CroppedRegion, render_message_text, sanitize_message_text};
+use crate::de_error::{
+    CroppedRegion, distinct_alias_error_location, render_message_text, sanitize_message_text,
+};
 use crate::de_snippet::sanitize_terminal_snippet_preserve_len;
 use crate::{MessageFormatter, RenderOptions};
 #[cfg(any(feature = "garde", feature = "validator"))]
@@ -175,6 +177,9 @@ fn build_diagnostic(
             } else if let Some(location) = error.location() {
                 insert_selected_region_key(&mut used_regions, snippet_regions, &location);
             }
+            if let Some(location) = distinct_alias_error_location(error) {
+                insert_selected_region_key(&mut used_regions, snippet_regions, &location);
+            }
 
             for region in snippet_regions {
                 let key = region_key(region);
@@ -197,19 +202,48 @@ fn build_diagnostic(
         }
 
         Error::AliasError { locations, .. } => {
-            let (actual_src, labels) = build_dual_location_labels(
+            let (actual_src, mut labels) = build_dual_location_labels(
                 &src,
                 locations.reference_location,
                 locations.defined_location,
                 regions,
                 "anchor defined here",
             );
+            let message = render_message_text(formatter, err).into_owned();
+            let mut related = Vec::new();
+
+            if let Some(location) = distinct_alias_error_location(err) {
+                let (error_src, span) = get_source_and_span(&src, &location, regions);
+                if let Some(span) = span {
+                    let label = LabeledSpan::new_with_span(
+                        Some(
+                            sanitize_message_text(formatter.localizer().error_here()).into_owned(),
+                        ),
+                        span,
+                    );
+                    // Cropped regions can share a filename while having different
+                    // padded contents and offsets. A label must use its own source.
+                    if Arc::ptr_eq(&actual_src, &error_src)
+                        || (actual_src.name() == error_src.name()
+                            && actual_src.inner() == error_src.inner())
+                    {
+                        labels.push(label);
+                    } else {
+                        related.push(ErrorDiagnostic {
+                            message: message.clone(),
+                            src: error_src,
+                            labels: vec![label],
+                            related: Vec::new(),
+                        });
+                    }
+                }
+            }
 
             ErrorDiagnostic {
-                message: render_message_text(formatter, err).into_owned(),
+                message,
                 src: actual_src,
                 labels,
-                related: Vec::new(),
+                related,
             }
         }
 
@@ -347,11 +381,14 @@ fn select_region_for_location<'a>(
     let location_source_id = location.source_id();
     regions
         .iter()
-        .find(|r| {
-            location_source_id != 0
-                && r.location.source_id() == location_source_id
-                && r.start_line <= line
-                && line <= r.end_line
+        .find(|r| r.location == *location)
+        .or_else(|| {
+            regions.iter().find(|r| {
+                location_source_id != 0
+                    && r.location.source_id() == location_source_id
+                    && r.start_line <= line
+                    && line <= r.end_line
+            })
         })
         .or_else(|| {
             regions.iter().find(|r| {
@@ -498,6 +535,121 @@ fn to_source_span(src: &NamedSource<String>, location: &Location) -> Option<Sour
 #[cfg(all(test, feature = "miette"))]
 mod tests {
     use super::*;
+
+    #[derive(Debug, serde::Deserialize)]
+    struct AliasMappingConfig {
+        #[serde(rename = "base")]
+        _base: std::collections::BTreeMap<String, String>,
+        #[serde(rename = "copy")]
+        _copy: AliasPort,
+    }
+
+    #[derive(Debug, serde::Deserialize)]
+    struct AliasPort {
+        #[serde(rename = "port")]
+        _port: u16,
+    }
+
+    fn labeled_text<'a>(diagnostic: &'a ErrorDiagnostic, label: &LabeledSpan) -> &'a str {
+        &diagnostic.src.inner()[label.offset()..label.offset() + label.len()]
+    }
+
+    #[test]
+    fn mapping_alias_labels_the_actual_failing_value() {
+        let yaml = "base: &b\n  port: eighty\ncopy: *b\n";
+        let error = crate::from_str::<AliasMappingConfig>(yaml).unwrap_err();
+        let src = Arc::new(NamedSource::new("config.yaml", yaml.to_owned()));
+
+        for error in [&error, error.without_snippet()] {
+            let diagnostic = build_diagnostic(
+                error,
+                Arc::clone(&src),
+                RenderOptions::default().formatter,
+                &[],
+            );
+            assert_eq!(diagnostic.labels.len(), 3);
+            assert!(diagnostic.related.is_empty());
+            let label = diagnostic
+                .labels
+                .iter()
+                .find(|label| label.label() == Some("the error occurred here"))
+                .expect("the failing value must have its own label");
+            assert_eq!(labeled_text(&diagnostic, label), "eighty");
+        }
+    }
+
+    #[test]
+    fn distant_alias_value_uses_its_own_cropped_source() {
+        let mut yaml = "base: &b\n".to_owned();
+        for index in 0..30 {
+            yaml.push_str(&format!("  before_{index}: ok\n"));
+        }
+        yaml.push_str("  port: eighty\n");
+        for index in 0..30 {
+            yaml.push_str(&format!("  after_{index}: ok\n"));
+        }
+        yaml.push_str("copy: *b\n");
+        let error = crate::from_str::<AliasMappingConfig>(&yaml).unwrap_err();
+        let src = Arc::new(NamedSource::new("config.yaml", yaml.clone()));
+        let diagnostic = build_diagnostic(&error, src, RenderOptions::default().formatter, &[]);
+
+        assert_eq!(diagnostic.labels.len(), 2);
+        assert!(!diagnostic.src.inner().contains("eighty"));
+        assert_eq!(
+            diagnostic.related.len(),
+            1,
+            "the failing value's region must not be repeated as included-from-here"
+        );
+        let underlying = &diagnostic.related[0];
+        assert_eq!(diagnostic.src.name(), underlying.src.name());
+        assert_ne!(diagnostic.src.inner(), underlying.src.inner());
+        assert_eq!(underlying.labels.len(), 1);
+        let label = &underlying.labels[0];
+        assert_eq!(label.label(), Some("the error occurred here"));
+        assert_eq!(labeled_text(underlying, label), "eighty");
+        assert_eq!(underlying.src.inner()[..label.offset()].lines().count(), 32);
+    }
+
+    #[test]
+    fn alias_value_label_is_localized_and_sanitized_without_reformatting_message() {
+        #[derive(Default)]
+        struct Formatter {
+            calls: std::cell::Cell<usize>,
+        }
+
+        impl crate::Localizer for Formatter {
+            fn error_here(&self) -> Cow<'static, str> {
+                Cow::Borrowed("failure\n\u{1b}]0;owned\u{7}")
+            }
+        }
+
+        impl MessageFormatter for Formatter {
+            fn localizer(&self) -> &dyn crate::Localizer {
+                self
+            }
+
+            fn format_message<'a>(&self, error: &'a Error) -> Cow<'a, str> {
+                assert!(matches!(error, Error::InvalidScalar { ty: "u16", .. }));
+                self.calls.set(self.calls.get() + 1);
+                Cow::Borrowed("custom port error")
+            }
+        }
+
+        let yaml = "base: &b\n  port: eighty\ncopy: *b\n";
+        let error = crate::from_str::<AliasMappingConfig>(yaml).unwrap_err();
+        let src = Arc::new(NamedSource::new("config.yaml", yaml.to_owned()));
+        let formatter = Formatter::default();
+        let diagnostic = build_diagnostic(&error, src, &formatter, &[]);
+
+        assert_eq!(diagnostic.message, "custom port error");
+        assert_eq!(formatter.calls.get(), 1);
+        let label = diagnostic
+            .labels
+            .iter()
+            .find(|label| label.label() == Some(r"failure\n\u{1b}]0;owned\u{7}"))
+            .expect("localized label must escape control characters");
+        assert_eq!(labeled_text(&diagnostic, label), "eighty");
+    }
 
     #[cfg(any(feature = "garde", feature = "validator"))]
     #[test]

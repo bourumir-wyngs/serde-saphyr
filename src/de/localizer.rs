@@ -218,6 +218,13 @@ pub trait Localizer {
         Cow::Borrowed("defined here")
     }
 
+    /// Label for the failing value when it differs from the alias definition and use.
+    ///
+    /// Default: `"the error occurred here"`.
+    fn error_here(&self) -> Cow<'static, str> {
+        Cow::Borrowed("the error occurred here")
+    }
+
     /// Compose the base validation message used in snippet rendering.
     ///
     /// Default: `"validation error: {entry} for `{`resolved_path`}`"`.

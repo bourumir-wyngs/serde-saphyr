@@ -42,6 +42,19 @@ fn mapping_alias_error() -> Error {
     from_str::<MappingConfig>("base: &b\n  port: eighty\ncopy: *b\n").unwrap_err()
 }
 
+fn distant_mapping_alias_yaml() -> String {
+    let mut yaml = String::from("base: &b\n");
+    for index in 0..30 {
+        yaml.push_str(&format!("  before_{index}: valid\n"));
+    }
+    yaml.push_str("  port: eighty\n");
+    for index in 0..30 {
+        yaml.push_str(&format!("  after_{index}: valid\n"));
+    }
+    yaml.push_str("copy: *b\n");
+    yaml
+}
+
 struct Bracketed;
 
 impl Localizer for Bracketed {
@@ -104,6 +117,18 @@ fn scalar_alias_reports_each_location_once() {
         error.to_string(),
         "invalid u16 (defined at line 1, column 10) at line 2, column 7"
     );
+    assert!(
+        !outer.to_string().contains("the error occurred here"),
+        "the scalar failure is already marked at the anchor"
+    );
+}
+
+#[test]
+fn mapping_alias_reports_the_failing_value_and_both_alias_locations() {
+    assert_eq!(
+        mapping_alias_error().without_snippet().to_string(),
+        "invalid u16 at line 2, column 9 (defined at line 2, column 3) at line 3, column 7"
+    );
 }
 
 #[test]
@@ -137,6 +162,12 @@ fn scalar_alias_respects_custom_location_formatting() {
         outer.without_snippet().render_with_formatter(&formatter),
         "invalid u16 (defined at line 1, column 10) [2:7]"
     );
+    assert_eq!(
+        mapping_alias_error()
+            .without_snippet()
+            .render_with_formatter(&formatter),
+        "invalid u16 [2:9] (defined at line 2, column 3) [3:7]"
+    );
 }
 
 #[test]
@@ -158,6 +189,12 @@ fn scalar_alias_line_offset_adjusts_every_reported_location() {
     assert_eq!(
         outer.without_snippet().render_with_formatter(&formatter),
         "invalid u16 [anchor 101:10] [102:7]"
+    );
+    assert_eq!(
+        mapping_alias_error()
+            .without_snippet()
+            .render_with_formatter(&formatter),
+        "invalid u16 [102:9] [anchor 102:3] [103:7]"
     );
 }
 
@@ -182,7 +219,7 @@ fn aliases_pass_the_original_variant_to_a_custom_formatter() {
         ),
         (
             mapping_alias_error(),
-            "custom port error (defined at line 2, column 3) at line 3, column 7",
+            "custom port error at line 2, column 9 (defined at line 2, column 3) at line 3, column 7",
         ),
     ] {
         formatter.scalar_calls.set(0);
@@ -198,6 +235,25 @@ fn aliases_pass_the_original_variant_to_a_custom_formatter() {
         assert!(!rendered.contains("invalid u16"), "{rendered}");
         assert_eq!(formatter.scalar_calls.get(), 1);
     }
+}
+
+#[test]
+#[allow(deprecated)] // Construct an outer alias around the original snippet and alias wrappers.
+fn mapping_alias_keeps_the_leaf_location_through_nested_wrappers() {
+    let inner = mapping_alias_error();
+    let locations = inner.locations().expect("alias locations");
+    let outer = Error::AliasError {
+        msg: inner.to_string(),
+        error: Box::new(inner),
+        locations,
+    };
+    let formatter = CustomFormatter::default();
+
+    assert_eq!(
+        outer.render_with_formatter(&formatter),
+        "custom port error at line 2, column 9 (defined at line 2, column 3) at line 3, column 7"
+    );
+    assert_eq!(formatter.scalar_calls.get(), 1);
 }
 
 #[test]
@@ -264,6 +320,69 @@ fn mapping_alias_snippet_has_no_embedded_plain_text_locations() {
     assert!(!rendered.contains(" (defined at "), "{rendered}");
     assert!(rendered.contains("the value is used here"), "{rendered}");
     assert!(rendered.contains("defined here"), "{rendered}");
+    assert!(rendered.contains("the error occurred here"), "{rendered}");
+    assert!(rendered.contains("<input>:2:9"), "{rendered}");
+}
+
+#[test]
+fn mapping_alias_snippet_retains_a_failing_field_far_from_the_anchor() {
+    let yaml = distant_mapping_alias_yaml();
+    let error = from_str::<MappingConfig>(&yaml).unwrap_err();
+    let Error::WithSnippet { regions, .. } = &error else {
+        panic!("expected a snippet wrapper, got {error:?}");
+    };
+    let failing_region = regions
+        .iter()
+        .find(|region| region.location.line() == 32 && region.location.column() == 9)
+        .expect("the distinct failing value must have a retained source window");
+    assert!(failing_region.text.contains("  port: eighty\n"));
+    assert!(
+        regions
+            .iter()
+            .filter(|region| region.location.line() == 2 || region.location.line() == 63)
+            .all(|region| !region.text.contains("port: eighty")),
+        "the failing field must be outside both alias snippet windows"
+    );
+    assert_eq!(
+        error.without_snippet().to_string(),
+        "invalid u16 at line 32, column 9 (defined at line 2, column 3) at line 63, column 7"
+    );
+
+    let rendered = error.to_string();
+    assert!(rendered.contains("port: eighty"), "{rendered}");
+    assert!(rendered.contains("<input>:32:9"), "{rendered}");
+    assert!(rendered.contains("the error occurred here"), "{rendered}");
+    assert!(rendered.contains("the value is used here"), "{rendered}");
+    assert!(rendered.contains("defined here"), "{rendered}");
+    let mut lines = rendered.lines();
+    let value_line = lines
+        .find(|line| line.contains("port: eighty"))
+        .expect("the failing value is shown");
+    let marker_line = lines.next().expect("the failing value has a marker");
+    assert_eq!(
+        marker_line.find('^'),
+        value_line.find("eighty"),
+        "the marker must point to the invalid value, not the beginning of the anchor:\n{rendered}"
+    );
+}
+
+#[test]
+fn mapping_alias_snippet_localizes_the_failing_value_label() {
+    struct Localized;
+
+    impl Localizer for Localized {
+        fn error_here(&self) -> Cow<'static, str> {
+            Cow::Borrowed("bad port here")
+        }
+    }
+
+    let formatter = DefaultMessageFormatter.with_localizer(&Localized);
+    let rendered = from_str::<MappingConfig>(&distant_mapping_alias_yaml())
+        .unwrap_err()
+        .render_with_formatter(&formatter);
+    assert!(rendered.contains("bad port here"), "{rendered}");
+    assert!(rendered.contains("<input>:32:9"), "{rendered}");
+    assert!(!rendered.contains("the error occurred here"), "{rendered}");
 }
 
 #[cfg(feature = "miette")]
