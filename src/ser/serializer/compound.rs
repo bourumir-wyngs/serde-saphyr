@@ -575,7 +575,9 @@ impl<'a, 'b, W: Write> MapSer<'a, 'b, W> {
         // continuation lines indent one level deeper than the parent mapping.
         self.ser.state.current_map_depth = Some(self.depth);
         let saved_key_column = self.ser.state.current_map_key_column.take();
-        self.ser.state.after_dash_depth = None;
+        // `? ` is laid out like a sequence dash `- `: a block collection key starts inline two
+        // columns past the indicator, so it takes the after-dash path (`- - a`, `- a: 1`).
+        self.ser.state.after_dash_depth = Some(self.depth);
         key.serialize(&mut *self.ser)?;
 
         self.ser.state.depth = saved_depth;
