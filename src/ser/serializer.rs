@@ -1810,12 +1810,15 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 && self.state.after_dash_depth.is_some()
                 && !self.state.pending_layout.pending_space_after_colon;
             let inline_first = after_dash && self.settings.indent_step == 2;
-            if after_dash && !inline_first {
-                self.state.pending_layout.pending_inline_map = false;
-                self.newline()?;
-            }
             // `inline_first` assumes we stay mid-line, but a pending anchor writes `&aN\n` first.
             let anchor_broke_line = self.has_pending_node_properties();
+            // Pending node properties (`- &a1`) end the line themselves below.
+            if after_dash && !inline_first {
+                self.state.pending_layout.pending_inline_map = false;
+                if !anchor_broke_line {
+                    self.newline()?;
+                }
+            }
             self.write_anchor_for_complex_node()?;
             if inline_first {
                 if anchor_broke_line {

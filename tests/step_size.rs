@@ -63,3 +63,25 @@ fn nested_collections_after_dash_round_trip_for_every_step_size() {
         }
     }
 }
+
+/// An anchored sequence after a dash (`- &a1` then the items on their own lines) keeps its
+/// items one level deeper for every `indent_step`.
+#[test]
+fn anchored_sequence_after_dash_round_trips_for_every_step_size() {
+    use serde_saphyr::RcAnchor;
+    use std::rc::Rc;
+
+    let shared = Rc::new(vec![1, 2]);
+    let value = vec![RcAnchor(shared.clone()), RcAnchor(shared)];
+    for indent_step in 1..=8 {
+        let options = serde_saphyr::ser_options! { indent_step: indent_step };
+        let yaml = serde_saphyr::to_string_with_options(&value, options).unwrap();
+        let back: Vec<RcAnchor<Vec<i32>>> = serde_saphyr::from_str(&yaml)
+            .unwrap_or_else(|e| panic!("indent_step {indent_step}: {e}\n{yaml}"));
+        assert_eq!(*back[0].0, vec![1, 2], "indent_step {indent_step}:\n{yaml}");
+        assert!(
+            Rc::ptr_eq(&back[0].0, &back[1].0),
+            "indent_step {indent_step}:\n{yaml}"
+        );
+    }
+}
