@@ -1757,8 +1757,18 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         if let Some(d) = self.state.after_dash_depth.take() {
             let nested_depth = self.variant_depth_after_dash(d, anchor_broke_line)?;
             let prev_map_depth = self.state.current_map_depth.replace(nested_depth);
+            // An inline `- Variant:` label sits two columns past the dash; block scalar
+            // values measure their indentation from that column.
+            let key_column = if anchor_broke_line {
+                None
+            } else {
+                Some(checked_indentation(self.settings.indent_step, d)? + 2)
+            };
+            let prev_key_column =
+                std::mem::replace(&mut self.state.current_map_key_column, key_column);
             let res = value.serialize(&mut *self);
             self.state.current_map_depth = prev_map_depth;
+            self.state.current_map_key_column = prev_key_column;
             res
         } else {
             value.serialize(&mut *self)

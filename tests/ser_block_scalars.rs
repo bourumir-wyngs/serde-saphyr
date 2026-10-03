@@ -278,3 +278,22 @@ fn block_scalar_indicator_in_map_after_dash_round_trips() {
         }
     }
 }
+
+/// Same for an externally tagged enum variant written inline after `- ` (`- Variant: |N`).
+#[test]
+fn block_scalar_indicator_in_variant_after_dash_round_trips() {
+    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+    enum V {
+        Lit(LitString),
+    }
+    for indent_step in 1..=9 {
+        for text in [" x", "  x\n", " ? a"] {
+            let value = vec![V::Lit(LitString(text.to_owned()))];
+            let options = serde_saphyr::ser_options! { indent_step: indent_step };
+            let yaml = to_string_with_options(&value, options).unwrap();
+            let back: Vec<V> = serde_saphyr::from_str(&yaml)
+                .unwrap_or_else(|e| panic!("indent_step {indent_step}: {e}\n{yaml}"));
+            assert_eq!(back, value, "indent_step {indent_step}:\n{yaml}");
+        }
+    }
+}
