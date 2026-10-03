@@ -71,7 +71,7 @@ pub(crate) fn include_spec_from_tag_and_value(
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) enum SfTag {
     None,
     Int,

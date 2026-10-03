@@ -26,7 +26,7 @@ pub(super) fn simple_tagged_enum_name(
 }
 
 /// Canonical tag identity used by [`KeyFingerprint`].
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(super) enum CanonicalKeyTag<'a> {
     /// A tag whose meaning is represented by `SfTag`.
     Semantic(SfTag),
@@ -35,7 +35,10 @@ pub(super) enum CanonicalKeyTag<'a> {
 }
 
 /// Canonical fingerprint of a YAML node for duplicate-key detection.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
+///
+/// `Ord` is only used to put mapping entries into a canonical order; the order itself carries
+/// no meaning.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default, PartialOrd, Ord)]
 pub(super) enum KeyFingerprint<'a> {
     /// A buffered recursive reference retains its anchor identity.
     RecursiveAlias { anchor: usize },
@@ -394,6 +397,11 @@ fn capture_node_inner<'a>(
                         let end_loc = *end_loc;
                         let _ = ev.next()?;
                         events.push(Ev::MapEnd { location: end_loc });
+                        // A mapping's content is an unordered set of key/value pairs (YAML
+                        // 1.2.2 3.2.1.1): `{a: 1, b: 2}` and `{b: 2, a: 1}` are the same key.
+                        // Sort the entries into a canonical order so the fingerprint does not
+                        // depend on how the entries were written.
+                        entries.sort();
                         break;
                     }
                     Some(_) => {
