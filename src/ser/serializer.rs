@@ -1727,8 +1727,12 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             // Ensure that if the value is another variant or a mapping/sequence,
             // it indents under this variant label rather than the parent map key.
             let prev_map_depth = self.state.current_map_depth.replace(variant_depth);
+            // The label is on its own line at `variant_depth`: an enclosing aligned key column
+            // no longer applies.
+            let prev_key_column = self.state.current_map_key_column.take();
             let res = value.serialize(&mut *self);
             self.state.current_map_depth = prev_map_depth;
+            self.state.current_map_key_column = prev_key_column;
             return res;
         }
         // Otherwise (top-level or sequence context).

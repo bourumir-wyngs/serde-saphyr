@@ -574,11 +574,13 @@ impl<'a, 'b, W: Write> MapSer<'a, 'b, W> {
         // Provide a base depth for nested maps within this complex key so that
         // continuation lines indent one level deeper than the parent mapping.
         self.ser.state.current_map_depth = Some(self.depth);
+        let saved_key_column = self.ser.state.current_map_key_column.take();
         self.ser.state.after_dash_depth = None;
         key.serialize(&mut *self.ser)?;
 
         self.ser.state.depth = saved_depth;
         self.ser.state.current_map_depth = saved_current_map_depth;
+        self.ser.state.current_map_key_column = saved_key_column;
         self.ser.state.pending_layout.pending_inline_map = saved_pending_inline_map;
         self.ser.state.pending_layout.inline_map_after_dash = saved_inline_map_after_dash;
         self.ser.state.after_dash_depth = saved_after_dash_depth;
@@ -820,8 +822,11 @@ impl<W: Write> SerializeStructVariant for StructVariantSer<'_, '_, W> {
                 ser.state.at_line_start = false;
                 // Ensure nested mappings/collections used as this field's value indent relative to this struct variant.
                 let prev_map_depth = ser.state.current_map_depth.replace(*depth);
+                // Fields are written on their own lines at `depth`.
+                let prev_key_column = ser.state.current_map_key_column.take();
                 let result = value.serialize(&mut **ser);
                 ser.state.current_map_depth = prev_map_depth;
+                ser.state.current_map_key_column = prev_key_column;
                 if result.is_ok() {
                     *fields_written = true;
                 }
