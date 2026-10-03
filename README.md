@@ -638,6 +638,9 @@ By default, interpolation is intentionally narrow:
 Selected operator text can contain nested braced references, for example
 `${PRIMARY:-${FALLBACK:-default}}`.
 The `error` hint may be empty (`${NAME?}` / `${NAME:?}`), matching docker-compose.
+If expanding an error hint would include a non-empty property-map value, the reported hint
+keeps its original source text instead. For example, `${MISSING:?configure ${SECRET}}`
+reports `configure ${SECRET}` without exposing the value of `SECRET`.
 
 `properties` is gated behind the `properties` feature flag.
 Once enabled, pass a property map through `Options::with_properties(...)`:

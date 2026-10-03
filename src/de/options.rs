@@ -98,6 +98,8 @@ pub enum PropertySyntax {
     ///   string instead of failing.
     /// - Selected default, replacement, and error text recursively expands both reference
     ///   forms and `$$` escapes. Property-map values are final and are not re-expanded.
+    ///   Error hints that include non-empty property-map values retain their original source
+    ///   text so resolved values cannot leak through diagnostics.
     /// - `$$` produces a literal `$` and prevents that dollar from starting a reference.
     ///   Dollar signs that do not start a reference or escape remain literal.
     /// - Interpolation applies to YAML string values, including quoted and block scalars,

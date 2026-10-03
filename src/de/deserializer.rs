@@ -18,6 +18,8 @@ use super::key_nodes::{
     is_empty_mapping_key_fingerprint, is_merge_key, pending_entries_from_live_events,
     simple_tagged_enum_name, validate_no_merge_keys_in_node_events,
 };
+#[cfg(feature = "properties")]
+use super::options::PropertySyntax;
 use super::options::{DuplicateKeyPolicy, MergeKeyPolicy, NonFiniteFloatPolicy};
 #[cfg(any(feature = "garde", feature = "validator"))]
 use super::path_map::PathRecorder;
@@ -420,29 +422,29 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         Error::quoting_required(view.raw.as_ref(), view.interpolated).with_location(view.location)
     }
 
+    #[cfg(feature = "properties")]
     fn interpolation_possible(&self, tag: SfTag, style: ScalarStyle) -> bool {
         if self.in_key || tag == SfTag::Binary {
             return false;
         }
 
-        #[cfg(not(feature = "properties"))]
-        {
-            let _ = style;
-            false
+        let properties = self.ev.property_interpolation();
+        if properties.property_map().is_none() {
+            return false;
         }
 
-        #[cfg(feature = "properties")]
-        {
-            let properties = self.ev.property_interpolation();
-            properties.property_map().is_some()
-                && if properties.syntax() == super::options::PropertySyntax::DockerCompose {
-                    tag.can_parse_into_string()
-                } else {
-                    style == ScalarStyle::Plain
-                }
+        match properties.syntax() {
+            PropertySyntax::DockerCompose => tag.can_parse_into_string(),
+            _ => style == ScalarStyle::Plain,
         }
     }
 
+    #[cfg(not(feature = "properties"))]
+    fn interpolation_possible(&self, _tag: SfTag, _style: ScalarStyle) -> bool {
+        false
+    }
+
+    #[cfg(feature = "properties")]
     fn peek_scalar_redaction_ctx(&mut self) -> Result<Option<ScalarRedactionCtx>, Error> {
         let Some((tag, style)) = (match self.ev.peek()? {
             Some(Ev::Scalar { tag, style, .. }) => Some((*tag, *style)),
@@ -458,6 +460,11 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         Ok(self
             .peek_scalar_view()?
             .and_then(|view| view.redaction_ctx()))
+    }
+
+    #[cfg(not(feature = "properties"))]
+    fn peek_scalar_redaction_ctx(&mut self) -> Result<Option<ScalarRedactionCtx>, Error> {
+        Ok(None)
     }
 
     #[cfg(any(feature = "garde", feature = "validator"))]
@@ -630,12 +637,13 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         style: ScalarStyle,
         location: Location,
     ) -> Result<ScalarView<'de>, Error> {
-        let effective = if self.interpolation_possible(tag, style) {
-            self.effective_scalar_value(raw.clone(), tag, style, location)?
+        let can_interpolate = self.interpolation_possible(tag, style);
+        let effective = if can_interpolate {
+            self.effective_scalar_value(raw.clone(), location)?
         } else {
             raw.clone()
         };
-        let interpolated = raw.as_ref() != effective.as_ref();
+        let interpolated = can_interpolate && raw.as_ref() != effective.as_ref();
         #[cfg(feature = "properties")]
         let tag = if interpolated
             && self.ev.property_interpolation().syntax()
@@ -661,79 +669,75 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         })
     }
 
+    /// Expand properties after the caller has checked scalar interpolation eligibility.
+    #[cfg(feature = "properties")]
     fn effective_scalar_value(
         &self,
         value: Cow<'de, str>,
-        tag: SfTag,
-        style: ScalarStyle,
         location: Location,
     ) -> Result<Cow<'de, str>, Error> {
-        if !self.interpolation_possible(tag, style) {
+        let properties = self.ev.property_interpolation();
+        let Some(vars) = properties.property_map() else {
             return Ok(value);
-        }
+        };
+        let vars = vars.as_ref();
+        let syntax = properties.syntax();
 
-        #[cfg(not(feature = "properties"))]
-        {
-            let _ = location;
-            Ok(value)
-        }
-
-        #[cfg(feature = "properties")]
-        {
-            let properties = self.ev.property_interpolation();
-            let Some(vars) = properties.property_map() else {
-                return Ok(value);
-            };
-            let vars = vars.as_ref();
-            let syntax = properties.syntax();
-
-            match interpolate_compose_style_with_limits(
-                value,
-                vars,
-                syntax,
-                properties.max_expansion_depth(),
-                properties.max_total_work(),
-                properties.total_work(),
-            ) {
-                Ok(value) => Ok(value),
-                Err(crate::properties::PropertyError::Unresolved(name)) => {
-                    Err(Error::UnresolvedProperty { name, location })
-                }
-                Err(crate::properties::PropertyError::InvalidName(name)) => {
-                    Err(Error::InvalidPropertyName { name, location })
-                }
-                Err(crate::properties::PropertyError::RequiredButUnset { name, message }) => {
-                    Err(Error::PropertyRequiredButUnset {
-                        name,
-                        message,
-                        location,
-                    })
-                }
-                Err(crate::properties::PropertyError::RequiredButEmpty { name, message }) => {
-                    Err(Error::PropertyRequiredButEmpty {
-                        name,
-                        message,
-                        location,
-                    })
-                }
-                Err(crate::properties::PropertyError::ExpansionDepthLimitExceeded {
-                    depth,
-                    max_depth,
-                }) => {
-                    let breach = BudgetBreach::PropertyExpansionDepth { depth, max_depth };
-                    properties.record_breach(breach.clone());
-                    Err(budget_error(breach).with_location(location))
-                }
-                Err(crate::properties::PropertyError::ExpansionWorkLimitExceeded {
-                    work,
-                    max_work,
-                }) => {
-                    let breach = BudgetBreach::PropertyInterpolationWork { work, max_work };
-                    properties.record_breach(breach.clone());
-                    Err(budget_error(breach).with_location(location))
-                }
+        match interpolate_compose_style_with_limits(
+            value,
+            vars,
+            syntax,
+            properties.max_expansion_depth(),
+            properties.max_total_work(),
+            properties.total_work(),
+        ) {
+            Ok(value) => Ok(value),
+            Err(crate::properties::PropertyError::Unresolved(name)) => {
+                Err(Error::UnresolvedProperty { name, location })
+            }
+            Err(crate::properties::PropertyError::InvalidName(name)) => {
+                Err(Error::InvalidPropertyName { name, location })
+            }
+            Err(crate::properties::PropertyError::RequiredButUnset { name, message }) => {
+                Err(Error::PropertyRequiredButUnset {
+                    name,
+                    message,
+                    location,
+                })
+            }
+            Err(crate::properties::PropertyError::RequiredButEmpty { name, message }) => {
+                Err(Error::PropertyRequiredButEmpty {
+                    name,
+                    message,
+                    location,
+                })
+            }
+            Err(crate::properties::PropertyError::ExpansionDepthLimitExceeded {
+                depth,
+                max_depth,
+            }) => {
+                let breach = BudgetBreach::PropertyExpansionDepth { depth, max_depth };
+                properties.record_breach(breach.clone());
+                Err(budget_error(breach).with_location(location))
+            }
+            Err(crate::properties::PropertyError::ExpansionWorkLimitExceeded {
+                work,
+                max_work,
+            }) => {
+                let breach = BudgetBreach::PropertyInterpolationWork { work, max_work };
+                properties.record_breach(breach.clone());
+                Err(budget_error(breach).with_location(location))
             }
         }
+    }
+
+    #[cfg(not(feature = "properties"))]
+    fn effective_scalar_value(
+        &self,
+        value: Cow<'de, str>,
+        _location: Location,
+    ) -> Result<Cow<'de, str>, Error> {
+        Ok(value)
     }
 
     /// Peek at the next event's anchor id, if any (0 indicates no anchor).
@@ -2982,12 +2986,7 @@ mod tests {
         let de = YamlDeserializer::new(&mut events, Cfg::from_options(&Options::default()));
 
         let value = de
-            .effective_scalar_value(
-                Cow::Borrowed("${MISSING}"),
-                SfTag::None,
-                ScalarStyle::Plain,
-                Location::new(1, 1),
-            )
+            .effective_scalar_value(Cow::Borrowed("${MISSING}"), Location::new(1, 1))
             .expect("missing property map should not be treated as interpolation");
 
         assert_eq!(value, Cow::Borrowed("${MISSING}"));

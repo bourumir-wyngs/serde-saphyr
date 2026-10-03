@@ -1015,14 +1015,16 @@ pub enum Error {
         location: Location,
     },
     /// A `${NAME?text}` or `${NAME:?text}` reference required a value but the property was unset.
-    /// `message` may be empty.
+    /// `message` may be empty. Hints containing non-empty property-map values preserve their
+    /// original source text instead of exposing the resolved values.
     PropertyRequiredButUnset {
         name: String,
         message: String,
         location: Location,
     },
     /// A `${NAME:?text}` reference required a non-empty value but the property was present and empty.
-    /// `message` may be empty.
+    /// `message` may be empty. Hints containing non-empty property-map values preserve their
+    /// original source text instead of exposing the resolved values.
     PropertyRequiredButEmpty {
         name: String,
         message: String,
