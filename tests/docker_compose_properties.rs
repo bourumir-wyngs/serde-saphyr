@@ -496,6 +496,85 @@ fn nested_expansion_respects_depth_budget() {
 }
 
 #[rstest]
+#[case::default("${MISSING:-cost $100}", 0, "cost $100")]
+#[case::replacement("${SET:+cost $100}", 0, "cost $100")]
+#[case::other_literal_dollars("${MISSING:-$! $Ω $}", 0, "$! $Ω $")]
+#[case::nested_default("${MISSING:-${MISSING:-cost $100}}", 1, "cost $100")]
+fn literal_dollars_do_not_consume_expansion_depth(
+    #[case] template: &str,
+    #[case] max_depth: usize,
+    #[case] expected: &str,
+) {
+    let mut options = compose_options(&[("SET", "value")]);
+    options.budget = serde_saphyr::budget! {
+        max_property_expansion_depth: max_depth,
+    };
+    let yaml = format!("value: '{template}'\n");
+    for parsed in [
+        from_str_with_options::<Config>(&yaml, options.clone()).unwrap(),
+        from_reader_with_options::<_, Config>(yaml.as_bytes(), options).unwrap(),
+    ] {
+        assert_eq!(parsed.value, expected);
+    }
+}
+
+#[rstest]
+#[case::unset("${MISSING?cost $100}", false)]
+#[case::empty("${EMPTY:?cost $100}", true)]
+fn literal_dollar_required_hints_preserve_required_errors(
+    #[case] template: &str,
+    #[case] empty: bool,
+) {
+    let mut options = compose_options(&[("EMPTY", "")]);
+    options.budget = serde_saphyr::budget! { max_property_expansion_depth: 0 };
+    let yaml = format!("value: '{template}'\n");
+    for err in [
+        from_str_with_options::<Config>(&yaml, options.clone()).unwrap_err(),
+        from_reader_with_options::<_, Config>(yaml.as_bytes(), options).unwrap_err(),
+    ] {
+        match err.without_snippet() {
+            Error::PropertyRequiredButEmpty { name, message, .. } if empty => {
+                assert_eq!(name, "EMPTY");
+                assert_eq!(message, "cost $100");
+            }
+            Error::PropertyRequiredButUnset { name, message, .. } if !empty => {
+                assert_eq!(name, "MISSING");
+                assert_eq!(message, "cost $100");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+}
+
+#[rstest]
+#[case::bare("${MISSING:-$SET}")]
+#[case::braced("${MISSING:-${SET}}")]
+#[case::escape("${MISSING:-$$SET}")]
+#[case::kelvin("${MISSING:-$K}")]
+#[case::long_s("${MISSING:-$ſ}")]
+#[case::after_literal_dollar("${MISSING:-$100 $SET}")]
+fn references_and_escapes_in_operator_text_consume_expansion_depth(#[case] template: &str) {
+    let mut options = compose_options(&[("SET", "value")]);
+    options.budget = serde_saphyr::budget! { max_property_expansion_depth: 0 };
+    let yaml = format!("value: '{template}'\n");
+    for err in [
+        from_str_with_options::<Config>(&yaml, options.clone()).unwrap_err(),
+        from_reader_with_options::<_, Config>(yaml.as_bytes(), options).unwrap_err(),
+    ] {
+        assert!(matches!(
+            err.without_snippet(),
+            Error::Budget {
+                breach: BudgetBreach::PropertyExpansionDepth {
+                    depth: 1,
+                    max_depth: 0
+                },
+                ..
+            }
+        ));
+    }
+}
+
+#[rstest]
 #[case::bare("$SET")]
 #[case::single_quoted("'$SET'")]
 #[case::double_quoted("\"${SET}\"")]

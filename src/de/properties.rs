@@ -552,7 +552,11 @@ pub(crate) fn interpolate_compose_style_with_limits<'s>(
                         PropertySyntax::Braced
                     };
                     let needs_expansion = if syntax == PropertySyntax::DockerCompose {
-                        text.contains('$')
+                        text.match_indices('$').any(|(index, _)| {
+                            text[index + 1..].chars().next().is_some_and(|next| {
+                                next == '$' || next == '{' || is_var_start(next, syntax)
+                            })
+                        })
                     } else {
                         text.contains("${")
                     };
