@@ -2,7 +2,7 @@ use std::io::Read;
 
 use serde_core::de::DeserializeOwned;
 
-use super::with_deserializer::{deserialize_with_scope_and_null_policy, normalize_str_input};
+use super::with_deserializer::deserialize_with_scope_and_null_policy;
 use super::{Error, Ev, Events, Options, ring_reader};
 use crate::budget::EnforcingPolicy;
 use crate::live_events::LiveEvents;
@@ -541,7 +541,6 @@ where
     T: serde_core::Deserialize<'de>,
     C: Default + Extend<T>,
 {
-    let input = normalize_str_input(input);
     let snippet_ctx = StrSnippetContext::new(input, options.with_snippet, options.crop_radius);
     let cfg = crate::de::Cfg::from_options(&options);
     let mut src = LiveEvents::from_str(input, options);

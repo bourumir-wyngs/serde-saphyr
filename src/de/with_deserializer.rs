@@ -4,11 +4,6 @@ use crate::live_events::LiveEvents;
 use super::api::{ReaderSnippetContext, StrSnippetContext};
 use super::{Cfg, Error, Events, Options, YamlDeserializer};
 
-pub(crate) fn normalize_str_input(input: &str) -> &str {
-    // Normalize: ignore a single leading UTF-8 BOM if present.
-    input.strip_prefix('\u{FEFF}').unwrap_or(input)
-}
-
 pub(crate) fn run_with_document_scope<'de, R, F, W, P>(
     src: &mut LiveEvents<'de>,
     f: F,
@@ -125,8 +120,7 @@ pub fn with_deserializer_from_str_with_options<'de, R, F>(
 where
     for<'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<R, Error>,
 {
-    let input = normalize_str_input(input);
-
+    // A leading BOM is kept: granit-parser skips it, and spans then stay relative to `input`.
     let with_snippet = options.with_snippet;
     let crop_radius = options.crop_radius;
 
