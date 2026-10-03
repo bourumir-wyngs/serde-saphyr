@@ -409,7 +409,15 @@ fn select_region_for_location<'a>(
                         || r.location.source_id() == location_source_id)
             })
         })
-        .or_else(|| regions.first())
+        .or_else(|| {
+            // A location in an included source without retained text must not fall back to a
+            // window of another source (such as the include site in the root).
+            regions.first().filter(|r| {
+                location_source_id <= 1
+                    || r.location.source_id() == 0
+                    || r.location.source_id() == location_source_id
+            })
+        })
 }
 
 fn get_source_and_span(
@@ -474,6 +482,12 @@ fn get_source_and_span(
                 Some(SourceSpan::new(byte_off.into(), clamped_len)),
             );
         }
+    }
+
+    // `src` is the root document. Source id 1 is the root and 0 is unknown; any other id is an
+    // included source with no retained text, whose location must not be mapped onto the root.
+    if location.source_id() > 1 {
+        return (Arc::clone(src), None);
     }
 
     (Arc::clone(src), to_source_span(src, location))

@@ -287,7 +287,7 @@ impl<'input> ParserStack<'input> {
                     self.reader_bytes_read.clone(),
                 );
                 let parser = Parser::with_options(input, self.parser_options.clone());
-                self.push_stream_parser_with_snippet(parser, name, None, crate::Location::UNKNOWN);
+                self.push_stream_parser_with_snippet(parser, name, None, location);
             }
             InputSource::AnchoredText { mut text, anchor } => {
                 let text_len = text.len();

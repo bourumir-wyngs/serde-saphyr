@@ -1143,6 +1143,23 @@ pub enum Error {
 }
 
 impl Error {
+    /// Wrap in an empty snippet wrapper, so include-site regions can be added for an error whose
+    /// own source text is not available.
+    #[cfg(feature = "include")]
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn with_no_snippet_regions(self, crop_radius: usize) -> Self {
+        let inner = match self {
+            Error::WithSnippet { error, .. } => *error,
+            other => other,
+        };
+        Error::WithSnippet {
+            regions: Vec::new(),
+            crop_radius,
+            error: Box::new(inner),
+        }
+    }
+
     #[cold]
     #[inline(never)]
     pub(crate) fn with_snippet(self, text: &str, crop_radius: usize) -> Self {
@@ -1949,7 +1966,29 @@ fn fmt_error_rendered(
             let l10n = options.formatter.localizer();
 
             let Some(region) = pick_cropped_region(regions, &location) else {
-                return fmt_error_plain_with_formatter(f, error, options.formatter);
+                // No window for the error's own source (an included source whose text was not
+                // retained): print the plain error, then the include sites as context.
+                fmt_error_plain_with_formatter(f, error, options.formatter)?;
+                if location.source_id() != 0 {
+                    for extra_region in regions {
+                        writeln!(f)?;
+                        writeln!(f, "included from here:")?;
+                        crate::de_snippet::Snippet::new(
+                            extra_region.text.as_str(),
+                            extra_region.source_name.as_str(),
+                            *crop_radius,
+                        )
+                        .with_offset(extra_region.start_line)
+                        .fmt_or_fallback(
+                            f,
+                            Level::NOTE,
+                            l10n,
+                            "",
+                            &extra_region.location,
+                        )?;
+                    }
+                }
+                return Ok(());
             };
 
             // Dual-location rendering: show both the reference and the definition window.

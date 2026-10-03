@@ -142,6 +142,64 @@ fn test_include_error_snippet_with_deserializer_helpers() {
 }
 
 #[test]
+fn reader_backed_include_error_does_not_render_root_lines() {
+    // A reader-backed include keeps no text for snippets. Its error location (line 3 of the
+    // included source) must not be rendered against line 3 of the root document.
+    let main_yaml = "a: root line one\nc: ROOT LINE TWO\nd: ROOT LINE THREE\nx: four\ny: five\nz: six\nb: !include included.yaml\n";
+    let options = serde_saphyr::options! {}.with_include_resolver(
+        |req: IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> {
+            assert_eq!(req.spec, "included.yaml");
+            Ok(ResolvedInclude::new(
+                "included.yaml",
+                "included.yaml",
+                serde_saphyr::InputSource::from_reader(Cursor::new(b"# c\n# d\nb:   x\n".to_vec())),
+            ))
+        },
+    );
+
+    #[derive(Deserialize, Debug)]
+    #[allow(dead_code)]
+    struct Inner {
+        b: usize,
+    }
+    #[derive(Deserialize, Debug)]
+    #[allow(dead_code)]
+    struct Root {
+        b: Inner,
+    }
+
+    let err = from_str_with_options::<Root>(main_yaml, options).unwrap_err();
+    let location = err.location().expect("error should carry a location");
+    assert_eq!((location.line(), location.column()), (3, 6));
+    let err_str = err.to_string();
+    assert!(
+        !err_str.contains("ROOT LINE THREE"),
+        "included-source location rendered against the root text: {err_str}"
+    );
+    assert!(
+        err_str.contains("included from here:") && err_str.contains("b: !include included.yaml"),
+        "include site should still be shown: {err_str}"
+    );
+    #[cfg(feature = "miette")]
+    {
+        let report = serde_saphyr::miette::to_miette_report(&err, main_yaml, "root.yaml");
+        let labels = report.labels().map_or(0, Iterator::count);
+        assert_eq!(
+            labels, 0,
+            "miette labelled root text for an included-source location"
+        );
+    }
+
+    // Errors in the root document itself keep their snippet.
+    let options = serde_saphyr::options! {}.with_include_resolver(
+        |_req: IncludeRequest| -> Result<ResolvedInclude, IncludeResolveError> { unreachable!() },
+    );
+    let err = from_reader_with_options::<_, Root>(Cursor::new("b:\n  b: ROOT VALUE\n"), options)
+        .unwrap_err();
+    assert!(err.to_string().contains("ROOT VALUE"), "{err}");
+}
+
+#[test]
 fn reader_root_include_site_snippet_uses_snapshot_start_line() {
     let mut main_yaml = String::new();
     for i in 1..50 {
