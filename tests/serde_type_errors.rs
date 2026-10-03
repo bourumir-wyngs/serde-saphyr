@@ -56,3 +56,35 @@ fn plain_string_into_int_error_has_location_and_renders_snippet() {
         "expected span marker in snippet, got: {rendered}"
     );
 }
+
+/// A collection where a borrowed `&str` is expected (a value, or a complex mapping key read into
+/// `serde_json::Value`) is reported as such, not as "unexpected end of input", like `String`.
+#[test]
+fn collection_into_str_reports_unexpected_node_not_eof() {
+    #[derive(Debug, Deserialize)]
+    #[allow(dead_code)]
+    struct Borrowed<'a> {
+        name: &'a str,
+    }
+
+    for yaml in ["name: [a]\n", "name: {a: 1}\n", "name:\n  - a\n"] {
+        let err = serde_saphyr::from_str::<Borrowed>(yaml).expect_err("must fail");
+        assert!(
+            matches!(
+                err.without_snippet(),
+                serde_saphyr::Error::Unexpected { .. }
+            ),
+            "{yaml:?}: {err}"
+        );
+    }
+    for yaml in ["[a]: b\n", "{[a]: b}\n", "? {x: 1}\n: b\n"] {
+        let err = serde_saphyr::from_str::<serde_json::Value>(yaml).expect_err("must fail");
+        assert!(
+            matches!(
+                err.without_snippet(),
+                serde_saphyr::Error::Unexpected { .. }
+            ),
+            "{yaml:?}: {err}"
+        );
+    }
+}

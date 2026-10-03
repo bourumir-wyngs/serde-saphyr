@@ -1136,7 +1136,13 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
                 view
             }
-            None => return Err(eof_with_loc(self.ev)),
+            // Not a scalar: report what was found (or EOF), as `deserialize_string` does.
+            None => {
+                return Err(self
+                    .take_scalar_view()
+                    .err()
+                    .unwrap_or_else(|| eof_with_loc(self.ev)));
+            }
         };
 
         let location = view.location;
