@@ -668,8 +668,22 @@ impl<W: Write> SerializeMap for MapSer<'_, '_, W> {
                 self.ser.state.depth = self.depth;
             }
             let prev_map_depth = self.ser.state.current_map_depth.replace(self.depth);
+            // Keys of a map opened after `- ` are two columns past the dash.
+            let key_column = if self.layout.align_after_dash() {
+                Some(
+                    super::super::checked_indentation(
+                        self.ser.settings.indent_step,
+                        self.depth.saturating_sub(1),
+                    )? + 2,
+                )
+            } else {
+                None
+            };
+            let prev_key_column =
+                std::mem::replace(&mut self.ser.state.current_map_key_column, key_column);
             let result = value.serialize(&mut *self.ser);
             self.ser.state.current_map_depth = prev_map_depth;
+            self.ser.state.current_map_key_column = prev_key_column;
             // Always restore the parent's pending_inline_map to avoid leaking inline hints
             // across sibling values (e.g., after finishing a sequence value like `groups`).
             self.ser.state.pending_layout.pending_inline_map = saved_pending_inline_map;

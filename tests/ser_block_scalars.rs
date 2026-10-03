@@ -254,3 +254,27 @@ fn lit_str_with_leading_spaces_emits_indicator() {
     // Should have |N where N is a digit
     assert!(yaml.contains('|'), "expected literal block: {yaml}");
 }
+
+/// A block scalar with leading spaces, as the value of a map opened right after `- `: the map's
+/// keys are aligned two columns past the dash, and the indentation indicator must be relative
+/// to that column for every `indent_step`.
+#[test]
+fn block_scalar_indicator_in_map_after_dash_round_trips() {
+    for indent_step in 1..=9 {
+        for text in ["  indented\n", " a\nb", "\n  x", "  \n  "] {
+            for value in [
+                serde_json::json!([{ "k": LitStr(text) }]),
+                serde_json::json!([{ "k": FoldStr(text) }]),
+                serde_json::json!({ "a": [{ "k": LitStr(text) }] }),
+            ] {
+                let options = serde_saphyr::ser_options! { indent_step: indent_step };
+                let yaml = to_string_with_options(&value, options).unwrap();
+                let back: serde_json::Value = serde_saphyr::from_str(&yaml)
+                    .unwrap_or_else(|e| panic!("indent_step {indent_step}: {e}\n{yaml}"));
+                let expected: serde_json::Value =
+                    serde_json::from_str(&serde_json::to_string(&value).unwrap()).unwrap();
+                assert_eq!(back, expected, "indent_step {indent_step}:\n{yaml}");
+            }
+        }
+    }
+}

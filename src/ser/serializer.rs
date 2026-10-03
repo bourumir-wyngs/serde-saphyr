@@ -513,6 +513,10 @@ struct SerializerState {
     after_dash_depth: Option<usize>,
     /// Current block-map depth for aligning sequences below mapping keys.
     current_map_depth: Option<usize>,
+    /// Column of the current block map's keys, when it differs from
+    /// `current_map_depth * indent_step` (a map opened after `- ` aligns its keys two columns
+    /// past the dash). Block scalar indentation indicators are relative to this column.
+    current_map_key_column: Option<usize>,
     /// Whether emission of the current document has begun.
     doc_started: bool,
 }
@@ -531,6 +535,7 @@ impl Default for SerializerState {
             last_value_was_block: false,
             after_dash_depth: None,
             current_map_depth: None,
+            current_map_key_column: None,
             doc_started: false,
         }
     }
@@ -866,16 +871,10 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         Ok(())
     }
 
-    /// Write a folded block string body, wrapping to `folded_wrap_col` characters.
-    /// Delegates to the standalone function in `wrapping` module.
-    fn write_folded_block(&mut self, s: &str, indent: usize) -> Result<()> {
-        self::wrapping::write_folded_block(
-            self.out,
-            s,
-            indent,
-            self.settings.indent_step,
-            self.settings.folded_wrap_col,
-        )?;
+    /// Write a folded block string body indented to `column` spaces, wrapping to
+    /// `folded_wrap_col` characters. Delegates to the standalone function in `wrapping` module.
+    fn write_folded_block(&mut self, s: &str, column: usize) -> Result<()> {
+        self::wrapping::write_folded_block(self.out, s, column, 1, self.settings.folded_wrap_col)?;
         self.state.at_line_start = true;
         Ok(())
     }
@@ -1392,7 +1391,17 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             //
             // We only emit it when the first non-empty content line has leading whitespace,
             // which would otherwise prevent automatic indentation detection by the parser.
-            let body_base = checked_depth_add(base, 1)?;
+            // The body is one `indent_step` deeper than the parent node, and the indicator is
+            // relative to the parent's indentation. For a value in a map opened after `- `,
+            // the keys sit two columns past the dash, not at `base * indent_step`: measure
+            // from (and indent past) that column.
+            let parent_column = match (was_map_value, self.state.current_map_key_column) {
+                (true, Some(col)) => col,
+                _ => checked_indentation(self.settings.indent_step, base)?,
+            };
+            let body_column = parent_column
+                .checked_add(self.settings.indent_step)
+                .ok_or_else(|| Error::custom("serializer indentation exceeds usize"))?;
             let indent_n = self.settings.indent_step;
 
             // Check if we need an explicit indentation indicator.
@@ -1444,7 +1453,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                     // Newline-only content needs one empty line per original newline.
                     // Precompute body indent string once for the entire block
                     let mut indent_buf: String = String::new();
-                    let spaces = checked_indentation(self.settings.indent_step, body_base)?;
+                    let spaces = body_column;
                     if spaces > 0 {
                         indent_buf.reserve(spaces);
                         for _ in 0..spaces {
@@ -1496,7 +1505,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                     // regardless of trailing newline; keep that behavior for compatibility.
                     self.write_pending_inline_comment()?;
                     self.newline()?;
-                    self.write_folded_block(v, body_base)?;
+                    self.write_folded_block(v, body_column)?;
                 }
             }
             return Ok(());
