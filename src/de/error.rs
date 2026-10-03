@@ -2105,6 +2105,15 @@ fn fmt_validation_error_with_snippets_offset(
     regions: &[CroppedRegion],
     crop_radius: usize,
 ) -> fmt::Result {
+    // Regions cropped for the issues' own locations. Only the remaining regions are include
+    // sites ("included from here"); the issue regions must not be repeated as such.
+    let issue_locations: Vec<Location> = issues
+        .iter()
+        .filter_map(|issue| locations.search_with_ancestor_fallback(&issue.path))
+        .flat_map(|(locs, _)| [locs.reference_location, locs.defined_location])
+        .filter(|loc| *loc != Location::UNKNOWN)
+        .collect();
+
     let mut first = true;
     for issue in issues {
         if !first {
@@ -2211,7 +2220,9 @@ fn fmt_validation_error_with_snippets_offset(
         }
 
         for extra_region in regions {
-            if rendered_regions.contains(&std::ptr::from_ref(extra_region)) {
+            if rendered_regions.contains(&std::ptr::from_ref(extra_region))
+                || issue_locations.contains(&extra_region.location)
+            {
                 continue;
             }
             writeln!(f)?;

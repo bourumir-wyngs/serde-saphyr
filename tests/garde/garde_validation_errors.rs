@@ -372,6 +372,38 @@ fn validation_error_shows_referenced_and_defined_snippets_for_aliases() {
 }
 
 #[test]
+fn validation_errors_without_includes_have_no_include_notes() {
+    // The windows cropped for the issues' own locations are not include sites. Without any
+    // `!include`, no "included from here" note may be printed.
+    #[derive(Debug, Deserialize, Validate)]
+    struct Two {
+        #[garde(length(min = 4))]
+        x: String,
+        #[garde(length(min = 4))]
+        y: String,
+    }
+
+    let err = serde_saphyr::from_str_with_options_valid::<AnchorRoot>(
+        "a: &A \"x\"\nb: *A\n",
+        Options::default(),
+    )
+    .expect_err("must fail validation");
+    let rendered = err.to_string();
+    assert!(rendered.contains("the value is used here"), "{rendered}");
+    assert!(!rendered.contains("included from here"), "{rendered}");
+
+    let err =
+        serde_saphyr::from_str_with_options_valid::<Two>("x: no\ny: no\n", Options::default())
+            .expect_err("must fail validation");
+    let rendered = err.to_string();
+    assert!(
+        rendered.contains("for `x`") && rendered.contains("for `y`"),
+        "{rendered}"
+    );
+    assert!(!rendered.contains("included from here"), "{rendered}");
+}
+
+#[test]
 fn validation_error_shows_longer_garde_path_for_nested_structures() {
     // Same anchor/alias scenario as `validation_error_shows_referenced_and_defined_snippets_for_aliases`,
     // but nested inside structures so garde produces a longer path like `outer.inner.b`.
