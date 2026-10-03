@@ -1802,9 +1802,18 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             // instead of:
             // -
             //   - 1
-            let inline_first = (!self.state.at_line_start)
+            // The inline form puts the inner items two columns (the width of "- ") past the
+            // outer dash, so it only lines up with the following items when one indentation
+            // level is two columns. With any other `indent_step`, start the inner sequence on
+            // its own line, one level deeper.
+            let after_dash = (!self.state.at_line_start)
                 && self.state.after_dash_depth.is_some()
                 && !self.state.pending_layout.pending_space_after_colon;
+            let inline_first = after_dash && self.settings.indent_step == 2;
+            if after_dash && !inline_first {
+                self.state.pending_layout.pending_inline_map = false;
+                self.newline()?;
+            }
             // `inline_first` assumes we stay mid-line, but a pending anchor writes `&aN\n` first.
             let anchor_broke_line = self.has_pending_node_properties();
             self.write_anchor_for_complex_node()?;
@@ -1826,7 +1835,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             // - After a list dash inline_first: base is dash depth; indent one level deeper.
             // - As a value after a map key: base is current_map_depth (if set), indent one level deeper.
             // - Otherwise (top-level or already at line start): base is current depth.
-            let base = if inline_first {
+            let base = if after_dash {
                 self.state.after_dash_depth.unwrap_or(self.state.depth)
             } else if was_inline_value && self.state.current_map_depth.is_some() {
                 self.state.current_map_depth.unwrap_or(self.state.depth)
@@ -1836,12 +1845,17 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             // For sequences used as a mapping value, indent them one level deeper so the dash is
             // nested under the parent key (consistent with serde_yaml's formatting). Keep block
             // sequences inline only when they immediately follow another dash.
-            let depth_next = if inline_first {
+            let depth_next = if after_dash {
                 checked_depth_add(base, 1)?
             } else if was_inline_value {
+                // Compact: the dashes go at the key's own column. That column is
+                // `base * indent_step`, except for a map opened after `- `, whose keys are
+                // aligned two columns past the dash; with `indent_step` 1 that is deeper than
+                // `base`, so the compact form would put the dashes left of the key.
                 if self.settings.compact_list_indent
                     && self.state.current_map_depth.is_some()
                     && !anchor_broke_line
+                    && self.settings.indent_step >= 2
                 {
                     base
                 } else {
@@ -1970,6 +1984,22 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             Ok(MapSer::flow(self, depth_next))
         } else {
             let node_properties_broke_line = self.has_pending_node_properties();
+            // A map opened right after `- ` has its keys two columns past the dash, but its
+            // nested values are indented by levels from the dash: with a one-column
+            // `indent_step` a nested value would land left of its key. Start such a map on its
+            // own line instead.
+            if self.state.pending_layout.pending_inline_map
+                && self.settings.indent_step < 2
+                && !self.state.at_line_start
+                && self.state.after_dash_depth.is_some()
+                && !self.state.pending_layout.pending_space_after_colon
+            {
+                self.state.pending_layout.pending_inline_map = false;
+                self.newline()?;
+                if let Some(d) = self.state.after_dash_depth {
+                    self.state.depth = checked_depth_add(d, 1)?;
+                }
+            }
             let inline_first = self.state.pending_layout.pending_inline_map;
             // Starting a complex (block) map: drop any staged inline comment.
             self.state.pending_inline_comment = None;
