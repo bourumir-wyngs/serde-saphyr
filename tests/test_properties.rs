@@ -447,8 +447,8 @@ fn property_work_limit_is_shared_with_alias_replay() {
             }
         ) || matches!(
             err,
-            serde_saphyr::Error::AliasError { msg, .. }
-                if msg.starts_with(
+            serde_saphyr::Error::AliasError { error, .. }
+                if error.to_string().starts_with(
                     "property interpolation work 21 exceeds limit 20"
                 )
         ),
@@ -491,8 +491,8 @@ merged:
             }
         ) || matches!(
             err,
-            serde_saphyr::Error::AliasError { msg, .. }
-                if msg.starts_with(
+            serde_saphyr::Error::AliasError { error, .. }
+                if error.to_string().starts_with(
                     "property interpolation work 21 exceeds limit 20"
                 )
         ),

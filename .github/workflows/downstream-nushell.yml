@@ -68,6 +68,12 @@ jobs:
             local version
 
             version=$(python3 -c 'import tomllib; print(tomllib.load(open("../serde-saphyr/Cargo.toml", "rb"))["package"]["version"])')
+            # Align the consumer's requirement with the version under test: a
+            # crates.io patch cannot satisfy an older major-version requirement.
+            sed -i -E \
+              "s/^(serde-saphyr[[:space:]]*=[[:space:]]*)\"[^\"]*\"/\1\"=$version\"/" \
+              Cargo.toml
+
             cargo --config "$patch" update \
               -p serde-saphyr --precise "$version"
 
