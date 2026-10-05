@@ -40,7 +40,7 @@ use crate::location::Locations;
 use crate::parse_scalars::{
     leading_zero_decimal, maybe_not_string, parse_int_signed, parse_int_unsigned,
     parse_yaml11_bool, parse_yaml12_float, scalar_is_null, scalar_is_nullish,
-    try_parse_float_incl_overflow,
+    try_parse_float_incl_overflow, yaml_trim,
 };
 
 struct TupleLenExpected {
@@ -789,7 +789,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     return visitor.visit_unit();
                 }
                 SfTag::Bool => return self.deserialize_bool(visitor),
-                SfTag::Int if value.trim().starts_with('-') => {
+                SfTag::Int if yaml_trim(&value).starts_with('-') => {
                     return self.deserialize_i64(visitor);
                 }
                 SfTag::Int => return self.deserialize_u64(visitor),
@@ -852,7 +852,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
             // Try booleans.
             if self.cfg.strict_booleans {
-                let tt = effective.trim();
+                let tt = yaml_trim(&effective);
                 if tt.eq_ignore_ascii_case("true") {
                     return visitor.visit_bool(true);
                 } else if tt.eq_ignore_ascii_case("false") {
@@ -864,7 +864,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             }
 
             // Try integers: signed if leading '-', else unsigned, using 64-bit visitors.
-            let t = effective.trim();
+            let t = yaml_trim(&effective);
             if t.starts_with('-') {
                 if (!leading_zero_decimal(t) || self.cfg.legacy_octal_numbers)
                     && let Ok(v) =
@@ -938,7 +938,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         let (s, tag, location) = self.take_scalar_cow_event()?;
         validate_core_scalar_tag(tag, SfTag::Bool, "boolean", location)?;
         let s = s.as_ref();
-        let t = s.trim();
+        let t = yaml_trim(s);
         let b: bool = if self.cfg.strict_booleans {
             if t.eq_ignore_ascii_case("true") {
                 true
