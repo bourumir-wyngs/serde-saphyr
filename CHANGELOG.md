@@ -9,7 +9,7 @@
 ### Added
 
 - Added `PropertySyntax::DockerCompose` for Compose-compatible property interpolation.
-- Added the default-enabled `parser-comments` feature, forwarding to granit-parser's matching
+- Added the default-enabled `comments` feature, forwarding to granit-parser's matching
   feature. Builds with `default-features = false` must enable it to use `Commented<T>`,
   `CommentPosition`, comment options, or comment budget fields and reports. Without it,
   YAML comments are still accepted and validated, but their text is not retained.
@@ -39,7 +39,7 @@
 ### Changed
 
 - Updated to granit-parser 2.0.0 and disabled its default features so comment support follows
-  serde-saphyr's `parser-comments` feature. Serialization-only builds remain independent of
+  serde-saphyr's `comments` feature. Serialization-only builds remain independent of
   granit-parser, including when comment emission is enabled.
 - Non-finite floats remain rejected by default in `deserialize_any`, including overflowing
   literals such as `1e999`. Opt into `PassThrough` to preserve them in float-capable visitors,

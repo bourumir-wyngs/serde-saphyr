@@ -34,7 +34,7 @@ fn budget_deserialization_defaults_new_limits() {
     object.remove("max_total_property_interpolation_work");
 
     let restored: budget::Budget = serde_json::from_value(json).unwrap();
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     assert_eq!(
         restored.max_total_comment_bytes,
         default.max_total_comment_bytes
@@ -47,7 +47,7 @@ fn budget_deserialization_defaults_new_limits() {
         restored.max_recorded_anchor_bytes,
         default.max_recorded_anchor_bytes
     );
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     assert_eq!(
         restored.max_buffered_comment_events,
         default.max_buffered_comment_events
@@ -77,7 +77,7 @@ fn options_deserialization_defaults_new_fields() {
     object.remove("non_finite_float_policy");
 
     let restored: serde_saphyr::Options = serde_json::from_value(json).unwrap();
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     assert!(restored.emit_comments);
     assert!(!restored.reject_unsupported_tags);
     assert_eq!(

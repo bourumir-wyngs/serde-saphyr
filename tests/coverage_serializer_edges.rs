@@ -15,7 +15,7 @@ struct WeakAnchorPayloadWithExtra(usize, bool, &'static str, &'static str);
 
 #[derive(Serialize)]
 #[serde(rename = "__yaml_commented")]
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 struct CommentedPayloadWithExtra(&'static str, &'static str, &'static str);
 
 #[derive(Serialize)]
@@ -32,7 +32,7 @@ struct WeakAnchorPayloadWithBytes(usize, serde_bytes::ByteBuf, &'static str);
 
 #[derive(Serialize)]
 #[serde(rename = "__yaml_commented")]
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 struct CommentedPayloadWithBytes(serde_bytes::ByteBuf, &'static str);
 
 #[derive(Serialize)]
@@ -104,7 +104,7 @@ fn internal_tuple_payloads_reject_extra_fields() {
         &WeakAnchorPayloadWithExtra(1, true, "value", "extra"),
         "unexpected field in __yaml_weak_anchor",
     );
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     assert_unexpected_error(
         &CommentedPayloadWithExtra("comment", "value", "extra"),
         "unexpected field in __yaml_commented",
@@ -125,7 +125,7 @@ fn internal_tuple_payload_captures_reject_bytes_in_scalar_slots() {
         &WeakAnchorPayloadWithBytes(1, serde_bytes::ByteBuf::from(b"present".to_vec()), "value"),
         "bool expected",
     );
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     assert_unexpected_error(
         &CommentedPayloadWithBytes(serde_bytes::ByteBuf::from(b"comment".to_vec()), "value"),
         "str expected",

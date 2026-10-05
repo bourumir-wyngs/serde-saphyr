@@ -2,7 +2,7 @@
 
 use serde::Deserialize;
 use serde::de::value::{Error as ValueError, SeqDeserializer};
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 use serde_saphyr::Commented;
 use serde_saphyr::{
     ArcAnchor, ArcRecursion, ArcWeakAnchor, RcAnchor, RcRecursion, RcWeakAnchor, Tagged,
@@ -17,7 +17,7 @@ fn expect_error<T, E>(result: Result<T, E>) -> E {
 }
 
 #[test]
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 fn commented_supports_non_yaml_newtypes_and_rejects_empty_sequences() {
     let value: Commented<u32> = serde_json::from_str("5").unwrap();
     assert_eq!(value, Commented(5, String::new()));
@@ -53,7 +53,7 @@ fn wrappers_forward_validator_arguments() {
         }
     }
 
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     {
         let value = Commented(RequiresArgument(41), "checked".to_owned());
         validator::ValidateArgs::validate_with_args(&value, 41).unwrap();

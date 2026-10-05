@@ -12,7 +12,7 @@ struct Root {
     a: String,
 }
 
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 #[derive(Debug, Deserialize, Validate)]
 struct CommentedRoot {
     #[garde(dive)]
@@ -63,7 +63,7 @@ fn assert_empty_document_validation_error(err: &Error) {
 }
 
 #[test]
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 fn validation_error_inside_commented_subtree_uses_child_location() {
     let yaml = "item:\n  value: \"\"\n";
 

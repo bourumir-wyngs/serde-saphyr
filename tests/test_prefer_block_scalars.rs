@@ -293,7 +293,7 @@ fn anchored_auto_literal_block_emits_anchor_before_block_scalar() {
 }
 
 #[test]
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 fn commented_auto_folded_block_keeps_inline_comment_on_header() {
     use std::collections::BTreeMap;
 
@@ -358,7 +358,7 @@ fn block_scalar_with_invalid_indent_step_falls_back_to_quoted() {
 }
 
 #[test]
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 fn commented_auto_literal_block_keeps_inline_comment_on_header() {
     use std::collections::BTreeMap;
 

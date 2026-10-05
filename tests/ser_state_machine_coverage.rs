@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -12,16 +12,16 @@ use serde_saphyr::{
     ArcRecursion, ArcRecursive, FoldStr, RcAnchor, SingleQuoted, Tagged, to_fmt_writer, to_string,
     to_string_multiple_with_options, to_string_with_options,
 };
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 use serde_saphyr::{CommentPosition, Commented};
 
 #[derive(Serialize)]
 #[serde(rename = "__yaml_commented")]
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 struct CommentWithI128(i128, &'static str);
 
 #[test]
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 fn commented_internal_payload_rejects_i128_comment() {
     let err = to_string(&CommentWithI128(1, "value")).unwrap_err();
 
@@ -133,14 +133,14 @@ fn anchored_empty_map_after_an_indented_dash_uses_aligned_braces() {
 }
 
 #[derive(Serialize)]
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 struct CommentedAlias {
     definition: RcAnchor<i32>,
     alias: Commented<RcAnchor<i32>>,
 }
 
 #[test]
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 fn above_comment_places_an_alias_at_the_start_of_its_own_line() {
     let shared = Rc::new(7);
     let value = CommentedAlias {

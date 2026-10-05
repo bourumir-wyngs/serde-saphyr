@@ -38,7 +38,7 @@ use crate::include::{BaseParser, create_parser_from_str};
 use crate::location::location_from_span;
 use crate::options::BudgetReportCallback;
 use crate::tags::{SfTag, TagNodeKind};
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 use granit_parser::Placement;
 use granit_parser::{Event, ScalarStyle, ScanError, Span, StructureStyle, Tag};
 
@@ -69,7 +69,7 @@ struct RecFrame<'a> {
     buf: SmallVec<[Ev<'a>; SMALLVECT_INLINE]>,
 }
 
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ConsumedEventKind {
     Scalar,
@@ -79,7 +79,7 @@ enum ConsumedEventKind {
     MapEnd,
 }
 
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 impl ConsumedEventKind {
     fn can_own_same_line_trailing_comment(self) -> bool {
         matches!(
@@ -89,14 +89,14 @@ impl ConsumedEventKind {
     }
 }
 
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PendingTrailingCommentKind {
     AfterConsumedNode,
     BeforeUpcomingNode,
 }
 
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 #[derive(Debug)]
 struct PendingTrailingComment<'a> {
     text: Cow<'a, str>,
@@ -240,17 +240,17 @@ pub(crate) struct LiveEvents<'a> {
     /// Captures retain recursive alias events until typed deserialization can resolve them.
     defer_recursive_aliases: bool,
     /// Comments immediately above the lookahead event.
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     look_leading_comments: Vec<Cow<'a, str>>,
     /// Comments gathered while scanning before the next data event.
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     pending_leading_comments: Vec<Cow<'a, str>>,
     /// Right-side comments pending until a caller claims them or the next data
     /// event is consumed.
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     pending_trailing_comments: Vec<PendingTrailingComment<'a>>,
     /// Comments attached to the event most recently produced by `next_impl`.
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     produced_leading_comments: Vec<Cow<'a, str>>,
     /// For alias replay: a stack of injected buffers; we always read from the top first.
     inject: Vec<InjectFrame>,
@@ -269,10 +269,10 @@ pub(crate) struct LiveEvents<'a> {
     /// Location of the last yielded event (for better error reporting).
     last_location: Location,
     /// Location of the last event actually consumed by `next`.
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     last_consumed_event_location: Location,
     /// Kind of the last event actually consumed by `next`.
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     last_consumed_event_kind: Option<ConsumedEventKind>,
 
     /// Alias-bomb hardening limits and counters.
@@ -398,13 +398,13 @@ impl<'a> LiveEvents<'a> {
             input: None, // Reader-based input cannot support zero-copy borrowing
             look: None,
             defer_recursive_aliases: false,
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             look_leading_comments: Vec::new(),
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             pending_leading_comments: Vec::new(),
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             pending_trailing_comments: Vec::new(),
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             produced_leading_comments: Vec::new(),
             inject: Vec::with_capacity(2),
             anchors: Vec::with_capacity(8),
@@ -415,9 +415,9 @@ impl<'a> LiveEvents<'a> {
             budget_report_cb,
 
             last_location: Location::UNKNOWN,
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             last_consumed_event_location: Location::UNKNOWN,
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             last_consumed_event_kind: None,
 
             alias_limits,
@@ -493,13 +493,13 @@ impl<'a> LiveEvents<'a> {
             input: Some(input),
             look: None,
             defer_recursive_aliases: false,
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             look_leading_comments: Vec::new(),
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             pending_leading_comments: Vec::new(),
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             pending_trailing_comments: Vec::new(),
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             produced_leading_comments: Vec::new(),
             inject: Vec::with_capacity(2),
             anchors: Vec::with_capacity(8),
@@ -511,9 +511,9 @@ impl<'a> LiveEvents<'a> {
             budget_report_cb,
 
             last_location: Location::UNKNOWN,
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             last_consumed_event_location: Location::UNKNOWN,
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             last_consumed_event_kind: None,
 
             alias_limits,
@@ -534,7 +534,7 @@ impl<'a> LiveEvents<'a> {
         }
     }
 
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     fn normalize_comment_text(text: Cow<'a, str>) -> Cow<'a, str> {
         match text {
             Cow::Borrowed(text) => Cow::Borrowed(text.trim()),
@@ -781,7 +781,7 @@ impl<'a> LiveEvents<'a> {
         })
     }
 
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     fn event_kind(ev: &Ev<'_>) -> Option<ConsumedEventKind> {
         match ev {
             Ev::Scalar { .. } | Ev::RecursiveAlias { .. } => Some(ConsumedEventKind::Scalar),
@@ -793,20 +793,20 @@ impl<'a> LiveEvents<'a> {
         }
     }
 
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     fn consumed_comment_location(&self, ev: &Ev<'_>) -> Location {
         self.inject
             .last()
             .map_or_else(|| ev.location(), |frame| frame.reference_location)
     }
 
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     fn remember_consumed_event(&mut self, ev: &Ev<'_>) {
         self.last_consumed_event_location = self.consumed_comment_location(ev);
         self.last_consumed_event_kind = Self::event_kind(ev);
     }
 
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     fn trailing_comment_kind(&self, location: Location) -> PendingTrailingCommentKind {
         let follows_completed_node_on_same_line = self
             .last_consumed_event_kind
@@ -821,7 +821,7 @@ impl<'a> LiveEvents<'a> {
         }
     }
 
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     fn take_pending_trailing_comments_where(
         &mut self,
         mut predicate: impl FnMut(PendingTrailingCommentKind) -> bool,
@@ -841,7 +841,7 @@ impl<'a> LiveEvents<'a> {
         taken
     }
 
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     fn take_all_pending_trailing_comments(&mut self) -> Vec<Cow<'a, str>> {
         std::mem::take(&mut self.pending_trailing_comments)
             .into_iter()
@@ -849,7 +849,7 @@ impl<'a> LiveEvents<'a> {
             .collect()
     }
 
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     fn remember_comment(&mut self, text: Cow<'a, str>, placement: Placement, location: Location) {
         let text = Self::normalize_comment_text(text);
         match placement {
@@ -862,12 +862,12 @@ impl<'a> LiveEvents<'a> {
         }
     }
 
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     fn attach_leading_comments_to_next_event(&mut self) {
         self.produced_leading_comments = std::mem::take(&mut self.pending_leading_comments);
     }
 
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     fn clear_comments_for_consumed_event(&mut self) {
         self.look_leading_comments.clear();
         self.produced_leading_comments.clear();
@@ -949,7 +949,7 @@ impl<'a> LiveEvents<'a> {
             self.record(
                 &ev, /*is_start*/ false, /*seeded_new_frame*/ false,
             )?;
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             self.attach_leading_comments_to_next_event();
             self.last_location = ev.location();
             self.produced_any_in_doc = true;
@@ -1043,7 +1043,7 @@ impl<'a> LiveEvents<'a> {
                         self.ensure_anchor_capacity(anchor_id);
                         self.anchors[anchor_id] = Some(vec![ev.clone()].into_boxed_slice());
                     }
-                    #[cfg(feature = "parser-comments")]
+                    #[cfg(feature = "comments")]
                     self.attach_leading_comments_to_next_event();
                     self.last_location = location;
                     self.produced_any_in_doc = true;
@@ -1106,7 +1106,7 @@ impl<'a> LiveEvents<'a> {
                         /*is_start*/ true,
                         /*seeded_new_frame*/ anchor_id != 0,
                     )?;
-                    #[cfg(feature = "parser-comments")]
+                    #[cfg(feature = "comments")]
                     self.attach_leading_comments_to_next_event();
                     self.last_location = location;
                     self.produced_any_in_doc = true;
@@ -1118,7 +1118,7 @@ impl<'a> LiveEvents<'a> {
                     self.record(&ev, false, false)?;
                     self.bump_depth_on_end()
                         .map_err(|err| err.with_location(location))?; // may finalize frames
-                    #[cfg(feature = "parser-comments")]
+                    #[cfg(feature = "comments")]
                     self.produced_leading_comments.clear();
                     self.last_location = location;
                     self.produced_any_in_doc = true;
@@ -1175,7 +1175,7 @@ impl<'a> LiveEvents<'a> {
                         /*is_start*/ true,
                         /*seeded_new_frame*/ anchor_id != 0,
                     )?;
-                    #[cfg(feature = "parser-comments")]
+                    #[cfg(feature = "comments")]
                     self.attach_leading_comments_to_next_event();
                     self.last_location = location;
                     self.produced_any_in_doc = true;
@@ -1187,7 +1187,7 @@ impl<'a> LiveEvents<'a> {
                     self.record(&ev, false, false)?;
                     self.bump_depth_on_end()
                         .map_err(|err| err.with_location(location))?;
-                    #[cfg(feature = "parser-comments")]
+                    #[cfg(feature = "comments")]
                     self.produced_leading_comments.clear();
                     self.last_location = location;
                     self.produced_any_in_doc = true;
@@ -1243,7 +1243,7 @@ impl<'a> LiveEvents<'a> {
                         };
                         self.validate_replayed_event(&ev)?;
                         self.record(&ev, false, false)?;
-                        #[cfg(feature = "parser-comments")]
+                        #[cfg(feature = "comments")]
                         self.attach_leading_comments_to_next_event();
                         self.last_location = location;
                         self.produced_any_in_doc = true;
@@ -1287,7 +1287,7 @@ impl<'a> LiveEvents<'a> {
                     continue;
                 }
 
-                #[cfg(feature = "parser-comments")]
+                #[cfg(feature = "comments")]
                 Event::Comment(text, placement) => {
                     self.remember_comment(text, placement, location);
                     self.last_location = location;
@@ -1317,7 +1317,7 @@ impl<'a> LiveEvents<'a> {
             self.produced_any_in_doc = true;
             self.synthesized_null_emitted = true;
             self.last_location = ev.location();
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             self.produced_leading_comments.clear();
             return Ok(Some(ev));
         }
@@ -1353,7 +1353,7 @@ impl<'a> LiveEvents<'a> {
 
         self.total_replayed_events = 0;
         self.seen_doc_end = false;
-        #[cfg(feature = "parser-comments")]
+        #[cfg(feature = "comments")]
         {
             self.last_consumed_event_location = Location::UNKNOWN;
             self.last_consumed_event_kind = None;
@@ -1583,10 +1583,10 @@ impl<'de> Events<'de> for LiveEvents<'de> {
             if !self.defer_recursive_aliases {
                 ev.resolve_recursive_alias()?;
             }
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             self.clear_comments_for_consumed_event();
             self.last_location = ev.location();
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             self.remember_consumed_event(&ev);
             return Ok(Some(ev));
         }
@@ -1596,9 +1596,9 @@ impl<'de> Events<'de> for LiveEvents<'de> {
         {
             ev.resolve_recursive_alias()?;
         }
-        #[cfg(feature = "parser-comments")]
+        #[cfg(feature = "comments")]
         self.clear_comments_for_consumed_event();
-        #[cfg(feature = "parser-comments")]
+        #[cfg(feature = "comments")]
         if let Some(ev) = event.as_ref() {
             self.remember_consumed_event(ev);
         }
@@ -1612,7 +1612,7 @@ impl<'de> Events<'de> for LiveEvents<'de> {
 
         if self.look.is_none() {
             self.look = self.next_impl()?;
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             {
                 self.look_leading_comments = std::mem::take(&mut self.produced_leading_comments);
             }
@@ -1655,13 +1655,13 @@ impl<'de> Events<'de> for LiveEvents<'de> {
             .map_or(self.last_location, super::events::Ev::location)
     }
 
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     fn take_leading_comments_for_next_node(&mut self) -> Result<Vec<Cow<'de, str>>, Error> {
         let _ = self.peek()?;
         Ok(std::mem::take(&mut self.look_leading_comments))
     }
 
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     fn take_separator_comments_before_mapping_value(
         &mut self,
     ) -> Result<Vec<Cow<'de, str>>, Error> {
@@ -1669,7 +1669,7 @@ impl<'de> Events<'de> for LiveEvents<'de> {
         Ok(self.take_all_pending_trailing_comments())
     }
 
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     fn take_separator_comments_before_sequence_item_value(
         &mut self,
     ) -> Result<Vec<Cow<'de, str>>, Error> {
@@ -1679,7 +1679,7 @@ impl<'de> Events<'de> for LiveEvents<'de> {
         }))
     }
 
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     fn take_trailing_comments_after_node(&mut self) -> Result<Vec<Cow<'de, str>>, Error> {
         let _ = self.peek()?;
         Ok(self.take_pending_trailing_comments_where(|kind| {

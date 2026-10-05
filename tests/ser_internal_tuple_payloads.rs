@@ -14,12 +14,12 @@ struct YamlWeakAnchorPayload(usize, bool, &'static str);
 
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename = "__yaml_commented")]
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 struct YamlCommentedPayload(&'static str, &'static str);
 
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename = "__yaml_commented")]
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 struct YamlCommentedNonString(bool, &'static str);
 
 #[test]
@@ -69,7 +69,7 @@ fn internal_yaml_weak_anchor_present_true_emits_anchor_then_alias() {
 }
 
 #[test]
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 fn internal_yaml_commented_payload_appends_inline_comment_in_block_context() {
     // This targets the `__yaml_commented` path which captures a string via `StrCapture` and stages
     // it as an inline comment. Newlines should be sanitized to spaces.
@@ -80,7 +80,7 @@ fn internal_yaml_commented_payload_appends_inline_comment_in_block_context() {
 }
 
 #[test]
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 fn internal_yaml_commented_payload_requires_string_comment() {
     // If the first field isn't a string, `StrCapture` should reject it.
     let err = to_string(&YamlCommentedNonString(true, "x"))

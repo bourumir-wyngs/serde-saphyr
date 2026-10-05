@@ -8,7 +8,7 @@ use std::io;
 use std::path::Path;
 use std::rc::Rc;
 
-#[cfg(all(feature = "serde_derived_types", feature = "parser-comments"))]
+#[cfg(all(feature = "serde_derived_types", feature = "comments"))]
 const fn default_emit_comments() -> bool {
     true
 }
@@ -229,7 +229,7 @@ pub struct Options {
         feature = "serde_derived_types",
         serde(default = "default_emit_comments")
     )]
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     pub emit_comments: bool,
 
     /// Enforce YAML indentation rules for flow collections (`[...]` and `{...}`).
@@ -423,13 +423,9 @@ impl Options {
         let default_budget = Budget::default();
         let budget = self.budget.as_ref().unwrap_or(&default_budget);
         let mut parser_options = budget.parser_options();
-        #[cfg(feature = "parser-comments")]
+        #[cfg(feature = "comments")]
         {
             parser_options.emit_comments = self.emit_comments;
-        }
-        #[cfg(not(feature = "parser-comments"))]
-        {
-            parser_options.emit_comments = false;
         }
         parser_options.strict_indentation = self.strict_indentation;
         parser_options
@@ -617,7 +613,7 @@ impl Default for Options {
             budget: Some(Budget::default()),
             budget_report: None,
             budget_report_cb: None,
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             emit_comments: true,
             strict_indentation: false,
             duplicate_keys: DuplicateKeyPolicy::Error,
@@ -660,7 +656,7 @@ impl std::fmt::Debug for Options {
                     "none"
                 },
             );
-        #[cfg(feature = "parser-comments")]
+        #[cfg(feature = "comments")]
         debug.field("emit_comments", &self.emit_comments);
         debug
             .field("strict_indentation", &self.strict_indentation)
@@ -743,7 +739,7 @@ mod tests {
         assert!(opts.budget.is_some());
         assert!(opts.budget_report.is_none());
         assert!(opts.budget_report_cb.is_none());
-        #[cfg(feature = "parser-comments")]
+        #[cfg(feature = "comments")]
         assert!(opts.emit_comments);
         assert!(!opts.strict_indentation);
         assert!(matches!(opts.duplicate_keys, DuplicateKeyPolicy::Error));
@@ -825,7 +821,7 @@ mod tests {
         assert!(debug_str.contains("Options"));
         assert!(debug_str.contains("budget"));
         assert!(debug_str.contains("budget_report_cb: \"none\""));
-        #[cfg(feature = "parser-comments")]
+        #[cfg(feature = "comments")]
         assert!(debug_str.contains("emit_comments: true"));
         assert!(debug_str.contains("strict_indentation: false"));
         assert!(debug_str.contains("reject_unsupported_tags: false"));

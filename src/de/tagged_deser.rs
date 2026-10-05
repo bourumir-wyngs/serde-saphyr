@@ -104,7 +104,7 @@ mod tests {
     use serde_core::de::{self, SeqAccess, Visitor};
     use std::fmt;
 
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     use crate::Commented;
     use crate::{Tagged, from_str};
 
@@ -240,7 +240,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     #[test]
     fn composes_with_commented_in_both_orders() {
         let tagged_comment: Tagged<Commented<String>> = from_str("!widget value # note").unwrap();

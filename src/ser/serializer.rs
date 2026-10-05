@@ -15,9 +15,9 @@ use std::fmt::Write;
 use crate::long_strings::{NAME_FOLD_STR, NAME_LIT_STR};
 use crate::tag::{YAML_TAG_NAMESPACE, simple_enum_variant_name, yaml_core_type_tag_name};
 
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 use super::NAME_TUPLE_COMMENTED;
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 use super::options::CommentPosition;
 use super::options::SerializerOptions;
 use super::quoting::{
@@ -436,7 +436,7 @@ struct SerializerSettings {
     /// Wrap width for folded block scalars (`>`).
     folded_wrap_col: usize,
     /// Placement mode for [`crate::Commented`] wrappers in block style.
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     comment_position: CommentPosition,
     /// Emit YAML tags for simple enums that serialize to a single scalar.
     tagged_enums: bool,
@@ -460,7 +460,7 @@ impl From<&SerializerOptions> for SerializerSettings {
             indent_step: options.indent_step,
             min_fold_chars: options.min_fold_chars,
             folded_wrap_col: options.folded_wrap_chars,
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             comment_position: options.comment_position,
             tagged_enums: options.tagged_enums,
             empty_as_braces: options.empty_as_braces,
@@ -509,7 +509,7 @@ struct SerializerState {
     /// Tag staged for the next node by a wrapper or a serializer feature.
     pending_tag: Option<PendingTag>,
     /// Inline comment waiting for the next scalar.
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     pending_inline_comment: Option<String>,
     /// Short-lived layout signals shared by nested collection serializers.
     pending_layout: PendingLayout,
@@ -536,7 +536,7 @@ impl Default for SerializerState {
             in_flow: 0,
             pending_str_style: None,
             pending_tag: None,
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             pending_inline_comment: None,
             pending_layout: PendingLayout::default(),
             last_value_was_block: false,
@@ -698,7 +698,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Used both by normal scalar emission (`value # comment\n`) and by
     /// block-scalar headers (`| # comment\n`). Comments are suppressed in flow
     /// style, matching the existing serializer policy.
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     #[inline]
     fn write_pending_inline_comment(&mut self) -> Result<()> {
         if self.state.in_flow == 0
@@ -715,7 +715,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     #[inline]
     fn write_end_of_scalar(&mut self) -> Result<()> {
         if self.state.in_flow == 0 {
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             self.write_pending_inline_comment()?;
             self.newline()?;
         }
@@ -725,7 +725,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Make `comment` safe to write after `#`. Comments cannot be escaped, so every character a
     /// YAML comment may not contain (`nb-char`, YAML 1.2.2 [27]: printable, no line break, no
     /// BOM) is replaced by a space. Tab stays (it is printable white space).
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     #[inline]
     fn sanitize_comment_text(comment: &str) -> String {
         comment
@@ -741,7 +741,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
             .collect()
     }
 
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     fn write_above_comment(&mut self, comment: &str) -> Result<Option<usize>> {
         if self.state.in_flow > 0 || comment.is_empty() {
             return Ok(None);
@@ -1463,7 +1463,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                         1 if !content.is_empty() => {}
                         _ => self.out.write_char('+')?,
                     }
-                    #[cfg(feature = "parser-comments")]
+                    #[cfg(feature = "comments")]
                     self.write_pending_inline_comment()?;
                     self.newline()?;
 
@@ -1522,7 +1522,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                     }
                     // Note: Explicit FoldStr/FoldString wrappers historically used plain '>'
                     // regardless of trailing newline; keep that behavior for compatibility.
-                    #[cfg(feature = "parser-comments")]
+                    #[cfg(feature = "comments")]
                     self.write_pending_inline_comment()?;
                     self.newline()?;
                     self.write_folded_block(v, body_column)?;
@@ -1911,7 +1911,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                 base
             };
             // Starting a complex (block) sequence: drop any staged inline comment.
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             {
                 self.state.pending_inline_comment = None;
             }
@@ -1937,7 +1937,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         match name {
             NAME_TUPLE_ANCHOR => Ok(TupleSer::anchor_strong(self)),
             NAME_TUPLE_WEAK => Ok(TupleSer::anchor_weak(self)),
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             NAME_TUPLE_COMMENTED => Ok(TupleSer::commented(self)),
             NAME_TUPLE_TAGGED => Ok(TupleSer::tagged(self)),
             // Normal tuple-struct: emit as a block sequence.
@@ -2048,7 +2048,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             }
             let inline_first = self.state.pending_layout.pending_inline_map;
             // Starting a complex (block) map: drop any staged inline comment.
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             {
                 self.state.pending_inline_comment = None;
             }

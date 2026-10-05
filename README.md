@@ -102,7 +102,7 @@ let yaml_input = r#"
 
 ### Using serializer or deserializer specifically
 
-To speed up compilation, you can link only the deserializer or only the serializer (along with their respective dependencies). The `serialize`, `deserialize`, and `parser-comments` features are enabled by default.
+To speed up compilation, you can link only the deserializer or only the serializer (along with their respective dependencies). The `serialize`, `deserialize`, and `comments` features are enabled by default.
 
 If you only need one side, you can disable default features and enable only the API surface you use:
 
@@ -115,9 +115,9 @@ serde-saphyr = { version = "2", default-features = false, features = ["serialize
 ```
 Disabling both will produce a "Invalid feature configuration" error (such configuration makes no sense).
 
-These configurations omit comment support. Add `"parser-comments"` to the feature list to use
+These configurations omit comment support. Add `"comments"` to the feature list to use
 `Commented<T>`, `CommentPosition`, or comment-specific options and budget fields. The feature
-also enables granit-parser's `parser-comments` feature when deserialization is enabled;
+also enables granit-parser's `comments` feature when deserialization is enabled;
 serialization alone does not pull in granit-parser. YAML comments are still accepted and
 validated when the feature is disabled, but their text is not retained.
 
@@ -631,7 +631,7 @@ Tagged enums written as `!!EnumName VARIANT` are also supported, but only for si
 
 ### Comments
 
-Comment support requires the default-enabled `parser-comments` feature. With
+Comment support requires the default-enabled `comments` feature. With
 `default-features = false`, enable it explicitly when using `Commented<T>`, `CommentPosition`,
 `Options::emit_comments`, `SerializerOptions::comment_position`,
 `Budget::{max_total_comment_bytes, max_buffered_comment_events}`,

@@ -33,11 +33,11 @@ miette = { version = "7", optional = true, features = ["fancy"] }
 validator = { version = ">= 0.11, < 0.22", optional = true, features = ["derive"] }
 
 [features]
-default = ["serialize", "deserialize", "parser-comments"]
+default = ["serialize", "deserialize", "comments"]
 
 # Enables comment capture and emission, including Commented<T> and comment options.
 # The weak dependency feature keeps serialize-only builds independent of the parser.
-parser-comments = ["granit-parser?/parser-comments"]
+comments = ["granit-parser?/comments"]
 
 # Enables YAML serialization APIs.
 serialize = ["dep:base64", "dep:num-traits", "dep:zmij", "dep:nohash-hasher"]
@@ -152,7 +152,7 @@ required-features = ["serialize"]
 
 [[example]]
 name = "commented"
-required-features = ["serialize", "deserialize", "parser-comments"]
+required-features = ["serialize", "deserialize", "comments"]
 
 [[example]]
 name = "graph_swiss_trains"
@@ -200,7 +200,7 @@ required-features = ["serialize", "deserialize"]
 
 [[example]]
 name = "spaced_yaml"
-required-features = ["serialize", "deserialize", "parser-comments"]
+required-features = ["serialize", "deserialize", "comments"]
 
 [[example]]
 name = "spanned"

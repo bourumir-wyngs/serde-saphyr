@@ -23,10 +23,10 @@ use crate::ser_error::Error;
 
 /// Placement style for comments emitted by [`crate::Commented`].
 ///
-/// Requires the `parser-comments` feature, which is enabled by default.
+/// Requires the `comments` feature, which is enabled by default.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 pub enum CommentPosition {
     /// Emit the comment inline on the right side from the item it describes (default)
     Inline,
@@ -142,8 +142,8 @@ pub struct SerializerOptions {
     /// scalars and aliases. [`CommentPosition::Above`] emits the comment on its own line
     /// immediately before the wrapped value. Comments remain suppressed in flow-style
     /// collections in both modes.
-    /// Available with the `parser-comments` feature, which is enabled by default.
-    #[cfg(feature = "parser-comments")]
+    /// Available with the `comments` feature, which is enabled by default.
+    #[cfg(feature = "comments")]
     pub comment_position: CommentPosition,
 
     /// When enabled, emit `%YAML 1.2` and the required document start marker
@@ -204,7 +204,7 @@ impl Default for SerializerOptions {
             empty_as_braces: true,
             prefer_block_scalars: true,
             quote_all: false,
-            #[cfg(feature = "parser-comments")]
+            #[cfg(feature = "comments")]
             comment_position: CommentPosition::Inline,
             yaml_12: false,
             no_lang_directive: false,

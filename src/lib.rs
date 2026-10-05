@@ -18,7 +18,7 @@ compile_error!(
 pub use self::de::PropertySyntax;
 #[cfg(all(feature = "deserialize", any(feature = "garde", feature = "validator")))]
 pub use self::de_error::{ValidationIssue, ValidationSource};
-#[cfg(all(feature = "serialize", feature = "parser-comments"))]
+#[cfg(all(feature = "serialize", feature = "comments"))]
 pub use self::ser::options::CommentPosition;
 #[cfg(feature = "serialize")]
 pub use self::ser::{Error as SerializeError, error as ser_error, options::SerializerOptions};
@@ -68,7 +68,7 @@ pub use long_strings::{FoldStr, FoldString, LitStr, LitString};
 pub use span::Span;
 pub use spanned::Spanned;
 #[cfg(all(
-    feature = "parser-comments",
+    feature = "comments",
     any(feature = "serialize", feature = "deserialize")
 ))]
 pub use wrappers::Commented;

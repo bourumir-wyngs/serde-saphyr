@@ -2,7 +2,7 @@
 use rstest::rstest;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 use serde_saphyr::Commented;
 use serde_saphyr::Spanned;
 use std::collections::BTreeMap;
@@ -38,7 +38,7 @@ enum TaggedMapping {
         a: u32,
         b: u32,
     },
-    #[cfg(feature = "parser-comments")]
+    #[cfg(feature = "comments")]
     Commented {
         value: Commented<u32>,
     },
@@ -371,7 +371,7 @@ fn equivalent_resolved_custom_tag_spellings_remain_duplicate_keys() {
 }
 
 #[test]
-#[cfg(feature = "parser-comments")]
+#[cfg(feature = "comments")]
 fn tagged_mapping_payload_preserves_inner_comments() {
     let actual: TaggedMapping = serde_saphyr::from_str("!commented\n  # note\n  value: 10")
         .expect("tagged mapping with a comment should deserialize");

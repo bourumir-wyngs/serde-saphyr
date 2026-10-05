@@ -1,4 +1,4 @@
-#![cfg(all(feature = "deserialize", not(feature = "parser-comments")))]
+#![cfg(all(feature = "deserialize", not(feature = "comments")))]
 
 use serde_saphyr::budget::BudgetReport;
 use serde_saphyr::{

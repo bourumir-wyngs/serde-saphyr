@@ -123,7 +123,7 @@ fn public_macros_report_missing_features() {
 }
 
 #[test]
-fn comment_apis_require_parser_comments() {
+fn comment_apis_require_comments() {
     let root = tempfile::tempdir().expect("create fixture root");
     let target_dir = root.path().join("target");
     let source = r#"use serde_saphyr::{CommentPosition, Commented};
@@ -151,7 +151,7 @@ fn main() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         !output.status.success(),
-        "comment APIs unexpectedly compiled without parser-comments"
+        "comment APIs unexpectedly compiled without comments"
     );
     for missing_api in [
         "Commented",
@@ -172,13 +172,13 @@ fn main() {
     let with_comments = write_fixture(
         root.path(),
         "serde-saphyr-with-comment-apis",
-        &["serialize", "deserialize", "parser-comments"],
+        &["serialize", "deserialize", "comments"],
         source,
     );
     let output = cargo_check(&with_comments, &target_dir);
     assert!(
         output.status.success(),
-        "comment APIs should compile with parser-comments:\n{}",
+        "comment APIs should compile with comments:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
 }
