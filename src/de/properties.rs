@@ -13,10 +13,10 @@ pub(crate) enum PropertyError {
     /// The string is the full candidate including braces.
     InvalidName(String),
     /// `${NAME?text}` or `${NAME:?text}` referenced a variable that was unset.
-    /// `message` may be empty.
+    /// `message` may be empty; hints containing property values preserve their source text.
     RequiredButUnset { name: String, message: String },
     /// `${NAME:?text}` referenced a variable that was present but empty.
-    /// `message` may be empty.
+    /// `message` may be empty; hints containing property values preserve their source text.
     RequiredButEmpty { name: String, message: String },
     /// A selected operator branch exceeded the configured nesting limit.
     ExpansionDepthLimitExceeded { depth: usize, max_depth: usize },
@@ -280,6 +280,8 @@ struct ExpansionFrame<'a> {
     syntax: PropertySyntax,
     out: String,
     changed: bool,
+    /// A non-empty property-map value contributed to this frame's output.
+    contains_property_value: bool,
     last: usize,
     cursor: usize,
     completion: FrameCompletion,
@@ -294,6 +296,7 @@ impl<'a> ExpansionFrame<'a> {
             // recreate the quadratic retained-memory behavior of the recursive implementation.
             out: String::new(),
             changed: false,
+            contains_property_value: false,
             last: 0,
             cursor: 0,
             completion,
@@ -333,7 +336,12 @@ impl FrameValue<'_> {
         }
     }
 
-    fn into_owned(self) -> String {
+    fn into_error_message(self, source: &str, contains_property_value: bool) -> String {
+        if contains_property_value {
+            // Required hints are public diagnostics. Keep their source text rather than
+            // copying property values into errors, snippets, or alias-error messages.
+            return source.to_owned();
+        }
         match self {
             Self::Borrowed(value) => value.to_owned(),
             Self::Owned(value) => value,
@@ -343,8 +351,10 @@ impl FrameValue<'_> {
 
 /// Action produced by resolving one braced property reference against the property map.
 enum BraceAction<'a> {
-    /// Append a property value or an empty replacement directly.
+    /// Append a literal replacement directly.
     Append(&'a str),
+    /// Append a final property-map value, tracking its provenance for error hints.
+    AppendProperty(&'a str),
     /// Evaluate selected operator text in a nested interpolation frame.
     Interpolate {
         text: &'a str,
@@ -362,7 +372,7 @@ fn resolve_brace_action<'a>(
     let name = brace.name;
     let value = vars.get(name).map(String::as_str);
     match (brace.op, value) {
-        (BraceOp::Required, Some(value)) => BraceAction::Append(value),
+        (BraceOp::Required, Some(value)) => BraceAction::AppendProperty(value),
         (BraceOp::Required, None) if syntax == PropertySyntax::DockerCompose => {
             BraceAction::Append("")
         }
@@ -373,7 +383,7 @@ fn resolve_brace_action<'a>(
             completion: FrameCompletion::Append,
         },
         (BraceOp::DefaultIfUnset(_), Some(value))
-        | (BraceOp::DefaultIfUnsetOrEmpty(_), Some(value)) => BraceAction::Append(value),
+        | (BraceOp::DefaultIfUnsetOrEmpty(_), Some(value)) => BraceAction::AppendProperty(value),
         (BraceOp::AlternateIfSet(text), Some(_)) => BraceAction::Interpolate {
             text,
             completion: FrameCompletion::Append,
@@ -390,13 +400,13 @@ fn resolve_brace_action<'a>(
             }
         }
         (BraceOp::AlternateIfSetAndNonEmpty(_), None) => BraceAction::Append(""),
-        (BraceOp::ErrorIfUnset(_), Some(value)) => BraceAction::Append(value),
+        (BraceOp::ErrorIfUnset(_), Some(value)) => BraceAction::AppendProperty(value),
         (BraceOp::ErrorIfUnset(message), None) => BraceAction::Interpolate {
             text: message,
             completion: FrameCompletion::RequiredButUnset(name.to_owned()),
         },
         (BraceOp::ErrorIfUnsetOrEmpty(_), Some(value)) if !value.is_empty() => {
-            BraceAction::Append(value)
+            BraceAction::AppendProperty(value)
         }
         (BraceOp::ErrorIfUnsetOrEmpty(message), Some(_)) => BraceAction::Interpolate {
             text: message,
@@ -479,21 +489,25 @@ pub(crate) fn interpolate_compose_style_with_limits<'s>(
                         FrameValue::Owned(value) => Ok(Cow::Owned(value)),
                     };
                 }
-                FrameCompletion::Append => frames
-                    .last_mut()
-                    .expect("nested interpolation has a parent")
-                    .out
-                    .push_str(value.as_str()),
+                FrameCompletion::Append => {
+                    let parent = frames
+                        .last_mut()
+                        .expect("nested interpolation has a parent");
+                    parent.out.push_str(value.as_str());
+                    parent.contains_property_value |= frame.contains_property_value;
+                }
                 FrameCompletion::RequiredButUnset(name) => {
                     return Err(PropertyError::RequiredButUnset {
                         name,
-                        message: value.into_owned(),
+                        message: value
+                            .into_error_message(frame.input, frame.contains_property_value),
                     });
                 }
                 FrameCompletion::RequiredButEmpty(name) => {
                     return Err(PropertyError::RequiredButEmpty {
                         name,
-                        message: value.into_owned(),
+                        message: value
+                            .into_error_message(frame.input, frame.contains_property_value),
                     });
                 }
             }
@@ -532,11 +546,15 @@ pub(crate) fn interpolate_compose_style_with_limits<'s>(
                 continue;
             };
 
-            match resolve_brace_action(brace, vars, syntax) {
-                BraceAction::Append(value) => frames
-                    .last_mut()
-                    .expect("interpolation stack is non-empty")
-                    .append_replacement(i, end, value),
+            let action = resolve_brace_action(brace, vars, syntax);
+            let contains_property_value =
+                matches!(&action, BraceAction::AppendProperty(value) if !value.is_empty());
+            match action {
+                BraceAction::Append(value) | BraceAction::AppendProperty(value) => {
+                    let frame = frames.last_mut().expect("interpolation stack is non-empty");
+                    frame.append_replacement(i, end, value);
+                    frame.contains_property_value |= contains_property_value;
+                }
                 BraceAction::Error(error) => return Err(error),
                 BraceAction::Interpolate { text, completion } => {
                     // Preserve lazy operators: only selected text is inspected or depth-limited.
@@ -549,7 +567,11 @@ pub(crate) fn interpolate_compose_style_with_limits<'s>(
                         PropertySyntax::Braced
                     };
                     let needs_expansion = if syntax == PropertySyntax::DockerCompose {
-                        text.contains('$')
+                        text.match_indices('$').any(|(index, _)| {
+                            text[index + 1..].chars().next().is_some_and(|next| {
+                                next == '$' || next == '{' || is_var_start(next, syntax)
+                            })
+                        })
                     } else {
                         text.contains("${")
                     };
@@ -607,6 +629,7 @@ pub(crate) fn interpolate_compose_style_with_limits<'s>(
                 None => return Err(PropertyError::Unresolved(name.to_owned())),
             };
             frame.append_replacement(i, next + name.len(), value);
+            frame.contains_property_value |= !value.is_empty();
         }
     }
 }
@@ -713,7 +736,7 @@ mod tests {
             error,
             PropertyError::RequiredButUnset {
                 name: "MISSING".into(),
-                message: "value".into()
+                message: "${SET}".into()
             }
         );
     }
@@ -731,7 +754,7 @@ mod tests {
             error,
             PropertyError::RequiredButEmpty {
                 name: "EMPTY".into(),
-                message: "value".into()
+                message: "${SET}".into()
             }
         );
     }
@@ -1091,16 +1114,16 @@ mod tests {
 
     #[rstest]
     #[case::missing("${MISSING?$SET $$SET}", PropertyError::RequiredButUnset {
-        name: "MISSING".into(), message: "value $SET".into()
+        name: "MISSING".into(), message: "$SET $$SET".into()
     })]
     #[case::empty("${EMPTY:?$SET $$SET}", PropertyError::RequiredButEmpty {
-        name: "EMPTY".into(), message: "value $SET".into()
+        name: "EMPTY".into(), message: "$SET $$SET".into()
     })]
     #[case::empty_message("${MISSING?}", PropertyError::RequiredButUnset {
         name: "MISSING".into(), message: String::new()
     })]
     #[case::nested_message("${MISSING:?${EMPTY:-$SET}}", PropertyError::RequiredButUnset {
-        name: "MISSING".into(), message: "value".into()
+        name: "MISSING".into(), message: "${EMPTY:-$SET}".into()
     })]
     fn docker_compose_expands_required_messages(
         #[case] input: &str,

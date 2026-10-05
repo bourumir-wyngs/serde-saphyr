@@ -103,6 +103,273 @@ fn required_values_report_errors(#[case] template: &str, #[case] empty: bool) {
     }
 }
 
+const HINT_SECRET: &str = "sensitive-property-value";
+const FINAL_HINT_SECRET: &str = "sensitive-final-value ${UNRESOLVED} $$FINAL";
+
+fn required_hint_options(syntax: PropertySyntax) -> Options {
+    let mut options = compose_options(&[
+        ("SECRET", HINT_SECRET),
+        ("FINAL", FINAL_HINT_SECRET),
+        ("SET", "condition-value"),
+        ("EMPTY", ""),
+        ("K", HINT_SECRET),
+        ("ſ", HINT_SECRET),
+    ]);
+    options.property_syntax = syntax;
+    options
+}
+
+fn assert_required_hint(err: &Error, expected_name: &str, expected_hint: &str) {
+    match err.without_snippet() {
+        Error::PropertyRequiredButUnset { name, message, .. } if expected_name != "EMPTY" => {
+            assert_eq!(name, expected_name);
+            assert_eq!(message, expected_hint);
+        }
+        Error::PropertyRequiredButEmpty { name, message, .. } if expected_name == "EMPTY" => {
+            assert_eq!(name, expected_name);
+            assert_eq!(message, expected_hint);
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+}
+
+fn assert_hint_secrets_are_absent(err: &Error) {
+    for rendered in [err.to_string(), format!("{err:?}")] {
+        assert!(!rendered.contains(HINT_SECRET), "{rendered}");
+        assert!(!rendered.contains(FINAL_HINT_SECRET), "{rendered}");
+    }
+}
+
+#[rstest]
+#[case::unset(
+    "${MISSING?prefix ${SECRET} suffix}",
+    "MISSING",
+    "prefix ${SECRET} suffix"
+)]
+#[case::unset_or_empty("${MISSING:?${SECRET}}", "MISSING", "${SECRET}")]
+#[case::empty("${EMPTY:?${SECRET}}", "EMPTY", "${SECRET}")]
+#[case::repeated("${MISSING:?${SECRET}/${SECRET}}", "MISSING", "${SECRET}/${SECRET}")]
+#[case::nested_default("${MISSING:?${ABSENT:-${SECRET}}}", "MISSING", "${ABSENT:-${SECRET}}")]
+#[case::nested_alternative("${MISSING:?${SET:+${SECRET}}}", "MISSING", "${SET:+${SECRET}}")]
+#[case::set_default("${MISSING:?${SECRET:-unused}}", "MISSING", "${SECRET:-unused}")]
+#[case::set_required("${MISSING:?${SECRET?unused}}", "MISSING", "${SECRET?unused}")]
+#[case::inner_required(
+    "${MISSING:?${OTHER?prefix ${SECRET} suffix}}",
+    "OTHER",
+    "prefix ${SECRET} suffix"
+)]
+#[case::final_property_text("${MISSING:?${FINAL}}", "MISSING", "${FINAL}")]
+fn required_hints_preserve_source_when_property_values_are_used(
+    #[case] template: &str,
+    #[case] name: &str,
+    #[case] expected: &str,
+    #[values(
+        PropertySyntax::Braced,
+        PropertySyntax::BracedOrBare,
+        PropertySyntax::DockerCompose
+    )]
+    syntax: PropertySyntax,
+) {
+    let options = required_hint_options(syntax);
+    for err in [
+        from_str_with_options::<String>(template, options.clone()).unwrap_err(),
+        from_reader_with_options::<_, String>(template.as_bytes(), options).unwrap_err(),
+    ] {
+        assert_required_hint(&err, name, expected);
+        assert_hint_secrets_are_absent(&err);
+    }
+}
+
+#[rstest]
+#[case::plain("${MISSING:?prefix $SECRET suffix}", "prefix $SECRET suffix")]
+#[case::single_quoted("'${MISSING:?$SECRET}'", "$SECRET")]
+#[case::double_quoted("\"${MISSING:?$SECRET}\"", "$SECRET")]
+#[case::literal("|-\n  ${MISSING:?$SECRET}\n", "$SECRET")]
+#[case::folded(">-\n  ${MISSING:?$SECRET}\n", "$SECRET")]
+#[case::unicode("'${MISSING:?$K/$ſ}'", "$K/$ſ")]
+fn compose_required_hints_redact_bare_references_in_all_styles(
+    #[case] yaml: &str,
+    #[case] expected: &str,
+) {
+    let options = required_hint_options(PropertySyntax::DockerCompose);
+    for err in [
+        from_str_with_options::<String>(yaml, options.clone()).unwrap_err(),
+        from_reader_with_options::<_, String>(yaml.as_bytes(), options).unwrap_err(),
+    ] {
+        assert_required_hint(&err, "MISSING", expected);
+        assert_hint_secrets_are_absent(&err);
+    }
+}
+
+#[rstest]
+fn aliased_required_hints_do_not_expose_property_values(
+    #[values(
+        PropertySyntax::Braced,
+        PropertySyntax::BracedOrBare,
+        PropertySyntax::DockerCompose
+    )]
+    syntax: PropertySyntax,
+) {
+    let yaml = "&hint ${MISSING:?${SECRET}}: ignored\nvalue: *hint\n";
+    let options = required_hint_options(syntax);
+    for err in [
+        from_str_with_options::<HashMap<String, String>>(yaml, options.clone()).unwrap_err(),
+        from_reader_with_options::<_, HashMap<String, String>>(yaml.as_bytes(), options)
+            .unwrap_err(),
+    ] {
+        assert!(matches!(
+            err.without_snippet(),
+            Error::PropertyRequiredButUnset { .. } | Error::AliasError { .. }
+        ));
+        assert!(err.to_string().contains("${SECRET}"));
+        assert_hint_secrets_are_absent(&err);
+    }
+}
+
+#[rstest]
+#[case::literal("${MISSING?please configure it}", "MISSING", "please configure it")]
+#[case::public_default("${MISSING:?${ABSENT:-public default}}", "MISSING", "public default")]
+#[case::public_alternative(
+    "${MISSING:?${SECRET:+public replacement}}",
+    "MISSING",
+    "public replacement"
+)]
+#[case::empty_value("${MISSING:?before${EMPTY}after}", "MISSING", "beforeafter")]
+#[case::empty_value_default("${MISSING:?${EMPTY:-public default}}", "MISSING", "public default")]
+#[case::inactive_alternative("${MISSING:?${ABSENT:+${SECRET}}}", "MISSING", "")]
+#[case::inner_public_error("${MISSING:?${SECRET}${OTHER?public hint}}", "OTHER", "public hint")]
+#[case::literal_matching_property("${MISSING:?sensitive-property-value}", "MISSING", HINT_SECRET)]
+fn required_hints_without_property_values_keep_evaluated_text(
+    #[case] template: &str,
+    #[case] name: &str,
+    #[case] expected: &str,
+    #[values(
+        PropertySyntax::Braced,
+        PropertySyntax::BracedOrBare,
+        PropertySyntax::DockerCompose
+    )]
+    syntax: PropertySyntax,
+) {
+    let options = required_hint_options(syntax);
+    for err in [
+        from_str_with_options::<String>(template, options.clone()).unwrap_err(),
+        from_reader_with_options::<_, String>(template.as_bytes(), options).unwrap_err(),
+    ] {
+        assert_required_hint(&err, name, expected);
+    }
+}
+
+#[rstest]
+#[case::escape("${MISSING:?$$SECRET}", "$SECRET")]
+#[case::missing_bare("${MISSING:?before $ABSENT after}", "before  after")]
+#[case::missing_braced("${MISSING:?before ${ABSENT} after}", "before  after")]
+fn compose_required_hints_evaluate_escapes_and_missing_references(
+    #[case] template: &str,
+    #[case] expected: &str,
+) {
+    let options = required_hint_options(PropertySyntax::DockerCompose);
+    for err in [
+        from_str_with_options::<String>(template, options.clone()).unwrap_err(),
+        from_reader_with_options::<_, String>(template.as_bytes(), options).unwrap_err(),
+    ] {
+        assert_required_hint(&err, "MISSING", expected);
+        assert_hint_secrets_are_absent(&err);
+    }
+}
+
+#[rstest]
+#[case::default("${ABSENT:-${SECRET}}", HINT_SECRET)]
+#[case::replacement("${SET:+${SECRET}}", HINT_SECRET)]
+#[case::inactive_required_hint("${SECRET?${OTHER?unreachable}}", HINT_SECRET)]
+#[case::final_property_text("${ABSENT:-${FINAL}}", FINAL_HINT_SECRET)]
+fn successful_expansions_keep_property_values(
+    #[case] template: &str,
+    #[case] expected: &str,
+    #[values(
+        PropertySyntax::Braced,
+        PropertySyntax::BracedOrBare,
+        PropertySyntax::DockerCompose
+    )]
+    syntax: PropertySyntax,
+) {
+    let options = required_hint_options(syntax);
+    for value in [
+        from_str_with_options::<String>(template, options.clone()).unwrap(),
+        from_reader_with_options::<_, String>(template.as_bytes(), options).unwrap(),
+    ] {
+        assert_eq!(value, expected);
+    }
+}
+
+#[rstest]
+#[case::malformed("${MISSING:?${SECRET}${}}", true)]
+#[case::depth_limit("${MISSING:?${SECRET}}", false)]
+fn required_hint_redaction_preserves_interpolation_failures(
+    #[case] template: &str,
+    #[case] malformed: bool,
+    #[values(
+        PropertySyntax::Braced,
+        PropertySyntax::BracedOrBare,
+        PropertySyntax::DockerCompose
+    )]
+    syntax: PropertySyntax,
+) {
+    let mut options = required_hint_options(syntax);
+    if !malformed {
+        options.budget = serde_saphyr::budget! { max_property_expansion_depth: 0 };
+    }
+    for err in [
+        from_str_with_options::<String>(template, options.clone()).unwrap_err(),
+        from_reader_with_options::<_, String>(template.as_bytes(), options).unwrap_err(),
+    ] {
+        if malformed {
+            assert!(matches!(
+                err.without_snippet(),
+                Error::InvalidPropertyName { .. }
+            ));
+        } else {
+            assert!(matches!(
+                err.without_snippet(),
+                Error::Budget {
+                    breach: BudgetBreach::PropertyExpansionDepth {
+                        depth: 1,
+                        max_depth: 0
+                    },
+                    ..
+                }
+            ));
+        }
+        assert_hint_secrets_are_absent(&err);
+    }
+}
+
+#[rstest]
+fn required_hint_redaction_preserves_work_budget(
+    #[values(
+        PropertySyntax::Braced,
+        PropertySyntax::BracedOrBare,
+        PropertySyntax::DockerCompose
+    )]
+    syntax: PropertySyntax,
+) {
+    let mut options = required_hint_options(syntax);
+    options.budget = serde_saphyr::budget! { max_total_property_interpolation_work: 0 };
+    let template = "${MISSING:?${SECRET}}";
+    for err in [
+        from_str_with_options::<String>(template, options.clone()).unwrap_err(),
+        from_reader_with_options::<_, String>(template.as_bytes(), options).unwrap_err(),
+    ] {
+        assert!(matches!(
+            err.without_snippet(),
+            Error::Budget {
+                breach: BudgetBreach::PropertyInterpolationWork { .. },
+                ..
+            }
+        ));
+        assert_hint_secrets_are_absent(&err);
+    }
+}
+
 #[rstest]
 #[case::bare_default("${MISSING:-$SET}", "value")]
 #[case::braced_default("${MISSING:-${SET}}", "value")]
@@ -535,6 +802,85 @@ fn flat_operator_repetition_has_linear_work() {
         from_reader_with_options(yaml.as_bytes(), options),
     ] {
         assert_eq!(parsed.unwrap().value, "a".repeat(repetitions));
+    }
+}
+
+#[rstest]
+#[case::default("${MISSING:-cost $100}", 0, "cost $100")]
+#[case::replacement("${SET:+cost $100}", 0, "cost $100")]
+#[case::other_literal_dollars("${MISSING:-$! $Ω $}", 0, "$! $Ω $")]
+#[case::nested_default("${MISSING:-${MISSING:-cost $100}}", 1, "cost $100")]
+fn literal_dollars_do_not_consume_expansion_depth(
+    #[case] template: &str,
+    #[case] max_depth: usize,
+    #[case] expected: &str,
+) {
+    let mut options = compose_options(&[("SET", "value")]);
+    options.budget = serde_saphyr::budget! {
+        max_property_expansion_depth: max_depth,
+    };
+    let yaml = format!("value: '{template}'\n");
+    for parsed in [
+        from_str_with_options::<Config>(&yaml, options.clone()).unwrap(),
+        from_reader_with_options::<_, Config>(yaml.as_bytes(), options).unwrap(),
+    ] {
+        assert_eq!(parsed.value, expected);
+    }
+}
+
+#[rstest]
+#[case::unset("${MISSING?cost $100}", false)]
+#[case::empty("${EMPTY:?cost $100}", true)]
+fn literal_dollar_required_hints_preserve_required_errors(
+    #[case] template: &str,
+    #[case] empty: bool,
+) {
+    let mut options = compose_options(&[("EMPTY", "")]);
+    options.budget = serde_saphyr::budget! { max_property_expansion_depth: 0 };
+    let yaml = format!("value: '{template}'\n");
+    for err in [
+        from_str_with_options::<Config>(&yaml, options.clone()).unwrap_err(),
+        from_reader_with_options::<_, Config>(yaml.as_bytes(), options).unwrap_err(),
+    ] {
+        match err.without_snippet() {
+            Error::PropertyRequiredButEmpty { name, message, .. } if empty => {
+                assert_eq!(name, "EMPTY");
+                assert_eq!(message, "cost $100");
+            }
+            Error::PropertyRequiredButUnset { name, message, .. } if !empty => {
+                assert_eq!(name, "MISSING");
+                assert_eq!(message, "cost $100");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+}
+
+#[rstest]
+#[case::bare("${MISSING:-$SET}")]
+#[case::braced("${MISSING:-${SET}}")]
+#[case::escape("${MISSING:-$$SET}")]
+#[case::kelvin("${MISSING:-$K}")]
+#[case::long_s("${MISSING:-$ſ}")]
+#[case::after_literal_dollar("${MISSING:-$100 $SET}")]
+fn references_and_escapes_in_operator_text_consume_expansion_depth(#[case] template: &str) {
+    let mut options = compose_options(&[("SET", "value")]);
+    options.budget = serde_saphyr::budget! { max_property_expansion_depth: 0 };
+    let yaml = format!("value: '{template}'\n");
+    for err in [
+        from_str_with_options::<Config>(&yaml, options.clone()).unwrap_err(),
+        from_reader_with_options::<_, Config>(yaml.as_bytes(), options).unwrap_err(),
+    ] {
+        assert!(matches!(
+            err.without_snippet(),
+            Error::Budget {
+                breach: BudgetBreach::PropertyExpansionDepth {
+                    depth: 1,
+                    max_depth: 0
+                },
+                ..
+            }
+        ));
     }
 }
 
