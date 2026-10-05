@@ -7,6 +7,15 @@ use granit_parser::ScalarStyle;
 #[cfg(feature = "deserialize")]
 use std::str::FromStr;
 
+/// Trim ASCII padding accepted during scalar conversion.
+///
+/// Besides YAML spaces and tabs, accept line breaks for quoted and block scalars.
+/// Other Unicode whitespace is scalar content and must be preserved.
+#[inline]
+pub(crate) fn yaml_trim(s: &str) -> &str {
+    s.trim_matches([' ', '\t', '\r', '\n'])
+}
+
 /// Parse a YAML 1.1 boolean from a &str (handles the "Norway problem").
 ///
 /// Accepted TRUE literals (case-insensitive): "y", "yes", "true", "on"
@@ -16,7 +25,7 @@ use std::str::FromStr;
 /// - Ok(true/false) on success
 /// - Err(...) if the input is not a YAML 1.1 boolean literal
 pub(crate) fn parse_yaml11_bool(s: &str) -> Result<bool, String> {
-    let t = s.trim();
+    let t = yaml_trim(s);
     if t.eq_ignore_ascii_case("true")
         || t.eq_ignore_ascii_case("yes")
         || t.eq_ignore_ascii_case("y")
@@ -171,7 +180,7 @@ where
 {
     let invalid = || Error::InvalidScalar { ty, location };
 
-    let t = s.trim();
+    let t = yaml_trim(s);
     let (neg, rest) = match t.strip_prefix('+') {
         Some(r) => (false, r),
         None => match t.strip_prefix('-') {
@@ -216,7 +225,7 @@ where
 {
     let invalid = || Error::InvalidScalar { ty, location };
 
-    let t = s.trim();
+    let t = yaml_trim(s);
     if t.starts_with('-') {
         return Err(invalid());
     }
@@ -302,7 +311,7 @@ where
     if angle_conversions {
         return crate::robotics::parse_yaml12_float_angle_converting(s, location, tag);
     }
-    let t = s.trim();
+    let t = yaml_trim(s);
     let lower = t.to_ascii_lowercase();
     match lower.as_str() {
         ".nan" | "+.nan" | "-.nan" => Ok(T::nan()),
@@ -323,7 +332,7 @@ where
     T: FromStr,
     T: num_traits::Float,
 {
-    let t = s.trim();
+    let t = yaml_trim(s);
     let lower = t.to_ascii_lowercase();
     match lower.as_str() {
         ".nan" | "+.nan" | "-.nan" => Ok(T::nan()),
@@ -358,7 +367,7 @@ pub(crate) fn try_parse_float_incl_overflow(
         return Some(v);
     }
 
-    let t = s.trim();
+    let t = yaml_trim(s);
     let unsigned = t.strip_prefix(['+', '-']).unwrap_or(t);
     if !unsigned.as_bytes().first().is_some_and(u8::is_ascii_digit) {
         return None;
@@ -386,7 +395,8 @@ pub(crate) fn maybe_not_string(s: &str, style: &ScalarStyle, strict_booleans: bo
 #[inline]
 fn maybe_bool(s: &str, strict: bool) -> bool {
     if strict {
-        s.trim().eq_ignore_ascii_case("true") || s.trim().eq_ignore_ascii_case("false")
+        let s = yaml_trim(s);
+        s.eq_ignore_ascii_case("true") || s.eq_ignore_ascii_case("false")
     } else {
         parse_yaml11_bool(s).is_ok()
     }
@@ -431,7 +441,7 @@ pub(crate) fn scalar_is_null(tag: &SfTag, value: &str, style: &ScalarStyle) -> b
 /// Explicit radices (`0x`, `0o`, `0b`) are excluded.
 /// A `true` result means this token should be avoided as an integer.
 pub(crate) fn leading_zero_decimal(t: &str) -> bool {
-    let s = t.trim();
+    let s = yaml_trim(t);
 
     // Handle optional sign
     let digits = s.strip_prefix(['+', '-']).unwrap_or(s);

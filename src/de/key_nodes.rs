@@ -11,7 +11,7 @@ use super::events::{Ev, Events, ReplayEvents, with_deferred_recursive_aliases};
 use super::options::{DuplicateKeyPolicy, MergeKeyPolicy};
 use super::tags::SfTag;
 use crate::location::Location;
-use crate::parse_scalars::{parse_int_signed, parse_int_unsigned, scalar_is_null};
+use crate::parse_scalars::{parse_int_signed, parse_int_unsigned, scalar_is_null, yaml_trim};
 use crate::tag::simple_enum_variant_name;
 
 pub(super) fn simple_tagged_enum_name(
@@ -117,7 +117,7 @@ fn integer_key_fingerprint(
         return None;
     }
 
-    let value = value.trim();
+    let value = yaml_trim(value);
     let (negative, magnitude) = if value.starts_with('-') {
         let parsed =
             parse_int_signed::<i128>(value, "i128", Location::UNKNOWN, legacy_octal_numbers)
