@@ -199,6 +199,7 @@ fn find_braced_reference_close(
 /// See https://github.com/compose-spec/compose-go/blob/main/template/template.go:
 /// `DefaultPattern` greedily matches operator text through the last `}` on its line,
 /// then `getFirstBraceClosingIndex` trims that match when it finds a balanced prefix.
+/// Return balanced prefixes immediately, retaining the last `}` only as a fallback.
 fn find_compose_braced_reference_close(
     input: &str,
     body_start: usize,
@@ -221,26 +222,25 @@ fn find_compose_braced_reference_close(
         return Ok(None);
     };
 
-    let bytes = input.as_bytes();
-    let mut close = None;
-    for (offset, byte) in bytes[operator_start + operator_len..].iter().enumerate() {
+    // The validated name and operator contain no braces; only the outer `{` is open.
+    let mut depth = 1usize;
+    let mut last_close = None;
+    let mut skip_next = false;
+    let text_start = operator_start + operator_len;
+    for (offset, &byte) in input.as_bytes()[text_start..].iter().enumerate() {
         work.charge(1)?;
-        if *byte == b'\n' {
+        if byte == b'\n' {
             break;
         }
-        if *byte == b'}' {
-            close = Some(operator_start + operator_len + offset);
+        let cursor = text_start + offset;
+        if byte == b'}' {
+            last_close = Some(cursor);
         }
-    }
-    let Some(close) = close else {
-        return Ok(None);
-    };
-
-    let mut depth = 0usize;
-    let mut cursor = body_start - 2;
-    while cursor <= close {
-        work.charge(1)?;
-        match bytes[cursor] {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        match byte {
             b'}' => {
                 depth = depth.saturating_sub(1);
                 if depth == 0 {
@@ -251,18 +251,15 @@ fn find_compose_braced_reference_close(
                 depth = depth.saturating_add(1);
                 // compose-go skips the byte after every opening brace. Preserve this
                 // detail: adjacent literal braces can change where the prefix ends.
-                cursor += 1;
-                if cursor <= close {
-                    work.charge(1)?;
-                }
+                // Skipped bytes still count toward the last-`}` fallback and newline boundary.
+                skip_next = true;
             }
             _ => {}
         }
-        cursor += 1;
     }
     // Compose accepts an unmatched literal opening brace when its original greedy
     // candidate still ends in `}`; only the selected operator text is expanded.
-    Ok(Some(close))
+    Ok(last_close)
 }
 
 /// Describes how a completed interpolation frame is applied to its parent or returned as an error.

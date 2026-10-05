@@ -123,6 +123,13 @@ fn required_values_report_errors(#[case] template: &str, #[case] empty: bool) {
 #[case::nested_literal_braces("${MISSING:-{{json}}}", "{{json}}")]
 #[case::unbalanced_literal_default("${SET:-{json}", "value")]
 #[case::unbalanced_selected_literal_default("${MISSING:-{json}", "{json")]
+#[case::unbalanced_skipped_close("${SET:-{}", "value")]
+#[case::unbalanced_selected_skipped_close("${MISSING:-{}", "{")]
+#[case::unbalanced_literal_uses_last_close("${SET:-{first}{last}suffix", "valuesuffix")]
+#[case::unbalanced_selected_literal_uses_last_close(
+    "${MISSING:-{first}{last}suffix",
+    "{first}{lastsuffix"
+)]
 #[case::compose_brace_matching("${SET:-{{}}}", "value}")]
 #[case::suffix_after_default("${SET:-{json}}suffix", "valuesuffix")]
 fn recursively_expands_selected_operator_text(#[case] template: &str, #[case] expected: &str) {
@@ -188,6 +195,8 @@ fn malformed_references_are_errors(#[case] template: &str) {
 #[rstest]
 #[case::selected("value: |-\n  ${MISSING:-first\n  second}\n")]
 #[case::unused("value: |-\n  ${SET:-first\n  second}\n")]
+#[case::selected_opening_brace_before_newline("value: |-\n  ${MISSING:-{\n  second}\n")]
+#[case::unused_opening_brace_before_newline("value: |-\n  ${SET:-{\n  second}\n")]
 fn multiline_operator_references_are_invalid(#[case] yaml: &str) {
     let err =
         from_str_with_options::<Config>(yaml, compose_options(&[("SET", "value")])).unwrap_err();
@@ -195,6 +204,19 @@ fn multiline_operator_references_are_invalid(#[case] yaml: &str) {
         err.without_snippet(),
         Error::InvalidPropertyName { .. }
     ));
+}
+
+#[rstest]
+#[case::selected("value: |-\n  ${MISSING:-{first}\n  suffix}\n", "{first\nsuffix}")]
+#[case::unused("value: |-\n  ${SET:-{first}\n  suffix}\n", "value\nsuffix}")]
+fn unbalanced_literal_fallback_stops_at_newline(#[case] yaml: &str, #[case] expected: &str) {
+    let options = compose_options(&[("SET", "value")]);
+    for parsed in [
+        from_str_with_options::<Config>(yaml, options.clone()),
+        from_reader_with_options(yaml.as_bytes(), options),
+    ] {
+        assert_eq!(parsed.unwrap().value, expected);
+    }
 }
 
 #[test]
@@ -492,6 +514,27 @@ fn nested_expansion_respects_depth_budget() {
                 ..
             }
         ));
+    }
+}
+
+#[test]
+fn flat_operator_repetition_has_linear_work() {
+    let repetitions = 9_000;
+    let input = "${X:-a}".repeat(repetitions);
+    let yaml = format!("value: '{input}'\n");
+    // The stream budget also includes interpolation for scalar error redaction.
+    let options = serde_saphyr::options! {
+        property_syntax: PropertySyntax::DockerCompose,
+        budget: serde_saphyr::budget! {
+            max_total_property_interpolation_work: input.len() * 4,
+        },
+    }
+    .with_properties(HashMap::new());
+    for parsed in [
+        from_str_with_options::<Config>(&yaml, options.clone()),
+        from_reader_with_options(yaml.as_bytes(), options),
+    ] {
+        assert_eq!(parsed.unwrap().value, "a".repeat(repetitions));
     }
 }
 
