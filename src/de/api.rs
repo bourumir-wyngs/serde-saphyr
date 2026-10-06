@@ -995,7 +995,7 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
 /// - Each `next()` yields either `Ok(T)` for a successfully deserialized document or `Err(Error)`
 ///   if parsing or deserialization fails.
 /// - After a **deserialization error** (e.g., type mismatch, missing field), the iterator
-///   skips to the next document boundary (`---`) and continues, as with [`read_with_options`].
+///   skips to the next document boundary (`---`) and continues.
 /// - After a **syntax error** or **budget/alias limit exceeded**, the iterator ends.
 /// - Empty/null-like documents are skipped and produce no items.
 ///
