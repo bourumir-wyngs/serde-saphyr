@@ -2,6 +2,10 @@
 
 ## 2.0.0 Unreleased
 
+### YAML changes
+- Composite mapping keys are not compared regardless of entry order (thanks @yuxi-liu-wired)  .
+- Commented<T> now writes its output replacing characters not allowed in comments (non printable) by spaces.
+
 ### Added
 
 - Added `Options::non_finite_float_policy` with `NonFiniteFloatPolicy::{PassThrough, Reject, AsString}`
