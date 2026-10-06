@@ -39,6 +39,33 @@ fn equivalent_integer_keys_are_duplicates_for_string_targets() {
     }
 }
 
+/// A mapping key's content is an unordered set of pairs: mapping keys that differ only in
+/// entry order are the same key, including when nested. Different values stay distinct.
+#[test]
+fn mapping_keys_compare_regardless_of_entry_order() {
+    for (first, second) in [
+        ("{a: 1, b: 2}", "{b: 2, a: 1}"),
+        ("{a: {x: 1, y: 2}}", "{a: {y: 2, x: 1}}"),
+        ("[{a: 1, b: 2}]", "[{b: 2, a: 1}]"),
+        ("{0xB: 1, b: 2}", "{b: 2, 11: 1}"),
+    ] {
+        let yaml = format!("? {first}\n: first\n? {second}\n: second\n");
+        let error = from_str::<serde::de::IgnoredAny>(&yaml)
+            .expect_err("reordered mapping keys must be duplicates");
+        assert!(
+            matches!(error.without_snippet(), Error::DuplicateMappingKey { .. }),
+            "expected duplicate keys for {first} and {second}: {error}"
+        );
+    }
+    for (first, second) in [("{a: 1, b: 2}", "{a: 2, b: 1}"), ("{a: 1}", "{a: 1, b: 2}")] {
+        let yaml = format!("? {first}\n: first\n? {second}\n: second\n");
+        assert!(
+            from_str::<serde::de::IgnoredAny>(&yaml).is_ok(),
+            "{first} and {second} are distinct keys"
+        );
+    }
+}
+
 #[test]
 fn duplicate_policy_keeps_the_winning_integer_key_spelling() {
     for &(first, second) in EQUIVALENT_INTEGERS {
