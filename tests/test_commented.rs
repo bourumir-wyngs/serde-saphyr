@@ -135,6 +135,27 @@ fn commented_above_sanitizes_newlines() {
     assert_eq!(y, "# line1 line2\n7\n");
 }
 
+/// Comments cannot be escaped: characters a YAML comment may not contain (control characters,
+/// BOM, U+FFFE/U+FFFF) are replaced like line breaks, so the output always parses.
+#[test]
+fn commented_non_printable_characters_are_sanitized() {
+    let specials = [
+        '\0', '\u{1}', '\u{7}', '\u{1b}', '\u{7f}', '\u{9f}', '\u{feff}', '\u{ffff}',
+    ];
+    for position in [CommentPosition::Inline, CommentPosition::Above] {
+        for ch in specials {
+            let options = ser_options! { comment_position: position };
+            let y = to_string_with_options(&Commented(7, format!("a{ch}b")), options).unwrap();
+            assert!(y.contains("a b"), "{ch:?}: {y:?}");
+            let back: i32 = serde_saphyr::from_str(&y).unwrap();
+            assert_eq!(back, 7, "{ch:?}: {y:?}");
+        }
+    }
+    // Tab is printable and stays.
+    let y = to_string(&Commented(7, "a\tb".into())).unwrap();
+    assert_eq!(y, "7 # a\tb\n");
+}
+
 #[test]
 fn commented_scalar_suppressed_in_flow_seq_above() {
     let seq = FlowSeq(vec![

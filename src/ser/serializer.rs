@@ -708,12 +708,19 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         Ok(())
     }
 
+    /// Make `comment` safe to write after `#`. Comments cannot be escaped, so every character a
+    /// YAML comment may not contain (`nb-char`, YAML 1.2.2 [27]: printable, no line break, no
+    /// BOM) is replaced by a space. Tab stays (it is printable white space).
     #[inline]
     fn sanitize_comment_text(comment: &str) -> String {
         comment
             .chars()
             .map(|ch| match ch {
+                '\t' => ch,
                 '\n' | '\r' | '\u{85}' | '\u{2028}' | '\u{2029}' => ' ',
+                c if is_controll_which_needs_escaping(c) => ' ',
+                // Surrogates cannot occur in a Rust `char`; other non-printable code points
+                // (C0/C1 controls, U+FFFE/U+FFFF, BOM) are covered above.
                 _ => ch,
             })
             .collect()
