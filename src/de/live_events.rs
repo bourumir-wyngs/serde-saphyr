@@ -451,7 +451,6 @@ impl<'a> LiveEvents<'a> {
         #[cfg(feature = "include")]
         let resolver = crate::resolver_from_options(&options);
 
-        let input = input.strip_prefix('\u{FEFF}').unwrap_or(input);
         #[cfg(feature = "include")]
         let default_budget = crate::Budget::default();
         #[cfg(feature = "include")]
