@@ -25,5 +25,6 @@ fn yaml_suite_jef9_01() {
 
 #[test]
 fn yaml_suite_jef9_02() {
-    super::yaml_suite_support::assert_json_case("- |+\n   ", "[\n  \"\\n\"\n]\n");
+    // The final spaces have no line break, so they are not an empty content line.
+    super::yaml_suite_support::assert_json_case("- |+\n   ", "[\n  \"\"\n]\n");
 }
