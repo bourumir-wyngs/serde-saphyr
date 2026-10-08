@@ -70,3 +70,32 @@ fn test_multibyte_key() {
     );
     assert_eq!(span.byte_len(), Some(3u64), "Length for 'val' should be 3");
 }
+
+#[test]
+fn test_byte_offset_after_bom() {
+    // A leading BOM is part of the caller's string: byte and character offsets must count it,
+    // so the span slices the original input back to the value.
+    let input = "\u{FEFF}foo: bar\n";
+    #[derive(serde::Deserialize)]
+    struct Test {
+        foo: Spanned<String>,
+    }
+
+    let t: Test = serde_saphyr::from_str(input).unwrap();
+    let span = t.foo.referenced.span();
+    let (off, len) = (span.byte_offset().unwrap(), span.byte_len().unwrap());
+    assert_eq!((off, len), (8, 3));
+    assert_eq!(&input[off as usize..(off + len) as usize], "bar");
+    assert_eq!(span.offset(), 6, "character offset counts the BOM");
+
+    #[derive(serde::Deserialize, Debug)]
+    #[allow(dead_code)]
+    struct Small {
+        n: u8,
+    }
+    let input = "\u{FEFF}n: 300\n";
+    let err = serde_saphyr::from_str::<Small>(input).unwrap_err();
+    let span = err.location().unwrap().span();
+    let (off, len) = (span.byte_offset().unwrap(), span.byte_len().unwrap());
+    assert_eq!(&input[off as usize..(off + len) as usize], "300");
+}

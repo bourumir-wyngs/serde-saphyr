@@ -1,7 +1,5 @@
 use super::api::{ReaderSnippetContext, StrSnippetContext};
-use super::with_deserializer::{
-    enforce_single_document_and_finish, normalize_str_input, run_with_document_scope,
-};
+use super::with_deserializer::{enforce_single_document_and_finish, run_with_document_scope};
 use crate::budget::EnforcingPolicy;
 use crate::de::{Error, Ev, Events, Options};
 #[cfg(feature = "garde")]
@@ -62,7 +60,6 @@ where
     T: DeserializeOwned,
     F: FnOnce(&T, &PathMap) -> Result<(), Error>,
 {
-    let input = normalize_str_input(input);
     let snippet_ctx = StrSnippetContext::new(input, options.with_snippet, options.crop_radius);
     let cfg = crate::de::Cfg::from_options(&options);
     let mut src = LiveEvents::from_str(input, options);
@@ -160,7 +157,6 @@ where
     T: DeserializeOwned,
     F: Fn(&T, &PathMap) -> Result<(), Error>,
 {
-    let input = normalize_str_input(input);
     let snippet_ctx = StrSnippetContext::new(input, options.with_snippet, options.crop_radius);
     let cfg = crate::de::Cfg::from_options(&options);
     let mut src = LiveEvents::from_str(input, options);
