@@ -23,8 +23,12 @@ fn yaml_suite_jef9_01() {
     super::yaml_suite_support::assert_json_case("- |+\n   \n", "[\n  \"\\n\"\n]\n");
 }
 
+// Upstream JEF9/02 expects ["\n"] even though the final indentation has no line
+// break: this variant inherits its tree/json expectations from the preceding one.
+// An empty-string interpretation of the YAML 1.2.2 grammar has been proposed, but
+// we retain the established 1.3.0 behavior for compatibility with the upstream suite.
+// https://github.com/yaml/yaml-test-suite/blob/main/src/JEF9.yaml
 #[test]
 fn yaml_suite_jef9_02() {
-    // The final spaces have no line break, so they are not an empty content line.
-    super::yaml_suite_support::assert_json_case("- |+\n   ", "[\n  \"\"\n]\n");
+    super::yaml_suite_support::assert_json_case("- |+\n   ", "[\n  \"\\n\"\n]\n");
 }
