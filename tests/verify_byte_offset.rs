@@ -154,7 +154,7 @@ fn test_byte_offset_after_bom_multiple_documents(#[case] prefix: &str) {
 struct BomValidated {
     #[cfg_attr(feature = "garde", garde(length(min = 2)))]
     #[cfg_attr(feature = "validator", validate(length(min = 2)))]
-    foo: String,
+    key: String,
 }
 
 #[cfg(any(feature = "garde", feature = "validator"))]
@@ -172,7 +172,7 @@ fn test_byte_offset_after_bom_validation(
     #[case] multiple: fn(&str) -> Result<Vec<BomValidated>, serde_saphyr::Error>,
     #[values("", "\u{FEFF}")] prefix: &str,
 ) {
-    let input = format!("{prefix}foo: x\n");
+    let input = format!("{prefix}key: x\n");
     let err = single(&input).unwrap_err();
     assert!(matches!(
         err.without_snippet(),
@@ -186,7 +186,7 @@ fn test_byte_offset_after_bom_validation(
     assert_eq!(span.offset(), 5 + prefix.chars().count() as u64);
     assert_eq!(&input[off as usize..(off + len) as usize], "x");
 
-    let input = format!("{prefix}foo: x\n---\nfoo: y\n");
+    let input = format!("{prefix}key: x\n---\nkey: y\n");
     let err = multiple(&input).unwrap_err();
     let serde_saphyr::Error::ValidationErrors { errors, .. } = err.without_snippet() else {
         panic!("expected validation errors for both documents, got: {err:?}");
