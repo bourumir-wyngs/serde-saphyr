@@ -230,6 +230,9 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
             expected,
             ..
         } => Cow::Owned(format!("invalid value: {unexpected}, expected {expected}")),
+        Error::SerdeInvalidLength { len, expected, .. } => {
+            Cow::Owned(format!("invalid length {len}, expected {expected}"))
+        }
         Error::SerdeUnknownVariant {
             variant, expected, ..
         } => Cow::Owned(format!(

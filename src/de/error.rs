@@ -969,6 +969,15 @@ pub enum Error {
         location: Location,
     },
 
+    /// Serde-generated: invalid sequence or container length.
+    SerdeInvalidLength {
+        /// Invalid length reported by the deserializer or visitor.
+        len: usize,
+        /// Description of the expected value supplied by Serde's visitor.
+        expected: String,
+        location: Location,
+    },
+
     /// Serde-generated: unknown enum variant.
     SerdeUnknownVariant {
         variant: String,
@@ -1562,6 +1571,7 @@ impl Error {
             | Error::NonFiniteFloat { location, .. }
             | Error::SerdeInvalidType { location, .. }
             | Error::SerdeInvalidValue { location, .. }
+            | Error::SerdeInvalidLength { location, .. }
             | Error::SerdeUnknownVariant { location, .. }
             | Error::SerdeUnknownField { location, .. }
             | Error::SerdeMissingField { location, .. }
@@ -1676,6 +1686,7 @@ impl Error {
             | Error::NonFiniteFloat { location, .. }
             | Error::SerdeInvalidType { location, .. }
             | Error::SerdeInvalidValue { location, .. }
+            | Error::SerdeInvalidLength { location, .. }
             | Error::SerdeUnknownVariant { location, .. }
             | Error::SerdeUnknownField { location, .. }
             | Error::SerdeMissingField { location, .. }
@@ -2459,7 +2470,11 @@ impl de::Error for Error {
     #[cold]
     #[inline(never)]
     fn invalid_length(len: usize, exp: &dyn de::Expected) -> Self {
-        maybe_attach_fallback_location(Error::msg(format!("invalid length {len}, expected {exp}")))
+        maybe_attach_fallback_location(Error::SerdeInvalidLength {
+            len,
+            expected: exp.to_string(),
+            location: Location::UNKNOWN,
+        })
     }
 
     #[cold]

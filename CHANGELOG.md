@@ -72,6 +72,9 @@
 
 ### Fixed
 
+- Serde invalid-length failures now return `Error::SerdeInvalidLength` with separate
+  `len`, `expected`, and `location` fields, allowing custom formatters to inspect them.
+  Default diagnostic wording is preserved ([#205, item 6](https://github.com/bourumir-wyngs/serde-saphyr/issues/205)).
 - Root validation paths honor `Localizer::root_path_label` in plain, snippet, and
   `miette` diagnostics ([#205, item 5c](https://github.com/bourumir-wyngs/serde-saphyr/issues/205)).
 - Plain validation diagnostics separate issues with real newlines while escaping control
