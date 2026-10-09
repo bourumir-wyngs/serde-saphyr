@@ -8,10 +8,14 @@
 
 ### Added
 
-- Added `RenderOptions::line_offset` for displaying embedded YAML diagnostics at their
-  containing document's line numbers, including snippets and the new
+- Added public `path_map::PathKind`, `PathKey::segments()`, and `PathMap::locations_for()`
+  for inspecting validation paths and resolving their YAML use/definition locations,
+  including best-effort spelling matches and recorded ancestor/root fallback.
+- Added `RenderOptions::line_offset` and `RenderOptions::source_name` for displaying
+  embedded YAML diagnostics at their containing document's line numbers and naming
+  the root source in snippet headers, including the new
   `miette::to_miette_report_with_options` entry point. Included files retain their own
-  coordinates, and stored error locations and spans are unchanged.
+  names and coordinates, and stored error locations and spans are unchanged.
 - Added `PropertySyntax::DockerCompose` for Compose-compatible property interpolation.
 - Added the default-enabled `comments` feature, forwarding to granit-parser's matching
   feature. Builds with `default-features = false` must enable it to use `Commented<T>`,

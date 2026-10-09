@@ -71,16 +71,23 @@ pub fn to_miette_report_with_formatter(
 /// own line numbers. Extremely large offsets are capped to the supported line
 /// number range, as with [`Error::render_with_options`].
 ///
+/// `source_name`, when set, overrides both `file` and stored snippet names for the
+/// root source. Included sources retain their own names. Control characters in
+/// display names are escaped.
+///
 /// Setting [`crate::SnippetMode::Off`] uses plain rendering, including location
 /// suffixes, without source snippets or labels.
 ///
 /// ```rust
 /// let yaml = "definitely\n";
 /// let err = serde_saphyr::from_str::<bool>(yaml).unwrap_err();
-/// let options = serde_saphyr::render_options! { line_offset: 9999 };
+/// let options = serde_saphyr::render_options! {
+///     line_offset: 9999,
+///     source_name: Some("article.md"),
+/// };
 /// // The YAML fragment starts at line 10000 in the surrounding document.
 /// let report = serde_saphyr::miette::to_miette_report_with_options(
-///     &err, yaml, "article.md", options,
+///     &err, yaml, "<input>", options,
 /// );
 /// ```
 #[must_use]
@@ -97,7 +104,13 @@ pub fn to_miette_report_with_options(
     let sanitized_file = sanitize_message_text(Cow::Borrowed(file)).into_owned();
     let src = Arc::new(NamedSource::new(sanitized_file, sanitized_source));
     let mut diag = build_diagnostic(err, src, options.formatter, &[]);
-    diag.apply_line_offset(render_line_offset(err, options.line_offset));
+    let source_name = options
+        .source_name
+        .map(|name| Arc::<str>::from(sanitize_message_text(Cow::Borrowed(name)).into_owned()));
+    diag.apply_source_options(
+        render_line_offset(err, options.line_offset),
+        source_name.as_ref(),
+    );
     miette::Report::new(diag)
 }
 
@@ -107,6 +120,7 @@ struct ErrorDiagnostic {
     src: Arc<NamedSource<String>>,
     source_id: u32,
     line_offset: u64,
+    source_name: Option<Arc<str>>,
     labels: Vec<LabeledSpan>,
     related: Vec<ErrorDiagnostic>,
 }
@@ -120,10 +134,15 @@ impl fmt::Display for ErrorDiagnostic {
 impl std::error::Error for ErrorDiagnostic {}
 
 impl ErrorDiagnostic {
-    fn apply_line_offset(&mut self, line_offset: u64) {
+    fn apply_source_options(&mut self, line_offset: u64, source_name: Option<&Arc<str>>) {
         self.line_offset = if self.source_id <= 1 { line_offset } else { 0 };
+        self.source_name = if self.source_id <= 1 {
+            source_name.cloned()
+        } else {
+            None
+        };
         for related in &mut self.related {
-            related.apply_line_offset(line_offset);
+            related.apply_source_options(line_offset, source_name);
         }
     }
 }
@@ -146,16 +165,21 @@ impl SourceCode for ErrorDiagnostic {
             .unwrap_or(usize::MAX)
             .min(max_offset);
         let line = contents.line().saturating_add(offset);
-        Ok(Box::new(OffsetSpanContents { contents, line }))
+        Ok(Box::new(RenderedSpanContents {
+            contents,
+            line,
+            name: self.source_name.as_deref(),
+        }))
     }
 }
 
-struct OffsetSpanContents<'a> {
+struct RenderedSpanContents<'a> {
     contents: Box<dyn SpanContents<'a> + 'a>,
     line: usize,
+    name: Option<&'a str>,
 }
 
-impl<'a> SpanContents<'a> for OffsetSpanContents<'a> {
+impl<'a> SpanContents<'a> for RenderedSpanContents<'a> {
     fn data(&self) -> &'a [u8] {
         self.contents.data()
     }
@@ -165,7 +189,7 @@ impl<'a> SpanContents<'a> for OffsetSpanContents<'a> {
     }
 
     fn name(&self) -> Option<&str> {
-        self.contents.name()
+        self.name.or_else(|| self.contents.name())
     }
 
     fn line(&self) -> usize {
@@ -238,6 +262,7 @@ fn build_diagnostic(
                 src,
                 source_id: 1,
                 line_offset: 0,
+                source_name: None,
                 labels: Vec::new(),
                 related,
             }
@@ -260,6 +285,7 @@ fn build_diagnostic(
                 src,
                 source_id: 1,
                 line_offset: 0,
+                source_name: None,
                 labels: Vec::new(),
                 related,
             }
@@ -329,6 +355,7 @@ fn build_diagnostic(
                             src: synthetic_src,
                             source_id: region.location.source_id(),
                             line_offset: 0,
+                            source_name: None,
                             labels: vec![LabeledSpan::new_with_span(None, span)],
                             related: Vec::new(),
                         });
@@ -368,6 +395,7 @@ fn build_diagnostic(
                             src: error_src,
                             source_id: location.source_id(),
                             line_offset: 0,
+                            source_name: None,
                             labels: vec![label],
                             related: Vec::new(),
                         });
@@ -380,6 +408,7 @@ fn build_diagnostic(
                 src: actual_src,
                 source_id,
                 line_offset: 0,
+                source_name: None,
                 labels,
                 related,
             }
@@ -405,6 +434,7 @@ fn build_diagnostic(
                 src: actual_src,
                 source_id: other.location().map_or(0, |location| location.source_id()),
                 line_offset: 0,
+                source_name: None,
                 labels,
                 related: Vec::new(),
             }
@@ -471,6 +501,7 @@ fn build_validation_entry_diagnostic(
         src: actual_src,
         source_id,
         line_offset: 0,
+        source_name: None,
         labels,
         related,
     }
@@ -527,6 +558,7 @@ fn build_dual_location_labels(
                     src: def_src,
                     source_id: def_loc.source_id(),
                     line_offset: 0,
+                    source_name: None,
                     labels: vec![label],
                     related: Vec::new(),
                 });
@@ -741,8 +773,19 @@ mod tests {
     }
 
     fn assert_display_offset(original: &ErrorDiagnostic, shifted: &ErrorDiagnostic, offset: usize) {
+        assert_source_display(original, shifted, offset, None);
+    }
+
+    fn assert_source_display(
+        original: &ErrorDiagnostic,
+        shifted: &ErrorDiagnostic,
+        offset: usize,
+        source_name: Option<&str>,
+    ) {
         assert_eq!(original.message, shifted.message);
         assert_eq!(original.src.inner(), shifted.src.inner());
+        assert_eq!(original.src.name(), shifted.src.name());
+        assert_eq!(original.source_id, shifted.source_id);
         assert_eq!(original.labels, shifted.labels);
         for label in &original.labels {
             let before = original.read_span(label.inner(), 1, 1).unwrap();
@@ -753,11 +796,16 @@ mod tests {
             assert_eq!(after.data(), before.data());
             assert_eq!(after.span(), before.span());
             assert_eq!(after.line_count(), before.line_count());
-            assert_eq!(after.name(), before.name());
+            let expected_name = if original.source_id <= 1 {
+                source_name.or_else(|| before.name())
+            } else {
+                before.name()
+            };
+            assert_eq!(after.name(), expected_name);
         }
         assert_eq!(original.related.len(), shifted.related.len());
         for (before, after) in original.related.iter().zip(&shifted.related) {
-            assert_display_offset(before, after, offset);
+            assert_source_display(before, after, offset, source_name);
         }
     }
 
@@ -796,6 +844,83 @@ mod tests {
     }
 
     #[test]
+    fn source_name_overrides_explicit_file_and_stored_names_without_changing_spans() {
+        let yaml = "éighty\n";
+        for error in [
+            crate::from_str::<bool>(yaml).unwrap_err(),
+            crate::from_reader::<_, bool>(yaml.as_bytes()).unwrap_err(),
+        ] {
+            let original_error = format!("{error:?}");
+            for error in [&error, error.without_snippet()] {
+                let baseline = to_miette_report(error, yaml, "fallback.yaml");
+                for (source_name, expected_name) in [
+                    (Some("article.md"), Some("article.md")),
+                    (
+                        Some("article\n\u{1b}😀.md\\raw"),
+                        Some(r"article\n\u{1b}😀.md\raw"),
+                    ),
+                    (Some(""), Some("")),
+                    (None, None),
+                ] {
+                    let report = to_miette_report_with_options(
+                        error,
+                        yaml,
+                        "fallback.yaml",
+                        crate::render_options! { line_offset: 9999, source_name: source_name },
+                    );
+                    assert_source_display(
+                        baseline.downcast_ref::<ErrorDiagnostic>().unwrap(),
+                        report.downcast_ref::<ErrorDiagnostic>().unwrap(),
+                        9999,
+                        expected_name,
+                    );
+                    if source_name == Some("article.md") {
+                        let rendered = graphical_report(&report);
+                        assert!(rendered.contains("article.md:10000:1"), "{rendered}");
+                        assert!(rendered.contains("10000 | éighty"), "{rendered}");
+                        assert!(!rendered.contains("fallback.yaml"), "{rendered}");
+                    }
+                }
+            }
+            assert_eq!(format!("{error:?}"), original_error);
+        }
+    }
+
+    #[test]
+    fn source_name_applies_to_all_root_alias_regions() {
+        let yaml = concat!(
+            "base: &b\n  port: eighty\n",
+            "# gap\n# gap\n# gap\n# gap\n# gap\n# gap\n",
+            "copy: *b\n",
+        );
+        for error in [
+            crate::from_str::<AliasMappingConfig>(yaml).unwrap_err(),
+            crate::from_reader::<_, AliasMappingConfig>(yaml.as_bytes()).unwrap_err(),
+        ] {
+            let baseline = to_miette_report(&error, yaml, "fallback.yaml");
+            assert!(baseline.related().is_some());
+            let report = to_miette_report_with_options(
+                &error,
+                yaml,
+                "fallback.yaml",
+                crate::render_options! {
+                    line_offset: 9999,
+                    source_name: Some("article.md"),
+                },
+            );
+            assert_source_display(
+                baseline.downcast_ref::<ErrorDiagnostic>().unwrap(),
+                report.downcast_ref::<ErrorDiagnostic>().unwrap(),
+                9999,
+                Some("article.md"),
+            );
+            let rendered = graphical_report(&report);
+            assert!(!rendered.contains("<input>"), "{rendered}");
+            assert!(!rendered.contains("fallback.yaml"), "{rendered}");
+        }
+    }
+
+    #[test]
     fn line_offset_covers_alias_crops_from_strings_and_readers() {
         let yaml = "base: &b\n  port: eighty\ncopy: *b\n";
         for error in [
@@ -819,14 +944,18 @@ mod tests {
         }
     }
 
-    #[test]
-    fn line_offset_preserves_included_coordinates_even_for_identical_named_sources() {
+    #[rstest::rstest]
+    #[case::unknown_root_source(0)]
+    #[case::known_root_source(1)]
+    fn line_offset_preserves_included_coordinates_even_for_identical_named_sources(
+        #[case] source_id: u32,
+    ) {
         let yaml = "wrong\n";
         let root = Location {
             line: 1,
             column: 1,
             span: crate::Span::new(0, 5),
-            source_id: 1,
+            source_id,
         };
         let included = Location {
             source_id: 2,
@@ -869,6 +998,24 @@ mod tests {
         let rendered = graphical_report(&shifted);
         assert!(rendered.contains("same.yaml:10000:1"), "{rendered}");
         assert!(rendered.contains("same.yaml:1:1"), "{rendered}");
+        let renamed = to_miette_report_with_options(
+            &error,
+            yaml,
+            "same.yaml",
+            crate::render_options! {
+                line_offset: 9999,
+                source_name: Some("article.md"),
+            },
+        );
+        assert_source_display(
+            baseline.downcast_ref::<ErrorDiagnostic>().unwrap(),
+            renamed.downcast_ref::<ErrorDiagnostic>().unwrap(),
+            9999,
+            Some("article.md"),
+        );
+        let rendered = graphical_report(&renamed);
+        assert!(rendered.contains("article.md:10000:1"), "{rendered}");
+        assert!(rendered.contains("same.yaml:1:1"), "{rendered}");
     }
 
     #[test]
@@ -897,6 +1044,7 @@ mod tests {
         let options = crate::render_options! {
             line_offset: 9999,
             snippets: crate::SnippetMode::Off,
+            source_name: Some("renamed.md"),
         };
         let report = to_miette_report_with_options(&error, yaml, "article.md", options);
         assert!(report.related().is_none());
@@ -908,6 +1056,7 @@ mod tests {
         assert!(rendered.contains("used at line 10008"), "{rendered}");
         assert!(rendered.contains("defined at line 10001"), "{rendered}");
         assert!(!rendered.contains("copy: *b"), "{rendered}");
+        assert!(!rendered.contains("renamed.md"), "{rendered}");
     }
 
     #[test]
@@ -1446,6 +1595,21 @@ mod tests {
             &diagnostic,
             shifted.downcast_ref::<ErrorDiagnostic>().unwrap(),
             9999,
+        );
+        let renamed = to_miette_report_with_options(
+            &error,
+            source,
+            file,
+            crate::render_options! {
+                line_offset: 9999,
+                source_name: Some("article.md"),
+            },
+        );
+        assert_source_display(
+            &diagnostic,
+            renamed.downcast_ref::<ErrorDiagnostic>().unwrap(),
+            9999,
+            Some("article.md"),
         );
     }
 

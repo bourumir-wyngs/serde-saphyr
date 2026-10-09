@@ -252,12 +252,23 @@ pub struct RenderOptions<'a> {
     /// let err = serde_saphyr::from_str::<u16>(yaml).unwrap_err();
     /// let options = serde_saphyr::render_options! {
     ///     line_offset: 9_999,
+    ///     source_name: Some("article.md"),
     /// };
     /// let rendered = err.render_with_options(options);
-    /// assert!(rendered.contains("10000"));
+    /// assert!(rendered.contains("article.md:10000:1"));
     /// assert_eq!(err.location().unwrap().line(), 1);
     /// ```
     pub line_offset: u64,
+    /// Display name for the root YAML source in snippet headers.
+    ///
+    /// Defaults to `None`, preserving the recorded source names. `Some(name)`
+    /// overrides the root name, including miette's `file` argument, while included
+    /// sources keep their own names. The name is borrowed and escaped for display;
+    /// an empty name is used verbatim. Stored error data is unchanged.
+    ///
+    /// Plain messages have no source-name headers, so this option has no effect
+    /// when snippets are disabled or unavailable.
+    pub source_name: Option<&'a str>,
 }
 
 impl Default for RenderOptions<'_> {
@@ -278,6 +289,7 @@ impl<'a> RenderOptions<'a> {
     /// Defaults:
     /// - `snippets`: [`SnippetMode::Auto`]
     /// - `line_offset`: `0`
+    /// - `source_name`: `None`
     #[inline]
     #[must_use]
     pub fn new(formatter: &'a dyn MessageFormatter) -> Self {
@@ -285,7 +297,22 @@ impl<'a> RenderOptions<'a> {
             formatter,
             snippets: SnippetMode::Auto,
             line_offset: 0,
+            source_name: None,
         }
+    }
+}
+
+/// Choose the displayed name using the snippet's source identity, rather than its
+/// filename: a root and an included source can legitimately have the same name.
+fn display_source_name<'a>(
+    location: Location,
+    recorded_name: &'a str,
+    root_name: Option<&'a str>,
+) -> &'a str {
+    if location.source_id() <= 1 {
+        root_name.unwrap_or(recorded_name)
+    } else {
+        recorded_name
     }
 }
 
@@ -384,6 +411,24 @@ impl CroppedRegion {
             end_line,
             location,
         }
+    }
+
+    fn snippet<'a>(
+        &'a self,
+        crop_radius: usize,
+        options: RenderOptions<'a>,
+    ) -> crate::de_snippet::Snippet<'a> {
+        crate::de_snippet::Snippet::new(
+            self.text.as_str(),
+            display_source_name(
+                self.location,
+                self.source_name.as_str(),
+                options.source_name,
+            ),
+            crop_radius,
+        )
+        .with_offset(self.start_line)
+        .with_line_offset(options.line_offset)
     }
 
     fn covers_exact_source(&self, location: &Location) -> bool {
@@ -2130,14 +2175,7 @@ fn fmt_error_rendered(
                         writeln!(f)?;
                     }
                     first = false;
-                    fmt_error_with_snippets_offset(
-                        f,
-                        err,
-                        regions,
-                        *crop_radius,
-                        options.formatter,
-                        options.line_offset,
-                    )?;
+                    fmt_error_with_snippets_offset(f, err, regions, *crop_radius, options)?;
                 }
                 return Ok(());
             }
@@ -2171,20 +2209,9 @@ fn fmt_error_rendered(
                     for extra_region in regions {
                         writeln!(f)?;
                         writeln!(f, "{}:", sanitize_message_text(l10n.included_from_here()))?;
-                        crate::de_snippet::Snippet::new(
-                            extra_region.text.as_str(),
-                            extra_region.source_name.as_str(),
-                            *crop_radius,
-                        )
-                        .with_offset(extra_region.start_line)
-                        .with_line_offset(options.line_offset)
-                        .fmt_or_fallback(
-                            f,
-                            Level::NOTE,
-                            l10n,
-                            "",
-                            &extra_region.location,
-                        )?;
+                        extra_region
+                            .snippet(*crop_radius, options)
+                            .fmt_or_fallback(f, Level::NOTE, l10n, "", &extra_region.location)?;
                     }
                 }
                 return Ok(());
@@ -2206,13 +2233,7 @@ fn fmt_error_rendered(
 
                 let used_region = pick_cropped_region(regions, &ref_loc).unwrap_or(region);
                 let label = l10n.value_used_here();
-                let ctx = crate::de_snippet::Snippet::new(
-                    used_region.text.as_str(),
-                    used_region.source_name.as_str(),
-                    *crop_radius,
-                )
-                .with_offset(used_region.start_line)
-                .with_line_offset(options.line_offset);
+                let ctx = used_region.snippet(*crop_radius, options);
                 ctx.fmt_or_fallback_with_label(
                     f,
                     Level::ERROR,
@@ -2236,13 +2257,7 @@ fn fmt_error_rendered(
                 )?;
             } else {
                 // Single location rendering.
-                let ctx = crate::de_snippet::Snippet::new(
-                    region.text.as_str(),
-                    region.source_name.as_str(),
-                    *crop_radius,
-                )
-                .with_offset(region.start_line)
-                .with_line_offset(options.line_offset);
+                let ctx = region.snippet(*crop_radius, options);
                 ctx.fmt_or_fallback(f, Level::ERROR, l10n, msg.as_ref(), &location)?;
 
                 for extra_region in regions {
@@ -2253,13 +2268,7 @@ fn fmt_error_rendered(
                     }
                     writeln!(f)?;
                     writeln!(f, "{}:", sanitize_message_text(l10n.included_from_here()))?;
-                    let extra_ctx = crate::de_snippet::Snippet::new(
-                        extra_region.text.as_str(),
-                        extra_region.source_name.as_str(),
-                        *crop_radius,
-                    )
-                    .with_offset(extra_region.start_line)
-                    .with_line_offset(options.line_offset);
+                    let extra_ctx = extra_region.snippet(*crop_radius, options);
                     extra_ctx.fmt_or_fallback(f, Level::NOTE, l10n, "", &extra_region.location)?;
                 }
             }
@@ -2268,13 +2277,7 @@ fn fmt_error_rendered(
                 writeln!(f)?;
                 let label = l10n.error_here();
                 if let Some(region) = pick_cropped_region(regions, &location) {
-                    let ctx = crate::de_snippet::Snippet::new(
-                        region.text.as_str(),
-                        region.source_name.as_str(),
-                        *crop_radius,
-                    )
-                    .with_offset(region.start_line)
-                    .with_line_offset(options.line_offset);
+                    let ctx = region.snippet(*crop_radius, options);
                     ctx.fmt_or_fallback(f, Level::NOTE, l10n, label.as_ref(), &location)?;
                 } else {
                     fmt_with_location(
@@ -2363,13 +2366,7 @@ fn fmt_validation_error_with_snippets_offset(
             (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
                 if let Some(region) = pick_cropped_region(regions, &r) {
                     rendered_regions.push(std::ptr::from_ref(region));
-                    let ctx = crate::de_snippet::Snippet::new(
-                        region.text.as_str(),
-                        region.source_name.as_str(),
-                        crop_radius,
-                    )
-                    .with_offset(region.start_line)
-                    .with_line_offset(line_offset);
+                    let ctx = region.snippet(crop_radius, options);
                     ctx.fmt_or_fallback(f, Level::ERROR, l10n, &base_msg, &r)?;
                 } else {
                     fmt_with_location(f, l10n, &base_msg, &display_location(r, line_offset))?;
@@ -2378,13 +2375,7 @@ fn fmt_validation_error_with_snippets_offset(
             (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
                 if let Some(region) = pick_cropped_region(regions, &d) {
                     rendered_regions.push(std::ptr::from_ref(region));
-                    let ctx = crate::de_snippet::Snippet::new(
-                        region.text.as_str(),
-                        region.source_name.as_str(),
-                        crop_radius,
-                    )
-                    .with_offset(region.start_line)
-                    .with_line_offset(line_offset);
+                    let ctx = region.snippet(crop_radius, options);
                     ctx.fmt_or_fallback(f, Level::ERROR, l10n, &base_msg, &d)?;
                 } else {
                     fmt_with_location(f, l10n, &base_msg, &display_location(d, line_offset))?;
@@ -2395,13 +2386,7 @@ fn fmt_validation_error_with_snippets_offset(
                 let invalid_here = l10n.invalid_here(&base_msg);
                 if let Some(region) = pick_cropped_region(regions, &r) {
                     rendered_regions.push(std::ptr::from_ref(region));
-                    let ctx = crate::de_snippet::Snippet::new(
-                        region.text.as_str(),
-                        region.source_name.as_str(),
-                        crop_radius,
-                    )
-                    .with_offset(region.start_line)
-                    .with_line_offset(line_offset);
+                    let ctx = region.snippet(crop_radius, options);
                     ctx.fmt_or_fallback_with_label(
                         f,
                         Level::ERROR,
@@ -2447,13 +2432,7 @@ fn fmt_validation_error_with_snippets_offset(
             }
             writeln!(f)?;
             writeln!(f, "{}:", sanitize_message_text(l10n.included_from_here()))?;
-            let extra_ctx = crate::de_snippet::Snippet::new(
-                extra_region.text.as_str(),
-                extra_region.source_name.as_str(),
-                crop_radius,
-            )
-            .with_offset(extra_region.start_line)
-            .with_line_offset(line_offset);
+            let extra_ctx = extra_region.snippet(crop_radius, options);
             extra_ctx.fmt_or_fallback(f, Level::NOTE, l10n, "", &extra_region.location)?;
         }
     }
@@ -2466,23 +2445,17 @@ fn fmt_error_with_snippets_offset(
     err: &Error,
     regions: &[CroppedRegion],
     crop_radius: usize,
-    formatter: &dyn MessageFormatter,
-    line_offset: u64,
+    options: RenderOptions<'_>,
 ) -> fmt::Result {
+    let formatter = options.formatter;
+    let line_offset = options.line_offset;
     if crop_radius == 0 {
         return fmt_error_plain_with_formatter(f, err, formatter, line_offset);
     }
 
     // Keep existing snippet output if the nested error is already wrapped.
     if let Error::WithSnippet { .. } = err {
-        return fmt_error_rendered(
-            f,
-            err,
-            RenderOptions {
-                line_offset,
-                ..RenderOptions::new(formatter)
-            },
-        );
+        return fmt_error_rendered(f, err, options);
     }
 
     #[cfg(any(feature = "garde", feature = "validator"))]
@@ -2494,10 +2467,7 @@ fn fmt_error_with_snippets_offset(
     {
         return fmt_validation_error_with_snippets_offset(
             f,
-            RenderOptions {
-                line_offset,
-                ..RenderOptions::new(formatter)
-            },
+            options,
             &source.external_message_source(),
             issues,
             locations,
@@ -2522,13 +2492,7 @@ fn fmt_error_with_snippets_offset(
             &display_location(location, line_offset),
         );
     };
-    let ctx = crate::de_snippet::Snippet::new(
-        region.text.as_str(),
-        region.source_name.as_str(),
-        crop_radius,
-    )
-    .with_offset(region.start_line)
-    .with_line_offset(line_offset);
+    let ctx = region.snippet(crop_radius, options);
     ctx.fmt_or_fallback(
         f,
         Level::ERROR,

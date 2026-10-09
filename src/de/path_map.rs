@@ -8,8 +8,12 @@
 //! We apply a small, ordered set of comparison strategies and only accept a match when it is
 //! **unique**.
 //!
+//! [`PathKey::segments`] exposes the individual keys and indices in a validation path.
+//! [`PathMap::locations_for`] resolves that path to its YAML use and definition locations.
+//!
 //! Matching rules:
-//! - Paths must have the same length and the same per-segment kind (key vs index).
+//! - Paths must have the same length. All but the final key-to-index fallback also
+//!   require the same per-segment kind (key vs index).
 //! - Segment names are first normalized by stripping Rust raw-identifier prefixes (`r#type` →
 //!   `type`) to work around reserved-keyword field names.
 //! - `PathMap::search` runs multiple passes from most exact to most fuzzy:
@@ -18,6 +22,8 @@
 //!   3. Token-sequence match: split on separators and common casing/digit boundaries
 //!      (`user_id`, `userId`, `user-id` → tokens `user`, `id`).
 //!   4. Collapsed match: drop all non-alphanumeric characters and compare ASCII-lowercased.
+//!   5. Key-to-index fallback for validation paths produced by custom deserialization
+//!      that transforms sequences into maps.
 //!
 //! Any non-direct pass succeeds only if it yields exactly one candidate; otherwise the result is
 //! considered ambiguous.
@@ -28,9 +34,12 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::mem;
 
+/// Kind of a segment returned by [`PathKey::segments`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum PathKind {
+pub enum PathKind {
+    /// A mapping key, including keys that happen to contain only digits.
     Key,
+    /// A sequence index.
     Index,
 }
 
@@ -110,6 +119,26 @@ impl PathKey {
             name: index.to_string(),
         });
         self
+    }
+
+    /// Iterate over this path's segments from the root toward the value.
+    ///
+    /// Each item contains the segment kind and its text, borrowed from this path.
+    /// Segment text is preserved; indices built with [`Self::join_index`] are decimal strings.
+    /// The root path has no segments. Iteration does not allocate.
+    ///
+    /// ```rust
+    /// use serde_saphyr::path_map::{PathKey, PathKind};
+    ///
+    /// let path = PathKey::new().join_key("items").join_index(2).join_key("name");
+    /// assert_eq!(path.segments().collect::<Vec<_>>(), vec![
+    ///     (PathKind::Key, "items"),
+    ///     (PathKind::Index, "2"),
+    ///     (PathKind::Key, "name"),
+    /// ]);
+    /// ```
+    pub fn segments(&self) -> impl Iterator<Item = (PathKind, &str)> {
+        self.iter_segments().map(|(kind, name)| (*kind, name))
     }
 
     pub(crate) fn empty() -> Self {
@@ -218,12 +247,52 @@ pub(crate) fn path_key_from_garde(path: &garde::error::Path) -> PathKey {
     PathKey { segments: segs }
 }
 
+/// Recorded YAML locations for paths reported by a validation library.
+///
+/// Available through [`crate::Error::ValidationError`]. Use [`Self::locations_for`]
+/// to resolve each [`crate::ValidationIssue::path`] when building custom diagnostics.
 #[derive(Debug, Clone)]
 pub struct PathMap {
     pub(crate) map: HashMap<PathKey, Locations>,
 }
 
 impl PathMap {
+    /// Find the use and definition locations associated with a validation path.
+    ///
+    /// Tries an exact match, then the spelling and key-to-index matching rules
+    /// described in this module. Each non-exact matching pass requires a unique
+    /// candidate. If the full path cannot be resolved, tries its nearest ancestors
+    /// in turn, including the root. An ambiguous child can therefore resolve to a
+    /// recorded parent, but never to an arbitrarily chosen child.
+    ///
+    /// An empty path returns the root location when one was recorded. Returns
+    /// `None` when neither the path nor any ancestor can be resolved. Not every
+    /// value has a recorded location, particularly with custom deserialization.
+    ///
+    /// Locations remain relative to their YAML sources, regardless of rendering
+    /// options such as [`crate::RenderOptions::line_offset`].
+    ///
+    /// ```rust
+    /// use serde_saphyr::{Error, Locations};
+    ///
+    /// fn validation_locations(error: &Error) -> Vec<Option<Locations>> {
+    ///     match error.without_snippet() {
+    ///         Error::ValidationError { issues, locations, .. } => issues.iter()
+    ///             .map(|issue| locations.locations_for(&issue.path))
+    ///             .collect(),
+    ///         _ => Vec::new(),
+    ///     }
+    /// }
+    /// ```
+    #[must_use]
+    pub fn locations_for(&self, path: &PathKey) -> Option<Locations> {
+        self.search_with_ancestor_fallback(path)
+            .map(|(locations, _)| locations)
+            // The rendering lookup also returns a leaf label, which an empty root
+            // path does not have. A location-only lookup can use its recorded entry.
+            .or_else(|| self.map.get(&PathKey::new()).copied())
+    }
+
     pub(crate) fn new() -> Self {
         Self {
             map: HashMap::new(),
@@ -548,6 +617,44 @@ mod tests {
         m.insert(k.clone(), locs(3, 7));
 
         assert_eq!(m.search(&k), Some((locs(3, 7), "a1".to_string())));
+    }
+
+    #[test]
+    fn public_lookup_exposes_recorded_root_without_requiring_a_leaf_label() {
+        let mut map = PathMap::new();
+        let root = PathKey::new();
+        let missing = root.clone().join_key("missing").join_key("value");
+        assert_eq!(map.locations_for(&root), None);
+        assert_eq!(map.locations_for(&missing), None);
+
+        map.insert(root.clone(), locs(1, 1));
+        assert_eq!(map.locations_for(&root), Some(locs(1, 1)));
+        assert_eq!(map.locations_for(&missing), Some(locs(1, 1)));
+
+        map.insert(root.join_key("missing"), locs(2, 3));
+        assert_eq!(map.locations_for(&missing), Some(locs(2, 3)));
+    }
+
+    #[test]
+    fn public_lookup_prefers_exact_matches_and_only_uses_unique_fuzzy_candidates() {
+        let mut map = PathMap::new();
+        let parent = PathKey::new().join_key("config");
+        let camel_case = parent.clone().join_key("userId");
+        let snake_case = parent.clone().join_key("user_id");
+        map.insert(camel_case.clone(), locs(2, 9));
+        assert_eq!(map.locations_for(&snake_case), Some(locs(2, 9)));
+
+        map.insert(snake_case.clone(), locs(3, 10));
+        assert_eq!(map.locations_for(&camel_case), Some(locs(2, 9)));
+        assert_eq!(map.locations_for(&snake_case), Some(locs(3, 10)));
+        // Both recorded spellings match this tokenized path; there is no ancestor yet.
+        let ambiguous = parent.clone().join_key("User-Id");
+        assert_eq!(map.locations_for(&ambiguous), None);
+
+        map.insert(PathKey::new(), locs(1, 1));
+        assert_eq!(map.locations_for(&ambiguous), Some(locs(1, 1)));
+        map.insert(parent, locs(1, 9));
+        assert_eq!(map.locations_for(&ambiguous), Some(locs(1, 9)));
     }
 
     #[test]
