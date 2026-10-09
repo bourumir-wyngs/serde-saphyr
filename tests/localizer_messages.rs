@@ -23,6 +23,17 @@ mod localizer_tests {
     }
 
     #[test]
+    fn alias_used_at() {
+        let l = &DEFAULT_ENGLISH_LOCALIZER;
+        assert_eq!(l.alias_used_at(Location::UNKNOWN), "");
+        let error = serde_saphyr::from_str::<u8>("bad").unwrap_err();
+        assert_eq!(
+            l.alias_used_at(error.location().unwrap()),
+            " (used at line 1, column 1)"
+        );
+    }
+
+    #[test]
     fn validation_issue_line_no_location() {
         let s = DEFAULT_ENGLISH_LOCALIZER.validation_issue_line("root", "missing", None);
         assert!(s.contains("validation error at root: missing"));
@@ -188,6 +199,10 @@ mod alias_error_tests {
         fn attach_location<'a>(&self, base: Cow<'a, str>, loc: Location) -> Cow<'a, str> {
             Cow::Owned(format!("{base} [{}:{}]", loc.line(), loc.column()))
         }
+
+        fn alias_used_at(&self, loc: Location) -> String {
+            format!(" [used {}:{}]", loc.line(), loc.column())
+        }
     }
 
     /// An error inside an aliased value keeps the inner error (issue #199), so a custom
@@ -228,12 +243,15 @@ mod alias_error_tests {
 
         assert_eq!(
             error.to_string(),
-            "invalid u16 (defined at line 1, column 10) at line 2, column 7",
+            "invalid u16 (defined at line 1, column 10) (used at line 2, column 7)",
             "the anchor definition and alias use must each be reported once"
         );
 
         let rendered =
             error.render_with_formatter(&DefaultMessageFormatter.with_localizer(&Bracketed));
-        assert_eq!(rendered, "invalid u16 (defined at line 1, column 10) [2:7]");
+        assert_eq!(
+            rendered,
+            "invalid u16 (defined at line 1, column 10) [used 2:7]"
+        );
     }
 }

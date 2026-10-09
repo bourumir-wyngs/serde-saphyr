@@ -61,6 +61,10 @@ impl Localizer for Bracketed {
     fn attach_location<'a>(&self, base: Cow<'a, str>, loc: Location) -> Cow<'a, str> {
         Cow::Owned(format!("{base} [{}:{}]", loc.line(), loc.column()))
     }
+
+    fn alias_used_at(&self, loc: Location) -> String {
+        format!(" [used {}:{}]", loc.line(), loc.column())
+    }
 }
 
 struct NoLocations;
@@ -71,6 +75,10 @@ impl Localizer for NoLocations {
     }
 
     fn alias_defined_at(&self, _loc: Location) -> String {
+        String::new()
+    }
+
+    fn alias_used_at(&self, _loc: Location) -> String {
         String::new()
     }
 }
@@ -115,7 +123,7 @@ fn scalar_alias_reports_each_location_once() {
     assert_eq!(error.location(), Some(locations.reference_location));
     assert_eq!(
         error.to_string(),
-        "invalid u16 (defined at line 1, column 10) at line 2, column 7"
+        "invalid u16 (defined at line 1, column 10) (used at line 2, column 7)"
     );
     assert!(
         !outer.to_string().contains("the error occurred here"),
@@ -127,7 +135,7 @@ fn scalar_alias_reports_each_location_once() {
 fn mapping_alias_reports_the_failing_value_and_both_alias_locations() {
     assert_eq!(
         mapping_alias_error().without_snippet().to_string(),
-        "invalid u16 at line 2, column 9 (defined at line 2, column 3) at line 3, column 7"
+        "invalid u16 at line 2, column 9 (defined at line 2, column 3) (used at line 3, column 7)"
     );
 }
 
@@ -215,7 +223,7 @@ fn deeply_nested_alias_keeps_one_wrapper_for_the_use_site() {
         assert!(std::error::Error::source(source).is_none());
         assert_eq!(
             alias.to_string(),
-            "invalid u16 at line 3, column 15 (defined at line 2, column 3) at line 4, column 7"
+            "invalid u16 at line 3, column 15 (defined at line 2, column 3) (used at line 4, column 7)"
         );
     }
 }
@@ -249,13 +257,13 @@ fn scalar_alias_respects_custom_location_formatting() {
     let outer = scalar_alias_error();
     assert_eq!(
         outer.without_snippet().render_with_formatter(&formatter),
-        "invalid u16 (defined at line 1, column 10) [2:7]"
+        "invalid u16 (defined at line 1, column 10) [used 2:7]"
     );
     assert_eq!(
         mapping_alias_error()
             .without_snippet()
             .render_with_formatter(&formatter),
-        "invalid u16 [2:9] (defined at line 2, column 3) [3:7]"
+        "invalid u16 [2:9] (defined at line 2, column 3) [used 3:7]"
     );
 }
 
@@ -271,19 +279,23 @@ fn scalar_alias_line_offset_adjusts_every_reported_location() {
         fn alias_defined_at(&self, loc: Location) -> String {
             format!(" [anchor {}:{}]", loc.line() + self.0, loc.column())
         }
+
+        fn alias_used_at(&self, loc: Location) -> String {
+            format!(" [used {}:{}]", loc.line() + self.0, loc.column())
+        }
     }
 
     let formatter = DefaultMessageFormatter.with_localizer(&Offset(100));
     let outer = scalar_alias_error();
     assert_eq!(
         outer.without_snippet().render_with_formatter(&formatter),
-        "invalid u16 [anchor 101:10] [102:7]"
+        "invalid u16 [anchor 101:10] [used 102:7]"
     );
     assert_eq!(
         mapping_alias_error()
             .without_snippet()
             .render_with_formatter(&formatter),
-        "invalid u16 [102:9] [anchor 102:3] [103:7]"
+        "invalid u16 [102:9] [anchor 102:3] [used 103:7]"
     );
 }
 
@@ -304,11 +316,11 @@ fn aliases_pass_the_original_variant_to_a_custom_formatter() {
     for (outer, expected) in [
         (
             scalar_alias_error(),
-            "custom port error (defined at line 1, column 10) at line 2, column 7",
+            "custom port error (defined at line 1, column 10) (used at line 2, column 7)",
         ),
         (
             mapping_alias_error(),
-            "custom port error at line 2, column 9 (defined at line 2, column 3) at line 3, column 7",
+            "custom port error at line 2, column 9 (defined at line 2, column 3) (used at line 3, column 7)",
         ),
     ] {
         formatter.scalar_calls.set(0);
@@ -340,7 +352,7 @@ fn mapping_alias_keeps_the_leaf_location_through_nested_wrappers() {
 
     assert_eq!(
         outer.render_with_formatter(&formatter),
-        "custom port error at line 2, column 9 (defined at line 2, column 3) at line 3, column 7"
+        "custom port error at line 2, column 9 (defined at line 2, column 3) (used at line 3, column 7)"
     );
     assert_eq!(formatter.scalar_calls.get(), 1);
 }
@@ -437,7 +449,7 @@ fn mapping_alias_snippet_retains_a_failing_field_far_from_the_anchor() {
         );
         assert_eq!(
             error.without_snippet().to_string(),
-            "invalid u16 at line 32, column 9 (defined at line 2, column 3) at line 63, column 7"
+            "invalid u16 at line 32, column 9 (defined at line 2, column 3) (used at line 63, column 7)"
         );
 
         let rendered = error.to_string();

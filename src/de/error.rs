@@ -1849,7 +1849,16 @@ fn fmt_error_plain_with_formatter(
         return write!(f, "{msg}");
     }
 
-    if let Some(loc) = err.location() {
+    if let Error::AliasError { locations, .. } = err
+        && locations.reference_location != Location::UNKNOWN
+    {
+        let suffix = sanitize_message_text(Cow::Owned(
+            formatter
+                .localizer()
+                .alias_used_at(locations.reference_location),
+        ));
+        write!(f, "{msg}{suffix}")?;
+    } else if let Some(loc) = err.location() {
         fmt_with_location(f, formatter.localizer(), msg.as_ref(), &loc)?;
     } else {
         write!(f, "{msg}")?;
@@ -3010,11 +3019,23 @@ mod tests {
         };
 
         let display = err.to_string();
-        // When both locations are the same, should only show one
-        assert!(display.contains("line 3"));
-        assert!(display.contains("column 7"));
-        // Should not contain "defined at" since locations are the same
-        assert!(!display.contains("defined at"));
+        // When both locations are the same, show the labelled use only once.
+        assert_eq!(display, "test (used at line 3, column 7)");
+    }
+
+    #[test]
+    #[allow(deprecated)] // Populates the legacy msg field when constructing an alias error.
+    fn alias_error_with_unknown_definition_reports_use_once() {
+        let err = Error::AliasError {
+            msg: "test error".to_owned(),
+            error: Box::new(Error::msg("test error")),
+            locations: Locations {
+                reference_location: Location::new(3, 7),
+                defined_location: Location::UNKNOWN,
+            },
+        };
+
+        assert_eq!(err.to_string(), "test error (used at line 3, column 7)");
     }
 
     #[test]
@@ -3051,7 +3072,7 @@ mod tests {
             };
             assert_eq!(
                 err.render(),
-                "invalid u16 (defined at line 1, column 10) at line 3, column 7"
+                "invalid u16 (defined at line 1, column 10) (used at line 3, column 7)"
             );
             let rendered = err
                 .with_snippet("base: &b\n  port: eighty\ncopy: *b\n", 64)

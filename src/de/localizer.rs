@@ -115,10 +115,12 @@ impl<'a> ExternalMessage<'a> {
 pub trait Localizer {
     // ---------------- Common tiny building blocks ----------------
 
-    /// Attach a location suffix to `base`.
+    /// Attach an ordinary error-location suffix to `base`.
     ///
     /// Renderers must use this instead of hard-coding English wording like
     /// `" at line X, column Y"`.
+    /// Plain alias use and definition locations have separate hooks:
+    /// [`Localizer::alias_used_at`] and [`Localizer::alias_defined_at`].
     ///
     /// Default:
     /// - If `loc == Location::UNKNOWN`: returns `base` unchanged.
@@ -152,6 +154,20 @@ pub trait Localizer {
             " (defined at line {}, column {})",
             defined.line, defined.column
         )
+    }
+
+    /// Suffix identifying where an aliased value is used in a plain-text diagnostic.
+    ///
+    /// Default: `" (used at line X, column Y)"`, or an empty string for an unknown location.
+    /// This replaces the generic [`Localizer::attach_location`] call for a known alias use.
+    /// Override this hook as well when customizing or suppressing alias-use coordinates;
+    /// return an empty string to omit the suffix.
+    fn alias_used_at(&self, used: Location) -> String {
+        if used == Location::UNKNOWN {
+            String::new()
+        } else {
+            format!(" (used at line {}, column {})", used.line, used.column)
+        }
     }
 
     // ---------------- Validation (plain text) glue ----------------

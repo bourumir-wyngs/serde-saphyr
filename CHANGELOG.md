@@ -72,6 +72,10 @@
 
 ### Fixed
 
+- Plain alias diagnostics explicitly label the use location with `(used at line X, column Y)`.
+  The new `Localizer::alias_used_at` hook controls this suffix independently of failure and
+  definition locations. Custom localizers that previously used `attach_location` to format
+  or suppress alias-use coordinates should override `alias_used_at` as well.
 - Miette diagnostics now localize alias labels, validation messages and summaries, and
   include context. Validation messages honor external-message overrides, and multi-document
   summaries honor custom message formatters. English defaults are unchanged.
