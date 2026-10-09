@@ -72,6 +72,8 @@
 
 ### Fixed
 
+- Root validation paths honor `Localizer::root_path_label` in plain, snippet, and
+  `miette` diagnostics ([#205, item 5c](https://github.com/bourumir-wyngs/serde-saphyr/issues/205)).
 - Plain validation diagnostics separate issues with real newlines while escaping control
   characters inside each issue. Built-in formatters use the new optional
   `MessageFormatter::format_validation_issue_lines` hook; existing custom whole-message

@@ -17,6 +17,7 @@ use crate::de_snippet::sanitize_terminal_snippet_preserve_len;
 use crate::{MessageFormatter, RenderOptions};
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::{
+    localizer::Localizer,
     location::Locations,
     path_map::{PathKey, PathMap, format_path_with_resolved_leaf},
 };
@@ -112,6 +113,7 @@ fn build_diagnostic(
             for issue in issues {
                 related.push(build_validation_entry_diagnostic(
                     &src,
+                    formatter.localizer(),
                     &issue.path,
                     &issue.display_entry(),
                     locations,
@@ -312,6 +314,7 @@ fn insert_selected_region_key<'a>(
 #[cfg(any(feature = "garde", feature = "validator"))]
 fn build_validation_entry_diagnostic(
     src: &Arc<NamedSource<String>>,
+    l10n: &dyn Localizer,
     path_key: &PathKey,
     entry: &str,
     locations: &PathMap,
@@ -319,7 +322,7 @@ fn build_validation_entry_diagnostic(
 ) -> ErrorDiagnostic {
     let original_leaf = path_key
         .leaf_string()
-        .unwrap_or_else(|| "<root>".to_string());
+        .unwrap_or_else(|| l10n.root_path_label().into_owned());
 
     let (locs, resolved_leaf) = locations
         .search_with_ancestor_fallback(path_key)

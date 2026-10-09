@@ -162,6 +162,10 @@ impl PathKey {
 }
 
 pub(crate) fn format_path_with_resolved_leaf(path: &PathKey, resolved_leaf: &str) -> String {
+    // For a root path, the caller supplies its localized label as the resolved leaf.
+    if path.is_empty() {
+        return resolved_leaf.to_owned();
+    }
     let mut out = String::new();
     let last_index = path.segments.len().saturating_sub(1);
 
@@ -512,6 +516,29 @@ mod tests {
 
     fn p2(a: &str, b: &str) -> PathKey {
         PathKey::empty().join(a).join(b)
+    }
+
+    #[rstest::rstest]
+    #[case::root(PathKey::new(), "ROOT", "ROOT")]
+    #[case::empty_root_label(PathKey::new(), "", "")]
+    #[case::default_root_label(PathKey::new(), "<root>", "<root>")]
+    #[case::key(PathKey::new().join_key("field"), "renamedField", "renamedField")]
+    #[case::nested(
+        PathKey::new().join_key("items").join_index(2).join_key("name"),
+        "displayName",
+        "items[2].displayName"
+    )]
+    #[case::index(PathKey::new().join_index(2), "unused", "[2]")]
+    #[case::empty_key(PathKey::new().join_key(""), "", "<root>")]
+    fn format_path_preserves_root_labels_and_existing_segments(
+        #[case] path: PathKey,
+        #[case] resolved_leaf: &str,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(
+            format_path_with_resolved_leaf(&path, resolved_leaf),
+            expected
+        );
     }
 
     #[test]
