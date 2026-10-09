@@ -9,6 +9,7 @@ use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
 use granit_parser::ScalarStyle;
+use smallvec::{SmallVec, smallvec};
 
 use super::error::Error;
 #[cfg(feature = "properties")]
@@ -307,7 +308,7 @@ pub(crate) enum NodeOrigin {
 #[derive(Debug, Default)]
 pub(super) struct RecordedEvents<'a> {
     events: Vec<Ev<'a>>,
-    origins: Vec<(usize, NodeOrigin)>,
+    origins: SmallVec<[(usize, NodeOrigin); 1]>,
 }
 
 impl<'a> RecordedEvents<'a> {
@@ -319,9 +320,9 @@ impl<'a> RecordedEvents<'a> {
         Self {
             events: vec![event],
             origins: if origin == NodeOrigin::Direct {
-                Vec::new()
+                SmallVec::new()
             } else {
-                vec![(0, origin)]
+                smallvec![(0, origin)]
             },
         }
     }
@@ -359,7 +360,7 @@ impl<'a> From<Vec<Ev<'a>>> for RecordedEvents<'a> {
     fn from(events: Vec<Ev<'a>>) -> Self {
         Self {
             events,
-            origins: Vec::new(),
+            origins: SmallVec::new(),
         }
     }
 }
