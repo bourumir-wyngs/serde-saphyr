@@ -72,6 +72,10 @@
 
 ### Fixed
 
+- Plain validation diagnostics separate issues with real newlines while escaping control
+  characters inside each issue. Built-in formatters use the new optional
+  `MessageFormatter::format_validation_issue_lines` hook; existing custom whole-message
+  overrides retain their behavior ([#205, item 5a](https://github.com/bourumir-wyngs/serde-saphyr/issues/205)).
 - Nested containers reuse the alias error wrapper for the same use site, preserving the
   outer anchor location while exposing the original error directly through `error`, `source()`,
   and the legacy `msg` field ([#205, item 1](https://github.com/bourumir-wyngs/serde-saphyr/issues/205)).

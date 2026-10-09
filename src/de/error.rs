@@ -112,6 +112,22 @@ pub trait MessageFormatter {
     /// writing its result to a terminal or log, sanitize it with
     /// [`str::escape_debug`] or an equivalent encoding.
     fn format_message<'a>(&self, err: &'a Error) -> Cow<'a, str>;
+
+    /// Optionally format individual validation issues for plain rendering.
+    ///
+    /// For [`Error::ValidationError`], returning `Some(lines)` replaces the call to
+    /// [`Self::format_message`]. The renderer escapes control characters in each line
+    /// before calling [`Localizer::join_validation_issues`], preserving the joiner's
+    /// newline separators. Lines may include their own per-issue locations.
+    ///
+    /// The default returns `None`, preserving custom whole-message formatting.
+    /// The built-in formatters return individual issue lines. A custom formatter that
+    /// delegates validation formatting can also delegate this method to a built-in
+    /// formatter to retain that layout.
+    #[cfg(any(feature = "garde", feature = "validator"))]
+    fn format_validation_issue_lines(&self, _err: &Error) -> Option<Vec<String>> {
+        None
+    }
 }
 
 /// Convert control characters in semantic diagnostic text to inert debug escapes.
@@ -1770,6 +1786,26 @@ fn fmt_error_plain_with_formatter(
         err = error;
     }
 
+    #[cfg(any(feature = "garde", feature = "validator"))]
+    if matches!(err, Error::ValidationError { .. })
+        && let Some(lines) = formatter.format_validation_issue_lines(err)
+    {
+        let lines: Vec<_> = lines
+            .into_iter()
+            .map(|line| sanitize_message_text(Cow::Owned(line)).into_owned())
+            .collect();
+        let joined = formatter.localizer().join_validation_issues(&lines);
+        // Only the join hook introduces layout. Escape its other control characters
+        // without turning the separators between already-sanitized issues into text.
+        for (index, line) in joined.split('\n').enumerate() {
+            if index > 0 {
+                writeln!(f)?;
+            }
+            write!(f, "{}", sanitize_message_text(Cow::Borrowed(line)))?;
+        }
+        return Ok(());
+    }
+
     let msg = render_message_text(formatter, err);
 
     let msg = if let Some(location) = distinct_alias_error_location(err) {
@@ -2537,6 +2573,110 @@ mod tests {
             r"cyclic include detected: child.yaml\nwhile processing include from root.yaml -> parent.yaml"
         );
         assert!(!rendered.contains('\n'));
+    }
+
+    #[cfg(any(feature = "garde", feature = "validator"))]
+    #[test]
+    fn validation_issue_separators_preserve_only_layout_newlines() {
+        let error = Error::ValidationError {
+            source: ValidationSource::Validator,
+            issues: vec![
+                ValidationIssue::new(PathKey::new().join_key("first\nkey"), "bad")
+                    .with_message("invalid\nvalue\r\t\u{1b}\u{9b}\u{2028}\u{2029}"),
+                ValidationIssue::new(PathKey::new().join_key("second"), "bad")
+                    .with_message("literal \\n stays literal"),
+            ],
+            locations: PathMap::new(),
+        };
+        let expected = concat!(
+            "validation error at first\\nkey: invalid\\nvalue\\r\\t\\u{1b}\\u{9b}\\u{2028}\\u{2029}\n",
+            "validation error at second: literal \\n stays literal",
+        );
+        let default = crate::DefaultMessageFormatter;
+        let localized_default = default.with_localizer(&DEFAULT_ENGLISH_LOCALIZER);
+        let localized_user = UserMessageFormatter.with_localizer(&DEFAULT_ENGLISH_LOCALIZER);
+        for formatter in [
+            &default as &dyn MessageFormatter,
+            &UserMessageFormatter,
+            &localized_default,
+            &localized_user,
+        ] {
+            assert_eq!(error.render_with_formatter(formatter), expected);
+        }
+    }
+
+    #[cfg(any(feature = "garde", feature = "validator"))]
+    #[test]
+    fn validation_layout_honors_localizer_hooks_and_escapes_their_text() {
+        struct Localized;
+        impl Localizer for Localized {
+            fn override_external_message<'a>(
+                &self,
+                _msg: ExternalMessage<'a>,
+            ) -> Option<Cow<'a, str>> {
+                Some(Cow::Borrowed("localized\nmessage\u{1b}"))
+            }
+
+            fn validation_issue_line(
+                &self,
+                path: &str,
+                entry: &str,
+                _loc: Option<Location>,
+            ) -> String {
+                format!("{path}: {entry}\t")
+            }
+
+            fn join_validation_issues(&self, lines: &[String]) -> String {
+                format!("{}\u{1b}", lines.join("\n---\n"))
+            }
+        }
+
+        let error = Error::ValidationError {
+            source: ValidationSource::Validator,
+            issues: ["first", "second"]
+                .into_iter()
+                .map(|key| ValidationIssue::new(PathKey::new().join_key(key), "bad"))
+                .collect(),
+            locations: PathMap::new(),
+        };
+        let formatter = crate::DefaultMessageFormatter.with_localizer(&Localized);
+        assert_eq!(
+            error.render_with_formatter(&formatter),
+            concat!(
+                "first: localized\\nmessage\\u{1b}\\t\n---\n",
+                "second: localized\\nmessage\\u{1b}\\t\\u{1b}",
+            )
+        );
+    }
+
+    #[cfg(any(feature = "garde", feature = "validator"))]
+    #[test]
+    fn validation_plain_rendering_keeps_custom_whole_message_overrides() {
+        struct Custom(std::cell::Cell<usize>);
+        impl MessageFormatter for Custom {
+            fn format_message<'a>(&self, error: &'a Error) -> Cow<'a, str> {
+                self.0.set(self.0.get() + 1);
+                let Error::ValidationError { issues, .. } = error else {
+                    panic!("expected the whole validation error");
+                };
+                Cow::Owned(format!("{} problems\ncustom\u{1b}", issues.len()))
+            }
+        }
+
+        let error = Error::ValidationError {
+            source: ValidationSource::Validator,
+            issues: ["first", "second"]
+                .into_iter()
+                .map(|key| ValidationIssue::new(PathKey::new().join_key(key), "bad"))
+                .collect(),
+            locations: PathMap::new(),
+        };
+        let formatter = Custom(std::cell::Cell::new(0));
+        assert_eq!(
+            error.render_with_formatter(&formatter),
+            r"2 problems\ncustom\u{1b}"
+        );
+        assert_eq!(formatter.0.get(), 1);
     }
 
     #[cfg(any(feature = "garde", feature = "validator"))]
