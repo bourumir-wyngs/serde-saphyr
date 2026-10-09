@@ -6,7 +6,7 @@ use annotate_snippets::{
 };
 
 use crate::Location;
-use crate::de_error::sanitize_message_text;
+use crate::de_error::{display_location, sanitize_message_text};
 use crate::localizer::Localizer;
 
 /// Borrowed YAML source information used for snippet rendering.
@@ -47,10 +47,11 @@ struct SnippetWindowRows<'a> {
 }
 
 impl SnippetWindowRows<'_> {
-    fn max_display_row(&self) -> usize {
+    fn max_display_row(&self, line_offset: usize) -> usize {
         self.window_start_absolute_row
             .saturating_add(self.window_end_row)
             .saturating_sub(self.window_start_row)
+            .saturating_add(line_offset)
     }
 }
 
@@ -288,12 +289,12 @@ mod tests {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             fmt_snippet_window_offset_or_fallback(
                 f,
-                &DefaultEnglishLocalizer,
                 &self.location,
                 self.text,
                 self.start_line,
                 self.msg,
                 80,
+                0,
             )
         }
     }
@@ -512,7 +513,7 @@ mod tests {
         assert!(fallback.contains('9'));
 
         assert_eq!(
-            snippet_window_frame_prefix_offset("value", 1, &Location::UNKNOWN),
+            snippet_window_frame_prefix_offset("value", 1, &Location::UNKNOWN, 0),
             None
         );
         assert_eq!(
@@ -553,6 +554,60 @@ mod tests {
         }
         .to_string();
         assert!(labeled.contains("^ at eof"));
+    }
+
+    #[test]
+    fn display_line_offsets_keep_primary_and_secondary_carets_on_the_original_text() {
+        struct OffsetSnippet {
+            location: Location,
+            secondary: bool,
+        }
+
+        impl fmt::Display for OffsetSnippet {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                let text = "first: 1\nsecond: nope\n";
+                if self.secondary {
+                    fmt_snippet_window_offset_or_fallback(
+                        f,
+                        &self.location,
+                        text,
+                        1,
+                        "invalid number",
+                        80,
+                        9_999,
+                    )
+                } else {
+                    Snippet::new(text, "<test>", 80)
+                        .with_line_offset(9_999)
+                        .fmt_or_fallback(
+                            f,
+                            Level::ERROR,
+                            &DefaultEnglishLocalizer,
+                            "invalid number",
+                            &self.location,
+                        )
+                }
+            }
+        }
+
+        for secondary in [false, true] {
+            let shifted = OffsetSnippet {
+                location: Location::new(2, 9),
+                secondary,
+            }
+            .to_string();
+            assert!(shifted.contains("10000 | first: 1"), "{shifted}");
+            assert!(shifted.contains("10001 | second: nope"), "{shifted}");
+            assert!(shifted.contains("      |         ^"), "{shifted}");
+
+            let included = OffsetSnippet {
+                location: Location::new(2, 9).with_source_id(2),
+                secondary,
+            }
+            .to_string();
+            assert!(included.contains("2 | second: nope"), "{included}");
+            assert!(!included.contains("10001"), "{included}");
+        }
     }
 
     #[test]
@@ -610,6 +665,8 @@ mod tests {
 pub(crate) struct Snippet<'a> {
     pub(crate) source: SnippetSource<'a>,
     pub(crate) mapping: LineMapping,
+    /// Lines preceding the root YAML source in an enclosing document, used only for display.
+    pub(crate) line_offset: u64,
     /// Maximum number of *columns* to keep on each side of the error column when cropping
     /// very long lines. `0` effectively disables snippet rendering at higher layers.
     pub(crate) crop_radius: usize,
@@ -622,6 +679,7 @@ impl<'a> Snippet<'a> {
         Self {
             source: SnippetSource { text, path },
             mapping: LineMapping::Identity,
+            line_offset: 0,
             crop_radius,
         }
     }
@@ -635,6 +693,14 @@ impl<'a> Snippet<'a> {
         debug_assert!(start_line >= 1);
         Self {
             mapping: LineMapping::Offset { start_line },
+            ..self
+        }
+    }
+
+    #[inline]
+    pub(crate) fn with_line_offset(self, line_offset: u64) -> Self {
+        Self {
+            line_offset,
             ..self
         }
     }
@@ -667,8 +733,9 @@ impl<'a> Snippet<'a> {
             return write!(f, "{msg}");
         }
 
+        let displayed_location = display_location(*location, self.line_offset);
         let Ok(window) = resolve_render_window(self.source.text, location, self.mapping) else {
-            return fmt_with_location(f, l10n, msg.as_ref(), location);
+            return fmt_with_location(f, l10n, msg.as_ref(), &displayed_location);
         };
 
         // Horizontal cropping (by character columns) for very long lines.
@@ -686,11 +753,18 @@ impl<'a> Snippet<'a> {
             window.local_end,
         );
 
-        let loc_prefix = sanitize_message_text(Cow::Owned(l10n.snippet_location_prefix(*location)));
+        let loc_prefix =
+            sanitize_message_text(Cow::Owned(l10n.snippet_location_prefix(displayed_location)));
+        let line_offset = (displayed_location.line - location.line) as usize;
 
         let report = &[level.primary_title(format!("{loc_prefix}: {msg}")).element(
             AnnotateSnippet::source(&window_text)
-                .line_start(window.rows.window_start_absolute_row)
+                .line_start(
+                    window
+                        .rows
+                        .window_start_absolute_row
+                        .saturating_add(line_offset),
+                )
                 .path(source_path.as_ref())
                 .fold(false)
                 .annotation(
@@ -712,21 +786,21 @@ impl<'a> Snippet<'a> {
 /// numbering may be offset.
 pub(crate) fn fmt_snippet_window_offset_or_fallback(
     f: &mut fmt::Formatter<'_>,
-    l10n: &dyn Localizer,
     location: &Location,
     text: &str,
     start_line: usize,
     msg: &str,
     crop_radius: usize,
+    line_offset: u64,
 ) -> fmt::Result {
     fmt_snippet_window_with_mapping_or_fallback(
         f,
-        l10n,
         location,
         text,
         LineMapping::Offset { start_line },
         msg,
         crop_radius,
+        line_offset,
     )
 }
 
@@ -734,14 +808,16 @@ pub(crate) fn snippet_window_frame_prefix_offset(
     text: &str,
     start_line: usize,
     location: &Location,
+    line_offset: u64,
 ) -> Option<String> {
     if location == &Location::UNKNOWN {
         return None;
     }
 
     let rows = resolve_window_rows(text, location, LineMapping::Offset { start_line }).ok()?;
+    let line_offset = (display_location(*location, line_offset).line - location.line) as usize;
     Some(snippet_window_frame_prefix(
-        rows.max_display_row().to_string().len(),
+        rows.max_display_row(line_offset).to_string().len(),
     ))
 }
 
@@ -751,12 +827,12 @@ fn snippet_window_frame_prefix(gutter_width: usize) -> String {
 
 fn fmt_snippet_window_with_mapping_or_fallback(
     f: &mut fmt::Formatter<'_>,
-    _l10n: &dyn Localizer,
     location: &Location,
     text: &str,
     mapping: LineMapping,
     msg: &str,
     crop_radius: usize,
+    line_offset: u64,
 ) -> fmt::Result {
     let msg = sanitize_message_text(Cow::Borrowed(msg));
 
@@ -778,7 +854,8 @@ fn fmt_snippet_window_with_mapping_or_fallback(
         window.local_end,
     );
 
-    let gutter_width = window.rows.max_display_row().to_string().len();
+    let line_offset = (display_location(*location, line_offset).line - location.line) as usize;
+    let gutter_width = window.rows.max_display_row(line_offset).to_string().len();
     let empty_gutter = snippet_window_frame_prefix(gutter_width);
     writeln!(f, "{empty_gutter}")?;
 
@@ -796,7 +873,8 @@ fn fmt_snippet_window_with_mapping_or_fallback(
             .rows
             .window_start_absolute_row
             .saturating_add(cur_row)
-            .saturating_sub(window.rows.window_start_row);
+            .saturating_sub(window.rows.window_start_row)
+            .saturating_add(line_offset);
         writeln!(f, "{display_row:>gutter_width$} | {line}")?;
 
         if cur_row == window.rows.relative_row {
@@ -828,7 +906,8 @@ fn fmt_snippet_window_with_mapping_or_fallback(
             .rows
             .window_start_absolute_row
             .saturating_add(cur_row)
-            .saturating_sub(window.rows.window_start_row);
+            .saturating_sub(window.rows.window_start_row)
+            .saturating_add(line_offset);
         writeln!(f, "{display_row:>gutter_width$} |")?;
 
         if cur_row == window.rows.relative_row {

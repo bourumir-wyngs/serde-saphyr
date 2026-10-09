@@ -8,6 +8,10 @@
 
 ### Added
 
+- Added `RenderOptions::line_offset` for displaying embedded YAML diagnostics at their
+  containing document's line numbers, including snippets and the new
+  `miette::to_miette_report_with_options` entry point. Included files retain their own
+  coordinates, and stored error locations and spans are unchanged.
 - Added `PropertySyntax::DockerCompose` for Compose-compatible property interpolation.
 - Added the default-enabled `comments` feature, forwarding to granit-parser's matching
   feature. Builds with `default-features = false` must enable it to use `Commented<T>`,

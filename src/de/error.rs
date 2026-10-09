@@ -221,8 +221,6 @@ pub enum SnippetMode {
 /// instead of a struct literal. This keeps call sites stable even if new fields are added
 /// in the future (this type is `#[non_exhaustive]`).
 ///
-/// # Example (using the `render_options!` macro)
-///
 /// ```rust
 /// use serde_saphyr::{DefaultMessageFormatter, SnippetMode};
 ///
@@ -244,6 +242,22 @@ pub struct RenderOptions<'a> {
     pub formatter: &'a dyn MessageFormatter,
     /// Snippet rendering mode.
     pub snippets: SnippetMode,
+    /// Number of lines preceding the root YAML input in its containing document.
+    ///
+    /// For YAML extracted from a larger document, set `line_offset` to the number of
+    /// preceding lines. This example displays the first YAML line as line 10000:
+    ///
+    /// ```rust
+    /// let yaml = "eighty\n";
+    /// let err = serde_saphyr::from_str::<u16>(yaml).unwrap_err();
+    /// let options = serde_saphyr::render_options! {
+    ///     line_offset: 9_999,
+    /// };
+    /// let rendered = err.render_with_options(options);
+    /// assert!(rendered.contains("10000"));
+    /// assert_eq!(err.location().unwrap().line(), 1);
+    /// ```
+    pub line_offset: u64,
 }
 
 impl Default for RenderOptions<'_> {
@@ -263,14 +277,75 @@ impl<'a> RenderOptions<'a> {
     ///
     /// Defaults:
     /// - `snippets`: [`SnippetMode::Auto`]
+    /// - `line_offset`: `0`
     #[inline]
     #[must_use]
     pub fn new(formatter: &'a dyn MessageFormatter) -> Self {
         Self {
             formatter,
             snippets: SnippetMode::Auto,
+            line_offset: 0,
         }
     }
+}
+
+/// Project a location for presentation without changing its source-relative span.
+pub(crate) fn display_location(mut location: Location, line_offset: u64) -> Location {
+    if location.line != 0 && location.source_id() <= 1 {
+        location.line = location
+            .line()
+            .saturating_add(line_offset)
+            .min(u32::MAX as u64) as u32;
+    }
+    location
+}
+
+/// Bound the offset once for the whole report so all displayed locations use the same
+/// translation, even near the line-number limit. Leave room for snippet context.
+pub(crate) fn render_line_offset(err: &Error, requested: u64) -> u64 {
+    if requested == 0 {
+        return 0;
+    }
+    fn root_line(location: Location) -> u64 {
+        if location.source_id() <= 1 {
+            location.line()
+        } else {
+            0
+        }
+    }
+    fn max_line(err: &Error) -> u64 {
+        let own = err.location().map_or(0, root_line);
+        match err {
+            Error::WithSnippet { error, regions, .. } => regions
+                .iter()
+                .filter(|region| region.location.source_id() <= 1)
+                .map(|region| region.end_line as u64)
+                .fold(max_line(error).max(own), u64::max),
+            Error::AliasError {
+                error, locations, ..
+            } => max_line(error)
+                .max(root_line(locations.reference_location))
+                .max(root_line(locations.defined_location))
+                .max(own),
+            #[cfg(any(feature = "garde", feature = "validator"))]
+            Error::ValidationError { locations, .. } => locations
+                .map
+                .values()
+                .flat_map(|locs| {
+                    [
+                        root_line(locs.reference_location),
+                        root_line(locs.defined_location),
+                    ]
+                })
+                .fold(own, u64::max),
+            #[cfg(any(feature = "garde", feature = "validator"))]
+            Error::ValidationErrors { errors, .. } => {
+                errors.iter().map(max_line).fold(own, u64::max)
+            }
+            _ => own,
+        }
+    }
+    requested.min((u32::MAX as u64).saturating_sub(max_line(err).saturating_add(2)))
 }
 
 /// Cropped YAML source window stored inside [`Error::WithSnippet`].
@@ -1357,13 +1432,14 @@ impl Error {
     pub fn render_with_formatter(&self, formatter: &dyn MessageFormatter) -> String {
         self.render_with_options(RenderOptions {
             formatter,
-            snippets: SnippetMode::Auto,
+            ..RenderOptions::default()
         })
     }
 
     /// Render this error using the provided options.
     #[must_use]
-    pub fn render_with_options(&self, options: RenderOptions<'_>) -> String {
+    pub fn render_with_options(&self, mut options: RenderOptions<'_>) -> String {
+        options.line_offset = render_line_offset(self, options.line_offset);
         struct RenderDisplay<'a> {
             err: &'a Error,
             options: RenderOptions<'a>,
@@ -1791,11 +1867,39 @@ fn fmt_error_plain_with_formatter(
     f: &mut fmt::Formatter<'_>,
     err: &Error,
     formatter: &dyn MessageFormatter,
+    line_offset: u64,
 ) -> fmt::Result {
     let mut err = err;
     while let Error::WithSnippet { error, .. } = err {
         err = error;
     }
+
+    // Validation formatters compose their own per-issue locations. Give both built-in
+    // and custom hooks a temporary display view, leaving the stored error untouched.
+    // The default (zero-offset) path does not copy any validation data.
+    #[cfg(any(feature = "garde", feature = "validator"))]
+    let display_error = if line_offset != 0
+        && let Error::ValidationError {
+            source,
+            issues,
+            locations,
+        } = err
+    {
+        let mut locations = locations.clone();
+        for locs in locations.map.values_mut() {
+            locs.reference_location = display_location(locs.reference_location, line_offset);
+            locs.defined_location = display_location(locs.defined_location, line_offset);
+        }
+        Some(Error::ValidationError {
+            source: *source,
+            issues: issues.clone(),
+            locations,
+        })
+    } else {
+        None
+    };
+    #[cfg(any(feature = "garde", feature = "validator"))]
+    let err = display_error.as_ref().unwrap_or(err);
 
     #[cfg(any(feature = "garde", feature = "validator"))]
     if matches!(err, Error::ValidationError { .. })
@@ -1820,7 +1924,11 @@ fn fmt_error_plain_with_formatter(
     let msg = render_message_text(formatter, err);
 
     let msg = if let Some(location) = distinct_alias_error_location(err) {
-        sanitize_message_text(formatter.localizer().attach_location(msg, location))
+        sanitize_message_text(
+            formatter
+                .localizer()
+                .attach_location(msg, display_location(location, line_offset)),
+        )
     } else {
         msg
     };
@@ -1834,7 +1942,7 @@ fn fmt_error_plain_with_formatter(
         let suffix = sanitize_message_text(Cow::Owned(
             formatter
                 .localizer()
-                .alias_defined_at(locations.defined_location),
+                .alias_defined_at(display_location(locations.defined_location, line_offset)),
         ));
         Cow::Owned(format!("{msg}{suffix}"))
     } else {
@@ -1855,11 +1963,16 @@ fn fmt_error_plain_with_formatter(
         let suffix = sanitize_message_text(Cow::Owned(
             formatter
                 .localizer()
-                .alias_used_at(locations.reference_location),
+                .alias_used_at(display_location(locations.reference_location, line_offset)),
         ));
         write!(f, "{msg}{suffix}")?;
     } else if let Some(loc) = err.location() {
-        fmt_with_location(f, formatter.localizer(), msg.as_ref(), &loc)?;
+        fmt_with_location(
+            f,
+            formatter.localizer(),
+            msg.as_ref(),
+            &display_location(loc, line_offset),
+        )?;
     } else {
         write!(f, "{msg}")?;
     }
@@ -1869,7 +1982,7 @@ fn fmt_error_plain_with_formatter(
         for err in errors {
             writeln!(f)?;
             writeln!(f)?;
-            fmt_error_plain_with_formatter(f, err, formatter)?;
+            fmt_error_plain_with_formatter(f, err, formatter, line_offset)?;
         }
     }
 
@@ -1913,12 +2026,16 @@ fn writeln_anchor_intro(
     l10n: &dyn Localizer,
     def_loc: Location,
     def_region: &CroppedRegion,
+    line_offset: u64,
 ) -> fmt::Result {
-    let line = sanitize_message_text(Cow::Owned(l10n.value_comes_from_the_anchor(def_loc)));
+    let line = sanitize_message_text(Cow::Owned(
+        l10n.value_comes_from_the_anchor(display_location(def_loc, line_offset)),
+    ));
     let Some(prefix) = snippet_window_frame_prefix_offset(
         def_region.text.as_str(),
         def_region.start_line,
         &def_loc,
+        line_offset,
     ) else {
         return writeln!(f, "{line}");
     };
@@ -1935,7 +2052,7 @@ fn fmt_error_rendered(
     options: RenderOptions<'_>,
 ) -> fmt::Result {
     if options.snippets == SnippetMode::Off {
-        return fmt_error_plain_with_formatter(f, err, options.formatter);
+        return fmt_error_plain_with_formatter(f, err, options.formatter, options.line_offset);
     }
 
     match err {
@@ -1964,11 +2081,21 @@ fn fmt_error_rendered(
         } => {
             if *crop_radius == 0 {
                 // Treat as "snippet disabled".
-                return fmt_error_plain_with_formatter(f, error, options.formatter);
+                return fmt_error_plain_with_formatter(
+                    f,
+                    error,
+                    options.formatter,
+                    options.line_offset,
+                );
             }
 
             if regions.is_empty() {
-                return fmt_error_plain_with_formatter(f, error, options.formatter);
+                return fmt_error_plain_with_formatter(
+                    f,
+                    error,
+                    options.formatter,
+                    options.line_offset,
+                );
             }
 
             // Validation errors have custom snippet formatting (paths, alias context, and
@@ -1982,7 +2109,7 @@ fn fmt_error_rendered(
             {
                 return fmt_validation_error_with_snippets_offset(
                     f,
-                    options.formatter.localizer(),
+                    options,
                     &source.external_message_source(),
                     issues,
                     locations,
@@ -2009,6 +2136,7 @@ fn fmt_error_rendered(
                         regions,
                         *crop_radius,
                         options.formatter,
+                        options.line_offset,
                     )?;
                 }
                 return Ok(());
@@ -2017,10 +2145,20 @@ fn fmt_error_rendered(
             // Render a snippet from the cropped source window. If anything is missing,
             // fall back to the plain nested error.
             let Some(location) = error.location() else {
-                return fmt_error_plain_with_formatter(f, error, options.formatter);
+                return fmt_error_plain_with_formatter(
+                    f,
+                    error,
+                    options.formatter,
+                    options.line_offset,
+                );
             };
             if location == Location::UNKNOWN {
-                return fmt_error_plain_with_formatter(f, error, options.formatter);
+                return fmt_error_plain_with_formatter(
+                    f,
+                    error,
+                    options.formatter,
+                    options.line_offset,
+                );
             }
 
             let l10n = options.formatter.localizer();
@@ -2028,7 +2166,7 @@ fn fmt_error_rendered(
             let Some(region) = pick_cropped_region(regions, &location) else {
                 // No window for the error's own source (an included source whose text was not
                 // retained): print the plain error, then the include sites as context.
-                fmt_error_plain_with_formatter(f, error, options.formatter)?;
+                fmt_error_plain_with_formatter(f, error, options.formatter, options.line_offset)?;
                 if location.source_id() != 0 {
                     for extra_region in regions {
                         writeln!(f)?;
@@ -2039,6 +2177,7 @@ fn fmt_error_rendered(
                             *crop_radius,
                         )
                         .with_offset(extra_region.start_line)
+                        .with_line_offset(options.line_offset)
                         .fmt_or_fallback(
                             f,
                             Level::NOTE,
@@ -2072,7 +2211,8 @@ fn fmt_error_rendered(
                     used_region.source_name.as_str(),
                     *crop_radius,
                 )
-                .with_offset(used_region.start_line);
+                .with_offset(used_region.start_line)
+                .with_line_offset(options.line_offset);
                 ctx.fmt_or_fallback_with_label(
                     f,
                     Level::ERROR,
@@ -2084,15 +2224,15 @@ fn fmt_error_rendered(
 
                 let def_region = pick_cropped_region(regions, &def_loc).unwrap_or(region);
                 writeln!(f)?;
-                writeln_anchor_intro(f, l10n, def_loc, def_region)?;
+                writeln_anchor_intro(f, l10n, def_loc, def_region, options.line_offset)?;
                 fmt_snippet_window_offset_or_fallback(
                     f,
-                    l10n,
                     &def_loc,
                     def_region.text.as_str(),
                     def_region.start_line,
                     l10n.defined_window().as_ref(),
                     *crop_radius,
+                    options.line_offset,
                 )?;
             } else {
                 // Single location rendering.
@@ -2101,7 +2241,8 @@ fn fmt_error_rendered(
                     region.source_name.as_str(),
                     *crop_radius,
                 )
-                .with_offset(region.start_line);
+                .with_offset(region.start_line)
+                .with_line_offset(options.line_offset);
                 ctx.fmt_or_fallback(f, Level::ERROR, l10n, msg.as_ref(), &location)?;
 
                 for extra_region in regions {
@@ -2117,7 +2258,8 @@ fn fmt_error_rendered(
                         extra_region.source_name.as_str(),
                         *crop_radius,
                     )
-                    .with_offset(extra_region.start_line);
+                    .with_offset(extra_region.start_line)
+                    .with_line_offset(options.line_offset);
                     extra_ctx.fmt_or_fallback(f, Level::NOTE, l10n, "", &extra_region.location)?;
                 }
             }
@@ -2131,15 +2273,21 @@ fn fmt_error_rendered(
                         region.source_name.as_str(),
                         *crop_radius,
                     )
-                    .with_offset(region.start_line);
+                    .with_offset(region.start_line)
+                    .with_line_offset(options.line_offset);
                     ctx.fmt_or_fallback(f, Level::NOTE, l10n, label.as_ref(), &location)?;
                 } else {
-                    fmt_with_location(f, l10n, label.as_ref(), &location)?;
+                    fmt_with_location(
+                        f,
+                        l10n,
+                        label.as_ref(),
+                        &display_location(location, options.line_offset),
+                    )?;
                 }
             }
             Ok(())
         }
-        _ => fmt_error_plain_with_formatter(f, err, options.formatter),
+        _ => fmt_error_plain_with_formatter(f, err, options.formatter, options.line_offset),
     }
 }
 
@@ -2158,13 +2306,15 @@ impl fmt::Debug for Error {
 #[cfg(any(feature = "garde", feature = "validator"))]
 fn fmt_validation_error_with_snippets_offset(
     f: &mut fmt::Formatter<'_>,
-    l10n: &dyn Localizer,
+    options: RenderOptions<'_>,
     source: &ExternalMessageSource,
     issues: &[ValidationIssue],
     locations: &PathMap,
     regions: &[CroppedRegion],
     crop_radius: usize,
 ) -> fmt::Result {
+    let l10n = options.formatter.localizer();
+    let line_offset = options.line_offset;
     // Regions cropped for the issues' own locations. Only the remaining regions are include
     // sites ("included from here"); the issue regions must not be repeated as such.
     let issue_locations: HashSet<Location> = issues
@@ -2218,10 +2368,11 @@ fn fmt_validation_error_with_snippets_offset(
                         region.source_name.as_str(),
                         crop_radius,
                     )
-                    .with_offset(region.start_line);
+                    .with_offset(region.start_line)
+                    .with_line_offset(line_offset);
                     ctx.fmt_or_fallback(f, Level::ERROR, l10n, &base_msg, &r)?;
                 } else {
-                    fmt_with_location(f, l10n, &base_msg, &r)?;
+                    fmt_with_location(f, l10n, &base_msg, &display_location(r, line_offset))?;
                 }
             }
             (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
@@ -2232,10 +2383,11 @@ fn fmt_validation_error_with_snippets_offset(
                         region.source_name.as_str(),
                         crop_radius,
                     )
-                    .with_offset(region.start_line);
+                    .with_offset(region.start_line)
+                    .with_line_offset(line_offset);
                     ctx.fmt_or_fallback(f, Level::ERROR, l10n, &base_msg, &d)?;
                 } else {
-                    fmt_with_location(f, l10n, &base_msg, &d)?;
+                    fmt_with_location(f, l10n, &base_msg, &display_location(d, line_offset))?;
                 }
             }
             (r, d) => {
@@ -2248,7 +2400,8 @@ fn fmt_validation_error_with_snippets_offset(
                         region.source_name.as_str(),
                         crop_radius,
                     )
-                    .with_offset(region.start_line);
+                    .with_offset(region.start_line)
+                    .with_line_offset(line_offset);
                     ctx.fmt_or_fallback_with_label(
                         f,
                         Level::ERROR,
@@ -2258,26 +2411,32 @@ fn fmt_validation_error_with_snippets_offset(
                         &r,
                     )?;
                 } else {
-                    fmt_with_location(f, l10n, &invalid_here, &r)?;
+                    fmt_with_location(f, l10n, &invalid_here, &display_location(r, line_offset))?;
                 }
                 writeln!(f)?;
                 if let Some(region) = pick_cropped_region(regions, &d) {
-                    writeln_anchor_intro(f, l10n, d, region)?;
+                    writeln_anchor_intro(f, l10n, d, region, line_offset)?;
                     rendered_regions.push(std::ptr::from_ref(region));
                     crate::de_snippet::fmt_snippet_window_offset_or_fallback(
                         f,
-                        l10n,
                         &d,
                         region.text.as_str(),
                         region.start_line,
                         l10n.defined_window().as_ref(),
                         crop_radius,
+                        line_offset,
                     )?;
                 } else {
-                    let anchor_intro =
-                        sanitize_message_text(Cow::Owned(l10n.value_comes_from_the_anchor(d)));
+                    let anchor_intro = sanitize_message_text(Cow::Owned(
+                        l10n.value_comes_from_the_anchor(display_location(d, line_offset)),
+                    ));
                     writeln!(f, "{anchor_intro}")?;
-                    fmt_with_location(f, l10n, l10n.defined_window().as_ref(), &d)?;
+                    fmt_with_location(
+                        f,
+                        l10n,
+                        l10n.defined_window().as_ref(),
+                        &display_location(d, line_offset),
+                    )?;
                 }
             }
         }
@@ -2293,7 +2452,8 @@ fn fmt_validation_error_with_snippets_offset(
                 extra_region.source_name.as_str(),
                 crop_radius,
             )
-            .with_offset(extra_region.start_line);
+            .with_offset(extra_region.start_line)
+            .with_line_offset(line_offset);
             extra_ctx.fmt_or_fallback(f, Level::NOTE, l10n, "", &extra_region.location)?;
         }
     }
@@ -2307,14 +2467,22 @@ fn fmt_error_with_snippets_offset(
     regions: &[CroppedRegion],
     crop_radius: usize,
     formatter: &dyn MessageFormatter,
+    line_offset: u64,
 ) -> fmt::Result {
     if crop_radius == 0 {
-        return fmt_error_plain_with_formatter(f, err, formatter);
+        return fmt_error_plain_with_formatter(f, err, formatter, line_offset);
     }
 
     // Keep existing snippet output if the nested error is already wrapped.
     if let Error::WithSnippet { .. } = err {
-        return fmt_error_rendered(f, err, RenderOptions::new(formatter));
+        return fmt_error_rendered(
+            f,
+            err,
+            RenderOptions {
+                line_offset,
+                ..RenderOptions::new(formatter)
+            },
+        );
     }
 
     #[cfg(any(feature = "garde", feature = "validator"))]
@@ -2326,7 +2494,10 @@ fn fmt_error_with_snippets_offset(
     {
         return fmt_validation_error_with_snippets_offset(
             f,
-            formatter.localizer(),
+            RenderOptions {
+                line_offset,
+                ..RenderOptions::new(formatter)
+            },
             &source.external_message_source(),
             issues,
             locations,
@@ -2344,14 +2515,20 @@ fn fmt_error_with_snippets_offset(
     }
 
     let Some(region) = pick_cropped_region(regions, &location) else {
-        return fmt_with_location(f, formatter.localizer(), msg.as_ref(), &location);
+        return fmt_with_location(
+            f,
+            formatter.localizer(),
+            msg.as_ref(),
+            &display_location(location, line_offset),
+        );
     };
     let ctx = crate::de_snippet::Snippet::new(
         region.text.as_str(),
         region.source_name.as_str(),
         crop_radius,
     )
-    .with_offset(region.start_line);
+    .with_offset(region.start_line)
+    .with_line_offset(line_offset);
     ctx.fmt_or_fallback(
         f,
         Level::ERROR,
