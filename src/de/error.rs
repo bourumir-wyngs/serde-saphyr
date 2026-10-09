@@ -25,6 +25,8 @@ use granit_parser::{ErrorKind, ScalarStyle, ScanError};
 use serde_core::de::{self};
 use std::borrow::Cow;
 use std::cell::Cell;
+#[cfg(any(feature = "garde", feature = "validator"))]
+use std::collections::HashSet;
 use std::fmt;
 
 #[cfg(all(feature = "properties", any(feature = "garde", feature = "validator")))]
@@ -1143,6 +1145,23 @@ pub enum Error {
 }
 
 impl Error {
+    /// Wrap in an empty snippet wrapper, so include-site regions can be added for an error whose
+    /// own source text is not available.
+    #[cfg(feature = "include")]
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn with_no_snippet_regions(self, crop_radius: usize) -> Self {
+        let inner = match self {
+            Error::WithSnippet { error, .. } => *error,
+            other => other,
+        };
+        Error::WithSnippet {
+            regions: Vec::new(),
+            crop_radius,
+            error: Box::new(inner),
+        }
+    }
+
     #[cold]
     #[inline(never)]
     pub(crate) fn with_snippet(self, text: &str, crop_radius: usize) -> Self {
@@ -1949,7 +1968,29 @@ fn fmt_error_rendered(
             let l10n = options.formatter.localizer();
 
             let Some(region) = pick_cropped_region(regions, &location) else {
-                return fmt_error_plain_with_formatter(f, error, options.formatter);
+                // No window for the error's own source (an included source whose text was not
+                // retained): print the plain error, then the include sites as context.
+                fmt_error_plain_with_formatter(f, error, options.formatter)?;
+                if location.source_id() != 0 {
+                    for extra_region in regions {
+                        writeln!(f)?;
+                        writeln!(f, "included from here:")?;
+                        crate::de_snippet::Snippet::new(
+                            extra_region.text.as_str(),
+                            extra_region.source_name.as_str(),
+                            *crop_radius,
+                        )
+                        .with_offset(extra_region.start_line)
+                        .fmt_or_fallback(
+                            f,
+                            Level::NOTE,
+                            l10n,
+                            "",
+                            &extra_region.location,
+                        )?;
+                    }
+                }
+                return Ok(());
             };
 
             // Dual-location rendering: show both the reference and the definition window.
@@ -2066,6 +2107,20 @@ fn fmt_validation_error_with_snippets_offset(
     regions: &[CroppedRegion],
     crop_radius: usize,
 ) -> fmt::Result {
+    // Regions cropped for the issues' own locations. Only the remaining regions are include
+    // sites ("included from here"); the issue regions must not be repeated as such.
+    let issue_locations: HashSet<Location> = issues
+        .iter()
+        .filter_map(|issue| locations.search_with_ancestor_fallback(&issue.path))
+        .flat_map(|(locs, _)| [locs.reference_location, locs.defined_location])
+        .filter(|loc| *loc != Location::UNKNOWN)
+        .collect();
+    // Classify once so rendering each issue does not rescan all issue locations/regions.
+    let include_regions: Vec<&CroppedRegion> = regions
+        .iter()
+        .filter(|region| !issue_locations.contains(&region.location))
+        .collect();
+
     let mut first = true;
     for issue in issues {
         if !first {
@@ -2171,7 +2226,7 @@ fn fmt_validation_error_with_snippets_offset(
             }
         }
 
-        for extra_region in regions {
+        for &extra_region in &include_regions {
             if rendered_regions.contains(&std::ptr::from_ref(extra_region)) {
                 continue;
             }

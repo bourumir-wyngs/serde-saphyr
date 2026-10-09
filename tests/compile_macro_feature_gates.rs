@@ -28,6 +28,8 @@ serde-saphyr = {{ path = "{manifest_dir}", default-features = false, features = 
     .expect("write fixture manifest");
     fs::write(dir.join("src/main.rs"), source).expect("write fixture source");
 
+    let lockfile = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.lock");
+    fs::copy(lockfile, dir.join("Cargo.lock")).expect("copy repository lockfile into fixture");
     dir
 }
 

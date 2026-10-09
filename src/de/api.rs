@@ -257,17 +257,6 @@ fn with_root_additional_snippet(
 }
 
 #[cfg(all(feature = "deserialize", feature = "include"))]
-fn recorded_source_snippet_chain<'a>(
-    events: &'a crate::live_events::LiveEvents<'_>,
-    location: &crate::Location,
-) -> Option<Vec<&'a crate::include_stack::RecordedSource>> {
-    let chain = events.recorded_source_chain(location.source_id());
-    // Bail unless the innermost source has recorded text — the snippet renderer needs it.
-    chain.first()?.text.as_deref()?;
-    Some(chain)
-}
-
-#[cfg(all(feature = "deserialize", feature = "include"))]
 fn with_recorded_source_snippets(
     err: Error,
     root: Option<&RootFragment<'_>>,
@@ -281,19 +270,27 @@ fn with_recorded_source_snippets(
     let Some(source_text) = current.text.as_deref() else {
         return with_root_or_input_snippet(err, root, input, crop_radius);
     };
-    let mut err_with_snippet =
-        err.with_snippet_named(source_text, current.name.as_str(), crop_radius);
+    let err_with_snippet = err.with_snippet_named(source_text, current.name.as_str(), crop_radius);
+    with_include_site_snippets(err_with_snippet, root, input, chain, crop_radius)
+}
 
+/// Add an "included from here" window for each include site in `chain` that has source text.
+#[cfg(all(feature = "deserialize", feature = "include"))]
+fn with_include_site_snippets(
+    mut err: Error,
+    root: Option<&RootFragment<'_>>,
+    input: &str,
+    chain: &[&crate::include_stack::RecordedSource],
+    crop_radius: usize,
+) -> Error {
     for window in chain.windows(2) {
-        let child = window[0];
-        let parent = window[1];
+        let (child, parent) = (window[0], window[1]);
         if child.include_location == crate::Location::UNKNOWN {
             continue;
         }
-
         match parent.text.as_deref() {
             Some(parent_text) => {
-                err_with_snippet = err_with_snippet.with_additional_snippet_named(
+                err = err.with_additional_snippet_named(
                     parent_text,
                     parent.name.as_str(),
                     &child.include_location,
@@ -301,8 +298,8 @@ fn with_recorded_source_snippets(
                 );
             }
             None if parent.parent_source_id.is_none() => {
-                err_with_snippet = with_root_additional_snippet(
-                    err_with_snippet,
+                err = with_root_additional_snippet(
+                    err,
                     root,
                     input,
                     &child.include_location,
@@ -312,7 +309,7 @@ fn with_recorded_source_snippets(
             None => {}
         }
     }
-    err_with_snippet
+    err
 }
 
 #[cfg(all(feature = "deserialize", feature = "include"))]
@@ -344,10 +341,21 @@ pub(crate) fn maybe_with_snippet_from_events_and_root_fragment(
     }
 
     #[cfg(feature = "include")]
-    if let Some(loc) = err.location()
-        && let Some(chain) = recorded_source_snippet_chain(events, &loc)
-    {
-        return with_recorded_source_snippets(err, root, input, &chain, crop_radius);
+    if let Some(loc) = err.location() {
+        let chain = events.recorded_source_chain(loc.source_id());
+        if let Some(current) = chain.first() {
+            if current.text.is_some() {
+                return with_recorded_source_snippets(err, root, input, &chain, crop_radius);
+            }
+            // An error inside an include whose text was not retained (a reader-backed include)
+            // has no source text to show. Its line/column belong to the included file, so
+            // rendering them against the root text would point at unrelated root lines.
+            // Show where it was included.
+            if current.parent_source_id.is_some() {
+                let err = err.with_no_snippet_regions(crop_radius);
+                return with_include_site_snippets(err, root, input, &chain, crop_radius);
+            }
+        }
     }
 
     match root {

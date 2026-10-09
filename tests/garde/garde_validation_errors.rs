@@ -372,6 +372,70 @@ fn validation_error_shows_referenced_and_defined_snippets_for_aliases() {
 }
 
 #[test]
+fn validation_errors_without_includes_have_no_include_notes() {
+    // The windows cropped for the issues' own locations are not include sites. Without any
+    // `!include`, no "included from here" note may be printed.
+    #[derive(Debug, Deserialize, Validate)]
+    struct Two {
+        #[garde(length(min = 4))]
+        x: String,
+        #[garde(length(min = 4))]
+        y: String,
+    }
+
+    let err = serde_saphyr::from_str_with_options_valid::<AnchorRoot>(
+        "a: &A \"x\"\nb: *A\n",
+        Options::default(),
+    )
+    .expect_err("must fail validation");
+    let rendered = err.to_string();
+    assert!(rendered.contains("the value is used here"), "{rendered}");
+    assert!(!rendered.contains("included from here"), "{rendered}");
+
+    let err =
+        serde_saphyr::from_str_with_options_valid::<Two>("x: no\ny: no\n", Options::default())
+            .expect_err("must fail validation");
+    let rendered = err.to_string();
+    assert!(
+        rendered.contains("for `x`") && rendered.contains("for `y`"),
+        "{rendered}"
+    );
+    assert!(!rendered.contains("included from here"), "{rendered}");
+}
+
+#[test]
+fn large_invalid_collection_renders_each_issue_without_include_notes() {
+    #[derive(Debug, Deserialize, Validate)]
+    struct Collection {
+        #[garde(dive)]
+        items: Vec<Root>,
+    }
+
+    const ISSUE_COUNT: usize = 1000;
+    let mut yaml = String::from("items:\n");
+    for _ in 0..ISSUE_COUNT {
+        yaml.push_str("  - a: \"\"\n");
+    }
+    let err = serde_saphyr::from_str_valid::<Collection>(&yaml)
+        .expect_err("every item must fail validation within the default budgets");
+    let Error::WithSnippet { error, regions, .. } = &err else {
+        panic!("expected validation snippets");
+    };
+    let Error::ValidationError { issues, .. } = error.as_ref() else {
+        panic!("expected validation issues");
+    };
+    assert_eq!(issues.len(), ISSUE_COUNT);
+    assert_eq!(regions.len(), ISSUE_COUNT);
+
+    let rendered = err.to_string();
+    assert_eq!(rendered.matches("error: line ").count(), ISSUE_COUNT);
+    for index in 0..ISSUE_COUNT {
+        assert!(rendered.contains(&format!("for `items[{index}].a`")));
+    }
+    assert!(!rendered.contains("included from here"));
+}
+
+#[test]
 fn validation_error_shows_longer_garde_path_for_nested_structures() {
     // Same anchor/alias scenario as `validation_error_shows_referenced_and_defined_snippets_for_aliases`,
     // but nested inside structures so garde produces a longer path like `outer.inner.b`.
