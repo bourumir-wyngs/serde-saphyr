@@ -139,7 +139,7 @@ impl MessageFormatter for PirateFormatter {
             }
             Error::UnknownAnchor { .. } => Cow::Borrowed("Mark be missing from the map!"),
             Error::SerdeInvalidLength { len, expected, .. } => Cow::Owned(format!(
-                "{len} items aboard, ye scallywag, but the manifest demands a tuple o’ {expected}"
+                "{len} items aboard, ye scallywag, but the manifest demands {expected}"
             )),
 
             // For other errors, we can delegate to the user-facing formatter.
