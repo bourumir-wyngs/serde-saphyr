@@ -25,6 +25,8 @@ use granit_parser::{ErrorKind, ScalarStyle, ScanError};
 use serde_core::de::{self};
 use std::borrow::Cow;
 use std::cell::Cell;
+#[cfg(any(feature = "garde", feature = "validator"))]
+use std::collections::HashSet;
 use std::fmt;
 
 #[cfg(all(feature = "properties", any(feature = "garde", feature = "validator")))]
@@ -2107,11 +2109,16 @@ fn fmt_validation_error_with_snippets_offset(
 ) -> fmt::Result {
     // Regions cropped for the issues' own locations. Only the remaining regions are include
     // sites ("included from here"); the issue regions must not be repeated as such.
-    let issue_locations: Vec<Location> = issues
+    let issue_locations: HashSet<Location> = issues
         .iter()
         .filter_map(|issue| locations.search_with_ancestor_fallback(&issue.path))
         .flat_map(|(locs, _)| [locs.reference_location, locs.defined_location])
         .filter(|loc| *loc != Location::UNKNOWN)
+        .collect();
+    // Classify once so rendering each issue does not rescan all issue locations/regions.
+    let include_regions: Vec<&CroppedRegion> = regions
+        .iter()
+        .filter(|region| !issue_locations.contains(&region.location))
         .collect();
 
     let mut first = true;
@@ -2219,10 +2226,8 @@ fn fmt_validation_error_with_snippets_offset(
             }
         }
 
-        for extra_region in regions {
-            if rendered_regions.contains(&std::ptr::from_ref(extra_region))
-                || issue_locations.contains(&extra_region.location)
-            {
+        for &extra_region in &include_regions {
+            if rendered_regions.contains(&std::ptr::from_ref(extra_region)) {
                 continue;
             }
             writeln!(f)?;

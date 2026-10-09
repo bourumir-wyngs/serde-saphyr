@@ -177,6 +177,28 @@ fn build_diagnostic(
             } else if let Some(location) = error.location() {
                 insert_selected_region_key(&mut used_regions, snippet_regions, &location);
             }
+            #[cfg(any(feature = "garde", feature = "validator"))]
+            if let Error::ValidationError {
+                issues, locations, ..
+            } = error.without_snippet()
+            {
+                // `Error::locations()` exposes only the first validation issue.
+                // Every issue's use and definition windows already have labels.
+                for issue in issues {
+                    if let Some((locs, _)) = locations.search_with_ancestor_fallback(&issue.path) {
+                        insert_selected_region_key(
+                            &mut used_regions,
+                            snippet_regions,
+                            &locs.reference_location,
+                        );
+                        insert_selected_region_key(
+                            &mut used_regions,
+                            snippet_regions,
+                            &locs.defined_location,
+                        );
+                    }
+                }
+            }
             if let Some(location) = distinct_alias_error_location(error) {
                 insert_selected_region_key(&mut used_regions, snippet_regions, &location);
             }
@@ -1017,6 +1039,93 @@ mod tests {
             diag.related.is_empty(),
             "primary snippet region should not be repeated as included-from-here"
         );
+    }
+
+    #[cfg(any(feature = "garde", feature = "validator"))]
+    #[rstest::rstest]
+    #[case::without_include(false)]
+    #[case::with_include(true)]
+    fn validation_snippet_regions_are_not_include_notes(#[case] with_include: bool) {
+        let yaml = "first: bad\n# 2\n# 3\n# 4\n# 5\n# 6\n# 7\n# 8\nsecond: wrong\n";
+        let source_name = if with_include {
+            "child.yaml"
+        } else {
+            "input.yaml"
+        };
+        let source_id = if with_include { 2 } else { 1 };
+        let mut issues = Vec::new();
+        let mut locations = PathMap::new();
+        for (field, value, line, column) in [("first", "bad", 1, 8), ("second", "wrong", 9, 9)] {
+            let path = PathKey::empty().join(field);
+            let location = Location {
+                line,
+                column,
+                span: crate::Span::new(yaml.find(value).unwrap() as u64, value.len() as u64),
+                source_id,
+            };
+            issues.push(crate::de_error::ValidationIssue::new(
+                path.clone(),
+                "invalid",
+            ));
+            locations.insert(
+                path,
+                Locations {
+                    reference_location: location,
+                    defined_location: location,
+                },
+            );
+        }
+        let mut error = Error::ValidationError {
+            source: crate::de_error::ValidationSource::Validator,
+            issues,
+            locations,
+        }
+        .with_snippet_named(yaml, source_name, 1);
+        let Error::WithSnippet { regions, .. } = &mut error else {
+            panic!("expected snippet regions");
+        };
+        assert_eq!(regions.len(), 2);
+        assert!(regions[0].end_line < regions[1].start_line);
+
+        let root_yaml = "config: !include child.yaml\n";
+        if with_include {
+            regions.push(CroppedRegion::new(
+                root_yaml,
+                "root.yaml",
+                1,
+                1,
+                Location {
+                    line: 1,
+                    column: 9,
+                    span: crate::Span::new(8, 19),
+                    source_id: 1,
+                },
+            ));
+        }
+        let (file, source) = if with_include {
+            ("root.yaml", root_yaml)
+        } else {
+            (source_name, yaml)
+        };
+        let src = Arc::new(NamedSource::new(file, source.to_owned()));
+        let diagnostic = build_diagnostic(&error, src, RenderOptions::default().formatter, &[]);
+
+        assert_eq!(diagnostic.related.len(), 2 + usize::from(with_include));
+        for (entry, value) in diagnostic.related.iter().zip(["bad", "wrong"]) {
+            assert!(entry.message.starts_with("validation error:"));
+            assert_eq!(entry.labels.len(), 1);
+            assert_eq!(labeled_text(entry, &entry.labels[0]), value);
+            assert!(entry.related.is_empty());
+        }
+        if with_include {
+            let include = &diagnostic.related[2];
+            assert_eq!(include.message, "included from here");
+            assert_eq!(include.src.name(), "root.yaml");
+            assert_eq!(
+                labeled_text(include, &include.labels[0]),
+                "!include child.yaml"
+            );
+        }
     }
 
     #[test]
