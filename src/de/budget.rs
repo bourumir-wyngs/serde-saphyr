@@ -311,13 +311,16 @@ impl Budget {
             .block_nesting_limit
             .max(self.max_depth.saturating_add(1));
 
-        granit_parser::options! {
+        let mut options = granit_parser::options! {
             simple_key_max_lookahead: self.simple_key_max_lookahead,
             flow_nesting_limit: self.flow_nesting_limit,
             block_nesting_limit: block_nesting_limit,
             #[cfg(feature = "comments")]
             max_buffered_comment_events: self.max_buffered_comment_events,
-        }
+        };
+        // Another dependency may enable upstream comments even when our feature is disabled.
+        options.set_emit_comments(cfg!(feature = "comments"));
+        options
     }
 }
 

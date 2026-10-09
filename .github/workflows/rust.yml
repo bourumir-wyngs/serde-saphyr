@@ -90,6 +90,11 @@ jobs:
         run: |
           cargo test --locked --offline --no-default-features --features serialize,deserialize
 
+      - name: Run without comments when the parser's comments feature is unified
+        run: |
+          cargo test --locked --offline --no-default-features --features deserialize,granit-parser/comments --test without_comments
+          cargo test --locked --offline --no-default-features --features include,granit-parser/comments --test without_comments
+
       - name: Run large huge_documents
         run: |
           cargo test --locked --offline --features huge_documents
@@ -121,6 +126,8 @@ jobs:
           cargo test --locked --offline --features miette
           cargo test --locked --offline --features garde,validator,miette,figment,robotics
           cargo test --locked --offline --no-default-features --features serialize,deserialize
+          cargo test --locked --offline --no-default-features --features deserialize,granit-parser/comments --test without_comments
+          cargo test --locked --offline --no-default-features --features include,granit-parser/comments --test without_comments
           cargo test --locked --offline --features huge_documents
           cargo test --locked --offline --all-features
 

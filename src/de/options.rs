@@ -425,7 +425,7 @@ impl Options {
         let mut parser_options = budget.parser_options();
         #[cfg(feature = "comments")]
         {
-            parser_options.emit_comments = self.emit_comments;
+            parser_options.set_emit_comments(self.emit_comments);
         }
         parser_options.strict_indentation = self.strict_indentation;
         parser_options
