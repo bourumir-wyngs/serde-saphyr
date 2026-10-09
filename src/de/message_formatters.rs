@@ -405,10 +405,11 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
             )))
         }
         #[cfg(any(feature = "garde", feature = "validator"))]
-        Error::ValidationErrors { errors, .. } => Cow::Owned(format!(
-            "validation failed for {} document(s)",
-            errors.len()
-        )),
+        Error::ValidationErrors { errors, .. } => Cow::Owned(
+            formatter
+                .localizer()
+                .validation_failed_documents(errors.len()),
+        ),
     }
 }
 

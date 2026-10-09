@@ -14,10 +14,10 @@ use crate::de_error::{
     CroppedRegion, distinct_alias_error_location, render_message_text, sanitize_message_text,
 };
 use crate::de_snippet::sanitize_terminal_snippet_preserve_len;
+use crate::localizer::Localizer;
 use crate::{MessageFormatter, RenderOptions};
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::{
-    localizer::Localizer,
     location::Locations,
     path_map::{PathKey, PathMap, format_path_with_resolved_leaf},
 };
@@ -47,6 +47,11 @@ pub fn to_miette_report(err: &Error, source: &str, file: &str) -> miette::Report
     to_miette_report_with_formatter(err, source, file, RenderOptions::default().formatter)
 }
 
+/// Like [`to_miette_report`], with custom messages and localization.
+///
+/// Labels, include context, and individual validation diagnostics use the formatter's
+/// [`Localizer`]. Validation entries also honor external-message overrides. The
+/// multi-document validation summary uses [`MessageFormatter::format_message`].
 #[must_use]
 pub fn to_miette_report_with_formatter(
     err: &Error,
@@ -107,29 +112,26 @@ fn build_diagnostic(
     match err {
         #[cfg(any(feature = "garde", feature = "validator"))]
         Error::ValidationError {
-            issues, locations, ..
+            source,
+            issues,
+            locations,
         } => {
+            let l10n = formatter.localizer();
             let mut related = Vec::new();
             for issue in issues {
+                let entry = issue.display_entry_overridden(l10n, source.external_message_source());
                 related.push(build_validation_entry_diagnostic(
                     &src,
-                    formatter.localizer(),
+                    l10n,
                     &issue.path,
-                    &issue.display_entry(),
+                    &entry,
                     locations,
                     regions,
                 ));
             }
 
             ErrorDiagnostic {
-                message: format!(
-                    "validation failed{}",
-                    if related.len() == 1 {
-                        ""
-                    } else {
-                        " (multiple errors)"
-                    }
-                ),
+                message: sanitize_message_text(l10n.validation_failed(issues.len())).into_owned(),
                 src,
                 labels: Vec::new(),
                 related,
@@ -149,7 +151,7 @@ fn build_diagnostic(
             }
 
             ErrorDiagnostic {
-                message: format!("validation failed for {} document(s)", errors.len()),
+                message: render_message_text(formatter, err).into_owned(),
                 src,
                 labels: Vec::new(),
                 related,
@@ -213,7 +215,10 @@ fn build_diagnostic(
                         get_source_and_span(&diag.src, &region.location, snippet_regions);
                     if let Some(span) = span {
                         diag.related.push(ErrorDiagnostic {
-                            message: "included from here".to_owned(),
+                            message: sanitize_message_text(
+                                formatter.localizer().included_from_here(),
+                            )
+                            .into_owned(),
                             src: synthetic_src,
                             labels: vec![LabeledSpan::new_with_span(None, span)],
                             related: Vec::new(),
@@ -226,12 +231,14 @@ fn build_diagnostic(
         }
 
         Error::AliasError { locations, .. } => {
+            let l10n = formatter.localizer();
             let (actual_src, mut labels, mut related) = build_dual_location_labels(
                 &src,
                 locations.reference_location,
                 locations.defined_location,
                 regions,
-                "anchor defined here",
+                l10n,
+                l10n.anchor_defined_here().as_ref(),
             );
             let message = render_message_text(formatter, err).into_owned();
 
@@ -239,9 +246,7 @@ fn build_diagnostic(
                 let (error_src, span) = get_source_and_span(&src, &location, regions);
                 if let Some(span) = span {
                     let label = LabeledSpan::new_with_span(
-                        Some(
-                            sanitize_message_text(formatter.localizer().error_here()).into_owned(),
-                        ),
+                        Some(sanitize_message_text(l10n.error_here()).into_owned()),
                         span,
                     );
                     // Cropped regions can share a filename while having different
@@ -332,13 +337,19 @@ fn build_validation_entry_diagnostic(
     let def_loc = locs.defined_location;
 
     let resolved_path = format_path_with_resolved_leaf(path_key, &resolved_leaf);
-    let base_msg = sanitize_message_text(Cow::Owned(format!(
-        "validation error: {entry} for `{resolved_path}`"
-    )))
+    let base_msg = sanitize_message_text(Cow::Owned(
+        l10n.validation_base_message(entry, &resolved_path),
+    ))
     .into_owned();
 
-    let (actual_src, labels, related) =
-        build_dual_location_labels(src, ref_loc, def_loc, regions, "defined here");
+    let (actual_src, labels, related) = build_dual_location_labels(
+        src,
+        ref_loc,
+        def_loc,
+        regions,
+        l10n,
+        l10n.defined_window().as_ref(),
+    );
 
     ErrorDiagnostic {
         message: base_msg,
@@ -353,7 +364,8 @@ fn build_dual_location_labels(
     ref_loc: Location,
     def_loc: Location,
     regions: &[CroppedRegion],
-    definition_label: &'static str,
+    l10n: &dyn Localizer,
+    definition_label: &str,
 ) -> (
     Arc<NamedSource<String>>,
     Vec<LabeledSpan>,
@@ -370,12 +382,13 @@ fn build_dual_location_labels(
     let (primary_src, span) = get_source_and_span(src, &primary_loc, regions);
 
     if let Some(span) = span {
+        let label = if ref_loc == Location::UNKNOWN {
+            l10n.defined_window()
+        } else {
+            l10n.value_used_here()
+        };
         labels.push(LabeledSpan::new_with_span(
-            Some(if ref_loc == Location::UNKNOWN {
-                "defined here".to_owned()
-            } else {
-                "the value is used here".to_owned()
-            }),
+            Some(sanitize_message_text(label).into_owned()),
             span,
         ));
     }
@@ -383,12 +396,14 @@ fn build_dual_location_labels(
     if def_loc != Location::UNKNOWN && def_loc != primary_loc {
         let (def_src, def_span) = get_source_and_span(src, &def_loc, regions);
         if let Some(span) = def_span {
-            let label = LabeledSpan::new_with_span(Some(definition_label.to_owned()), span);
+            let definition_label =
+                sanitize_message_text(Cow::Borrowed(definition_label)).into_owned();
+            let label = LabeledSpan::new_with_span(Some(definition_label.clone()), span);
             if sources_match(&primary_src, &def_src) {
                 labels.push(label);
             } else {
                 related.push(ErrorDiagnostic {
-                    message: definition_label.to_owned(),
+                    message: definition_label,
                     src: def_src,
                     labels: vec![label],
                     related: Vec::new(),

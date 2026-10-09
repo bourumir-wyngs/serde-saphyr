@@ -2023,7 +2023,7 @@ fn fmt_error_rendered(
                 if location.source_id() != 0 {
                     for extra_region in regions {
                         writeln!(f)?;
-                        writeln!(f, "included from here:")?;
+                        writeln!(f, "{}:", sanitize_message_text(l10n.included_from_here()))?;
                         crate::de_snippet::Snippet::new(
                             extra_region.text.as_str(),
                             extra_region.source_name.as_str(),
@@ -2102,7 +2102,7 @@ fn fmt_error_rendered(
                         continue;
                     }
                     writeln!(f)?;
-                    writeln!(f, "included from here:")?;
+                    writeln!(f, "{}:", sanitize_message_text(l10n.included_from_here()))?;
                     let extra_ctx = crate::de_snippet::Snippet::new(
                         extra_region.text.as_str(),
                         extra_region.source_name.as_str(),
@@ -2278,7 +2278,7 @@ fn fmt_validation_error_with_snippets_offset(
                 continue;
             }
             writeln!(f)?;
-            writeln!(f, "included from here:")?;
+            writeln!(f, "{}:", sanitize_message_text(l10n.included_from_here()))?;
             let extra_ctx = crate::de_snippet::Snippet::new(
                 extra_region.text.as_str(),
                 extra_region.source_name.as_str(),

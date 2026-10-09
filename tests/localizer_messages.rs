@@ -61,6 +61,26 @@ mod localizer_tests {
         assert_eq!(l.defined_here(), "(defined here)");
         assert_eq!(l.value_used_here(), "the value is used here");
         assert_eq!(l.defined_window(), "defined here");
+        assert_eq!(l.anchor_defined_here(), "anchor defined here");
+        assert_eq!(l.included_from_here(), "included from here");
+    }
+
+    #[test]
+    fn validation_summaries() {
+        let l = &DEFAULT_ENGLISH_LOCALIZER;
+        assert_eq!(l.validation_failed(1), "validation failed");
+        for count in [0, 2, usize::MAX] {
+            assert_eq!(
+                l.validation_failed(count),
+                "validation failed (multiple errors)"
+            );
+        }
+        for count in [0, 1, 2, usize::MAX] {
+            assert_eq!(
+                l.validation_failed_documents(count),
+                format!("validation failed for {count} document(s)")
+            );
+        }
     }
 
     #[test]

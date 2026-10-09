@@ -72,6 +72,9 @@
 
 ### Fixed
 
+- Miette diagnostics now localize alias labels, validation messages and summaries, and
+  include context. Validation messages honor external-message overrides, and multi-document
+  summaries honor custom message formatters. English defaults are unchanged.
 - Validation snippet headers now show the actual source name instead of `(defined)` or
   `(defined here)`, including errors in included YAML files.
 - Serde invalid-length failures now return `Error::SerdeInvalidLength` with separate
