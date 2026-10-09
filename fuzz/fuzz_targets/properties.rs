@@ -34,10 +34,10 @@ fuzz_target!(|data: &[u8]| {
         return;
     }
 
-    let syntax = if data.first().is_some_and(|byte| byte & 1 == 1) {
-        PropertySyntax::BracedOrBare
-    } else {
-        PropertySyntax::Braced
+    let syntax = match data.first().copied().unwrap_or_default() % 3 {
+        0 => PropertySyntax::Braced,
+        1 => PropertySyntax::BracedOrBare,
+        _ => PropertySyntax::DockerCompose,
     };
 
     if let Ok(text) = std::str::from_utf8(data) {

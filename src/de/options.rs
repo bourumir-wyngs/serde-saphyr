@@ -66,7 +66,7 @@ pub enum NonFiniteFloatPolicy {
     AsString,
 }
 
-/// Recognized syntaxes for `${NAME}` / `$NAME` property interpolation.
+/// Syntax and expansion rules for `${NAME}` / `$NAME` property interpolation.
 #[cfg(feature = "properties")]
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -83,6 +83,10 @@ pub enum PropertySyntax {
     /// Both `${NAME}` and the unbraced shorthand `$NAME` are interpolated.
     /// The unbraced form uses Required semantics (missing values error).
     BracedOrBare,
+
+    /// Property interpolation compatible with [Docker Compose]'s syntax and value expansion.
+    /// [Docker Compose]: https://docs.docker.com/reference/compose-file/interpolation/
+    DockerCompose,
 }
 
 /// Merge key handling policy for YAML mappings.
@@ -404,7 +408,10 @@ impl Options {
         self
     }
 
-    /// Installs a property map used for `${NAME}` interpolation in plain scalars.
+    /// Installs a property map used for `${NAME}` interpolation.
+    ///
+    /// [`PropertySyntax::DockerCompose`] also interpolates quoted and block string values;
+    /// the other modes interpolate only plain scalars.
     ///
     /// This is the intended public API for the `properties` feature. It consumes the provided
     /// [`HashMap`] and stores it in the internal shared representation used by nested
