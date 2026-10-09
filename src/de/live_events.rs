@@ -28,7 +28,7 @@ use crate::buffered_input::ReaderInput;
 
 #[cfg(feature = "properties")]
 use super::events::PropertyInterpolation;
-use super::events::attach_alias_locations_if_missing;
+use super::events::{NodeOrigin, attach_alias_locations_if_missing};
 use crate::buffered_input::buffered_input_from_reader_with_limit;
 use crate::de::{AliasLimits, Error, Ev, Events, Location, Options};
 use crate::de_error::budget_error;
@@ -721,10 +721,7 @@ impl<'a> LiveEvents<'a> {
         }
 
         let defined_location = ev.location();
-        let reference_location = self
-            .inject
-            .last()
-            .map_or(defined_location, |frame| frame.reference_location);
+        let reference_location = self.inject.last().map(|frame| frame.reference_location);
         let result = match ev {
             Ev::RecursiveAlias { location, .. } => {
                 self.validate_scalar_tag(SfTag::Null, String::new, "", *location)
@@ -1366,10 +1363,7 @@ impl<'a> LiveEvents<'a> {
     /// `BudgetEnforcer`, attaching the alias use and anchor definition locations on error.
     fn observe_budget_for_replay(&mut self, ev: &Ev) -> Result<(), Error> {
         let defined_location = ev.location();
-        let reference_location = self
-            .inject
-            .last()
-            .map_or(defined_location, |frame| frame.reference_location);
+        let reference_location = self.inject.last().map(|frame| frame.reference_location);
         let Some(budget) = self.budget.as_mut() else {
             return Ok(());
         };
@@ -1410,10 +1404,7 @@ impl<'a> LiveEvents<'a> {
     /// Charge one event copy before retaining it in an anchor buffer.
     fn observe_recorded_anchor_copy(&mut self, ev: &Ev<'a>) -> Result<(), Error> {
         let defined_location = ev.location();
-        let reference_location = self
-            .inject
-            .last()
-            .map_or(defined_location, |frame| frame.reference_location);
+        let reference_location = self.inject.last().map(|frame| frame.reference_location);
         let owned_bytes = ev.owned_payload_bytes();
         let Some(budget) = self.budget.as_mut() else {
             return Ok(());
@@ -1653,6 +1644,12 @@ impl<'de> Events<'de> for LiveEvents<'de> {
         self.look
             .as_ref()
             .map_or(self.last_location, super::events::Ev::location)
+    }
+
+    fn node_origin(&self) -> NodeOrigin {
+        self.inject.last().map_or(NodeOrigin::Direct, |frame| {
+            NodeOrigin::Alias(frame.reference_location)
+        })
     }
 
     #[cfg(feature = "comments")]

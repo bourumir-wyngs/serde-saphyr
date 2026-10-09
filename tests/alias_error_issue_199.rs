@@ -61,6 +61,10 @@ impl Localizer for Bracketed {
     fn attach_location<'a>(&self, base: Cow<'a, str>, loc: Location) -> Cow<'a, str> {
         Cow::Owned(format!("{base} [{}:{}]", loc.line(), loc.column()))
     }
+
+    fn alias_used_at(&self, loc: Location) -> String {
+        format!(" [used {}:{}]", loc.line(), loc.column())
+    }
 }
 
 struct NoLocations;
@@ -71,6 +75,10 @@ impl Localizer for NoLocations {
     }
 
     fn alias_defined_at(&self, _loc: Location) -> String {
+        String::new()
+    }
+
+    fn alias_used_at(&self, _loc: Location) -> String {
         String::new()
     }
 }
@@ -115,7 +123,7 @@ fn scalar_alias_reports_each_location_once() {
     assert_eq!(error.location(), Some(locations.reference_location));
     assert_eq!(
         error.to_string(),
-        "invalid u16 (defined at line 1, column 10) at line 2, column 7"
+        "invalid u16 (defined at line 1, column 10) (used at line 2, column 7)"
     );
     assert!(
         !outer.to_string().contains("the error occurred here"),
@@ -127,8 +135,97 @@ fn scalar_alias_reports_each_location_once() {
 fn mapping_alias_reports_the_failing_value_and_both_alias_locations() {
     assert_eq!(
         mapping_alias_error().without_snippet().to_string(),
-        "invalid u16 at line 2, column 9 (defined at line 2, column 3) at line 3, column 7"
+        "invalid u16 at line 2, column 9 (defined at line 2, column 3) (used at line 3, column 7)"
     );
+}
+
+#[test]
+#[allow(deprecated)] // The legacy message must describe the original error too.
+fn mapping_alias_exposes_the_original_error_without_redundant_wrappers() {
+    let outer = mapping_alias_error();
+    let Error::AliasError {
+        error,
+        msg,
+        locations,
+    } = outer.without_snippet()
+    else {
+        panic!("expected an alias error, got {outer:?}");
+    };
+
+    assert!(matches!(
+        error.as_ref(),
+        Error::InvalidScalar { ty: "u16", .. }
+    ));
+    assert_eq!(msg, "invalid u16 at line 2, column 9");
+    assert_eq!(error.to_string(), *msg);
+    assert_eq!(
+        (
+            locations.reference_location.line(),
+            locations.reference_location.column()
+        ),
+        (3, 7)
+    );
+    assert_eq!(
+        (
+            locations.defined_location.line(),
+            locations.defined_location.column()
+        ),
+        (2, 3)
+    );
+}
+
+#[test]
+#[allow(deprecated)] // Check the legacy message across nested mappings and sequences.
+fn deeply_nested_alias_keeps_one_wrapper_for_the_use_site() {
+    #[derive(Debug, Deserialize)]
+    struct NestedConfig {
+        #[serde(rename = "copy")]
+        _copy: std::collections::BTreeMap<String, Vec<Vec<Port>>>,
+    }
+
+    let yaml = "base: &b\n  nested:\n    - - port: eighty\ncopy: *b\n";
+    for outer in [
+        from_str::<NestedConfig>(yaml).unwrap_err(),
+        serde_saphyr::from_reader::<_, NestedConfig>(yaml.as_bytes()).unwrap_err(),
+    ] {
+        let alias = outer.without_snippet();
+        let Error::AliasError {
+            error,
+            msg,
+            locations,
+        } = alias
+        else {
+            panic!("expected an alias error, got {alias:?}");
+        };
+        assert!(matches!(
+            error.as_ref(),
+            Error::InvalidScalar { ty: "u16", .. }
+        ));
+        assert_eq!(msg, "invalid u16 at line 3, column 15");
+        assert_eq!(
+            (
+                locations.reference_location.line(),
+                locations.reference_location.column()
+            ),
+            (4, 7)
+        );
+        assert_eq!(
+            (
+                locations.defined_location.line(),
+                locations.defined_location.column()
+            ),
+            (2, 3)
+        );
+        let source = std::error::Error::source(alias)
+            .and_then(|source| source.downcast_ref::<Error>())
+            .expect("the alias source must be the original YAML error");
+        assert!(std::ptr::eq(source, error.as_ref()));
+        assert!(std::error::Error::source(source).is_none());
+        assert_eq!(
+            alias.to_string(),
+            "invalid u16 at line 3, column 15 (defined at line 2, column 3) (used at line 4, column 7)"
+        );
+    }
 }
 
 #[test]
@@ -160,13 +257,13 @@ fn scalar_alias_respects_custom_location_formatting() {
     let outer = scalar_alias_error();
     assert_eq!(
         outer.without_snippet().render_with_formatter(&formatter),
-        "invalid u16 (defined at line 1, column 10) [2:7]"
+        "invalid u16 (defined at line 1, column 10) [used 2:7]"
     );
     assert_eq!(
         mapping_alias_error()
             .without_snippet()
             .render_with_formatter(&formatter),
-        "invalid u16 [2:9] (defined at line 2, column 3) [3:7]"
+        "invalid u16 [2:9] (defined at line 2, column 3) [used 3:7]"
     );
 }
 
@@ -182,19 +279,23 @@ fn scalar_alias_line_offset_adjusts_every_reported_location() {
         fn alias_defined_at(&self, loc: Location) -> String {
             format!(" [anchor {}:{}]", loc.line() + self.0, loc.column())
         }
+
+        fn alias_used_at(&self, loc: Location) -> String {
+            format!(" [used {}:{}]", loc.line() + self.0, loc.column())
+        }
     }
 
     let formatter = DefaultMessageFormatter.with_localizer(&Offset(100));
     let outer = scalar_alias_error();
     assert_eq!(
         outer.without_snippet().render_with_formatter(&formatter),
-        "invalid u16 [anchor 101:10] [102:7]"
+        "invalid u16 [anchor 101:10] [used 102:7]"
     );
     assert_eq!(
         mapping_alias_error()
             .without_snippet()
             .render_with_formatter(&formatter),
-        "invalid u16 [102:9] [anchor 102:3] [103:7]"
+        "invalid u16 [102:9] [anchor 102:3] [used 103:7]"
     );
 }
 
@@ -215,11 +316,11 @@ fn aliases_pass_the_original_variant_to_a_custom_formatter() {
     for (outer, expected) in [
         (
             scalar_alias_error(),
-            "custom port error (defined at line 1, column 10) at line 2, column 7",
+            "custom port error (defined at line 1, column 10) (used at line 2, column 7)",
         ),
         (
             mapping_alias_error(),
-            "custom port error at line 2, column 9 (defined at line 2, column 3) at line 3, column 7",
+            "custom port error at line 2, column 9 (defined at line 2, column 3) (used at line 3, column 7)",
         ),
     ] {
         formatter.scalar_calls.set(0);
@@ -251,7 +352,7 @@ fn mapping_alias_keeps_the_leaf_location_through_nested_wrappers() {
 
     assert_eq!(
         outer.render_with_formatter(&formatter),
-        "custom port error at line 2, column 9 (defined at line 2, column 3) at line 3, column 7"
+        "custom port error at line 2, column 9 (defined at line 2, column 3) (used at line 3, column 7)"
     );
     assert_eq!(formatter.scalar_calls.get(), 1);
 }
@@ -267,11 +368,11 @@ fn alias_error_source_chain_preserves_the_original_typed_error_and_location() {
             .and_then(|source| source.downcast_ref::<Error>())
             .expect("snippet must expose its wrapped error");
         assert!(std::ptr::eq(snippet_source, error));
-        let mut source =
-            std::error::Error::source(error).expect("alias must expose its inner error");
-        while let Some(inner) = source.source() {
-            source = inner;
-        }
+        let source = std::error::Error::source(error).expect("alias must expose its inner error");
+        assert!(
+            source.source().is_none(),
+            "alias must expose the leaf directly"
+        );
         let original = source.downcast_ref::<Error>().expect("original YAML error");
         assert!(matches!(original, Error::InvalidScalar { ty: "u16", .. }));
         let location = original.location().expect("original scalar location");
@@ -348,7 +449,7 @@ fn mapping_alias_snippet_retains_a_failing_field_far_from_the_anchor() {
         );
         assert_eq!(
             error.without_snippet().to_string(),
-            "invalid u16 at line 32, column 9 (defined at line 2, column 3) at line 63, column 7"
+            "invalid u16 at line 32, column 9 (defined at line 2, column 3) (used at line 63, column 7)"
         );
 
         let rendered = error.to_string();

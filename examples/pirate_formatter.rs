@@ -138,6 +138,9 @@ impl MessageFormatter for PirateFormatter {
                 Cow::Borrowed("That string got mangled by the waves")
             }
             Error::UnknownAnchor { .. } => Cow::Borrowed("Mark be missing from the map!"),
+            Error::SerdeInvalidLength { len, expected, .. } => Cow::Owned(format!(
+                "{len} items aboard, ye scallywag, but the manifest demands {expected}"
+            )),
 
             // For other errors, we can delegate to the user-facing formatter.
             // Localizer stays pirate-speak.
@@ -261,7 +264,24 @@ fn main() {
         );
     }
 
-    // Example 5: Serialization error customization. Serialization uses `ser_error::Error`,
+    // Example 5: Three YAML items cannot fit into a two-element tuple.
+    let yaml_invalid_length = "[rum, gold, maps]\n";
+    println!("\n\n--- Attempting to parse three cargo items into a pair ---");
+    println!("{}", yaml_invalid_length.trim());
+
+    let err = serde_saphyr::from_str::<(String, String)>(yaml_invalid_length)
+        .expect_err("three items cannot fit into a pair");
+    println!("\n[Developer Error]:\n{}", err.render());
+    println!(
+        "\n[User Error]:\n{}",
+        err.render_with_formatter(&UserMessageFormatter)
+    );
+    println!(
+        "\n[Pirate Error]:\n{}",
+        err.render_with_formatter(&PirateFormatter)
+    );
+
+    // Example 6: Serialization error customization. Serialization uses `ser_error::Error`,
     // so customize it by matching typed serializer variants directly.
     let single_quoted = SingleQuoted("line\nbreak");
     println!("\n\n--- Attempting to serialize a value that cannot use SingleQuoted safely ---");
@@ -274,7 +294,7 @@ fn main() {
         );
     }
 
-    // Example 6: Validation with dual-snippet (anchor + alias)
+    // Example 7: Validation with dual-snippet (anchor + alias)
     // The invalid value is defined with an anchor and referenced via alias,
     // so the error shows both where the alias is used and where the anchor defined the value.
     #[cfg(feature = "garde")]

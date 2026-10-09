@@ -115,10 +115,12 @@ impl<'a> ExternalMessage<'a> {
 pub trait Localizer {
     // ---------------- Common tiny building blocks ----------------
 
-    /// Attach a location suffix to `base`.
+    /// Attach an ordinary error-location suffix to `base`.
     ///
     /// Renderers must use this instead of hard-coding English wording like
     /// `" at line X, column Y"`.
+    /// Plain alias use and definition locations have separate hooks:
+    /// [`Localizer::alias_used_at`] and [`Localizer::alias_defined_at`].
     ///
     /// Default:
     /// - If `loc == Location::UNKNOWN`: returns `base` unchanged.
@@ -154,6 +156,20 @@ pub trait Localizer {
         )
     }
 
+    /// Suffix identifying where an aliased value is used in a plain-text diagnostic.
+    ///
+    /// Default: `" (used at line X, column Y)"`, or an empty string for an unknown location.
+    /// This replaces the generic [`Localizer::attach_location`] call for a known alias use.
+    /// Override this hook as well when customizing or suppressing alias-use coordinates;
+    /// return an empty string to omit the suffix.
+    fn alias_used_at(&self, used: Location) -> String {
+        if used == Location::UNKNOWN {
+            String::new()
+        } else {
+            format!(" (used at line {}, column {})", used.line, used.column)
+        }
+    }
+
     // ---------------- Validation (plain text) glue ----------------
 
     /// Render one validation issue line.
@@ -186,17 +202,41 @@ pub trait Localizer {
         lines.join("\n")
     }
 
+    /// Summary for a validation report whose issues are shown as related miette diagnostics.
+    ///
+    /// Default: `"validation failed"` for one issue, otherwise
+    /// `"validation failed (multiple errors)"`.
+    fn validation_failed(&self, issue_count: usize) -> Cow<'static, str> {
+        if issue_count == 1 {
+            Cow::Borrowed("validation failed")
+        } else {
+            Cow::Borrowed("validation failed (multiple errors)")
+        }
+    }
+
+    /// Summary for validation failures spanning multiple YAML documents.
+    ///
+    /// Default: `"validation failed for {document_count} document(s)"`.
+    fn validation_failed_documents(&self, document_count: usize) -> String {
+        format!("validation failed for {document_count} document(s)")
+    }
+
     // ---------------- Validation snippets / diagnostic labels ----------------
 
-    /// Label used for a snippet window when the location is known and considered the
-    /// “definition” site.
+    /// Legacy label for a snippet window at the “definition” site.
+    ///
+    /// Retained for compatibility. Built-in validation snippets now use the actual source
+    /// name in their headers and do not call this hook.
     ///
     /// Default: `"(defined)"`.
     fn defined(&self) -> Cow<'static, str> {
         Cow::Borrowed("(defined)")
     }
 
-    /// Label used for a snippet window when we only have a “defined here” location.
+    /// Legacy label for a snippet window with only a “defined here” location.
+    ///
+    /// Retained for compatibility. Built-in validation snippets now use the actual source
+    /// name in their headers and do not call this hook.
     ///
     /// Default: `"(defined here)"`.
     fn defined_here(&self) -> Cow<'static, str> {
@@ -204,7 +244,7 @@ pub trait Localizer {
     }
 
     /// Label used for the primary snippet window when an aliased/anchored value is used
-    /// at a different location than where it was defined.
+    /// at a different location than where it was defined, and for use sites in miette.
     ///
     /// Default: `"the value is used here"`.
     fn value_used_here(&self) -> Cow<'static, str> {
@@ -212,10 +252,28 @@ pub trait Localizer {
     }
 
     /// Label used for the secondary snippet window that points at the anchor definition.
+    /// Also used for validation definitions and definition-only locations in miette.
     ///
     /// Default: `"defined here"`.
     fn defined_window(&self) -> Cow<'static, str> {
         Cow::Borrowed("defined here")
+    }
+
+    /// Label for an alias's anchor definition in miette diagnostics.
+    ///
+    /// Default: `"anchor defined here"`.
+    fn anchor_defined_here(&self) -> Cow<'static, str> {
+        Cow::Borrowed("anchor defined here")
+    }
+
+    /// Message identifying an include site in a diagnostic.
+    ///
+    /// Used by miette related diagnostics and plain snippet headings. The plain snippet
+    /// renderer adds a trailing colon.
+    ///
+    /// Default: `"included from here"` (without a trailing colon).
+    fn included_from_here(&self) -> Cow<'static, str> {
+        Cow::Borrowed("included from here")
     }
 
     /// Label for the failing value when it differs from the alias definition and use.
@@ -225,7 +283,7 @@ pub trait Localizer {
         Cow::Borrowed("the error occurred here")
     }
 
-    /// Compose the base validation message used in snippet rendering.
+    /// Compose the base validation message used in snippets and miette diagnostics.
     ///
     /// Default: `"validation error: {entry} for `{`resolved_path`}`"`.
     fn validation_base_message(&self, entry: &str, resolved_path: &str) -> String {
