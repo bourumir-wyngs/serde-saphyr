@@ -230,6 +230,8 @@ Adding or removing a single space in YAML indentation may result in a document t
 
 You can require the number of indentation columns to be consistent throughout the document, ensure it is even, or enforce that it is divisible by a specific number (for example, 4 or 6). Configure the desired policy using `Options`.
 
+Set `strict_indentation: true` in `options!` to enforce YAML indentation rules for flow collections (`[...]` and `{...}`), including their entries, delimiters, and multiline scalar content. This also applies to included YAML. The default is `false`, allowing under-indented flow collections for compatibility.
+
 ### Duplicate keys
 
 Duplicate key handling is configurable. By default it’s an error; “first wins” and “last wins” strategies are available via [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). The duplicate key policy applies not just to strings but also to other types (if used as keys when deserializing into a map).
