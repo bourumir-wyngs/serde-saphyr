@@ -254,3 +254,63 @@ fn lit_str_with_leading_spaces_emits_indicator() {
     // Should have |N where N is a digit
     assert!(yaml.contains('|'), "expected literal block: {yaml}");
 }
+
+/// A block scalar with leading spaces, as the value of a map opened right after `- `: the map's
+/// keys are aligned two columns past the dash, and the indentation indicator must be relative
+/// to that column for every `indent_step`.
+#[test]
+fn block_scalar_indicator_in_map_after_dash_round_trips() {
+    for indent_step in 1..=9 {
+        for text in ["  indented\n", " a\nb", "\n  x", "  \n  "] {
+            for value in [
+                serde_json::json!([{ "k": LitStr(text) }]),
+                serde_json::json!([{ "k": FoldStr(text) }]),
+                serde_json::json!({ "a": [{ "k": LitStr(text) }] }),
+            ] {
+                let options = serde_saphyr::ser_options! { indent_step: indent_step };
+                let yaml = to_string_with_options(&value, options).unwrap();
+                let back: serde_json::Value = serde_saphyr::from_str(&yaml)
+                    .unwrap_or_else(|e| panic!("indent_step {indent_step}: {e}\n{yaml}"));
+                let expected: serde_json::Value =
+                    serde_json::from_str(&serde_json::to_string(&value).unwrap()).unwrap();
+                assert_eq!(back, expected, "indent_step {indent_step}:\n{yaml}");
+            }
+        }
+    }
+}
+
+/// Same for an externally tagged enum variant written inline after `- ` (`- Variant: |N`).
+#[test]
+fn block_scalar_indicator_in_variant_after_dash_round_trips() {
+    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+    enum V {
+        Lit(LitString),
+    }
+    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+    enum Outer {
+        Inner(V),
+        Fields { v: V },
+    }
+    for indent_step in 1..=9 {
+        for text in [" x", "  x\n", " ? a"] {
+            let options = serde_saphyr::ser_options! { indent_step: indent_step };
+            let value = vec![V::Lit(LitString(text.to_owned()))];
+            let yaml = to_string_with_options(&value, options.clone()).unwrap();
+            let back: Vec<V> = serde_saphyr::from_str(&yaml)
+                .unwrap_or_else(|e| panic!("indent_step {indent_step}: {e}\n{yaml}"));
+            assert_eq!(back, value, "indent_step {indent_step}:\n{yaml}");
+            // A variant label on its own line (as a mapping value, or a struct-variant field)
+            // inside a variant after `- ` measures from its own depth, not the outer label.
+            let nested = vec![
+                Outer::Inner(V::Lit(LitString(text.to_owned()))),
+                Outer::Fields {
+                    v: V::Lit(LitString(text.to_owned())),
+                },
+            ];
+            let yaml = to_string_with_options(&nested, options).unwrap();
+            let back: Vec<Outer> = serde_saphyr::from_str(&yaml)
+                .unwrap_or_else(|e| panic!("indent_step {indent_step}: {e}\n{yaml}"));
+            assert_eq!(back, nested, "indent_step {indent_step}:\n{yaml}");
+        }
+    }
+}

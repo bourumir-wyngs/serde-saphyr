@@ -99,3 +99,44 @@ fn deserialize_unit_key_into_hashmap_unit() {
     assert_eq!(m.len(), 1);
     assert_eq!(m.get(&()), Some(&"value".to_string()));
 }
+
+/// Block collections used as map keys are written after `? `; their continuation lines must
+/// align with the first item (two columns past `?`), at the top level and nested.
+#[test]
+fn block_collection_keys_round_trip() {
+    use serde::{Deserialize, Serialize};
+    use std::collections::BTreeMap;
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord)]
+    enum E {
+        C { x: String, y: i32 },
+    }
+
+    fn round_trip<T>(value: &T)
+    where
+        T: Serialize + for<'de> Deserialize<'de> + PartialEq + std::fmt::Debug,
+    {
+        let yaml = serde_saphyr::to_string(value).unwrap();
+        let back: T = serde_saphyr::from_str(&yaml).unwrap_or_else(|e| panic!("{e}\n{yaml}"));
+        assert_eq!(&back, value, "{yaml}");
+    }
+
+    round_trip(&BTreeMap::from([((1, "a".to_string()), 0)]));
+    round_trip(&BTreeMap::from([(vec![1, 2], 0)]));
+    round_trip(&BTreeMap::from([(
+        E::C {
+            x: "y".into(),
+            y: 1,
+        },
+        0,
+    )]));
+    round_trip(&BTreeMap::from([((1, 2), (3, 4))]));
+    round_trip(&BTreeMap::from([(
+        "outer".to_string(),
+        BTreeMap::from([((1, "a".to_string()), 0)]),
+    )]));
+    round_trip(&vec![BTreeMap::from([((1, "a".to_string()), 0)])]);
+
+    let yaml = serde_saphyr::to_string(&BTreeMap::from([((1, "a".to_string()), 0)])).unwrap();
+    assert_eq!(yaml, "? - 1\n  - a\n: 0\n");
+}
