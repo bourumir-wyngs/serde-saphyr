@@ -105,10 +105,12 @@ impl PropertyInterpolation {
 /// During alias replay, errors may already have a location attached (the anchor's definition
 /// location from the replayed events). We still want to create an `Error::AliasError` with both
 /// locations when the reference (alias) and defined (anchor) locations differ.
+/// Reuse an existing wrapper for the same alias use, updating its definition to the outer
+/// anchor location as the error propagates through nested containers.
 #[inline]
 #[allow(deprecated)] // Keep populating msg for existing message-based alias handlers.
 pub(super) fn attach_alias_locations_if_missing(
-    err: Error,
+    mut err: Error,
     reference_location: Location,
     defined_location: Location,
 ) -> Error {
@@ -119,6 +121,12 @@ pub(super) fn attach_alias_locations_if_missing(
         && defined_location != Location::UNKNOWN
         && reference_location != defined_location
     {
+        if let Error::AliasError { locations, .. } = &mut err
+            && locations.reference_location == reference_location
+        {
+            locations.defined_location = defined_location;
+            return err;
+        }
         Error::AliasError {
             msg: err.to_string(),
             error: Box::new(err),

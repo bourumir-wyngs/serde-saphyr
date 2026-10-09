@@ -132,6 +132,95 @@ fn mapping_alias_reports_the_failing_value_and_both_alias_locations() {
 }
 
 #[test]
+#[allow(deprecated)] // The legacy message must describe the original error too.
+fn mapping_alias_exposes_the_original_error_without_redundant_wrappers() {
+    let outer = mapping_alias_error();
+    let Error::AliasError {
+        error,
+        msg,
+        locations,
+    } = outer.without_snippet()
+    else {
+        panic!("expected an alias error, got {outer:?}");
+    };
+
+    assert!(matches!(
+        error.as_ref(),
+        Error::InvalidScalar { ty: "u16", .. }
+    ));
+    assert_eq!(msg, "invalid u16 at line 2, column 9");
+    assert_eq!(error.to_string(), *msg);
+    assert_eq!(
+        (
+            locations.reference_location.line(),
+            locations.reference_location.column()
+        ),
+        (3, 7)
+    );
+    assert_eq!(
+        (
+            locations.defined_location.line(),
+            locations.defined_location.column()
+        ),
+        (2, 3)
+    );
+}
+
+#[test]
+#[allow(deprecated)] // Check the legacy message across nested mappings and sequences.
+fn deeply_nested_alias_keeps_one_wrapper_for_the_use_site() {
+    #[derive(Debug, Deserialize)]
+    struct NestedConfig {
+        #[serde(rename = "copy")]
+        _copy: std::collections::BTreeMap<String, Vec<Vec<Port>>>,
+    }
+
+    let yaml = "base: &b\n  nested:\n    - - port: eighty\ncopy: *b\n";
+    for outer in [
+        from_str::<NestedConfig>(yaml).unwrap_err(),
+        serde_saphyr::from_reader::<_, NestedConfig>(yaml.as_bytes()).unwrap_err(),
+    ] {
+        let alias = outer.without_snippet();
+        let Error::AliasError {
+            error,
+            msg,
+            locations,
+        } = alias
+        else {
+            panic!("expected an alias error, got {alias:?}");
+        };
+        assert!(matches!(
+            error.as_ref(),
+            Error::InvalidScalar { ty: "u16", .. }
+        ));
+        assert_eq!(msg, "invalid u16 at line 3, column 15");
+        assert_eq!(
+            (
+                locations.reference_location.line(),
+                locations.reference_location.column()
+            ),
+            (4, 7)
+        );
+        assert_eq!(
+            (
+                locations.defined_location.line(),
+                locations.defined_location.column()
+            ),
+            (2, 3)
+        );
+        let source = std::error::Error::source(alias)
+            .and_then(|source| source.downcast_ref::<Error>())
+            .expect("the alias source must be the original YAML error");
+        assert!(std::ptr::eq(source, error.as_ref()));
+        assert!(std::error::Error::source(source).is_none());
+        assert_eq!(
+            alias.to_string(),
+            "invalid u16 at line 3, column 15 (defined at line 2, column 3) at line 4, column 7"
+        );
+    }
+}
+
+#[test]
 fn alias_error_preserves_existing_variant_handlers_and_legacy_message() {
     for outer in [scalar_alias_error(), mapping_alias_error()] {
         let error = outer.without_snippet();
@@ -267,11 +356,11 @@ fn alias_error_source_chain_preserves_the_original_typed_error_and_location() {
             .and_then(|source| source.downcast_ref::<Error>())
             .expect("snippet must expose its wrapped error");
         assert!(std::ptr::eq(snippet_source, error));
-        let mut source =
-            std::error::Error::source(error).expect("alias must expose its inner error");
-        while let Some(inner) = source.source() {
-            source = inner;
-        }
+        let source = std::error::Error::source(error).expect("alias must expose its inner error");
+        assert!(
+            source.source().is_none(),
+            "alias must expose the leaf directly"
+        );
         let original = source.downcast_ref::<Error>().expect("original YAML error");
         assert!(matches!(original, Error::InvalidScalar { ty: "u16", .. }));
         let location = original.location().expect("original scalar location");

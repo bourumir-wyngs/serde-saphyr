@@ -262,6 +262,37 @@ fn attach_alias_locations_prefers_dual_locations_and_existing_errors() {
 }
 
 #[test]
+fn attach_alias_locations_preserves_distinct_use_sites() {
+    let reference = loc(1, 2).with_source_id(1);
+    let defined = loc(3, 4).with_source_id(1);
+    // Identical line/column coordinates in different sources are distinct uses.
+    for outer_reference in [loc(7, 8).with_source_id(1), reference.with_source_id(2)] {
+        let original = Error::unexpected("value").with_location(defined);
+        let inner = attach_alias_locations_if_missing(original, reference, defined);
+        let outer = attach_alias_locations_if_missing(inner, outer_reference, reference);
+
+        let Error::AliasError {
+            error, locations, ..
+        } = outer
+        else {
+            panic!("expected the outer alias error");
+        };
+        assert_eq!(locations.reference_location, outer_reference);
+        assert_eq!(locations.defined_location, reference);
+        let Error::AliasError {
+            error, locations, ..
+        } = *error
+        else {
+            panic!("the distinct inner alias must be retained");
+        };
+        assert_eq!(locations.reference_location, reference);
+        assert_eq!(locations.defined_location, defined);
+        assert!(matches!(*error, Error::Unexpected { .. }));
+        assert_eq!(error.location(), Some(defined));
+    }
+}
+
+#[test]
 fn simple_tagged_enum_helpers_accept_only_simple_variant_names() {
     assert_eq!(
         simple_tagged_enum_name(&Some(Cow::Borrowed("!Widget")), &SfTag::Other),

@@ -72,6 +72,9 @@
 
 ### Fixed
 
+- Nested containers reuse the alias error wrapper for the same use site, preserving the
+  outer anchor location while exposing the original error directly through `error`, `source()`,
+  and the legacy `msg` field ([#205, item 1](https://github.com/bourumir-wyngs/serde-saphyr/issues/205)).
 - Alias diagnostics preserve the precise location of a failing value inside an anchored mapping,
   including fields outside the anchor's snippet window. Plain messages, snippets, and `miette`
   reports include the distinct failing location; equal locations are not repeated.
