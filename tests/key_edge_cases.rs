@@ -116,9 +116,21 @@ fn block_collection_keys_round_trip() {
     where
         T: Serialize + for<'de> Deserialize<'de> + PartialEq + std::fmt::Debug,
     {
-        let yaml = serde_saphyr::to_string(value).unwrap();
-        let back: T = serde_saphyr::from_str(&yaml).unwrap_or_else(|e| panic!("{e}\n{yaml}"));
-        assert_eq!(&back, value, "{yaml}");
+        for indent_step in 1..=9 {
+            for compact_list_indent in [false, true] {
+                let options = serde_saphyr::ser_options! {
+                    indent_step: indent_step,
+                    compact_list_indent: compact_list_indent,
+                };
+                let context =
+                    format!("indent_step {indent_step}, compact_list_indent {compact_list_indent}");
+                let yaml = serde_saphyr::to_string_with_options(value, options)
+                    .unwrap_or_else(|e| panic!("{context}: {e}"));
+                let back: T = serde_saphyr::from_str(&yaml)
+                    .unwrap_or_else(|e| panic!("{context}: {e}\n{yaml}"));
+                assert_eq!(&back, value, "{context}:\n{yaml}");
+            }
+        }
     }
 
     round_trip(&BTreeMap::from([((1, "a".to_string()), 0)]));

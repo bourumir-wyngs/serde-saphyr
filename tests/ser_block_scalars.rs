@@ -279,6 +279,44 @@ fn block_scalar_indicator_in_map_after_dash_round_trips() {
     }
 }
 
+#[test]
+fn explicit_block_styles_in_map_after_dash_preserve_indentation() {
+    use std::collections::BTreeMap;
+
+    let text = "  indented\n";
+
+    for indent_step in 1..=9 {
+        let options = serde_saphyr::ser_options! {
+            indent_step: indent_step,
+            prefer_block_scalars: false,
+        };
+
+        let literal = vec![BTreeMap::from([("k", LitStr(text))])];
+        let folded = vec![BTreeMap::from([("k", FoldStr(text))])];
+
+        let outputs = [
+            (
+                '|',
+                to_string_with_options(&literal, options.clone()).unwrap(),
+            ),
+            ('>', to_string_with_options(&folded, options).unwrap()),
+        ];
+
+        for (style, yaml) in outputs {
+            let header = format!("k: {style}{indent_step}\n");
+            assert!(yaml.contains(&header), "missing {header:?}:\n{yaml}");
+
+            let back: Vec<BTreeMap<String, String>> = serde_saphyr::from_str(&yaml).unwrap();
+
+            assert_eq!(
+                back,
+                vec![BTreeMap::from([("k".to_owned(), text.to_owned())])],
+                "indent_step {indent_step}:\n{yaml}"
+            );
+        }
+    }
+}
+
 /// Same for an externally tagged enum variant written inline after `- ` (`- Variant: |N`).
 #[test]
 fn block_scalar_indicator_in_variant_after_dash_round_trips() {

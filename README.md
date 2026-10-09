@@ -772,6 +772,9 @@ When the property values are secrets, interpolation resolves the final value bef
 `serde-saphyr` tracks interpolated values and redacts them back to their `${...}` form in later error messages.
 Treat the property map itself as sensitive - do not log or format it directly.
 
+If you write a loaded data structure with resolved properties, the resolved values will obviously appear in the output. 
+If this is unwanted, do now write the structure that has been loaded with property resolver.
+
 ### Includes
 
 The need for including YAML (not part of the official specs) can be seen from the popularity of the command-line [yaml-include](https://crates.io/crates/yaml-include) crate. That crate is very feature-complete. However, if the YAML parser and validator are separate from the pre-processor, they usually only report the line number and snippet in the processed document. For large documents with multiple and deep includes, this becomes challenging to interpret. YAML indentation and security requirements like path confinement or anchor isolation make "quick adding" of includes non-trivial.  
