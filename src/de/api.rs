@@ -257,17 +257,6 @@ fn with_root_additional_snippet(
 }
 
 #[cfg(all(feature = "deserialize", feature = "include"))]
-fn recorded_source_snippet_chain<'a>(
-    events: &'a crate::live_events::LiveEvents<'_>,
-    location: &crate::Location,
-) -> Option<Vec<&'a crate::include_stack::RecordedSource>> {
-    let chain = events.recorded_source_chain(location.source_id());
-    // Bail unless the innermost source has recorded text — the snippet renderer needs it.
-    chain.first()?.text.as_deref()?;
-    Some(chain)
-}
-
-#[cfg(all(feature = "deserialize", feature = "include"))]
 fn with_recorded_source_snippets(
     err: Error,
     root: Option<&RootFragment<'_>>,
@@ -352,23 +341,20 @@ pub(crate) fn maybe_with_snippet_from_events_and_root_fragment(
     }
 
     #[cfg(feature = "include")]
-    if let Some(loc) = err.location()
-        && let Some(chain) = recorded_source_snippet_chain(events, &loc)
-    {
-        return with_recorded_source_snippets(err, root, input, &chain, crop_radius);
-    }
-
-    // An error inside an include whose text was not retained (a reader-backed include) has no
-    // source text to show. Its line/column belong to the included file, so rendering them
-    // against the root text would point at unrelated root lines. Show where it was included.
-    #[cfg(feature = "include")]
     if let Some(loc) = err.location() {
         let chain = events.recorded_source_chain(loc.source_id());
-        if let Some(current) = chain.first()
-            && current.parent_source_id.is_some()
-        {
-            let err = err.with_no_snippet_regions(crop_radius);
-            return with_include_site_snippets(err, root, input, &chain, crop_radius);
+        if let Some(current) = chain.first() {
+            if current.text.is_some() {
+                return with_recorded_source_snippets(err, root, input, &chain, crop_radius);
+            }
+            // An error inside an include whose text was not retained (a reader-backed include)
+            // has no source text to show. Its line/column belong to the included file, so
+            // rendering them against the root text would point at unrelated root lines.
+            // Show where it was included.
+            if current.parent_source_id.is_some() {
+                let err = err.with_no_snippet_regions(crop_radius);
+                return with_include_site_snippets(err, root, input, &chain, crop_radius);
+            }
         }
     }
 
