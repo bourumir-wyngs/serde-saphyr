@@ -2202,12 +2202,11 @@ fn fmt_validation_error_with_snippets_offset(
                 write!(f, "{base_msg}")?;
             }
             (r, d) if r != Location::UNKNOWN && (d == Location::UNKNOWN || d == r) => {
-                let label = l10n.defined();
                 if let Some(region) = pick_cropped_region(regions, &r) {
                     rendered_regions.push(std::ptr::from_ref(region));
                     let ctx = crate::de_snippet::Snippet::new(
                         region.text.as_str(),
-                        label.as_ref(),
+                        region.source_name.as_str(),
                         crop_radius,
                     )
                     .with_offset(region.start_line);
@@ -2217,12 +2216,11 @@ fn fmt_validation_error_with_snippets_offset(
                 }
             }
             (r, d) if r == Location::UNKNOWN && d != Location::UNKNOWN => {
-                let label = l10n.defined_here();
                 if let Some(region) = pick_cropped_region(regions, &d) {
                     rendered_regions.push(std::ptr::from_ref(region));
                     let ctx = crate::de_snippet::Snippet::new(
                         region.text.as_str(),
-                        label.as_ref(),
+                        region.source_name.as_str(),
                         crop_radius,
                     )
                     .with_offset(region.start_line);
@@ -2588,6 +2586,75 @@ mod tests {
             r"cyclic include detected: child.yaml\nwhile processing include from root.yaml -> parent.yaml"
         );
         assert!(!rendered.contains('\n'));
+    }
+
+    #[cfg(any(feature = "garde", feature = "validator"))]
+    #[rstest::rstest]
+    #[case::reference_only(Location::new(10, 8), Location::UNKNOWN)]
+    #[case::definition_only(Location::UNKNOWN, Location::new(10, 8))]
+    #[case::same_location(Location::new(10, 8), Location::new(10, 8))]
+    fn validation_snippet_headers_use_region_source_names(
+        #[case] reference_location: Location,
+        #[case] defined_location: Location,
+    ) {
+        struct DefinitionLabels;
+        impl Localizer for DefinitionLabels {
+            fn defined(&self) -> Cow<'static, str> {
+                Cow::Borrowed("LOCALIZED DEFINITION")
+            }
+
+            fn defined_here(&self) -> Cow<'static, str> {
+                Cow::Borrowed("LOCALIZED DEFINITION HERE")
+            }
+        }
+
+        let path = PathKey::new().join_key("value");
+        let mut locations = PathMap::new();
+        locations.insert(
+            path.clone(),
+            Locations {
+                reference_location,
+                defined_location,
+            },
+        );
+        let default = crate::DefaultMessageFormatter;
+        let localized = default.with_localizer(&DefinitionLabels);
+        for (source_name, displayed_name) in [
+            ("config.yaml", "config.yaml"),
+            ("config.yaml\n\u{1b}[31m", r"config.yaml\n\u{1b}[31m"),
+        ] {
+            let error = Error::WithSnippet {
+                error: Box::new(Error::ValidationError {
+                    source: ValidationSource::Validator,
+                    issues: vec![
+                        ValidationIssue::new(path.clone(), "bad").with_message("invalid value"),
+                    ],
+                    locations: locations.clone(),
+                }),
+                regions: vec![CroppedRegion::new(
+                    "value: bad\n",
+                    source_name,
+                    10,
+                    11,
+                    Location::new(10, 8),
+                )],
+                crop_radius: 64,
+            };
+            for formatter in [&default as &dyn MessageFormatter, &localized] {
+                let rendered = error.render_with_formatter(formatter);
+                assert!(
+                    rendered.contains(&format!(" --> {displayed_name}:10:8")),
+                    "expected the source name and absolute coordinates: {rendered}"
+                );
+                assert!(
+                    rendered.contains("^ validation error: invalid value for `value`"),
+                    "expected the validation annotation to be preserved: {rendered}"
+                );
+                assert!(!rendered.contains("LOCALIZED DEFINITION"), "{rendered}");
+                assert!(!rendered.contains("included from here"), "{rendered}");
+                assert!(!rendered.contains('\u{1b}'), "{rendered:?}");
+            }
+        }
     }
 
     #[cfg(any(feature = "garde", feature = "validator"))]

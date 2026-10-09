@@ -72,6 +72,8 @@
 
 ### Fixed
 
+- Validation snippet headers now show the actual source name instead of `(defined)` or
+  `(defined here)`, including errors in included YAML files.
 - Serde invalid-length failures now return `Error::SerdeInvalidLength` with separate
   `len`, `expected`, and `location` fields, allowing custom formatters to inspect them.
   Default diagnostic wording is preserved ([#205, item 6](https://github.com/bourumir-wyngs/serde-saphyr/issues/205)).

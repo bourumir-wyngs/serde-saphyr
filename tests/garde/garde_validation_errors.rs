@@ -192,7 +192,7 @@ fn from_str_with_options_valid_runs_garde_validation() {
 
     let expected = concat!(
         "error: line 1 column 4: validation error: length is lower than 1 for `a`\n",
-        " --> (defined):1:4\n",
+        " --> <input>:1:4\n",
         "  |\n",
         "1 | a: \"\"\n",
         "  |    ^ validation error: length is lower than 1 for `a`",
@@ -246,7 +246,7 @@ fn serde_rename() {
     // Location lookup should still find the YAML location of `myField`'s value.
     let expected = concat!(
         "error: line 1 column 10: validation error: length is lower than 1 for `myField`\n",
-        " --> (defined):1:10\n",
+        " --> <input>:1:10\n",
         "  |\n",
         "1 | myField: \"\"\n",
         "  |          ^ validation error: length is lower than 1 for `myField`",
@@ -274,7 +274,7 @@ fn from_str_validated_converts_garde_report_into_error() {
         other => panic!("expected validation error, got: {other:?}"),
     }
     assert!(
-        rendered.contains("defined"),
+        rendered.contains("--> <input>:1:4"),
         "expected snippet output, got: {rendered}"
     );
 }
@@ -555,6 +555,10 @@ fn reader_validation_root_snapshot_out_of_range_has_no_incorrect_snippet() {
         "expected either a correct high-line snippet or no snippet, got: {rendered}"
     );
     assert!(
+        rendered.contains("--> input:9001:4"),
+        "expected reader source name and absolute location, got: {rendered}"
+    );
+    assert!(
         !rendered.contains("<input>:1:"),
         "expected no incorrect line-1 snippet rendering, got: {rendered}"
     );
@@ -593,8 +597,8 @@ fn read_with_options_valid_validates_each_document_in_iterator() {
         "expected second-doc location, got: {rendered}"
     );
     assert!(
-        rendered.contains(":3:4"),
-        "expected reader snippet location, got: {rendered}"
+        rendered.contains("--> input:3:4"),
+        "expected reader source name and snippet location, got: {rendered}"
     );
     assert!(
         rendered.contains("3 | a: \"\""),
@@ -614,7 +618,7 @@ fn reader_garde_validation_in_text_include_has_snippet() {
             if req.spec == "child.yaml" {
                 Ok(serde_saphyr::ResolvedInclude::new(
                     req.spec,
-                    req.spec,
+                    "config/child.yaml",
                     serde_saphyr::InputSource::from_string("\"\"\n".to_string()),
                 ))
             } else {
@@ -645,6 +649,10 @@ fn reader_garde_validation_in_text_include_has_snippet() {
         rendered.contains("| \"\""),
         "expected snippet to render included content, got: {rendered}"
     );
+    assert!(
+        rendered.contains("--> config/child.yaml:1:1"),
+        "expected included source display name, got: {rendered}"
+    );
 }
 
 #[cfg(feature = "include")]
@@ -656,7 +664,7 @@ fn from_str_with_options_valid_reports_garde_error_from_included_input() {
             if req.spec == "child.yaml" {
                 Ok(serde_saphyr::ResolvedInclude::new(
                     req.spec,
-                    req.spec,
+                    "config/child.yaml",
                     serde_saphyr::InputSource::from_string("\"\"\n".to_string()),
                 ))
             } else {
@@ -685,6 +693,10 @@ fn from_str_with_options_valid_reports_garde_error_from_included_input() {
     assert!(
         rendered.contains("| \"\""),
         "expected snippet to render included content, got: {rendered}"
+    );
+    assert!(
+        rendered.contains("--> config/child.yaml:1:1"),
+        "expected included source display name, got: {rendered}"
     );
 }
 
@@ -760,7 +772,7 @@ fn validation_include_chain_built_from_recorded_sources() {
     let rendered = err.to_string();
 
     assert!(
-        rendered.contains("--> (defined):1:1"),
+        rendered.contains("--> grandchild.yaml:1:1"),
         "expected deepest included source snippet, got: {rendered}"
     );
     assert!(
@@ -812,7 +824,7 @@ fn garde_multidoc_validation_in_included_file_renders_included_snippet() {
 
     let rendered = err.to_string();
     assert!(
-        rendered.contains("--> (defined):1:1"),
+        rendered.contains("--> child.yaml:1:1"),
         "expected included file content as primary snippet, got: {rendered}"
     );
     assert!(

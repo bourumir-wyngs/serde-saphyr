@@ -188,15 +188,20 @@ pub trait Localizer {
 
     // ---------------- Validation snippets / diagnostic labels ----------------
 
-    /// Label used for a snippet window when the location is known and considered the
-    /// “definition” site.
+    /// Legacy label for a snippet window at the “definition” site.
+    ///
+    /// Retained for compatibility. Built-in validation snippets now use the actual source
+    /// name in their headers and do not call this hook.
     ///
     /// Default: `"(defined)"`.
     fn defined(&self) -> Cow<'static, str> {
         Cow::Borrowed("(defined)")
     }
 
-    /// Label used for a snippet window when we only have a “defined here” location.
+    /// Legacy label for a snippet window with only a “defined here” location.
+    ///
+    /// Retained for compatibility. Built-in validation snippets now use the actual source
+    /// name in their headers and do not call this hook.
     ///
     /// Default: `"(defined here)"`.
     fn defined_here(&self) -> Cow<'static, str> {
