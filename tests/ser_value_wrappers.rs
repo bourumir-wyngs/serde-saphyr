@@ -1,9 +1,12 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
 
 use serde::Serialize;
-use serde_saphyr::{Commented, FlowSeq, SpaceAfter, to_string};
+#[cfg(feature = "comments")]
+use serde_saphyr::Commented;
+use serde_saphyr::{FlowSeq, SpaceAfter, to_string};
 
 #[test]
+#[cfg(feature = "comments")]
 fn commented_in_flow_seq_suppresses_comment() {
     let v = FlowSeq(vec![Commented(42i32, "# note".to_string())]);
     let yaml = to_string(&v).unwrap();
@@ -24,6 +27,7 @@ fn space_after_in_flow_no_extra_newline() {
 }
 
 #[test]
+#[cfg(feature = "comments")]
 fn commented_in_block_emits_comment() {
     let v = Commented(42i32, "# my comment".to_string());
     let yaml = to_string(&v).unwrap();
@@ -50,6 +54,7 @@ fn space_after_in_block_adds_blank_line() {
 }
 
 #[test]
+#[cfg(feature = "comments")]
 fn commented_newline_in_comment_sanitized() {
     let v = Commented(42i32, "line1\nline2".to_string());
     let yaml = to_string(&v).unwrap();
@@ -70,6 +75,7 @@ fn space_after_deserialize_roundtrip() {
 }
 
 #[test]
+#[cfg(feature = "comments")]
 fn commented_deserialize_roundtrip() {
     let original = Commented(99i32, "a comment".to_string());
     let yaml = to_string(&original).unwrap();
@@ -97,6 +103,7 @@ fn space_after_emits_blank_line() {
 }
 
 #[test]
+#[cfg(feature = "comments")]
 fn commented_in_flow_context_suppresses_comment() {
     let yaml = to_string(&FlowSeq(vec![Commented(1, "note".into())])).unwrap();
     assert!(
@@ -106,6 +113,7 @@ fn commented_in_flow_context_suppresses_comment() {
 }
 
 #[test]
+#[cfg(feature = "comments")]
 fn commented_empty_string_no_comment_marker() {
     let yaml = to_string(&Commented(42, String::new())).unwrap();
     assert!(
@@ -131,6 +139,7 @@ fn space_after_with_seq() {
 }
 
 #[test]
+#[cfg(feature = "comments")]
 fn commented_with_map_value_ignores_comment() {
     #[derive(Serialize)]
     struct Inner {
@@ -158,6 +167,7 @@ fn serialize_space_after() {
 }
 
 #[test]
+#[cfg(feature = "comments")]
 fn serialize_commented() {
     use serde_saphyr::Commented;
     #[derive(Serialize)]

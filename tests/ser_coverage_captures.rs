@@ -14,6 +14,7 @@ struct WeakAnchorPayload<T>(usize, T, &'static str);
 
 #[derive(Serialize)]
 #[serde(rename = "__yaml_commented")]
+#[cfg(feature = "comments")]
 struct CommentedPayload<T>(T, &'static str);
 
 #[derive(Serialize)]
@@ -38,6 +39,7 @@ struct NormalStruct {
 fn test_capture<T: Serialize>(val: T) {
     let _ = to_string(&AnchorPayload(&val, "x"));
     let _ = to_string(&WeakAnchorPayload(1, &val, "x"));
+    #[cfg(feature = "comments")]
     let _ = to_string(&CommentedPayload(&val, "x"));
 }
 

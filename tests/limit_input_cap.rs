@@ -115,6 +115,7 @@ fn read_respects_max_input_bytes_budget() {
 }
 
 #[test]
+#[cfg(feature = "comments")]
 fn read_rejects_oversized_comments_when_reader_byte_cap_is_disabled() {
     let yaml = format!("---\n#{}\na1: 1\n", "c".repeat(128));
     let mut reader = std::io::Cursor::new(yaml.as_bytes());

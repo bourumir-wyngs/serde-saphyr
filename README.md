@@ -102,7 +102,7 @@ let yaml_input = r#"
 
 ### Using serializer or deserializer specifically
 
-To speed up compilation, you can link only the deserializer or only the serializer (along with their respective dependencies). For easier initial integration, both `serialize` and `deserialize` features are enabled by default.
+To speed up compilation, you can link only the deserializer or only the serializer (along with their respective dependencies). The `serialize`, `deserialize`, and `comments` features are enabled by default.
 
 If you only need one side, you can disable default features and enable only the API surface you use:
 
@@ -114,6 +114,12 @@ or
 serde-saphyr = { version = "2", default-features = false, features = ["serialize"] }
 ```
 Disabling both will produce a "Invalid feature configuration" error (such configuration makes no sense).
+
+These configurations omit comment support. Add `"comments"` to the feature list to use
+`Commented<T>`, `CommentPosition`, or comment-specific options and budget fields. The feature
+also enables granit-parser's `comments` feature when deserialization is enabled;
+serialization alone does not pull in granit-parser. YAML comments are still accepted and
+validated when the feature is disabled, but their text is not retained.
 
 The optional `huge_documents` feature switches span storage from `u32` indices to a packed 48-bit internal representation so spans can cover YAML inputs far beyond 4 GiB without widening every coordinate to a full `u64`. Public getters still return `u64`, and values beyond the packed range saturate instead of wrapping.
 
@@ -229,6 +235,8 @@ To find the typical budget requirements for your file, use our [web demo](https:
 Adding or removing a single space in YAML indentation may result in a document that is still syntactically correct but semantically wrong. To mitigate such issues, `serde-saphyr` can enforce indentation rules during deserialization via [`RequireIndent`](https://docs.rs/serde-saphyr/latest/serde_saphyr/enum.RequireIndent.html).
 
 You can require the number of indentation columns to be consistent throughout the document, ensure it is even, or enforce that it is divisible by a specific number (for example, 4 or 6). Configure the desired policy using `Options`.
+
+Set `strict_indentation: true` in `options!` to enforce YAML indentation rules for flow collections (`[...]` and `{...}`), including their entries, delimiters, and multiline scalar content. This also applies to included YAML. The default is `false`, allowing under-indented flow collections for compatibility.
 
 ### Duplicate keys
 
@@ -622,6 +630,14 @@ the `reject_unsupported_tags` option.
 Tagged enums written as `!!EnumName VARIANT` are also supported, but only for single-level scalar variants. Use mapping-based representations (`EnumName: RED`) if you need to embed enums within other enums.
 
 ### Comments
+
+Comment support requires the default-enabled `comments` feature. With
+`default-features = false`, enable it explicitly when using `Commented<T>`, `CommentPosition`,
+`Options::emit_comments`, `SerializerOptions::comment_position`,
+`Budget::{max_total_comment_bytes, max_buffered_comment_events}`,
+`BudgetReport::total_comment_bytes`, or `BudgetBreach::CommentBytes`. These APIs are absent
+without the feature, so using them produces a compile error. Ordinary YAML parsing continues
+to accept and validate comments.
 
 - As granit-parser now supports comments, the wrapper [Commented](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) will also capture the relevant YAML comment into its field when deserializing YAML.
 - Comment capture is enabled by default. Set `emit_comments: false` in [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html) to recognize and validate YAML comments without retaining their text or emitting parser comment events. In this mode, deserialized `Commented<T>` values have an empty comment string. Comment bytes are still consumed and validated, so this is not an input-size or processing-time limit.

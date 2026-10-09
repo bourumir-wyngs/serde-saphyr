@@ -527,6 +527,7 @@ fn last_wins_keeps_merge_precedence_across_the_first_integer_key() {
 }
 
 #[test]
+#[cfg(feature = "comments")]
 fn last_wins_preserves_trailing_comments_in_ordinary_string_key_maps() {
     use serde_saphyr::Commented;
 

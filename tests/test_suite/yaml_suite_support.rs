@@ -93,6 +93,7 @@ fn render_event(event: Event<'_>) -> Option<String> {
             )
         }
         Event::Alias(anchor) => format!("=ALI *{anchor}"),
+        #[cfg(feature = "comments")]
         Event::Comment(..) => return None,
         _ => return None,
     };

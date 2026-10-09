@@ -23,6 +23,7 @@ struct Root {
     a: String,
 }
 
+#[cfg(feature = "comments")]
 #[derive(Debug, Deserialize, Validate)]
 struct CommentedRoot {
     #[validate(nested)]
@@ -114,6 +115,7 @@ fn from_str_with_options_validate_runs_validator_validation() {
 }
 
 #[test]
+#[cfg(feature = "comments")]
 fn validator_error_inside_commented_subtree_uses_child_location() {
     let yaml = "item:\n  value: \"\"\n";
 

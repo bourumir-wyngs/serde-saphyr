@@ -2,7 +2,9 @@
 //! Tests for `SpaceAfter` wrapper.
 
 use serde::{Deserialize, Serialize};
-use serde_saphyr::{Commented, FlowSeq, SpaceAfter, from_str, to_string};
+#[cfg(feature = "comments")]
+use serde_saphyr::Commented;
+use serde_saphyr::{FlowSeq, SpaceAfter, from_str, to_string};
 
 #[test]
 fn space_after_adds_blank_line() {
@@ -26,6 +28,7 @@ fn space_after_adds_blank_line() {
 }
 
 #[test]
+#[cfg(feature = "comments")]
 fn space_after_with_commented() {
     #[derive(Serialize)]
     struct Config {

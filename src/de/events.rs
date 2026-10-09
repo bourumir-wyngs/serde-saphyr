@@ -378,6 +378,7 @@ pub(crate) trait Events<'de> {
     }
 
     /// Take same-line comments immediately after the node that was just deserialized.
+    #[cfg(feature = "comments")]
     fn take_trailing_comments_after_node(&mut self) -> Result<Vec<Cow<'de, str>>, Error> {
         Ok(Vec::new())
     }

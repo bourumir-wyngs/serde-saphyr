@@ -6,6 +6,7 @@ use serde_core::de::{self, Deserializer as _, IntoDeserializer, Visitor};
 
 use super::base64::decode_base64_yaml;
 use super::cfg::Cfg;
+#[cfg(feature = "comments")]
 use super::commented_deser;
 use super::error::{Error, MissingFieldLocationGuard, TransformReason};
 use super::events::{
@@ -1445,6 +1446,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         match n {
             // Internal wrapper types use `__yaml_*` names (see `__yaml_rc_anchor`, etc.).
             "__yaml_spanned" => spanned_deser::deserialize_yaml_spanned(self, visitor),
+            #[cfg(feature = "comments")]
             "__yaml_commented" => commented_deser::deserialize_yaml_commented(self, visitor),
             "__yaml_tagged" => tagged_deser::deserialize_yaml_tagged(self, visitor),
             "__yaml_rc_anchor" => {
@@ -1834,6 +1836,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     let value_separator_comments =
                         ev.take_separator_comments_before_mapping_value()?;
                     let value_comments = ev.take_leading_comments_for_next_node()?;
+                    // Comment hooks need not fill lookahead, so locate the value explicitly
+                    // before recording its use site for replay.
+                    let _ = ev.peek()?;
                     let reference_location = ev.reference_location();
                     let value = capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
                     explicit_entries.push(PendingEntry {

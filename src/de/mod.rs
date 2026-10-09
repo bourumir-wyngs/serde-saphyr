@@ -66,6 +66,7 @@ pub(crate) mod tags;
 
 pub(crate) mod api;
 mod cfg;
+#[cfg(feature = "comments")]
 mod commented_deser;
 mod deserializer;
 mod events;

@@ -104,7 +104,9 @@ mod tests {
     use serde_core::de::{self, SeqAccess, Visitor};
     use std::fmt;
 
-    use crate::{Commented, Tagged, from_str};
+    #[cfg(feature = "comments")]
+    use crate::Commented;
+    use crate::{Tagged, from_str};
 
     #[derive(Debug, PartialEq)]
     struct InspectedTagged {
@@ -238,6 +240,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "comments")]
     #[test]
     fn composes_with_commented_in_both_orders() {
         let tagged_comment: Tagged<Commented<String>> = from_str("!widget value # note").unwrap();
