@@ -72,6 +72,9 @@
 
 ### Fixed
 
+- Buffered `LastWins` values and inline merges no longer produce alias errors when no
+  alias was used. Replay preserves per-node origins, including genuine nested aliases,
+  ordinary value locations, and merge use-sites for `Spanned<T>`.
 - Plain alias diagnostics explicitly label the use location with `(used at line X, column Y)`.
   The new `Localizer::alias_used_at` hook controls this suffix independently of failure and
   definition locations. Custom localizers that previously used `attach_location` to format

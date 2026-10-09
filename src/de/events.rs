@@ -4,6 +4,7 @@ use std::cell::{Cell, RefCell};
 #[cfg(feature = "properties")]
 use std::collections::HashMap;
 use std::mem;
+use std::ops::{Deref, DerefMut};
 #[cfg(feature = "properties")]
 use std::rc::Rc;
 
@@ -99,8 +100,8 @@ impl PropertyInterpolation {
 }
 
 /// Attach both reference and defined locations to an error for alias replay scenarios.
-/// When both locations are known and different, wraps the error in `Error::AliasError` to report both.
-/// This is used for errors occurring when deserializing aliased values.
+/// When a real alias reference and its definition are known and different, wraps the error
+/// in `Error::AliasError` to report both. A merge use-site alone is not an alias reference.
 ///
 /// During alias replay, errors may already have a location attached (the anchor's definition
 /// location from the replayed events). We still want to create an `Error::AliasError` with both
@@ -111,9 +112,10 @@ impl PropertyInterpolation {
 #[allow(deprecated)] // Keep populating msg for existing message-based alias handlers.
 pub(super) fn attach_alias_locations_if_missing(
     mut err: Error,
-    reference_location: Location,
+    alias_reference_location: Option<Location>,
     defined_location: Location,
 ) -> Error {
+    let reference_location = alias_reference_location.unwrap_or(defined_location);
     // If both locations are known and different, wrap the error in AliasError to show both.
     // This applies even if the error already has a location (from replayed anchor events),
     // because we want to show where the alias was used, not just where the anchor was defined.
@@ -286,6 +288,96 @@ impl Ev<'_> {
     }
 }
 
+/// Why a node is being replayed somewhere other than its definition.
+///
+/// Alias provenance is independent from source coordinates: ordinary buffering and inline
+/// merges can change the current use-site without introducing an alias token.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum NodeOrigin {
+    #[default]
+    Direct,
+    Alias(Location),
+    Merge(Location),
+}
+
+/// Captured events and their per-event origins.
+///
+/// Ordinary events need no extra allocation. Non-direct origins are indexed separately so
+/// that buffering an ordinary container does not erase any aliases nested inside it.
+#[derive(Debug, Default)]
+pub(super) struct RecordedEvents<'a> {
+    events: Vec<Ev<'a>>,
+    origins: Vec<(usize, NodeOrigin)>,
+}
+
+impl<'a> RecordedEvents<'a> {
+    pub(super) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(super) fn from_event(event: Ev<'a>, origin: NodeOrigin) -> Self {
+        Self {
+            events: vec![event],
+            origins: if origin == NodeOrigin::Direct {
+                Vec::new()
+            } else {
+                vec![(0, origin)]
+            },
+        }
+    }
+
+    pub(super) fn reserve(&mut self, additional: usize) {
+        self.events.reserve(additional);
+    }
+
+    pub(super) fn push(&mut self, event: Ev<'a>, origin: NodeOrigin) {
+        if origin != NodeOrigin::Direct {
+            self.origins.push((self.events.len(), origin));
+        }
+        self.events.push(event);
+    }
+
+    pub(super) fn extend(&mut self, mut other: Self) {
+        let offset = self.events.len();
+        self.origins.extend(
+            other
+                .origins
+                .drain(..)
+                .map(|(index, origin)| (offset + index, origin)),
+        );
+        self.events.append(&mut other.events);
+    }
+
+    pub(super) fn origin(&self, index: usize) -> NodeOrigin {
+        self.origins
+            .binary_search_by_key(&index, |(index, _)| *index)
+            .map_or(NodeOrigin::Direct, |index| self.origins[index].1)
+    }
+}
+
+impl<'a> From<Vec<Ev<'a>>> for RecordedEvents<'a> {
+    fn from(events: Vec<Ev<'a>>) -> Self {
+        Self {
+            events,
+            origins: Vec::new(),
+        }
+    }
+}
+
+impl<'a> Deref for RecordedEvents<'a> {
+    type Target = [Ev<'a>];
+
+    fn deref(&self) -> &Self::Target {
+        &self.events
+    }
+}
+
+impl DerefMut for RecordedEvents<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.events
+    }
+}
+
 /// `from_slice_multiple` location-free representation of events for duplicate-key comparison.
 /// Source of events with lookahead and alias-injection.
 pub(crate) trait Events<'de> {
@@ -353,6 +445,22 @@ pub(crate) trait Events<'de> {
     /// Implementations therefore must keep the necessary context alive at least
     /// until the node is consumed.
     fn reference_location(&self) -> Location;
+
+    /// Provenance of the node currently exposed by `peek`, preserved through buffering.
+    fn node_origin(&self) -> NodeOrigin {
+        NodeOrigin::Direct
+    }
+
+    /// Actual alias token responsible for the next node, if any.
+    ///
+    /// A merge reference must not cause an alias error merely because its coordinates differ
+    /// from the definition. Call this after `peek`, before consuming the node.
+    fn alias_reference_location(&self) -> Option<Location> {
+        match self.node_origin() {
+            NodeOrigin::Alias(location) => Some(location),
+            NodeOrigin::Direct | NodeOrigin::Merge(_) => None,
+        }
+    }
 
     /// Take comments immediately above the next data node.
     ///
@@ -426,25 +534,15 @@ pub(super) fn eof_with_loc(events: &dyn Events<'_>) -> Error {
 
 /// Event source that replays a pre-recorded buffer.
 ///
-/// Replay buffers contain `Ev` values only. Comment hooks therefore use the
-/// trait defaults and return empty comment sets; use-site comments must be passed
-/// around separately by the map/sequence access code.
+/// Replay buffers preserve event origins but not comments. Comment hooks therefore use
+/// the trait defaults; use-site comments must be passed separately by map/sequence access.
 pub(super) struct ReplayEvents<'a> {
-    buf: Vec<Ev<'a>>,
+    buf: RecordedEvents<'a>,
     defer_recursive_aliases: bool,
     /// Index of the next event to yield (`0..=buf.len()`).
     idx: usize,
-    /// Optional override for the reference location (use-site) of the next node.
-    /// When we replay a captured subtree (e.g. an anchored mapping) we often want to
-    /// preserve *where it was referenced*, not just where it was originally defined.
-    ///
-    /// Scope/when it applies
-    /// - The override is used by [`Events::reference_location`].
-    /// - It is intended to apply to the node currently at `idx` (i.e. the node visible via
-    ///   `peek()`), and is typically kept for the whole replay.
-    /// - `next()` does not clear it: callers that need different reference locations for
-    ///   different nested nodes should create nested replay sources (which we do during
-    ///   recursive merge expansion).
+    /// Merge use-site applied to ordinary replayed nodes. Captured aliases retain their
+    /// own use-site and provenance instead of inheriting this non-alias override.
     ref_override: Option<Location>,
 
     #[cfg(feature = "properties")]
@@ -460,11 +558,11 @@ impl<'a> ReplayEvents<'a> {
     /// Called by:
     /// - Merge expansion and recorded key/value deserialization.
     pub(super) fn new(
-        buf: Vec<Ev<'a>>,
+        buf: impl Into<RecordedEvents<'a>>,
         #[cfg(feature = "properties")] property_interpolation: PropertyInterpolation,
     ) -> Self {
         Self {
-            buf,
+            buf: buf.into(),
             defer_recursive_aliases: false,
             idx: 0,
             ref_override: None,
@@ -473,25 +571,16 @@ impl<'a> ReplayEvents<'a> {
         }
     }
 
-    /// Create a replay source over `buf` with a fixed reference (use-site) location.
-    ///
-    /// This is primarily used when a recorded node is replayed in a *different place*
-    /// than where it was defined:
-    /// - alias replay (`*a`) where the replayed events come from the anchor definition,
-    ///   but `Spanned<T>.referenced` should point at the alias token.
-    /// - merge expansion (`<<: *m`) where merge-derived fields should point at the merge
-    ///   entry (use-site) even though the actual events come from the merged mapping.
-    ///
-    /// Note that this does not change the events themselves: `Ev::location()` still
-    /// points to where each event was originally produced/captured (definition-site).
-    /// The override only affects [`Events::reference_location`].
+    /// Replay merge-derived nodes at a merge use-site without inventing alias provenance.
+    /// Captured aliases keep their original use-site, including aliases nested in an inline
+    /// merge. Definition locations on the events themselves remain unchanged.
     pub(super) fn with_reference(
-        buf: Vec<Ev<'a>>,
+        buf: impl Into<RecordedEvents<'a>>,
         reference: Location,
         #[cfg(feature = "properties")] property_interpolation: PropertyInterpolation,
     ) -> Self {
         Self {
-            buf,
+            buf: buf.into(),
             defer_recursive_aliases: false,
             idx: 0,
             ref_override: Some(reference),
@@ -550,16 +639,140 @@ impl<'a> Events<'a> for ReplayEvents<'a> {
     }
 
     fn reference_location(&self) -> Location {
-        if let Some(loc) = self.ref_override {
-            return loc;
+        match self.node_origin() {
+            NodeOrigin::Alias(location) | NodeOrigin::Merge(location) => location,
+            NodeOrigin::Direct => self
+                .buf
+                .get(self.idx)
+                .map_or_else(|| self.last_location(), Ev::location),
         }
-        self.buf
-            .get(self.idx)
-            .map_or_else(|| self.last_location(), Ev::location)
+    }
+
+    fn node_origin(&self) -> NodeOrigin {
+        let origin = self.buf.origin(self.idx);
+        match (origin, self.ref_override) {
+            (NodeOrigin::Alias(_), _) => origin,
+            (_, Some(reference)) => NodeOrigin::Merge(reference),
+            (_, None) => origin,
+        }
     }
 
     #[cfg(feature = "properties")]
     fn property_interpolation(&self) -> &PropertyInterpolation {
         &self.property_interpolation
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scalar(location: Location) -> Ev<'static> {
+        Ev::Scalar {
+            value: Cow::Borrowed("value"),
+            tag: SfTag::None,
+            raw_tag: None,
+            style: ScalarStyle::Plain,
+            anchor: 0,
+            location,
+        }
+    }
+
+    fn replay(
+        events: RecordedEvents<'static>,
+        reference: Option<Location>,
+    ) -> ReplayEvents<'static> {
+        #[cfg(feature = "properties")]
+        let properties = PropertyInterpolation::new(None, PropertySyntax::Braced, None);
+        match reference {
+            Some(reference) => ReplayEvents::with_reference(
+                events,
+                reference,
+                #[cfg(feature = "properties")]
+                properties,
+            ),
+            None => ReplayEvents::new(
+                events,
+                #[cfg(feature = "properties")]
+                properties,
+            ),
+        }
+    }
+
+    #[test]
+    fn recorded_origins_follow_events_when_buffers_are_joined() {
+        let location = Location::new(1, 1);
+        let alias = NodeOrigin::Alias(Location::new(4, 3));
+        let merge = NodeOrigin::Merge(Location::new(7, 5));
+        let mut prefix = RecordedEvents::from(vec![scalar(location)]);
+        let mut suffix = RecordedEvents::new();
+        suffix.push(scalar(location), alias);
+        suffix.push(scalar(location), NodeOrigin::Direct);
+        suffix.push(scalar(location), merge);
+        prefix.extend(suffix);
+
+        assert_eq!(prefix.len(), 4);
+        assert_eq!(prefix.origin(0), NodeOrigin::Direct);
+        assert_eq!(prefix.origin(1), alias);
+        assert_eq!(prefix.origin(2), NodeOrigin::Direct);
+        assert_eq!(prefix.origin(3), merge);
+        assert_eq!(prefix.origin(4), NodeOrigin::Direct);
+        assert_eq!(prefix.origins.len(), 2);
+    }
+
+    #[test]
+    fn replay_keeps_each_direct_location_and_nested_alias_origin() {
+        let first = Location::new(1, 1);
+        let defined = Location::new(2, 3);
+        let alias = Location::new(5, 7);
+        let last = Location::new(8, 9);
+        let mut events = RecordedEvents::new();
+        events.push(scalar(first), NodeOrigin::Direct);
+        events.push(scalar(defined), NodeOrigin::Alias(alias));
+        events.push(scalar(last), NodeOrigin::Direct);
+        let mut replay = replay(events, None);
+
+        assert_eq!(replay.reference_location(), first);
+        assert_eq!(replay.alias_reference_location(), None);
+        replay.next().unwrap();
+        assert_eq!(replay.peek().unwrap().unwrap().location(), defined);
+        assert_eq!(replay.reference_location(), alias);
+        assert_eq!(replay.alias_reference_location(), Some(alias));
+        replay.next().unwrap();
+        assert_eq!(replay.reference_location(), last);
+        assert_eq!(replay.alias_reference_location(), None);
+    }
+
+    #[test]
+    fn merge_reference_is_not_an_alias_and_does_not_replace_captured_aliases() {
+        let defined = Location::new(1, 1);
+        let alias = Location::new(3, 5);
+        let merge = Location::new(6, 2);
+        let mut events = RecordedEvents::new();
+        events.push(scalar(defined), NodeOrigin::Direct);
+        events.push(scalar(defined), NodeOrigin::Alias(alias));
+        let mut replay = replay(events, Some(merge));
+
+        assert_eq!(replay.node_origin(), NodeOrigin::Merge(merge));
+        assert_eq!(replay.reference_location(), merge);
+        assert_eq!(replay.alias_reference_location(), None);
+        let error = attach_alias_locations_if_missing(
+            Error::msg("invalid value"),
+            replay.alias_reference_location(),
+            defined,
+        );
+        assert!(!matches!(error, Error::AliasError { .. }));
+        assert_eq!(error.location(), Some(defined));
+
+        replay.next().unwrap();
+        assert_eq!(replay.node_origin(), NodeOrigin::Alias(alias));
+        assert_eq!(replay.reference_location(), alias);
+        assert_eq!(replay.alias_reference_location(), Some(alias));
+        let error = attach_alias_locations_if_missing(
+            Error::msg("invalid value"),
+            replay.alias_reference_location(),
+            defined,
+        );
+        assert!(matches!(error, Error::AliasError { .. }));
     }
 }
