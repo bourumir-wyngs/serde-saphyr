@@ -385,14 +385,16 @@ pub(crate) fn maybe_with_snippet_from_events(
 }
 
 /// Deserialize multiple YAML documents from a single string into a vector of `T`.
-/// Completely empty documents are ignored and not included in the returned vector.
+/// Completely empty and plain null-like documents are skipped.
 ///
-/// Deprecated in favor of [`from_str_multiple`], which supports both owned and borrowed values.
-/// This compatibility wrapper requires [`DeserializeOwned`], so results cannot borrow from the input.
-/// Its signature is retained for compatibility with existing function pointers and callbacks.
-/// When migrating a callback, use a forwarding closure such as `|input| from_str_multiple(input)`.
+/// Supports both owned values and values borrowing from the input string. Borrowed values
+/// cannot outlive the input, and strings requiring transformation cannot be borrowed as `&str`;
+/// see [`from_str_multiple`] for details and for collecting into other collection types.
 ///
-/// Example using the replacement: read two `Config` documents separated by `---`.
+/// Since 2.0, function pointers or callbacks accepting any input lifetime may need a
+/// forwarding closure such as `|input| from_multiple::<String>(input)`.
+///
+/// Example: read two `Config` documents separated by `---`.
 ///
 /// ```rust
 /// use serde::Deserialize;
@@ -414,28 +416,28 @@ pub(crate) fn maybe_with_snippet_from_events(
 /// retries: 2
 /// "#;
 ///
-/// let cfgs: Vec<Config> = serde_saphyr::from_str_multiple(yaml).unwrap();
+/// let cfgs: Vec<Config> = serde_saphyr::from_multiple(yaml).unwrap();
 /// assert_eq!(cfgs.len(), 2);
 /// assert_eq!(cfgs[0].name, "First");
 /// ```
 #[cfg(feature = "deserialize")]
-#[deprecated(
-    since = "2.0.0",
-    note = "use from_str_multiple, which supports both owned and borrowed values"
-)]
-pub fn from_multiple<T: DeserializeOwned>(input: &str) -> Result<Vec<T>, Error> {
+pub fn from_multiple<'de, T>(input: &'de str) -> Result<Vec<T>, Error>
+where
+    T: serde_core::Deserialize<'de>,
+{
     from_str_multiple::<T, Vec<T>>(input)
 }
 
 /// Deserialize multiple YAML documents into a vector with configurable [`Options`].
 ///
-/// Deprecated in favor of [`from_str_multiple_with_options`], which supports both owned and borrowed values.
-/// This compatibility wrapper requires [`DeserializeOwned`], so results cannot borrow from the input.
-/// Its signature is retained for compatibility with existing function pointers and callbacks.
-/// When migrating a callback, use a forwarding closure such as
-/// `|input, options| from_str_multiple_with_options(input, options)`.
+/// Like [`from_multiple`], this supports owned and borrowed values and skips completely
+/// empty and plain null-like documents. Use [`from_str_multiple_with_options`] to collect
+/// into other collection types.
 ///
-/// Example using the replacement: two `Config` documents with a custom budget.
+/// Since 2.0, function pointers or callbacks accepting any input lifetime may need a
+/// forwarding closure such as `|input, options| from_multiple_with_options::<String>(input, options)`.
+///
+/// Example: two `Config` documents with a custom budget.
 ///
 /// ```rust
 /// use serde::Deserialize;
@@ -464,19 +466,18 @@ pub fn from_multiple<T: DeserializeOwned>(input: &str) -> Result<Vec<T>, Error> 
 ///     },
 ///     duplicate_keys: DuplicateKeyPolicy::FirstWins,
 /// };
-/// let cfgs: Vec<Config> = serde_saphyr::from_str_multiple_with_options(yaml, options).unwrap();
+/// let cfgs: Vec<Config> = serde_saphyr::from_multiple_with_options(yaml, options).unwrap();
 /// assert_eq!(cfgs.len(), 2);
 /// assert!(!cfgs[1].enabled);
 /// ```
 #[cfg(feature = "deserialize")]
-#[deprecated(
-    since = "2.0.0",
-    note = "use from_str_multiple_with_options, which supports both owned and borrowed values"
-)]
-pub fn from_multiple_with_options<T: DeserializeOwned>(
-    input: &str,
+pub fn from_multiple_with_options<'de, T>(
+    input: &'de str,
     options: Options,
-) -> Result<Vec<T>, Error> {
+) -> Result<Vec<T>, Error>
+where
+    T: serde_core::Deserialize<'de>,
+{
     from_str_multiple_with_options::<T, Vec<T>>(input, options)
 }
 
@@ -489,10 +490,10 @@ pub fn from_multiple_with_options<T: DeserializeOwned>(
 /// Specify both types when using turbofish syntax, for example `::<String, Vec<_>>`.
 /// If the collection implements `Extend` for multiple item types, specify `T` explicitly
 /// to resolve ambiguity, for example `::<i32, Vec<_>>`.
+/// Use [`from_multiple`] to return a `Vec<T>` with a single type argument.
 ///
 /// This function supports both owned types (like `String`) and borrowed types (like `&str`).
-/// Borrowed values refer to the input string and cannot outlive it. Unlike [`from_multiple`],
-/// this function does not require [`DeserializeOwned`].
+/// Borrowed values refer to the input string and cannot outlive it.
 ///
 /// Strings can be borrowed when their parsed value exists verbatim in the input, including
 /// plain scalars and simple quoted strings. Strings requiring escape processing, folding,
@@ -528,8 +529,8 @@ where
 /// Like [`from_str_multiple`], this function supports both owned values and values borrowing
 /// from the input string, collected into any `C: Default + Extend<T>`.
 /// Borrowed values cannot outlive the input, and strings requiring
-/// transformation cannot be borrowed as `&str`. Unlike [`from_multiple_with_options`], this
-/// function does not require [`DeserializeOwned`].
+/// transformation cannot be borrowed as `&str`.
+/// Use [`from_multiple_with_options`] to return a `Vec<T>` with a single type argument.
 ///
 /// ```rust
 /// use std::collections::BTreeSet;
@@ -674,13 +675,17 @@ where
 }
 
 /// Deserialize multiple YAML documents from a UTF-8 byte slice into a vector of `T`.
+/// Completely empty and plain null-like documents are skipped.
 ///
-/// Deprecated in favor of [`from_bytes_multiple`], which supports both owned and borrowed values.
-/// This compatibility wrapper requires [`DeserializeOwned`], so results cannot borrow from the input.
-/// Its signature is retained for compatibility with existing function pointers and callbacks.
-/// When migrating a callback, use a forwarding closure such as `|bytes| from_bytes_multiple(bytes)`.
+/// Supports both owned values and values borrowing from the input byte slice. Borrowed
+/// values cannot outlive the input, and strings requiring transformation cannot be borrowed
+/// as `&str`; see [`from_str_multiple`] for details. Invalid UTF-8 returns [`Error::InvalidUtf8Input`].
+/// Use [`from_bytes_multiple`] to collect into other collection types.
 ///
-/// Example using the replacement: read two `Config` documents separated by `---` from bytes.
+/// Since 2.0, function pointers or callbacks accepting any input lifetime may need a
+/// forwarding closure such as `|bytes| from_slice_multiple::<String>(bytes)`.
+///
+/// Example: read two `Config` documents separated by `---` from bytes.
 ///
 /// ```rust
 /// use serde::Deserialize;
@@ -702,29 +707,28 @@ where
 /// retries: 2
 /// "#;
 /// let bytes = yaml.as_bytes();
-/// let cfgs: Vec<Config> = serde_saphyr::from_bytes_multiple(bytes).unwrap();
+/// let cfgs: Vec<Config> = serde_saphyr::from_slice_multiple(bytes).unwrap();
 /// assert_eq!(cfgs.len(), 2);
 /// assert_eq!(cfgs[0].name, "First");
 /// ```
 #[cfg(feature = "deserialize")]
-#[deprecated(
-    since = "2.0.0",
-    note = "use from_bytes_multiple, which supports both owned and borrowed values"
-)]
-pub fn from_slice_multiple<T: DeserializeOwned>(bytes: &[u8]) -> Result<Vec<T>, Error> {
+pub fn from_slice_multiple<'de, T>(bytes: &'de [u8]) -> Result<Vec<T>, Error>
+where
+    T: serde_core::Deserialize<'de>,
+{
     from_bytes_multiple::<T, Vec<T>>(bytes)
 }
 
-/// Deserialize multiple YAML documents from bytes with configurable [`Options`].
-/// Completely empty documents are ignored and not included in the returned vector.
+/// Deserialize multiple YAML documents from a UTF-8 byte slice into a vector with configurable [`Options`].
 ///
-/// Deprecated in favor of [`from_bytes_multiple_with_options`], which supports both owned and borrowed values.
-/// This compatibility wrapper requires [`DeserializeOwned`], so results cannot borrow from the input.
-/// Its signature is retained for compatibility with existing function pointers and callbacks.
-/// When migrating a callback, use a forwarding closure such as
-/// `|bytes, options| from_bytes_multiple_with_options(bytes, options)`.
+/// Like [`from_slice_multiple`], this supports owned and borrowed values and skips completely
+/// empty and plain null-like documents. Invalid UTF-8 returns [`Error::InvalidUtf8Input`].
+/// Use [`from_bytes_multiple_with_options`] to collect into other collection types.
 ///
-/// Example using the replacement: two `Config` documents with a custom budget from bytes.
+/// Since 2.0, function pointers or callbacks accepting any input lifetime may need a
+/// forwarding closure such as `|bytes, options| from_slice_multiple_with_options::<String>(bytes, options)`.
+///
+/// Example: two `Config` documents with a custom budget from bytes.
 ///
 /// ```rust
 /// use serde::Deserialize;
@@ -753,19 +757,18 @@ pub fn from_slice_multiple<T: DeserializeOwned>(bytes: &[u8]) -> Result<Vec<T>, 
 ///     },
 ///     duplicate_keys: DuplicateKeyPolicy::FirstWins,
 /// };
-/// let cfgs: Vec<Config> = serde_saphyr::from_bytes_multiple_with_options(bytes, options).unwrap();
+/// let cfgs: Vec<Config> = serde_saphyr::from_slice_multiple_with_options(bytes, options).unwrap();
 /// assert_eq!(cfgs.len(), 2);
 /// assert!(!cfgs[1].enabled);
 /// ```
 #[cfg(feature = "deserialize")]
-#[deprecated(
-    since = "2.0.0",
-    note = "use from_bytes_multiple_with_options, which supports both owned and borrowed values"
-)]
-pub fn from_slice_multiple_with_options<T: DeserializeOwned>(
-    bytes: &[u8],
+pub fn from_slice_multiple_with_options<'de, T>(
+    bytes: &'de [u8],
     options: Options,
-) -> Result<Vec<T>, Error> {
+) -> Result<Vec<T>, Error>
+where
+    T: serde_core::Deserialize<'de>,
+{
     from_bytes_multiple_with_options::<T, Vec<T>>(bytes, options)
 }
 
@@ -779,10 +782,10 @@ pub fn from_slice_multiple_with_options<T: DeserializeOwned>(
 /// Any `C: Default + Extend<T>` is supported. Documents extend the collection in input
 /// order; the collection determines how ordering and duplicate values are handled.
 /// Specify both types when using turbofish syntax, for example `::<String, Vec<_>>`.
+/// Use [`from_slice_multiple`] to return a `Vec<T>` with a single type argument.
 ///
 /// This function supports both owned types (like `String`) and borrowed types (like `&str`).
-/// Borrowed values refer to the input byte slice and cannot outlive it. Unlike
-/// [`from_slice_multiple`], this function does not require [`DeserializeOwned`].
+/// Borrowed values refer to the input byte slice and cannot outlive it.
 /// Strings requiring escape processing, folding, or other transformations cannot be
 /// borrowed as `&str`; see [`from_str_multiple`] for details.
 ///
@@ -817,7 +820,7 @@ where
 /// from the input byte slice, collected into any `C: Default + Extend<T>`.
 /// Borrowed values cannot outlive the input, and strings requiring
 /// transformation cannot be borrowed as `&str`. Invalid UTF-8 returns [`Error::InvalidUtf8Input`].
-/// Unlike [`from_slice_multiple_with_options`], this function does not require [`DeserializeOwned`].
+/// Use [`from_slice_multiple_with_options`] to return a `Vec<T>` with a single type argument.
 ///
 /// ```rust
 /// use std::collections::VecDeque;

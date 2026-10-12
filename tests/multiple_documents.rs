@@ -75,16 +75,21 @@ fn multiple_documents_two_documents() {
 #[test]
 fn str_multiple_documents_borrow_from_input_and_skip_empty_documents() {
     let yaml = String::from("\u{FEFF}---\n---\nname: First\n---\nnull\n---\nname: 'Second'\n");
-    let docs: Vec<BorrowedPerson<'_>> = serde_saphyr::from_str_multiple(&yaml).unwrap();
-    assert_eq!(
-        docs,
-        vec![
-            BorrowedPerson { name: "First" },
-            BorrowedPerson { name: "Second" },
-        ]
-    );
-    for doc in docs {
-        assert_borrows_from(doc.name, yaml.as_bytes());
+    let results: [Vec<BorrowedPerson<'_>>; 2] = [
+        serde_saphyr::from_multiple(&yaml).unwrap(),
+        serde_saphyr::from_str_multiple(&yaml).unwrap(),
+    ];
+    for docs in results {
+        assert_eq!(
+            docs,
+            vec![
+                BorrowedPerson { name: "First" },
+                BorrowedPerson { name: "Second" },
+            ]
+        );
+        for doc in docs {
+            assert_borrows_from(doc.name, yaml.as_bytes());
+        }
     }
 }
 
@@ -94,32 +99,47 @@ fn str_multiple_documents_with_options_borrow_and_honor_duplicate_key_policy() {
     let options = serde_saphyr::options! {
         duplicate_keys: serde_saphyr::DuplicateKeyPolicy::FirstWins,
     };
-    let docs: Vec<BorrowedPerson<'_>> =
-        serde_saphyr::from_str_multiple_with_options(&yaml, options).unwrap();
-    assert_eq!(
-        docs,
-        vec![
-            BorrowedPerson { name: "First" },
-            BorrowedPerson { name: "Second" },
-        ]
-    );
-    for doc in docs {
-        assert_borrows_from(doc.name, yaml.as_bytes());
+    let results: [Vec<BorrowedPerson<'_>>; 2] = [
+        serde_saphyr::from_multiple_with_options(&yaml, options.clone()).unwrap(),
+        serde_saphyr::from_str_multiple_with_options(&yaml, options).unwrap(),
+    ];
+    for docs in results {
+        assert_eq!(
+            docs,
+            vec![
+                BorrowedPerson { name: "First" },
+                BorrowedPerson { name: "Second" },
+            ]
+        );
+        for doc in docs {
+            assert_borrows_from(doc.name, yaml.as_bytes());
+        }
     }
 }
 
 #[test]
 fn str_multiple_documents_reject_borrowing_transformed_strings() {
     let yaml = String::from("name: First\n---\nname: \"hello\\nworld\"\n");
-    let err = serde_saphyr::from_str_multiple::<BorrowedPerson<'_>, Vec<_>>(&yaml).unwrap_err();
-    assert!(matches!(
-        err.without_snippet(),
-        serde_saphyr::Error::CannotBorrowTransformedString { .. }
-    ));
+    for result in [
+        serde_saphyr::from_multiple::<BorrowedPerson<'_>>(&yaml),
+        serde_saphyr::from_multiple_with_options::<BorrowedPerson<'_>>(
+            &yaml,
+            serde_saphyr::Options::default(),
+        ),
+        serde_saphyr::from_str_multiple::<BorrowedPerson<'_>, Vec<_>>(&yaml),
+        serde_saphyr::from_str_multiple_with_options::<BorrowedPerson<'_>, Vec<_>>(
+            &yaml,
+            serde_saphyr::Options::default(),
+        ),
+    ] {
+        assert!(matches!(
+            result.unwrap_err().without_snippet(),
+            serde_saphyr::Error::CannotBorrowTransformedString { .. }
+        ));
+    }
 }
 
 #[test]
-#[allow(deprecated)]
 fn str_multiple_documents_support_callback_adapters_and_owned_output() {
     // Forwarding closures let callbacks accept any input lifetime while returning owned values.
     let parse: for<'a> fn(&'a str) -> Result<Vec<String>, serde_saphyr::Error> =
@@ -130,22 +150,21 @@ fn str_multiple_documents_support_callback_adapters_and_owned_output() {
     ) -> Result<Vec<String>, serde_saphyr::Error> =
         |input, options| serde_saphyr::from_str_multiple_with_options::<String, _>(input, options);
 
-    // Deprecated entrypoints still coerce directly to higher-ranked function pointers.
-    let legacy_parse: for<'a> fn(&'a str) -> Result<Vec<String>, serde_saphyr::Error> =
-        serde_saphyr::from_multiple::<String>;
-    let legacy_parse_with_options: for<'a> fn(
+    let parse_vec: for<'a> fn(&'a str) -> Result<Vec<String>, serde_saphyr::Error> =
+        |input| serde_saphyr::from_multiple::<String>(input);
+    let parse_vec_with_options: for<'a> fn(
         &'a str,
         serde_saphyr::Options,
     ) -> Result<Vec<String>, serde_saphyr::Error> =
-        serde_saphyr::from_multiple_with_options::<String>;
+        |input, options| serde_saphyr::from_multiple_with_options::<String>(input, options);
 
     let results = {
         let yaml = String::from("First\n---\nSecond\n");
         [
             parse(&yaml).unwrap(),
             parse_with_options(&yaml, serde_saphyr::Options::default()).unwrap(),
-            legacy_parse(&yaml).unwrap(),
-            legacy_parse_with_options(&yaml, serde_saphyr::Options::default()).unwrap(),
+            parse_vec(&yaml).unwrap(),
+            parse_vec_with_options(&yaml, serde_saphyr::Options::default()).unwrap(),
             serde_saphyr::from_str_multiple::<String, Vec<_>>(&yaml).unwrap(),
             serde_saphyr::from_str_multiple_with_options::<String, Vec<_>>(
                 &yaml,
@@ -163,16 +182,21 @@ fn str_multiple_documents_support_callback_adapters_and_owned_output() {
 fn bytes_multiple_documents_borrow_from_input_and_skip_empty_documents() {
     let yaml = String::from("\u{FEFF}---\n---\nname: First\n---\nnull\n---\nname: 'Second'\n")
         .into_bytes();
-    let docs: Vec<BorrowedPerson<'_>> = serde_saphyr::from_bytes_multiple(&yaml).unwrap();
-    assert_eq!(
-        docs,
-        vec![
-            BorrowedPerson { name: "First" },
-            BorrowedPerson { name: "Second" },
-        ]
-    );
-    for doc in docs {
-        assert_borrows_from(doc.name, &yaml);
+    let results: [Vec<BorrowedPerson<'_>>; 2] = [
+        serde_saphyr::from_slice_multiple(&yaml).unwrap(),
+        serde_saphyr::from_bytes_multiple(&yaml).unwrap(),
+    ];
+    for docs in results {
+        assert_eq!(
+            docs,
+            vec![
+                BorrowedPerson { name: "First" },
+                BorrowedPerson { name: "Second" },
+            ]
+        );
+        for doc in docs {
+            assert_borrows_from(doc.name, &yaml);
+        }
     }
 
     for empty in [b"".as_slice(), b"---\n...\n", b"null\n---\n~\n"] {
@@ -199,17 +223,21 @@ fn bytes_multiple_documents_with_options_borrow_and_honor_duplicate_key_policy()
     let options = serde_saphyr::options! {
         duplicate_keys: serde_saphyr::DuplicateKeyPolicy::FirstWins,
     };
-    let docs: Vec<BorrowedPerson<'_>> =
-        serde_saphyr::from_bytes_multiple_with_options(&yaml, options).unwrap();
-    assert_eq!(
-        docs,
-        vec![
-            BorrowedPerson { name: "First" },
-            BorrowedPerson { name: "Second" },
-        ]
-    );
-    for doc in docs {
-        assert_borrows_from(doc.name, &yaml);
+    let results: [Vec<BorrowedPerson<'_>>; 2] = [
+        serde_saphyr::from_slice_multiple_with_options(&yaml, options.clone()).unwrap(),
+        serde_saphyr::from_bytes_multiple_with_options(&yaml, options).unwrap(),
+    ];
+    for docs in results {
+        assert_eq!(
+            docs,
+            vec![
+                BorrowedPerson { name: "First" },
+                BorrowedPerson { name: "Second" },
+            ]
+        );
+        for doc in docs {
+            assert_borrows_from(doc.name, &yaml);
+        }
     }
 }
 
@@ -217,6 +245,11 @@ fn bytes_multiple_documents_with_options_borrow_and_honor_duplicate_key_policy()
 fn bytes_multiple_documents_reject_borrowing_transformed_strings() {
     let yaml = String::from("name: First\n---\nname: \"hello\\nworld\"\n").into_bytes();
     for result in [
+        serde_saphyr::from_slice_multiple::<BorrowedPerson<'_>>(&yaml),
+        serde_saphyr::from_slice_multiple_with_options::<BorrowedPerson<'_>>(
+            &yaml,
+            serde_saphyr::Options::default(),
+        ),
         serde_saphyr::from_bytes_multiple::<BorrowedPerson<'_>, Vec<_>>(&yaml),
         serde_saphyr::from_bytes_multiple_with_options::<BorrowedPerson<'_>, Vec<_>>(
             &yaml,
@@ -233,6 +266,11 @@ fn bytes_multiple_documents_reject_borrowing_transformed_strings() {
 #[test]
 fn bytes_multiple_documents_reject_invalid_utf8() {
     for result in [
+        serde_saphyr::from_slice_multiple::<Person>(&[0xFF]),
+        serde_saphyr::from_slice_multiple_with_options::<Person>(
+            &[0xFF],
+            serde_saphyr::Options::default(),
+        ),
         serde_saphyr::from_bytes_multiple::<Person, Vec<_>>(&[0xFF]),
         serde_saphyr::from_bytes_multiple_with_options::<Person, Vec<_>>(
             &[0xFF],
@@ -247,7 +285,6 @@ fn bytes_multiple_documents_reject_invalid_utf8() {
 }
 
 #[test]
-#[allow(deprecated)]
 fn bytes_multiple_documents_support_callback_adapters_and_owned_output() {
     let parse: for<'a> fn(&'a [u8]) -> Result<Vec<String>, serde_saphyr::Error> =
         |input| serde_saphyr::from_bytes_multiple::<String, _>(input);
@@ -258,22 +295,21 @@ fn bytes_multiple_documents_support_callback_adapters_and_owned_output() {
         serde_saphyr::from_bytes_multiple_with_options::<String, _>(input, options)
     };
 
-    // Deprecated entrypoints still coerce directly to higher-ranked function pointers.
-    let legacy_parse: for<'a> fn(&'a [u8]) -> Result<Vec<String>, serde_saphyr::Error> =
-        serde_saphyr::from_slice_multiple::<String>;
-    let legacy_parse_with_options: for<'a> fn(
+    let parse_vec: for<'a> fn(&'a [u8]) -> Result<Vec<String>, serde_saphyr::Error> =
+        |input| serde_saphyr::from_slice_multiple::<String>(input);
+    let parse_vec_with_options: for<'a> fn(
         &'a [u8],
         serde_saphyr::Options,
     ) -> Result<Vec<String>, serde_saphyr::Error> =
-        serde_saphyr::from_slice_multiple_with_options::<String>;
+        |input, options| serde_saphyr::from_slice_multiple_with_options::<String>(input, options);
 
     let results = {
         let yaml = String::from("First\n---\nSecond\n").into_bytes();
         [
             parse(&yaml).unwrap(),
             parse_with_options(&yaml, serde_saphyr::Options::default()).unwrap(),
-            legacy_parse(&yaml).unwrap(),
-            legacy_parse_with_options(&yaml, serde_saphyr::Options::default()).unwrap(),
+            parse_vec(&yaml).unwrap(),
+            parse_vec_with_options(&yaml, serde_saphyr::Options::default()).unwrap(),
             serde_saphyr::from_bytes_multiple::<String, Vec<_>>(&yaml).unwrap(),
             serde_saphyr::from_bytes_multiple_with_options::<String, Vec<_>>(
                 &yaml,
@@ -281,6 +317,31 @@ fn bytes_multiple_documents_support_callback_adapters_and_owned_output() {
             )
             .unwrap(),
         ]
+    };
+    for docs in results {
+        assert_eq!(docs, ["First", "Second"]);
+    }
+}
+
+#[test]
+fn multiple_documents_support_deserialize_owned_wrappers() {
+    fn parse<T: serde::de::DeserializeOwned>(
+        yaml: &str,
+    ) -> Result<[Vec<T>; 4], serde_saphyr::Error> {
+        Ok([
+            serde_saphyr::from_multiple(yaml)?,
+            serde_saphyr::from_multiple_with_options(yaml, serde_saphyr::Options::default())?,
+            serde_saphyr::from_slice_multiple(yaml.as_bytes())?,
+            serde_saphyr::from_slice_multiple_with_options(
+                yaml.as_bytes(),
+                serde_saphyr::Options::default(),
+            )?,
+        ])
+    }
+
+    let results = {
+        let yaml = String::from("First\n---\nSecond\n");
+        parse::<String>(&yaml).unwrap()
     };
     for docs in results {
         assert_eq!(docs, ["First", "Second"]);
@@ -467,17 +528,6 @@ fn multiple_documents_strips_bom_and_skips_plain_null_like_documents() {
             },
         ]
     );
-}
-
-#[test]
-#[allow(deprecated)]
-fn from_slice_multiple_with_options_rejects_invalid_utf8() {
-    let err = serde_saphyr::from_slice_multiple_with_options::<Person>(
-        &[0xFF],
-        serde_saphyr::options! {},
-    )
-    .expect_err("invalid UTF-8 input should fail");
-    assert!(matches!(err, serde_saphyr::Error::InvalidUtf8Input));
 }
 
 #[test]
