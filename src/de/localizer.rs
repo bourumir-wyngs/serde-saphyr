@@ -254,6 +254,10 @@ pub trait Localizer {
     /// Label used for the secondary snippet window that points at the anchor definition.
     /// Also used for validation definitions and definition-only locations in miette.
     ///
+    /// For the separate anchor-definition label in miette alias diagnostics, also override
+    /// [`Localizer::anchor_defined_here`], which defaults to `"anchor defined here"`
+    /// independently of this method.
+    ///
     /// Default: `"defined here"`.
     fn defined_window(&self) -> Cow<'static, str> {
         Cow::Borrowed("defined here")
