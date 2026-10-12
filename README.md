@@ -125,6 +125,27 @@ The optional `huge_documents` feature switches span storage from `u32` indices t
 
 ### Migrating from 1.x
 
+Version 2.0 lets `from_multiple`, `from_slice_multiple`, and their `_with_options` variants
+deserialize values that borrow from the input by changing their bound from `DeserializeOwned`
+to `Deserialize<'de>`. These functions retain their names, single type parameter, and `Vec<T>`
+returns and are not deprecated. Ordinary calls such as `from_multiple::<Config>(input)` and
+generic callers with `T: DeserializeOwned` continue to work.
+
+Direct function pointers or callbacks that must accept arbitrary input lifetimes may need a
+forwarding closure:
+
+```rust
+use serde_saphyr::{Error, from_multiple, from_slice_multiple};
+
+let parse: fn(&str) -> Result<Vec<String>, Error> =
+    |input| from_multiple::<String>(input);
+let parse_bytes: fn(&[u8]) -> Result<Vec<String>, Error> =
+    |input| from_slice_multiple::<String>(input);
+```
+
+The new `from_str_multiple`, `from_bytes_multiple`, and their `_with_options` variants also
+support borrowing and let you choose a collection implementing `Default + Extend<T>`.
+
 Version 2.0 keeps `Error::AliasError` and adds a mandatory `error: Box<Error>` field containing
 the original error. Manual constructors must supply it, and patterns listing every field
 must add `error` or `..`. The `msg` field remains available as a deprecated compatibility
@@ -267,11 +288,12 @@ The concept that “Rust code is the schema” naturally extends to implemented 
 
 ### Multiple documents
 
-Multiple documents can be deserialized into a collection.
-[`serde_saphyr::from_str_multiple`](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.from_str_multiple.html) supports any collection implementing `Default + Extend<T>`, such as `Vec<T>`, 
-`VecDeque<T>`, `BTreeSet<T>` or custom storage like [`SmallVec<T>`](https://docs.rs/smallvec/latest/smallvec/struct.SmallVec.html).
-Collections like sets may not preserve the order and discard duplicates. Empty and null-like documents are skipped.
-Use enum to represent diverse documents while retaining strong typing on the Rust side.
+Multiple documents can be deserialized into a `Vec<T>` with
+[`serde_saphyr::from_multiple`](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.from_multiple.html)
+for strings or `from_slice_multiple` for UTF-8 byte slices. Both support owned values and values
+that borrow from the input, with `_with_options` variants for custom options. Empty and null-like
+documents are skipped; other documents retain their input order.
+Use an enum to represent diverse documents while retaining strong typing on the Rust side.
  
 ```rust
 use serde::Deserialize;
@@ -298,14 +320,16 @@ fn main() {
    age: 25
 "#;
     let docs: Vec<Document> =
-        serde_saphyr::from_str_multiple(input).expect("valid YAML stream");
+        serde_saphyr::from_multiple(input).expect("valid YAML stream");
 }
 ```
 
-Empty and null-like documents are skipped. All other documents are added in input order (mind that
-sets may change the order or discard duplicates). Choose a sequence to preserve order and duplicates,
-or a set to deduplicate values. Explicit type
-arguments specify both the document and collection types. Specifying the document type also
+To choose a different collection, use
+[`serde_saphyr::from_str_multiple`](https://docs.rs/serde-saphyr/latest/serde_saphyr/fn.from_str_multiple.html).
+It supports any collection implementing `Default + Extend<T>`, such as `Vec<T>`, `VecDeque<T>`,
+`BTreeSet<T>`, or custom storage like [`SmallVec<T>`](https://docs.rs/smallvec/latest/smallvec/struct.SmallVec.html).
+Documents are added in input order, but sets may change the order or discard duplicates. Explicit
+type arguments specify both the document and collection types. Specifying the document type also
 resolves ambiguity when the collection implements `Extend` for multiple item types:
 
 ```rust
@@ -489,9 +513,13 @@ YAML non-finite spellings and reject overflowing decimal literals.
 
 ### Borrowed string deserialization
 
-serde-saphyr supports zero-copy deserialization for string fields when using `from_str`, `from_slice`, `from_str_multiple`, or `from_bytes_multiple` (including their `_with_options` variants). This allows deserializing into `&str` fields that borrow directly from the input, avoiding allocation overhead. For multiple documents, use `from_str_multiple` for strings or `from_bytes_multiple` for UTF-8 byte slices, with their `_with_options` variants for custom options; all also support owned values.
-
-The older `from_multiple`, `from_multiple_with_options`, `from_slice_multiple`, and `from_slice_multiple_with_options` functions require owned values and are deprecated since 2.0.0, with their signatures retained for compatibility. When migrating function pointers or callbacks, wrap the new functions in forwarding closures if needed.
+serde-saphyr supports zero-copy deserialization for string fields when using `from_str`, `from_slice`,
+`from_multiple`, or `from_slice_multiple` (including their `_with_options` variants). This allows
+deserializing into `&str` fields that borrow directly from the input, avoiding allocation overhead.
+For multiple documents, use `from_multiple` for strings or `from_slice_multiple` for UTF-8 byte
+slices to collect into a `Vec<T>`. The `from_str_multiple` and `from_bytes_multiple` families
+support borrowing into any collection implementing `Default + Extend<T>`. All of these functions
+also support owned values.
 
 ```rust
 use serde::Deserialize;

@@ -29,16 +29,11 @@
   style wrappers without building a second container tree or using thread-local state.
 - Added `SerializerOptions::no_lang_directive` (default `false`) to suppress the
   `%YAML 1.2` directive and its leading `---` marker independently of `yaml_12`'s quoting. 
-- Added `from_str_multiple` and `from_str_multiple_with_options` to deserialize multiple YAML
-  documents into values that can borrow from the input string. The existing `from_multiple`
-  and `from_multiple_with_options` APIs retain their `DeserializeOwned` bounds for compatibility.
-- Added `from_bytes_multiple` and `from_bytes_multiple_with_options` to deserialize multiple YAML
-  documents into values that can borrow from a UTF-8 byte slice. The existing `from_slice_multiple`
-  and `from_slice_multiple_with_options` APIs retain their `DeserializeOwned` bounds for compatibility.
-- The new string and byte multi-document APIs collect into any `C: Default + Extend<T>`,
-  including vectors, queues, sets, and custom accumulators. Explicit type arguments now specify
-  both the document and collection types, for example `from_str_multiple::<String, Vec<_>>(input)`.
-  The deprecated APIs continue returning `Vec<T>` with their original signatures.
+- Added `from_str_multiple`, `from_bytes_multiple`, and their `_with_options` variants to
+  deserialize multiple YAML documents into any `C: Default + Extend<T>`, including vectors,
+  queues, sets, and custom accumulators. Values can borrow from the input string or UTF-8 byte
+  slice. Explicit type arguments specify both the document and collection types, for example
+  `from_str_multiple::<String, Vec<_>>(input)`.
 - Added an `error: Box<Error>` field to `Error::AliasError`, which keeps the original error
   when an aliased value fails to deserialize. A custom `MessageFormatter` or `Localizer`
   now applies to that error, and `std::error::Error::source` returns it
@@ -46,6 +41,12 @@
 
 ### Changed
 
+- **Breaking:** `from_multiple`, `from_multiple_with_options`, `from_slice_multiple`, and
+  `from_slice_multiple_with_options` now accept `T: Deserialize<'de>` so values can borrow from
+  the input. They retain their names, single type parameter, and `Vec<T>` returns and are not
+  deprecated. Ordinary calls, including `from_multiple::<Config>(input)` and generic callers
+  with `T: DeserializeOwned`, continue to work. Function pointers or callbacks accepting arbitrary
+  input lifetimes may need forwarding closures, such as `|input| from_multiple::<String>(input)`.
 - Updated to granit-parser 2.0.0 and disabled its default features so comment support follows
   serde-saphyr's `comments` feature. Serialization-only builds remain independent of
   granit-parser, including when comment emission is enabled.
@@ -67,14 +68,6 @@
   when migrating. Explicit policies override the boolean. Serialized options that omit both
   fields retain the 1.3.0 behavior of converting non-finite floats to strings;
   `Options::default()` continues to reject them.
-- Deprecated `from_multiple` and `from_multiple_with_options` in favor of `from_str_multiple`
-  and `from_str_multiple_with_options`, which support both owned and borrowed values. The old
-  functions remain available with their original signatures for compatibility. When migrating
-  function pointers or callbacks, wrap the new functions in forwarding closures if needed.
-- Deprecated `from_slice_multiple` and `from_slice_multiple_with_options` in favor of
-  `from_bytes_multiple` and `from_bytes_multiple_with_options`, which support both owned and borrowed
-  values. The old signatures remain available; the same callback migration guidance applies.
-- Updated internal callers, examples, tests, fuzz targets, and error hints to use the new APIs.
 - Deprecated the `msg` field of `Error::AliasError` in favor of its structured `error` field.
   Existing `Error::AliasError { msg, .. }` patterns still work with a deprecation warning.
 
