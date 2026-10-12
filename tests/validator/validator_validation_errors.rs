@@ -112,6 +112,10 @@ fn from_str_with_options_validate_runs_validator_validation() {
         rendered.contains("line 1 column 4"),
         "expected location in output, got: {rendered}"
     );
+    assert!(
+        rendered.contains("--> <input>:1:4"),
+        "expected root source name in snippet header, got: {rendered}"
+    );
 }
 
 #[test]
@@ -259,6 +263,10 @@ fn reader_validation_root_snapshot_out_of_range_has_no_incorrect_snippet() {
         "expected either a correct high-line snippet or no snippet, got: {rendered}"
     );
     assert!(
+        rendered.contains("--> input:9001:4"),
+        "expected reader source name and absolute location, got: {rendered}"
+    );
+    assert!(
         !rendered.contains("<input>:1:"),
         "expected no incorrect line-1 snippet rendering, got: {rendered}"
     );
@@ -294,8 +302,8 @@ fn read_with_options_validate_validates_each_document_in_iterator() {
         "expected second-doc location, got: {rendered}"
     );
     assert!(
-        rendered.contains(":3:4"),
-        "expected reader snippet location, got: {rendered}"
+        rendered.contains("--> input:3:4"),
+        "expected reader source name and snippet location, got: {rendered}"
     );
     assert!(
         rendered.contains("3 | a: \"\""),
@@ -315,7 +323,7 @@ fn reader_validator_validation_in_text_include_has_snippet() {
             if req.spec == "child.yaml" {
                 Ok(serde_saphyr::ResolvedInclude::new(
                     req.spec,
-                    req.spec,
+                    "config/child.yaml",
                     serde_saphyr::InputSource::from_string("\"\"\n".to_string()),
                 ))
             } else {
@@ -342,6 +350,10 @@ fn reader_validator_validation_in_text_include_has_snippet() {
         rendered.contains("| \"\""),
         "expected snippet to render included content, got: {rendered}"
     );
+    assert!(
+        rendered.contains("--> config/child.yaml:1:1"),
+        "expected included source display name, got: {rendered}"
+    );
 }
 
 #[cfg(feature = "include")]
@@ -353,7 +365,7 @@ fn from_str_with_options_validate_reports_validator_error_from_included_input() 
             if req.spec == "child.yaml" {
                 Ok(serde_saphyr::ResolvedInclude::new(
                     req.spec,
-                    req.spec,
+                    "config/child.yaml",
                     serde_saphyr::InputSource::from_string("\"\"\n".to_string()),
                 ))
             } else {
@@ -378,6 +390,10 @@ fn from_str_with_options_validate_reports_validator_error_from_included_input() 
     assert!(
         rendered.contains("| \"\""),
         "expected snippet to render included content, got: {rendered}"
+    );
+    assert!(
+        rendered.contains("--> config/child.yaml:1:1"),
+        "expected included source display name, got: {rendered}"
     );
 }
 
@@ -417,7 +433,7 @@ fn validator_multidoc_validation_in_included_file_renders_included_snippet() {
 
     let rendered = err.to_string();
     assert!(
-        rendered.contains("--> (defined):1:8"),
+        rendered.contains("--> child.yaml:1:8"),
         "expected included file content as primary snippet, got: {rendered}"
     );
     assert!(

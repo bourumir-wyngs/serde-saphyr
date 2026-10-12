@@ -165,7 +165,7 @@ fn scalar_key_node(
     location: Location,
 ) -> KeyNode<'static> {
     KeyNode::Scalar {
-        events: vec![scalar(value, tag, None, style, location)],
+        events: vec![scalar(value, tag, None, style, location)].into(),
         location,
     }
 }
@@ -232,7 +232,7 @@ fn attach_alias_locations_prefers_dual_locations_and_existing_errors() {
 
     let err = Error::msg("alias boom").with_location(existing);
     let expected_message = err.to_string();
-    let attached = attach_alias_locations_if_missing(err, reference, defined);
+    let attached = attach_alias_locations_if_missing(err, Some(reference), defined);
     match attached {
         Error::AliasError {
             error, locations, ..
@@ -246,19 +246,49 @@ fn attach_alias_locations_prefers_dual_locations_and_existing_errors() {
 
     let preserved = attach_alias_locations_if_missing(
         Error::unexpected("value").with_location(existing),
-        Location::UNKNOWN,
+        None,
         Location::UNKNOWN,
     );
     assert!(!matches!(&preserved, Error::AliasError { .. }));
     assert_eq!(preserved.location(), Some(existing));
 
     let preferred_reference =
-        attach_alias_locations_if_missing(Error::msg("same"), reference, reference);
+        attach_alias_locations_if_missing(Error::msg("same"), Some(reference), reference);
     assert_eq!(preferred_reference.location(), Some(reference));
 
-    let fallback_defined =
-        attach_alias_locations_if_missing(Error::msg("defined"), Location::UNKNOWN, defined);
+    let fallback_defined = attach_alias_locations_if_missing(Error::msg("defined"), None, defined);
     assert_eq!(fallback_defined.location(), Some(defined));
+}
+
+#[test]
+fn attach_alias_locations_preserves_distinct_use_sites() {
+    let reference = loc(1, 2).with_source_id(1);
+    let defined = loc(3, 4).with_source_id(1);
+    // Identical line/column coordinates in different sources are distinct uses.
+    for outer_reference in [loc(7, 8).with_source_id(1), reference.with_source_id(2)] {
+        let original = Error::unexpected("value").with_location(defined);
+        let inner = attach_alias_locations_if_missing(original, Some(reference), defined);
+        let outer = attach_alias_locations_if_missing(inner, Some(outer_reference), reference);
+
+        let Error::AliasError {
+            error, locations, ..
+        } = outer
+        else {
+            panic!("expected the outer alias error");
+        };
+        assert_eq!(locations.reference_location, outer_reference);
+        assert_eq!(locations.defined_location, reference);
+        let Error::AliasError {
+            error, locations, ..
+        } = *error
+        else {
+            panic!("the distinct inner alias must be retained");
+        };
+        assert_eq!(locations.reference_location, reference);
+        assert_eq!(locations.defined_location, defined);
+        assert!(matches!(*error, Error::Unexpected { .. }));
+        assert_eq!(error.location(), Some(defined));
+    }
 }
 
 #[test]
@@ -688,7 +718,7 @@ fn is_merge_key_accepts_implicit_and_explicit_merge_tags() {
     )));
     assert!(!is_merge_key(&KeyNode::Fingerprinted {
         fingerprint: KeyFingerprint::Default,
-        events: vec![map_start(loc(21, 7)), map_end(loc(21, 8))],
+        events: vec![map_start(loc(21, 7)), map_end(loc(21, 8))].into(),
         location: loc(21, 7),
     }));
 }

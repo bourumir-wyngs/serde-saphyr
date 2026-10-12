@@ -38,6 +38,10 @@ impl Localizer for InjectingLocalizer {
         Cow::Owned(format!("{base} localizer\n\u{1b}]0;owned\u{7}"))
     }
 
+    fn alias_used_at(&self, _loc: Location) -> String {
+        " localizer\n\u{1b}]0;owned\u{7}".to_owned()
+    }
+
     fn snippet_location_prefix(&self, _loc: Location) -> String {
         "prefix\n\u{1b}[31m".to_owned()
     }

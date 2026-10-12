@@ -8,6 +8,14 @@
 
 ### Added
 
+- Added public `path_map::PathKind`, `PathKey::segments()`, and `PathMap::locations_for()`
+  for inspecting validation paths and resolving their YAML use/definition locations,
+  including best-effort spelling matches and recorded ancestor/root fallback.
+- Added `RenderOptions::line_offset` and `RenderOptions::source_name` for displaying
+  embedded YAML diagnostics at their containing document's line numbers and naming
+  the root source in snippet headers, including the new
+  `miette::to_miette_report_with_options` entry point. Included files retain their own
+  names and coordinates, and stored error locations and spans are unchanged.
 - Added `PropertySyntax::DockerCompose` for Compose-compatible property interpolation.
 - Added the default-enabled `comments` feature, forwarding to granit-parser's matching
   feature. Builds with `default-features = false` must enable it to use `Commented<T>`,
@@ -72,6 +80,30 @@
 
 ### Fixed
 
+- Buffered `LastWins` values and inline merges no longer produce alias errors when no
+  alias was used. Replay preserves per-node origins, including genuine nested aliases,
+  ordinary value locations, and merge use-sites for `Spanned<T>`.
+- Plain alias diagnostics explicitly label the use location with `(used at line X, column Y)`.
+  The new `Localizer::alias_used_at` hook controls this suffix independently of failure and
+  definition locations. Custom localizers that previously used `attach_location` to format
+  or suppress alias-use coordinates should override `alias_used_at` as well.
+- Miette diagnostics now localize alias labels, validation messages and summaries, and
+  include context. Validation messages honor external-message overrides, and multi-document
+  summaries honor custom message formatters. English defaults are unchanged.
+- Validation snippet headers now show the actual source name instead of `(defined)` or
+  `(defined here)`, including errors in included YAML files.
+- Serde invalid-length failures now return `Error::SerdeInvalidLength` with separate
+  `len`, `expected`, and `location` fields, allowing custom formatters to inspect them.
+  Default diagnostic wording is preserved ([#205, item 6](https://github.com/bourumir-wyngs/serde-saphyr/issues/205)).
+- Root validation paths honor `Localizer::root_path_label` in plain, snippet, and
+  `miette` diagnostics ([#205, item 5c](https://github.com/bourumir-wyngs/serde-saphyr/issues/205)).
+- Plain validation diagnostics separate issues with real newlines while escaping control
+  characters inside each issue. Built-in formatters use the new optional
+  `MessageFormatter::format_validation_issue_lines` hook; existing custom whole-message
+  overrides retain their behavior ([#205, item 5a](https://github.com/bourumir-wyngs/serde-saphyr/issues/205)).
+- Nested containers reuse the alias error wrapper for the same use site, preserving the
+  outer anchor location while exposing the original error directly through `error`, `source()`,
+  and the legacy `msg` field ([#205, item 1](https://github.com/bourumir-wyngs/serde-saphyr/issues/205)).
 - Alias diagnostics preserve the precise location of a failing value inside an anchored mapping,
   including fields outside the anchor's snippet window. Plain messages, snippets, and `miette`
   reports include the distinct failing location; equal locations are not repeated.

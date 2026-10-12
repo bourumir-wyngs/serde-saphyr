@@ -25,12 +25,12 @@ pub struct DefaultMessageFormatter;
 pub type DeveloperMessageFormatter = DefaultMessageFormatter;
 
 #[cfg(any(feature = "garde", feature = "validator"))]
-fn format_validation_issues(
+fn format_validation_issue_lines(
     l10n: &dyn Localizer,
     source: &ExternalMessageSource,
     issues: &[ValidationIssue],
     locations: &PathMap,
-) -> String {
+) -> Vec<String> {
     let mut lines = Vec::with_capacity(issues.len());
     for issue in issues {
         let entry = issue.display_entry_overridden(l10n, (*source).clone());
@@ -57,7 +57,25 @@ fn format_validation_issues(
             (loc != Location::UNKNOWN).then_some(loc),
         ));
     }
-    l10n.join_validation_issues(&lines)
+    lines
+}
+
+#[cfg(any(feature = "garde", feature = "validator"))]
+fn default_validation_issue_lines(l10n: &dyn Localizer, err: &Error) -> Option<Vec<String>> {
+    let Error::ValidationError {
+        source,
+        issues,
+        locations,
+    } = err
+    else {
+        return None;
+    };
+    Some(format_validation_issue_lines(
+        l10n,
+        &source.external_message_source(),
+        issues,
+        locations,
+    ))
 }
 
 fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) -> Cow<'a, str> {
@@ -212,6 +230,9 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
             expected,
             ..
         } => Cow::Owned(format!("invalid value: {unexpected}, expected {expected}")),
+        Error::SerdeInvalidLength { len, expected, .. } => {
+            Cow::Owned(format!("invalid length {len}, expected {expected}"))
+        }
         Error::SerdeUnknownVariant {
             variant, expected, ..
         } => Cow::Owned(format!(
@@ -376,24 +397,30 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
             locations,
         } => {
             let l10n = formatter.localizer();
-            Cow::Owned(format_validation_issues(
+            Cow::Owned(l10n.join_validation_issues(&format_validation_issue_lines(
                 l10n,
                 &source.external_message_source(),
                 issues,
                 locations,
-            ))
+            )))
         }
         #[cfg(any(feature = "garde", feature = "validator"))]
-        Error::ValidationErrors { errors, .. } => Cow::Owned(format!(
-            "validation failed for {} document(s)",
-            errors.len()
-        )),
+        Error::ValidationErrors { errors, .. } => Cow::Owned(
+            formatter
+                .localizer()
+                .validation_failed_documents(errors.len()),
+        ),
     }
 }
 
 impl MessageFormatter for DefaultMessageFormatter {
     fn format_message<'a>(&self, err: &'a Error) -> Cow<'a, str> {
         default_format_message(self, err)
+    }
+
+    #[cfg(any(feature = "garde", feature = "validator"))]
+    fn format_validation_issue_lines(&self, err: &Error) -> Option<Vec<String>> {
+        default_validation_issue_lines(self.localizer(), err)
     }
 }
 
@@ -408,6 +435,11 @@ impl MessageFormatter for DefaultMessageFormatterWithLocalizer<'_> {
 
     fn format_message<'a>(&self, err: &'a Error) -> Cow<'a, str> {
         default_format_message(self, err)
+    }
+
+    #[cfg(any(feature = "garde", feature = "validator"))]
+    fn format_validation_issue_lines(&self, err: &Error) -> Option<Vec<String>> {
+        default_validation_issue_lines(self.localizer(), err)
     }
 }
 
@@ -530,6 +562,11 @@ impl MessageFormatter for UserMessageFormatter {
     fn format_message<'a>(&self, err: &'a Error) -> Cow<'a, str> {
         user_format_message(self, err)
     }
+
+    #[cfg(any(feature = "garde", feature = "validator"))]
+    fn format_validation_issue_lines(&self, err: &Error) -> Option<Vec<String>> {
+        default_validation_issue_lines(self.localizer(), err)
+    }
 }
 
 struct UserMessageFormatterWithLocalizer<'a> {
@@ -543,6 +580,11 @@ impl MessageFormatter for UserMessageFormatterWithLocalizer<'_> {
 
     fn format_message<'a>(&self, err: &'a Error) -> Cow<'a, str> {
         user_format_message(self, err)
+    }
+
+    #[cfg(any(feature = "garde", feature = "validator"))]
+    fn format_validation_issue_lines(&self, err: &Error) -> Option<Vec<String>> {
+        default_validation_issue_lines(self.localizer(), err)
     }
 }
 

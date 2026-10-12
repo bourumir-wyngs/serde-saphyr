@@ -10,7 +10,7 @@ use super::cfg::Cfg;
 use super::commented_deser;
 use super::error::{Error, MissingFieldLocationGuard, TransformReason};
 use super::events::{
-    Ev, Events, ReplayEvents, attach_alias_locations_if_missing, eof_with_loc,
+    Ev, Events, RecordedEvents, ReplayEvents, attach_alias_locations_if_missing, eof_with_loc,
     with_deferred_recursive_aliases,
 };
 use super::key_nodes::{
@@ -1606,6 +1606,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
                 // The peek borrow is now released, so it's safe to query other cursor state.
                 let reference_location = self.ev.reference_location();
+                let alias_reference_location = self.ev.alias_reference_location();
                 let _missing_field_guard = MissingFieldLocationGuard::new(reference_location);
                 let mut item_comments = std::mem::take(&mut self.pending_first_element_comments);
                 item_comments.extend(self.ev.take_leading_comments_for_next_node()?);
@@ -1639,7 +1640,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             .map_err(|e| {
                                 attach_alias_locations_if_missing(
                                     e,
-                                    reference_location,
+                                    alias_reference_location,
                                     defined_location,
                                 )
                             });
@@ -1657,7 +1658,11 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 with_subtree_redaction(redaction_ctx, || seed.deserialize(de))
                     .map(Some)
                     .map_err(|e| {
-                        attach_alias_locations_if_missing(e, reference_location, defined_location)
+                        attach_alias_locations_if_missing(
+                            e,
+                            alias_reference_location,
+                            defined_location,
+                        )
                     })
             }
         }
@@ -1755,12 +1760,13 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             Some(ev) => ev.location(),
             None => self.ev.last_location(),
         };
+        let map_reference_location = self.ev.reference_location();
         let child_cfg = self.cfg.enter_container(map_location)?;
         self.expect_map_start()?;
 
         // Ensure "missing field" errors (which have no natural span) get attributed to the
         // current container.
-        let _missing_field_guard = MissingFieldLocationGuard::new(self.ev.reference_location());
+        let _missing_field_guard = MissingFieldLocationGuard::new(map_reference_location);
 
         #[cfg(any(feature = "garde", feature = "validator"))]
         if let Some(recorder) = self.garde.as_mut() {
@@ -1770,8 +1776,8 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             recorder.map.insert(
                 path,
                 Locations {
-                    reference_location: self.ev.reference_location(),
-                    defined_location: self.ev.last_location(),
+                    reference_location: map_reference_location,
+                    defined_location: map_location,
                 },
             );
         }
@@ -1899,7 +1905,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             merge_stack: VecDeque<Vec<PendingEntry<'de>>>,
             flushing_merges: bool,
             live_done: bool,
-            pending_value: Option<(Vec<Ev<'de>>, Location)>,
+            pending_value: Option<(RecordedEvents<'de>, Location)>,
             pending_field_comments: Vec<Cow<'de, str>>,
             pending_value_separator_comments: Vec<Cow<'de, str>>,
             pending_value_comments: Vec<Cow<'de, str>>,
@@ -1965,7 +1971,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             fn deserialize_recorded_key<'de2, K>(
                 &mut self,
                 seed: K,
-                events: Vec<Ev<'de2>>,
+                events: RecordedEvents<'de2>,
                 kemn: bool,
             ) -> Result<K::Value, Error>
             where
@@ -2295,10 +2301,11 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 let mut value_comments = std::mem::take(&mut self.pending_value_comments);
 
                 if let Some(events) = self.pending_value.take() {
-                    let (events, reference_location) = events;
-                    let mut replay = ReplayEvents::with_reference(
+                    let (events, fallback_reference_location) = events;
+                    // Each captured node retains its own origin. Fixing the reference to
+                    // the outer value would mistake ordinary descendants for aliases.
+                    let mut replay = ReplayEvents::new(
                         events,
-                        reference_location,
                         #[cfg(feature = "properties")]
                         self.ev.property_interpolation().clone(),
                     );
@@ -2309,6 +2316,15 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                         Some(ev) => ev.location(),
                         None => replay.last_location(),
                     };
+                    let alias_reference_location = replay.alias_reference_location();
+                    #[cfg(any(feature = "garde", feature = "validator"))]
+                    let reference_location = if defined_location == Location::UNKNOWN {
+                        fallback_reference_location
+                    } else {
+                        replay.reference_location()
+                    };
+                    #[cfg(not(any(feature = "garde", feature = "validator")))]
+                    let _ = fallback_reference_location;
 
                     #[cfg(any(feature = "garde", feature = "validator"))]
                     {
@@ -2341,7 +2357,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                                     .map_err(|e| {
                                         attach_alias_locations_if_missing(
                                             e,
-                                            reference_location,
+                                            alias_reference_location,
                                             defined_location,
                                         )
                                     });
@@ -2356,7 +2372,11 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     de.pending_value_comments = value_comments;
                     let redaction_ctx = de.peek_scalar_redaction_ctx()?;
                     with_subtree_redaction(redaction_ctx, || seed.deserialize(de)).map_err(|e| {
-                        attach_alias_locations_if_missing(e, reference_location, defined_location)
+                        attach_alias_locations_if_missing(
+                            e,
+                            alias_reference_location,
+                            defined_location,
+                        )
                     })
                 } else {
                     value_separator_comments
@@ -2369,7 +2389,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                         None => self.ev.last_location(),
                     };
 
+                    #[cfg(any(feature = "garde", feature = "validator"))]
                     let reference_location = self.ev.reference_location();
+                    let alias_reference_location = self.ev.alias_reference_location();
 
                     #[cfg(any(feature = "garde", feature = "validator"))]
                     {
@@ -2399,7 +2421,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                                     .map_err(|e| {
                                         attach_alias_locations_if_missing(
                                             e,
-                                            reference_location,
+                                            alias_reference_location,
                                             defined_location,
                                         )
                                     });
@@ -2414,7 +2436,11 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     de.pending_value_comments = value_comments;
                     let redaction_ctx = de.peek_scalar_redaction_ctx()?;
                     with_scalar_redaction(redaction_ctx, || seed.deserialize(de)).map_err(|e| {
-                        attach_alias_locations_if_missing(e, reference_location, defined_location)
+                        attach_alias_locations_if_missing(
+                            e,
+                            alias_reference_location,
+                            defined_location,
+                        )
                     })
                 }
             }
@@ -2502,7 +2528,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             Unit(EnumScalarId<'de>),
             Map(String, Location),
             /// Tag selects the variant, scalar value is the newtype payload.
-            TaggedNewtype(EnumScalarId<'de>, Vec<Ev<'a>>),
+            TaggedNewtype(EnumScalarId<'de>, RecordedEvents<'a>),
         }
 
         let mut tagged_enum = None;
@@ -2544,28 +2570,12 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             location: tag_loc,
                         };
                         // Consume the scalar and re-emit it without the tag for payload deserialization
-                        let Some(ev) = self.ev.next()? else {
+                        let origin = self.ev.node_origin();
+                        let Some(mut ev) = self.ev.next()? else {
                             return Err(eof_with_loc(self.ev));
                         };
-                        let replay = match ev {
-                            Ev::Scalar {
-                                value,
-                                style,
-                                location,
-                                anchor,
-                                ..
-                            } => {
-                                vec![Ev::Scalar {
-                                    value,
-                                    tag: SfTag::None,
-                                    raw_tag: None,
-                                    style,
-                                    location,
-                                    anchor,
-                                }]
-                            }
-                            other => vec![other],
-                        };
+                        ev.strip_node_tag();
+                        let replay = RecordedEvents::from_event(ev, origin);
                         tagged_enum = None; // prevent mismatch check
                         Mode::TaggedNewtype(variant_name, replay)
                     } else {
@@ -2644,36 +2654,42 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     && variants.contains(&tag_name.as_str())
                 {
                     // Consume the SeqStart, collect all events until SeqEnd, replay as untagged sequence
+                    let origin = self.ev.node_origin();
                     let Some(seq_start) = self.ev.next()? else {
                         return Err(eof_with_loc(self.ev));
                     };
                     let start_loc = seq_start.location();
-                    let mut replay_events: Vec<Ev<'de>> = Vec::new();
+                    let mut replay_events = RecordedEvents::new();
                     // Re-emit SeqStart without tag
                     if let Ev::SeqStart {
                         anchor, location, ..
                     } = seq_start
                     {
-                        replay_events.push(Ev::SeqStart {
-                            anchor,
-                            tag: SfTag::None,
-                            raw_tag: None,
-                            location,
-                        });
+                        replay_events.push(
+                            Ev::SeqStart {
+                                anchor,
+                                tag: SfTag::None,
+                                raw_tag: None,
+                                location,
+                            },
+                            origin,
+                        );
                     }
                     let mut depth = 1usize;
                     while depth > 0 {
+                        let _ = self.ev.peek()?;
+                        let origin = self.ev.node_origin();
                         match self.ev.next()? {
                             Some(ev @ (Ev::SeqStart { .. } | Ev::MapStart { .. })) => {
                                 depth += 1;
-                                replay_events.push(ev);
+                                replay_events.push(ev, origin);
                             }
                             Some(ev @ (Ev::SeqEnd { .. } | Ev::MapEnd { .. })) => {
                                 depth -= 1;
-                                replay_events.push(ev);
+                                replay_events.push(ev, origin);
                             }
                             Some(ev) => {
-                                replay_events.push(ev);
+                                replay_events.push(ev, origin);
                             }
                             None => return Err(eof_with_loc(self.ev)),
                         }
@@ -2817,13 +2833,17 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     Some(ev) => ev.location(),
                     None => self.ev.last_location(),
                 };
-                let reference_location = self.ev.reference_location();
+                let alias_reference_location = self.ev.alias_reference_location();
 
                 let mut de = YamlDeserializer::new(self.ev, self.cfg);
                 let redaction_ctx = de.peek_scalar_redaction_ctx()?;
                 let value = with_subtree_redaction(redaction_ctx, || seed.deserialize(de))
                     .map_err(|e| {
-                        attach_alias_locations_if_missing(e, reference_location, defined_location)
+                        attach_alias_locations_if_missing(
+                            e,
+                            alias_reference_location,
+                            defined_location,
+                        )
                     })?;
                 if self.map_mode {
                     self.expect_map_end()?;

@@ -7,7 +7,7 @@ use granit_parser::ScalarStyle;
 use super::error::Error;
 #[cfg(feature = "properties")]
 use super::events::PropertyInterpolation;
-use super::events::{Ev, Events, ReplayEvents, with_deferred_recursive_aliases};
+use super::events::{Ev, Events, RecordedEvents, ReplayEvents, with_deferred_recursive_aliases};
 use super::options::{DuplicateKeyPolicy, MergeKeyPolicy};
 use super::tags::SfTag;
 use crate::location::Location;
@@ -160,11 +160,11 @@ pub(super) fn is_empty_mapping_key_fingerprint(fingerprint: &KeyFingerprint<'_>)
 pub(super) enum KeyNode<'a> {
     Fingerprinted {
         fingerprint: KeyFingerprint<'a>,
-        events: Vec<Ev<'a>>,
+        events: RecordedEvents<'a>,
         location: Location,
     },
     Scalar {
-        events: Vec<Ev<'a>>,
+        events: RecordedEvents<'a>,
         location: Location,
     },
 }
@@ -214,7 +214,7 @@ impl<'a> KeyNode<'a> {
         }
     }
 
-    pub(super) fn take_events(&mut self) -> Vec<Ev<'a>> {
+    pub(super) fn take_events(&mut self) -> RecordedEvents<'a> {
         match self {
             KeyNode::Fingerprinted { events, .. } | KeyNode::Scalar { events, .. } => {
                 mem::take(events)
@@ -293,16 +293,23 @@ fn capture_node_inner<'a>(
     ev: &mut dyn Events<'a>,
     legacy_octal_numbers: bool,
 ) -> Result<KeyNode<'a>, Error> {
+    // Fill live lookahead before capturing origin: pumping the next event can enter
+    // or leave an alias-injection frame.
+    let _ = ev.peek()?;
+    let origin = ev.node_origin();
     let Some(event) = ev.next()? else {
         return Err(Error::eof().with_location(ev.last_location()));
     };
 
     match event {
-        Ev::RecursiveAlias { anchor, location } => Ok(KeyNode::Fingerprinted {
-            fingerprint: KeyFingerprint::RecursiveAlias { anchor },
-            events: vec![event],
-            location,
-        }),
+        Ev::RecursiveAlias { anchor, location } => {
+            let events = RecordedEvents::from_event(event, origin);
+            Ok(KeyNode::Fingerprinted {
+                fingerprint: KeyFingerprint::RecursiveAlias { anchor },
+                events,
+                location,
+            })
+        }
         Ev::Scalar {
             value,
             tag,
@@ -321,17 +328,15 @@ fn capture_node_inner<'a>(
                 anchor,
                 location,
             };
+            let events = RecordedEvents::from_event(scalar_ev, origin);
             if let Some(fingerprint) = integer_fingerprint {
                 return Ok(KeyNode::Fingerprinted {
                     fingerprint,
-                    events: vec![scalar_ev],
+                    events,
                     location,
                 });
             }
-            Ok(KeyNode::Scalar {
-                events: vec![scalar_ev],
-                location,
-            })
+            Ok(KeyNode::Scalar { events, location })
         }
         Ev::SeqStart {
             anchor,
@@ -340,19 +345,23 @@ fn capture_node_inner<'a>(
             location,
         } => {
             let fingerprint_tag = canonical_node_key_tag(tag, &raw_tag, SfTag::Seq);
-            let mut events = vec![Ev::SeqStart {
-                anchor,
-                tag,
-                raw_tag,
-                location,
-            }];
+            let mut events = RecordedEvents::from_event(
+                Ev::SeqStart {
+                    anchor,
+                    tag,
+                    raw_tag,
+                    location,
+                },
+                origin,
+            );
             let mut elements = Vec::new();
             loop {
                 match ev.peek()? {
                     Some(Ev::SeqEnd { location: end_loc }) => {
                         let end_loc = *end_loc;
+                        let end_origin = ev.node_origin();
                         let _ = ev.next()?;
-                        events.push(Ev::SeqEnd { location: end_loc });
+                        events.push(Ev::SeqEnd { location: end_loc }, end_origin);
                         break;
                     }
                     Some(_) => {
@@ -384,19 +393,23 @@ fn capture_node_inner<'a>(
             location,
         } => {
             let fingerprint_tag = canonical_node_key_tag(tag, &raw_tag, SfTag::Map);
-            let mut events = vec![Ev::MapStart {
-                anchor,
-                tag,
-                raw_tag,
-                location,
-            }];
+            let mut events = RecordedEvents::from_event(
+                Ev::MapStart {
+                    anchor,
+                    tag,
+                    raw_tag,
+                    location,
+                },
+                origin,
+            );
             let mut entries = Vec::new();
             loop {
                 match ev.peek()? {
                     Some(Ev::MapEnd { location: end_loc }) => {
                         let end_loc = *end_loc;
+                        let end_origin = ev.node_origin();
                         let _ = ev.next()?;
-                        events.push(Ev::MapEnd { location: end_loc });
+                        events.push(Ev::MapEnd { location: end_loc }, end_origin);
                         // A mapping's content is an unordered set of key/value pairs (YAML
                         // 1.2.2 3.2.1.1): `{a: 1, b: 2}` and `{b: 2, a: 1}` are the same key.
                         // Sort the entries into a canonical order so the fingerprint does not
@@ -478,39 +491,51 @@ pub(super) fn strip_root_tag_for_externally_tagged_payload(events: &mut [Ev<'_>]
 ///
 /// Returns:
 /// - A synthetic one-entry mapping equivalent to `{ Variant: payload }`.
-pub(super) fn externally_tagged_payload_as_map_events(
+pub(super) fn externally_tagged_payload_as_map_events<'a>(
     variant: String,
     tag_location: Location,
-    mut payload_events: Vec<Ev<'_>>,
-) -> Vec<Ev<'_>> {
+    payload_events: impl Into<RecordedEvents<'a>>,
+) -> RecordedEvents<'a> {
+    let payload_events = payload_events.into();
+    let origin = payload_events.origin(0);
     let end_location = payload_events.last().map_or(tag_location, Ev::location);
 
-    let mut events = Vec::with_capacity(payload_events.len() + 3);
-    events.push(Ev::MapStart {
-        anchor: 0,
-        tag: SfTag::None,
-        raw_tag: None,
-        location: tag_location,
-    });
-    events.push(Ev::Scalar {
-        value: Cow::Owned(variant),
-        tag: SfTag::String,
-        raw_tag: None,
-        style: ScalarStyle::Plain,
-        anchor: 0,
-        location: tag_location,
-    });
-    events.append(&mut payload_events);
-    events.push(Ev::MapEnd {
-        location: end_location,
-    });
+    let mut events = RecordedEvents::new();
+    events.reserve(payload_events.len() + 3);
+    events.push(
+        Ev::MapStart {
+            anchor: 0,
+            tag: SfTag::None,
+            raw_tag: None,
+            location: tag_location,
+        },
+        origin,
+    );
+    events.push(
+        Ev::Scalar {
+            value: Cow::Owned(variant),
+            tag: SfTag::String,
+            raw_tag: None,
+            style: ScalarStyle::Plain,
+            anchor: 0,
+            location: tag_location,
+        },
+        origin,
+    );
+    events.extend(payload_events);
+    events.push(
+        Ev::MapEnd {
+            location: end_location,
+        },
+        origin,
+    );
     events
 }
 
 /// Capture `!Variant payload` as a synthetic `{ Variant: payload }` event buffer.
 pub(super) fn capture_simple_tagged_node_as_map_events<'a>(
     ev: &mut dyn Events<'a>,
-) -> Result<Option<Vec<Ev<'a>>>, Error> {
+) -> Result<Option<RecordedEvents<'a>>, Error> {
     let Some((variant, tag_location)) = ev.peek()?.and_then(|event| simple_tagged_node_name(event))
     else {
         return Ok(None);
@@ -673,15 +698,15 @@ pub(super) fn apply_duplicate_key_policy_to_entries(
 ///
 /// Called by:
 /// - Mapping deserialization when encountering `<<: value`.
-pub(super) fn pending_entries_from_events(
-    events: Vec<Ev<'_>>,
+pub(super) fn pending_entries_from_events<'a>(
+    events: impl Into<RecordedEvents<'a>>,
     location: Location,
     reference_location: Location,
     merge_keys: MergeKeyPolicy,
     duplicate_keys: DuplicateKeyPolicy,
     legacy_octal_numbers: bool,
     #[cfg(feature = "properties")] property_interpolation: PropertyInterpolation,
-) -> Result<Vec<PendingEntry<'_>>, Error> {
+) -> Result<Vec<PendingEntry<'a>>, Error> {
     let mut replay = ReplayEvents::with_reference(
         events,
         reference_location,
