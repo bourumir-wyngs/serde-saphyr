@@ -544,6 +544,16 @@ points take UTF-8 only.
 
 ## YAML composition, comments, and external values
 
+### Anchors
+Anchor defines the value that can be referenced elsewhere. A value, referenced by the anchor, can also be used as a key:
+```yaml
+  aaa: &anchor zzz
+  *anchor : *anchor
+
+```
+It produces `{"aaa": "zzz", "zzz": "zzz"}`. Mind space before semicolon (':') is required, as semicolon is a otherwise
+a valid part of the key.
+
 ### Merge keys
 
 `serde-saphyr` supports merge keys, which reduce redundancy and verbosity by specifying shared key-value pairs once and then reusing them across multiple mappings. Here is an example with merge keys (inherited properties):
