@@ -4,8 +4,10 @@ on:
   schedule:
     - cron: '50 5 1,11,21 * *'  # Runs three times a month on the 1st, 11th, and 21st at 00:50 EST (05:50 UTC)
   workflow_dispatch:     # Allows manual triggering
+  workflow_call:
 
-permissions: read-all
+permissions:
+  contents: read
 
 jobs:
   fuzz_test_audit:

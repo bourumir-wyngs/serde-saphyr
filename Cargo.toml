@@ -13,7 +13,8 @@ keywords = ["yaml", "serde", "config", "ros", "wasm"]
 exclude = ["Cargo.lock", ".github/**", ".idea/**"]
 
 [dependencies]
-granit-parser = { version = "2.0.0", git = "https://github.com/bourumir-wyngs/granit-parser", optional = true, default-features = false, features = ["std", "error_messages"] }
+# granit-parser = { version = "2.0.0", git = "https://github.com/bourumir-wyngs/granit-parser", optional = true, default-features = false, features = ["std", "error_messages"] }
+granit-parser = { version = "2.0.0", optional = true, default-features = false, features = ["std", "error_messages"] }
 
 # Normal builds use core only, to allow building serde-saphyr in parallel with serde.
 # Complete serde is only used when serde_derived_types is enabled (off by default)
