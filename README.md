@@ -272,7 +272,7 @@ Buffered “last wins” entries use the same replay mechanism as struct fields:
 ### Booleans
 
 By default, if the target field is boolean, serde-saphyr will attempt to interpret standard YAML 1.1 values as boolean (not just `false` but also `no`, etc.).
-If you do not want this (or if you are parsing into a JSON Value where it might be incorrectly inferred), enclose the value in quotes or set `strict_booleans` to true in [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html).
+If you do not want this (or if you are parsing into a JSON Value where it might be incorrectly inferred), set `strict_booleans` to true in [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html).
 
 ## Deserialization patterns and YAML types
 
@@ -838,7 +838,7 @@ When the property values are secrets, interpolation resolves the final value bef
 Treat the property map itself as sensitive - do not log or format it directly.
 
 If you write a loaded data structure with resolved properties, the resolved values will obviously appear in the output. 
-If this is unwanted, do now write the structure that has been loaded with property resolver.
+If this is unwanted, do not write the structure that has been loaded with property resolver.
 
 ### Includes
 
@@ -1022,7 +1022,7 @@ error: line 3 column 23: invalid here, validation error: length is lower than 2 
 
 The integration of garde is feature-gated and disabled by default. Use `serde-saphyr = { version = "2", features = ["garde"] }` (or `features = ["validator"]`) in `Cargo.toml` to enable it.
 
-If you prefer to validate without validation crates and want to ensure that location information is always available, use the heavier approach with [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html) wrapper instead.
+If you prefer to validate without validation crates, use the [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Spanned.html) wrapper to retain YAML locations for manual checks. Location information can be lost when Serde buffers values, as described in the [limitations](#unsupported-features) below.
 
 ### Custom messages
 
@@ -1156,7 +1156,7 @@ Serde-saphyr supports recursive structures, but Rust requires being very explici
 ### Controlling serialization
 
 - Empty maps are serialized as {} and empty lists as [] by default.
-- Strings containing newlines, and very long strings are serialized as appropriate block scalars, except in cases where they would need escaping (like ending with `:`).
+- Strings containing newlines and very long strings are serialized as appropriate block scalars, except when they contain characters that require escaping (such as carriage returns).
 - Indentation is configurable.
 - The wrapper [SpaceAfter](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.SpaceAfter.html) adds an empty line after the wrapped value, useful for visually separating sections in the output YAML.
 - It is possible to request that all strings be **quoted** — using single quotes when no escape sequences are present, and double quotes otherwise. This is very explicit and unambiguous, but such YAML may be less readable for humans. Line wrapping is disabled in this mode.
@@ -1213,9 +1213,9 @@ Safety hardening measures with this feature enabled include limits on maximal ex
 ### Unsupported features
 
 - Common Serde renames made to follow naming conventions (case changes, snake_case, kebab-case, r# stripping) are supported in snippets, as long as they do not introduce ambiguity. Arbitrary renames, flattening, aliases and other complex manipulations possible with serde are not. Parsing and validation will still work, but error messages for arbitrarily renamed fields will only show the Rust path.
-- [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/spanned/struct.Spanned.html) cannot be used within variants of untagged or internally tagged enums due to a fundamental limitation in Serde. Instead, wrap the entire enum in `Spanned<T>`, or use externally tagged enums (the default).
+- [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Spanned.html) deserializes successfully within variants of untagged or internally tagged enums, but Serde buffers the values without preserving YAML location of the possible error. Values passing through `#[serde(flatten)]` buffering can also lose their locations. Wrap the entire enum in `Spanned<T>` to retain the enum's location, or use externally tagged enums (the default).
 - Anchors are not fully compatible with `#[serde(flatten)]` directive (this is Serde limitation we can't work around). Deserialization succeeds, but full strong-pointer identity may be lost for nested anchors inside flattened payloads.
-- Borrowing works for any scalar whose parsed value exists **verbatim** in the input. This includes plain scalars and simple quoted strings without escape sequences (e.g., `"hello world"` can be borrowed, but `"hello\nworld"` cannot because `\n` is transformed to a newline). For maximum flexibility, use `Cow<'a, str>` which borrows when possible and owns when transformation is required.
+- Borrowing works for any scalar whose parsed value exists **verbatim** in the input. This includes plain scalars and simple quoted strings without escape sequences (e.g., `"hello world"` can be borrowed, but `"hello\nworld"` cannot because `\n` is transformed to a newline). To allow both borrowed and owned strings, use a Cow<'a, str> field annotated with #[serde(borrow)]. It borrows when the deserializer can provide borrowed data and otherwise owns the string, for example when transformation is required. Borrowing is explicit because it ties the result’s lifetime to the input. Without this annotation, Serde’s default deserialization of Cow<str> produces Cow::Owned, even when the input could be borrowed.
 - Reader-based entry points (`from_reader`) require `DeserializeOwned` and cannot return borrowed values.
 - `serde-saphyr` does not capture freestanding comments, not obviously attached to any node (separated by multiple empty lines, or at the end of the document). Use [`granit-parser`](https://crates.io/crates/granit-parser) directly to capture such comments (serde-saphyr re-exports it). 
 
