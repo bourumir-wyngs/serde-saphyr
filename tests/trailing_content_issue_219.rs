@@ -51,29 +51,37 @@ fn assert_parser_error_reported<T: std::fmt::Debug>(
     parse: impl Fn(&str) -> Result<T, Error>,
 ) {
     for input in CONTENT_AFTER_IMPLICIT_END {
-        let expected = serde_saphyr::from_str_multiple::<Map, Vec<Map>>(input)
-            .expect_err("the multi-document entry point reports the parser error");
-        let err = match parse(input) {
-            Ok(value) => panic!("{entry_point}({input:?}) returned Ok({value:?})"),
-            Err(err) => err,
-        };
-        let err = err.without_snippet();
-        assert!(
-            !matches!(err, Error::MultipleDocuments { .. }),
-            "{entry_point}({input:?}): {err:?}"
-        );
-        assert_eq!(
-            err.to_string(),
-            expected.without_snippet().to_string(),
-            "{entry_point}({input:?})"
-        );
-        let location = err.location().expect("parser error location");
-        assert_eq!(
-            (location.line(), location.column()),
-            (2, 1),
-            "{entry_point}({input:?})"
-        );
+        assert_parser_error_reported_for_input(entry_point, input, &parse);
     }
+}
+
+fn assert_parser_error_reported_for_input<T: std::fmt::Debug>(
+    entry_point: &str,
+    input: &str,
+    parse: impl Fn(&str) -> Result<T, Error>,
+) {
+    let expected = serde_saphyr::from_str_multiple::<Map, Vec<Map>>(input)
+        .expect_err("the multi-document entry point reports the parser error");
+    let err = match parse(input) {
+        Ok(value) => panic!("{entry_point}({input:?}) returned Ok({value:?})"),
+        Err(err) => err,
+    };
+    let err = err.without_snippet();
+    assert!(
+        !matches!(err, Error::MultipleDocuments { .. }),
+        "{entry_point}({input:?}): {err:?}"
+    );
+    assert_eq!(
+        err.to_string(),
+        expected.without_snippet().to_string(),
+        "{entry_point}({input:?})"
+    );
+    let location = err.location().expect("parser error location");
+    assert_eq!(
+        (location.line(), location.column()),
+        (2, 1),
+        "{entry_point}({input:?})"
+    );
 }
 
 #[test]
@@ -106,11 +114,16 @@ fn parser_error_after_implicit_document_end_is_reported_for_structs() {
 }
 
 #[cfg(feature = "validator")]
-#[test]
-fn validation_entry_point_reports_parser_error_after_implicit_document_end() {
-    assert_parser_error_reported("from_str_validate::<Config>", |input| {
-        serde_saphyr::from_str_validate::<Config>(input)
-    });
+#[rstest::rstest]
+#[case::dedented_mapping("  a: 1\nb: 2\n")]
+#[case::consecutive_flow_mappings("{a: 1}\n{b: 2}\n")]
+#[case::block_mapping_after_flow_mapping("{a: 1}\nb: 2\n")]
+fn validation_entry_point_reports_parser_error_after_implicit_document_end(#[case] input: &str) {
+    assert_parser_error_reported_for_input(
+        "from_str_validate::<Config>",
+        input,
+        serde_saphyr::from_str_validate::<Config>,
+    );
 }
 
 #[test]
