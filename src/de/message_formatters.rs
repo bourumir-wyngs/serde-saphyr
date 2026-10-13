@@ -522,7 +522,7 @@ fn user_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) -> 
             Cow::Borrowed("Recursive reference not allowed here")
         }
         Error::DuplicateMappingKey { key, .. } => match key {
-            Some(k) => Cow::Owned(format!("duplicate mapping key: {k} not allowed here")),
+            Some(k) => Cow::Owned(format!("duplicate mapping key `{k}` is not allowed here")),
             None => Cow::Borrowed("duplicate mapping key not allowed here"),
         },
         Error::QuotingRequired { .. } => Cow::Borrowed("value requires quoting"),
