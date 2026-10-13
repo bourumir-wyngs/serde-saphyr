@@ -13,6 +13,7 @@ use serde_saphyr::Error;
 type Map = BTreeMap<String, i32>;
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "validator", derive(validator::Validate))]
 #[serde(deny_unknown_fields)]
 struct Config {
     #[serde(rename = "a")]
@@ -101,6 +102,14 @@ fn parser_error_after_implicit_document_end_is_reported_for_structs() {
     });
     assert_parser_error_reported("from_reader::<_, Config>", |input| {
         serde_saphyr::from_reader::<_, Config>(input.as_bytes())
+    });
+}
+
+#[cfg(feature = "validator")]
+#[test]
+fn validation_entry_point_reports_parser_error_after_implicit_document_end() {
+    assert_parser_error_reported("from_str_validate::<Config>", |input| {
+        serde_saphyr::from_str_validate::<Config>(input)
     });
 }
 
