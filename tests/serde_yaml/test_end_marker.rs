@@ -8,29 +8,21 @@ struct Person {
 }
 
 #[test]
-fn test_yaml_end_marker_ignores_following_content() {
+fn test_yaml_end_marker_does_not_ignore_following_content() {
     let yaml_input = "\
 ---
 name: John Smith
 age: 30
 ...
-!!! this is invalid YAML that should be ignored
+!!! this is invalid YAML that is not ignored
 ";
-
-    let expected = Person {
-        name: "John Smith".into(),
-        age: 30,
-        note: None,
-    };
 
     let result: Result<Person, _> = serde_saphyr::from_str(yaml_input);
 
     assert!(
-        result.is_ok(),
-        "Parser incorrectly considered content after end-of-document marker."
+        result.is_err(),
+        "Parser ignored invalid content after end-of-document marker."
     );
-
-    assert_eq!(result.unwrap(), expected);
 }
 
 #[test]
@@ -42,7 +34,7 @@ name: John ... Smith ...
 age: 30
 note: ...
 ...
-!!! this is invalid YAML that should be ignored
+# Three dots ... after the end-of-document marker
 ";
 
     let expected = Person {

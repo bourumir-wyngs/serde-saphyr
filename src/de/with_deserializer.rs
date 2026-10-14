@@ -82,9 +82,8 @@ where
     W: Fn(Error, &LiveEvents<'de>) -> Error,
 {
     // After finishing first document, peek ahead to detect either another document/content
-    // or trailing garbage. Preserve the compatibility behavior that ignores malformed YAML
-    // after an explicit "...", but never suppress a reader or reader-limit failure. After an
-    // implicit document end, the parser error is reported.
+    // or trailing garbage. A document end, explicit "..." or implicit, does not end the
+    // stream: what follows is parsed as usual, and a parser error there is reported.
     match src.peek() {
         Ok(Some(_)) => {
             return Err(wrap_err(
@@ -93,13 +92,7 @@ where
             ));
         }
         Ok(None) => {}
-        Err(e) => {
-            if src.seen_explicit_doc_end() && !matches!(&e, Error::IOError { .. }) {
-                // Trailing garbage after an explicit "..." document end marker is ignored.
-            } else {
-                return Err(wrap_err(e, src));
-            }
-        }
+        Err(e) => return Err(wrap_err(e, src)),
     }
 
     src.finish().map_err(|e| wrap_err(e, src))

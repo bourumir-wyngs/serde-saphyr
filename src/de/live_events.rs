@@ -285,8 +285,6 @@ pub(crate) struct LiveEvents<'a> {
     property_interpolation: PropertyInterpolation,
     /// Per-anchor replay expansion counters, indexed by anchor id (dense ids).
     per_anchor_expansions: Vec<usize>,
-    /// Indicates whether the last parsed document was closed by an explicit `...` marker.
-    seen_explicit_doc_end: bool,
 
     /// Invalid options are reported through the same stream error channel as parse errors.
     pending_error: Option<Error>,
@@ -425,7 +423,6 @@ impl<'a> LiveEvents<'a> {
             #[cfg(feature = "properties")]
             property_interpolation,
             per_anchor_expansions: Vec::new(),
-            seen_explicit_doc_end: false,
 
             pending_error,
             reject_unsupported_tags,
@@ -521,7 +518,6 @@ impl<'a> LiveEvents<'a> {
             #[cfg(feature = "properties")]
             property_interpolation,
             per_anchor_expansions: Vec::new(),
-            seen_explicit_doc_end: false,
 
             pending_error,
             reject_unsupported_tags,
@@ -1271,11 +1267,8 @@ impl<'a> LiveEvents<'a> {
                     continue;
                 }
                 Event::DocumentEnd => {
-                    // On document end, mark and skip the parser marker. granit-parser emits
-                    // the same event for an explicit `...` and an implicit end; only the
-                    // explicit marker has a non-empty span.
+                    // On document end, skip the parser marker.
                     self.reset_document_state();
-                    self.seen_explicit_doc_end = !span.is_empty();
                     self.last_location = location;
                     continue;
                 }
@@ -1351,7 +1344,6 @@ impl<'a> LiveEvents<'a> {
         self.per_anchor_expansions.fill(0);
 
         self.total_replayed_events = 0;
-        self.seen_explicit_doc_end = false;
         #[cfg(feature = "comments")]
         {
             self.last_consumed_event_location = Location::UNKNOWN;
@@ -1697,9 +1689,6 @@ impl<'de> Events<'de> for LiveEvents<'de> {
 }
 
 impl LiveEvents<'_> {
-    pub(crate) fn seen_explicit_doc_end(&self) -> bool {
-        self.seen_explicit_doc_end
-    }
     pub(crate) fn synthesized_null_emitted(&self) -> bool {
         self.synthesized_null_emitted
     }
