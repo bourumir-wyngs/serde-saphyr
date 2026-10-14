@@ -141,13 +141,16 @@ mod with_deserializer_tests {
     }
 
     #[test]
-    fn from_str_trailing_garbage_after_document_end_is_ignored() {
-        let result: Simple = serde_saphyr::with_deserializer_from_str(
-            "x: 12\n...\n@ ignored after document end\n",
+    fn from_str_trailing_garbage_after_document_end_errors() {
+        let err = serde_saphyr::with_deserializer_from_str(
+            "x: 12\n...\n@ not ignored after document end\n",
             |de| Simple::deserialize(de),
         )
-        .unwrap();
-        assert_eq!(result, Simple { x: 12 });
+        .unwrap_err();
+        assert!(!matches!(
+            err.without_snippet(),
+            serde_saphyr::Error::MultipleDocuments { .. }
+        ));
     }
 
     #[test]

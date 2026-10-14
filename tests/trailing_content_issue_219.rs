@@ -2,8 +2,8 @@
 
 //! Regression tests for https://github.com/bourumir-wyngs/serde-saphyr/issues/219.
 //! The single-document entry points must report a parser error that follows the root
-//! node when the document ended implicitly. Malformed content after an explicit `...`
-//! document end marker is still ignored.
+//! node when the document ended implicitly. Content after an explicit `...` document
+//! end marker is covered in `document_end_issue_228.rs`.
 
 use std::collections::BTreeMap;
 
@@ -147,13 +147,14 @@ fn trailing_comment_after_implicit_document_end_is_accepted() {
 }
 
 #[test]
-fn malformed_content_after_explicit_document_end_is_ignored() {
+fn malformed_content_after_explicit_document_end_is_reported() {
     for input in ["a: 1\n...\n@ not yaml\n", "{a: 1}\n...\n`not yaml`\n"] {
         for (entry_point, result) in single_document_results(input) {
-            match result {
-                Ok(value) => assert_eq!(value, map_a1(), "{entry_point}({input:?})"),
-                Err(err) => panic!("{entry_point}({input:?}) failed: {err}"),
-            }
+            let err = result.expect_err(entry_point);
+            assert!(
+                !matches!(err.without_snippet(), Error::MultipleDocuments { .. }),
+                "{entry_point}({input:?}): {err:?}"
+            );
         }
     }
 }

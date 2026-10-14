@@ -80,11 +80,14 @@ fn from_reader_rejects_multiple_documents() {
 }
 
 #[test]
-fn from_reader_ignores_garbage_after_document_end_marker() {
-    let yaml = b"id: 7\n...\n@ this is ignored after the document end\n";
-    let value: Simple = serde_saphyr::from_reader(std::io::Cursor::new(&yaml[..]))
-        .expect("garbage after explicit document end should be ignored");
-    assert_eq!(value, Simple { id: 7 });
+fn from_reader_rejects_garbage_after_document_end_marker() {
+    let yaml = b"id: 7\n...\n@ this is not ignored after the document end\n";
+    let err = serde_saphyr::from_reader::<_, Simple>(std::io::Cursor::new(&yaml[..]))
+        .expect_err("garbage after explicit document end should fail");
+    assert!(!matches!(
+        err.without_snippet(),
+        serde_saphyr::Error::MultipleDocuments { .. }
+    ));
 }
 
 #[test]
