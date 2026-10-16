@@ -292,6 +292,54 @@ fn attach_alias_locations_preserves_distinct_use_sites() {
 }
 
 #[test]
+fn tagged_enum_variant_name_lets_reserved_shorthand_tags_select_matching_variants() {
+    let variants = ["timestamp", "map", "Widget"];
+
+    assert_eq!(
+        tagged_enum_variant_name(
+            &Some(Cow::Borrowed("!timestamp")),
+            &SfTag::TimeStamp,
+            &variants
+        ),
+        Some("timestamp".to_owned())
+    );
+    assert_eq!(
+        tagged_enum_variant_name(&Some(Cow::Borrowed("!map")), &SfTag::Map, &variants),
+        Some("map".to_owned())
+    );
+    assert_eq!(
+        tagged_enum_variant_name(&Some(Cow::Borrowed("!Widget")), &SfTag::Other, &variants),
+        Some("Widget".to_owned())
+    );
+    // Reserved tags only select a variant when the enum has one of that name.
+    assert_eq!(
+        tagged_enum_variant_name(&Some(Cow::Borrowed("!str")), &SfTag::String, &variants),
+        None
+    );
+    // Core schema forms remain type annotations.
+    assert_eq!(
+        tagged_enum_variant_name(
+            &Some(Cow::Borrowed("!!timestamp")),
+            &SfTag::TimeStamp,
+            &variants
+        ),
+        None
+    );
+    assert_eq!(
+        tagged_enum_variant_name(
+            &Some(Cow::Borrowed("tag:yaml.org,2002:timestamp")),
+            &SfTag::TimeStamp,
+            &variants
+        ),
+        None
+    );
+    assert_eq!(
+        tagged_enum_variant_name(&None, &SfTag::None, &variants),
+        None
+    );
+}
+
+#[test]
 fn simple_tagged_enum_helpers_accept_only_simple_variant_names() {
     assert_eq!(
         simple_tagged_enum_name(&Some(Cow::Borrowed("!Widget")), &SfTag::Other),
