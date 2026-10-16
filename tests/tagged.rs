@@ -551,6 +551,35 @@ fn local_map_tag_can_select_enum_variant() {
 }
 
 #[test]
+fn local_core_like_tags_can_select_enum_variants() {
+    #[derive(Debug, Deserialize, PartialEq, Serialize)]
+    enum Value {
+        #[serde(rename = "seq")]
+        Seq(Vec<i32>),
+        #[serde(rename = "int")]
+        Int(i32),
+        #[serde(rename = "str")]
+        Str(String),
+    }
+
+    for (value, tag, expected) in [
+        (Value::Seq(vec![7, 8]), "!seq", "!seq\n- 7\n- 8\n"),
+        (Value::Int(7), "!int", "!int 7\n"),
+        (Value::Str("value".to_owned()), "!str", "!str value\n"),
+    ] {
+        let value = Tagged(value, Some(tag.to_owned()));
+        let yaml = to_string(&value).unwrap();
+
+        assert_eq!(yaml, expected, "tag: {tag}");
+        assert_eq!(
+            from_str::<Tagged<Value>>(&yaml).unwrap(),
+            value,
+            "tag: {tag}"
+        );
+    }
+}
+
+#[test]
 fn same_tag_selects_only_one_nested_newtype_variant() {
     #[derive(Debug, Deserialize, PartialEq, Serialize)]
     enum Inner {
