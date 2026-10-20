@@ -42,10 +42,8 @@ pub(crate) fn local_enum_variant_name(tag: &str) -> Option<&str> {
 pub(crate) fn yaml_core_type_tag_name(tag: &str) -> Option<&str> {
     let candidate = if let Some(stripped) = tag.strip_prefix(YAML_TAG_NAMESPACE) {
         stripped
-    } else if let Some(stripped) = tag.strip_prefix("!!") {
-        stripped
     } else {
-        return None;
+        tag.strip_prefix("!!")?
     };
 
     if matches!(candidate, "merge" | "value") {
