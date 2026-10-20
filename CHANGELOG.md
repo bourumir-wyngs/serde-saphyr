@@ -4,6 +4,9 @@
 
 ### Added
 
+- Added `Error::render_to` to append diagnostics to any `std::fmt::Write` using
+  `RenderOptions`, without collecting the complete output in an intermediate string
+  ([#221](https://github.com/bourumir-wyngs/serde-saphyr/issues/221)).
 - Added `DuplicateKeyPolicy::PassThrough` to delegate repeated explicit mapping entries
   to Serde visitors, matching `serde_yaml`'s handling for structs, standard maps, and custom
   multimap visitors ([#226](https://github.com/bourumir-wyngs/serde-saphyr/issues/226)).
