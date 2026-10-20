@@ -318,14 +318,12 @@ impl<'de> Visitor<'de> for ValueBeforeKeyVisitor {
 }
 
 #[test]
-fn both_empty_map_access_implementations_reject_value_before_key() {
-    for yaml in ["{}", "null"] {
-        let error = serde_saphyr::from_str::<ValueBeforeKey>(yaml).unwrap_err();
-        assert!(matches!(
-            error.without_snippet(),
-            Error::ValueRequestedBeforeKey { .. }
-        ));
-    }
+fn empty_map_access_rejects_value_before_key() {
+    let error = serde_saphyr::from_str::<ValueBeforeKey>("{}").unwrap_err();
+    assert!(matches!(
+        error.without_snippet(),
+        Error::ValueRequestedBeforeKey { .. }
+    ));
 }
 
 #[derive(Debug)]

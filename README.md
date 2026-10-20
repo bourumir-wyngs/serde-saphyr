@@ -125,6 +125,25 @@ The optional `huge_documents` feature switches span storage from `u32` indices t
 
 ### Migrating from 1.x
 
+A bug fix removes the implicit conversion of YAML null into empty sequences, mappings,
+and mapping-based structs. This includes blank values such as `items:`, the plain spellings
+`~`, `null`, `Null`, and `NULL`, and explicitly tagged null values.
+If an empty collection is intended, write `[]` for an empty sequence or `{}` for an empty
+mapping:
+
+```yaml
+items: []     # Instead of items: or items: null
+settings: {}  # Instead of settings: or settings: null
+```
+
+An empty mapping used for a struct must still satisfy that struct's field requirements.
+`Option<T>` continues to accept null as `None`. `#[serde(default)]` still supplies a default
+when a field is absent; it does not make a present null value valid for a collection field.
+
+Keep `SerializerOptions::empty_as_braces` at its default `true` when round-tripping collections.
+Setting it to `false` can emit blank values for empty collections; those values are null
+and are now rejected when deserializing back into collection types.
+
 Version 2.0 lets `from_multiple`, `from_slice_multiple`, and their `_with_options` variants
 deserialize values that borrow from the input by changing their bound from `DeserializeOwned`
 to `Deserialize<'de>`. These functions retain their names, single type parameter, and `Vec<T>`

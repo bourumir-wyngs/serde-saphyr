@@ -71,10 +71,9 @@ non_empty:
 
     // Round trip test
     let or1: OneOne = serde_saphyr::from_str(yaml.as_str()).unwrap();
-    let or2: OneOne = serde_saphyr::from_str(yaml_legacy.as_str()).unwrap();
-
     assert_eq!(or1, o);
-    assert_eq!(or2, o);
+    // Legacy serialization emits a null value, which is not an empty mapping.
+    assert!(serde_saphyr::from_str::<OneOne>(&yaml_legacy).is_err());
 
     let opts = serde_saphyr::ser_options! {
         indent_step: 3,

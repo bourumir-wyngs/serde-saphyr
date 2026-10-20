@@ -73,6 +73,11 @@
 
 ### Fixed
 
+- Reject YAML null when deserializing sequences, mappings, and mapping-based structs instead
+  of silently constructing empty values ([#233](https://github.com/bourumir-wyngs/serde-saphyr/issues/233)).
+  Blank values and the plain spellings `~`, `null`, `Null`, and `NULL` are handled consistently.
+  Write `[]` for an empty sequence or `{}` for an empty mapping. `Option<T>` null handling
+  and defaults for absent fields are unchanged; see the README migration notes.
 - Recognize only the standard plain null spellings: empty, `~`, `null`, `Null`, and `NULL`.
   Other capitalization such as `NulL` remains a string instead of being rejected, converted
   to an empty value, or skipped as a document ([#234](https://github.com/bourumir-wyngs/serde-saphyr/issues/234)).
