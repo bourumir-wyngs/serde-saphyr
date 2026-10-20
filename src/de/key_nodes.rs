@@ -652,6 +652,10 @@ pub(super) fn apply_duplicate_key_policy_to_entries(
     duplicate_keys: DuplicateKeyPolicy,
     merge_keys: MergeKeyPolicy,
 ) -> Result<Vec<PendingEntry<'_>>, Error> {
+    if matches!(duplicate_keys, DuplicateKeyPolicy::PassThrough) {
+        return Ok(entries);
+    }
+
     let last_wins = matches!(duplicate_keys, DuplicateKeyPolicy::LastWins);
     if last_wins {
         entries.reverse();

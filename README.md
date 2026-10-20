@@ -125,6 +125,32 @@ The optional `huge_documents` feature switches span storage from `u32` indices t
 
 ### Migrating from serde_yaml
 
+#### Duplicate mapping entries
+
+`serde-saphyr` rejects duplicate mapping keys by default. To use `serde_yaml`'s
+visitor-driven handling of explicit entries, select `DuplicateKeyPolicy::PassThrough`:
+
+```rust
+let options = serde_saphyr::options! {
+    duplicate_keys: serde_saphyr::DuplicateKeyPolicy::PassThrough,
+};
+```
+
+This forwards repeated entries to the receiving Serde visitor. Ordinary derived
+structs reject repeated fields, `HashMap` and `BTreeMap` keep the last value, and
+custom visitors can retain all pairs for a multimap. Unlike `LastWins`, this policy
+does not collapse struct fields or numerically equivalent keys before Serde sees them.
+For example, string keys `0xB` and `11` are both delivered with their original spelling.
+
+Merge expansion still follows `MergeKeyPolicy`: explicit entries override merged
+entries, earlier merge sources override later sources, and repeated keys within a
+merge source retain the first entry. Use `MergeKeyPolicy::AsOrdinary` to forward
+literal `<<` entries without expansion.
+
+`PassThrough` is an opt-in extension, not a YAML-conformance requirement or a promise
+of complete `serde_yaml` compatibility. YAML requires unique mapping keys;
+`DuplicateKeyPolicy::Error` remains the default.
+
 #### Null values for string fields
 
 For a field declared as `hi: String`, `serde_yaml` accepts the plain null forms below
@@ -302,9 +328,9 @@ Set `strict_indentation: true` in `options!` to enforce YAML indentation rules f
 
 ### Duplicate keys
 
-Duplicate key handling is configurable. By default it’s an error; “first wins” and “last wins” strategies are available via [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). The duplicate key policy applies not just to strings but also to other types (if used as keys when deserializing into a map).
+Duplicate key handling is configurable. By default it’s an error; “first wins”, “last wins”, and `PassThrough` strategies are available via [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). `PassThrough` delegates duplicate handling to the receiving Serde visitor; see [the migration note](#duplicate-mapping-entries). The duplicate key policy applies not just to strings but also to other types (if used as keys when deserializing into a map).
 
-YAML integer keys are parsed to their numeric meaning before checking for duplicates, regardless of the target Rust type. For example, `0xB` and `11` are the same integer key, even in a `HashMap<String, _>`. This comparison uses exact integer values within the supported `i128`/`u128` range and respects `legacy_octal_numbers`; values outside that range retain text-based comparison. The same rule applies inside composite keys and when resolving merge keys.
+With `Error`, `FirstWins`, and `LastWins`, YAML integer keys are parsed to their numeric meaning before checking for duplicates, regardless of the target Rust type. For example, `0xB` and `11` are the same integer key, even in a `HashMap<String, _>`. This comparison uses exact integer values within the supported `i128`/`u128` range and respects `legacy_octal_numbers`; values outside that range retain text-based comparison. The same rule applies inside composite keys. Merge expansion uses this comparison under every duplicate key policy.
 
 Deserialization into a string still preserves the original scalar spelling: `0xB` becomes `"0xB"`. “First wins” and “last wins” retain the selected entry's spelling and value; when integer keys require numeric comparison, “last wins” buffers the remaining mapping to select entries before passing them to Serde. Quoted keys and keys tagged `!!str` remain strings, so `"0xB"` and `"11"` are distinct keys. Duplicate checking uses YAML key identity; the target Rust map can still combine distinct YAML keys if they become equal after deserialization.
 

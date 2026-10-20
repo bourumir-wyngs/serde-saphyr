@@ -15,9 +15,10 @@ const fn default_emit_comments() -> bool {
 
 /// Duplicate key handling policy for mappings.
 ///
-/// YAML integer keys are compared by their parsed integer value, so `0xB` and
-/// `11` are duplicates even when the target key type is `String`. The retained
-/// key preserves its original spelling when deserialized into a string.
+/// Except with [`Self::PassThrough`], YAML integer keys are compared by their
+/// parsed integer value, so `0xB` and `11` are duplicates even when the target
+/// key type is `String`. The retained key preserves its original spelling when
+/// deserialized into a string. Merge expansion always uses YAML key identity.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(
@@ -35,6 +36,20 @@ pub enum DuplicateKeyPolicy {
     /// key requires numeric comparison, then buffer the remaining entries to
     /// retain the last key's original spelling and value.
     LastWins,
+    /// Forward repeated explicit mapping entries to the receiving Serde visitor.
+    ///
+    /// This matches `serde_yaml`'s visitor-driven handling of explicit entries:
+    /// derived structs reject repeated fields, standard maps keep the last value,
+    /// and custom visitors decide whether to reject, replace, or retain duplicates.
+    /// Integer-equivalent keys such as `0xB` and `11` are also forwarded separately.
+    ///
+    /// Merge expansion still follows [`MergeKeyPolicy`] and suppresses overridden
+    /// entries. Repeated keys within a merge source retain the first entry. Use
+    /// [`MergeKeyPolicy::AsOrdinary`] to forward literal `<<` entries as well.
+    ///
+    /// This is a permissive extension: YAML requires unique mapping keys.
+    /// [`Self::Error`] remains the default.
+    PassThrough,
 }
 
 /// Handling of non-finite floats in `deserialize_any`.

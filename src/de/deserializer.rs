@@ -2036,7 +2036,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                                         continue;
                                     }
                                 }
-                                DuplicateKeyPolicy::LastWins => {}
+                                DuplicateKeyPolicy::LastWins | DuplicateKeyPolicy::PassThrough => {}
                             }
                         }
 
@@ -2177,7 +2177,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                                         continue;
                                     }
                                 }
-                                DuplicateKeyPolicy::LastWins => {}
+                                DuplicateKeyPolicy::LastWins | DuplicateKeyPolicy::PassThrough => {}
                             }
 
                             let kemn_direct =
