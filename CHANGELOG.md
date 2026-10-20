@@ -22,6 +22,8 @@
 
 ### Fixed
 
+- Let local `!timestamp` select a matching unit or scalar newtype enum variant (#231).
+  Selection precedes scalar-tag validation; standard `!!timestamp` tags retain their meaning.
 - Validate recognized scalar tags consistently for numeric, boolean, character,
   and enum targets, including externally tagged enum mapping keys (#235).
   Incompatible tags and tagged null-like payloads no longer bypass validation.

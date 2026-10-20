@@ -753,6 +753,11 @@ Likewise, in strict mode, `!include` is accepted only when the `include` crate f
 and an include resolver is configured. Tag capture does not bypass normal YAML tag semantics or
 the `reject_unsupported_tags` option.
 
+When directly deserializing an enum, local `!timestamp` selects a matching `timestamp` unit
+or scalar newtype variant. The resolved standard tag `tag:yaml.org,2002:timestamp`
+(`!!timestamp` by default) remains a type annotation. This support does not extend to
+collection payloads or enum values buffered through `untagged` or `flatten`.
+
 Tagged enums written as `!!EnumName VARIANT` are also supported, but only for single-level scalar variants. Use mapping-based representations (`EnumName: RED`) if you need to embed enums within other enums.
 
 ### Comments

@@ -41,8 +41,8 @@ use crate::location::Location;
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::location::Locations;
 use crate::parse_scalars::{
-    leading_zero_decimal, maybe_not_string, parse_int_signed, parse_int_unsigned, parse_yaml11_bool,
-    parse_yaml12_bool, parse_yaml12_float, scalar_is_null, scalar_is_nullish,
+    leading_zero_decimal, maybe_not_string, parse_int_signed, parse_int_unsigned,
+    parse_yaml11_bool, parse_yaml12_bool, parse_yaml12_float, scalar_is_null, scalar_is_nullish,
     try_parse_float_incl_overflow, yaml_trim,
 };
 
@@ -2512,49 +2512,52 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 location,
                 ..
             }) => {
-                if let Some(tag_name) = simple_tagged_enum_name(&raw_tag, &tag) {
+                // Local !timestamp may select a variant. Match the resolved identity
+                // so global timestamp tags retain their type meaning.
+                let tag_name = simple_tagged_enum_name(&raw_tag, &tag).or_else(|| {
+                    (tag == SfTag::TimeStamp && raw_tag.as_deref() == Some("!timestamp"))
+                        .then(|| "timestamp".to_owned())
+                });
+                if let Some(tag_name) = tag_name {
                     tagged_enum = Some((tag_name, location));
-                }
-                let Some(view) = self.peek_scalar_view()? else {
-                    return Err(eof_with_loc(self.ev));
-                };
-                self.validate_scalar_tag(
-                    view.tag,
-                    SfTag::String,
-                    "enum variant",
-                    view.location,
-                )?;
-                if self.cfg.no_schema
-                    && !view.tag.forces_string()
-                    && maybe_not_string(&view.effective, &style, self.cfg.strict_booleans)
-                {
-                    let view = self.take_scalar_view()?;
-                    return Err(Self::quoting_required_for_scalar(&view));
                 }
                 // If the tag matches a variant name, use tag as variant selector
                 // and the scalar value as newtype payload.
-                if let Some((ref tag_name, tag_loc)) = tagged_enum {
-                    if variants.contains(&tag_name.as_str()) {
-                        let variant_name = EnumScalarId {
-                            raw: Cow::Owned(tag_name.clone()),
-                            effective: Cow::Owned(tag_name.clone()),
-                            interpolated: false,
-                            location: tag_loc,
-                        };
-                        // Consume the scalar and re-emit it without the tag for payload deserialization
-                        let origin = self.ev.node_origin();
-                        let Some(mut ev) = self.ev.next()? else {
-                            return Err(eof_with_loc(self.ev));
-                        };
-                        ev.strip_node_tag();
-                        let replay = RecordedEvents::from_event(ev, origin);
-                        tagged_enum = None; // prevent mismatch check
-                        Mode::TaggedNewtype(variant_name, replay)
-                    } else {
-                        let view = self.take_scalar_view()?;
-                        Mode::Unit(EnumScalarId::from_view(view))
-                    }
+                if let Some((ref tag_name, tag_loc)) = tagged_enum
+                    && variants.contains(&tag_name.as_str())
+                {
+                    let variant_name = EnumScalarId {
+                        raw: Cow::Owned(tag_name.clone()),
+                        effective: Cow::Owned(tag_name.clone()),
+                        interpolated: false,
+                        location: tag_loc,
+                    };
+                    // Consume the scalar and re-emit it without the tag for payload deserialization
+                    let origin = self.ev.node_origin();
+                    let Some(mut ev) = self.ev.next()? else {
+                        return Err(eof_with_loc(self.ev));
+                    };
+                    ev.strip_node_tag();
+                    let replay = RecordedEvents::from_event(ev, origin);
+                    tagged_enum = None; // prevent mismatch check
+                    Mode::TaggedNewtype(variant_name, replay)
                 } else {
+                    let Some(view) = self.peek_scalar_view()? else {
+                        return Err(eof_with_loc(self.ev));
+                    };
+                    self.validate_scalar_tag(
+                        view.tag,
+                        SfTag::String,
+                        "enum variant",
+                        view.location,
+                    )?;
+                    if self.cfg.no_schema
+                        && !view.tag.forces_string()
+                        && maybe_not_string(&view.effective, &style, self.cfg.strict_booleans)
+                    {
+                        let view = self.take_scalar_view()?;
+                        return Err(Self::quoting_required_for_scalar(&view));
+                    }
                     let view = self.take_scalar_view()?;
                     Mode::Unit(EnumScalarId::from_view(view))
                 }
