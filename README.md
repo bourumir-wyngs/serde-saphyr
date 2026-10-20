@@ -138,7 +138,7 @@ settings: {}  # Instead of settings: or settings: null
 
 `Option<T>` continues to accept null as `None`.
 
-`SerializerOptions::empty_as_braces` is deprecated since 2.0.1. Omit this setting to keep
+`SerializerOptions::empty_as_braces` is deprecated since 2.1.0. Omit this setting to keep
 the default `true`, which emits `[]` and `{}` for empty collections. Setting it to `false`
 emits blank values for empty block collections without tags or anchors. These values are
 YAML null and do not round-trip into collection types. The setting remains supported for
