@@ -25,6 +25,7 @@ use std::{fmt, io};
 ///   absolute URI.
 /// - `CoreTypeTagAsEnumVariant` reports a YAML core type tag whose
 ///   name collides with a non-unit enum variant.
+/// - `LocalTagOnNone` reports a local tag attached to an absent optional value.
 /// - `Unexpected` is used internally for invariant violations (e.g., around
 ///   anchors). It should not normally surface; if it does, please file a bug.
 #[non_exhaustive]
@@ -52,6 +53,12 @@ pub enum Error {
     /// A YAML core type tag cannot act as the discriminator for a same-named non-unit enum
     /// variant.
     CoreTypeTagAsEnumVariant { tag: String, variant: String },
+    /// An absent optional value cannot carry a local tag, because local tags denote
+    /// present values when deserializing an [`Option`].
+    ///
+    /// An enum selector may still tag a variant whose payload is `None`; the tag
+    /// selects the enum before its untagged payload is read.
+    LocalTagOnNone { tag: String },
 }
 
 impl serde_core::ser::Error for Error {
@@ -132,6 +139,10 @@ impl fmt::Display for Error {
                 f,
                 "cannot use YAML core type tag {tag:?} to select enum variant {variant:?}"
             ),
+            Error::LocalTagOnNone { tag } => write!(
+                f,
+                "cannot serialize None with local YAML tag {tag:?}: local tags denote present optional values; omit the tag or use the global YAML null tag"
+            ),
         }
     }
 }
@@ -147,7 +158,8 @@ impl std::error::Error for Error {
             | Error::SingleQuotedRequiresEscaping { .. }
             | Error::EmptyResolvedTag
             | Error::InvalidGlobalTagUri { .. }
-            | Error::CoreTypeTagAsEnumVariant { .. } => None,
+            | Error::CoreTypeTagAsEnumVariant { .. }
+            | Error::LocalTagOnNone { .. } => None,
         }
     }
 }

@@ -14,7 +14,8 @@ use std::fmt::Write;
 
 use crate::long_strings::{NAME_FOLD_STR, NAME_LIT_STR};
 use crate::tag::{
-    YAML_TAG_NAMESPACE, local_enum_variant_name, simple_enum_variant_name, yaml_core_type_tag_name,
+    YAML_TAG_NAMESPACE, is_specific_local_tag, local_enum_variant_name, simple_enum_variant_name,
+    yaml_core_type_tag_name,
 };
 
 #[cfg(feature = "comments")]
@@ -1062,7 +1063,22 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         self.write_end_of_scalar()
     }
 
+    /// Reject local tags on absent options unless an enum has already consumed
+    /// the tag as its selector and this `None` is the variant's untagged payload.
+    fn validate_none_tag(&self) -> Result<()> {
+        if let Some(tag) = &self.state.pending_tag
+            && !tag.variant_selector_claimed
+            && is_specific_local_tag(&tag.resolved)
+        {
+            return Err(Error::LocalTagOnNone {
+                tag: tag.resolved.clone(),
+            });
+        }
+        Ok(())
+    }
+
     fn serialize_tilde_null(&mut self) -> Result<()> {
+        self.validate_none_tag()?;
         self.state.pending_flow = None;
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
@@ -1591,6 +1607,7 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
     }
 
     fn serialize_none(self) -> Result<()> {
+        self.validate_none_tag()?;
         self.write_space_if_pending()?;
         self.write_scalar_prefix_if_anchor()?;
         self.state.last_value_was_block = false;

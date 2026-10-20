@@ -1,5 +1,11 @@
 pub(crate) const YAML_TAG_NAMESPACE: &str = "tag:yaml.org,2002:";
 
+/// Whether a resolved identity is an explicit local tag rather than the non-specific `!`.
+/// Source handles must be resolved first; a source `!!null` normally resolves to a global URI.
+pub(crate) fn is_specific_local_tag(tag: &str) -> bool {
+    tag.starts_with('!') && tag != "!"
+}
+
 /// Return the simple enum variant selected by a resolved or source-spelled YAML tag.
 ///
 /// Verbatim syntax is unwrapped first, the core namespace is removed when present, and every

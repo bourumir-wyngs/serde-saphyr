@@ -785,12 +785,24 @@ When constructing `Tagged<T>` directly, a tag beginning with `!` is local; every
 must have valid absolute URI syntax. Characters requiring URI escaping are percent-encoded on
 output.
 
-When deserializing an enum directly, a local tag matching a variant name selects that
+When deserializing an enum, a local tag matching a variant name selects that
 variant before its payload is interpreted. This includes names such as `!timestamp`,
 `!str`, `!int`, `!null`, `!seq`, and `!map`, even when the payload has a different shape
 from the ordinary meaning of that tag. For example, a variant renamed `timestamp` can
 be selected by `!timestamp` (unit) or `!timestamp text` (a string newtype). Unit variants
 require empty or null content. `Tagged<T>` serialization follows the same rule.
+
+An explicit local tag represents a present value inside `Option<T>`. The inner type
+receives the tag, so `!null payload` can select `Some(Enum::Null(payload))` and `!now`
+can select a unit variant. This applies to ordinary optional types too: `!null` is
+passed to their inner type instead of becoming `None`. Use untagged null or the global
+`!!null` tag for `None`. Once an enum consumes its selector, an untagged null payload
+still becomes `None`; for example, `!const null` can represent `Some(Enum::Const(None))`.
+
+Serializing `Tagged(None, Some(local_tag))` returns `SerializeError::LocalTagOnNone`:
+that YAML would represent a present tagged value when read back. Use an absent tag
+or the resolved global null identity (`tag:yaml.org,2002:null`) for a tagged `None`.
+Null payloads inside a selected enum variant remain supported, including `NullableTilde`.
 
 Matching uses the resolved tag identity: `!<!timestamp>` is equivalent to the default
 `!timestamp`, whereas `!!timestamp` is the global YAML timestamp tag. `%TAG` directives
