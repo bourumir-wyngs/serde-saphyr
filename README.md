@@ -171,6 +171,20 @@ Here, `hi:` supplies an empty mapping value, which is YAML null.
   These produce `""`, `"~"`, and `"null"`, respectively. An explicit string tag also works,
   for example `hi: !!str null` produces `"null"`.
 
+### Migrating from 2.0
+
+Recognized scalar tags are now checked consistently for numeric, boolean, character,
+and enum targets. Values such as `!!timestamp 10`, `!time false`, and `!!int vast`
+are rejected instead of silently discarding their tags. Enum variant names accept
+string-compatible tags; supported custom enum tags remain available.
+
+The robotics tags `!degrees`, `!radians`, and `!time` require the `robotics` feature
+and `angle_conversions: true`, and deserialize into floating-point values. Their
+conversions also apply to untyped reads, skipped fields, and `#[serde(flatten)]`.
+Use `!time` for durations in seconds; standard YAML `!!timestamp` is not a numeric
+duration tag. Remove a tag if an ordinary number or boolean is intended. A null-like
+payload with one of these tags is rejected, including inside `Option<T>`.
+
 ### Migrating from 1.x
 
 A bug fix removes the implicit conversion of YAML null into empty sequences, mappings,
@@ -732,8 +746,8 @@ select enum variants. YAML 1.1 `!!merge` and `!!value` tags remain accepted only
 scalar mapping keys, `<<` and `=` respectively; using either tag on a value, a collection, or any
 other scalar is rejected in strict mode. Known scalar, sequence, and mapping tags are likewise
 accepted only on matching node kinds, even when `reject_unsupported_tags` is false. Robotics-only
-`!degrees` and `!radians` tags are accepted in strict mode only when the `robotics` crate feature and
-`angle_conversions: true` are both enabled.
+`!degrees`, `!radians`, and `!time` tags require the `robotics` crate feature and
+`angle_conversions: true` for floating-point deserialization and untyped reads.
 
 Likewise, in strict mode, `!include` is accepted only when the `include` crate feature is enabled
 and an include resolver is configured. Tag capture does not bypass normal YAML tag semantics or
@@ -1252,6 +1266,7 @@ expr_complex: 1 + 2*(3 - 4/5) # simple expressions supported
 func_deg: deg(180) # value in degrees, converts to radians
 func_rad: rad(pi) # value in radians (stays in radians)
 hh_mm_secs: -0:30:30.5 # Time
+duration: !time 1:02:03 # duration in seconds: 3723.0
 longitude: !radians 8:32:53.2 # Nautical, ETH Zürich Main Building (8°32′53.2″ E)
 ```
 
@@ -1279,6 +1294,12 @@ fn main() {
 # #[cfg(not(feature = "robotics"))]
 # fn main() {}
 ```
+
+The `!time` tag denotes a duration in seconds, including `hh:mm[:ss]` notation.
+It is distinct from the standard YAML `!!timestamp` tag, which denotes a date or
+point in time and is not accepted as a floating-point value. Explicit robotics
+tags apply the same conversions in typed reads, untyped reads, skipped fields,
+and `#[serde(flatten)]` fields.
 
 Safety hardening measures with this feature enabled include limits on maximal expression depth, maximal number of digits, strict underscore placement, and fraction parsing limits to the precision-relevant digit.
 

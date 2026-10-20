@@ -19,6 +19,7 @@
 /// # Tag interaction
 /// - If no `deg`/`rad` is used, `SfTag::Degrees` converts to radians.
 /// - `SfTag::Radians` leaves values as-is.
+/// - `SfTag::Time` interprets sexagesimal values as durations in seconds.
 /// - Unitized inputs (`deg(...)`, `rad(...)`, **sexagesimal**) override tag-based conversion.
 /// - Safety rule: mixing unitized inputs with bare terms under `SfTag::Degrees` is rejected
 ///   to avoid ambiguous semantics. Wrap bare terms explicitly with `deg(...)` or `rad(...)`,
@@ -528,7 +529,7 @@ impl<'a> Parser<'a> {
         }
 
         // Interpret sexagesimal based on current mode and tag:
-        // - Default/time or explicit TimeStamp tag -> total seconds
+        // - Default/time or explicit Time tag -> total seconds
         // - Inside unit functions (sexagesimal_is_time == false) -> degrees numeric (wrapping unit converts)
         // - Top-level with Degrees/Radians tag -> treat as angle and produce radians directly
         if self.sexagesimal_is_time {
@@ -540,8 +541,8 @@ impl<'a> Parser<'a> {
                 let total_seconds = deg_whole * 3600.0 + f64::from(mins_u) * 60.0 + secs;
                 Ok(Some((total_seconds, true, false)))
             }
-        } else if matches!(self.tag, SfTag::TimeStamp) {
-            // Explicit time tag forces time semantics even inside functions (unlikely combo)
+        } else if matches!(self.tag, SfTag::Time) {
+            // The explicit time tag retains duration semantics inside unit functions.
             let total_seconds = deg_whole * 3600.0 + f64::from(mins_u) * 60.0 + secs;
             Ok(Some((total_seconds, true, false)))
         } else {

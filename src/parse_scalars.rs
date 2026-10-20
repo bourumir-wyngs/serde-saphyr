@@ -437,13 +437,14 @@ pub(crate) fn scalar_is_nullish(value: &str, style: &ScalarStyle) -> bool {
 
 #[cfg(feature = "deserialize")]
 #[inline]
-/// Resolve null while honoring explicit core types, binary tags, and string-forcing tags.
+/// Resolve null while honoring explicit scalar types and string-forcing tags.
 /// Non-null typed scalars must reach their deserializer even when their text looks null-like.
 pub(crate) fn scalar_is_null(tag: &SfTag, value: &str, style: &ScalarStyle) -> bool {
     *tag == SfTag::Null
         || (!tag.is_core()
             && !tag.forces_string()
-            && *tag != SfTag::Binary
+            && !matches!(tag, SfTag::Binary | SfTag::TimeStamp)
+            && !tag.is_robotics()
             && scalar_is_nullish(value, style))
 }
 

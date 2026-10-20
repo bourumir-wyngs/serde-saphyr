@@ -80,7 +80,10 @@ pub(crate) enum SfTag {
     Null,
     Seq,
     Map,
+    /// Standard YAML date or timestamp, distinct from the robotics time extension.
     TimeStamp,
+    /// Robotics time duration, represented as seconds.
+    Time,
     Binary,
     String,
     /// YAML 1.1 merge key (`tag:yaml.org,2002:merge`).
@@ -91,7 +94,7 @@ pub(crate) enum SfTag {
     NonSpecific,
     /// !include tag - include external resource
     Include,
-    // Custom angle tags supported by angles_hook
+    // Custom angle tags supported by the robotics feature.
     Degrees,
     Radians,
     Other,
@@ -147,15 +150,15 @@ static TAG_LOOKUP_MAP: LazyLock<BTreeMap<&'static str, SfTag>> = LazyLock::new(|
         ("!str", SfTag::String),
         ("tag:yaml.org,2002:str", SfTag::String),
         ("tag:yaml.org,2002:!str", SfTag::String),
-        // timestamp / time
+        // standard timestamp
         ("!!timestamp", SfTag::TimeStamp),
         ("!timestamp", SfTag::TimeStamp),
         ("tag:yaml.org,2002:timestamp", SfTag::TimeStamp),
         ("tag:yaml.org,2002:!timestamp", SfTag::TimeStamp),
-        // additional time aliases (custom)
-        ("!time", SfTag::TimeStamp),
-        ("tag:yaml.org,2002:time", SfTag::TimeStamp),
-        ("tag:yaml.org,2002:!time", SfTag::TimeStamp),
+        // time duration aliases (custom)
+        ("!time", SfTag::Time),
+        ("tag:yaml.org,2002:time", SfTag::Time),
+        ("tag:yaml.org,2002:!time", SfTag::Time),
         // binary
         ("!!binary", SfTag::Binary),
         ("!binary", SfTag::Binary),
@@ -203,6 +206,7 @@ impl SfTag {
             | SfTag::Bool
             | SfTag::Null
             | SfTag::TimeStamp
+            | SfTag::Time
             | SfTag::Binary
             | SfTag::String
             | SfTag::Merge
@@ -253,6 +257,11 @@ impl SfTag {
         matches!(self, SfTag::String | SfTag::NonSpecific)
     }
 
+    /// Whether this tag selects a numeric conversion supplied by the robotics feature.
+    pub(crate) fn is_robotics(&self) -> bool {
+        matches!(self, SfTag::Time | SfTag::Degrees | SfTag::Radians)
+    }
+
     pub(crate) fn can_parse_into_string(&self) -> bool {
         match self {
             SfTag::None
@@ -270,6 +279,7 @@ impl SfTag {
             | SfTag::Seq
             | SfTag::Map
             | SfTag::TimeStamp
+            | SfTag::Time
             | SfTag::Degrees
             | SfTag::Radians => false,
         }
@@ -313,10 +323,29 @@ fn is_yaml_value_tag(tag: &Tag) -> bool {
 mod tests {
     use super::{SfTag, TagNodeKind, core_suffix_to_sf_tag, is_yaml_merge_tag, is_yaml_value_tag};
     use granit_parser::Tag;
+    use rstest::rstest;
     use std::borrow::Cow;
 
     fn sf_tag(tag: Tag) -> SfTag {
         SfTag::from_optional_cow(&Some(Cow::Owned(tag)))
+    }
+
+    #[rstest]
+    #[case::local_time(("!", "time", "!"), SfTag::Time)]
+    #[case::global_time(("tag:yaml.org,2002:", "time", "!!"), SfTag::Time)]
+    #[case::global_local_time(("tag:yaml.org,2002:", "!time", "!!"), SfTag::Time)]
+    #[case::local_timestamp(("!", "timestamp", "!"), SfTag::TimeStamp)]
+    #[case::global_timestamp(("tag:yaml.org,2002:", "timestamp", "!!"), SfTag::TimeStamp)]
+    #[case::global_local_timestamp(("tag:yaml.org,2002:", "!timestamp", "!!"), SfTag::TimeStamp)]
+    fn distinguishes_time_durations_from_timestamps(
+        #[case] parts: (&str, &str, &str),
+        #[case] expected: SfTag,
+    ) {
+        let (prefix, suffix, handle) = parts;
+        let tag = sf_tag(Tag::with_original_handle(prefix, suffix, handle));
+        assert_eq!(tag, expected);
+        assert_eq!(tag.is_robotics(), expected == SfTag::Time);
+        assert!(!tag.can_parse_into_string());
     }
 
     #[test]
@@ -403,6 +432,7 @@ mod tests {
             SfTag::Bool,
             SfTag::Null,
             SfTag::TimeStamp,
+            SfTag::Time,
             SfTag::Binary,
             SfTag::String,
             SfTag::Merge,
