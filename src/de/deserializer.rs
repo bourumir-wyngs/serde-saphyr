@@ -1497,58 +1497,39 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     /// `!!binary` scalar as a byte *sequence* view when the caller expects a
     /// sequence of u8.
     fn deserialize_seq<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        if let Some((s, tag, style, _location)) = self.peek_effective_scalar()? {
-            // Treat null-like scalar as an empty sequence.
-            if scalar_is_null(&tag, &s, &style) {
-                let _ = self.ev.next()?; // consume the null-like scalar
-                struct EmptySeq;
-                impl<'de> de::SeqAccess<'de> for EmptySeq {
-                    type Error = Error;
-                    fn next_element_seed<T>(&mut self, _seed: T) -> Result<Option<T::Value>, Error>
-                    where
-                        T: de::DeserializeSeed<'de>,
-                    {
-                        Ok(None)
-                    }
+        if let Some((_, SfTag::Binary, _, _)) = self.peek_effective_scalar()? {
+            let (scalar, data_location) = match self.ev.next()? {
+                Some(Ev::Scalar {
+                    value, location, ..
+                }) => (value, location),
+                Some(other) => {
+                    return Err(Error::unexpected("binary scalar").with_location(other.location()));
                 }
-                return visitor.visit_seq(EmptySeq);
+                None => return Err(eof_with_loc(self.ev)),
+            };
+            let data =
+                decode_base64_yaml(&scalar).map_err(|err| err.with_location(data_location))?;
+            /// `SeqAccess` that iterates over bytes from a decoded `!!binary`.
+            struct ByteSeq {
+                data: Vec<u8>,
+                idx: usize,
             }
-            if tag == SfTag::Binary {
-                let (scalar, data_location) = match self.ev.next()? {
-                    Some(Ev::Scalar {
-                        value, location, ..
-                    }) => (value, location),
-                    Some(other) => {
-                        return Err(
-                            Error::unexpected("binary scalar").with_location(other.location())
-                        );
+            impl<'de> de::SeqAccess<'de> for ByteSeq {
+                type Error = Error;
+                fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Error>
+                where
+                    T: de::DeserializeSeed<'de>,
+                {
+                    if self.idx >= self.data.len() {
+                        return Ok(None);
                     }
-                    None => return Err(eof_with_loc(self.ev)),
-                };
-                let data =
-                    decode_base64_yaml(&scalar).map_err(|err| err.with_location(data_location))?;
-                /// `SeqAccess` that iterates over bytes from a decoded `!!binary`.
-                struct ByteSeq {
-                    data: Vec<u8>,
-                    idx: usize,
+                    let b = self.data[self.idx];
+                    self.idx += 1;
+                    let deser = serde_core::de::value::U8Deserializer::<Error>::new(b);
+                    seed.deserialize(deser).map(Some)
                 }
-                impl<'de> de::SeqAccess<'de> for ByteSeq {
-                    type Error = Error;
-                    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Error>
-                    where
-                        T: de::DeserializeSeed<'de>,
-                    {
-                        if self.idx >= self.data.len() {
-                            return Ok(None);
-                        }
-                        let b = self.data[self.idx];
-                        self.idx += 1;
-                        let deser = serde_core::de::value::U8Deserializer::<Error>::new(b);
-                        seed.deserialize(deser).map(Some)
-                    }
-                }
-                return visitor.visit_seq(ByteSeq { data, idx: 0 });
             }
+            return visitor.visit_seq(ByteSeq { data, idx: 0 });
         }
         // Comments passed in from the parent value slot belong to the first item
         // of the sequence. If this sequence is reached through a nested alias,
@@ -1708,33 +1689,6 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     /// Caller: Serde field visitors for maps and for Rust structs
     /// (which Serde also requests via `deserialize_map`).
     fn deserialize_map<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        // Treat null-like scalar as an empty map/struct.
-        if let Some((s, tag, style, location)) = self.peek_effective_scalar()?
-            && scalar_is_null(&tag, &s, &style)
-        {
-            let _ = self.ev.next()?; // consume the null-like scalar
-            struct EmptyMap {
-                location: Location,
-            }
-            impl<'de> de::MapAccess<'de> for EmptyMap {
-                type Error = Error;
-                fn next_key_seed<K>(&mut self, _seed: K) -> Result<Option<K::Value>, Error>
-                where
-                    K: de::DeserializeSeed<'de>,
-                {
-                    Ok(None)
-                }
-                fn next_value_seed<Vv>(&mut self, _seed: Vv) -> Result<Vv::Value, Error>
-                where
-                    Vv: de::DeserializeSeed<'de>,
-                {
-                    Err(Error::ValueRequestedBeforeKey {
-                        location: self.location,
-                    })
-                }
-            }
-            return visitor.visit_map(EmptyMap { location });
-        }
         // Same-line separator comments on the parent field belong to this mapping node.
         // `Commented<Container>` consumes those comments before this point; a plain map
         // must not reattach them to the first child key.

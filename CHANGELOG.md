@@ -1,6 +1,23 @@
 # Changelog
 
-## 2.0.0 Unreleased
+## 2.1.0 Unreleased
+
+### Deprecated
+
+- Deprecated `SerializerOptions::empty_as_braces`. Setting it to `false` emits YAML null
+  for empty block collections without tags or anchors. These values do not round-trip into
+  collection types. Omit the setting to keep the default `true` and emit `[]` or `{}`.
+  Existing serialization behavior remains supported for compatibility.
+
+### Fixed
+
+- Reject YAML null when deserializing sequences, mappings, and mapping-based structs instead
+  of silently constructing empty values ([#233](https://github.com/bourumir-wyngs/serde-saphyr/issues/233)).
+  Blank values and the plain spellings `~`, `null`, `Null`, and `NULL` are handled consistently.
+  Write `[]` for an empty sequence or `{}` for an empty mapping. `Option<T>` null handling
+  and defaults for absent fields are unchanged; see the README migration notes.
+
+## 2.0.0
 
 ### YAML changes
 - Composite mapping keys are not compared regardless of entry order (thanks @yuxi-liu-wired)  .

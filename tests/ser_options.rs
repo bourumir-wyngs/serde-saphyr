@@ -6,6 +6,7 @@ use serde::Serialize;
 use serde_saphyr::{to_string, to_string_with_options};
 
 #[test]
+#[allow(deprecated)] // Verify that explicitly enabling the legacy option still works.
 fn empty_seq_with_empty_as_braces() {
     let opts = serde_saphyr::ser_options! {
         empty_as_braces: true,
@@ -16,6 +17,7 @@ fn empty_seq_with_empty_as_braces() {
 }
 
 #[test]
+#[allow(deprecated)] // Verify that explicitly enabling the legacy option still works.
 fn empty_map_with_empty_as_braces() {
     let opts = serde_saphyr::ser_options! {
         empty_as_braces: true,
@@ -37,6 +39,7 @@ fn yaml_12_option_bool_key() {
 }
 
 #[test]
+#[allow(deprecated)] // Verify that explicitly enabling the legacy option still works.
 fn empty_block_seq_as_map_value_with_empty_as_braces() {
     let opts = serde_saphyr::ser_options! {
         empty_as_braces: true,
@@ -50,6 +53,7 @@ fn empty_block_seq_as_map_value_with_empty_as_braces() {
 }
 
 #[test]
+#[allow(deprecated)] // Verify that explicitly enabling the legacy option still works.
 fn empty_block_map_as_map_value_with_empty_as_braces() {
     let opts = serde_saphyr::ser_options! {
         empty_as_braces: true,
@@ -97,6 +101,7 @@ fn empty_seq_as_brackets() {
 }
 
 #[test]
+#[allow(deprecated)] // Preserve coverage of legacy null output for empty maps.
 fn empty_map_without_braces() {
     #[derive(Serialize)]
     struct S {

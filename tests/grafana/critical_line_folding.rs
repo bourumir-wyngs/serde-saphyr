@@ -6,7 +6,6 @@ fn test_line_width_is_80_not_60() {
     let options = serde_saphyr::ser_options! {
         indent_step: 2,
         prefer_block_scalars: true,
-        empty_as_braces: true,
         folded_wrap_chars: 80,
     };
 
@@ -56,7 +55,6 @@ fn get_rtk_options() -> SerializerOptions {
     serde_saphyr::ser_options! {
         indent_step: 2,
         prefer_block_scalars: true,
-        empty_as_braces: true,
         folded_wrap_chars: 80,
     }
 }

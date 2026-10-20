@@ -1014,25 +1014,21 @@ fn deserialize_any_null_forms(#[case] yaml: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// deserialize_map: empty map from null scalar
+// deserialize_map: reject null scalar
 // ---------------------------------------------------------------------------
 
 #[test]
-fn map_from_null_is_empty() {
-    // A null/~ at map position should yield an empty map
-    let v: std::collections::HashMap<String, i32> =
-        serde_saphyr::from_str("~\n").unwrap_or_default();
-    assert!(v.is_empty());
+fn map_from_null_is_rejected() {
+    assert!(serde_saphyr::from_str::<std::collections::HashMap<String, i32>>("~\n").is_err());
 }
 
 // ---------------------------------------------------------------------------
-// deserialize_seq: empty seq from null scalar
+// deserialize_seq: reject null scalar
 // ---------------------------------------------------------------------------
 
 #[test]
-fn seq_from_null_is_empty() {
-    let v: Vec<i32> = serde_saphyr::from_str("~\n").unwrap_or_default();
-    assert!(v.is_empty());
+fn seq_from_null_is_rejected() {
+    assert!(serde_saphyr::from_str::<Vec<i32>>("~\n").is_err());
 }
 
 // ---------------------------------------------------------------------------

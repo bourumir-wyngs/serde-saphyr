@@ -35,15 +35,16 @@ impl<'de> Visitor<'de> for ValueBeforeKeyVisitor {
 }
 
 #[test]
-fn null_as_empty_map_reports_value_before_key_instead_of_panicking() {
+fn null_is_rejected_before_invoking_map_visitor() {
     let err = serde_saphyr::from_str::<ValueBeforeKey>("~").unwrap_err();
 
     match inner_error(&err) {
-        serde_saphyr::Error::ValueRequestedBeforeKey { location } => {
+        serde_saphyr::Error::Unexpected { expected, location } => {
+            assert_eq!(*expected, "mapping start");
             assert_eq!(location.line(), 1);
             assert_eq!(location.column(), 1);
         }
-        other => panic!("expected ValueRequestedBeforeKey, got {other:?}"),
+        other => panic!("expected a mapping type error, got {other:?}"),
     }
 }
 

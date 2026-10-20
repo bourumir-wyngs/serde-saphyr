@@ -494,24 +494,16 @@ fn test_ignore_tag() {
 }
 
 #[test]
-fn test_no_required_fields() {
+fn test_empty_document_is_null_even_without_required_fields() {
     #[derive(Deserialize, PartialEq, Debug)]
     pub struct NoRequiredFields {
         optional: Option<usize>,
     }
 
     for document in ["", "# comment\n"] {
-        let expected = NoRequiredFields { optional: None };
-        let deserialized: NoRequiredFields = serde_saphyr::from_str(document).unwrap();
-        assert_eq!(expected, deserialized);
-
-        let expected = Vec::<String>::new();
-        let deserialized: Vec<String> = serde_saphyr::from_str(document).unwrap();
-        assert_eq!(expected, deserialized);
-
-        let expected = BTreeMap::new();
-        let deserialized: BTreeMap<char, usize> = serde_saphyr::from_str(document).unwrap();
-        assert_eq!(expected, deserialized);
+        assert!(serde_saphyr::from_str::<NoRequiredFields>(document).is_err());
+        assert!(serde_saphyr::from_str::<Vec<String>>(document).is_err());
+        assert!(serde_saphyr::from_str::<BTreeMap<char, usize>>(document).is_err());
 
         let expected = None;
         let deserialized: Option<String> = serde_saphyr::from_str(document).unwrap();
@@ -521,26 +513,33 @@ fn test_no_required_fields() {
         let deserialized: Value = serde_saphyr::from_str(document).unwrap();
         assert_eq!(expected, deserialized);
     }
+
+    test_de("{}", &NoRequiredFields { optional: None });
 }
 
 #[test]
-fn test_empty_scalar() {
+fn test_empty_scalar_is_not_a_collection() {
     #[derive(Deserialize, PartialEq, Debug)]
     struct Struct<T> {
         thing: T,
     }
 
-    let empty_vector: Vec<String> = vec![];
-    let empty_map: HashMap<String, String> = HashMap::new();
-
     let yaml = "thing:\n";
-    let expected = Struct {
-        thing: empty_vector,
-    };
-    test_de(yaml, &expected);
+    assert!(serde_saphyr::from_str::<Struct<Vec<String>>>(yaml).is_err());
+    assert!(serde_saphyr::from_str::<Struct<HashMap<String, String>>>(yaml).is_err());
 
-    let expected = Struct { thing: empty_map };
-    test_de(yaml, &expected);
+    test_de(
+        "thing: []\n",
+        &Struct {
+            thing: Vec::<String>::new(),
+        },
+    );
+    test_de(
+        "thing: {}\n",
+        &Struct {
+            thing: HashMap::<String, String>::new(),
+        },
+    );
 }
 
 #[test]

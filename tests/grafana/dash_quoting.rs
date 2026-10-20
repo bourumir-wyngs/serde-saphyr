@@ -602,9 +602,7 @@ fn test_non_empty_map_unchanged_with_braces_option() {
     map.insert("key".to_string(), "value".to_string());
     let v = Volume { data: map };
 
-    let opts = serde_saphyr::ser_options! {
-        empty_as_braces: true,
-    };
+    let opts = serde_saphyr::SerializerOptions::default();
     let mut buf = String::new();
     to_fmt_writer_with_options(&mut buf, &v, opts).unwrap();
 

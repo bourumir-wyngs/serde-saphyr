@@ -169,6 +169,7 @@ fn tagged_block_collections_round_trip() {
 }
 
 #[test]
+#[allow(deprecated)] // Tagged collections must retain markers even with the legacy option.
 fn tagged_empty_collections_remain_nodes_when_empty_markers_are_disabled() {
     let options = ser_options! { empty_as_braces: false };
 

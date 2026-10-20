@@ -147,6 +147,25 @@ Here, `hi:` supplies an empty mapping value, which is YAML null.
 
 ### Migrating from 1.x
 
+A bug fix removes the implicit conversion of YAML null into empty sequences, mappings,
+and mapping-based structs. This includes blank values such as `items:`, the plain spellings
+`~`, `null`, `Null`, and `NULL`, and explicitly tagged null values.
+If an empty collection is intended, write `[]` for an empty sequence or `{}` for an empty
+mapping:
+
+```yaml
+items: []     # Instead of items: or items: null
+settings: {}  # Instead of settings: or settings: null
+```
+
+`Option<T>` continues to accept null as `None`.
+
+`SerializerOptions::empty_as_braces` is deprecated since 2.1.0. Omit this setting to keep
+the default `true`, which emits `[]` and `{}` for empty collections. Setting it to `false`
+emits blank values for empty block collections without tags or anchors. These values are
+YAML null and do not round-trip into collection types. The setting remains supported for
+compatibility, but deserialization rejects those null values.
+
 Version 2.0 lets `from_multiple`, `from_slice_multiple`, and their `_with_options` variants
 deserialize values that borrow from the input by changing their bound from `DeserializeOwned`
 to `Deserialize<'de>`. These functions retain their names, single type parameter, and `Vec<T>`
