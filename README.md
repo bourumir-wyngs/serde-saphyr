@@ -123,6 +123,28 @@ validated when the feature is disabled, but their text is not retained.
 
 The optional `huge_documents` feature switches span storage from `u32` indices to a packed 48-bit internal representation so spans can cover YAML inputs far beyond 4 GiB without widening every coordinate to a full `u64`. Public getters still return `u64`, and values beyond the packed range saturate instead of wrapping.
 
+### Migrating from serde_yaml
+
+#### Null values for string fields
+
+For a field declared as `hi: String`, `serde_yaml` accepts the plain null forms below
+as their original text. `serde-saphyr` treats these forms as null and reports
+`Error::NullIntoString`. This also applies with the default `no_schema: false` setting.
+
+| YAML input | `serde_yaml` string value | `serde-saphyr` result |
+| --- | --- | --- |
+| `hi:` | `""` | `Error::NullIntoString` |
+| `hi: ~` | `"~"` | `Error::NullIntoString` |
+| `hi: null` | `"null"` | `Error::NullIntoString` |
+
+Here, `hi:` supplies an empty mapping value, which is YAML null.
+
+- If null means no value, use `Option<String>`. All three inputs above deserialize
+  as `None`; the original null spelling is not retained.
+- If text is intended, quote the value: `hi: ""`, `hi: "~"`, or `hi: "null"`.
+  These produce `""`, `"~"`, and `"null"`, respectively. An explicit string tag also works,
+  for example `hi: !!str null` produces `"null"`.
+
 ### Migrating from 1.x
 
 Version 2.0 lets `from_multiple`, `from_slice_multiple`, and their `_with_options` variants
@@ -282,6 +304,10 @@ Other capitalization, such as `tRuE`, remains a string during type inference and
 ### Rust types as schema
 
 To address the “Norway problem,” the target Rust types serve as an explicit schema. Because the parser knows whether a field expects a string or a boolean, it can correctly accept `1.2` either as a number or as the string `"1.2"`, and interpret the common YAML boolean shorthands (`y`, `on`, `n`, `off`) as actual booleans when appropriate (can be disabled). Likewise, `0x2A` is parsed as a hexadecimal integer when the target field is numeric, and as a string when the target is `String`. As with [StrictYAML](https://hitchdev.com/strictyaml/why/implicit-typing-removed/), **serde-saphyr** uses the Rust type system as the schema for typed deserialization. Integer key comparison is an exception: [duplicate checking](#duplicate-keys) uses the integer's numeric meaning while preserving its original spelling for string targets.
+
+YAML null values are rejected for `String` fields. See
+[null values for string fields](#null-values-for-string-fields) for the difference from
+`serde_yaml` and the available representations.
 
 Schema-based parsing can be disabled by setting `no_schema` to true in [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). In this case all *unquoted* values that are parsed into strings, but can be understood as something else, are rejected. This can be used for enforcing compatibility with another YAML parser that reads the same content and requires this quoting. Default setting is false.
 
