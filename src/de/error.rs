@@ -1479,21 +1479,38 @@ impl Error {
     }
 
     /// Render this error using the provided options.
+    ///
+    /// To append to an existing writer, use [`Error::render_to`].
     #[must_use]
-    pub fn render_with_options(&self, mut options: RenderOptions<'_>) -> String {
-        options.line_offset = render_line_offset(self, options.line_offset);
-        struct RenderDisplay<'a> {
-            err: &'a Error,
-            options: RenderOptions<'a>,
-        }
-
-        impl fmt::Display for RenderDisplay<'_> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                fmt_error_rendered(f, self.err, self.options)
-            }
-        }
-
+    pub fn render_with_options(&self, options: RenderOptions<'_>) -> String {
         RenderDisplay { err: self, options }.to_string()
+    }
+
+    /// Append this error to `writer` using the provided rendering `options`.
+    ///
+    /// Produces the same text as [`Error::render_with_options`] without first
+    /// collecting the complete output in an intermediate `String`. Message
+    /// formatters and snippet rendering still perform their own allocations.
+    ///
+    /// Returns [`fmt::Result`], propagating any error from `writer`. On failure,
+    /// the writer may already contain part of the rendered error.
+    ///
+    /// ```rust
+    /// let err = serde_saphyr::from_str::<u16>("eighty").unwrap_err();
+    /// let mut output = String::from("invalid configuration: ");
+    /// err.render_to(&mut output, serde_saphyr::render_options! {
+    ///     source_name: Some("config.yaml"),
+    /// })?;
+    /// assert!(output.starts_with("invalid configuration: "));
+    /// assert!(output.contains("config.yaml:1:1"));
+    /// # Ok::<(), std::fmt::Error>(())
+    /// ```
+    pub fn render_to<W: fmt::Write + ?Sized>(
+        &self,
+        writer: &mut W,
+        options: RenderOptions<'_>,
+    ) -> fmt::Result {
+        writer.write_fmt(format_args!("{}", RenderDisplay { err: self, options }))
     }
 
     /// Construct a `Message` error with no known location.
@@ -2085,6 +2102,19 @@ fn writeln_anchor_intro(
     match line.strip_prefix("  |") {
         Some(rest) => writeln!(f, "{prefix}{rest}"),
         None => writeln!(f, "{line}"),
+    }
+}
+
+struct RenderDisplay<'a> {
+    err: &'a Error,
+    options: RenderOptions<'a>,
+}
+
+impl fmt::Display for RenderDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut options = self.options;
+        options.line_offset = render_line_offset(self.err, options.line_offset);
+        fmt_error_rendered(f, self.err, options)
     }
 }
 

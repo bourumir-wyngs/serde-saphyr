@@ -1119,6 +1119,11 @@ use serde_saphyr::UserMessageFormatter;
 println!("\n[User Error]:\n{}", err.render_with_formatter(&UserMessageFormatter));
 ```
 
+To append a diagnostic to an existing `std::fmt::Write`, use
+`err.render_to(&mut writer, render_options)`. It accepts the same `RenderOptions` as
+`render_with_options`, including the formatter, snippet mode, source name, and line offset.
+It avoids an intermediate string for the complete output.
+
 #### Use a custom formatter with `miette`
 
 If you want fancy diagnostics via `miette`, you can convert a `serde-saphyr` error to a
