@@ -12,7 +12,7 @@ use super::options::{DuplicateKeyPolicy, MergeKeyPolicy};
 use super::tags::SfTag;
 use crate::location::Location;
 use crate::parse_scalars::{parse_int_signed, parse_int_unsigned, scalar_is_null, yaml_trim};
-use crate::tag::simple_enum_variant_name;
+use crate::tag::{local_enum_variant_name, simple_enum_variant_name};
 
 pub(super) fn simple_tagged_enum_name(
     raw_tag: &Option<Cow<'_, str>>,
@@ -23,6 +23,24 @@ pub(super) fn simple_tagged_enum_name(
     }
 
     simple_enum_variant_name(raw_tag.as_deref()?).map(ToOwned::to_owned)
+}
+
+/// Select a matching local enum variant before applying built-in YAML tag semantics.
+///
+/// `raw_tag` is the parser-resolved tag identity, `tag` its YAML classification,
+/// and `variants` the target enum's accepted names. Returns a matching local
+/// selector, or the existing custom-tag fallback used for mismatch diagnostics.
+pub(super) fn tagged_enum_variant_name(
+    raw_tag: &Option<Cow<'_, str>>,
+    tag: &SfTag,
+    variants: &[&str],
+) -> Option<String> {
+    if let Some(name) = raw_tag.as_deref().and_then(local_enum_variant_name)
+        && variants.contains(&name)
+    {
+        return Some(name.to_owned());
+    }
+    simple_tagged_enum_name(raw_tag, tag)
 }
 
 /// Canonical tag identity used by [`KeyFingerprint`].
@@ -83,12 +101,12 @@ fn canonical_node_key_tag<'a>(
     raw_tag: &Option<Cow<'a, str>>,
     implicit_tag: SfTag,
 ) -> CanonicalKeyTag<'a> {
-    // `raw_tag` contains the parser-resolved tag identity. Keep it for tags
-    // collapsed into `Other`, and for local `!map`, which is deliberately
-    // distinct from the resolved core map tag in typed enum contexts.
-    if (tag == SfTag::Other
-        || (implicit_tag == SfTag::Map && tag == SfTag::Map && raw_tag.as_deref() == Some("!map")))
-        && let Some(raw_tag) = raw_tag
+    // Resolved local tags have identities distinct from global YAML type tags.
+    // Preserve them at every depth: the node may become an enum selector inside
+    // a newtype, option, tuple, or another enum's payload. Key comparison runs
+    // before Serde reveals those nested target types.
+    if let Some(raw_tag) = raw_tag
+        && (tag == SfTag::Other || local_enum_variant_name(raw_tag).is_some())
     {
         return CanonicalKeyTag::Custom(raw_tag.clone());
     }
@@ -318,8 +336,17 @@ fn capture_node_inner<'a>(
             anchor,
             location,
         } => {
-            let integer_fingerprint =
-                integer_key_fingerprint(&value, tag, style, legacy_octal_numbers);
+            // A local tag can select an enum carrying a string, so neither its
+            // tag nor its payload spelling may be collapsed to integer identity.
+            let integer_fingerprint = if raw_tag
+                .as_deref()
+                .and_then(local_enum_variant_name)
+                .is_some()
+            {
+                None
+            } else {
+                integer_key_fingerprint(&value, tag, style, legacy_octal_numbers)
+            };
             let scalar_ev = Ev::Scalar {
                 value,
                 tag,
@@ -717,6 +744,9 @@ pub(super) fn pending_entries_from_events<'a>(
         #[cfg(feature = "properties")]
         property_interpolation.clone(),
     );
+    if let Some(event) = replay.peek()? {
+        super::live_events::validate_node_tag_kind(event)?;
+    }
     match replay.peek()? {
         Some(Ev::Scalar {
             value, tag, style, ..
@@ -799,6 +829,9 @@ pub(super) fn pending_entries_from_live_events<'a>(
 ) -> Result<Vec<PendingEntry<'a>>, Error> {
     #[cfg(feature = "properties")]
     let property_interpolation = ev.property_interpolation().clone();
+    if let Some(event) = ev.peek()? {
+        super::live_events::validate_node_tag_kind(event)?;
+    }
     match ev.peek()? {
         Some(event @ Ev::RecursiveAlias { .. }) => {
             // A supported recursive merge is the same empty placeholder as on the live
@@ -886,6 +919,9 @@ pub(super) fn collect_entries_from_map<'a>(
     duplicate_keys: DuplicateKeyPolicy,
     legacy_octal_numbers: bool,
 ) -> Result<Vec<PendingEntry<'a>>, Error> {
+    if let Some(event) = ev.peek()? {
+        super::live_events::validate_node_tag_kind(event)?;
+    }
     let Some(Ev::MapStart { .. }) = ev.next()? else {
         return Err(Error::MergeValueNotMapOrSeqOfMaps {
             location: ev.last_location(),

@@ -37,6 +37,14 @@
   `std::error::Error::source()` by forwarding the wrapped error's source.
   Use `without_snippet()` to inspect the wrapped error. Alias errors retain their
   complete source chain, including snippet wrappers, for compatibility.
+- Resolve matching local YAML tags as enum variant selectors before interpreting
+  their payloads (#231). Names such as `!timestamp`, `!str`, `!null`, `!seq`, and
+  `!map` work with unit, scalar, sequence, and mapping variants, including through
+  `Tagged<T>` serialization. Resolved global tags retain their YAML type semantics.
+  Duplicate-key handling preserves resolved local tag identities throughout keys,
+  so local selectors no longer collide with global type annotations or untagged
+  values. This also distinguishes ordinary `!str foo` from `!!str foo`, and keeps
+  local `!int` payload spellings distinct; global `!!int` keys still compare numerically.
 - Validate recognized scalar tags consistently for numeric, boolean, character,
   and enum targets, including externally tagged enum mapping keys (#235).
   Incompatible tags and tagged null-like payloads no longer bypass validation.

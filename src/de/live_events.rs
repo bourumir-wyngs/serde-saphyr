@@ -58,6 +58,82 @@ type StreamParser<'a> = granit_parser::Parser<'a, ReaderInput<'a>>;
 /// This is enough to hold a single scalar, which is a common case in YAML anchors.
 const SMALLVECT_INLINE: usize = 8;
 
+/// Validate a node once its consumer has decided that its tag is not an enum selector.
+///
+/// Local aliases can name enum variants with any payload shape, so their node-kind checks
+/// cannot run while events are merely peeked at or buffered before the target type is known.
+pub(super) fn validate_node_tag_kind(event: &Ev<'_>) -> Result<(), Error> {
+    let (tag, raw_tag, node_kind, location) = match event {
+        Ev::Scalar {
+            tag,
+            raw_tag,
+            location,
+            ..
+        } => (*tag, raw_tag.as_deref(), TagNodeKind::Scalar, *location),
+        Ev::SeqStart {
+            tag,
+            raw_tag,
+            location,
+            ..
+        } => (*tag, raw_tag.as_deref(), TagNodeKind::Sequence, *location),
+        Ev::MapStart {
+            tag,
+            raw_tag,
+            location,
+            ..
+        } => (*tag, raw_tag.as_deref(), TagNodeKind::Mapping, *location),
+        _ => return Ok(()),
+    };
+    validate_tag_kind(
+        tag,
+        node_kind,
+        || raw_tag.unwrap_or_default().to_owned(),
+        location,
+    )
+}
+
+/// Check whether a recognized tag accepts the node's syntactic shape.
+///
+/// # Parameters
+/// - `tag_kind`: The recognized tag meaning, including supported local aliases.
+/// - `node_kind`: The scalar, sequence, or mapping shape of the node.
+/// - `tag`: Supplies the diagnostic spelling only when validation fails.
+/// - `location`: Identifies the tagged node in an error.
+///
+/// # Returns
+/// Success when the shape is compatible, or a tag/include error at `location`.
+fn validate_tag_kind(
+    tag_kind: SfTag,
+    node_kind: TagNodeKind,
+    tag: impl FnOnce() -> String,
+    location: Location,
+) -> Result<(), Error> {
+    if tag_kind
+        .requires()
+        .is_some_and(|required| required != node_kind)
+    {
+        return if tag_kind == SfTag::Include {
+            Err(Error::UnsupportedIncludeForm { location })
+        } else {
+            Err(Error::UnsupportedTag {
+                tag: tag(),
+                location,
+            })
+        };
+    }
+    Ok(())
+}
+
+/// Decide whether the recognized `tag_kind` can be a typed enum selector.
+/// `raw_tag` is the resolved identity, so remapped global handles keep their YAML constraints.
+fn defer_local_tag_kind(tag_kind: SfTag, raw_tag: Option<&str>) -> bool {
+    tag_kind.requires().is_some()
+        && tag_kind != SfTag::Include
+        && raw_tag
+            .and_then(crate::tag::local_enum_variant_name)
+            .is_some()
+}
+
 /// A frame that records events for an anchored container until its end.
 /// Uses `SmallVec` to avoid heap allocations for small anchors.
 #[derive(Clone, Debug)]
@@ -545,29 +621,26 @@ impl<'a> LiveEvents<'a> {
         }
     }
 
+    /// Enforce the configured strict policy after node-kind validation or deferral.
+    ///
+    /// # Parameters
+    /// - `tag_kind`: The tag meaning used to decide whether the library supports it.
+    /// - `tag`: Supplies the diagnostic spelling only when the tag is rejected.
+    /// - `scalar_value`: The scalar text, or `None` for collections.
+    /// - `position`: The node's position, used for key-only merge and value tags.
+    /// - `location`: Identifies the tagged node in an error.
+    ///
+    /// # Returns
+    /// Success when strict checking is disabled or the tag is supported in this context;
+    /// otherwise an unsupported-tag error at `location`.
     fn ensure_supported_tag(
         &self,
         tag_kind: SfTag,
         tag: impl FnOnce() -> String,
-        node_kind: TagNodeKind,
         scalar_value: Option<&str>,
         position: NodePosition,
         location: Location,
     ) -> Result<(), Error> {
-        if tag_kind
-            .requires()
-            .is_some_and(|required| required != node_kind)
-        {
-            return if tag_kind == SfTag::Include {
-                Err(Error::UnsupportedIncludeForm { location })
-            } else {
-                Err(Error::UnsupportedTag {
-                    tag: tag(),
-                    location,
-                })
-            };
-        }
-
         if !self.reject_unsupported_tags {
             return Ok(());
         }
@@ -635,32 +708,52 @@ impl<'a> LiveEvents<'a> {
         }
     }
 
+    /// Check a scalar's tag and complete its slot in the strict-policy context.
+    ///
+    /// # Parameters
+    /// - `tag_kind`: The recognized tag meaning.
+    /// - `tag`: Supplies the diagnostic spelling only when validation fails.
+    /// - `raw_tag`: The resolved tag identity, used to defer local enum selectors.
+    /// - `value`: The scalar text, used to validate key-only tags.
+    /// - `location`: Identifies the tagged scalar in an error.
+    ///
+    /// # Returns
+    /// Success after applicable checks and context updates, or the tag validation error.
     fn validate_scalar_tag(
         &mut self,
         tag_kind: SfTag,
-        tag: impl FnOnce() -> String,
+        tag: impl Fn() -> String,
+        raw_tag: Option<&str>,
         value: &str,
         location: Location,
     ) -> Result<(), Error> {
+        if !defer_local_tag_kind(tag_kind, raw_tag) {
+            validate_tag_kind(tag_kind, TagNodeKind::Scalar, &tag, location)?;
+        }
         let position = self.next_node_position();
-        self.ensure_supported_tag(
-            tag_kind,
-            tag,
-            TagNodeKind::Scalar,
-            Some(value),
-            position,
-            location,
-        )?;
+        self.ensure_supported_tag(tag_kind, tag, Some(value), position, location)?;
         if self.reject_unsupported_tags {
             self.finish_tagged_node(position);
         }
         Ok(())
     }
 
+    /// Check a collection's tag and enter its strict-policy context.
+    ///
+    /// # Parameters
+    /// - `tag_kind`: The recognized tag meaning.
+    /// - `tag`: Supplies the diagnostic spelling only when validation fails.
+    /// - `raw_tag`: The resolved tag identity, used to defer local enum selectors.
+    /// - `is_mapping`: Selects a mapping when true and a sequence when false.
+    /// - `location`: Identifies the tagged collection in an error.
+    ///
+    /// # Returns
+    /// Success after applicable checks and context updates, or the tag validation error.
     fn validate_container_tag(
         &mut self,
         tag_kind: SfTag,
-        tag: impl FnOnce() -> String,
+        tag: impl Fn() -> String,
+        raw_tag: Option<&str>,
         is_mapping: bool,
         location: Location,
     ) -> Result<(), Error> {
@@ -670,7 +763,10 @@ impl<'a> LiveEvents<'a> {
         } else {
             TagNodeKind::Sequence
         };
-        self.ensure_supported_tag(tag_kind, tag, node_kind, None, parent_position, location)?;
+        if !defer_local_tag_kind(tag_kind, raw_tag) {
+            validate_tag_kind(tag_kind, node_kind, &tag, location)?;
+        }
+        self.ensure_supported_tag(tag_kind, tag, None, parent_position, location)?;
         if !self.reject_unsupported_tags {
             return Ok(());
         }
@@ -722,7 +818,7 @@ impl<'a> LiveEvents<'a> {
         let reference_location = self.inject.last().map(|frame| frame.reference_location);
         let result = match ev {
             Ev::RecursiveAlias { location, .. } => {
-                self.validate_scalar_tag(SfTag::Null, String::new, "", *location)
+                self.validate_scalar_tag(SfTag::Null, String::new, None, "", *location)
             }
             Ev::Scalar {
                 value,
@@ -733,6 +829,7 @@ impl<'a> LiveEvents<'a> {
             } => self.validate_scalar_tag(
                 *tag,
                 || replayed_tag_spelling(*tag, raw_tag.as_deref()),
+                raw_tag.as_deref(),
                 value,
                 *location,
             ),
@@ -744,6 +841,7 @@ impl<'a> LiveEvents<'a> {
             } => self.validate_container_tag(
                 *tag,
                 || replayed_tag_spelling(*tag, raw_tag.as_deref()),
+                raw_tag.as_deref(),
                 false,
                 *location,
             ),
@@ -755,6 +853,7 @@ impl<'a> LiveEvents<'a> {
             } => self.validate_container_tag(
                 *tag,
                 || replayed_tag_spelling(*tag, raw_tag.as_deref()),
+                raw_tag.as_deref(),
                 true,
                 *location,
             ),
@@ -1017,9 +1116,11 @@ impl<'a> LiveEvents<'a> {
                         self.pending_include_anchor = 0;
                     }
 
+                    let raw_tag = tag.as_ref().map(|t| Cow::Owned(t.to_string()));
                     self.validate_scalar_tag(
                         tag_s,
                         || tag.as_deref().map_or_else(String::new, Tag::original),
+                        raw_tag.as_deref(),
                         &val,
                         location,
                     )?;
@@ -1027,7 +1128,7 @@ impl<'a> LiveEvents<'a> {
                     let ev = Ev::Scalar {
                         value: val,
                         tag: tag_s,
-                        raw_tag: tag.as_ref().map(|t| Cow::Owned(t.to_string())),
+                        raw_tag,
                         style,
                         anchor: anchor_id,
                         location,
@@ -1049,9 +1150,11 @@ impl<'a> LiveEvents<'a> {
                     #[cfg(feature = "include")]
                     let mut anchor_id = anchor_id;
                     let tag_s = SfTag::from_optional_cow(&tag);
+                    let raw_tag = tag.as_ref().map(|t| Cow::Owned(t.to_string()));
                     self.validate_container_tag(
                         tag_s,
                         || tag.as_deref().map_or_else(String::new, Tag::original),
+                        raw_tag.as_deref(),
                         false,
                         location,
                     )?;
@@ -1075,7 +1178,7 @@ impl<'a> LiveEvents<'a> {
                     let ev = Ev::SeqStart {
                         anchor: anchor_id,
                         tag: tag_s,
-                        raw_tag: tag.as_ref().map(|t| Cow::Owned(t.to_string())),
+                        raw_tag,
                         location,
                     };
                     // Existing frames go deeper with this start.
@@ -1122,9 +1225,11 @@ impl<'a> LiveEvents<'a> {
 
                 Event::MappingStart(_style, anchor_id, tag) => {
                     let tag_s = SfTag::from_optional_cow(&tag);
+                    let raw_tag = tag.as_ref().map(|t| Cow::Owned(t.to_string()));
                     self.validate_container_tag(
                         tag_s,
                         || tag.as_deref().map_or_else(String::new, Tag::original),
+                        raw_tag.as_deref(),
                         true,
                         location,
                     )?;
@@ -1150,7 +1255,7 @@ impl<'a> LiveEvents<'a> {
                     let ev = Ev::MapStart {
                         anchor: anchor_id,
                         tag: tag_s,
-                        raw_tag: tag.as_ref().map(|t| Cow::Owned(t.to_string())),
+                        raw_tag,
                         location,
                     };
                     self.bump_depth_on_start();
