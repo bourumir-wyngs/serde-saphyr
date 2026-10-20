@@ -68,9 +68,16 @@ pub enum CommentPosition {
 #[non_exhaustive]
 #[derive(Clone, Debug)]
 pub struct SerializerOptions {
-    /// If true, empty maps are emitted as braces {} and empty lists as [] (this is the default).
-    /// This form is valid YAML, distinguishes empty collections from null, and may be easier
-    /// for a human to read.
+    /// If true (the default), empty maps are emitted as `{}` and empty lists as `[]`.
+    ///
+    /// Deprecated: omit this setting to retain the default. Setting it to `false` can emit
+    /// blank values for empty collections. These are YAML null values, so they do not
+    /// round-trip: deserializing them back into collection types returns an error.
+    /// The setting remains supported for compatibility.
+    #[deprecated(
+        since = "2.0.0",
+        note = "leave this at its default true; false can emit null values that do not round-trip into collections"
+    )]
     pub empty_as_braces: bool,
     /// Number of spaces to indent per nesting level when emitting block-style collections (2 by default).
     /// Values must be in `1..=64`.
@@ -192,6 +199,7 @@ impl SerializerOptions {
 }
 
 impl Default for SerializerOptions {
+    #[allow(deprecated)] // Retain the default that emits explicit empty collections.
     fn default() -> Self {
         // Defaults mirror internal constants used by the serializer.
         Self {

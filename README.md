@@ -140,9 +140,11 @@ An empty mapping used for a struct must still satisfy that struct's field requir
 `Option<T>` continues to accept null as `None`. `#[serde(default)]` still supplies a default
 when a field is absent; it does not make a present null value valid for a collection field.
 
-Keep `SerializerOptions::empty_as_braces` at its default `true` when round-tripping collections.
-Setting it to `false` can emit blank values for empty collections; those values are null
-and are now rejected when deserializing back into collection types.
+`SerializerOptions::empty_as_braces` is deprecated since 2.0.0. Omit this setting to keep
+the default `true`, which emits `[]` and `{}` for empty collections. Setting it to `false`
+can emit blank values that are YAML null and therefore do not round-trip into collection
+types. The setting remains supported for compatibility, but deserialization rejects those
+null values.
 
 Version 2.0 lets `from_multiple`, `from_slice_multiple`, and their `_with_options` variants
 deserialize values that borrow from the input by changing their bound from `DeserializeOwned`

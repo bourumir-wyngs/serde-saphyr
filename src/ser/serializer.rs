@@ -455,6 +455,7 @@ struct SerializerSettings {
 }
 
 impl From<&SerializerOptions> for SerializerSettings {
+    #[allow(deprecated)] // Honor empty_as_braces for existing callers during deprecation.
     fn from(options: &SerializerOptions) -> Self {
         Self {
             indent_step: options.indent_step,

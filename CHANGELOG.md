@@ -62,6 +62,10 @@
 
 ### Deprecated
 
+- Deprecated `SerializerOptions::empty_as_braces`. Setting it to `false` can emit YAML null
+  for empty collections, which does not round-trip into collection types. Omit the setting
+  to keep the default `true` and emit `[]` or `{}`. Existing serialization behavior remains
+  supported for compatibility.
 - Deprecated `Options::reject_non_finite_typeless_float` in favor of `non_finite_float_policy`.
   When the new field is unconfigured, the boolean retains its original behavior: `true`
   (the default) rejects and `false` converts to strings. Use `Reject` or `AsString`, respectively,

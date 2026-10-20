@@ -27,6 +27,7 @@ fn empty_map_value_braces_by_default() {
 }
 
 #[test]
+#[allow(deprecated)] // Exercise the legacy empty-collection output.
 fn struct_with_empty_map_renders_exact() {
     let v = WrapMap { m: BTreeMap::new() };
     let s = serde_saphyr::to_string(&v).unwrap();
@@ -40,6 +41,7 @@ fn struct_with_empty_map_renders_exact() {
 }
 
 #[test]
+#[allow(deprecated)] // Compare explicit empty markers with legacy null output.
 fn test_struct_empty_and_not() {
     #[derive(Serialize, Deserialize, PartialEq, Debug)]
     struct OneOne {
@@ -135,6 +137,7 @@ fn empty_map_in_sequence_braces_by_default() {
 }
 
 #[test]
+#[allow(deprecated)] // Preserve coverage of the legacy option.
 fn disable_empty_map_as_braces_restores_legacy() {
     // When disabled, an empty map in block position should not render braces. We test a map value
     // position where previously an empty body produced just a newline after the key.
