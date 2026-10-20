@@ -2,6 +2,14 @@
 
 ## 2.1.0 Unreleased
 
+### Added
+
+- Added `DuplicateKeyPolicy::PassThrough` to delegate repeated explicit mapping entries
+  to Serde visitors, matching `serde_yaml`'s handling for structs, standard maps, and custom
+  multimap visitors ([#226](https://github.com/bourumir-wyngs/serde-saphyr/issues/226)).
+  The default remains `Error`; merge expansion retains its precedence rules. See the README
+  migration note for the scope of this option.
+
 ### Deprecated
 
 - Deprecated `SerializerOptions::empty_as_braces`. Setting it to `false` emits YAML null
