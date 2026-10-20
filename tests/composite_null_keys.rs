@@ -286,6 +286,8 @@ fn null_and_string_identity_applies_throughout_composite_keys(#[case] yaml: &str
 
 #[test]
 fn custom_tagged_null_keys_keep_their_tag_identity() {
+    type OptionalUnitCompositeMap = BTreeMap<BTreeMap<Option<()>, u32>, u32>;
+
     let yaml = "? {null: 1}\n: 10\n? {!First null: 1}\n: 20\n? {!Second null: 1}\n: 30\n";
     for policy in [
         DuplicateKeyPolicy::Error,
@@ -293,10 +295,19 @@ fn custom_tagged_null_keys_keep_their_tag_identity() {
         DuplicateKeyPolicy::LastWins,
     ] {
         let options = serde_saphyr::options! { duplicate_keys: policy };
-        let actual: NullCompositeMap = serde_saphyr::from_str_with_options(yaml, options).unwrap();
-        // These are distinct YAML keys. The target's Option<String> conversion
-        // discards their tags, so the BTreeMap itself retains the final value.
-        assert_eq!(actual, null_composite_entry(30), "{policy:?}");
+        let actual: OptionalUnitCompositeMap =
+            serde_saphyr::from_str_with_options(yaml, options).unwrap();
+        // These are distinct YAML keys. Local tags denote Some(()), while the
+        // untagged null denotes None. The target discards the local tag identities,
+        // so the BTreeMap itself retains the final tagged value.
+        assert_eq!(
+            actual,
+            BTreeMap::from([
+                (BTreeMap::from([(None, 1)]), 10),
+                (BTreeMap::from([(Some(()), 1)]), 30),
+            ]),
+            "{policy:?}"
+        );
     }
 }
 
