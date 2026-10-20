@@ -410,7 +410,7 @@ fn maybe_bool(s: &str, strict: bool) -> bool {
 /// - `style`: YAML scalar style; only plain form participates.
 ///
 /// Returns:
-/// - `true` for empty, `~`, or case-insensitive `null`; `false` otherwise.
+/// - `true` for empty, `~`, `null`, `Null`, or `NULL`; `false` otherwise.
 ///
 /// Used by:
 /// - Option, unit, typeless scalar handling, and other cases where absence is tolerated.
@@ -420,7 +420,7 @@ pub(crate) fn scalar_is_nullish(value: &str, style: &ScalarStyle) -> bool {
     if !matches!(style, ScalarStyle::Plain) {
         return false;
     }
-    value.is_empty() || value == "~" || value.eq_ignore_ascii_case("null")
+    matches!(value, "" | "~" | "null" | "Null" | "NULL")
 }
 
 #[cfg(feature = "deserialize")]

@@ -1078,7 +1078,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     /// Parse a single Unicode scalar value (`char`).
     ///
     /// Null semantics:
-    /// - Tagged null or plain null-like scalars (empty, `~`, or case-insensitive `null`) are not valid `char`.
+    /// - Tagged null or plain null-like scalars (empty, `~`, `null`, `Null`, or `NULL`) are not valid `char`.
     ///   Quoted forms are treated as normal strings and validated for length 1.
     /// - In `no_schema` mode, plain scalars that look like non-strings (numbers, bools, etc.)
     ///   must be quoted; this check uses scalar style to avoid flagging quoted scalars.
@@ -1206,7 +1206,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     /// Deserialize an owned string (with `!!binary` UTF-8 support).
     ///
     /// Null semantics:
-    /// - Tagged null or plain null-like scalars (empty, `~`, or case-insensitive `null`) are not valid `String`.
+    /// - Tagged null or plain null-like scalars (empty, `~`, `null`, `Null`, or `NULL`) are not valid `String`.
     ///   Suggest using `Option<String>` for such YAML values.
     /// - Quoted "null" and quoted empty strings are treated as normal strings and allowed.
     ///

@@ -73,6 +73,9 @@
 
 ### Fixed
 
+- Recognize only the standard plain null spellings: empty, `~`, `null`, `Null`, and `NULL`.
+  Other capitalization such as `NulL` remains a string instead of being rejected, converted
+  to an empty value, or skipped as a document ([#234](https://github.com/bourumir-wyngs/serde-saphyr/issues/234)).
 - Buffered `LastWins` values and inline merges no longer produce alias errors when no
   alias was used. Replay preserves per-node origins, including genuine nested aliases,
   ordinary value locations, and merge use-sites for `Spanned<T>`.
