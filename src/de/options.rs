@@ -323,6 +323,8 @@ pub struct Options {
     /// Activates YAML conventions common in robotics community. These extensions support
     /// conversion functions (deg, rad) and simple mathematical expressions such as deg(180),
     /// rad(pi), 1 + 2*(3 - 4/5), or rad(pi/2). `robotics` feature must also be enabled.
+    /// The `!degrees`, `!radians`, and `!time` tags select floating-point conversions.
+    /// `!time` represents a duration in seconds; the standard `!!timestamp` tag does not.
     pub angle_conversions: bool,
     /// If true, values that can be parsed as booleans or numbers are rejected as
     /// unquoted strings. This flag is intended for teams that want to enforce
@@ -338,7 +340,7 @@ pub struct Options {
     /// and `!!value` tags are accepted only on their exact scalar mapping keys, `<<`
     /// and `=` respectively. Known scalar, sequence, and mapping tags are accepted
     /// only on matching node kinds; this node-kind requirement is enforced regardless
-    /// of this option. Robotics-only `!degrees` and `!radians` tags are
+    /// of this option. Robotics-only `!degrees`, `!radians`, and `!time` tags are
     /// supported only when the `robotics` crate feature and
     /// [`Self::angle_conversions`] are both enabled. The `!include` tag is supported
     /// only when the `include` crate feature is enabled and an include resolver is

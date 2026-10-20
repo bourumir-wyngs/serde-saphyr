@@ -22,6 +22,12 @@
 
 ### Fixed
 
+- Validate recognized scalar tags consistently for numeric, boolean, character,
+  and enum targets, including externally tagged enum mapping keys (#235).
+  Incompatible tags and tagged null-like payloads no longer bypass validation.
+- Apply enabled robotics conversions to untyped reads, skipped fields, and
+  flattened values. The local `!time` duration tag is distinct from standard YAML
+  `!!timestamp`; robotics tags require the feature and `angle_conversions: true`.
 - Reject YAML null when deserializing sequences, mappings, and mapping-based structs instead
   of silently constructing empty values ([#233](https://github.com/bourumir-wyngs/serde-saphyr/issues/233)).
   Blank values and the plain spellings `~`, `null`, `Null`, and `NULL` are handled consistently.
