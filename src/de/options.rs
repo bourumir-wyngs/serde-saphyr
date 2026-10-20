@@ -294,8 +294,10 @@ pub struct Options {
     /// Enable legacy octal parsing where values starting with `0` are treated as base-8.
     /// They are deprecated in YAML 1.2. Default: false.
     pub legacy_octal_numbers: bool,
-    /// If true, interpret only the exact literals `true` and `false` as booleans.
-    /// YAML 1.1 forms like `yes`/`no`/`on`/`off` will be rejected and not inferred.
+    /// If true, accept only YAML 1.2 Core boolean spellings:
+    /// `true`, `True`, `TRUE`, `false`, `False`, and `FALSE`.
+    /// Other spellings, including YAML 1.1 forms such as `yes`/`no`/`on`/`off`,
+    /// are rejected for boolean targets and are not inferred as booleans.
     /// Default: false (accept YAML 1.1 boolean forms).
     pub strict_booleans: bool,
     /// When a field marked with the `!!binary` tag is deserialized into a `String`,

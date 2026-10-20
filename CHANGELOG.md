@@ -76,6 +76,9 @@
 - Buffered `LastWins` values and inline merges no longer produce alias errors when no
   alias was used. Replay preserves per-node origins, including genuine nested aliases,
   ordinary value locations, and merge use-sites for `Spanned<T>`.
+- `strict_booleans: true` now recognizes only the six YAML 1.2 Core boolean spellings.
+  Other capitalization such as `tRuE` remains a string during inference, is accepted
+  as unquoted text with `no_schema`, and is rejected for boolean targets.
 - Plain alias diagnostics explicitly label the use location with `(used at line X, column Y)`.
   The new `Localizer::alias_used_at` hook controls this suffix independently of failure and
   definition locations. Custom localizers that previously used `attach_location` to format

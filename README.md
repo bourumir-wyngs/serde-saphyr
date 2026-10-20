@@ -274,6 +274,9 @@ Buffered “last wins” entries use the same replay mechanism as struct fields:
 By default, if the target field is boolean, serde-saphyr will attempt to interpret standard YAML 1.1 values as boolean (not just `false` but also `no`, etc.).
 If you do not want this (or if you are parsing into a JSON Value where it might be incorrectly inferred), set `strict_booleans` to true in [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html).
 
+With `strict_booleans: true`, the accepted spellings are `true`, `True`, `TRUE`, `false`, `False`, and `FALSE`.
+Other capitalization, such as `tRuE`, remains a string during type inference and is rejected when the target is `bool`.
+
 ## Deserialization patterns and YAML types
 
 ### Rust types as schema
