@@ -13,7 +13,9 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 use crate::long_strings::{NAME_FOLD_STR, NAME_LIT_STR};
-use crate::tag::{YAML_TAG_NAMESPACE, simple_enum_variant_name, yaml_core_type_tag_name};
+use crate::tag::{
+    YAML_TAG_NAMESPACE, local_enum_variant_name, simple_enum_variant_name, yaml_core_type_tag_name,
+};
 
 #[cfg(feature = "comments")]
 use super::NAME_TUPLE_COMMENTED;
@@ -999,8 +1001,7 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Whether the tag staged for the next node is a tag that Serde's enum
     /// deserializer interprets as `variant`.
     ///
-    /// A YAML core type tag whose normalized name equals the variant is
-    /// ambiguous so wrong.
+    /// Global built-in type tags retain their type semantics and cannot select a variant.
     #[inline]
     fn pending_tag_selects_variant(&mut self, variant: &str) -> Result<bool> {
         let Some(tag) = self.state.pending_tag.as_mut() else {
@@ -1627,6 +1628,15 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
         _variant_index: u32,
         variant: &'static str,
     ) -> Result<()> {
+        if self
+            .state
+            .pending_tag
+            .as_ref()
+            .is_some_and(|tag| local_enum_variant_name(&tag.resolved) == Some(variant))
+            && self.pending_tag_selects_variant(variant)?
+        {
+            return self.serialize_unit();
+        }
         // If we are in a mapping value position, insert the deferred space after ':'
         self.write_space_if_pending()?;
         if self.settings.tagged_enums {

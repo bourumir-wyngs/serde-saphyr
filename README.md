@@ -348,6 +348,18 @@ With `Error`, `FirstWins`, and `LastWins`, YAML integer keys are parsed to their
 
 Deserialization into a string still preserves the original scalar spelling: `0xB` becomes `"0xB"`. “First wins” and “last wins” retain the selected entry's spelling and value; when integer keys require numeric comparison, “last wins” buffers the remaining mapping to select entries before passing them to Serde. Quoted keys and keys tagged `!!str` remain strings, so `"0xB"` and `"11"` are distinct keys. Duplicate checking uses YAML key identity; the target Rust map can still combine distinct YAML keys if they become equal after deserialization.
 
+Local tags retain their resolved identity and scalar spelling when comparing keys,
+including inside composite keys. For example, `!str foo` differs from `!!str foo`,
+and `!int 1` differs from `1`. This prevents local enum selectors from colliding
+with type annotations or untagged values. Likewise, `!int 0xB` and `!int 11` are
+distinct because their payload may be an enum's string value; use `!!int` for numeric
+key equality. Equivalent local tags written through different `%TAG` handles or
+verbatim syntax still compare equally.
+
+Discarded duplicate values have no requested Rust type. Their local tags may have
+been enum selectors, so deferred local tag shape checks do not run on those values.
+Global tag checks and `reject_unsupported_tags` still apply while reading the input.
+
 Buffered “last wins” entries use the same replay mechanism as struct fields: trailing comments and comments nested inside buffered values are not preserved, and nested `Spanned::referenced` locations use the buffered value's reference location. The default error policy and “first wins” do not require this additional buffering.
 
 ### Booleans
@@ -739,13 +751,28 @@ When constructing `Tagged<T>` directly, a tag beginning with `!` is local; every
 must have valid absolute URI syntax. Characters requiring URI escaping are percent-encoded on
 output.
 
+When deserializing an enum directly, a local tag matching a variant name selects that
+variant before its payload is interpreted. This includes names such as `!timestamp`,
+`!str`, `!int`, `!null`, `!seq`, and `!map`, even when the payload has a different shape
+from the ordinary meaning of that tag. For example, a variant renamed `timestamp` can
+be selected by `!timestamp` (unit) or `!timestamp text` (a string newtype). Unit variants
+require empty or null content. `Tagged<T>` serialization follows the same rule.
+
+Matching uses the resolved tag identity: `!<!timestamp>` is equivalent to the default
+`!timestamp`, whereas `!!timestamp` is the global YAML timestamp tag. `%TAG` directives
+can change that identity. Global type tags retain their normal meaning. Outside a
+matching enum context, existing local aliases retain their usual type semantics.
+Serde's generic buffering, including untagged enums, does not provide a variant list
+for this precedence rule. Include expansion and strict tag eligibility still apply.
+
 By default, unknown application-specific YAML tags remain available for tagged-enum handling and
 are otherwise ignored where possible. Set `reject_unsupported_tags: true` in `Options` to reject any
 explicit tag that serde-saphyr does not recognize. This strict mode also rejects custom tags used to
 select enum variants. YAML 1.1 `!!merge` and `!!value` tags remain accepted only on their exact
 scalar mapping keys, `<<` and `=` respectively; using either tag on a value, a collection, or any
-other scalar is rejected in strict mode. Known scalar, sequence, and mapping tags are likewise
-accepted only on matching node kinds, even when `reject_unsupported_tags` is false. Robotics-only
+other scalar is rejected in strict mode. Except when a matching local tag selects an enum
+variant, known scalar, sequence, and mapping tags are accepted only on matching node kinds,
+even when `reject_unsupported_tags` is false. Robotics-only
 `!degrees`, `!radians`, and `!time` tags require the `robotics` crate feature and
 `angle_conversions: true` for floating-point deserialization and untyped reads.
 

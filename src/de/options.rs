@@ -339,8 +339,10 @@ pub struct Options {
     /// This includes application-specific local and global tags. YAML 1.1 `!!merge`
     /// and `!!value` tags are accepted only on their exact scalar mapping keys, `<<`
     /// and `=` respectively. Known scalar, sequence, and mapping tags are accepted
-    /// only on matching node kinds; this node-kind requirement is enforced regardless
-    /// of this option. Robotics-only `!degrees`, `!radians`, and `!time` tags are
+    /// only on matching node kinds, unless a matching local tag selects a typed enum
+    /// variant. These shape checks are independent of this option; discarded values
+    /// have no target type and do not undergo deferred local tag shape checks.
+    /// Robotics-only `!degrees`, `!radians`, and `!time` tags are
     /// supported only when the `robotics` crate feature and
     /// [`Self::angle_conversions`] are both enabled. The `!include` tag is supported
     /// only when the `include` crate feature is enabled and an include resolver is
