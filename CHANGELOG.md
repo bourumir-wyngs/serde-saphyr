@@ -20,6 +20,9 @@
 ## 2.0.0
 
 ### YAML changes
+- Tags selecting unit enum variants now reject non-null payloads instead of silently
+  discarding them (#236). Use a bare variant name, a tag with empty content, or a
+  tag followed by `~` or `null`; quoted strings and collections are rejected.
 - Composite mapping keys are not compared regardless of entry order (thanks @yuxi-liu-wired)  .
 - Commented<T> now writes its output replacing characters not allowed in comments (non printable) by spaces.
 

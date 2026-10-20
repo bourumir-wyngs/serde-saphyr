@@ -2760,7 +2760,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                         None => Err(eof_with_loc(self.ev)),
                     }
                 } else if self.tagged_payload {
-                    skip_one_node_from_events(self.ev)
+                    de::Deserialize::deserialize(YamlDeserializer::new(self.ev, self.cfg))
                 } else {
                     Ok(())
                 }
@@ -2858,8 +2858,8 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         impl<'de> de::VariantAccess<'de> for TaggedVA<'de> {
             type Error = Error;
 
-            fn unit_variant(self) -> Result<(), Error> {
-                Ok(())
+            fn unit_variant(mut self) -> Result<(), Error> {
+                de::Deserialize::deserialize(YamlDeserializer::new(&mut *self.replay, self.cfg))
             }
 
             fn newtype_variant_seed<T>(mut self, seed: T) -> Result<T::Value, Error>

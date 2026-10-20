@@ -464,8 +464,11 @@ fn tagged_sequence_enum_captures_nested_containers_and_dispatches_variants() {
     let nested: EnumEdges = serde_saphyr::from_str("!Nested [[1, 2], [3]]").unwrap();
     assert_eq!(nested, EnumEdges::Nested(vec![vec![1, 2], vec![3]]));
 
-    let unit: EnumEdges = serde_saphyr::from_str("!Unit []").unwrap();
-    assert_eq!(unit, EnumEdges::Unit);
+    let unit_payload = serde_saphyr::from_str::<EnumEdges>("!Unit []").unwrap_err();
+    assert!(matches!(
+        unit_payload.without_snippet(),
+        Error::UnexpectedValueForUnit { .. }
+    ));
 
     let wrong_struct_shape = serde_saphyr::from_str::<EnumEdges>("!Struct [value, 1]").unwrap_err();
     assert!(matches!(
