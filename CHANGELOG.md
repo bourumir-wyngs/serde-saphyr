@@ -119,6 +119,12 @@
 - Made `huge_documents` and `serde_derived_types` enable `deserialize`, fixing isolated feature
   builds with `--no-default-features`, including autopkgtests of Debian team (as [observed](https://dfsg-new-queue.debian.org/reviews/rust-serde-saphyr)).
 
+### Documentation
+
+- Documented the `serde_yaml` migration caveat for null values in `String` fields,
+  including when to use `Option<String>`, quoted strings, or `!!str`
+  ([#229](https://github.com/bourumir-wyngs/serde-saphyr/issues/229)).
+
 ## 1.3.0 Maintenance and performance release
 
 ### Fixed
