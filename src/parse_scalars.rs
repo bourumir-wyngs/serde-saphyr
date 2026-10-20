@@ -16,6 +16,19 @@ pub(crate) fn yaml_trim(s: &str) -> &str {
     s.trim_matches([' ', '\t', '\r', '\n'])
 }
 
+/// Parse a YAML 1.2 Core boolean spelling.
+///
+/// Preserve the ASCII padding accepted during scalar conversion.
+#[cfg(feature = "deserialize")]
+#[inline]
+pub(crate) fn parse_yaml12_bool(s: &str) -> Option<bool> {
+    match yaml_trim(s) {
+        "true" | "True" | "TRUE" => Some(true),
+        "false" | "False" | "FALSE" => Some(false),
+        _ => None,
+    }
+}
+
 /// Parse a YAML 1.1 boolean from a &str (handles the "Norway problem").
 ///
 /// Accepted TRUE literals (case-insensitive): "y", "yes", "true", "on"
@@ -395,8 +408,7 @@ pub(crate) fn maybe_not_string(s: &str, style: &ScalarStyle, strict_booleans: bo
 #[inline]
 fn maybe_bool(s: &str, strict: bool) -> bool {
     if strict {
-        let s = yaml_trim(s);
-        s.eq_ignore_ascii_case("true") || s.eq_ignore_ascii_case("false")
+        parse_yaml12_bool(s).is_some()
     } else {
         parse_yaml11_bool(s).is_ok()
     }

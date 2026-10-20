@@ -41,8 +41,8 @@ use crate::location::Location;
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::location::Locations;
 use crate::parse_scalars::{
-    leading_zero_decimal, maybe_not_string, parse_int_signed, parse_int_unsigned,
-    parse_yaml11_bool, parse_yaml12_float, scalar_is_null, scalar_is_nullish,
+    leading_zero_decimal, maybe_not_string, parse_int_signed, parse_int_unsigned, parse_yaml11_bool,
+    parse_yaml12_bool, parse_yaml12_float, scalar_is_null, scalar_is_nullish,
     try_parse_float_incl_overflow, yaml_trim,
 };
 
@@ -879,13 +879,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
             // Try booleans.
             if self.cfg.strict_booleans {
-                let tt = yaml_trim(&effective);
-                if tt.eq_ignore_ascii_case("true") {
-                    return visitor.visit_bool(true);
-                } else if tt.eq_ignore_ascii_case("false") {
-                    return visitor.visit_bool(false);
+                if let Some(b) = parse_yaml12_bool(&effective) {
+                    return visitor.visit_bool(b);
                 }
-                // otherwise not a bool in strict mode; continue to numbers/float/string
             } else if let Ok(b) = parse_yaml11_bool(&effective) {
                 return visitor.visit_bool(b);
             }
@@ -957,7 +953,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         }
     }
 
-    /// Parse a YAML 1.1 boolean literal into `bool`.
+    /// Parse a boolean literal according to `strict_booleans`.
     ///
     /// Caller: Serde when target expects `bool`.
     /// Flow: scalar text → `Visitor::visit_bool`.
@@ -965,15 +961,8 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         let (s, tag, location) = self.take_scalar_cow_event()?;
         validate_core_scalar_tag(tag, SfTag::Bool, "boolean", location)?;
         let s = s.as_ref();
-        let t = yaml_trim(s);
         let b: bool = if self.cfg.strict_booleans {
-            if t.eq_ignore_ascii_case("true") {
-                true
-            } else if t.eq_ignore_ascii_case("false") {
-                false
-            } else {
-                return Err(Error::InvalidBooleanStrict { location });
-            }
+            parse_yaml12_bool(s).ok_or(Error::InvalidBooleanStrict { location })?
         } else {
             parse_yaml11_bool(s).map_err(|_| Error::InvalidScalar {
                 ty: "boolean",

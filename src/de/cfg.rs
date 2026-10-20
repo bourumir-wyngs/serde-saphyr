@@ -11,7 +11,7 @@ pub(crate) struct Cfg {
     pub(crate) merge_keys: MergeKeyPolicy,
     /// If true, accept legacy octal numbers that start with `0`.
     pub(crate) legacy_octal_numbers: bool,
-    /// If true, only accept exact literals `true`/`false` as booleans.
+    /// If true, accept only the six YAML 1.2 Core boolean spellings.
     pub(crate) strict_booleans: bool,
     /// If true, ROS-compliant angle resolver is enabled
     pub(crate) angle_conversions: bool,
