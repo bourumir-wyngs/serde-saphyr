@@ -89,7 +89,7 @@ struct FlattenedTaggedMappings {
 enum TaggedKey {
     First { x: u32 },
     Second { x: u32 },
-    Unit,
+    Empty {},
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
@@ -238,10 +238,10 @@ fn differently_tagged_mapping_keys_are_not_duplicates() {
 
 #[test]
 fn custom_tagged_empty_mapping_key_is_not_an_implicit_empty_key() {
-    let actual: BTreeMap<TaggedKey, u32> = serde_saphyr::from_str("? !Unit {}\n: 10\n")
+    let actual: BTreeMap<TaggedKey, u32> = serde_saphyr::from_str("? !Empty {}\n: 10\n")
         .expect("a tagged empty mapping must remain an enum key payload");
 
-    assert_eq!(actual, BTreeMap::from([(TaggedKey::Unit, 10)]));
+    assert_eq!(actual, BTreeMap::from([(TaggedKey::Empty {}, 10)]));
 }
 
 #[test]
@@ -413,10 +413,26 @@ fn tagged_mapping_alias_preserves_nested_use_site_location() {
 }
 
 #[test]
-fn tagged_unit_mapping_payload_is_drained_before_the_next_item() {
+fn tagged_unit_mapping_payload_is_rejected() {
+    let error = serde_saphyr::from_str::<Vec<TaggedMapping>>(
+        "- !unit {ignored: [1, 2]}\n- !struct\n  a: 123\n  b: 456\n",
+    )
+    .expect_err("a unit variant must not discard a mapping payload");
+
+    assert!(matches!(
+        error.without_snippet(),
+        serde_saphyr::Error::UnexpectedValueForUnit { .. }
+    ));
+}
+
+#[rstest]
+#[case::empty("")]
+#[case::tilde("~")]
+#[case::null("null")]
+fn tagged_unit_null_is_consumed_before_the_next_item(#[case] payload: &str) {
+    let yaml = format!("- !unit {payload}\n- !struct\n  a: 123\n  b: 456\n");
     let actual: Vec<TaggedMapping> =
-        serde_saphyr::from_str("- !unit {ignored: [1, 2]}\n- !struct\n  a: 123\n  b: 456\n")
-            .expect("tagged mapping sequence should deserialize");
+        serde_saphyr::from_str(&yaml).expect("a null unit payload should deserialize");
 
     assert_eq!(
         actual,
