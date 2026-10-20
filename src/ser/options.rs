@@ -75,7 +75,7 @@ pub struct SerializerOptions {
     /// null values, so deserializing them back into collection types returns an error.
     /// The setting remains supported for compatibility.
     #[deprecated(
-        since = "2.0.0",
+        since = "2.0.1",
         note = "leave this at its default true; false emits null for empty block collections without tags or anchors, preventing round-trips"
     )]
     pub empty_as_braces: bool,
