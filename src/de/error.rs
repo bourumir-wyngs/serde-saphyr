@@ -216,10 +216,7 @@ pub enum SnippetMode {
 }
 
 /// Options for deferred error rendering.
-///
-/// Prefer constructing this via the [`render_options!`](crate::render_options!) macro
-/// instead of a struct literal. This keeps call sites stable even if new fields are added
-/// in the future (this type is `#[non_exhaustive]`).
+/// Construct this via the [`render_options!`](crate::render_options!) macro:
 ///
 /// ```rust
 /// use serde_saphyr::{DefaultMessageFormatter, SnippetMode};
