@@ -785,24 +785,15 @@ When constructing `Tagged<T>` directly, a tag beginning with `!` is local; every
 must have valid absolute URI syntax. Characters requiring URI escaping are percent-encoded on
 output.
 
-When deserializing an enum, a local tag matching a variant name selects that
+When deserializing an enum directly, a local tag matching a variant name selects that
 variant before its payload is interpreted. This includes names such as `!timestamp`,
 `!str`, `!int`, `!null`, `!seq`, and `!map`, even when the payload has a different shape
 from the ordinary meaning of that tag. For example, a variant renamed `timestamp` can
 be selected by `!timestamp` (unit) or `!timestamp text` (a string newtype). Unit variants
 require empty or null content. `Tagged<T>` serialization follows the same rule.
-
-An explicit local tag represents a present value inside `Option<T>`. The inner type
-receives the tag, so `!null payload` can select `Some(Enum::Null(payload))` and `!now`
-can select a unit variant. This applies to ordinary optional types too: `!null` is
-passed to their inner type instead of becoming `None`. Use untagged null or the global
-`!!null` tag for `None`. Once an enum consumes its selector, an untagged null payload
-still becomes `None`; for example, `!const null` can represent `Some(Enum::Const(None))`.
-
-Serializing `Tagged(None, Some(local_tag))` returns `SerializeError::LocalTagOnNone`:
-that YAML would represent a present tagged value when read back. Use an absent tag
-or the resolved global null identity (`tag:yaml.org,2002:null`) for a tagged `None`.
-Null payloads inside a selected enum variant remain supported, including `NullableTilde`.
+See [unsupported features](#unsupported-features) for null-like selectors inside
+options. Multi-document APIs retain explicitly local-tagged documents and pass them
+to the target deserializer; untagged and global null documents are still skipped.
 
 Matching uses the resolved tag identity: `!<!timestamp>` is equivalent to the default
 `!timestamp`, whereas `!!timestamp` is the global YAML timestamp tag. `%TAG` directives
@@ -1385,6 +1376,8 @@ Safety hardening measures with this feature enabled include limits on maximal ex
 
 ### Unsupported features
 
+- Null resolution happens before the inner enum is known in `Option<E>` and `NullableTilde<E>`. Scalar `!null` values, including `!null payload`, and custom tags with plain null-like content, such as `!now` or `!now null`, become `None` rather than selecting a variant. Consequently, some `Tagged<Option<E>>` values containing `Some` do not round-trip. Deserialize `E` directly, or use an externally tagged mapping such as `{'null': payload}` or `{now: null}`. Existing null handling and serialization of locally tagged `None` values remain supported for compatibility.
+- Multi-document APIs retain explicitly local-tagged documents, but `Option<E>` still applies the limitation above: the listed scalar forms produce retained `None` entries. Use `E` directly or an externally tagged mapping to select the variant.
 - Common Serde renames made to follow naming conventions (case changes, snake_case, kebab-case, r# stripping) are supported in snippets, as long as they do not introduce ambiguity. Arbitrary renames, flattening, aliases and other complex manipulations possible with serde are not. Parsing and validation will still work, but error messages for arbitrarily renamed fields will only show the Rust path.
 - [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Spanned.html) deserializes successfully within variants of untagged or internally tagged enums, but Serde buffers the values without preserving YAML location of the possible error. Values passing through `#[serde(flatten)]` buffering can also lose their locations. Wrap the entire enum in `Spanned<T>` to retain the enum's location, or use externally tagged enums (the default).
 - Anchors are not fully compatible with `#[serde(flatten)]` directive (this is Serde limitation we can't work around). Deserialization succeeds, but full strong-pointer identity may be lost for nested anchors inside flattened payloads.
