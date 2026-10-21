@@ -46,7 +46,6 @@ use crate::parse_scalars::{
     parse_yaml11_bool, parse_yaml12_bool, parse_yaml12_float, scalar_is_null, scalar_is_nullish,
     try_parse_float_incl_overflow, yaml_trim,
 };
-use crate::tag::is_specific_local_tag;
 
 struct TupleLenExpected {
     len: usize,
@@ -1347,11 +1346,10 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
     /// Deserialize an `Option<T>`.
     ///
-    /// **What is treated as `None`?** End-of-input, container end, a global null tag,
-    /// or a plain empty / `~` / `null` scalar permitting implicit null resolution.
+    /// **What is treated as `None`?** End-of-input, container end, an explicitly
+    /// tagged null, or a plain empty / `~` / `null` scalar permitting implicit null resolution.
     /// Explicit non-null core, binary, timestamp, and robotics tags are passed to the inner
-    /// value's deserializer. Explicit local tags always represent `Some`, allowing the inner
-    /// type to interpret a selector such as `!null` or `!now` before null resolution.
+    /// value's deserializer.
     fn deserialize_option<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Only when Serde asks for Option<T> do we interpret YAML null-like scalars as None.
         // Special-case for map keys: treat an explicit empty key captured as an empty mapping node
@@ -1378,16 +1376,6 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 None => return Err(eof_with_loc(self.ev)),
             }
             return visitor.visit_none();
-        }
-
-        // An explicit local tag marks a present value. The option visitor does
-        // not expose its inner type, so let that type decide what the tag means.
-        if let Some(Ev::Scalar {
-            raw_tag: Some(tag), ..
-        }) = self.ev.peek()?
-            && is_specific_local_tag(tag)
-        {
-            return visitor.visit_some(self);
         }
 
         if let Some((value, tag, style, _location)) = self.peek_effective_scalar()?

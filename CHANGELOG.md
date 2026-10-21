@@ -30,11 +30,11 @@
   so local selectors no longer collide with global type annotations or untagged
   values. This also distinguishes ordinary `!str foo` from `!!str foo`, and keeps
   local `!int` payload spellings distinct; global `!!int` keys still compare numerically.
-- Preserve explicit local tags through `Option<T>` as present values, including
-  `!null` enum payloads and empty unit selectors such as `!now`. Untagged null and
-  global `!!null` still produce `None`. Serializing a locally tagged `None` now
-  returns `SerializeError::LocalTagOnNone`; null payloads inside selected enum
-  variants remain supported.
+  Null-like selectors inside optional enums retain their existing limitations,
+  documented in the README's unsupported features section.
+- Preserve explicitly local-tagged documents in multi-document APIs instead of
+  skipping them as null before deserializing the target type. Untagged and global
+  null documents are still skipped; optional targets retain their existing null handling.
 - Validate recognized scalar tags consistently for numeric, boolean, character,
   and enum targets, including externally tagged enum mapping keys (#235).
   Incompatible tags and tagged null-like payloads no longer bypass validation.
