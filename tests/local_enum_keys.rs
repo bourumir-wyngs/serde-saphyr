@@ -273,12 +273,38 @@ fn local_and_global_tags_keep_distinct_yaml_identity_for_ordinary_keys(
     )]
     duplicate_keys: DuplicateKeyPolicy,
 ) {
-    // The YAML keys differ by resolved tag identity. Their Rust String values
-    // coincide, so insertion in this target map determines the final value.
+    // Duplicate policies compare YAML key identities before conversion.
+    // !str foo and !!str foo are distinct YAML keys, so neither filters the
+    // other. Both become the Rust String "foo"; BTreeMap's later insertion
+    // replaces the earlier value even under FirstWins.
     let actual: BTreeMap<String, u8> = from_str_with_options(
         "!str foo: 1\n!!str foo: 2\n",
         options! { duplicate_keys: duplicate_keys },
     )
     .unwrap();
     assert_eq!(actual, BTreeMap::from([("foo".into(), 2)]));
+}
+
+#[rstest]
+#[case::error(DuplicateKeyPolicy::Error, None)]
+#[case::first(DuplicateKeyPolicy::FirstWins, Some(2))]
+#[case::last(DuplicateKeyPolicy::LastWins, Some(3))]
+fn duplicate_policy_precedes_rust_key_conversion(
+    #[case] duplicate_keys: DuplicateKeyPolicy,
+    #[case] expected: Option<u8>,
+) {
+    // !str a and a are distinct YAML keys but become the same Rust String.
+    // Only the second and third entries are YAML duplicates. FirstWins drops
+    // a: 3, then BTreeMap's insertion of a: 2 replaces the value from !str a: 1.
+    let actual = from_str_with_options::<BTreeMap<String, u8>>(
+        "{!str a: 1, a: 2, a: 3}",
+        options! { duplicate_keys: duplicate_keys },
+    );
+    match expected {
+        Some(value) => assert_eq!(actual.unwrap(), BTreeMap::from([("a".into(), value)])),
+        None => assert!(matches!(
+            actual.unwrap_err().without_snippet(),
+            Error::DuplicateMappingKey { .. }
+        )),
+    }
 }
