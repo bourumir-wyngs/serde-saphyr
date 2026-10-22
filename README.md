@@ -389,8 +389,8 @@ integer keys such as `0xB` and `11` already compare by numeric value, as do keys
 explicitly tagged `!!int`. Equivalent local tags written through different `%TAG`
 handles or verbatim syntax still compare equally.
 
-Discarded duplicate values have no requested Rust type. Their local tags may have
-been enum selectors, so deferred local tag shape checks do not run on those values.
+Discarded duplicate values have no requested Rust type. Their robotics extension
+tags may have been enum selectors, so deferred robotics shape checks do not run on them.
 Global tag checks and `reject_unsupported_tags` still apply while reading the input.
 
 Buffered “last wins” entries use the same replay mechanism as struct fields: trailing comments and comments nested inside buffered values are not preserved, and nested `Spanned::referenced` locations use the buffered value's reference location. The default error policy and “first wins” do not require this additional buffering.
@@ -788,8 +788,9 @@ output.
 
 When deserializing an enum directly, a local tag matching a variant name selects that
 variant before its payload is interpreted. This includes names such as `!timestamp`,
-`!str`, `!int`, `!null`, `!seq`, and `!map`, even when the payload has a different shape
-from the ordinary meaning of that tag. For example, a variant renamed `timestamp` can
+`!str`, `!int`, `!null`, `!seq`, and `!map`. These are application tags,
+not standard YAML type annotations, and impose no built-in payload shape.
+For example, a variant renamed `timestamp` can
 be selected by `!timestamp` (unit) or `!timestamp text` (a string newtype). Unit variants
 require empty or null content. `Tagged<T>` serialization follows the same rule.
 See [unsupported features](#unsupported-features) for null-like selectors inside
@@ -798,19 +799,32 @@ to the target deserializer; untagged and global null documents are still skipped
 
 Matching uses the resolved tag identity: `!<!timestamp>` is equivalent to the default
 `!timestamp`, whereas `!!timestamp` is the global YAML timestamp tag. `%TAG` directives
-can change that identity. Global type tags retain their normal meaning. Outside a
-matching enum context, existing local aliases retain their usual type semantics.
+can change that identity. Only resolved standard tags, such as `!!str` and `!!int`,
+apply the corresponding YAML type semantics. Local `!str`, `!int`, `!bool`, `!float`,
+`!null`, `!seq`, `!map`, `!timestamp`, and `!binary` are ordinary application tags;
+outside a matching enum context they follow the unsupported-tag policy below.
+
+The standalone `!` is a separate non-specific tag, not an enum selector. It resolves
+scalars as strings and collections as ordinary sequences or mappings, without changing
+how their children resolve. For example, `! [12, ! 12]` contains a number and a string.
+This behavior is unchanged by `%TAG` directives; bare `!!` is not another spelling of it.
+
+Migration: replace former local type aliases with standard tags (`!int` becomes `!!int`,
+`!binary` becomes `!!binary`, and so on); quote strings or use `!!str`. Tags such as
+`!<tag:yaml.org,2002:!str>` are also distinct from standard type tags. Intentional
+application extensions (`!time`, `!degrees`, `!radians`, and `!include`) retain their
+existing meanings. Matching local robotics tags can still select typed enum variants.
 Serde's generic buffering, including untagged enums, does not provide a variant list
-for this precedence rule. Include expansion and strict tag eligibility still apply.
+for that precedence rule. Include expansion and strict tag eligibility still apply.
 
 By default, unknown application-specific YAML tags remain available for tagged-enum handling and
 are otherwise ignored where possible. Set `reject_unsupported_tags: true` in `Options` to reject any
 explicit tag that serde-saphyr does not recognize. This strict mode also rejects custom tags used to
 select enum variants. YAML 1.1 `!!merge` and `!!value` tags remain accepted only on their exact
 scalar mapping keys, `<<` and `=` respectively; using either tag on a value, a collection, or any
-other scalar is rejected in strict mode. Except when a matching local tag selects an enum
-variant, known scalar, sequence, and mapping tags are accepted only on matching node kinds,
-even when `reject_unsupported_tags` is false. Robotics-only
+other scalar is rejected in strict mode. Standard scalar, sequence, and mapping tags
+are accepted only on matching node kinds, even when `reject_unsupported_tags` is false.
+Local robotics tag shape checks are deferred until a non-enum consumer is known. Robotics-only
 `!degrees`, `!radians`, and `!time` tags require the `robotics` crate feature and
 `angle_conversions: true` for floating-point deserialization and untyped reads.
 
@@ -1377,8 +1391,8 @@ Safety hardening measures with this feature enabled include limits on maximal ex
 
 ### Unsupported features
 
-- Null resolution happens before the inner enum is known in `Option<E>` and `NullableTilde<E>`. Scalar `!null` values, including `!null payload`, and custom tags with plain null-like content, such as `!now` or `!now null`, become `None` rather than selecting a variant. Consequently, some `Tagged<Option<E>>` values containing `Some` do not round-trip. Deserialize `E` directly, or use an externally tagged mapping such as `{'null': payload}` or `{now: null}`. Existing null handling and serialization of locally tagged `None` values remain supported for compatibility.
-- Multi-document APIs retain explicitly local-tagged documents, but `Option<E>` still applies the limitation above: the listed scalar forms produce retained `None` entries. Use `E` directly or an externally tagged mapping to select the variant.
+- Null resolution happens before the inner enum is known in `Option<E>` and `NullableTilde<E>`. Application tags with plain null-like content, such as `!null`, `!now`, `!timestamp`, or `!now null`, become `None` rather than selecting a variant. A non-null payload such as `!null payload` reaches the inner enum; the local name `null` does not force null. Consequently, some `Tagged<Option<E>>` values containing `Some` do not round-trip. Deserialize `E` directly, or use an externally tagged mapping such as `{'null': payload}` or `{now: null}`. Serialization of locally tagged `None` values remains supported.
+- Multi-document APIs retain explicitly local-tagged documents. For `Option<E>`, plain null-like payloads produce retained `None` entries; non-null payloads reach the inner enum. Use `E` directly or an externally tagged mapping to select a unit variant.
 - Common Serde renames made to follow naming conventions (case changes, snake_case, kebab-case, r# stripping) are supported in snippets, as long as they do not introduce ambiguity. Arbitrary renames, flattening, aliases and other complex manipulations possible with serde are not. Parsing and validation will still work, but error messages for arbitrarily renamed fields will only show the Rust path.
 - [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Spanned.html) deserializes successfully within variants of untagged or internally tagged enums, but Serde buffers the values without preserving YAML location of the possible error. Values passing through `#[serde(flatten)]` buffering can also lose their locations. Wrap the entire enum in `Spanned<T>` to retain the enum's location, or use externally tagged enums (the default).
 - Anchors are not fully compatible with `#[serde(flatten)]` directive (this is Serde limitation we can't work around). Deserialization succeeds, but full strong-pointer identity may be lost for nested anchors inside flattened payloads.

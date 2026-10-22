@@ -530,11 +530,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
     }
 
     fn take_scalar_view(&mut self) -> Result<ScalarView<'de>, Error> {
-        let event = self.ev.next()?;
-        if let Some(event) = &event {
-            validate_node_tag_kind(event)?;
-        }
-        match event {
+        match self.ev.next()? {
             Some(Ev::Scalar {
                 value,
                 tag,
@@ -549,10 +545,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
 
     fn take_peeked_scalar_view(&mut self, view: ScalarView<'de>) -> Result<ScalarView<'de>, Error> {
         match self.ev.next()? {
-            Some(event @ Ev::Scalar { .. }) => {
-                validate_node_tag_kind(&event)?;
-                Ok(view)
-            }
+            Some(Ev::Scalar { .. }) => Ok(view),
             Some(other) => Err(Error::unexpected("string scalar").with_location(other.location())),
             None => Err(eof_with_loc(self.ev)),
         }
@@ -2539,8 +2532,8 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     tagged_enum = Some((tag_name, location));
                 }
                 // Resolve the variant before interpreting the payload's tag or spelling.
-                // A matching local tag selects an enum even when its name is also a
-                // supported scalar or collection alias outside this typed context.
+                // The selected variant determines the payload type, including
+                // no_schema checks and supported robotics conversions.
                 if let Some((ref tag_name, tag_loc)) = tagged_enum
                     && variants.contains(&tag_name.as_str())
                 {
@@ -2560,10 +2553,6 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     tagged_enum = None; // prevent mismatch check
                     Mode::TaggedNewtype(variant_name, replay)
                 } else {
-                    let Some(event) = self.ev.peek()? else {
-                        return Err(eof_with_loc(self.ev));
-                    };
-                    validate_node_tag_kind(event)?;
                     let Some(view) = self.peek_scalar_view()? else {
                         return Err(eof_with_loc(self.ev));
                     };

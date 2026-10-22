@@ -124,7 +124,18 @@ fn ordinary_newtype_keys_retain_enum_context() {
 #[case("<<: !str [{x: 1}]")]
 #[case("<<: [!int {x: 1}]")]
 #[case("<<: {<<: !int {x: 1}}")]
-fn merge_containers_still_validate_tag_shapes(#[case] yaml: &str) {
+fn merge_containers_ignore_application_tag_names(#[case] yaml: &str) {
+    let actual: BTreeMap<String, u8> = serde_saphyr::from_str(yaml).unwrap();
+    assert_eq!(actual, BTreeMap::from([("x".into(), 1)]));
+}
+
+#[rstest]
+#[case("<<: !time {x: 1}")]
+#[case("<<: !degrees [{x: 1}]")]
+#[case("<<: [!radians {x: 1}]")]
+#[case("<<: {<<: !time {x: 1}}")]
+#[case("<<: !!int {x: 1}")]
+fn merge_containers_validate_standard_and_robotics_shapes(#[case] yaml: &str) {
     let error = serde_saphyr::from_str::<BTreeMap<String, u8>>(yaml).unwrap_err();
     assert!(matches!(
         error.without_snippet(),

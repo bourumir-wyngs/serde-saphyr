@@ -63,8 +63,11 @@ fn local_null_tag_keeps_the_enum_payload() {
 
 #[test]
 fn retained_documents_keep_option_null_resolution() {
-    for result in documents::<Option<Command>>(OPTIONAL_DOCUMENTS) {
-        assert_eq!(result.unwrap(), [None, None, None]);
+    for result in documents::<Option<Payload>>(OPTIONAL_DOCUMENTS) {
+        assert_eq!(
+            result.unwrap(),
+            [None, None, Some(Payload::Null("payload".into()))]
+        );
     }
 }
 
@@ -139,10 +142,14 @@ fn garde_keeps_payloads_and_option_none_documents() {
             [Validated(Payload::Null("payload".into()))]
         );
     }
-    for result in garde_documents::<Option<Command>>(OPTIONAL_DOCUMENTS) {
+    for result in garde_documents::<Option<Payload>>(OPTIONAL_DOCUMENTS) {
         assert_eq!(
             result.unwrap(),
-            [Validated(None), Validated(None), Validated(None)]
+            [
+                Validated(None),
+                Validated(None),
+                Validated(Some(Payload::Null("payload".into())))
+            ]
         );
     }
 }
@@ -190,10 +197,14 @@ fn validator_keeps_payloads_and_option_none_documents() {
             [Validated(Payload::Null("payload".into()))]
         );
     }
-    for result in validator_documents::<Option<Command>>(OPTIONAL_DOCUMENTS) {
+    for result in validator_documents::<Option<Payload>>(OPTIONAL_DOCUMENTS) {
         assert_eq!(
             result.unwrap(),
-            [Validated(None), Validated(None), Validated(None)]
+            [
+                Validated(None),
+                Validated(None),
+                Validated(Some(Payload::Null("payload".into())))
+            ]
         );
     }
 }
