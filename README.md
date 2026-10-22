@@ -384,9 +384,10 @@ Local tags retain their resolved identity and scalar spelling when comparing key
 including inside composite keys. For example, `!str foo` differs from `!!str foo`,
 and `!int 1` differs from `1`. This prevents local enum selectors from colliding
 with type annotations or untagged values. Likewise, `!int 0xB` and `!int 11` are
-distinct because their payload may be an enum's string value; use `!!int` for numeric
-key equality. Equivalent local tags written through different `%TAG` handles or
-verbatim syntax still compare equally.
+distinct because their payload may be an enum's string value. Untagged, unquoted
+integer keys such as `0xB` and `11` already compare by numeric value, as do keys
+explicitly tagged `!!int`. Equivalent local tags written through different `%TAG`
+handles or verbatim syntax still compare equally.
 
 Discarded duplicate values have no requested Rust type. Their local tags may have
 been enum selectors, so deferred local tag shape checks do not run on those values.
