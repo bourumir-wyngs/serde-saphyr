@@ -113,57 +113,39 @@ pub(crate) enum TagNodeKind {
 
 static TAG_LOOKUP_MAP: LazyLock<BTreeMap<&'static str, SfTag>> = LazyLock::new(|| {
     BTreeMap::from([
-        // Core-like spellings kept for compatibility. Resolved YAML 1.2.2 Core Schema tags are
-        // handled first via `Tag::core_suffix()`, which is independent of source handle spelling.
+        // Standard tags use resolved identities. Local tags with identical suffixes
+        // are application tags and must not activate standard YAML types.
         // int
         ("!!int", SfTag::Int),
-        ("!int", SfTag::Int),
         ("tag:yaml.org,2002:int", SfTag::Int),
-        ("tag:yaml.org,2002:!int", SfTag::Int),
         // float
         ("!!float", SfTag::Float),
-        ("!float", SfTag::Float),
         ("tag:yaml.org,2002:float", SfTag::Float),
-        ("tag:yaml.org,2002:!float", SfTag::Float),
         // bool
         ("!!bool", SfTag::Bool),
-        ("!bool", SfTag::Bool),
         ("tag:yaml.org,2002:bool", SfTag::Bool),
-        ("tag:yaml.org,2002:!bool", SfTag::Bool),
         // null
         ("!!null", SfTag::Null),
-        ("!null", SfTag::Null),
         ("tag:yaml.org,2002:null", SfTag::Null),
-        ("tag:yaml.org,2002:!null", SfTag::Null),
         // seq
         ("!!seq", SfTag::Seq),
-        ("!seq", SfTag::Seq),
         ("tag:yaml.org,2002:seq", SfTag::Seq),
-        ("tag:yaml.org,2002:!seq", SfTag::Seq),
         // map
         ("!!map", SfTag::Map),
-        ("!map", SfTag::Map),
         ("tag:yaml.org,2002:map", SfTag::Map),
-        ("tag:yaml.org,2002:!map", SfTag::Map),
         // string (null key or value with this tag can be serialized into empty string)
         ("!!str", SfTag::String),
-        ("!str", SfTag::String),
         ("tag:yaml.org,2002:str", SfTag::String),
-        ("tag:yaml.org,2002:!str", SfTag::String),
         // standard timestamp
         ("!!timestamp", SfTag::TimeStamp),
-        ("!timestamp", SfTag::TimeStamp),
         ("tag:yaml.org,2002:timestamp", SfTag::TimeStamp),
-        ("tag:yaml.org,2002:!timestamp", SfTag::TimeStamp),
         // time duration aliases (custom)
         ("!time", SfTag::Time),
         ("tag:yaml.org,2002:time", SfTag::Time),
         ("tag:yaml.org,2002:!time", SfTag::Time),
         // binary
         ("!!binary", SfTag::Binary),
-        ("!binary", SfTag::Binary),
         ("tag:yaml.org,2002:binary", SfTag::Binary),
-        ("tag:yaml.org,2002:!binary", SfTag::Binary),
         // include
         ("!include", SfTag::Include),
         ("tag:yaml.org,2002:include", SfTag::Include),
@@ -334,9 +316,9 @@ mod tests {
     #[case::local_time(("!", "time", "!"), SfTag::Time)]
     #[case::global_time(("tag:yaml.org,2002:", "time", "!!"), SfTag::Time)]
     #[case::global_local_time(("tag:yaml.org,2002:", "!time", "!!"), SfTag::Time)]
-    #[case::local_timestamp(("!", "timestamp", "!"), SfTag::TimeStamp)]
+    #[case::local_timestamp(("!", "timestamp", "!"), SfTag::Other)]
     #[case::global_timestamp(("tag:yaml.org,2002:", "timestamp", "!!"), SfTag::TimeStamp)]
-    #[case::global_local_timestamp(("tag:yaml.org,2002:", "!timestamp", "!!"), SfTag::TimeStamp)]
+    #[case::global_local_timestamp(("tag:yaml.org,2002:", "!timestamp", "!!"), SfTag::Other)]
     fn distinguishes_time_durations_from_timestamps(
         #[case] parts: (&str, &str, &str),
         #[case] expected: SfTag,
@@ -345,7 +327,28 @@ mod tests {
         let tag = sf_tag(Tag::with_original_handle(prefix, suffix, handle));
         assert_eq!(tag, expected);
         assert_eq!(tag.is_robotics(), expected == SfTag::Time);
-        assert!(!tag.can_parse_into_string());
+        assert_eq!(tag.can_parse_into_string(), expected == SfTag::Other);
+    }
+
+    #[rstest]
+    #[case("int")]
+    #[case("float")]
+    #[case("bool")]
+    #[case("null")]
+    #[case("seq")]
+    #[case("map")]
+    #[case("str")]
+    #[case("timestamp")]
+    #[case("binary")]
+    fn local_type_names_do_not_select_standard_types(#[case] name: &str) {
+        assert_eq!(
+            sf_tag(Tag::with_original_handle("!", name, "!")),
+            SfTag::Other
+        );
+        assert_eq!(
+            sf_tag(Tag::with_original_handle("tag:yaml.org,2002:", &format!("!{name}"), "!!")),
+            SfTag::Other
+        );
     }
 
     #[test]
