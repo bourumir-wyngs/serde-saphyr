@@ -759,9 +759,14 @@ not standard YAML type annotations, and impose no built-in payload shape.
 For example, a variant renamed `timestamp` can
 be selected by `!timestamp` (unit) or `!timestamp text` (a string newtype). Unit variants
 require empty or null content. `Tagged<T>` serialization follows the same rule.
-See [unsupported features](#unsupported-features) for null-like selectors inside
-options. Multi-document APIs retain explicitly local-tagged documents and pass them
-to the target deserializer; untagged and global null documents are still skipped.
+`Option<E>` preserves the same selector and payload: `!timestamp` becomes
+`Some(E::Timestamp)`, and `!maybe null` becomes `Some(E::Maybe(None))` when `Maybe`
+has an optional payload. Untagged empty scalars, `~`, `null`, and the standard `!!null`
+tag still represent `None`. Unknown selectors and invalid payloads produce the same
+errors as they do without the outer `Option`.
+
+Multi-document APIs retain application-tagged documents and pass them to the target
+deserializer; only untagged and standard-tagged null documents are skipped.
 
 Matching uses the resolved tag identity: `!<!timestamp>` is equivalent to the default
 `!timestamp`, whereas `!!timestamp` is the global YAML timestamp tag. `%TAG` directives
@@ -780,6 +785,15 @@ Migration: replace former local type aliases with standard tags (`!int` becomes 
 `!<tag:yaml.org,2002:!str>` are also distinct from standard type tags. Intentional
 application extensions (`!time`, `!degrees`, `!radians`, and `!include`) retain their
 existing meanings. Matching local robotics tags can still select typed enum variants.
+
+An explicit application tag denotes a present value, including inside `NullableTilde<T>`
+and `Tagged<Option<T>>`. Attaching `!foo` to `None` still emits `!foo null`, but that
+node no longer deserializes as absence: its payload must be accepted by the inner type.
+For example, `Tagged<Option<String>>` rejects it rather than returning `None`;
+`Tagged<Option<()>>` reads it as `Some(())`. Use an untagged or standard-tagged null
+for absence, or an enum variant with an optional payload for a present tagged value
+whose payload is absent.
+
 Serde's generic buffering, including untagged enums, does not provide a variant list
 for that precedence rule. Include expansion and strict tag eligibility still apply.
 
@@ -1357,8 +1371,6 @@ Safety hardening measures with this feature enabled include limits on maximal ex
 
 ### Unsupported features
 
-- Null resolution happens before the inner enum is known in `Option<E>` and `NullableTilde<E>`. Application tags with plain null-like content, such as `!null`, `!now`, `!timestamp`, or `!now null`, become `None` rather than selecting a variant. A non-null payload such as `!null payload` reaches the inner enum; the local name `null` does not force null. Consequently, some `Tagged<Option<E>>` values containing `Some` do not round-trip. Deserialize `E` directly, or use an externally tagged mapping such as `{'null': payload}` or `{now: null}`. Serialization of locally tagged `None` values remains supported.
-- Multi-document APIs retain explicitly local-tagged documents. For `Option<E>`, plain null-like payloads produce retained `None` entries; non-null payloads reach the inner enum. Use `E` directly or an externally tagged mapping to select a unit variant.
 - Common Serde renames made to follow naming conventions (case changes, snake_case, kebab-case, r# stripping) are supported in snippets, as long as they do not introduce ambiguity. Arbitrary renames, flattening, aliases and other complex manipulations possible with serde are not. Parsing and validation will still work, but error messages for arbitrarily renamed fields will only show the Rust path.
 - [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Spanned.html) deserializes successfully within variants of untagged or internally tagged enums, but Serde buffers the values without preserving YAML location of the possible error. Values passing through `#[serde(flatten)]` buffering can also lose their locations. Wrap the entire enum in `Spanned<T>` to retain the enum's location, or use externally tagged enums (the default).
 - Anchors are not fully compatible with `#[serde(flatten)]` directive (this is Serde limitation we can't work around). Deserialization succeeds, but full strong-pointer identity may be lost for nested anchors inside flattened payloads.

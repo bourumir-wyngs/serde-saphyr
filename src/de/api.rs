@@ -7,27 +7,21 @@ use super::{Error, Ev, Events, Options, ring_reader};
 use crate::budget::EnforcingPolicy;
 use crate::live_events::LiveEvents;
 use crate::parse_scalars::scalar_is_null;
+use crate::tags::SfTag;
 
 /// Whether the multi-document entry points may omit this null scalar document.
 ///
-/// Specific local tags must reach the target type: even an empty scalar can select an enum
-/// variant. `raw_tag` already contains the resolved identity, including directive expansion.
+/// Only implicit nulls and resolved standard null tags may be omitted. Every other
+/// explicit tag must reach the target type, even when its scalar payload is empty.
 pub(super) fn is_skippable_null_document(event: &Ev<'_>) -> bool {
     let Ev::Scalar {
-        value,
-        style,
-        tag,
-        raw_tag,
-        ..
+        value, style, tag, ..
     } = event
     else {
         return false;
     };
 
-    !raw_tag
-        .as_deref()
-        .is_some_and(|tag| tag.starts_with('!') && tag != "!")
-        && scalar_is_null(tag, value, style)
+    matches!(tag, SfTag::None | SfTag::Null) && scalar_is_null(tag, value, style)
 }
 
 #[cfg(all(feature = "deserialize", feature = "include"))]

@@ -38,13 +38,19 @@
   so local selectors no longer collide with global type annotations or untagged
   values. This also distinguishes ordinary `!str foo` from `!!str foo`, and keeps
   local `!int` payload spellings distinct; global `!!int` keys still compare numerically.
-  Plain null-like payloads inside optional enums are resolved before the inner
-  variant is known; this limitation is documented in the README. Non-null payloads
-  such as `!null payload` now reach the inner enum rather than becoming `None`.
-- Preserve explicitly local-tagged documents in multi-document APIs instead of
-  skipping them as null before deserializing the target type. Untagged and global
-  null documents are still skipped. Optional targets retain local-tagged entries
-  and resolve plain null-like payloads before selecting inner variants.
+  Optional targets preserve the tagged value before interpreting its payload:
+  `!timestamp` can select a present unit variant, and `!maybe null` can select a
+  present variant with an absent optional payload. Invalid payloads and unknown
+  selectors report the same errors as direct enum targets instead of returning `None`.
+- Preserve application-tagged documents in multi-document APIs instead of
+  skipping them as null before deserializing the target type. Only untagged and
+  standard-tagged null documents are skipped. Optional targets retain tagged values,
+  including null-like enum payloads, as present values.
+- An application-tagged `None`, such as `Tagged(None::<String>, Some("!foo".into()))`,
+  still emits `!foo null`, but no longer reads back as absence. Its tag denotes a
+  present value and its payload must be valid for the inner type. Use untagged or
+  standard-tagged null for `None`; use an optional enum payload for a present value
+  whose payload is absent.
 - Validate recognized scalar tags consistently for numeric, boolean, character,
   and enum targets, including externally tagged enum mapping keys (#235).
   Incompatible tags and tagged null-like payloads no longer bypass validation.
