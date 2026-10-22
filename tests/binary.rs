@@ -197,10 +197,7 @@ fn local_binary_tag_does_not_decode_null_like_text(
 ) {
     let yaml = format!("!binary {payload}");
     assert!(serde_saphyr::from_str::<ByteBuf>(&yaml).is_err());
-    assert_eq!(
-        serde_saphyr::from_str::<Option<ByteBuf>>(&yaml).unwrap(),
-        None
-    );
+    assert!(serde_saphyr::from_str::<Option<ByteBuf>>(&yaml).is_err());
 }
 
 #[rstest::rstest]

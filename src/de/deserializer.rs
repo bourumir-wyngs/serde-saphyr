@@ -1351,9 +1351,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     /// Deserialize an `Option<T>`.
     ///
     /// **What is treated as `None`?** End-of-input, container end, an explicitly
-    /// tagged null, or a plain empty / `~` / `null` scalar permitting implicit null resolution.
-    /// Explicit non-null core, binary, timestamp, and robotics tags are passed to the inner
-    /// value's deserializer.
+    /// tagged standard null, or an untagged plain empty / `~` / `null` scalar.
+    /// Every other explicit tag denotes a present value and reaches the inner
+    /// deserializer unchanged, even when its payload is empty or null-like.
     fn deserialize_option<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Only when Serde asks for Option<T> do we interpret YAML null-like scalars as None.
         // Special-case for map keys: treat an explicit empty key captured as an empty mapping node
@@ -1382,7 +1382,11 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             return visitor.visit_none();
         }
 
+        // An application tag denotes a present value, not an absent payload.
+        // The inner deserializer interprets the intact node; an enum removes its
+        // selector before deserializing a payload that may itself be optional.
         if let Some((value, tag, style, _location)) = self.peek_effective_scalar()?
+            && matches!(tag, SfTag::None | SfTag::Null)
             && scalar_is_null(&tag, &value, &style)
         {
             let _ = self.ev.next()?; // consume the scalar

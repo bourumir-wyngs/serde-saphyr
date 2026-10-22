@@ -15,7 +15,9 @@ enum Command {
 #[derive(Debug, Deserialize, PartialEq)]
 enum Payload {
     #[serde(rename = "null")]
-    Null(String),
+    Null(Option<String>),
+    #[serde(rename = "now")]
+    Now,
 }
 
 const LOCAL_DOCUMENTS: &str = "--- !null\n--- !now\n";
@@ -57,16 +59,20 @@ fn local_tagged_documents_are_retained(#[case] yaml: &str, #[case] expected: Vec
 #[test]
 fn local_null_tag_keeps_the_enum_payload() {
     for result in documents::<Payload>("--- !null payload\n") {
-        assert_eq!(result.unwrap(), [Payload::Null("payload".to_owned())]);
+        assert_eq!(result.unwrap(), [Payload::Null(Some("payload".to_owned()))]);
     }
 }
 
 #[test]
-fn retained_documents_keep_option_null_resolution() {
+fn retained_documents_preserve_present_optional_values() {
     for result in documents::<Option<Payload>>(OPTIONAL_DOCUMENTS) {
         assert_eq!(
             result.unwrap(),
-            [None, None, Some(Payload::Null("payload".into()))]
+            [
+                Some(Payload::Null(None)),
+                Some(Payload::Now),
+                Some(Payload::Null(Some("payload".into())))
+            ]
         );
     }
 }
@@ -135,20 +141,20 @@ fn garde_preserves_local_tagged_documents(#[case] yaml: &str, #[case] expected: 
 
 #[cfg(feature = "garde")]
 #[test]
-fn garde_keeps_payloads_and_option_none_documents() {
+fn garde_preserves_present_optional_documents() {
     for result in garde_documents::<Payload>("--- !null payload\n") {
         assert_eq!(
             result.unwrap(),
-            [Validated(Payload::Null("payload".into()))]
+            [Validated(Payload::Null(Some("payload".into())))]
         );
     }
     for result in garde_documents::<Option<Payload>>(OPTIONAL_DOCUMENTS) {
         assert_eq!(
             result.unwrap(),
             [
-                Validated(None),
-                Validated(None),
-                Validated(Some(Payload::Null("payload".into())))
+                Validated(Some(Payload::Null(None))),
+                Validated(Some(Payload::Now)),
+                Validated(Some(Payload::Null(Some("payload".into()))))
             ]
         );
     }
@@ -190,21 +196,39 @@ fn validator_preserves_local_tagged_documents(#[case] yaml: &str, #[case] expect
 
 #[cfg(feature = "validator")]
 #[test]
-fn validator_keeps_payloads_and_option_none_documents() {
+fn validator_preserves_present_optional_documents() {
     for result in validator_documents::<Payload>("--- !null payload\n") {
         assert_eq!(
             result.unwrap(),
-            [Validated(Payload::Null("payload".into()))]
+            [Validated(Payload::Null(Some("payload".into())))]
         );
     }
     for result in validator_documents::<Option<Payload>>(OPTIONAL_DOCUMENTS) {
         assert_eq!(
             result.unwrap(),
             [
-                Validated(None),
-                Validated(None),
-                Validated(Some(Payload::Null("payload".into())))
+                Validated(Some(Payload::Null(None))),
+                Validated(Some(Payload::Now)),
+                Validated(Some(Payload::Null(Some("payload".into()))))
             ]
         );
+    }
+}
+
+#[rstest]
+#[case("!<tag:example.org,2026:unit> null")]
+#[case("%TAG !e! tag:example.org,2026:\n--- !e!unit")]
+fn global_application_tags_are_not_skipped_as_null(#[case] yaml: &str) {
+    for result in documents::<Option<()>>(yaml) {
+        assert_eq!(result.unwrap(), [Some(())]);
+    }
+}
+
+#[rstest]
+#[case("!unknown")]
+#[case("!unknown null")]
+fn optional_document_errors_are_not_hidden_by_null_resolution(#[case] yaml: &str) {
+    for result in documents::<Option<Command>>(yaml) {
+        assert!(result.is_err());
     }
 }
