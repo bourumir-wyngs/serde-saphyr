@@ -20,7 +20,45 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
       - name: Prepare source changes
-        run: python .github/scripts/pr246-unit-output.py
+        run: |
+          python .github/scripts/pr246-unit-output.py
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('src/ser/serializer.rs')
+          source = p.read_text()
+          old = '''            // The tag identifies a fieldless variant; no scalar payload is needed.
+                      self.write_space_if_pending()?;
+                      self.write_node_properties(false)?;
+                      return self.write_end_of_scalar();'''
+          new = '''            // The tag identifies a fieldless variant; no scalar payload is needed.
+                      self.write_space_if_pending()?;
+                      // Separate a tag or anchor from the following flow delimiter.
+                      self.write_node_properties(self.state.in_flow > 0)?;
+                      return self.write_end_of_scalar();'''
+          assert source.count(old) == 1
+          p.write_text(source.replace(old, new))
+          p = Path('tests/tag_only_unit_roundtrip.rs')
+          source = p.read_text()
+          source = source.replace('[!timestamp, null, !timestamp]', '[!timestamp , null, !timestamp ]')
+          source = source.replace('{first: !timestamp, last: !timestamp}', '{first: !timestamp , last: !timestamp }')
+          source += r'''
+          #[test]
+          fn tag_only_units_keep_anchors_and_aliases() {
+              use serde_saphyr::ArcAnchor;
+              use std::sync::Arc;
+
+              let anchored = ArcAnchor(Arc::new(timestamp()));
+              let values = [&anchored, &anchored];
+              let block = to_string(&values).unwrap();
+              assert_eq!(block, "- !timestamp &a1\n- *a1\n");
+              assert_eq!(from_str::<Vec<Tagged<Event>>>(&block).unwrap(), [timestamp(), timestamp()]);
+              let flow = to_string(&FlowSeq(values)).unwrap();
+              assert_eq!(flow, "[!timestamp &a1 , *a1]\n");
+              assert_eq!(from_str::<Vec<Tagged<Event>>>(&flow).unwrap(), [timestamp(), timestamp()]);
+          }
+          '''
+          p.write_text(source)
+          PY
       - name: Install toolchain and format changed sources
         run: |
           rustup toolchain install stable --profile minimal --component rustfmt --component clippy
