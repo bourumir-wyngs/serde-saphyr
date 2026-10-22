@@ -21,6 +21,15 @@ jobs:
           persist-credentials: false
       - name: Prepare optional tagged-value fix
         run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('tests/binary.rs')
+          old = 'assert_eq!(\n        serde_saphyr::from_str::<Option<ByteBuf>>(&yaml).unwrap(),\n        None\n    );'
+          new = 'assert_eq!(serde_saphyr::from_str::<Option<ByteBuf>>(&yaml).unwrap(), None);'
+          source = p.read_text()
+          assert source.count(old) == 1
+          p.write_text(source.replace(old, new))
+          PY
           python .github/scripts/pr246-option-fix.py
           sed -i 's/assert_eq!(from_str::<()>(yaml).unwrap(), ());/from_str::<()>(yaml).unwrap();/' tests/option_tag_compatibility.rs
       - name: Install toolchain and format changed sources
@@ -28,11 +37,14 @@ jobs:
           rustup toolchain install stable --profile minimal --component rustfmt --component clippy
           rustup default stable
           python - <<'PY'
-          import json, subprocess
+          import json, subprocess, tarfile
           from pathlib import Path
           files = json.loads(Path('/tmp/pr246-option-files.json').read_text())
           subprocess.run(['rustfmt', '--edition', '2024', *[p for p in files if p.endswith('.rs')]], check=True)
           subprocess.run(['git', 'add', '--', *files], check=True)
+          with tarfile.open('/tmp/pr246-option-source.tar.gz', 'w:gz') as archive:
+              for path in files:
+                  archive.add(path, arcname=path)
           PY
           git diff --cached --check
           git diff --cached --stat
