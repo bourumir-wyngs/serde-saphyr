@@ -22,6 +22,14 @@
 
 ### Fixed
 
+- Distinguish local application tags from standard YAML types. Without a `%TAG`
+  remapping, `!str`, `!int`, `!bool`, `!float`, `!null`, `!seq`, `!map`, `!timestamp`,
+  and `!binary` no longer force their similarly named standard types. Use `!!str`,
+  `!!int`, and the other standard tags for type annotations. Strict unsupported-tag
+  rejection now treats those local names like other application tags.
+- Keep bare `!` as the separate non-specific tag: scalars resolve as strings and
+  collections keep their ordinary kinds. Remove the false bare `!!` alias and
+  redundant local-type shape and integer-key workarounds.
 - Resolve matching local YAML tags as enum variant selectors before interpreting
   their payloads (#231). Names such as `!timestamp`, `!str`, `!null`, `!seq`, and
   `!map` work with unit, scalar, sequence, and mapping variants, including through
@@ -30,11 +38,13 @@
   so local selectors no longer collide with global type annotations or untagged
   values. This also distinguishes ordinary `!str foo` from `!!str foo`, and keeps
   local `!int` payload spellings distinct; global `!!int` keys still compare numerically.
-  Null-like selectors inside optional enums retain their existing limitations,
-  documented in the README's unsupported features section.
+  Plain null-like payloads inside optional enums are resolved before the inner
+  variant is known; this limitation is documented in the README. Non-null payloads
+  such as `!null payload` now reach the inner enum rather than becoming `None`.
 - Preserve explicitly local-tagged documents in multi-document APIs instead of
   skipping them as null before deserializing the target type. Untagged and global
-  null documents are still skipped; optional targets retain their existing null handling.
+  null documents are still skipped. Optional targets retain local-tagged entries
+  and resolve plain null-like payloads before selecting inner variants.
 - Validate recognized scalar tags consistently for numeric, boolean, character,
   and enum targets, including externally tagged enum mapping keys (#235).
   Incompatible tags and tagged null-like payloads no longer bypass validation.

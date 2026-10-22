@@ -336,17 +336,8 @@ fn capture_node_inner<'a>(
             anchor,
             location,
         } => {
-            // A local tag can select an enum carrying a string, so neither its
-            // tag nor its payload spelling may be collapsed to integer identity.
-            let integer_fingerprint = if raw_tag
-                .as_deref()
-                .and_then(local_enum_variant_name)
-                .is_some()
-            {
-                None
-            } else {
-                integer_key_fingerprint(&value, tag, style, legacy_octal_numbers)
-            };
+            let integer_fingerprint =
+                integer_key_fingerprint(&value, tag, style, legacy_octal_numbers);
             let scalar_ev = Ev::Scalar {
                 value,
                 tag,

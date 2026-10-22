@@ -173,10 +173,12 @@ fn core_map_tag_does_not_select_enum_variant(#[case] yaml: &str) {
     );
 }
 
-#[test]
-fn local_map_compatibility_tag_remains_a_map_in_untagged_enum() {
-    let actual: UntaggedMapping = serde_saphyr::from_str(r#"!map {"value": 10}"#)
-        .expect("compatibility-tagged mapping should deserialize");
+#[rstest]
+#[case(r#"!!map {"value": 10}"#)]
+#[case("%TAG ! tag:yaml.org,2002:\n--- !map {value: 10}")]
+fn standard_map_tag_remains_a_map_in_untagged_enum(#[case] yaml: &str) {
+    let actual: UntaggedMapping =
+        serde_saphyr::from_str(yaml).expect("standard-tagged mapping should deserialize");
 
     assert_eq!(
         actual,
@@ -510,4 +512,16 @@ fn serde_saphyr<T: DeserializeOwned + Debug>(yaml: &str) -> T {
         Ok(value) => value,
         Err(err) => panic!("{}", err),
     }
+}
+
+#[test]
+fn local_map_tag_survives_untagged_enum_buffering() {
+    let yaml = "!map {value: 10}";
+    let actual: UntaggedTaggedMapping = serde_saphyr::from_str(yaml).unwrap();
+    assert_eq!(
+        actual,
+        UntaggedTaggedMapping::Tagged(TaggedMapping::Map(BTreeMap::from([("value".into(), 10),]))),
+    );
+    // The application tag is preserved, not treated as a standard mapping annotation.
+    assert!(serde_saphyr::from_str::<UntaggedMapping>(yaml).is_err());
 }

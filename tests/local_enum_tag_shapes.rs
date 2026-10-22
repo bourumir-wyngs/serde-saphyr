@@ -38,7 +38,7 @@ enums_with_tag_names!(Int, Float, Bool, Null, Seq, Map, Str, Timestamp, Binary);
 
 /// `tag` selects the local spelling; the remaining parameters construct the
 /// expected unit, scalar, tuple, struct, sequence, and mapping variants.
-/// Returns normally when all payload shapes deserialize in both strict modes.
+/// Returns normally when all payload shapes deserialize in permissive mode.
 #[rstest]
 #[case("int", Unit::Int, Scalar::Int, Tuple::Int, Struct::Int { value: 1 }, Sequence::Int, Mapping::Int)]
 #[case("float", Unit::Float, Scalar::Float, Tuple::Float, Struct::Float { value: 1 }, Sequence::Float, Mapping::Float)]
@@ -58,33 +58,31 @@ fn local_enum_tags_accept_every_payload_shape(
     #[case] sequence: fn(Vec<u8>) -> Sequence,
     #[case] mapping: fn(BTreeMap<String, u8>) -> Mapping,
 ) {
-    for reject_unsupported_tags in [false, true] {
-        let opts = options! { reject_unsupported_tags: reject_unsupported_tags };
-        assert_eq!(
-            from_str_with_options::<Unit>(&format!("!{tag}"), opts.clone()).unwrap(),
-            unit,
-        );
-        assert_eq!(
-            from_str_with_options::<Scalar>(&format!("!{tag} text"), opts.clone()).unwrap(),
-            scalar("text".to_owned()),
-        );
-        assert_eq!(
-            from_str_with_options::<Tuple>(&format!("!{tag} [1, 2]"), opts.clone()).unwrap(),
-            tuple(1, 2),
-        );
-        assert_eq!(
-            from_str_with_options::<Struct>(&format!("!{tag} {{value: 1}}"), opts.clone()).unwrap(),
-            structure,
-        );
-        assert_eq!(
-            from_str_with_options::<Sequence>(&format!("!{tag} [1, 2]"), opts.clone()).unwrap(),
-            sequence(vec![1, 2]),
-        );
-        assert_eq!(
-            from_str_with_options::<Mapping>(&format!("!{tag} {{value: 1}}"), opts).unwrap(),
-            mapping(BTreeMap::from([("value".to_owned(), 1)])),
-        );
-    }
+    let opts = options! { reject_unsupported_tags: false };
+    assert_eq!(
+        from_str_with_options::<Unit>(&format!("!{tag}"), opts.clone()).unwrap(),
+        unit,
+    );
+    assert_eq!(
+        from_str_with_options::<Scalar>(&format!("!{tag} text"), opts.clone()).unwrap(),
+        scalar("text".to_owned()),
+    );
+    assert_eq!(
+        from_str_with_options::<Tuple>(&format!("!{tag} [1, 2]"), opts.clone()).unwrap(),
+        tuple(1, 2),
+    );
+    assert_eq!(
+        from_str_with_options::<Struct>(&format!("!{tag} {{value: 1}}"), opts.clone()).unwrap(),
+        structure,
+    );
+    assert_eq!(
+        from_str_with_options::<Sequence>(&format!("!{tag} [1, 2]"), opts.clone()).unwrap(),
+        sequence(vec![1, 2]),
+    );
+    assert_eq!(
+        from_str_with_options::<Mapping>(&format!("!{tag} {{value: 1}}"), opts).unwrap(),
+        mapping(BTreeMap::from([("value".to_owned(), 1)])),
+    );
 }
 
 #[rstest]
@@ -99,16 +97,9 @@ fn local_enum_tags_accept_every_payload_shape(
 #[case("!seq {value: 1}")]
 #[case("!map scalar")]
 #[case("!map [1]")]
-fn non_enum_consumers_still_validate_local_tag_shapes(
-    #[case] yaml: &str,
-    #[values(false, true)] reject_unsupported_tags: bool,
-) {
-    let opts = options! { reject_unsupported_tags: reject_unsupported_tags };
-    let error = from_str_with_options::<IgnoredAny>(yaml, opts.clone()).unwrap_err();
-    assert!(matches!(
-        error.without_snippet(),
-        Error::UnsupportedTag { .. }
-    ));
+fn ordinary_consumers_ignore_local_type_names(#[case] yaml: &str) {
+    assert!(from_str::<IgnoredAny>(yaml).is_ok());
+    assert!(from_str::<serde_json::Value>(yaml).is_ok());
 
     #[derive(Debug, Deserialize)]
     struct KnownOnly {
@@ -116,12 +107,35 @@ fn non_enum_consumers_still_validate_local_tag_shapes(
         known: u8,
     }
 
-    let error = from_str_with_options::<KnownOnly>(&format!("known: 1\nignored: {yaml}\n"), opts)
-        .unwrap_err();
-    assert!(matches!(
-        error.without_snippet(),
-        Error::UnsupportedTag { .. }
-    ));
+    assert!(from_str::<KnownOnly>(&format!("known: 1\nignored: {yaml}\n")).is_ok());
+}
+
+#[rstest]
+fn strict_mode_rejects_local_type_names(
+    #[values(
+        "int",
+        "float",
+        "bool",
+        "null",
+        "seq",
+        "map",
+        "str",
+        "timestamp",
+        "binary"
+    )]
+    tag: &str,
+    #[values("", "text", "[1, 2]", "{value: 1}")] payload: &str,
+) {
+    let yaml = format!("!{tag} {payload}");
+    let opts = options! { reject_unsupported_tags: true };
+    let ignored = from_str_with_options::<IgnoredAny>(&yaml, opts.clone()).unwrap_err();
+    let typed = from_str_with_options::<Unit>(&yaml, opts).unwrap_err();
+    for error in [ignored, typed] {
+        assert!(matches!(
+            error.without_snippet(),
+            Error::UnsupportedTag { .. }
+        ));
+    }
 }
 
 #[rstest]
@@ -131,8 +145,7 @@ fn duplicate_values_with_local_enum_tags_keep_the_selected_value(
     #[case] duplicate_keys: DuplicateKeyPolicy,
     #[case] expected: Vec<u8>,
 ) {
-    // A discarded value has no target type. It may be a valid enum payload, so local
-    // tag shape checks must wait until a value is actually deserialized.
+    // Ordinary local tags do not impose a built-in node shape, even while buffering.
     let value = from_str_with_options::<BTreeMap<String, Sequence>>(
         "value: !int [1, 2]\nvalue: !int [3, 4]\n",
         options! { duplicate_keys: duplicate_keys },
@@ -228,5 +241,40 @@ fn local_extension_tags_select_variants_with_collection_payloads(#[case] tag: &s
     assert_eq!(
         from_str::<Extension>(&format!("!{tag} [1, 2]")).unwrap(),
         expected,
+    );
+}
+
+#[rstest]
+#[case("!time [1, 2]")]
+#[case("!degrees {value: 1}")]
+#[case("!radians []")]
+fn ordinary_consumers_validate_robotics_collection_shapes(#[case] yaml: &str) {
+    let error = from_str::<serde_json::Value>(yaml).unwrap_err();
+    assert!(matches!(
+        error.without_snippet(),
+        Error::UnsupportedTag { .. }
+    ));
+}
+
+#[rstest]
+#[case(DuplicateKeyPolicy::FirstWins, vec![1, 2])]
+#[case(DuplicateKeyPolicy::LastWins, vec![3, 4])]
+fn discarded_robotics_selectors_defer_shape_checks(
+    #[case] duplicate_keys: DuplicateKeyPolicy,
+    #[case] expected: Vec<u8>,
+) {
+    #[derive(Debug, Deserialize, PartialEq)]
+    enum Extension {
+        #[serde(rename = "time")]
+        Time(Vec<u8>),
+    }
+    let value: BTreeMap<String, Extension> = from_str_with_options(
+        "value: !time [1, 2]\nvalue: !time [3, 4]\n",
+        options! { duplicate_keys: duplicate_keys },
+    )
+    .unwrap();
+    assert_eq!(
+        value,
+        BTreeMap::from([("value".into(), Extension::Time(expected))])
     );
 }

@@ -154,3 +154,17 @@ fn global_str_tag_retains_its_string_meaning_for_unit_variants() {
     assert_eq!(yaml, "!<tag:yaml.org,2002:str> str\n");
     assert_eq!(from_str::<Tagged<Unit>>(&yaml).unwrap(), value);
 }
+
+#[rstest]
+#[case("tag:yaml.org,2002:!str", Payload::Str(7))]
+#[case("tag:yaml.org,2002:!int", Payload::Int("not an integer".into()))]
+#[case("tag:yaml.org,2002:!binary", Payload::Binary("not base64!".into()))]
+fn nonstandard_yaml_uri_tags_do_not_select_builtin_types(
+    #[case] tag: &str,
+    #[case] payload: Payload,
+) {
+    let value = Tagged(payload, Some(tag.to_owned()));
+    let yaml = to_string(&value).unwrap();
+    assert!(yaml.starts_with(&format!("!<{tag}> ")), "{yaml}");
+    assert_eq!(from_str::<Tagged<Payload>>(&yaml).unwrap(), value);
+}

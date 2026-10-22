@@ -121,11 +121,8 @@ fn matching_local_string_tag_selects_a_variant_before_reading_its_payload() {
 }
 
 #[test]
-fn unmatched_local_string_tag_keeps_its_scalar_meaning() {
-    assert_eq!(
-        from_str::<Generator>("!str timestamp").unwrap(),
-        Generator::Timestamp,
-    );
+fn unmatched_local_string_tag_does_not_force_a_string() {
+    assert!(from_str::<Generator>("!str timestamp").is_err());
 }
 
 #[rstest]
@@ -154,9 +151,9 @@ fn wrappers_preserve_the_typed_enum_context() {
     }
 
     assert_eq!(
-        from_str::<Option<Transparent>>("!timestamp").unwrap(),
-        Some(Transparent {
+        from_str::<Transparent>("!timestamp").unwrap(),
+        Transparent {
             inner: Newtype(Generator::Timestamp),
-        }),
+        },
     );
 }

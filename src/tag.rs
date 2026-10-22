@@ -46,14 +46,12 @@ pub(crate) fn yaml_core_type_tag_name(tag: &str) -> Option<&str> {
         tag.strip_prefix("!!")?
     };
 
-    if matches!(candidate, "merge" | "value") {
-        return Some(candidate);
+    // Only intentional application extensions retain the historical bang-prefixed URI.
+    if tag.starts_with(YAML_TAG_NAMESPACE)
+        && matches!(candidate, "!time" | "!include" | "!degrees" | "!radians")
+    {
+        return candidate.strip_prefix('!');
     }
-    let candidate = if tag.starts_with(YAML_TAG_NAMESPACE) {
-        candidate.strip_prefix('!').unwrap_or(candidate)
-    } else {
-        candidate
-    };
 
     matches!(
         candidate,
@@ -66,6 +64,8 @@ pub(crate) fn yaml_core_type_tag_name(tag: &str) -> Option<&str> {
             | "str"
             | "timestamp"
             | "binary"
+            | "merge"
+            | "value"
             | "time"
             | "include"
             | "degrees"
@@ -136,16 +136,20 @@ mod tests {
             "degrees",
             "radians",
         ] {
-            for tag in [
-                format!("!!{name}"),
-                format!("{YAML_TAG_NAMESPACE}{name}"),
-                format!("{YAML_TAG_NAMESPACE}!{name}"),
-            ] {
+            for tag in [format!("!!{name}"), format!("{YAML_TAG_NAMESPACE}{name}")] {
                 assert_eq!(yaml_core_type_tag_name(&tag), Some(name), "tag: {tag}");
             }
 
             let local = format!("!{name}");
             assert_eq!(yaml_core_type_tag_name(&local), None, "tag: {local}");
+            let historical = format!("{YAML_TAG_NAMESPACE}!{name}");
+            let expected =
+                matches!(name, "time" | "include" | "degrees" | "radians").then_some(name);
+            assert_eq!(
+                yaml_core_type_tag_name(&historical),
+                expected,
+                "tag: {historical}"
+            );
         }
 
         assert_eq!(yaml_core_type_tag_name("!map"), None);

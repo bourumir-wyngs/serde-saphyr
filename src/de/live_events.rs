@@ -60,8 +60,8 @@ const SMALLVECT_INLINE: usize = 8;
 
 /// Validate a node once its consumer has decided that its tag is not an enum selector.
 ///
-/// Local aliases can name enum variants with any payload shape, so their node-kind checks
-/// cannot run while events are merely peeked at or buffered before the target type is known.
+/// Local robotics tags can also select enum variants with collection payloads.
+/// Their deferred shape checks run only when the consumer is known.
 pub(super) fn validate_node_tag_kind(event: &Ev<'_>) -> Result<(), Error> {
     let (tag, raw_tag, node_kind, location) = match event {
         Ev::Scalar {
@@ -95,7 +95,7 @@ pub(super) fn validate_node_tag_kind(event: &Ev<'_>) -> Result<(), Error> {
 /// Check whether a recognized tag accepts the node's syntactic shape.
 ///
 /// # Parameters
-/// - `tag_kind`: The recognized tag meaning, including supported local aliases.
+/// - `tag_kind`: The recognized standard or application-extension tag meaning.
 /// - `node_kind`: The scalar, sequence, or mapping shape of the node.
 /// - `tag`: Supplies the diagnostic spelling only when validation fails.
 /// - `location`: Identifies the tagged node in an error.
@@ -124,11 +124,10 @@ fn validate_tag_kind(
     Ok(())
 }
 
-/// Decide whether the recognized `tag_kind` can be a typed enum selector.
-/// `raw_tag` is the resolved identity, so remapped global handles keep their YAML constraints.
+/// Defer robotics shape checks when a resolved local tag may select an enum.
+/// Global tags and include processing retain their constraints.
 fn defer_local_tag_kind(tag_kind: SfTag, raw_tag: Option<&str>) -> bool {
-    tag_kind.requires().is_some()
-        && tag_kind != SfTag::Include
+    tag_kind.is_robotics()
         && raw_tag
             .and_then(crate::tag::local_enum_variant_name)
             .is_some()
@@ -713,7 +712,6 @@ impl<'a> LiveEvents<'a> {
     /// # Parameters
     /// - `tag_kind`: The recognized tag meaning.
     /// - `tag`: Supplies the diagnostic spelling only when validation fails.
-    /// - `raw_tag`: The resolved tag identity, used to defer local enum selectors.
     /// - `value`: The scalar text, used to validate key-only tags.
     /// - `location`: Identifies the tagged scalar in an error.
     ///
@@ -723,13 +721,10 @@ impl<'a> LiveEvents<'a> {
         &mut self,
         tag_kind: SfTag,
         tag: impl Fn() -> String,
-        raw_tag: Option<&str>,
         value: &str,
         location: Location,
     ) -> Result<(), Error> {
-        if !defer_local_tag_kind(tag_kind, raw_tag) {
-            validate_tag_kind(tag_kind, TagNodeKind::Scalar, &tag, location)?;
-        }
+        validate_tag_kind(tag_kind, TagNodeKind::Scalar, &tag, location)?;
         let position = self.next_node_position();
         self.ensure_supported_tag(tag_kind, tag, Some(value), position, location)?;
         if self.reject_unsupported_tags {
@@ -818,7 +813,7 @@ impl<'a> LiveEvents<'a> {
         let reference_location = self.inject.last().map(|frame| frame.reference_location);
         let result = match ev {
             Ev::RecursiveAlias { location, .. } => {
-                self.validate_scalar_tag(SfTag::Null, String::new, None, "", *location)
+                self.validate_scalar_tag(SfTag::Null, String::new, "", *location)
             }
             Ev::Scalar {
                 value,
@@ -829,7 +824,6 @@ impl<'a> LiveEvents<'a> {
             } => self.validate_scalar_tag(
                 *tag,
                 || replayed_tag_spelling(*tag, raw_tag.as_deref()),
-                raw_tag.as_deref(),
                 value,
                 *location,
             ),
@@ -1120,7 +1114,6 @@ impl<'a> LiveEvents<'a> {
                     self.validate_scalar_tag(
                         tag_s,
                         || tag.as_deref().map_or_else(String::new, Tag::original),
-                        raw_tag.as_deref(),
                         &val,
                         location,
                     )?;
