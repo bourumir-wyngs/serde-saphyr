@@ -1,0 +1,85 @@
+name: PR 246 tag cleanup validation
+
+on:
+  push:
+    branches: ["work/pr-246-tag-cleanup"]
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Prepare cleanup
+        run: |
+          python .github/scripts/pr246-tag-cleanup.py
+          python .github/scripts/pr246-tag-adjustments.py
+      - name: Install toolchain and format changed Rust files
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+          python - <<'PY'
+          import json, subprocess
+          from pathlib import Path
+          paths = json.loads(Path('/tmp/pr246-changed.json').read_text())
+          subprocess.run(['rustfmt', '--edition', '2024', *[p for p in paths if p.endswith('.rs')]], check=True)
+          subprocess.run(['git', 'add', '--', *paths], check=True)
+          PY
+          git diff --cached --check
+          git diff --cached --stat
+          git diff --cached > /tmp/pr246-cleanup.patch
+      - name: Export prepared source tree
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python .github/scripts/pr246-tag-cleanup.py export
+      - name: Default library and integration tests
+        id: default-tests
+        continue-on-error: true
+        run: |
+          set +e
+          cargo test --lib --tests --no-fail-fast > /tmp/pr246-default-tests.log 2>&1
+          status=$?
+          grep -E 'test result:|FAILED|^error:|^failures:|^----' /tmp/pr246-default-tests.log || true
+          if [ "$status" -ne 0 ]; then tail -n 160 /tmp/pr246-default-tests.log; fi
+          exit "$status"
+      - name: All-features library and integration tests
+        id: all-tests
+        continue-on-error: true
+        run: |
+          set +e
+          cargo test --all-features --lib --tests --no-fail-fast > /tmp/pr246-all-tests.log 2>&1
+          status=$?
+          grep -E 'test result:|FAILED|^error:|^failures:|^----' /tmp/pr246-all-tests.log || true
+          if [ "$status" -ne 0 ]; then tail -n 160 /tmp/pr246-all-tests.log; fi
+          exit "$status"
+      - name: Clippy and feature builds
+        id: lint
+        continue-on-error: true
+        run: |
+          cargo clippy --all-targets --all-features -- -D warnings
+          cargo check --no-default-features --features serialize
+          cargo check --no-default-features --features deserialize
+      - name: Upload validation records
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr246-tag-cleanup
+          path: /tmp/pr246-*
+          retention-days: 3
+      - name: Validation result
+        if: always()
+        env:
+          DEFAULT: ${{ steps.default-tests.outcome }}
+          ALL: ${{ steps.all-tests.outcome }}
+          LINT: ${{ steps.lint.outcome }}
+        run: |
+          printf 'VALIDATION default=%s all=%s lint=%s\n' "$DEFAULT" "$ALL" "$LINT"
+          test "$DEFAULT" = success && test "$ALL" = success && test "$LINT" = success
