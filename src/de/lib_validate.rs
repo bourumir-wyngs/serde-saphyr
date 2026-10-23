@@ -1,14 +1,13 @@
-use super::api::{ReaderSnippetContext, StrSnippetContext};
+use super::api::{ReaderSnippetContext, StrSnippetContext, is_skippable_null_document};
 use super::with_deserializer::{enforce_single_document_and_finish, run_with_document_scope};
 use crate::budget::EnforcingPolicy;
-use crate::de::{Error, Ev, Events, Options};
+use crate::de::{Error, Events, Options};
 #[cfg(feature = "garde")]
 use crate::de_error::collect_garde_issues;
 #[cfg(feature = "validator")]
 use crate::de_error::collect_validator_issues;
 use crate::de_error::redact_issue;
 use crate::live_events::LiveEvents;
-use crate::parse_scalars::scalar_is_null;
 use crate::path_map::PathMap;
 use serde_core::de::DeserializeOwned;
 use std::io::Read;
@@ -171,13 +170,7 @@ where
         };
 
         match peeked {
-            // Skip documents that are explicit null-like scalars ("", "~", or "null").
-            Some(Ev::Scalar {
-                value: s,
-                style,
-                tag,
-                ..
-            }) if scalar_is_null(tag, s, style) => {
+            Some(event) if is_skippable_null_document(event) => {
                 let _ = src.next()?; // consume the null scalar document
                 continue;
             }
@@ -401,9 +394,7 @@ where
             }
             loop {
                 match self.src.peek() {
-                    Ok(Some(Ev::Scalar {
-                        value, style, tag, ..
-                    })) if scalar_is_null(tag, value, style) => {
+                    Ok(Some(event)) if is_skippable_null_document(event) => {
                         let _ = self.src.next();
                     }
                     Ok(Some(_)) => {

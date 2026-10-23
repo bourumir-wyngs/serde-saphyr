@@ -1,6 +1,24 @@
 # Changelog
 
-## 2.1.0 Unreleased
+## 3.0.0-rc.1 Unreleased
+
+### Breaking YAML changes
+
+This prerelease changes tag interpretation, optional tagged values, mapping-key
+identity, document filtering, and tagged unit output. These are behavioral
+incompatibilities even when existing Rust code compiles. The corrected semantics
+are the defaults; no legacy alias mode is provided. See
+[YAML changes in 3.0.0](README.md#yaml-changes-in-300) for all migration details.
+
+- Tags selecting unit enum variants now reject non-null payloads instead of silently
+  discarding them (#236). Use a bare variant name, a tag with empty content, or a
+  tag followed by `~` or `null`; quoted strings and collections are rejected.
+- Recognize only the standard plain null spellings: empty, `~`, `null`, `Null`, and `NULL`.
+  Other capitalization such as `NulL` remains a string instead of being rejected, converted
+  to an empty value, or skipped as a document ([#234](https://github.com/bourumir-wyngs/serde-saphyr/issues/234)).
+- `strict_booleans: true` now recognizes only the six YAML 1.2 Core boolean spellings.
+  Other capitalization such as `tRuE` remains a string during inference, is accepted
+  as unquoted text with `no_schema`, and is rejected for boolean targets.
 
 ### Added
 
@@ -22,6 +40,39 @@
 
 ### Fixed
 
+- Emit matching local tags on unit enum variants without a redundant `null`
+  payload, including through optional and tagged wrappers. Existing explicit
+  null payloads remain readable; actual variant fields retain their payload
+  representation. Share node-property emission to preserve anchors and spacing.
+- Distinguish local application tags from standard YAML types. Without a `%TAG`
+  remapping, `!str`, `!int`, `!bool`, `!float`, `!null`, `!seq`, `!map`, `!timestamp`,
+  and `!binary` no longer force their similarly named standard types. Use `!!str`,
+  `!!int`, and the other standard tags for type annotations. Strict unsupported-tag
+  rejection now treats those local names like other application tags.
+- Keep bare `!` as the separate non-specific tag: scalars resolve as strings and
+  collections keep their ordinary kinds. Remove the false bare `!!` alias and
+  redundant local-type shape and integer-key workarounds.
+- Resolve matching local YAML tags as enum variant selectors before interpreting
+  their payloads (#231). Names such as `!timestamp`, `!str`, `!null`, `!seq`, and
+  `!map` work with unit, scalar, sequence, and mapping variants, including through
+  `Tagged<T>` serialization. Resolved global tags retain their YAML type semantics.
+  Duplicate-key handling preserves resolved local tag identities throughout keys,
+  so local selectors no longer collide with global type annotations or untagged
+  values. This also distinguishes ordinary `!str foo` from `!!str foo`, and keeps
+  local `!int` payload spellings distinct; global `!!int` keys still compare numerically.
+  Optional targets preserve the tagged value before interpreting its payload:
+  `!timestamp` can select a present unit variant, and `!maybe null` can select a
+  present variant with an absent optional payload. Invalid payloads and unknown
+  selectors report the same errors as direct enum targets instead of returning `None`.
+- Preserve application-tagged documents in multi-document APIs instead of
+  skipping them as null before deserializing the target type. Only untagged and
+  standard-tagged null documents are skipped. Optional targets retain tagged values,
+  including null-like enum payloads, as present values.
+- An application-tagged `None`, such as `Tagged(None::<String>, Some("!foo".into()))`,
+  still emits `!foo null`, but no longer reads back as absence. Its tag denotes a
+  present value and its payload must be valid for the inner type. Use untagged or
+  standard-tagged null for `None`; use an optional enum payload for a present value
+  whose payload is absent.
 - Validate recognized scalar tags consistently for numeric, boolean, character,
   and enum targets, including externally tagged enum mapping keys (#235).
   Incompatible tags and tagged null-like payloads no longer bypass validation.
@@ -31,15 +82,13 @@
 - Reject YAML null when deserializing sequences, mappings, and mapping-based structs instead
   of silently constructing empty values ([#233](https://github.com/bourumir-wyngs/serde-saphyr/issues/233)).
   Blank values and the plain spellings `~`, `null`, `Null`, and `NULL` are handled consistently.
-  Write `[]` for an empty sequence or `{}` for an empty mapping. `Option<T>` null handling
-  and defaults for absent fields are unchanged; see the README migration notes.
+  Write `[]` for an empty sequence or `{}` for an empty mapping. Untagged and
+  standard-tagged nulls remain `None` for `Option<T>`; defaults for absent fields
+  are unchanged. See the README for the separate tagged-value presence change.
 
 ## 2.0.0
 
 ### YAML changes
-- Tags selecting unit enum variants now reject non-null payloads instead of silently
-  discarding them (#236). Use a bare variant name, a tag with empty content, or a
-  tag followed by `~` or `null`; quoted strings and collections are rejected.
 - Composite mapping keys are not compared regardless of entry order (thanks @yuxi-liu-wired)  .
 - Commented<T> now writes its output replacing characters not allowed in comments (non printable) by spaces.
 
@@ -110,15 +159,9 @@
 
 ### Fixed
 
-- Recognize only the standard plain null spellings: empty, `~`, `null`, `Null`, and `NULL`.
-  Other capitalization such as `NulL` remains a string instead of being rejected, converted
-  to an empty value, or skipped as a document ([#234](https://github.com/bourumir-wyngs/serde-saphyr/issues/234)).
 - Buffered `LastWins` values and inline merges no longer produce alias errors when no
   alias was used. Replay preserves per-node origins, including genuine nested aliases,
   ordinary value locations, and merge use-sites for `Spanned<T>`.
-- `strict_booleans: true` now recognizes only the six YAML 1.2 Core boolean spellings.
-  Other capitalization such as `tRuE` remains a string during inference, is accepted
-  as unquoted text with `no_schema`, and is rejected for boolean targets.
 - Plain alias diagnostics explicitly label the use location with `(used at line X, column Y)`.
   The new `Localizer::alias_used_at` hook controls this suffix independently of failure and
   definition locations. Custom localizers that previously used `attach_location` to format
