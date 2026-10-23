@@ -19,6 +19,9 @@ use std::path::Path;
 /// assert_eq!(cfg.answer, 42);
 /// # }
 /// ```
+///
+/// I/O failures include their cause in a standalone message because the provider
+/// retains only the error's display text.
 pub struct Yaml;
 
 impl ::figment2::providers::Format for Yaml {
@@ -37,14 +40,20 @@ impl ::figment2::providers::Format for Yaml {
     }
 
     fn from_path<T: DeserializeOwned>(path: &Path) -> Result<T, Self::Error> {
-        let file = std::fs::File::open(path).map_err(|cause| crate::Error::IOError { cause })?;
-        // figment2 does not render out snippet anyway
-        crate::from_reader_with_options(
-            file,
-            crate::options! {
-                with_snippet: false,
-            },
-        )
+        std::fs::File::open(path)
+            .map_err(|cause| crate::Error::IOError { cause })
+            .and_then(|file| {
+                crate::from_reader_with_options(
+                    file,
+                    crate::options! {
+                        with_snippet: false,
+                    },
+                )
+            })
+            .map_err(|error| match error {
+                crate::Error::IOError { cause } => crate::Error::msg(format!("IO error: {cause}")),
+                other => other,
+            })
     }
 }
 
@@ -73,5 +82,48 @@ mod tests {
 
         let cfg: Config = <Yaml as Format>::from_path(file.path()).unwrap();
         assert_eq!(cfg, Config { answer: 7 });
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn from_path_retains_file_open_error_in_display_without_duplicate_sources() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("missing.yaml");
+        let cause = std::fs::File::open(&path).unwrap_err();
+        let expected = format!("IO error: {cause}");
+
+        let error = <Yaml as Format>::from_path::<Config>(&path).unwrap_err();
+        assert_eq!(error.to_string(), expected);
+        assert_eq!(format!("{:#}", anyhow::Error::new(error)), expected);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    #[cfg_attr(miri, ignore)]
+    fn from_path_retains_file_read_error_in_display_without_duplicate_sources() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut file = std::fs::File::open(directory.path()).unwrap();
+        let cause = std::io::Read::read(&mut file, &mut [0]).unwrap_err();
+        let expected = format!("IO error: {cause}");
+
+        let error = <Yaml as Format>::from_path::<Config>(directory.path()).unwrap_err();
+        assert_eq!(error.to_string(), expected);
+        assert_eq!(format!("{:#}", anyhow::Error::new(error)), expected);
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn provider_preserves_parser_error_message() {
+        let yaml = "answer: 'unterminated\n";
+        let expected = <Yaml as Format>::from_str::<Config>(yaml)
+            .unwrap_err()
+            .to_string();
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), yaml).unwrap();
+
+        let error = <Yaml as Format>::from_path::<Config>(file.path()).unwrap_err();
+        assert_eq!(error.to_string(), expected);
+        let error = figment2::Provider::data(&Yaml::file(file.path()).search(false)).unwrap_err();
+        assert_eq!(error.to_string(), expected);
     }
 }

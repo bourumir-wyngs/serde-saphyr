@@ -43,6 +43,8 @@ use crate::{
 /// - `serde-saphyr::Error` intentionally does not retain the full input text.
 ///   This helper owns a copy of `source` to build a standalone `miette::Report`.
 /// - If the error has no known location/span, the report will not include labels.
+/// - I/O causes are included in the report message, since the report does not retain
+///   the original error's source chain.
 #[must_use]
 pub fn to_miette_report(err: &Error, source: &str, file: &str) -> miette::Report {
     to_miette_report_with_options(err, source, file, RenderOptions::default())
@@ -97,6 +99,11 @@ pub fn to_miette_report_with_options(
     file: &str,
     options: RenderOptions<'_>,
 ) -> miette::Report {
+    let formatter = DiagnosticMessageFormatter(options.formatter);
+    let options = RenderOptions {
+        formatter: &formatter,
+        ..options
+    };
     if options.snippets == crate::SnippetMode::Off {
         return miette::Report::msg(err.render_with_options(options));
     }
@@ -112,6 +119,29 @@ pub fn to_miette_report_with_options(
         source_name.as_ref(),
     );
     miette::Report::new(diag)
+}
+
+// Converted diagnostics own their messages but do not retain the original sources.
+// Include the I/O cause here so it survives conversion, before rendering sanitizes it.
+struct DiagnosticMessageFormatter<'a>(&'a dyn MessageFormatter);
+
+impl MessageFormatter for DiagnosticMessageFormatter<'_> {
+    fn localizer(&self) -> &dyn Localizer {
+        self.0.localizer()
+    }
+
+    fn format_message<'a>(&self, err: &'a Error) -> Cow<'a, str> {
+        let message = self.0.format_message(err);
+        match err {
+            Error::IOError { cause } => Cow::Owned(format!("{message}: {cause}")),
+            _ => message,
+        }
+    }
+
+    #[cfg(any(feature = "garde", feature = "validator"))]
+    fn format_validation_issue_lines(&self, err: &Error) -> Option<Vec<String>> {
+        self.0.format_validation_issue_lines(err)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -816,6 +846,41 @@ mod tests {
             .render_report(&mut output, report.as_ref())
             .unwrap();
         output
+    }
+
+    #[rstest::rstest]
+    #[case::plain("disk full", "disk full")]
+    #[case::control_characters("reader\n\u{1b}failure", r"reader\n\u{1b}failure")]
+    fn io_error_report_includes_the_sanitized_cause_once(
+        #[case] cause: &str,
+        #[case] expected_cause: &str,
+    ) {
+        for wrapped in [false, true] {
+            let mut error = Error::IOError {
+                cause: std::io::Error::other(cause.to_owned()),
+            };
+            if wrapped {
+                error = Error::WithSnippet {
+                    regions: Vec::new(),
+                    crop_radius: 0,
+                    error: Box::new(error),
+                };
+            }
+            for snippets in [crate::SnippetMode::Auto, crate::SnippetMode::Off] {
+                let report = to_miette_report_with_options(
+                    &error,
+                    "",
+                    "config.yaml",
+                    crate::render_options! { snippets: snippets },
+                );
+                assert_eq!(report.to_string(), format!("IO error: {expected_cause}"));
+                let debug = format!("{report:?}");
+                assert_eq!(debug.matches(expected_cause).count(), 1, "{debug}");
+                let rendered = graphical_report(&report);
+                assert_eq!(rendered.matches(expected_cause).count(), 1, "{rendered}");
+                assert!(!rendered.contains('\u{1b}'), "{rendered}");
+            }
+        }
     }
 
     #[test]
