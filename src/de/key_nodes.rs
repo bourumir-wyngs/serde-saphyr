@@ -25,6 +25,28 @@ pub(super) fn simple_tagged_enum_name(
     simple_enum_variant_name(raw_tag.as_deref()?).map(ToOwned::to_owned)
 }
 
+/// Returns the externally tagged enum variant selected by a node's tag.
+///
+/// Custom tags are resolved by [`simple_tagged_enum_name`]. Local tags that also
+/// name a YAML type (`!map`, `!str`, `!timestamp`, ...) are classified as type
+/// annotations, but in a typed enum context the local tag selects a variant of
+/// exactly that name when the enum has one. Resolved core forms (`!!timestamp`,
+/// `!<tag:yaml.org,2002:timestamp>`, and directive-expanded handles) have a
+/// different `raw_tag` and remain YAML type annotations.
+pub(super) fn tagged_enum_variant_name(
+    raw_tag: &Option<Cow<'_, str>>,
+    tag: &SfTag,
+    variants: &[&str],
+) -> Option<String> {
+    if let Some(name) = simple_tagged_enum_name(raw_tag, tag) {
+        return Some(name);
+    }
+
+    let suffix = raw_tag.as_deref()?.strip_prefix('!')?;
+    (simple_enum_variant_name(suffix) == Some(suffix) && variants.contains(&suffix))
+        .then(|| suffix.to_owned())
+}
+
 /// Canonical tag identity used by [`KeyFingerprint`].
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(super) enum CanonicalKeyTag<'a> {

@@ -17,7 +17,7 @@ use super::key_nodes::{
     KeyFingerprint, KeyNode, PendingEntry, apply_duplicate_key_policy_to_entries,
     capture_node_with_legacy_octal, capture_simple_tagged_node_as_map_events,
     is_empty_mapping_key_fingerprint, is_merge_key, pending_entries_from_live_events,
-    simple_tagged_enum_name, validate_no_merge_keys_in_node_events,
+    tagged_enum_variant_name, validate_no_merge_keys_in_node_events,
 };
 #[cfg(feature = "properties")]
 use super::options::PropertySyntax;
@@ -2512,7 +2512,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 location,
                 ..
             }) => {
-                if let Some(tag_name) = simple_tagged_enum_name(&raw_tag, &tag) {
+                if let Some(tag_name) = tagged_enum_variant_name(&raw_tag, &tag, variants) {
                     tagged_enum = Some((tag_name, location));
                 }
                 let Some(view) = self.peek_scalar_view()? else {
@@ -2562,14 +2562,8 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             }) => {
                 // `!map` is classified as `SfTag::Map` for compatibility when used as
                 // an ordinary mapping tag. In a typed enum context it may instead select
-                // a renamed `map` variant. Resolved core forms (`!!map`, verbatim tags,
-                // and directive-expanded handles) have a different `raw_tag` and remain
-                // YAML type annotations.
-                let tag_name = simple_tagged_enum_name(&raw_tag, &tag).or_else(|| {
-                    (tag == SfTag::Map && raw_tag.as_deref() == Some("!map"))
-                        .then(|| "map".to_owned())
-                });
-                if let Some(tag_name) = tag_name
+                // a renamed `map` variant; see `tagged_enum_variant_name`.
+                if let Some(tag_name) = tagged_enum_variant_name(&raw_tag, &tag, variants)
                     && variants.contains(&tag_name.as_str())
                 {
                     self.ev.strip_peeked_node_tag()?;
@@ -2623,7 +2617,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 location,
                 ..
             }) => {
-                if let Some(tag_name) = simple_tagged_enum_name(&raw_tag, &tag)
+                if let Some(tag_name) = tagged_enum_variant_name(&raw_tag, &tag, variants)
                     && variants.contains(&tag_name.as_str())
                 {
                     // Consume the SeqStart, collect all events until SeqEnd, replay as untagged sequence
