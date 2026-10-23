@@ -1,6 +1,24 @@
 # Changelog
 
-## 2.1.0 Unreleased
+## 3.0.0-rc.1 Unreleased
+
+### Breaking YAML changes
+
+This prerelease changes tag interpretation, optional tagged values, mapping-key
+identity, document filtering, and tagged unit output. These are behavioral
+incompatibilities even when existing Rust code compiles. The corrected semantics
+are the defaults; no legacy alias mode is provided. See
+[YAML changes in 3.0.0](README.md#yaml-changes-in-300) for all migration details.
+
+- Tags selecting unit enum variants now reject non-null payloads instead of silently
+  discarding them (#236). Use a bare variant name, a tag with empty content, or a
+  tag followed by `~` or `null`; quoted strings and collections are rejected.
+- Recognize only the standard plain null spellings: empty, `~`, `null`, `Null`, and `NULL`.
+  Other capitalization such as `NulL` remains a string instead of being rejected, converted
+  to an empty value, or skipped as a document ([#234](https://github.com/bourumir-wyngs/serde-saphyr/issues/234)).
+- `strict_booleans: true` now recognizes only the six YAML 1.2 Core boolean spellings.
+  Other capitalization such as `tRuE` remains a string during inference, is accepted
+  as unquoted text with `no_schema`, and is rejected for boolean targets.
 
 ### Added
 
@@ -64,15 +82,13 @@
 - Reject YAML null when deserializing sequences, mappings, and mapping-based structs instead
   of silently constructing empty values ([#233](https://github.com/bourumir-wyngs/serde-saphyr/issues/233)).
   Blank values and the plain spellings `~`, `null`, `Null`, and `NULL` are handled consistently.
-  Write `[]` for an empty sequence or `{}` for an empty mapping. `Option<T>` null handling
-  and defaults for absent fields are unchanged; see the README migration notes.
+  Write `[]` for an empty sequence or `{}` for an empty mapping. Untagged and
+  standard-tagged nulls remain `None` for `Option<T>`; defaults for absent fields
+  are unchanged. See the README for the separate tagged-value presence change.
 
 ## 2.0.0
 
 ### YAML changes
-- Tags selecting unit enum variants now reject non-null payloads instead of silently
-  discarding them (#236). Use a bare variant name, a tag with empty content, or a
-  tag followed by `~` or `null`; quoted strings and collections are rejected.
 - Composite mapping keys are not compared regardless of entry order (thanks @yuxi-liu-wired)  .
 - Commented<T> now writes its output replacing characters not allowed in comments (non printable) by spaces.
 
@@ -143,15 +159,9 @@
 
 ### Fixed
 
-- Recognize only the standard plain null spellings: empty, `~`, `null`, `Null`, and `NULL`.
-  Other capitalization such as `NulL` remains a string instead of being rejected, converted
-  to an empty value, or skipped as a document ([#234](https://github.com/bourumir-wyngs/serde-saphyr/issues/234)).
 - Buffered `LastWins` values and inline merges no longer produce alias errors when no
   alias was used. Replay preserves per-node origins, including genuine nested aliases,
   ordinary value locations, and merge use-sites for `Spanned<T>`.
-- `strict_booleans: true` now recognizes only the six YAML 1.2 Core boolean spellings.
-  Other capitalization such as `tRuE` remains a string during inference, is accepted
-  as unquoted text with `no_schema`, and is rejected for boolean targets.
 - Plain alias diagnostics explicitly label the use location with `(used at line X, column Y)`.
   The new `Localizer::alias_used_at` hook controls this suffix independently of failure and
   definition locations. Custom localizers that previously used `attach_location` to format

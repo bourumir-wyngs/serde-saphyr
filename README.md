@@ -69,6 +69,18 @@ The test suite currently includes over 3000 passing tests. For [YAML Test Suite 
 
 ### Usage
 
+This branch targets the `3.0.0-rc.1` prerelease. To test this exact candidate after
+it is published, opt in explicitly:
+
+```toml
+[dependencies]
+serde-saphyr = "=3.0.0-rc.1"
+```
+
+Ordinary `"2"` and `"3"` requirements do not select this prerelease. See
+[Cargo's prerelease rules](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#pre-releases)
+and [YAML changes in 3.0.0](#yaml-changes-in-300) before upgrading.
+
 ```rust
 use serde::Deserialize;
 
@@ -107,11 +119,11 @@ To speed up compilation, you can link only the deserializer or only the serializ
 If you only need one side, you can disable default features and enable only the API surface you use:
 
 ```toml
-serde-saphyr = { version = "2", default-features = false, features = ["deserialize"] }
+serde-saphyr = { version = "=3.0.0-rc.1", default-features = false, features = ["deserialize"] }
 ```
 or
 ```toml
-serde-saphyr = { version = "2", default-features = false, features = ["serialize"] }
+serde-saphyr = { version = "=3.0.0-rc.1", default-features = false, features = ["serialize"] }
 ```
 Disabling both will produce a "Invalid feature configuration" error (such configuration makes no sense).
 
@@ -171,40 +183,253 @@ Here, `hi:` supplies an empty mapping value, which is YAML null.
   These produce `""`, `"~"`, and `"null"`, respectively. An explicit string tag also works,
   for example `hi: !!str null` produces `"null"`.
 
-### Migrating from 2.0
+### YAML changes in 3.0.0
 
-Recognized scalar tags are now checked consistently for numeric, boolean, character,
-and enum targets. Values such as `!!timestamp 10`, `!time false`, and `!!int vast`
-are rejected instead of silently discarding their tags. Enum variant names accept
-string-compatible tags; supported custom enum tags remain available.
+Version 3.0 changes YAML interpretation and serialization, even where the same Rust
+code still compiles. Existing documents can produce different values or errors,
+and some serialized output changes. These rules are the defaults in
+`3.0.0-rc.1`; there is no legacy local-type-alias mode. Test existing configuration
+files and stored YAML, not just compilation, before upgrading from 2.x.
 
-The robotics tags `!degrees`, `!radians`, and `!time` require the `robotics` feature
-and `angle_conversions: true`, and deserialize into floating-point values. Their
-conversions also apply to untyped reads, skipped fields, and `#[serde(flatten)]`.
-Use `!time` for durations in seconds; standard YAML `!!timestamp` is not a numeric
-duration tag. Remove a tag if an ordinary number or boolean is intended. A null-like
-payload with one of these tags is rejected, including inside `Option<T>`.
+The examples below assume the default tag handles unless a `%TAG` directive is
+shown. [YAML tag handles](https://yaml.org/spec/1.2.2/#6821-tag-handles) are expanded
+before interpretation; counting exclamation marks alone is not sufficient.
+
+#### Local type aliases are removed
+
+Earlier releases treated the following local application tags as aliases of
+standard YAML types. Version 3.0 removes those aliases:
+
+| Former local alias | Use for a standard type annotation |
+| --- | --- |
+| `!str` | `!!str`, or quote the string |
+| `!int` | `!!int` |
+| `!float` | `!!float` |
+| `!bool` | `!!bool` |
+| `!null` | `!!null`, or an untagged null |
+| `!seq` | `!!seq`, or an untagged sequence |
+| `!map` | `!!map`, or an untagged mapping |
+| `!timestamp` | `!!timestamp` |
+| `!binary` | `!!binary` |
+
+The old spellings remain valid application tags; they are not invalid YAML.
+They no longer request the corresponding built-in conversion or node-shape check.
+By default they follow the same policy as other application tags: they can select
+enum variants, are captured by `Tagged<T>`, and are otherwise ignored where possible.
+With `reject_unsupported_tags: true`, these newly unsupported aliases are rejected,
+including when used as enum selectors. Strict mode already rejects unknown custom
+enum tags; this change adds the former aliases to that category.
+
+This can silently change successfully parsed values. For example, when the target
+is `serde_json::Value` with default options:
+
+| Input | Previous alias behavior | 3.0 behavior |
+| --- | --- | --- |
+| `!str 123` | String `"123"` | Number `123` |
+| `!int '123'` | Number `123` | String `"123"` |
+| `!null 123` | Null | Number `123` |
+| `!!str 123` | String `"123"` | String `"123"` |
+
+For concrete Rust targets the target type still controls deserialization, so an
+input can instead produce a type error. For example, use `!!binary AQID` to request
+base64 decoding; local `!binary AQID` no longer requests that conversion.
+
+Nonstandard global aliases such as `!<tag:yaml.org,2002:!str>` are also removed.
+The standard URI is `tag:yaml.org,2002:str`, without the extra `!` after the colon.
+The same distinction applies to all nine type names above, on both input and output.
+
+Replace local tags only where they were intended as type annotations. Do not change
+an intentional enum selector such as `!timestamp` into `!!timestamp`. Likewise,
+inspect `%TAG` directives rather than performing a blanket text replacement:
+
+```yaml
+%TAG ! tag:yaml.org,2002:
+---
+value: !str 123  # Still a standard string: the directive changes the resolved tag.
+```
+
+Conversely, `%TAG !! !` makes `!!str` resolve to the local application tag `!str`.
+Verbatim tags and named handles use the same resolved-identity rule.
+
+Standalone `!` remains a separate non-specific tag: `! 123` is a string, and
+`! [123, ! 123]` is a sequence containing a number and a string. It does not select
+an enum variant and is not changed by `%TAG` remapping. Bare `!!` is not an alias
+for standalone `!`; a shorthand using the `!!` handle requires a suffix.
+
+Intentional extensions `!include`, `!time`, `!degrees`, and `!radians` remain
+available under their feature and configuration requirements. Their supported
+extension aliases are not removed with the standard-type aliases.
+
+#### Enum selection precedes payload interpretation
+
+A resolved local tag matching a Rust enum variant selects that variant before
+its payload is interpreted, including names such as `str`, `int`, `null`, `seq`,
+`map`, and `timestamp`. The selector is then removed and the payload is deserialized
+into the variant's actual field type. A local `!int` can therefore select a variant
+whose field is a string or a collection; it does not impose an integer conversion.
+
+Do not depend on a former type alias overriding a matching enum selector, or on
+an unmatched local alias being ignored as a built-in string annotation. Recognized
+global built-in tags remain type annotations, not selectors for similarly named
+variants. Use local selectors or externally tagged mappings for those variants.
+`Tagged<T>` serialization follows the same distinction; a recognized global built-in
+tag cannot be used to suppress a payload variant's external representation.
+
+Serde's buffering for untagged enums does not provide the direct enum's variant
+list. In particular, a local `!map` is no longer a standard mapping annotation
+through that buffering, so an ordinary mapping arm that accepted it can stop
+matching. Use `!!map` or no tag for an ordinary mapping, and a compatible tagged
+enum representation when the tag is part of the data. The existing
+`!!EnumName VARIANT` syntax for supported single-level scalar enums is unchanged;
+it does not make recognized standard tags into variant selectors.
+
+#### Tagged values are present inside options
+
+Previously, some application-tagged empty or null-like scalars were consumed as
+`None` before the inner target could see the tag. An explicit application tag now
+denotes a present value: `Option<T>` passes the intact node to `T` and wraps a
+successful result in `Some`. This does not depend on whether `T` is an enum.
+
+For an enum with unit variant `Timestamp`, newtype variant `Count(u32)`, and
+newtype variant `Maybe(Option<u32>)`, using their lowercase local selectors:
+
+| Input | Result as `Option<E>` in 3.0 |
+| --- | --- |
+| Untagged empty scalar, `null`, or `~` | `None` |
+| `!!null` | `None` |
+| `!timestamp`, `!timestamp null`, or `!timestamp ~` | `Some(E::Timestamp)` |
+| `!count 42` | `Some(E::Count(42))` |
+| `!maybe`, `!maybe null`, or `!maybe ~` | `Some(E::Maybe(None))` |
+| `!maybe 42` | `Some(E::Maybe(Some(42)))` |
+| `!count` or an unknown selector | The same error as for the direct enum target |
+
+A null payload is not an absent enum value. Local `!null payload` no longer forces
+absence either: it can select a `Null(String)` variant with payload `"payload"`.
+Nested options, optional fields and keys, `NullableTilde<T>`, and tagged wrappers
+follow the same presence rule. Untagged nulls and resolved standard null tags still
+represent absence; `%TAG` and verbatim forms of the standard null tag work as before.
+
+One formerly supported round-trip intentionally changes:
+`Tagged(None::<String>, Some("!foo".into()))` still writes `!foo null`, but reading
+that node as `Tagged<Option<String>>` now errors instead of producing `None`.
+Reading it as `Tagged<Option<()>>` produces a tagged `Some(())`. Likewise, wrapping
+an absent `NullableTilde<T>` in an application tag writes `!foo ~`, which is now a
+present tagged node. For absence, use an untagged or standard-tagged null. For a
+present tagged value with an absent payload, use an enum variant with an optional
+field. Do not attach an application tag to outer `None` and expect to preserve
+absence on reading.
+
+#### Mapping-key identity includes local tags
+
+Duplicate detection and merge expansion now preserve resolved local tag identities,
+including inside composite keys. Local `!str a` is distinct from standard `!!str a`
+and from untagged `a`; different local tags also remain distinct. For example:
+
+```yaml
+{!str a: 1, a: 2}
+```
+
+These are two distinct YAML keys, rather than an alias-tagged duplicate. Similarly,
+local `!int 0xB` and `!int 11` retain their payload spellings and are distinct.
+Standard `!!int 0xB` and `!!int 11` still compare numerically, as do equivalent
+untagged integer keys. Equivalent spellings of the same local tag, including
+verbatim and directive-expanded forms, still compare equally.
+
+This changes which entries are duplicates and which entries survive `FirstWins`,
+`LastWins`, or merge expansion. YAML key equality is separate from Rust key equality:
+if conversion discards a tag, a receiving `HashMap` or `BTreeMap` can still combine
+otherwise distinct YAML keys. Preserve the distinction in the target key type when
+it matters; do not rely on the previous alias-based duplicate detection.
+
+#### Multi-document APIs retain tagged null-like documents
+
+Application-tagged scalar documents with empty or null-like payloads now reach
+the target deserializer instead of being skipped as null. This includes local tags
+and global application-tag URIs, through string, byte, reader, and validation APIs.
+Only implicit null scalar documents and resolved standard-null scalar documents
+are skipped by the multi-document null filter.
+
+A stream containing a document `--- !timestamp` can therefore yield an enum value
+where it previously yielded no entry. With `Option<E>`, that document becomes a
+present variant rather than a skipped value or `None`. A retained document with an
+unknown selector or invalid payload now reports an error. Review assumptions about
+result counts, omitted documents, and ignored invalid data when upgrading.
+
+#### Tagged unit variants omit the written null payload
+
+A matching local tag on a unit enum variant now writes only the tag:
+
+```yaml
+# Previously written for Tagged(E::Timestamp, Some("!timestamp".into())):
+!timestamp null
+```
+
+```yaml
+# Written in 3.0:
+!timestamp
+```
+
+This also applies through optional and tagged wrappers and inside containers.
+Reading still accepts omitted content and explicit plain null spellings, including
+`null`, `Null`, `NULL`, and `~`. Non-null content is rejected for a unit variant,
+not silently discarded: quoted `"null"`, numbers, and collections are not unit
+payloads. Use a variant with fields when the content is meaningful.
+
+Actual fields keep their serialized payloads: `!count 42`, `!maybe null`, and
+`!maybe 42` are not shortened. Empty tuple and struct variants retain `[]` and `{}`
+respectively. Ordinary enum serialization without an explicit matching local tag
+is unchanged. Update exact-output snapshots for tag-only units, and test old readers
+before exchanging new output with applications still using 2.x.
+
+#### Additional scalar and collection corrections since 2.0
+
+Recognized scalar tags are checked consistently for numeric, boolean, character,
+and enum targets. Incompatible tags no longer disappear during conversion. For
+example, do not use standard `!!timestamp` as a numeric duration annotation or
+`!time` on a boolean. The robotics tags `!time`, `!degrees`, and `!radians` require
+the `robotics` feature and `angle_conversions: true` for floating-point conversions
+and untyped reads. Enabled conversions also run for skipped and flattened values;
+invalid tagged payloads can therefore fail in paths that previously ignored them.
+Use `!time` for durations in seconds, not `!!timestamp`, and remove annotations
+where an ordinary number or boolean is intended. Local robotics tags can still
+select matching typed enum variants before their payloads are interpreted; include
+processing and strict tag rejection retain their separate requirements.
+
+YAML null no longer constructs empty sequences, mappings, or mapping-based structs.
+This covers blank values, `~`, `null`, `Null`, `NULL`, and standard-tagged nulls.
+Write the intended collection explicitly:
+
+```yaml
+items: []     # Not items: or items: null
+settings: {}  # Not settings: or settings: null
+```
+
+A mapping-based struct must still satisfy its field requirements. Ordinary null
+continues to produce `None` for `Option<T>`. `#[serde(default)]` still handles an
+absent field; it does not make a present null valid for a collection field.
+`SerializerOptions::empty_as_braces` is deprecated since `3.0.0-rc.1`: leave it at
+its default `true` to write `[]` and `{}`. The retained `false` setting emits blank
+values for empty block collections without tags or anchors; those values are null
+and no longer round-trip into collection types.
+
+Implicit null recognition uses only the standard plain spellings: empty, `~`,
+`null`, `Null`, and `NULL`. Mixed capitalization such as `NulL` remains a string,
+not null, so it is not skipped as a null document or treated as outer `None`.
+With `strict_booleans: true`, only `true`, `True`, `TRUE`, `false`, `False`, and
+`FALSE` are boolean spellings. Mixed forms such as `tRuE` remain strings during
+inference, are allowed as unquoted text with `no_schema`, and are rejected for
+boolean targets. Use standard spellings for nulls and booleans, and quote text
+whose exact spelling must be preserved.
+
+Before upgrading, check type-like local tags and `%TAG` directives, tagged optional
+values, duplicate and merged keys, document streams, empty collections, and exact
+serialized-output assertions. Test with both the intended Rust types and generic
+values where your application uses them; those paths need not coerce scalars alike.
 
 ### Migrating from 1.x
 
-A bug fix removes the implicit conversion of YAML null into empty sequences, mappings,
-and mapping-based structs. This includes blank values such as `items:`, the plain spellings
-`~`, `null`, `Null`, and `NULL`, and explicitly tagged null values.
-If an empty collection is intended, write `[]` for an empty sequence or `{}` for an empty
-mapping:
-
-```yaml
-items: []     # Instead of items: or items: null
-settings: {}  # Instead of settings: or settings: null
-```
-
-`Option<T>` continues to accept null as `None`.
-
-`SerializerOptions::empty_as_braces` is deprecated since 2.1.0. Omit this setting to keep
-the default `true`, which emits `[]` and `{}` for empty collections. Setting it to `false`
-emits blank values for empty block collections without tags or anchors. These values are
-YAML null and do not round-trip into collection types. The setting remains supported for
-compatibility, but deserialization rejects those null values.
+When upgrading from 1.x, also apply the [YAML changes in 3.0.0](#yaml-changes-in-300)
+above. The following API migration notes describe the earlier 2.0 transition.
 
 Version 2.0 lets `from_multiple`, `from_slice_multiple`, and their `_with_options` variants
 deserialize values that borrow from the input by changing their bound from `DeserializeOwned`
@@ -274,7 +499,7 @@ The CLI includes filesystem-backed `!include` support, so it must be built with 
 `include_fs` feature. To install and run it (no Rust knowledge required):
 
 ```bash
-cargo install serde-saphyr --features include_fs
+cargo install serde-saphyr --version 3.0.0-rc.1 --features include_fs
 
 # binary name is the package name by default
 serde-saphyr path/to/file.yaml
@@ -284,7 +509,7 @@ To enable **fancy error reporting** (graphical diagnostics) via the optional `mi
 
 ```bash
 # install with miette enabled
-cargo install serde-saphyr --features miette,include_fs
+cargo install serde-saphyr --version 3.0.0-rc.1 --features miette,include_fs
 
 # or run from a git checkout
 cargo run --features miette,include_fs -- path/to/file.yaml
@@ -789,6 +1014,8 @@ scalars as strings and collections as ordinary sequences or mappings, without ch
 how their children resolve. For example, `! [12, ! 12]` contains a number and a string.
 This behavior is unchanged by `%TAG` directives; bare `!!` is not another spelling of it.
 
+See [YAML changes in 3.0.0](#yaml-changes-in-300) for the complete migration guide.
+
 Migration: replace former local type aliases with standard tags (`!int` becomes `!!int`,
 `!binary` becomes `!!binary`, and so on); quote strings or use `!!str`. Tags such as
 `!<tag:yaml.org,2002:!str>` are also distinct from standard type tags. Intentional
@@ -1176,7 +1403,7 @@ error: line 3 column 23: invalid here, validation error: length is lower than 2 
 4 |  
 ```
 
-The integration of garde is feature-gated and disabled by default. Use `serde-saphyr = { version = "2", features = ["garde"] }` (or `features = ["validator"]`) in `Cargo.toml` to enable it.
+The integration of garde is feature-gated and disabled by default. Use `serde-saphyr = { version = "=3.0.0-rc.1", features = ["garde"] }` (or `features = ["validator"]`) in `Cargo.toml` to enable it.
 
 If you prefer to validate without validation crates, use the [`Spanned<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Spanned.html) wrapper to retain YAML locations for manual checks. Location information can be lost when Serde buffers values, as described in the [limitations](#unsupported-features) below.
 
