@@ -47,14 +47,33 @@ fn injected_error(kind: io::ErrorKind) -> io::Error {
 }
 
 #[track_caller]
-fn assert_injected_io_error(error: &Error, expected_kind: io::ErrorKind) {
+fn assert_io_error_source(error: &Error) -> &io::Error {
     match error.without_snippet() {
         Error::IOError { cause } => {
-            assert_eq!(cause.kind(), expected_kind);
-            assert!(cause.to_string().contains("injected reader failure"));
+            let source = std::error::Error::source(error)
+                .and_then(|source| source.downcast_ref::<io::Error>())
+                .expect("the source must expose the original I/O error");
+            assert!(std::ptr::eq(source, cause));
+            source
         }
         other => panic!("expected reader I/O error, got {other:?}"),
     }
+}
+
+#[track_caller]
+fn assert_injected_io_error(error: Error, expected_kind: io::ErrorKind) {
+    let source = assert_io_error_source(&error);
+    assert_eq!(source.kind(), expected_kind);
+    assert!(source.to_string().contains("injected reader failure"));
+
+    let report = anyhow::Error::new(error);
+    assert_eq!(format!("{report:#}"), "IO error: injected reader failure");
+    let debug = format!("{report:?}");
+    assert_eq!(
+        debug.matches("injected reader failure").count(),
+        1,
+        "{debug}"
+    );
 }
 
 #[test]
@@ -65,7 +84,7 @@ fn from_reader_propagates_io_error() {
     ))
     .expect_err("reader failure must be returned");
 
-    assert_injected_io_error(&error, io::ErrorKind::ConnectionReset);
+    assert_injected_io_error(error, io::ErrorKind::ConnectionReset);
 }
 
 #[derive(Debug, Deserialize)]
@@ -82,7 +101,7 @@ fn from_reader_does_not_swallow_io_error_after_document_end() {
     ))
     .expect_err("late reader failure must be returned");
 
-    assert_injected_io_error(&error, io::ErrorKind::ConnectionReset);
+    assert_injected_io_error(error, io::ErrorKind::ConnectionReset);
 }
 
 #[test]
@@ -93,7 +112,7 @@ fn from_reader_does_not_treat_reader_unexpected_eof_as_clean_eof() {
     ))
     .expect_err("reader-generated UnexpectedEof must be returned");
 
-    assert_injected_io_error(&error, io::ErrorKind::UnexpectedEof);
+    assert_injected_io_error(error, io::ErrorKind::UnexpectedEof);
 }
 
 #[test]
@@ -106,10 +125,8 @@ fn from_reader_preserves_raw_os_error() {
     ))
     .expect_err("late reader failure must be returned");
 
-    match error.without_snippet() {
-        Error::IOError { cause } => assert_eq!(cause.raw_os_error(), Some(RAW_OS_ERROR)),
-        other => panic!("expected reader I/O error, got {other:?}"),
-    }
+    let source = assert_io_error_source(&error);
+    assert_eq!(source.raw_os_error(), Some(RAW_OS_ERROR));
 }
 
 #[derive(Debug)]
@@ -135,14 +152,11 @@ fn from_reader_preserves_custom_io_error_cause() {
     ))
     .expect_err("late reader failure must be returned");
 
-    match error.without_snippet() {
-        Error::IOError { cause } => {
-            let inner = cause
-                .get_ref()
-                .and_then(|error| error.downcast_ref::<InjectedCause>())
-                .expect("the original custom error must remain directly inspectable");
-            assert_eq!(inner.marker, "custom injected cause");
-        }
-        other => panic!("expected reader I/O error, got {other:?}"),
-    }
+    let source = assert_io_error_source(&error);
+    assert_eq!(source.kind(), io::ErrorKind::Other);
+    let inner = source
+        .get_ref()
+        .and_then(|error| error.downcast_ref::<InjectedCause>())
+        .expect("the original custom error must remain directly inspectable");
+    assert_eq!(inner.marker, "custom injected cause");
 }

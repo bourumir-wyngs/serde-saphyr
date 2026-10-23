@@ -59,7 +59,10 @@ fn standard_null_spellings_remain_null() -> Result<(), serde_saphyr::Error> {
 fn nonstandard_null_spellings_do_not_become_empty_values() {
     for text in MIXED_CASE_NULL_STRINGS {
         assert!(serde_saphyr::from_str::<()>(text).is_err(), "{text:?}");
-        assert!(serde_saphyr::from_str::<Vec<String>>(text).is_err(), "{text:?}");
+        assert!(
+            serde_saphyr::from_str::<Vec<String>>(text).is_err(),
+            "{text:?}"
+        );
         assert!(
             serde_saphyr::from_str::<BTreeMap<String, String>>(text).is_err(),
             "{text:?}"

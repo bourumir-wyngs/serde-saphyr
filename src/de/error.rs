@@ -113,6 +113,20 @@ pub trait MessageFormatter {
     /// [`str::escape_debug`] or an equivalent encoding.
     fn format_message<'a>(&self, err: &'a Error) -> Cow<'a, str>;
 
+    /// Return the complete message for a standalone diagnostic, such as a Miette report,
+    /// that does not retain the original error's source chain.
+    ///
+    /// The default preserves [`Self::format_message`] unchanged. Built-in formatters
+    /// also include I/O causes here. Custom formatters control whether to include,
+    /// translate, or omit those details; delegate this hook to a built-in formatter
+    /// when its standalone behavior is desired for fallback cases.
+    ///
+    /// The same wrapper-unwrapping and sanitization rules as [`Self::format_message`]
+    /// apply. Ordinary [`Error::render`] and `Display` still use `format_message`.
+    fn format_standalone_message<'a>(&self, err: &'a Error) -> Cow<'a, str> {
+        self.format_message(err)
+    }
+
     /// Optionally format individual validation issues for plain rendering.
     ///
     /// For [`Error::ValidationError`], returning `Some(lines)` replaces the call to
@@ -1225,6 +1239,9 @@ pub enum Error {
         location: Location,
     },
     /// Unexpected I/O error. This may happen only when deserializing from a reader.
+    ///
+    /// The default display is `IO error`; [`std::error::Error::source`] provides
+    /// the underlying cause so error chains do not repeat its message.
     IOError {
         cause: std::io::Error,
     },
@@ -2588,11 +2605,26 @@ pub(crate) fn collect_garde_issues(report: &garde::Report) -> Vec<ValidationIssu
     out
 }
 impl std::error::Error for Error {
+    /// Snippet wrappers forward the wrapped error's cause to avoid duplicate messages.
+    /// Use [`Error::without_snippet`] to inspect the wrapped error itself.
+    /// As an exception, [`Error::AliasError`] and its snippet wrappers return the
+    /// wrapped error directly to preserve the existing source chain.
+    /// I/O errors return their underlying [`std::io::Error`].
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Error::AliasError { error, .. } | Error::WithSnippet { error, .. } => {
-                Some(error.as_ref())
+            Error::WithSnippet { error, .. } => {
+                let mut inner = error.as_ref();
+                while let Error::WithSnippet { error, .. } = inner {
+                    inner = error;
+                }
+                if matches!(inner, Error::AliasError { .. }) {
+                    Some(error.as_ref())
+                } else {
+                    inner.source()
+                }
             }
+            Error::AliasError { error, .. } => Some(error.as_ref()),
+            Error::IOError { cause } => Some(cause),
             _ => None,
         }
     }

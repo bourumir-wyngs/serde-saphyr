@@ -41,8 +41,8 @@ use crate::location::Location;
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::location::Locations;
 use crate::parse_scalars::{
-    leading_zero_decimal, maybe_not_string, parse_int_signed, parse_int_unsigned, parse_yaml11_bool,
-    parse_yaml12_bool, parse_yaml12_float, scalar_is_null, scalar_is_nullish,
+    leading_zero_decimal, maybe_not_string, parse_int_signed, parse_int_unsigned,
+    parse_yaml11_bool, parse_yaml12_bool, parse_yaml12_float, scalar_is_null, scalar_is_nullish,
     try_parse_float_incl_overflow, yaml_trim,
 };
 
@@ -2518,12 +2518,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 let Some(view) = self.peek_scalar_view()? else {
                     return Err(eof_with_loc(self.ev));
                 };
-                self.validate_scalar_tag(
-                    view.tag,
-                    SfTag::String,
-                    "enum variant",
-                    view.location,
-                )?;
+                self.validate_scalar_tag(view.tag, SfTag::String, "enum variant", view.location)?;
                 if self.cfg.no_schema
                     && !view.tag.forces_string()
                     && maybe_not_string(&view.effective, &style, self.cfg.strict_booleans)

@@ -73,10 +73,7 @@ fn strict_boolean_capitalization_is_consistent_across_targets(
         assert_eq!(strict::<Value>(&text, false)?, inferred, "{text}");
 
         // Explicit bool tags validate their contents, even when quoted.
-        for yaml in [
-            format!("!!bool {text}"),
-            format!("!!bool \" \t{text}\t \""),
-        ] {
+        for yaml in [format!("!!bool {text}"), format!("!!bool \" \t{text}\t \"")] {
             let result = strict::<Value>(&yaml, false);
             if accepted {
                 assert_eq!(result?, Value::Bool(expected), "{yaml}");

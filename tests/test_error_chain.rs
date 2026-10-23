@@ -6,6 +6,96 @@ use serde_saphyr::{
     IncludeResolveError, InputSource, Options, ResolvedInclude, from_str_with_options,
 };
 
+#[test]
+fn snippet_wrappers_do_not_repeat_messages_in_error_chains() {
+    for with_snippet in [false, true] {
+        let options = serde_saphyr::options! { with_snippet: with_snippet };
+        for error in [
+            serde_saphyr::from_str_with_options::<u16>("nope", options.clone()).unwrap_err(),
+            serde_saphyr::from_str_with_options::<String>("[", options.clone()).unwrap_err(),
+            serde_saphyr::from_str_with_options::<&str>(r#""hello\nworld""#, options).unwrap_err(),
+        ] {
+            let rendered = error.to_string();
+            let report = anyhow::Error::new(error);
+            assert_eq!(
+                format!("{report:#}"),
+                rendered,
+                "following source() must not append the same diagnostic again"
+            );
+        }
+    }
+}
+
+#[test]
+fn snippet_wrappers_forward_the_underlying_io_error() {
+    for snippet_layers in 0..=2 {
+        let mut error = serde_saphyr::Error::IOError {
+            cause: std::io::Error::from_raw_os_error(12_345),
+        };
+        for _ in 0..snippet_layers {
+            error = serde_saphyr::Error::WithSnippet {
+                regions: Vec::new(),
+                crop_radius: 0,
+                error: Box::new(error),
+            };
+        }
+        let source = std::error::Error::source(&error)
+            .and_then(|source| source.downcast_ref::<std::io::Error>())
+            .expect("source must expose the original I/O error through snippet wrappers");
+        assert_eq!(source.raw_os_error(), Some(12_345));
+        let expected = format!("IO error: {source}");
+        let report = anyhow::Error::new(error);
+        assert_eq!(report.chain().count(), 2);
+        assert_eq!(format!("{report:#}"), expected);
+    }
+}
+
+#[test]
+fn alias_error_source_is_preserved_through_snippet_wrappers() {
+    for with_snippet in [false, true] {
+        let error = serde_saphyr::from_str_with_options::<(String, u16)>(
+            "[&a nope, *a]",
+            serde_saphyr::options! { with_snippet: with_snippet },
+        )
+        .unwrap_err();
+        let rendered = error.to_string();
+        let expected = if with_snippet {
+            format!(
+                "{rendered}: {}: invalid u16 at line 1, column 5",
+                error.without_snippet()
+            )
+        } else {
+            format!("{rendered}: invalid u16 at line 1, column 5")
+        };
+        let report = anyhow::Error::new(error);
+        assert_eq!(report.chain().count(), if with_snippet { 3 } else { 2 });
+        assert_eq!(format!("{report:#}"), expected);
+    }
+}
+
+#[test]
+fn nested_snippet_wrappers_preserve_the_complete_alias_chain() {
+    let error = serde_saphyr::Error::WithSnippet {
+        regions: Vec::new(),
+        crop_radius: 0,
+        error: Box::new(serde_saphyr::from_str::<(String, u16)>("[&a nope, *a]").unwrap_err()),
+    };
+    let report = anyhow::Error::new(error);
+    let variants: Vec<_> = report
+        .chain()
+        .map(|error| match error.downcast_ref::<serde_saphyr::Error>() {
+            Some(serde_saphyr::Error::WithSnippet { .. }) => "WithSnippet",
+            Some(serde_saphyr::Error::AliasError { .. }) => "AliasError",
+            Some(serde_saphyr::Error::InvalidScalar { .. }) => "InvalidScalar",
+            other => panic!("unexpected error in alias chain: {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        variants,
+        ["WithSnippet", "WithSnippet", "AliasError", "InvalidScalar"]
+    );
+}
+
 #[cfg(feature = "include")]
 #[derive(Debug, Deserialize, PartialEq)]
 struct Foo {
