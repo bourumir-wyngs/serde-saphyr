@@ -1,0 +1,29 @@
+name: PR 246 release documentation preparation
+
+on:
+  pull_request:
+    branches: ["master"]
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    if: github.event.pull_request.number == 246 && github.head_ref == 'fix/local-tag-enum-precedence-231' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Prepare and verify version and migration edits
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/pr246-release-docs.py
+      - name: Retain reviewed patch and files
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr246-release-docs
+          path: /tmp/pr246-*
+          retention-days: 3
