@@ -1073,37 +1073,19 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
         self.write_end_of_scalar()
     }
 
-    /// Emit pending YAML node properties before a scalar.
+    /// Emit pending YAML node properties before scalar content.
     #[inline]
     fn write_scalar_prefix_if_anchor(&mut self) -> Result<()> {
-        let tag = self.state.pending_tag.take();
-        let anchor_id = self.anchors.pending_id.take();
-        if tag.is_some() || anchor_id.is_some() {
-            if self.state.at_line_start {
-                self.write_indent(self.state.depth)?;
-            }
-            if let Some(tag) = tag.as_ref() {
-                self.out.write_str(&tag.emitted)?;
-                self.out.write_char(' ')?;
-            }
-            if let Some(id) = anchor_id {
-                self.anchors
-                    .record_resolved_tag(id, tag.as_ref().map(|tag| tag.resolved.as_str()));
-                self.out.write_char('&')?;
-                self.write_anchor_name(id)?;
-                self.out.write_char(' ')?;
-            }
-        }
-        Ok(())
+        self.write_node_properties(true)
     }
 
-    /// Emit pending YAML node properties on their own line before a block node.
-    #[inline]
-    fn write_anchor_for_complex_node(&mut self) -> Result<()> {
+    /// Emit pending tags and anchors, separated by a space.
+    /// `trailing_space` separates the properties from following scalar content;
+    /// omit it for a tag-only unit variant or a block-node header.
+    fn write_node_properties(&mut self, trailing_space: bool) -> Result<()> {
         let tag = self.state.pending_tag.take();
         let anchor_id = self.anchors.pending_id.take();
         if tag.is_some() || anchor_id.is_some() {
-            self.write_space_if_pending()?;
             if self.state.at_line_start {
                 self.write_indent(self.state.depth)?;
             }
@@ -1119,6 +1101,19 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
                 self.out.write_char('&')?;
                 self.write_anchor_name(id)?;
             }
+            if trailing_space {
+                self.out.write_char(' ')?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Emit pending YAML node properties on their own line before a block node.
+    #[inline]
+    fn write_anchor_for_complex_node(&mut self) -> Result<()> {
+        if self.has_pending_node_properties() {
+            self.write_space_if_pending()?;
+            self.write_node_properties(false)?;
             self.newline()?;
         }
         Ok(())
@@ -1635,7 +1630,11 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
             .is_some_and(|tag| local_enum_variant_name(&tag.resolved) == Some(variant))
             && self.pending_tag_selects_variant(variant)?
         {
-            return self.serialize_unit();
+            // The tag identifies a fieldless variant; no scalar payload is needed.
+            self.write_space_if_pending()?;
+            // Separate a tag or anchor from the following flow delimiter.
+            self.write_node_properties(self.state.in_flow > 0)?;
+            return self.write_end_of_scalar();
         }
         // If we are in a mapping value position, insert the deferred space after ':'
         self.write_space_if_pending()?;

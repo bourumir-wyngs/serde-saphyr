@@ -34,7 +34,7 @@ enum Unit {
 #[case("!time", Unit::Time)]
 #[case("!degrees", Unit::Degrees)]
 #[case("!radians", Unit::Radians)]
-fn local_tags_serialize_unit_variants_with_null_payloads(#[case] tag: &str, #[case] unit: Unit) {
+fn local_tags_serialize_unit_variants_without_payloads(#[case] tag: &str, #[case] unit: Unit) {
     #[derive(Debug, Deserialize, PartialEq, Serialize)]
     struct Wrapper {
         generator: Tagged<Unit>,
@@ -42,12 +42,12 @@ fn local_tags_serialize_unit_variants_with_null_payloads(#[case] tag: &str, #[ca
 
     let value = Tagged(unit, Some(tag.to_owned()));
     let yaml = to_string(&value).unwrap();
-    assert_eq!(yaml, format!("{tag} null\n"));
+    assert_eq!(yaml, format!("{tag}\n"));
     assert_eq!(from_str::<Tagged<Unit>>(&yaml).unwrap(), value);
 
     let wrapper = Wrapper { generator: value };
     let yaml = to_string(&wrapper).unwrap();
-    assert_eq!(yaml, format!("generator: {tag} null\n"));
+    assert_eq!(yaml, format!("generator: {tag}\n"));
     assert_eq!(from_str::<Wrapper>(&yaml).unwrap(), wrapper);
 }
 
