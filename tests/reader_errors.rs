@@ -61,10 +61,19 @@ fn assert_io_error_source(error: &Error) -> &io::Error {
 }
 
 #[track_caller]
-fn assert_injected_io_error(error: &Error, expected_kind: io::ErrorKind) {
-    let source = assert_io_error_source(error);
+fn assert_injected_io_error(error: Error, expected_kind: io::ErrorKind) {
+    let source = assert_io_error_source(&error);
     assert_eq!(source.kind(), expected_kind);
     assert!(source.to_string().contains("injected reader failure"));
+
+    let report = anyhow::Error::new(error);
+    assert_eq!(format!("{report:#}"), "IO error: injected reader failure");
+    let debug = format!("{report:?}");
+    assert_eq!(
+        debug.matches("injected reader failure").count(),
+        1,
+        "{debug}"
+    );
 }
 
 #[test]
@@ -75,7 +84,7 @@ fn from_reader_propagates_io_error() {
     ))
     .expect_err("reader failure must be returned");
 
-    assert_injected_io_error(&error, io::ErrorKind::ConnectionReset);
+    assert_injected_io_error(error, io::ErrorKind::ConnectionReset);
 }
 
 #[derive(Debug, Deserialize)]
@@ -92,7 +101,7 @@ fn from_reader_does_not_swallow_io_error_after_document_end() {
     ))
     .expect_err("late reader failure must be returned");
 
-    assert_injected_io_error(&error, io::ErrorKind::ConnectionReset);
+    assert_injected_io_error(error, io::ErrorKind::ConnectionReset);
 }
 
 #[test]
@@ -103,7 +112,7 @@ fn from_reader_does_not_treat_reader_unexpected_eof_as_clean_eof() {
     ))
     .expect_err("reader-generated UnexpectedEof must be returned");
 
-    assert_injected_io_error(&error, io::ErrorKind::UnexpectedEof);
+    assert_injected_io_error(error, io::ErrorKind::UnexpectedEof);
 }
 
 #[test]

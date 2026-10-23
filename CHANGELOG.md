@@ -23,7 +23,8 @@
 ### Fixed
 
 - Expose the original `std::io::Error` from deserialization failures through
-  `std::error::Error::source()`.
+  `std::error::Error::source()`. The outer message is `IO error`, so error chains
+  include the underlying cause only once.
 - Avoid duplicate messages from `Error::WithSnippet` when following
   `std::error::Error::source()` by forwarding the wrapped error's source.
   Use `without_snippet()` to inspect the wrapped error. Alias errors retain their

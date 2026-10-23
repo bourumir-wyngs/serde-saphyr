@@ -387,7 +387,7 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
         } => Cow::Owned(format!(
             "indentation error: expected {required}, found {actual} spaces"
         )),
-        Error::IOError { cause } => Cow::Owned(format!("IO error: {cause}")),
+        Error::IOError { .. } => Cow::Borrowed("IO error"),
         Error::AliasError { error, .. } => render_message_text(formatter, error),
 
         #[cfg(any(feature = "garde", feature = "validator"))]
@@ -720,6 +720,10 @@ mod tests {
         },
         "property interpolation work 101 exceeds limit 100"
     )]
+    #[case::io_error(
+        Error::IOError { cause: std::io::Error::other("disk full") },
+        "IO error"
+    )]
     fn default_exact_messages(#[case] err: Error, #[case] expected: &str) {
         let formatter = DefaultMessageFormatter;
         assert_eq!(formatter.format_message(&err), expected);
@@ -749,10 +753,6 @@ mod tests {
             location: loc(),
         },
         &["unknown field", "xyz"]
-    )]
-    #[case::io_error(
-        Error::IOError { cause: std::io::Error::other("disk full") },
-        &["IO error", "disk full"]
     )]
     fn default_contains_messages(#[case] err: Error, #[case] needles: &[&str]) {
         let formatter = DefaultMessageFormatter;

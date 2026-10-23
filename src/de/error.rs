@@ -1225,6 +1225,9 @@ pub enum Error {
         location: Location,
     },
     /// Unexpected I/O error. This may happen only when deserializing from a reader.
+    ///
+    /// The default display is `IO error`; [`std::error::Error::source`] provides
+    /// the underlying cause so error chains do not repeat its message.
     IOError {
         cause: std::io::Error,
     },

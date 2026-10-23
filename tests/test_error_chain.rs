@@ -43,7 +43,10 @@ fn snippet_wrappers_forward_the_underlying_io_error() {
             .and_then(|source| source.downcast_ref::<std::io::Error>())
             .expect("source must expose the original I/O error through snippet wrappers");
         assert_eq!(source.raw_os_error(), Some(12_345));
-        assert_eq!(anyhow::Error::new(error).chain().count(), 2);
+        let expected = format!("IO error: {source}");
+        let report = anyhow::Error::new(error);
+        assert_eq!(report.chain().count(), 2);
+        assert_eq!(format!("{report:#}"), expected);
     }
 }
 
