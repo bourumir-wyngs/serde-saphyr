@@ -413,9 +413,24 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
     }
 }
 
+fn builtin_standalone_message<'a>(
+    formatter: &dyn MessageFormatter,
+    err: &'a Error,
+) -> Cow<'a, str> {
+    let message = formatter.format_message(err);
+    match err {
+        Error::IOError { cause } => Cow::Owned(format!("{message}: {cause}")),
+        _ => message,
+    }
+}
+
 impl MessageFormatter for DefaultMessageFormatter {
     fn format_message<'a>(&self, err: &'a Error) -> Cow<'a, str> {
         default_format_message(self, err)
+    }
+
+    fn format_standalone_message<'a>(&self, err: &'a Error) -> Cow<'a, str> {
+        builtin_standalone_message(self, err)
     }
 
     #[cfg(any(feature = "garde", feature = "validator"))]
@@ -435,6 +450,10 @@ impl MessageFormatter for DefaultMessageFormatterWithLocalizer<'_> {
 
     fn format_message<'a>(&self, err: &'a Error) -> Cow<'a, str> {
         default_format_message(self, err)
+    }
+
+    fn format_standalone_message<'a>(&self, err: &'a Error) -> Cow<'a, str> {
+        builtin_standalone_message(self, err)
     }
 
     #[cfg(any(feature = "garde", feature = "validator"))]
@@ -563,6 +582,10 @@ impl MessageFormatter for UserMessageFormatter {
         user_format_message(self, err)
     }
 
+    fn format_standalone_message<'a>(&self, err: &'a Error) -> Cow<'a, str> {
+        builtin_standalone_message(self, err)
+    }
+
     #[cfg(any(feature = "garde", feature = "validator"))]
     fn format_validation_issue_lines(&self, err: &Error) -> Option<Vec<String>> {
         default_validation_issue_lines(self.localizer(), err)
@@ -580,6 +603,10 @@ impl MessageFormatter for UserMessageFormatterWithLocalizer<'_> {
 
     fn format_message<'a>(&self, err: &'a Error) -> Cow<'a, str> {
         user_format_message(self, err)
+    }
+
+    fn format_standalone_message<'a>(&self, err: &'a Error) -> Cow<'a, str> {
+        builtin_standalone_message(self, err)
     }
 
     #[cfg(any(feature = "garde", feature = "validator"))]

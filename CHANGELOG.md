@@ -25,7 +25,8 @@
 - Expose the original `std::io::Error` from deserialization failures through
   `std::error::Error::source()`. The outer message is `IO error`, so error chains
   include the underlying cause only once. Standalone Miette, Figment, and Figment2
-  diagnostics retain the cause in their messages.
+  diagnostics retain the cause in their messages. Custom Miette formatters retain
+  control over the complete message through `MessageFormatter::format_standalone_message`.
 - Avoid duplicate messages from `Error::WithSnippet` when following
   `std::error::Error::source()` by forwarding the wrapped error's source.
   Use `without_snippet()` to inspect the wrapped error. Alias errors retain their

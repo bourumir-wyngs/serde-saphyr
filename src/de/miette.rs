@@ -43,8 +43,9 @@ use crate::{
 /// - `serde-saphyr::Error` intentionally does not retain the full input text.
 ///   This helper owns a copy of `source` to build a standalone `miette::Report`.
 /// - If the error has no known location/span, the report will not include labels.
-/// - I/O causes are included in the report message, since the report does not retain
-///   the original error's source chain.
+/// - Built-in formatters include I/O causes in the report message, since the report
+///   does not retain the original error's source chain. Custom formatters control
+///   their complete message through [`MessageFormatter::format_standalone_message`].
 #[must_use]
 pub fn to_miette_report(err: &Error, source: &str, file: &str) -> miette::Report {
     to_miette_report_with_options(err, source, file, RenderOptions::default())
@@ -122,7 +123,7 @@ pub fn to_miette_report_with_options(
 }
 
 // Converted diagnostics own their messages but do not retain the original sources.
-// Include the I/O cause here so it survives conversion, before rendering sanitizes it.
+// Let the formatter supply the complete message before rendering sanitizes it.
 struct DiagnosticMessageFormatter<'a>(&'a dyn MessageFormatter);
 
 impl MessageFormatter for DiagnosticMessageFormatter<'_> {
@@ -131,11 +132,7 @@ impl MessageFormatter for DiagnosticMessageFormatter<'_> {
     }
 
     fn format_message<'a>(&self, err: &'a Error) -> Cow<'a, str> {
-        let message = self.0.format_message(err);
-        match err {
-            Error::IOError { cause } => Cow::Owned(format!("{message}: {cause}")),
-            _ => message,
-        }
+        self.0.format_standalone_message(err)
     }
 
     #[cfg(any(feature = "garde", feature = "validator"))]

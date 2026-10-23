@@ -113,6 +113,20 @@ pub trait MessageFormatter {
     /// [`str::escape_debug`] or an equivalent encoding.
     fn format_message<'a>(&self, err: &'a Error) -> Cow<'a, str>;
 
+    /// Return the complete message for a standalone diagnostic, such as a Miette report,
+    /// that does not retain the original error's source chain.
+    ///
+    /// The default preserves [`Self::format_message`] unchanged. Built-in formatters
+    /// also include I/O causes here. Custom formatters control whether to include,
+    /// translate, or omit those details; delegate this hook to a built-in formatter
+    /// when its standalone behavior is desired for fallback cases.
+    ///
+    /// The same wrapper-unwrapping and sanitization rules as [`Self::format_message`]
+    /// apply. Ordinary [`Error::render`] and `Display` still use `format_message`.
+    fn format_standalone_message<'a>(&self, err: &'a Error) -> Cow<'a, str> {
+        self.format_message(err)
+    }
+
     /// Optionally format individual validation issues for plain rendering.
     ///
     /// For [`Error::ValidationError`], returning `Some(lines)` replaces the call to
