@@ -2588,11 +2588,26 @@ pub(crate) fn collect_garde_issues(report: &garde::Report) -> Vec<ValidationIssu
     out
 }
 impl std::error::Error for Error {
+    /// Snippet wrappers forward the wrapped error's cause to avoid duplicate messages.
+    /// Use [`Error::without_snippet`] to inspect the wrapped error itself.
+    /// As an exception, [`Error::AliasError`] and its snippet wrappers return the
+    /// wrapped error directly to preserve the existing source chain.
+    /// I/O errors return their underlying [`std::io::Error`].
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Error::AliasError { error, .. } | Error::WithSnippet { error, .. } => {
-                Some(error.as_ref())
+            Error::WithSnippet { error, .. } => {
+                let mut inner = error.as_ref();
+                while let Error::WithSnippet { error, .. } = inner {
+                    inner = error;
+                }
+                if matches!(inner, Error::AliasError { .. }) {
+                    Some(error.as_ref())
+                } else {
+                    inner.source()
+                }
             }
+            Error::AliasError { error, .. } => Some(error.as_ref()),
+            Error::IOError { cause } => Some(cause),
             _ => None,
         }
     }

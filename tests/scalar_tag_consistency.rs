@@ -115,7 +115,15 @@ fn semantic_tags_do_not_become_null(
 
 #[rstest]
 fn incompatible_tags_do_not_become_characters(
-    #[values("!!int v", "!!bool v", "!!timestamp v", "!time v", "!degrees v", "!radians v")] yaml: &str,
+    #[values(
+        "!!int v",
+        "!!bool v",
+        "!!timestamp v",
+        "!time v",
+        "!degrees v",
+        "!radians v"
+    )]
+    yaml: &str,
 ) {
     assert!(serde_saphyr::from_str::<char>(yaml).is_err());
 }
@@ -130,7 +138,16 @@ fn string_scalars_remain_valid_characters(#[case] yaml: &str) {
 
 #[rstest]
 fn enum_variant_names_validate_tags(
-    #[values("!!int", "!!bool", "!!float", "!!timestamp", "!time", "!degrees", "!radians")] tag: &str,
+    #[values(
+        "!!int",
+        "!!bool",
+        "!!float",
+        "!!timestamp",
+        "!time",
+        "!degrees",
+        "!radians"
+    )]
+    tag: &str,
 ) {
     let scalar = format!("{tag} vast");
     assert!(serde_saphyr::from_str::<Protocol>(&scalar).is_err());
@@ -221,10 +238,7 @@ fn robotics_tags_survive_alias_replay() {
 #[rstest]
 #[case::infinity("!radians .inf", ".inf")]
 #[case::nan("!degrees .nan", ".nan")]
-fn robotics_tags_respect_typeless_non_finite_policy(
-    #[case] scalar: &str,
-    #[case] canonical: &str,
-) {
+fn robotics_tags_respect_typeless_non_finite_policy(#[case] scalar: &str, #[case] canonical: &str) {
     use serde_saphyr::NonFiniteFloatPolicy;
 
     let options = serde_saphyr::options! {

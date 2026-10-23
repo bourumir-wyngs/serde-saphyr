@@ -235,8 +235,11 @@ string populated from `error.to_string()`.
 Rendering passes the original error through alias and snippet wrappers to the active
 formatter. Plain messages compose the alias definition and use locations once using the
 active localizer; snippet and `miette` diagnostics use their location labels without
-embedding plain-text location suffixes. Both `Error::AliasError` and `Error::WithSnippet`
-expose their inner errors through `std::error::Error::source`.
+embedding plain-text location suffixes. Since version 2.1, `Error::WithSnippet`
+forwards the wrapped error's `source()` to avoid duplicate messages in error chains.
+Use `without_snippet()` to inspect the wrapped error itself. As an exception,
+`Error::AliasError` and its snippet wrappers return the wrapped error directly,
+preserving the complete alias source chain.
 
 ```rust
 use serde_saphyr::Error;
