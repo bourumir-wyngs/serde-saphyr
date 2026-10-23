@@ -37,6 +37,10 @@
   `std::error::Error::source()` by forwarding the wrapped error's source.
   Use `without_snippet()` to inspect the wrapped error. Alias errors retain their
   complete source chain, including snippet wrappers, for compatibility.
+- Emit matching local tags on unit enum variants without a redundant `null`
+  payload, including through optional and tagged wrappers. Existing explicit
+  null payloads remain readable; actual variant fields retain their payload
+  representation. Share node-property emission to preserve anchors and spacing.
 - Distinguish local application tags from standard YAML types. Without a `%TAG`
   remapping, `!str`, `!int`, `!bool`, `!float`, `!null`, `!seq`, `!map`, `!timestamp`,
   and `!binary` no longer force their similarly named standard types. Use `!!str`,

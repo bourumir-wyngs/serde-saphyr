@@ -29,7 +29,10 @@ fn unit_tag_round_trips_through_optional_wrappers() {
     assert_eq!(yaml, "!timestamp\n");
     assert_eq!(from_str::<Event>(&yaml).unwrap(), Event::Timestamp);
     assert_eq!(from_str::<Tagged<Event>>(&yaml).unwrap(), value);
-    assert_eq!(from_str::<Option<Event>>(&yaml).unwrap(), Some(Event::Timestamp));
+    assert_eq!(
+        from_str::<Option<Event>>(&yaml).unwrap(),
+        Some(Event::Timestamp)
+    );
     assert_eq!(
         from_str::<Option<Option<Event>>>(&yaml).unwrap(),
         Some(Some(Event::Timestamp)),
@@ -42,9 +45,15 @@ fn unit_tag_round_trips_through_optional_wrappers() {
     let optional = Tagged(Some(Event::Timestamp), Some("!timestamp".into()));
     assert_eq!(to_string(&optional).unwrap(), yaml);
     assert_eq!(from_str::<Tagged<Option<Event>>>(&yaml).unwrap(), optional);
-    let nullable = Tagged(NullableTilde(Some(Event::Timestamp)), Some("!timestamp".into()));
+    let nullable = Tagged(
+        NullableTilde(Some(Event::Timestamp)),
+        Some("!timestamp".into()),
+    );
     assert_eq!(to_string(&nullable).unwrap(), yaml);
-    assert_eq!(from_str::<Tagged<NullableTilde<Event>>>(&yaml).unwrap(), nullable);
+    assert_eq!(
+        from_str::<Tagged<NullableTilde<Event>>>(&yaml).unwrap(),
+        nullable
+    );
 }
 
 #[rstest]
@@ -85,18 +94,33 @@ fn tag_only_units_round_trip_in_block_and_flow_containers() {
     let sequence = vec![Some(timestamp()), None, Some(timestamp())];
     let block = to_string(&sequence).unwrap();
     assert_eq!(block, "- !timestamp\n- null\n- !timestamp\n");
-    assert_eq!(from_str::<Vec<Option<Tagged<Event>>>>(&block).unwrap(), sequence);
+    assert_eq!(
+        from_str::<Vec<Option<Tagged<Event>>>>(&block).unwrap(),
+        sequence
+    );
     let flow = to_string(&FlowSeq(&sequence)).unwrap();
-    assert_eq!(flow, "[!timestamp, null, !timestamp]\n");
-    assert_eq!(from_str::<Vec<Option<Tagged<Event>>>>(&flow).unwrap(), sequence);
+    assert_eq!(flow, "[!timestamp , null, !timestamp ]\n");
+    assert_eq!(
+        from_str::<Vec<Option<Tagged<Event>>>>(&flow).unwrap(),
+        sequence
+    );
 
-    let mapping = BTreeMap::from([("first".to_owned(), timestamp()), ("last".to_owned(), timestamp())]);
+    let mapping = BTreeMap::from([
+        ("first".to_owned(), timestamp()),
+        ("last".to_owned(), timestamp()),
+    ]);
     let block = to_string(&mapping).unwrap();
     assert_eq!(block, "first: !timestamp\nlast: !timestamp\n");
-    assert_eq!(from_str::<BTreeMap<String, Tagged<Event>>>(&block).unwrap(), mapping);
+    assert_eq!(
+        from_str::<BTreeMap<String, Tagged<Event>>>(&block).unwrap(),
+        mapping
+    );
     let flow = to_string(&FlowMap(&mapping)).unwrap();
-    assert_eq!(flow, "{first: !timestamp, last: !timestamp}\n");
-    assert_eq!(from_str::<BTreeMap<String, Tagged<Event>>>(&flow).unwrap(), mapping);
+    assert_eq!(flow, "{first: !timestamp , last: !timestamp }\n");
+    assert_eq!(
+        from_str::<BTreeMap<String, Tagged<Event>>>(&flow).unwrap(),
+        mapping
+    );
 }
 
 #[test]
@@ -125,7 +149,10 @@ fn tag_only_unit_documents_are_not_dropped() {
     let yaml = to_string(&value).unwrap();
     let stream = format!("---\n{yaml}---\n{yaml}");
     let expected = vec![Some(Event::Timestamp), Some(Event::Timestamp)];
-    assert_eq!(serde_saphyr::from_multiple::<Option<Event>>(&stream).unwrap(), expected);
+    assert_eq!(
+        serde_saphyr::from_multiple::<Option<Event>>(&stream).unwrap(),
+        expected
+    );
     let mut reader = std::io::Cursor::new(stream.as_bytes());
     let actual: Vec<Option<Event>> = serde_saphyr::read(&mut reader)
         .collect::<Result<_, _>>()
@@ -174,8 +201,32 @@ fn an_outer_selector_does_not_erase_an_inner_unit_variant() {
         #[serde(rename = "timestamp")]
         Timestamp(Event),
     }
-    let tagged = Tagged(Outer::Timestamp(Event::Timestamp), Some("!timestamp".into()));
+    let tagged = Tagged(
+        Outer::Timestamp(Event::Timestamp),
+        Some("!timestamp".into()),
+    );
     let yaml = to_string(&tagged).unwrap();
     assert_eq!(yaml, "!timestamp timestamp\n");
     assert_eq!(from_str::<Tagged<Outer>>(&yaml).unwrap(), tagged);
+}
+
+#[test]
+fn tag_only_units_keep_anchors_and_aliases() {
+    use serde_saphyr::ArcAnchor;
+    use std::sync::Arc;
+
+    let anchored = ArcAnchor(Arc::new(timestamp()));
+    let values = [&anchored, &anchored];
+    let block = to_string(&values).unwrap();
+    assert_eq!(block, "- !timestamp &a1\n- *a1\n");
+    assert_eq!(
+        from_str::<Vec<Tagged<Event>>>(&block).unwrap(),
+        [timestamp(), timestamp()]
+    );
+    let flow = to_string(&FlowSeq(values)).unwrap();
+    assert_eq!(flow, "[!timestamp &a1 , *a1]\n");
+    assert_eq!(
+        from_str::<Vec<Tagged<Event>>>(&flow).unwrap(),
+        [timestamp(), timestamp()]
+    );
 }

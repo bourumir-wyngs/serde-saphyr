@@ -809,6 +809,15 @@ apply the corresponding YAML type semantics. Local `!str`, `!int`, `!bool`, `!fl
 `!null`, `!seq`, `!map`, `!timestamp`, and `!binary` are ordinary application tags;
 outside a matching enum context they follow the unsupported-tag policy below.
 
+A matching local tag on a unit enum variant is emitted without a payload:
+`Tagged(E::Timestamp, Some("!timestamp".into()))` writes `!timestamp`, not
+`!timestamp null`. The same form round-trips through `Option<E>`, nested
+options, and tagged wrappers. Reading still accepts an omitted payload or
+an explicit plain `null` or `~` for unit variants; non-null payloads are
+rejected. Variants with fields keep their payloads: for example, a tagged
+`E::Maybe(None)` writes `!maybe null`, while empty tuple and struct payloads
+retain `[]` and `{}`. Ordinary untagged enum serialization is unchanged.
+
 The standalone `!` is a separate non-specific tag, not an enum selector. It resolves
 scalars as strings and collections as ordinary sequences or mappings, without changing
 how their children resolve. For example, `! [12, ! 12]` contains a number and a string.
