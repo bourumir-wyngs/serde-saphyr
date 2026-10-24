@@ -1121,7 +1121,7 @@ dependencies = [
 
 [[package]]
 name = "serde-saphyr"
-version = "2.1.0"
+version = "3.0.0-rc.1"
 dependencies = [
  "annotate-snippets",
  "anyhow",
