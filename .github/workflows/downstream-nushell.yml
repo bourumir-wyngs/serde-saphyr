@@ -47,6 +47,33 @@ jobs:
           path: nushell
           persist-credentials: false
 
+      - name: Adapt Nushell's blank-line formatting expectation
+        run: |
+          # serde-saphyr #249 removes structural indentation from empty scalar lines.
+          # Keep the exact-output test enabled while Nushell expects the old formatting.
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("crates/nu-command/tests/format_conversions/yaml.rs")
+          source = path.read_text()
+          marker = "fn convert_multiline_string_uses_chomping_indicators() -> Result {"
+          if source.count(marker) != 1:
+              raise SystemExit("Nushell's chomping test changed; review the #249 adaptation")
+          start = source.index(marker)
+          end = source.index("\n}\n", start) + 2
+          test = source[start:end]
+          old = r'.expect_value_eq("string: |+\n  Hello\n  world\n  \n")'
+          new = r'.expect_value_eq("string: |+\n  Hello\n  world\n\n")'
+          counts = (test.count(old), test.count(new))
+          if counts == (1, 0):
+              path.write_text(source[:start] + test.replace(old, new, 1) + source[end:])
+              print("Adapted Nushell's expected blank line for serde-saphyr #249")
+          elif counts == (0, 1):
+              print("Nushell already expects unindented blank lines")
+          else:
+              raise SystemExit("Nushell's chomping fixture changed; review the #249 adaptation")
+          PY
+
       - name: Install Nushell's Rust toolchain
         run: |
           nu_toolchain=$(python3 -c 'import tomllib; print(tomllib.load(open("rust-toolchain.toml", "rb"))["toolchain"]["channel"])')
