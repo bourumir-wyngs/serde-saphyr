@@ -309,6 +309,31 @@ pub struct Options {
     /// Enable legacy octal parsing where values starting with `0` are treated as base-8.
     /// They are deprecated in YAML 1.2. Default: false.
     pub legacy_octal_numbers: bool,
+    /// Preserve plain decimal integer spellings with redundant leading zeros as
+    /// strings during implicit type inference (`deserialize_any`).
+    ///
+    /// Examples include `0755`, `-007`, and `+00`. Floating-point spellings such as
+    /// `0.5`, `00.5`, and `01e2`, and explicit radix prefixes, are unaffected.
+    /// This supports compatibility with `serde_yaml` when reading untyped values.
+    /// Default: false.
+    ///
+    /// Applies to untyped values and Serde's buffering for untagged enums and
+    /// flattened fields. Takes precedence over [`Self::legacy_octal_numbers`]
+    /// during inference. Direct typed deserialization, explicit `!!int`/`!!float`
+    /// tags, and mapping-key equality retain their existing behavior.
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
+    pub leading_zero_numbers_as_strings: bool,
+    /// Preserve plain scalars containing underscores as strings during implicit
+    /// type inference (`deserialize_any`), including numeric spellings such as
+    /// `1_000`, `0xFF_FF`, and `0b10_01`.
+    ///
+    /// This supports compatibility with `serde_yaml` when reading untyped values.
+    /// It also applies to untagged enums and flattened fields, and takes precedence
+    /// over [`Self::legacy_octal_numbers`] during inference. Direct typed
+    /// deserialization, explicit `!!int`/`!!float` tags, and mapping-key equality
+    /// retain their existing behavior. Default: false.
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
+    pub underscored_numbers_as_strings: bool,
     /// If true, accept only YAML 1.2 Core boolean spellings:
     /// `true`, `True`, `TRUE`, `false`, `False`, and `FALSE`.
     /// Other spellings, including YAML 1.1 forms such as `yes`/`no`/`on`/`off`,
@@ -639,6 +664,8 @@ impl Default for Options {
             merge_keys: MergeKeyPolicy::Merge,
             alias_limits: AliasLimits::default(),
             legacy_octal_numbers: false,
+            leading_zero_numbers_as_strings: false,
+            underscored_numbers_as_strings: false,
             strict_booleans: false,
             angle_conversions: false,
             ignore_binary_tag_for_string: false,
@@ -683,6 +710,14 @@ impl std::fmt::Debug for Options {
             .field("merge_keys", &self.merge_keys)
             .field("alias_limits", &self.alias_limits)
             .field("legacy_octal_numbers", &self.legacy_octal_numbers)
+            .field(
+                "leading_zero_numbers_as_strings",
+                &self.leading_zero_numbers_as_strings,
+            )
+            .field(
+                "underscored_numbers_as_strings",
+                &self.underscored_numbers_as_strings,
+            )
             .field("strict_booleans", &self.strict_booleans)
             .field(
                 "ignore_binary_tag_for_string",
@@ -765,6 +800,8 @@ mod tests {
         assert!(matches!(opts.merge_keys, MergeKeyPolicy::Merge));
         assert_eq!(opts.alias_limits.max_total_replayed_events, 1_000_000);
         assert!(!opts.legacy_octal_numbers);
+        assert!(!opts.leading_zero_numbers_as_strings);
+        assert!(!opts.underscored_numbers_as_strings);
         assert!(!opts.strict_booleans);
         assert!(!opts.ignore_binary_tag_for_string);
         assert!(!opts.angle_conversions);

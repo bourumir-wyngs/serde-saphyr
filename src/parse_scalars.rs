@@ -204,7 +204,7 @@ where
 
     let (radix, digits) = radix_and_digits(legacy_octal, rest);
     if radix == 10 {
-        // Yaml 1.2 forbids decimal integer literals starting with zero.
+        // Keep zero-prefixed integer spellings opt-in through legacy octal parsing.
         if digits.starts_with('0') && digits != "0" {
             return Err(invalid());
         }
@@ -246,7 +246,7 @@ where
     let (radix, digits) = radix_and_digits(legacy_octal, rest);
 
     if radix == 10 {
-        // Yaml 1.2 forbids decimal integer literals starting with zero.
+        // Keep zero-prefixed integer spellings opt-in through legacy octal parsing.
         if digits.starts_with('0') && digits != "0" {
             return Err(invalid());
         }
@@ -449,27 +449,17 @@ pub(crate) fn scalar_is_null(tag: &SfTag, value: &str, style: &ScalarStyle) -> b
 }
 
 #[cfg(feature = "deserialize")]
-/// Returns `true` if the string represents a decimal number with a redundant leading zero,
+/// Returns `true` if the string represents a decimal integer with a redundant leading zero,
 /// such as `0127`, `+0127`, or `-0127`.
-/// Explicit radices (`0x`, `0o`, `0b`) are excluded.
-/// A `true` result means this token should be avoided as an integer.
+/// Floating-point spellings, underscores, and explicit radices (`0x`, `0o`, `0b`)
+/// are excluded.
 pub(crate) fn leading_zero_decimal(t: &str) -> bool {
     let s = yaml_trim(t);
 
     // Handle optional sign
     let digits = s.strip_prefix(['+', '-']).unwrap_or(s);
 
-    // Must start with 0 but not just "0"
-    if let Some(rest) = digits.strip_prefix('0') {
-        if let Some(next) = rest.chars().next() {
-            // If next char denotes radix, then allow
-            !matches!(next, 'x' | 'X' | 'o' | 'O' | 'b' | 'B')
-        } else {
-            false // "0", "+0", "-0"
-        }
-    } else {
-        false
-    }
+    digits.len() > 1 && digits.starts_with('0') && digits.bytes().all(|b| b.is_ascii_digit())
 }
 
 #[cfg(all(test, feature = "deserialize"))]

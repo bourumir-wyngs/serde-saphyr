@@ -176,6 +176,8 @@ fn cfg_and_replay_events_follow_options_and_reference_overrides() {
         duplicate_keys: DuplicateKeyPolicy::LastWins,
         merge_keys: MergeKeyPolicy::AsOrdinary,
         legacy_octal_numbers: true,
+        leading_zero_numbers_as_strings: true,
+        underscored_numbers_as_strings: true,
         strict_booleans: true,
         angle_conversions: true,
         ignore_binary_tag_for_string: true,
@@ -188,6 +190,8 @@ fn cfg_and_replay_events_follow_options_and_reference_overrides() {
     assert!(matches!(cfg.dup_policy, DuplicateKeyPolicy::LastWins));
     assert!(matches!(cfg.merge_keys, MergeKeyPolicy::AsOrdinary));
     assert!(cfg.legacy_octal_numbers);
+    assert!(cfg.leading_zero_numbers_as_strings);
+    assert!(cfg.underscored_numbers_as_strings);
     assert!(cfg.strict_booleans);
     assert!(cfg.angle_conversions);
     assert!(cfg.ignore_binary_tag_for_string);
