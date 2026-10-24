@@ -46,15 +46,6 @@ are the defaults; no legacy alias mode is provided. See
 
 ### Fixed
 
-- Expose the original `std::io::Error` from deserialization failures through
-  `std::error::Error::source()`. The outer message is `IO error`, so error chains
-  include the underlying cause only once. Standalone Miette, Figment, and Figment2
-  diagnostics retain the cause in their messages. Custom Miette formatters retain
-  control over the complete message through `MessageFormatter::format_standalone_message`.
-- Avoid duplicate messages from `Error::WithSnippet` when following
-  `std::error::Error::source()` by forwarding the wrapped error's source.
-  Use `without_snippet()` to inspect the wrapped error. Alias errors retain their
-  complete source chain, including snippet wrappers, for compatibility.
 - Emit matching local tags on unit enum variants without a redundant `null`
   payload, including through optional and tagged wrappers. Existing explicit
   null payloads remain readable; actual variant fields retain their payload
@@ -88,6 +79,15 @@ are the defaults; no legacy alias mode is provided. See
   present value and its payload must be valid for the inner type. Use untagged or
   standard-tagged null for `None`; use an optional enum payload for a present value
   whose payload is absent.
+- Expose the original `std::io::Error` from deserialization failures through
+  `std::error::Error::source()`. The outer message is `IO error`, so error chains
+  include the underlying cause only once. Standalone Miette, Figment, and Figment2
+  diagnostics retain the cause in their messages. Custom Miette formatters retain
+  control over the complete message through `MessageFormatter::format_standalone_message`.
+- Avoid duplicate messages from `Error::WithSnippet` when following
+  `std::error::Error::source()` by forwarding the wrapped error's source.
+  Use `without_snippet()` to inspect the wrapped error. Alias errors retain their
+  complete source chain, including snippet wrappers, for compatibility.
 - Validate recognized scalar tags consistently for numeric, boolean, character,
   and enum targets, including externally tagged enum mapping keys (#235).
   Incompatible tags and tagged null-like payloads no longer bypass validation.

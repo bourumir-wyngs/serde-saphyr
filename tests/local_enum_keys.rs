@@ -237,6 +237,77 @@ fn nested_local_enum_selectors_keep_distinct_identities(
 }
 
 #[rstest]
+#[case("{}")]
+#[case("!!map {}")]
+fn empty_mapping_keys_remain_absent_for_optional_strings(
+    #[case] empty_key: &str,
+    #[values(
+        DuplicateKeyPolicy::Error,
+        DuplicateKeyPolicy::FirstWins,
+        DuplicateKeyPolicy::LastWins
+    )]
+    duplicate_keys: DuplicateKeyPolicy,
+) {
+    // The existing empty-mapping key convention applies only to Option targets.
+    let yaml = format!("? {empty_key}\n: 1\n!str present: 2\n");
+    let actual: BTreeMap<Option<String>, u8> =
+        from_str_with_options(&yaml, options! { duplicate_keys: duplicate_keys }).unwrap();
+    assert_eq!(
+        actual,
+        BTreeMap::from([(None, 1), (Some("present".into()), 2)])
+    );
+}
+
+#[rstest]
+#[case::error(DuplicateKeyPolicy::Error, None)]
+#[case::first(DuplicateKeyPolicy::FirstWins, Some(1))]
+#[case::last(DuplicateKeyPolicy::LastWins, Some(3))]
+fn equivalent_empty_mapping_keys_follow_duplicate_policy(
+    #[case] duplicate_keys: DuplicateKeyPolicy,
+    #[case] expected: Option<u8>,
+) {
+    let actual = from_str_with_options::<BTreeMap<Option<String>, u8>>(
+        "? {}\n: 1\n? !!map {}\n: 2\n? {}\n: 3\n",
+        options! { duplicate_keys: duplicate_keys },
+    );
+    match expected {
+        Some(value) => assert_eq!(actual.unwrap(), BTreeMap::from([(None, value)])),
+        None => assert!(matches!(
+            actual.unwrap_err().without_snippet(),
+            Error::DuplicateMappingKey { .. }
+        )),
+    }
+}
+
+#[rstest]
+fn tagged_and_nonempty_mapping_keys_reach_the_optional_enum(
+    #[values(
+        DuplicateKeyPolicy::Error,
+        DuplicateKeyPolicy::FirstWins,
+        DuplicateKeyPolicy::LastWins
+    )]
+    duplicate_keys: DuplicateKeyPolicy,
+) {
+    let actual: BTreeMap<Option<Key>, u8> = from_str_with_options(
+        "? {}\n: 1\n? !map {}\n: 2\n? !map {str: foo}\n: 3\n? {str: foo}\n: 4\n",
+        options! { duplicate_keys: duplicate_keys },
+    )
+    .unwrap();
+    assert_eq!(
+        actual,
+        BTreeMap::from([
+            (None, 1),
+            (Some(Key::Map(BTreeMap::new())), 2),
+            (
+                Some(Key::Map(BTreeMap::from([("str".into(), "foo".into())]))),
+                3
+            ),
+            (Some(Key::Str("foo".into())), 4),
+        ])
+    );
+}
+
+#[rstest]
 fn local_integer_named_variants_preserve_string_payloads(
     #[values(
         DuplicateKeyPolicy::Error,

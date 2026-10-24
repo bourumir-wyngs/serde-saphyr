@@ -229,6 +229,26 @@ fn cfg_and_replay_events_follow_options_and_reference_overrides() {
 }
 
 #[test]
+fn empty_replay_is_null_for_typeless_values_but_not_a_mapping() {
+    use serde::Deserialize;
+    use std::collections::BTreeMap;
+
+    let cfg = Cfg::from_options(&Options::default());
+    let mut events = replay_events(Vec::new());
+    let value = serde_json::Value::deserialize(super::YamlDeserializer::new(&mut events, cfg))
+        .expect("an empty typeless replay represents null");
+    assert_eq!(value, serde_json::Value::Null);
+
+    let mut events = replay_events(Vec::new());
+    let error = BTreeMap::<String, u8>::deserialize(super::YamlDeserializer::new(&mut events, cfg))
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        Error::Eof { location } if location == Location::UNKNOWN
+    ));
+}
+
+#[test]
 fn attach_alias_locations_prefers_dual_locations_and_existing_errors() {
     let reference = loc(1, 2);
     let defined = loc(3, 4);
@@ -890,6 +910,22 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
         false,
     ));
     assert!(matches!(err, Error::Eof { location } if location == Location::UNKNOWN));
+}
+
+#[test]
+fn collect_entries_from_map_rejects_an_empty_replay() {
+    let mut events = replay_events(Vec::new());
+    let error = unwrap_err(collect_entries_from_map(
+        &mut events,
+        loc(34, 9),
+        MergeKeyPolicy::Merge,
+        DuplicateKeyPolicy::Error,
+        false,
+    ));
+    assert!(matches!(
+        error,
+        Error::MergeValueNotMapOrSeqOfMaps { location } if location == Location::UNKNOWN
+    ));
 }
 
 #[test]
