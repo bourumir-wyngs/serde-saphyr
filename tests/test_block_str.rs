@@ -75,7 +75,7 @@ fn litstr_only_newline() {
     let out = to_string(&d).unwrap();
 
     // Contentless literal blocks need keep chomping to preserve the newline.
-    assert_eq!(out, "note: |+\n  \nother: 0\n");
+    assert_eq!(out, "note: |+\n\nother: 0\n");
     let back: std::collections::BTreeMap<String, serde_json::Value> =
         serde_saphyr::from_str(&out).unwrap();
     assert_eq!(back["note"], "\n");
@@ -83,11 +83,19 @@ fn litstr_only_newline() {
 }
 
 #[test]
-fn newline_only_strings_roundtrip() {
+fn literal_blank_lines_roundtrip_without_indentation() {
     #[derive(Debug, Deserialize, PartialEq, Serialize)]
     struct Doc<T> {
         note: T,
         other: usize,
+    }
+
+    fn assert_unindented_blank_lines(yaml: &str) {
+        assert!(
+            yaml.lines()
+                .all(|line| line.is_empty() || !line.trim().is_empty()),
+            "empty content lines must not acquire indentation: {yaml:?}"
+        );
     }
 
     fn check<T: Serialize>(
@@ -97,6 +105,7 @@ fn newline_only_strings_roundtrip() {
         options: serde_saphyr::SerializerOptions,
     ) {
         let yaml = to_string_with_options(value, options.clone()).unwrap();
+        assert_unindented_blank_lines(&yaml);
         let back: String = serde_saphyr::from_str(&yaml).unwrap();
         assert_eq!(back, expected, "{style} root: {yaml:?}");
 
@@ -108,6 +117,7 @@ fn newline_only_strings_roundtrip() {
             options.clone(),
         )
         .unwrap();
+        assert_unindented_blank_lines(&yaml);
         let back: Doc<String> = serde_saphyr::from_str(&yaml).unwrap();
         assert_eq!(
             back,
@@ -119,6 +129,7 @@ fn newline_only_strings_roundtrip() {
         );
 
         let yaml = to_string_with_options(&(value, "kept"), options.clone()).unwrap();
+        assert_unindented_blank_lines(&yaml);
         let back: Vec<String> = serde_saphyr::from_str(&yaml).unwrap();
         assert_eq!(back, [expected, "kept"], "{style} sequence: {yaml:?}");
 
@@ -131,6 +142,7 @@ fn newline_only_strings_roundtrip() {
             options,
         )
         .unwrap();
+        assert_unindented_blank_lines(&yaml);
         let back: Doc<Vec<String>> = serde_saphyr::from_str(&yaml).unwrap();
         assert_eq!(
             back,
@@ -142,7 +154,20 @@ fn newline_only_strings_roundtrip() {
         );
     }
 
-    for value in ["", "\n", "\n\n", "\n\n\n", "text", "text\n", "text\n\n"] {
+    for value in [
+        "",
+        "\n",
+        "\n\n",
+        "\n\n\n",
+        "text",
+        "text\n",
+        "text\n\n",
+        "\ntext",
+        "\n\ntext\n\n",
+        "before\n\nafter",
+        "before\n\n\nafter\n\n",
+        "\n leading\n\nnext\n\n",
+    ] {
         for indent_step in [1, 2, 4, 9, 10, 64] {
             for compact_list_indent in [false, true] {
                 let options = serde_saphyr::ser_options! {
@@ -216,7 +241,7 @@ fn litstr_two_trailing_newlines() {
 
     // Content lines: "a", "b", "" plus keep chomping.
     // Value: "a\nb\n\n"
-    assert_eq!(out, "note: |+\n  a\n  b\n  \nother: 0\n");
+    assert_eq!(out, "note: |+\n  a\n  b\n\nother: 0\n");
 }
 
 #[test]
@@ -235,7 +260,25 @@ fn litstr_inner_blank_line_and_trailing_newline() {
 
     // Inner blank line must be preserved as content; one trailing '\n'.
     // Value: "a\n\nb\n"
-    assert_eq!(out, "note: |\n  a\n  \n  b\nother: 0\n");
+    assert_eq!(out, "note: |\n  a\n\n  b\nother: 0\n");
+}
+
+#[test]
+fn literal_blank_lines_preserve_whitespace_content() {
+    for value in [
+        " \nalpha \t\n\n \t\nbeta\t \n  \n\n",
+        "\n \t\n\n",
+        "alpha\n\t\n\nbeta\n",
+    ] {
+        for yaml in [
+            to_string(&value).unwrap(),
+            to_string(&LitStr(value)).unwrap(),
+            to_string(&LitString(value.to_owned())).unwrap(),
+        ] {
+            let back: String = serde_saphyr::from_str(&yaml).unwrap();
+            assert_eq!(back, value, "whitespace content changed: {yaml:?}");
+        }
+    }
 }
 
 #[test]
@@ -295,6 +338,33 @@ fn foldstr_in_block_sequence_item() {
     let v = vec![FoldStr("alpha\nbeta")];
     let out = to_string(&v).unwrap();
     assert_eq!(out, "- >\n  alpha\n  beta\n");
+}
+
+#[test]
+fn folded_blank_lines_are_unindented() {
+    for (value, expected_yaml, expected_value) in [
+        ("\n\n", ">\n\n\n\n", ""),
+        (
+            "\nalpha\n\nbeta\n\n",
+            ">\n\n  alpha\n\n  beta\n\n\n",
+            "\nalpha\nbeta\n",
+        ),
+        (
+            "alpha \t\n\n \t\nbeta\t \n",
+            ">\n  alpha \t\n\n   \t\n  beta\t \n\n",
+            "alpha \t\n\n \t\nbeta\t \n",
+        ),
+    ] {
+        for yaml in [
+            to_string(&FoldStr(value)).unwrap(),
+            to_string(&FoldString(value.to_owned())).unwrap(),
+        ] {
+            assert_eq!(yaml, expected_yaml);
+            let back: String = serde_saphyr::from_str(&yaml).unwrap();
+            // Explicit folded wrappers retain their historical clip chomping.
+            assert_eq!(back, expected_value, "{yaml:?}");
+        }
+    }
 }
 
 #[test]

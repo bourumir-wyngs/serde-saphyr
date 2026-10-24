@@ -28,6 +28,9 @@
 
 ### Fixed
 
+- Emit empty lines in literal and folded block scalars without indentation,
+  avoiding trailing whitespace while preserving whitespace in the string content
+  ([#249](https://github.com/bourumir-wyngs/serde-saphyr/issues/249)).
 - Expose the original `std::io::Error` from deserialization failures through
   `std::error::Error::source()`. The outer message is `IO error`, so error chains
   include the underlying cause only once. Standalone Miette, Figment, and Figment2

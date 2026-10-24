@@ -15,8 +15,8 @@ pub fn first_line_leading_spaces(s: &str) -> usize {
 }
 
 /// Write a folded block string body, wrapping to `folded_wrap_col` characters.
-/// Preserves blank lines between paragraphs. Each emitted line is indented
-/// exactly at `indent` depth.
+/// Preserves blank lines between paragraphs without adding whitespace. Each
+/// non-empty content line is indented exactly at `indent` depth.
 ///
 /// Wrapping is only performed at ASCII space (`' '`) boundaries.
 ///
@@ -55,7 +55,6 @@ pub fn write_folded_block<W: Write>(
     for line in s.split('\n') {
         if line.is_empty() {
             // Preserve empty lines between paragraphs
-            out.write_str(indent_str)?;
             out.write_char('\n')?;
             continue;
         }
@@ -212,7 +211,7 @@ mod tests {
     fn write_folded_block_preserves_empty_lines() {
         let mut out = String::new();
         write_folded_block(&mut out, "para1\n\npara2", 1, 2, 80).unwrap();
-        assert_eq!(out, "  para1\n  \n  para2\n");
+        assert_eq!(out, "  para1\n\n  para2\n");
     }
 
     #[test]
