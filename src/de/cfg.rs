@@ -11,6 +11,10 @@ pub(crate) struct Cfg {
     pub(crate) merge_keys: MergeKeyPolicy,
     /// If true, accept legacy octal numbers that start with `0`.
     pub(crate) legacy_octal_numbers: bool,
+    /// Preserve redundant-zero decimal integer spellings during implicit inference.
+    pub(crate) leading_zero_numbers_as_strings: bool,
+    /// Preserve scalars containing underscores during implicit inference.
+    pub(crate) underscored_numbers_as_strings: bool,
     /// If true, accept only the six YAML 1.2 Core boolean spellings.
     pub(crate) strict_booleans: bool,
     /// If true, ROS-compliant angle resolver is enabled
@@ -37,6 +41,8 @@ impl Cfg {
             dup_policy: options.duplicate_keys,
             merge_keys: options.merge_keys,
             legacy_octal_numbers: options.legacy_octal_numbers,
+            leading_zero_numbers_as_strings: options.leading_zero_numbers_as_strings,
+            underscored_numbers_as_strings: options.underscored_numbers_as_strings,
             strict_booleans: options.strict_booleans,
             angle_conversions: options.angle_conversions,
             ignore_binary_tag_for_string: options.ignore_binary_tag_for_string,

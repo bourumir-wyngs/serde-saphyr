@@ -907,8 +907,19 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 return visitor.visit_bool(b);
             }
 
-            // Try integers: signed if leading '-', else unsigned, using 64-bit visitors.
             let t = yaml_trim(&effective);
+            // Preserve selected spellings before either numeric parser can consume
+            // them. Explicit numeric tags have already dispatched above.
+            if (self.cfg.leading_zero_numbers_as_strings && leading_zero_decimal(t))
+                || (self.cfg.underscored_numbers_as_strings && t.contains('_'))
+            {
+                return match effective {
+                    Cow::Borrowed(b) => visitor.visit_borrowed_str(b),
+                    Cow::Owned(s) => visitor.visit_string(s),
+                };
+            }
+
+            // Try integers: signed if leading '-', else unsigned, using 64-bit visitors.
             if t.starts_with('-') {
                 if (!leading_zero_decimal(t) || self.cfg.legacy_octal_numbers)
                     && let Ok(v) =

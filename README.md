@@ -151,6 +151,35 @@ literal `<<` entries without expansion.
 of complete `serde_yaml` compatibility. YAML requires unique mapping keys;
 `DuplicateKeyPolicy::Error` remains the default.
 
+#### Numeric-looking strings in untyped values
+
+When migrating code that reads generic values such as `serde_json::Value`, enable
+either of these independent options to preserve numeric spellings as strings:
+
+```rust
+let options = serde_saphyr::options! {
+    leading_zero_numbers_as_strings: true,
+    underscored_numbers_as_strings: true,
+};
+let value: serde_json::Value = serde_saphyr::from_str_with_options(
+    "[0755, -007, +00, 1_000, 0xFF_FF]",
+    options,
+).unwrap();
+assert_eq!(value, serde_json::json!(["0755", "-007", "+00", "1_000", "0xFF_FF"]));
+```
+
+Both options default to `false`. `leading_zero_numbers_as_strings` preserves
+digit-only decimal spellings with redundant leading zeros and an optional sign;
+floats such as `0.5`, `00.5`, and `01e2` still infer as numbers.
+`underscored_numbers_as_strings` preserves numeric spellings containing underscores.
+
+These options apply to implicit type inference through Serde's `deserialize_any`,
+including buffering for `#[serde(untagged)]` and `#[serde(flatten)]`. Direct typed
+deserialization and explicit `!!int` or `!!float` tags retain their existing behavior.
+Preservation takes precedence over `legacy_octal_numbers` during implicit inference.
+The options do not change [mapping-key comparison](#duplicate-keys): for example,
+`1_000` and `1000` still compare as the same integer key.
+
 #### Null values for string fields
 
 For a field declared as `hi: String`, `serde_yaml` accepts the plain null forms below
@@ -374,6 +403,8 @@ YAML null values are rejected for `String` fields. See
 Schema-based parsing can be disabled by setting `no_schema` to true in [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html). In this case all *unquoted* values that are parsed into strings, but can be understood as something else, are rejected. This can be used for enforcing compatibility with another YAML parser that reads the same content and requires this quoting. Default setting is false.
 
 Legacy octal notation such as `0052` can be enabled via `Options`, but it is disabled by default.
+For untyped values, [numeric spelling options](#numeric-looking-strings-in-untyped-values)
+can preserve leading-zero and underscored numbers as strings.
 
 The concept that “Rust code is the schema” naturally extends to implemented support for [`validator`](https://crates.io/crates/validator) and [`garde`](https://crates.io/crates/garde), as these crates allow annotations to be added directly to Rust types, providing even stricter control over permissible values.
 
