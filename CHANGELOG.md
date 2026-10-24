@@ -4,6 +4,12 @@
 
 ### Added
 
+- Added `Options::leading_zero_numbers_as_strings` and
+  `Options::underscored_numbers_as_strings` to preserve numeric spellings such as
+  `0755` and `1_000` as strings in untyped values, including untagged enums and
+  flattened fields ([#225](https://github.com/bourumir-wyngs/serde-saphyr/issues/225)).
+  Both default to `false`; direct typed parsing, explicit numeric tags, and
+  mapping-key comparison keep their existing behavior.
 - Added `Error::render_to` to append diagnostics to any `std::fmt::Write` using
   `RenderOptions`, without collecting the complete output in an intermediate string
   ([#221](https://github.com/bourumir-wyngs/serde-saphyr/issues/221)).
