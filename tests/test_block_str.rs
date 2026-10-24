@@ -342,6 +342,88 @@ fn foldstr_in_block_sequence_item() {
 
 #[test]
 fn folded_blank_lines_are_unindented() {
+    #[derive(Debug, Deserialize, PartialEq, Serialize)]
+    struct Doc<T> {
+        note: T,
+        other: usize,
+    }
+
+    fn check<T: Serialize>(value: &T, expected_yaml: &str, expected_value: &str) {
+        let yaml = to_string(value).unwrap();
+        assert_eq!(yaml, expected_yaml);
+        let back: String = serde_saphyr::from_str(&yaml).unwrap();
+        // Explicit folded wrappers retain their historical clip chomping.
+        assert_eq!(back, expected_value, "{yaml:?}");
+
+        for indent_step in [1, 2, 4] {
+            for compact_list_indent in [false, true] {
+                let options = serde_saphyr::ser_options! {
+                    indent_step: indent_step,
+                    compact_list_indent: compact_list_indent,
+                };
+                let indent = " ".repeat(indent_step);
+                let yaml = to_string_with_options(
+                    &Doc {
+                        note: Doc {
+                            note: value,
+                            other: 7,
+                        },
+                        other: 9,
+                    },
+                    options.clone(),
+                )
+                .unwrap();
+                // Reindent only the root fixture's content prefix; blank lines stay empty.
+                let block = expected_yaml.replace("\n  ", &format!("\n{indent}{indent}"));
+                assert_eq!(
+                    yaml,
+                    format!("note:\n{indent}note: {block}{indent}other: 7\nother: 9\n")
+                );
+                let back: Doc<Doc<String>> = serde_saphyr::from_str(&yaml).unwrap();
+                assert_eq!(
+                    back,
+                    Doc {
+                        note: Doc {
+                            note: expected_value.to_owned(),
+                            other: 7,
+                        },
+                        other: 9,
+                    },
+                    "nested mapping: {yaml:?}"
+                );
+
+                let yaml = to_string_with_options(
+                    &Doc {
+                        note: (value, "kept"),
+                        other: 9,
+                    },
+                    options,
+                )
+                .unwrap();
+                // One-space indentation uses the expanded sequence layout.
+                let sequence_indent = if compact_list_indent && indent_step >= 2 {
+                    ""
+                } else {
+                    &indent
+                };
+                let block = expected_yaml.replace("\n  ", &format!("\n{sequence_indent}{indent}"));
+                assert_eq!(
+                    yaml,
+                    format!("note:\n{sequence_indent}- {block}{sequence_indent}- kept\nother: 9\n")
+                );
+                let back: Doc<Vec<String>> = serde_saphyr::from_str(&yaml).unwrap();
+                assert_eq!(
+                    back,
+                    Doc {
+                        note: vec![expected_value.to_owned(), "kept".to_owned()],
+                        other: 9,
+                    },
+                    "nested sequence: {yaml:?}"
+                );
+            }
+        }
+    }
+
     for (value, expected_yaml, expected_value) in [
         ("\n\n", ">\n\n\n\n", ""),
         (
@@ -355,15 +437,8 @@ fn folded_blank_lines_are_unindented() {
             "alpha \t\n\n \t\nbeta\t \n",
         ),
     ] {
-        for yaml in [
-            to_string(&FoldStr(value)).unwrap(),
-            to_string(&FoldString(value.to_owned())).unwrap(),
-        ] {
-            assert_eq!(yaml, expected_yaml);
-            let back: String = serde_saphyr::from_str(&yaml).unwrap();
-            // Explicit folded wrappers retain their historical clip chomping.
-            assert_eq!(back, expected_value, "{yaml:?}");
-        }
+        check(&FoldStr(value), expected_yaml, expected_value);
+        check(&FoldString(value.to_owned()), expected_yaml, expected_value);
     }
 }
 
