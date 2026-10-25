@@ -1484,21 +1484,21 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
 
                     if content.is_empty() {
                         for _ in 0..trailing_nl {
-                            self.out.write_str(indent_str)?;
-                            self.state.at_line_start = false;
                             self.newline()?;
                         }
                     } else {
                         for line in content.split('\n') {
-                            self.out.write_str(indent_str)?;
-                            self.state.at_line_start = false;
-                            self.out.write_str(line)?;
+                            // Empty lines need no indentation; whitespace in non-empty
+                            // content lines must be preserved exactly.
+                            if !line.is_empty() {
+                                self.out.write_str(indent_str)?;
+                                self.state.at_line_start = false;
+                                self.out.write_str(line)?;
+                            }
                             self.newline()?;
                         }
                         if trailing_nl >= 2 {
                             for _ in 0..(trailing_nl - 1) {
-                                self.out.write_str(indent_str)?;
-                                self.state.at_line_start = false;
                                 self.newline()?;
                             }
                         }

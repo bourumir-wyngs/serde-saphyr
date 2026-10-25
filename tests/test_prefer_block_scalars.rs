@@ -18,7 +18,7 @@ fn prefer_block_scalars_literal_newlines_and_trailing() {
     // Case 2: multiline with two trailing newlines => use |+ and keep one visible empty line
     let s2 = "a\nb\n\n".to_string();
     let out2 = serde_saphyr::to_string(&s2).unwrap();
-    let expected2 = "|+\n  a\n  b\n  \n";
+    let expected2 = "|+\n  a\n  b\n\n";
     assert_eq!(
         out2, expected2,
         "Unexpected YAML for 2 trailing newlines: {out2}"
@@ -29,13 +29,30 @@ fn prefer_block_scalars_literal_newlines_and_trailing() {
     // Case 3: multiline with four trailing newlines => use |+ and keep three visible empty lines
     let s3 = "a\nb\n\n\n\n".to_string();
     let out3 = serde_saphyr::to_string(&s3).unwrap();
-    let expected3 = "|+\n  a\n  b\n  \n  \n  \n";
+    let expected3 = "|+\n  a\n  b\n\n\n\n";
     assert_eq!(
         out3, expected3,
         "Unexpected YAML for 4 trailing newlines: {out3}"
     );
     let r3: String = serde_saphyr::from_str(&out3).unwrap();
     assert_eq!(s3, r3);
+}
+
+#[test]
+fn nested_literal_blank_lines_are_unindented_issue_249() {
+    use std::collections::BTreeMap;
+
+    let input = BTreeMap::from([(
+        "info",
+        BTreeMap::from([("description", "First paragraph.\n\nSecond paragraph.\n")]),
+    )]);
+    let yaml = serde_saphyr::to_string(&input).unwrap();
+    assert_eq!(
+        yaml,
+        "info:\n  description: |\n    First paragraph.\n\n    Second paragraph.\n"
+    );
+    let back: BTreeMap<String, BTreeMap<String, String>> = serde_saphyr::from_str(&yaml).unwrap();
+    assert_eq!(back["info"]["description"], input["info"]["description"]);
 }
 
 #[test]
