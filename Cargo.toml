@@ -99,7 +99,7 @@ serde_path_to_error = "0.1"
 serde_json = { version = "1", features = ["preserve_order"] }
 miette = { version = "7", features = ["fancy"] }
 tempfile = "3.27"
-rstest = { version = ">=0.26,<0.28" }
+rstest = { version = ">=0.26, <0.29" }
 proptest = { version = "1", default-features = false, features = ["std"] }
 typetag = "0.2"
 divan = { version = "5.0.2", package = "codspeed-divan-compat" }
