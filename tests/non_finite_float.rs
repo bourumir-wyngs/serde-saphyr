@@ -20,7 +20,7 @@ const NON_FINITE_CASES: &[(&str, f64, &str)] = &[
     (".INF", f64::INFINITY, ".inf"),
     ("+.INF", f64::INFINITY, ".inf"),
     ("-.inf", f64::NEG_INFINITY, "-.inf"),
-    ("-.InF", f64::NEG_INFINITY, "-.inf"),
+    ("-.Inf", f64::NEG_INFINITY, "-.inf"),
     ("1e999", f64::INFINITY, ".inf"),
     ("9e400", f64::INFINITY, ".inf"),
     ("-1e999", f64::NEG_INFINITY, "-.inf"),

@@ -289,6 +289,21 @@ fn normalize_prefixed_digits(legacy_octal: bool, digits: &str) -> &str {
     }
 }
 
+/// Parse the YAML 1.2 Core spellings of infinity and NaN, with an optional sign.
+#[cfg(feature = "deserialize")]
+fn parse_yaml12_non_finite_float<T: num_traits::Float>(t: &str) -> Option<T> {
+    let (negative, unsigned) = match t.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, t.strip_prefix('+').unwrap_or(t)),
+    };
+    match unsigned {
+        ".nan" | ".NaN" | ".NAN" => Some(T::nan()),
+        ".inf" | ".Inf" | ".INF" if negative => Some(T::neg_infinity()),
+        ".inf" | ".Inf" | ".INF" => Some(T::infinity()),
+        _ => None,
+    }
+}
+
 #[cfg(feature = "deserialize")]
 fn parse_yaml12_finite_float_fallback<T>(t: &str, location: Location) -> Result<T, Error>
 where
@@ -325,12 +340,9 @@ where
         return crate::robotics::parse_yaml12_float_angle_converting(s, location, tag);
     }
     let t = yaml_trim(s);
-    let lower = t.to_ascii_lowercase();
-    match lower.as_str() {
-        ".nan" | "+.nan" | "-.nan" => Ok(T::nan()),
-        ".inf" | "+.inf" => Ok(T::infinity()),
-        "-.inf" => Ok(T::neg_infinity()),
-        _ => parse_yaml12_finite_float_fallback(t, location),
+    match parse_yaml12_non_finite_float(t) {
+        Some(value) => Ok(value),
+        None => parse_yaml12_finite_float_fallback(t, location),
     }
 }
 
@@ -346,12 +358,9 @@ where
     T: num_traits::Float,
 {
     let t = yaml_trim(s);
-    let lower = t.to_ascii_lowercase();
-    match lower.as_str() {
-        ".nan" | "+.nan" | "-.nan" => Ok(T::nan()),
-        ".inf" | "+.inf" => Ok(T::infinity()),
-        "-.inf" => Ok(T::neg_infinity()),
-        _ => parse_yaml12_finite_float_fallback(t, location),
+    match parse_yaml12_non_finite_float(t) {
+        Some(value) => Ok(value),
+        None => parse_yaml12_finite_float_fallback(t, location),
     }
 }
 
