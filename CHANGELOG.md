@@ -51,6 +51,7 @@
   Blank values and the plain spellings `~`, `null`, `Null`, and `NULL` are handled consistently.
   Write `[]` for an empty sequence or `{}` for an empty mapping. `Option<T>` null handling
   and defaults for absent fields are unchanged; see the README migration notes.
+- Reject "wrong case" YAML 1.2 Core spellings like NUlL, .NAn or FAlse (PR #254, #237).  
 
 ## 2.0.0
 
