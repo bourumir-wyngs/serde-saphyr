@@ -382,7 +382,7 @@ pub struct Options {
     /// custom tag on that key can therefore be discarded without the struct ever
     /// seeing it. Such a tag has no effect on field selection and may be a value
     /// annotation accidentally placed on the field name. Enable this option to
-    /// report [`crate::Error::TaggedFieldName`] instead of silently accepting it.
+    /// report [`crate::Error::TaggedStructFieldName`] instead of silently accepting it.
     ///
     /// For example, an application can inspect a value's `!secret` tag by reading
     /// that value as [`crate::Tagged<T>`]:

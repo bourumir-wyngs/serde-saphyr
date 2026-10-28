@@ -31,7 +31,7 @@ fn inner_error(mut error: &Error) -> &Error {
 fn assert_rejected<T: for<'de> Deserialize<'de> + std::fmt::Debug>(yaml: &str) {
     let error = from_str_with_options::<T>(yaml, strict_options()).unwrap_err();
     assert!(
-        matches!(inner_error(&error), Error::TaggedFieldName { .. }),
+        matches!(inner_error(&error), Error::TaggedStructFieldName { .. }),
         "{yaml:?}: unexpected error: {error:?}"
     );
     assert!(error.location().is_some());
@@ -132,7 +132,7 @@ fn field_tag_errors_preserve_source_spelling_through_replay_and_reader_input() {
         .unwrap_err();
         for error in [&error, &reader_error] {
             assert!(
-                matches!(inner_error(error), Error::TaggedFieldName { tag, .. } if tag == expected),
+                matches!(inner_error(error), Error::TaggedStructFieldName { tag, .. } if tag == expected),
                 "{policy:?}, {yaml:?}: unexpected error: {error:?}"
             );
             assert!(error.location().is_some());
@@ -177,7 +177,7 @@ fn buffered_duplicate_policy_checks_field_names() {
         duplicate_keys: DuplicateKeyPolicy::LastWins,
     };
     let error = from_str_with_options::<Entry>("{name: a, !custom count: 1}", options).unwrap_err();
-    assert!(matches!(inner_error(&error), Error::TaggedFieldName { .. }));
+    assert!(matches!(inner_error(&error), Error::TaggedStructFieldName { .. }));
 
     let entry: Entry = from_str_with_options(
         "{name: a, !!str count: 1, !!str count: 2}",
@@ -197,7 +197,7 @@ fn assert_rejected_with_duplicate_policy(yaml: &str, duplicate_keys: DuplicateKe
     )
     .unwrap_err();
     assert!(
-        matches!(inner_error(&error), Error::TaggedFieldName { tag, .. } if tag == "!str"),
+        matches!(inner_error(&error), Error::TaggedStructFieldName { tag, .. } if tag == "!str"),
         "{duplicate_keys:?}, {yaml:?}: unexpected error: {error:?}"
     );
     assert!(error.location().is_some());
@@ -299,7 +299,7 @@ fn struct_values_inside_maps_still_validate_field_tags() {
             .unwrap_err(),
         ] {
             assert!(
-                matches!(inner_error(&error), Error::TaggedFieldName { tag, .. } if tag == "!str"),
+                matches!(inner_error(&error), Error::TaggedStructFieldName { tag, .. } if tag == "!str"),
                 "{policy:?}: unexpected error: {error:?}"
             );
         }
@@ -468,7 +468,7 @@ fn error_keeps_the_tag_and_escapes_control_characters_in_diagnostics() {
             .unwrap_err();
     let inner = inner_error(&error);
     assert!(
-        matches!(inner, Error::TaggedFieldName { tag, .. } if tag == "!evil\nforged"),
+        matches!(inner, Error::TaggedStructFieldName { tag, .. } if tag == "!evil\nforged"),
         "{inner:?}"
     );
     assert!(inner.location().is_some());

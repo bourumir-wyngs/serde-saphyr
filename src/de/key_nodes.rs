@@ -192,7 +192,7 @@ impl<'a> KeyNode<'a> {
                 NodeOrigin::Direct | NodeOrigin::Merge(_) => None,
             };
             return Err(attach_alias_locations_if_missing(
-                Error::TaggedFieldName {
+                Error::TaggedStructFieldName {
                     tag: original_tag
                         .as_deref()
                         .unwrap_or(raw_tag.as_ref())
