@@ -1303,6 +1303,13 @@ pub enum Error {
         tag: String,
         location: Location,
     },
+
+    /// A struct field name's explicit tag violates the enabled
+    /// [`crate::Options::reject_tagged_field_names`] policy.
+    TaggedFieldName {
+        tag: String,
+        location: Location,
+    },
 }
 
 impl Error {
@@ -1693,6 +1700,7 @@ impl Error {
             | Error::MergeValueNotMapOrSeqOfMaps { location }
             | Error::MergeKeyNotAllowed { location }
             | Error::UnsupportedTag { location, .. }
+            | Error::TaggedFieldName { location, .. }
             | Error::InvalidBinaryBase64 { location }
             | Error::BinaryNotUtf8 { location }
             | Error::TaggedScalarCannotDeserializeIntoString { location }
@@ -1808,6 +1816,7 @@ impl Error {
             | Error::MergeValueNotMapOrSeqOfMaps { location }
             | Error::MergeKeyNotAllowed { location }
             | Error::UnsupportedTag { location, .. }
+            | Error::TaggedFieldName { location, .. }
             | Error::InvalidBinaryBase64 { location }
             | Error::BinaryNotUtf8 { location }
             | Error::TaggedScalarCannotDeserializeIntoString { location }

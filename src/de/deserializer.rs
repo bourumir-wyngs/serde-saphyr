@@ -1864,6 +1864,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         struct MA<'de, 'e> {
             ev: &'e mut dyn Events<'de>,
             cfg: Cfg,
+            struct_mode: bool,
             have_key: bool,
 
             // Persist a best-effort “current location” across `next_key_seed` returning to Serde.
@@ -1962,6 +1963,26 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
                 // Get location from replay events for error reporting.
                 let location = replay.reference_location();
+
+                if self.struct_mode && self.cfg.reject_tagged_field_names {
+                    let tagged_name = match replay.peek()? {
+                        Some(Ev::Scalar {
+                            raw_tag: Some(raw_tag),
+                            location,
+                            ..
+                        }) if !matches!(raw_tag.as_ref(), "!" | "tag:yaml.org,2002:str") => {
+                            Some((raw_tag.to_string(), *location))
+                        }
+                        _ => None,
+                    };
+                    if let Some((tag, location)) = tagged_name {
+                        return Err(attach_alias_locations_if_missing(
+                            Error::TaggedFieldName { tag, location },
+                            replay.alias_reference_location(),
+                            location,
+                        ));
+                    }
+                }
 
                 let de = YamlDeserializer::<'de2, '_> {
                     ev: &mut replay,
@@ -2447,6 +2468,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         let mut access = MA {
             ev: self.ev,
             cfg: child_cfg,
+            struct_mode: self.struct_mode,
             have_key: false,
 
             fallback_guard: None,
