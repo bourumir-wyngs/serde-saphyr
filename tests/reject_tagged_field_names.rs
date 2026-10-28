@@ -48,17 +48,17 @@ fn tagged_field_names_keep_their_existing_behavior_by_default() {
 fn string_tags_and_renamed_fields_are_allowed() {
     #[derive(Debug, Deserialize, PartialEq)]
     struct Renamed {
-        #[serde(rename = "0name")]
+        #[serde(rename = "0.0")]
         name: String,
     }
 
     for yaml in [
-        "0name: Alice",
-        "'0name': Alice",
-        "!!str 0name: Alice",
-        "! 0name: Alice",
-        "!<tag:yaml.org,2002:str> 0name: Alice",
-        "%TAG !e! tag:yaml.org,2002:\n---\n!e!str 0name: Alice",
+        "0.0: Alice",
+        "'0.0': Alice",
+        "!!str 0.0: Alice",
+        "! 0.0: Alice",
+        "!<tag:yaml.org,2002:str> 0.0: Alice",
+        "%TAG !e! tag:yaml.org,2002:\n---\n!e!str 0.0: Alice",
     ] {
         let value: Renamed = from_str_with_options(yaml, strict_options()).unwrap();
         assert_eq!(value.name, "Alice", "{yaml:?}");

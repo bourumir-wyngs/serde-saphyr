@@ -400,8 +400,9 @@ pub struct Options {
     /// Untagged and quoted field names remain accepted. Explicit standard string tags
     /// (`!!str`, including equivalent verbatim or directive-expanded forms) and
     /// the non-specific `!` tag are also accepted. Field names are the external
-    /// strings used by Serde: `!!str 0name: Alice` can populate a Rust field marked
-    /// `#[serde(rename = "0name")]`, even though `0name` is not a Rust identifier.
+    /// strings used by Serde: `!!str 0.0: Alice` can populate a Rust field marked
+    /// `#[serde(rename = "0.0")]`. Here `!!str` explicitly gives `0.0` string
+    /// semantics, and Serde's rename handles the external field name.
     /// The exception uses the resolved tag identity; a local `!str` tag is still
     /// rejected, including when a directive rebinds `!!` to an application namespace.
     ///
