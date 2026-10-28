@@ -904,7 +904,9 @@ mod tests {
         let restored: Options = serde_json::from_value(json.clone()).unwrap();
         assert!(restored.reject_tagged_field_names);
 
-        json.as_object_mut().unwrap().remove("reject_tagged_field_names");
+        json.as_object_mut()
+            .unwrap()
+            .remove("reject_tagged_field_names");
         let legacy: Options = serde_json::from_value(json).unwrap();
         assert!(!legacy.reject_tagged_field_names);
     }

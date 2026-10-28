@@ -193,7 +193,10 @@ impl<'a> KeyNode<'a> {
             };
             return Err(attach_alias_locations_if_missing(
                 Error::TaggedFieldName {
-                    tag: original_tag.as_deref().unwrap_or(raw_tag.as_ref()).to_owned(),
+                    tag: original_tag
+                        .as_deref()
+                        .unwrap_or(raw_tag.as_ref())
+                        .to_owned(),
                     location: *location,
                 },
                 alias_reference_location,
@@ -866,7 +869,8 @@ pub(super) fn pending_entries_from_live_events<'a>(
                     Some(_) => {
                         let _ = ev.peek()?;
                         let element_ref_loc = ev.reference_location();
-                        let mut element = capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
+                        let mut element =
+                            capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
                         batches.push(pending_entries_from_events(
                             element.take_events(),
                             element.location(),
@@ -966,7 +970,8 @@ pub(super) fn collect_entries_from_map<'a>(
         }
     }
 
-    let mut entries = apply_duplicate_key_policy_to_entries(fields, cfg.dup_policy, cfg.merge_keys)?;
+    let mut entries =
+        apply_duplicate_key_policy_to_entries(fields, cfg.dup_policy, cfg.merge_keys)?;
     for mut nested in merges {
         entries.append(&mut nested);
     }

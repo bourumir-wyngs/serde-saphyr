@@ -276,8 +276,7 @@ impl Ev<'_> {
                 *original_tag = None;
                 true
             }
-            Ev::SeqStart { tag, raw_tag, .. }
-            | Ev::MapStart { tag, raw_tag, .. } => {
+            Ev::SeqStart { tag, raw_tag, .. } | Ev::MapStart { tag, raw_tag, .. } => {
                 *tag = SfTag::None;
                 *raw_tag = None;
                 true

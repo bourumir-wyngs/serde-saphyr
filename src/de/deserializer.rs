@@ -1795,11 +1795,8 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             MergeKeyPolicy::Merge => {
                                 let _ = ev.peek()?;
                                 let merge_ref_loc = ev.reference_location();
-                                let entries = pending_entries_from_live_events(
-                                    ev,
-                                    merge_ref_loc,
-                                    cfg,
-                                )?;
+                                let entries =
+                                    pending_entries_from_live_events(ev, merge_ref_loc, cfg)?;
                                 if !entries.is_empty() {
                                     merge_batches.push_back(entries);
                                 }

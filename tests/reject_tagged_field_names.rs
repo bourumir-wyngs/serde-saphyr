@@ -89,7 +89,11 @@ fn other_explicit_scalar_tags_are_rejected_on_field_names() {
 #[test]
 fn field_tag_errors_preserve_source_spelling_through_replay_and_reader_input() {
     for (yaml, expected, policy) in [
-        ("{name: a, !!int count: 1}", "!!int", DuplicateKeyPolicy::Error),
+        (
+            "{name: a, !!int count: 1}",
+            "!!int",
+            DuplicateKeyPolicy::Error,
+        ),
         (
             "%TAG !e! tag:example.com,2026:\n---\n{name: a, !e!secret count: 1}",
             "!e!secret",
@@ -172,8 +176,7 @@ fn buffered_duplicate_policy_checks_field_names() {
         reject_tagged_field_names: true,
         duplicate_keys: DuplicateKeyPolicy::LastWins,
     };
-    let error = from_str_with_options::<Entry>("{name: a, !custom count: 1}", options)
-        .unwrap_err();
+    let error = from_str_with_options::<Entry>("{name: a, !custom count: 1}", options).unwrap_err();
     assert!(matches!(inner_error(&error), Error::TaggedFieldName { .. }));
 
     let entry: Entry = from_str_with_options(
@@ -271,7 +274,11 @@ fn duplicate_and_merged_map_keys_keep_their_existing_behavior() {
                 options! { reject_tagged_field_names: true, duplicate_keys: policy },
             )
             .unwrap();
-            assert_eq!(value.values.get("count"), Some(&winner), "{policy:?}, {yaml:?}");
+            assert_eq!(
+                value.values.get("count"),
+                Some(&winner),
+                "{policy:?}, {yaml:?}"
+            );
         }
     }
 }
@@ -402,8 +409,7 @@ fn identifier_values_are_not_field_names() {
         kind: NamedKey,
     }
 
-    let value: WithKind =
-        from_str_with_options("{kind: !custom Count}", strict_options()).unwrap();
+    let value: WithKind = from_str_with_options("{kind: !custom Count}", strict_options()).unwrap();
     assert_eq!(value.kind, NamedKey::Count);
 
     let internal: Internal =
@@ -446,11 +452,8 @@ fn serde_buffered_and_flattened_structs_are_outside_the_policy() {
         from_str_with_options("{!!value count: 1}", strict_options()).unwrap();
     assert_eq!(plain.count, 1);
 
-    let Adjacent::Entry(plain) = from_str_with_options(
-        "{data: {!!value count: 1}, kind: Entry}",
-        strict_options(),
-    )
-    .unwrap();
+    let Adjacent::Entry(plain) =
+        from_str_with_options("{data: {!!value count: 1}, kind: Entry}", strict_options()).unwrap();
     assert_eq!(plain.count, 1);
 
     let flattened: Flattened =
@@ -460,11 +463,9 @@ fn serde_buffered_and_flattened_structs_are_outside_the_policy() {
 
 #[test]
 fn error_keeps_the_tag_and_escapes_control_characters_in_diagnostics() {
-    let error = from_str_with_options::<Entry>(
-        "{name: a, !evil%0Aforged count: 1}",
-        strict_options(),
-    )
-    .unwrap_err();
+    let error =
+        from_str_with_options::<Entry>("{name: a, !evil%0Aforged count: 1}", strict_options())
+            .unwrap_err();
     let inner = inner_error(&error);
     assert!(
         matches!(inner, Error::TaggedFieldName { tag, .. } if tag == "!evil\nforged"),
