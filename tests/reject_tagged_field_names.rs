@@ -2,7 +2,8 @@
 
 use serde::Deserialize;
 use serde_saphyr::{
-    DuplicateKeyPolicy, Error, Options, Tagged, from_str, from_str_with_options, options,
+    DuplicateKeyPolicy, Error, Options, Tagged, from_reader_with_options, from_str,
+    from_str_with_options, options,
 };
 use std::collections::BTreeMap;
 
@@ -83,6 +84,66 @@ fn other_explicit_scalar_tags_are_rejected_on_field_names() {
     ] {
         assert_rejected::<Entry>(yaml);
     }
+}
+
+#[test]
+fn field_tag_errors_preserve_source_spelling_through_replay_and_reader_input() {
+    for (yaml, expected, policy) in [
+        ("{name: a, !!int count: 1}", "!!int", DuplicateKeyPolicy::Error),
+        (
+            "%TAG !e! tag:example.com,2026:\n---\n{name: a, !e!secret count: 1}",
+            "!e!secret",
+            DuplicateKeyPolicy::Error,
+        ),
+        (
+            "{name: a, !<tag:example.com,2026:field> count: 1}",
+            "!<tag:example.com,2026:field>",
+            DuplicateKeyPolicy::Error,
+        ),
+        (
+            "%TAG !e! tag:example.com,2026:\n---\n{name: &key !e!secret count, *key : 1}",
+            "!e!secret",
+            DuplicateKeyPolicy::Error,
+        ),
+        (
+            "%TAG !e! tag:example.com,2026:\n---\n{name: a, <<: {!e!secret count: 1}}",
+            "!e!secret",
+            DuplicateKeyPolicy::Error,
+        ),
+        (
+            "{name: a, !<tag:yaml.org,2002:!str> count: 1, count: 2}",
+            "!<tag:yaml.org,2002:!str>",
+            DuplicateKeyPolicy::LastWins,
+        ),
+    ] {
+        let error = from_str_with_options::<Entry>(
+            yaml,
+            options! { reject_tagged_field_names: true, duplicate_keys: policy },
+        )
+        .unwrap_err();
+        let reader_error = from_reader_with_options::<_, Entry>(
+            yaml.as_bytes(),
+            options! { reject_tagged_field_names: true, duplicate_keys: policy },
+        )
+        .unwrap_err();
+        for error in [&error, &reader_error] {
+            assert!(
+                matches!(inner_error(error), Error::TaggedFieldName { tag, .. } if tag == expected),
+                "{policy:?}, {yaml:?}: unexpected error: {error:?}"
+            );
+            assert!(error.location().is_some());
+        }
+    }
+}
+
+#[test]
+fn ignored_unknown_field_names_are_still_checked_for_misplaced_tags() {
+    let entry: Entry =
+        from_str_with_options("{name: a, count: 1, unknown: 2}", strict_options()).unwrap();
+    assert_eq!(entry.name.0, "a");
+    assert_eq!(entry.count, Some(1));
+
+    assert_rejected::<Entry>("{name: a, count: 1, !secret unknown: 2}");
 }
 
 #[test]

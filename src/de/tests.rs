@@ -35,6 +35,7 @@ fn scalar(
         value: Cow::Borrowed(value),
         tag,
         raw_tag: raw_tag.map(Cow::Borrowed),
+        original_tag: None,
         style,
         anchor: 0,
         location,

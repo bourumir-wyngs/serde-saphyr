@@ -181,6 +181,7 @@ impl<'a> KeyNode<'a> {
         };
         if let Some(Ev::Scalar {
             raw_tag: Some(raw_tag),
+            original_tag,
             location,
             ..
         }) = events.first()
@@ -192,7 +193,7 @@ impl<'a> KeyNode<'a> {
             };
             return Err(attach_alias_locations_if_missing(
                 Error::TaggedFieldName {
-                    tag: raw_tag.to_string(),
+                    tag: original_tag.as_deref().unwrap_or(raw_tag.as_ref()).to_owned(),
                     location: *location,
                 },
                 alias_reference_location,
@@ -346,6 +347,7 @@ fn capture_node_inner<'a>(
             value,
             tag,
             raw_tag,
+            original_tag,
             style,
             anchor,
             location,
@@ -356,6 +358,7 @@ fn capture_node_inner<'a>(
                 value,
                 tag,
                 raw_tag,
+                original_tag,
                 style,
                 anchor,
                 location,
@@ -548,6 +551,7 @@ pub(super) fn externally_tagged_payload_as_map_events<'a>(
             value: Cow::Owned(variant),
             tag: SfTag::String,
             raw_tag: None,
+            original_tag: None,
             style: ScalarStyle::Plain,
             anchor: 0,
             location: tag_location,

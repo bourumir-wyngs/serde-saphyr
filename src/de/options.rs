@@ -408,6 +408,8 @@ pub struct Options {
     ///
     /// This option applies only to struct mappings entered through Serde's
     /// `deserialize_struct`, including externally tagged struct enum variants.
+    /// It checks every key in such a mapping, including unknown keys that Serde
+    /// would otherwise ignore without `#[serde(deny_unknown_fields)]`.
     /// It also checks field names replayed through aliases and expanded merges.
     /// Keys are checked before duplicate-key or merge precedence filtering, even
     /// when their values would otherwise be discarded.
