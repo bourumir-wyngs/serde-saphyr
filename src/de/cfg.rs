@@ -23,6 +23,8 @@ pub(crate) struct Cfg {
     pub(crate) ignore_binary_tag_for_string: bool,
     /// Do not take into String type that looks like number or boolean (require quoting)
     pub(crate) no_schema: bool,
+    /// Reject tags other than standard string tags on Rust struct field names.
+    pub(crate) reject_tagged_field_names: bool,
     /// Effective handling of non-finite floats in `deserialize_any`, with the legacy
     /// boolean already resolved.
     pub(crate) non_finite_float_policy: NonFiniteFloatPolicy,
@@ -47,6 +49,7 @@ impl Cfg {
             angle_conversions: options.angle_conversions,
             ignore_binary_tag_for_string: options.ignore_binary_tag_for_string,
             no_schema: options.no_schema,
+            reject_tagged_field_names: options.reject_tagged_field_names,
             non_finite_float_policy: match options.non_finite_float_policy {
                 NonFiniteFloatPolicy::Default if options.reject_non_finite_typeless_float => {
                     NonFiniteFloatPolicy::Reject

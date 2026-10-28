@@ -376,6 +376,61 @@ pub struct Options {
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub reject_unsupported_tags: bool,
 
+    /// Reject explicit tags on struct field names, except standard string tags.
+    ///
+    /// A derived struct normally matches each mapping key by its text alone. A
+    /// custom tag on that key can therefore be discarded without the struct ever
+    /// seeing it. Such a tag has no effect on field selection and may be a value
+    /// annotation accidentally placed on the field name. Enable this option to
+    /// report [`crate::Error::TaggedFieldName`] instead of silently accepting it.
+    ///
+    /// For example, an application can inspect a value's `!secret` tag by reading
+    /// that value as [`crate::Tagged<T>`]:
+    ///
+    /// ```yaml
+    /// password: !secret API_TOKEN
+    /// ```
+    ///
+    /// This misplaced annotation is rejected when the option is enabled:
+    ///
+    /// ```yaml
+    /// !secret password: API_TOKEN
+    /// ```
+    ///
+    /// Untagged and quoted field names remain accepted. Explicit standard string tags
+    /// (`!!str`, including equivalent verbatim or directive-expanded forms) and
+    /// the non-specific `!` tag are also accepted. Field names are the external
+    /// strings used by Serde: `!!str 0.0: Alice` can populate a Rust field marked
+    /// `#[serde(rename = "0.0")]`. Here `!!str` explicitly gives `0.0` string
+    /// semantics, and Serde's rename handles the external field name.
+    /// The exception uses the resolved tag identity; a local `!str` tag is still
+    /// rejected, including when a directive rebinds `!!` to an application namespace.
+    ///
+    /// This option applies only to struct mappings entered through Serde's
+    /// `deserialize_struct`, including externally tagged struct enum variants.
+    /// It checks every key in such a mapping, including unknown keys that Serde
+    /// would otherwise ignore without `#[serde(deny_unknown_fields)]`.
+    /// It also checks field names replayed through aliases and expanded merges.
+    /// Keys are checked before duplicate-key or merge precedence filtering, even
+    /// when their values would otherwise be discarded.
+    /// Ordinary map keys, including string, numeric, and enum keys, and tags on
+    /// values retain their existing behavior. Unlike
+    /// [`Self::reject_unsupported_tags`], it does not reject application tags
+    /// throughout the document.
+    /// Tags consumed by enabled preprocessing, such as `!include`, retain that
+    /// behavior before this check.
+    ///
+    /// Serde can match fields without calling `deserialize_struct`: structs using
+    /// `#[serde(flatten)]` enter through `deserialize_map`, while internally tagged
+    /// and untagged enums buffer their fields first. Adjacently tagged enums also
+    /// buffer content that precedes the discriminator. Fields handled by those
+    /// paths, including structs nested in their buffers, are not covered by this
+    /// option; it is not a document-wide guarantee against tagged field names.
+    ///
+    /// Default: false (retain existing field-name handling).
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
+    pub reject_tagged_field_names: bool,
+
     /// Handling of NaN, positive/negative infinity, and decimal literals that overflow
     /// `f64` (e.g. `1e999`) in `deserialize_any`.
     ///
@@ -671,6 +726,7 @@ impl Default for Options {
             ignore_binary_tag_for_string: false,
             no_schema: false,
             reject_unsupported_tags: false,
+            reject_tagged_field_names: false,
             reject_non_finite_typeless_float: true,
             with_snippet: true,
             crop_radius: 64,
@@ -726,6 +782,7 @@ impl std::fmt::Debug for Options {
             .field("angle_conversions", &self.angle_conversions)
             .field("no_schema", &self.no_schema)
             .field("reject_unsupported_tags", &self.reject_unsupported_tags)
+            .field("reject_tagged_field_names", &self.reject_tagged_field_names)
             .field("non_finite_float_policy", &self.non_finite_float_policy)
             .field(
                 "reject_non_finite_typeless_float",
@@ -807,6 +864,7 @@ mod tests {
         assert!(!opts.angle_conversions);
         assert!(!opts.no_schema);
         assert!(!opts.reject_unsupported_tags);
+        assert!(!opts.reject_tagged_field_names);
         assert_eq!(
             opts.non_finite_float_policy,
             NonFiniteFloatPolicy::default()
@@ -836,6 +894,21 @@ mod tests {
             DuplicateKeyPolicy::LastWins
         ));
         assert!(serde_json::from_str::<DuplicateKeyPolicy>("\"FirstWins\"").is_err());
+    }
+
+    #[cfg(feature = "serde_derived_types")]
+    #[test]
+    fn tagged_field_name_policy_serde_roundtrip_and_missing_default() {
+        let options = crate::options! { reject_tagged_field_names: true };
+        let mut json = serde_json::to_value(&options).unwrap();
+        let restored: Options = serde_json::from_value(json.clone()).unwrap();
+        assert!(restored.reject_tagged_field_names);
+
+        json.as_object_mut()
+            .unwrap()
+            .remove("reject_tagged_field_names");
+        let legacy: Options = serde_json::from_value(json).unwrap();
+        assert!(!legacy.reject_tagged_field_names);
     }
 
     #[cfg(feature = "serde_derived_types")]
@@ -881,6 +954,7 @@ mod tests {
         assert!(debug_str.contains("emit_comments: true"));
         assert!(debug_str.contains("strict_indentation: false"));
         assert!(debug_str.contains("reject_unsupported_tags: false"));
+        assert!(debug_str.contains("reject_tagged_field_names: false"));
         assert!(debug_str.contains("non_finite_float_policy: Default"));
         assert!(debug_str.contains("reject_non_finite_typeless_float: true"));
 

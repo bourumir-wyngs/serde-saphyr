@@ -4,6 +4,11 @@
 
 ### Added
 
+- Added opt-in `Options::reject_tagged_field_names` to catch misplaced tags on
+  struct field names, with `Error::TaggedFieldName` diagnostics. Standard string
+  tags remain accepted; map keys and tagged values keep their existing behavior.
+  The option defaults to `false`; see its documentation for Serde buffering and
+  `flatten` coverage limitations.
 - Added `Options::leading_zero_numbers_as_strings` and
   `Options::underscored_numbers_as_strings` to preserve numeric spellings such as
   `0755` and `1_000` as strings in untyped values, including untagged enums and

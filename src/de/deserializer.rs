@@ -1795,13 +1795,8 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             MergeKeyPolicy::Merge => {
                                 let _ = ev.peek()?;
                                 let merge_ref_loc = ev.reference_location();
-                                let entries = pending_entries_from_live_events(
-                                    ev,
-                                    merge_ref_loc,
-                                    cfg.merge_keys,
-                                    cfg.dup_policy,
-                                    cfg.legacy_octal_numbers,
-                                )?;
+                                let entries =
+                                    pending_entries_from_live_events(ev, merge_ref_loc, cfg)?;
                                 if !entries.is_empty() {
                                     merge_batches.push_back(entries);
                                 }
@@ -1816,6 +1811,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                         }
                     }
 
+                    if cfg.reject_tagged_field_names {
+                        key.validate_field_name_tag()?;
+                    }
                     let value_separator_comments =
                         ev.take_separator_comments_before_mapping_value()?;
                     let value_comments = ev.take_leading_comments_for_next_node()?;
@@ -1864,6 +1862,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         struct MA<'de, 'e> {
             ev: &'e mut dyn Events<'de>,
             cfg: Cfg,
+            struct_mode: bool,
             have_key: bool,
 
             // Persist a best-effort “current location” across `next_key_seed` returning to Serde.
@@ -2159,9 +2158,11 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                                         let entries = pending_entries_from_live_events(
                                             self.ev,
                                             merge_ref_loc,
-                                            self.cfg.merge_keys,
-                                            self.cfg.dup_policy,
-                                            self.cfg.legacy_octal_numbers,
+                                            Cfg {
+                                                reject_tagged_field_names: self.struct_mode
+                                                    && self.cfg.reject_tagged_field_names,
+                                                ..self.cfg
+                                            },
                                         )?;
                                         if !entries.is_empty() {
                                             self.merge_stack.push_back(entries);
@@ -2177,6 +2178,10 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                                 }
                             }
 
+                            if self.struct_mode && self.cfg.reject_tagged_field_names {
+                                key_node.validate_field_name_tag()?;
+                            }
+
                             if matches!(self.cfg.dup_policy, DuplicateKeyPolicy::LastWins)
                                 && key_node.fingerprint().contains_integer()
                             {
@@ -2185,7 +2190,11 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                                 self.pending = collect_last_wins_entries(
                                     self.ev,
                                     key_comments,
-                                    self.cfg,
+                                    Cfg {
+                                        reject_tagged_field_names: self.struct_mode
+                                            && self.cfg.reject_tagged_field_names,
+                                        ..self.cfg
+                                    },
                                     Some(key_node),
                                     &self.seen,
                                     std::mem::take(&mut self.merge_stack),
@@ -2447,6 +2456,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         let mut access = MA {
             ev: self.ev,
             cfg: child_cfg,
+            struct_mode: self.struct_mode,
             have_key: false,
 
             fallback_guard: None,

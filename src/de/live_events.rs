@@ -292,6 +292,9 @@ pub(crate) struct LiveEvents<'a> {
     /// Whether explicitly tagged nodes whose tags are unknown to this crate are rejected.
     reject_unsupported_tags: bool,
 
+    /// Retain scalar tag spellings for struct field-name diagnostics.
+    preserve_original_tags: bool,
+
     /// Whether robotics-only angle tags are supported in strict mode.
     angle_conversions: bool,
 
@@ -358,6 +361,7 @@ impl<'a> LiveEvents<'a> {
         let merge_keys = options.merge_keys;
         let pending_error = options.validate().err();
         let reject_unsupported_tags = options.reject_unsupported_tags;
+        let preserve_original_tags = options.reject_tagged_field_names;
         let angle_conversions = options.angle_conversions;
         let require_indent = options.require_indent;
         #[cfg(feature = "properties")]
@@ -426,6 +430,7 @@ impl<'a> LiveEvents<'a> {
 
             pending_error,
             reject_unsupported_tags,
+            preserve_original_tags,
             angle_conversions,
             tag_context: SmallVec::new(),
 
@@ -455,6 +460,7 @@ impl<'a> LiveEvents<'a> {
         let merge_keys = options.merge_keys;
         let pending_error = options.validate().err();
         let reject_unsupported_tags = options.reject_unsupported_tags;
+        let preserve_original_tags = options.reject_tagged_field_names;
         let angle_conversions = options.angle_conversions;
         let require_indent = options.require_indent;
         #[cfg(feature = "properties")]
@@ -521,6 +527,7 @@ impl<'a> LiveEvents<'a> {
 
             pending_error,
             reject_unsupported_tags,
+            preserve_original_tags,
             angle_conversions,
             tag_context: SmallVec::new(),
 
@@ -1024,10 +1031,20 @@ impl<'a> LiveEvents<'a> {
                         location,
                     )?;
 
+                    let raw_tag = tag.as_ref().map(|tag| Cow::Owned(tag.to_string()));
+                    let original_tag = if self.preserve_original_tags {
+                        tag.as_deref()
+                            .map(Tag::original)
+                            .filter(|original| Some(original.as_str()) != raw_tag.as_deref())
+                            .map(String::into_boxed_str)
+                    } else {
+                        None
+                    };
                     let ev = Ev::Scalar {
                         value: val,
                         tag: tag_s,
-                        raw_tag: tag.as_ref().map(|t| Cow::Owned(t.to_string())),
+                        raw_tag,
+                        original_tag,
                         style,
                         anchor: anchor_id,
                         location,
@@ -1303,6 +1320,7 @@ impl<'a> LiveEvents<'a> {
                 value: String::new().into(),
                 tag: SfTag::Null,
                 raw_tag: None,
+                original_tag: None,
                 style: ScalarStyle::Plain,
                 anchor: 0,
                 location: self.last_location,
