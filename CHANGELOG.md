@@ -6,7 +6,7 @@
 
 - Added opt-in `Options::reject_tagged_field_names` to catch misplaced tags on
   struct field names, with `Error::TaggedStructFieldName` diagnostics. Struct field names can
-  only be strings, !!str is still accepted. As other tags can only be ignored, tag on a structure
+  only be strings, `!!str` is still accepted. As other tags can only be ignored, tag on a structure
   field name is almost for sure placed wrongly. This setting but will be default in next major release.
 - Added `Options::leading_zero_numbers_as_strings` and
   `Options::underscored_numbers_as_strings` to preserve numeric spellings such as

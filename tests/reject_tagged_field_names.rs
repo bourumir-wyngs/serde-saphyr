@@ -177,7 +177,10 @@ fn buffered_duplicate_policy_checks_field_names() {
         duplicate_keys: DuplicateKeyPolicy::LastWins,
     };
     let error = from_str_with_options::<Entry>("{name: a, !custom count: 1}", options).unwrap_err();
-    assert!(matches!(inner_error(&error), Error::TaggedStructFieldName { .. }));
+    assert!(matches!(
+        inner_error(&error),
+        Error::TaggedStructFieldName { .. }
+    ));
 
     let entry: Entry = from_str_with_options(
         "{name: a, !!str count: 1, !!str count: 2}",
