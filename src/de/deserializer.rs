@@ -1798,9 +1798,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                                 let entries = pending_entries_from_live_events(
                                     ev,
                                     merge_ref_loc,
-                                    cfg.merge_keys,
-                                    cfg.dup_policy,
-                                    cfg.legacy_octal_numbers,
+                                    cfg,
                                 )?;
                                 if !entries.is_empty() {
                                     merge_batches.push_back(entries);
@@ -1816,6 +1814,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                         }
                     }
 
+                    if cfg.reject_tagged_field_names {
+                        key.validate_field_name_tag()?;
+                    }
                     let value_separator_comments =
                         ev.take_separator_comments_before_mapping_value()?;
                     let value_comments = ev.take_leading_comments_for_next_node()?;
@@ -1963,26 +1964,6 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
                 // Get location from replay events for error reporting.
                 let location = replay.reference_location();
-
-                if self.struct_mode && self.cfg.reject_tagged_field_names {
-                    let tagged_name = match replay.peek()? {
-                        Some(Ev::Scalar {
-                            raw_tag: Some(raw_tag),
-                            location,
-                            ..
-                        }) if !matches!(raw_tag.as_ref(), "!" | "tag:yaml.org,2002:str") => {
-                            Some((raw_tag.to_string(), *location))
-                        }
-                        _ => None,
-                    };
-                    if let Some((tag, location)) = tagged_name {
-                        return Err(attach_alias_locations_if_missing(
-                            Error::TaggedFieldName { tag, location },
-                            replay.alias_reference_location(),
-                            location,
-                        ));
-                    }
-                }
 
                 let de = YamlDeserializer::<'de2, '_> {
                     ev: &mut replay,
@@ -2180,9 +2161,11 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                                         let entries = pending_entries_from_live_events(
                                             self.ev,
                                             merge_ref_loc,
-                                            self.cfg.merge_keys,
-                                            self.cfg.dup_policy,
-                                            self.cfg.legacy_octal_numbers,
+                                            Cfg {
+                                                reject_tagged_field_names: self.struct_mode
+                                                    && self.cfg.reject_tagged_field_names,
+                                                ..self.cfg
+                                            },
                                         )?;
                                         if !entries.is_empty() {
                                             self.merge_stack.push_back(entries);
@@ -2198,6 +2181,10 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                                 }
                             }
 
+                            if self.struct_mode && self.cfg.reject_tagged_field_names {
+                                key_node.validate_field_name_tag()?;
+                            }
+
                             if matches!(self.cfg.dup_policy, DuplicateKeyPolicy::LastWins)
                                 && key_node.fingerprint().contains_integer()
                             {
@@ -2206,7 +2193,11 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                                 self.pending = collect_last_wins_entries(
                                     self.ev,
                                     key_comments,
-                                    self.cfg,
+                                    Cfg {
+                                        reject_tagged_field_names: self.struct_mode
+                                            && self.cfg.reject_tagged_field_names,
+                                        ..self.cfg
+                                    },
                                     Some(key_node),
                                     &self.seen,
                                     std::mem::take(&mut self.merge_stack),

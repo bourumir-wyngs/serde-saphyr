@@ -16,6 +16,14 @@ fn loc(line: usize, column: usize) -> Location {
     Location::new(line, column)
 }
 
+fn merge_cfg(merge_keys: MergeKeyPolicy, duplicate_keys: DuplicateKeyPolicy) -> Cfg {
+    Cfg::from_options(&Options {
+        merge_keys,
+        duplicate_keys,
+        ..Options::default()
+    })
+}
+
 fn scalar(
     value: &'static str,
     tag: SfTag,
@@ -111,9 +119,7 @@ fn pending_from_events(
         events,
         location,
         reference_location,
-        MergeKeyPolicy::Merge,
-        DuplicateKeyPolicy::Error,
-        false,
+        merge_cfg(MergeKeyPolicy::Merge, DuplicateKeyPolicy::Error),
     )
 }
 
@@ -127,9 +133,7 @@ fn pending_from_events(
         events,
         location,
         reference_location,
-        MergeKeyPolicy::Merge,
-        DuplicateKeyPolicy::Error,
-        false,
+        merge_cfg(MergeKeyPolicy::Merge, DuplicateKeyPolicy::Error),
         empty_property_interpolation(),
     )
 }
@@ -824,9 +828,7 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
         pending_entries_from_live_events(
             &mut null_replay,
             merge_reference,
-            MergeKeyPolicy::Merge,
-            DuplicateKeyPolicy::Error,
-            false,
+            merge_cfg(MergeKeyPolicy::Merge, DuplicateKeyPolicy::Error),
         )
         .unwrap()
         .is_empty()
@@ -842,9 +844,7 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
     let err = unwrap_err(pending_entries_from_live_events(
         &mut scalar_replay,
         merge_reference,
-        MergeKeyPolicy::Merge,
-        DuplicateKeyPolicy::Error,
-        false,
+        merge_cfg(MergeKeyPolicy::Merge, DuplicateKeyPolicy::Error),
     ));
     assert!(matches!(
         err,
@@ -866,9 +866,7 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
     let entries = pending_entries_from_live_events(
         &mut seq_replay,
         merge_reference,
-        MergeKeyPolicy::Merge,
-        DuplicateKeyPolicy::Error,
-        false,
+        merge_cfg(MergeKeyPolicy::Merge, DuplicateKeyPolicy::Error),
     )
     .unwrap();
     assert_eq!(entries.len(), 2);
@@ -885,9 +883,7 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
     let err = unwrap_err(pending_entries_from_live_events(
         &mut empty,
         merge_reference,
-        MergeKeyPolicy::Merge,
-        DuplicateKeyPolicy::Error,
-        false,
+        merge_cfg(MergeKeyPolicy::Merge, DuplicateKeyPolicy::Error),
     ));
     assert!(matches!(err, Error::Eof { location } if location == Location::UNKNOWN));
 }
@@ -904,9 +900,7 @@ fn collect_entries_from_map_expands_merges_and_preserves_reference_locations() {
     let err = unwrap_err(collect_entries_from_map(
         &mut not_a_map,
         loc(34, 9),
-        MergeKeyPolicy::Merge,
-        DuplicateKeyPolicy::Error,
-        false,
+        merge_cfg(MergeKeyPolicy::Merge, DuplicateKeyPolicy::Error),
     ));
     assert!(matches!(
         err,
@@ -930,9 +924,7 @@ fn collect_entries_from_map_expands_merges_and_preserves_reference_locations() {
     let entries = collect_entries_from_map(
         &mut replay,
         outer_reference,
-        MergeKeyPolicy::Merge,
-        DuplicateKeyPolicy::Error,
-        false,
+        merge_cfg(MergeKeyPolicy::Merge, DuplicateKeyPolicy::Error),
     )
     .unwrap();
     assert_eq!(entries.len(), 2);
@@ -959,9 +951,7 @@ fn collect_entries_from_map_treats_merge_key_as_ordinary_under_policy() {
     let entries = collect_entries_from_map(
         &mut replay,
         reference,
-        MergeKeyPolicy::AsOrdinary,
-        DuplicateKeyPolicy::Error,
-        false,
+        merge_cfg(MergeKeyPolicy::AsOrdinary, DuplicateKeyPolicy::Error),
     )
     .unwrap();
 
@@ -984,9 +974,7 @@ fn collect_entries_from_map_rejects_merge_key_under_error_policy() {
     let err = unwrap_err(collect_entries_from_map(
         &mut replay,
         loc(37, 9),
-        MergeKeyPolicy::Error,
-        DuplicateKeyPolicy::Error,
-        false,
+        merge_cfg(MergeKeyPolicy::Error, DuplicateKeyPolicy::Error),
     ));
 
     assert!(matches!(
@@ -1089,9 +1077,7 @@ fn duplicate_filter_validates_discarded_values_when_merges_are_forbidden() {
     let err = unwrap_err(collect_entries_from_map(
         &mut replay,
         loc(48, 1),
-        MergeKeyPolicy::Error,
-        DuplicateKeyPolicy::FirstWins,
-        false,
+        merge_cfg(MergeKeyPolicy::Error, DuplicateKeyPolicy::FirstWins),
     ));
     assert!(matches!(
         err,

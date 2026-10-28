@@ -408,6 +408,8 @@ pub struct Options {
     /// This option applies only to struct mappings entered through Serde's
     /// `deserialize_struct`, including externally tagged struct enum variants.
     /// It also checks field names replayed through aliases and expanded merges.
+    /// Keys are checked before duplicate-key or merge precedence filtering, even
+    /// when their values would otherwise be discarded.
     /// Ordinary map keys, including string, numeric, and enum keys, and tags on
     /// values retain their existing behavior. Unlike
     /// [`Self::reject_unsupported_tags`], it does not reject application tags

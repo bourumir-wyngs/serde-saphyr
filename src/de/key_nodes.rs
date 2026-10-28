@@ -4,10 +4,14 @@ use std::mem;
 
 use granit_parser::ScalarStyle;
 
+use super::cfg::Cfg;
 use super::error::Error;
 #[cfg(feature = "properties")]
 use super::events::PropertyInterpolation;
-use super::events::{Ev, Events, RecordedEvents, ReplayEvents, with_deferred_recursive_aliases};
+use super::events::{
+    Ev, Events, NodeOrigin, RecordedEvents, ReplayEvents, attach_alias_locations_if_missing,
+    with_deferred_recursive_aliases,
+};
 use super::options::{DuplicateKeyPolicy, MergeKeyPolicy};
 use super::tags::SfTag;
 use crate::location::Location;
@@ -170,6 +174,34 @@ pub(super) enum KeyNode<'a> {
 }
 
 impl<'a> KeyNode<'a> {
+    /// Check a captured struct field name before duplicate or merge filtering can discard it.
+    pub(super) fn validate_field_name_tag(&self) -> Result<(), Error> {
+        let events = match self {
+            Self::Fingerprinted { events, .. } | Self::Scalar { events, .. } => events,
+        };
+        if let Some(Ev::Scalar {
+            raw_tag: Some(raw_tag),
+            location,
+            ..
+        }) = events.first()
+            && !matches!(raw_tag.as_ref(), "!" | "tag:yaml.org,2002:str")
+        {
+            let alias_reference_location = match events.origin(0) {
+                NodeOrigin::Alias(location) => Some(location),
+                NodeOrigin::Direct | NodeOrigin::Merge(_) => None,
+            };
+            return Err(attach_alias_locations_if_missing(
+                Error::TaggedFieldName {
+                    tag: raw_tag.to_string(),
+                    location: *location,
+                },
+                alias_reference_location,
+                *location,
+            ));
+        }
+        Ok(())
+    }
+
     /// Original scalar text for diagnostics, independent of the comparison fingerprint.
     pub(super) fn stringy_scalar_value(&self) -> Option<&str> {
         match self.events() {
@@ -702,13 +734,14 @@ pub(super) fn apply_duplicate_key_policy_to_entries(
 ///
 /// Called by:
 /// - Mapping deserialization when encountering `<<: value`.
+///
+/// The rejection flag in `cfg` describes the destination mapping. Callers disable it
+/// for ordinary maps; nested merges inherit it without applying it to nested values.
 pub(super) fn pending_entries_from_events<'a>(
     events: impl Into<RecordedEvents<'a>>,
     location: Location,
     reference_location: Location,
-    merge_keys: MergeKeyPolicy,
-    duplicate_keys: DuplicateKeyPolicy,
-    legacy_octal_numbers: bool,
+    cfg: Cfg,
     #[cfg(feature = "properties")] property_interpolation: PropertyInterpolation,
 ) -> Result<Vec<PendingEntry<'a>>, Error> {
     let mut replay = ReplayEvents::with_reference(
@@ -724,13 +757,7 @@ pub(super) fn pending_entries_from_events<'a>(
         Some(Ev::Scalar { location, .. }) => Err(Error::MergeValueNotMapOrSeqOfMaps {
             location: *location,
         }),
-        Some(Ev::MapStart { .. }) => collect_entries_from_map(
-            &mut replay,
-            reference_location,
-            merge_keys,
-            duplicate_keys,
-            legacy_octal_numbers,
-        ),
+        Some(Ev::MapStart { .. }) => collect_entries_from_map(&mut replay, reference_location, cfg),
         Some(Ev::SeqStart { .. }) => {
             let mut batches = Vec::new();
             let _ = replay.next()?; // consume SeqStart
@@ -747,14 +774,12 @@ pub(super) fn pending_entries_from_events<'a>(
                         let _ = replay.peek()?;
                         let element_ref_loc = replay.reference_location();
                         let mut element =
-                            capture_node_with_legacy_octal(&mut replay, legacy_octal_numbers)?;
+                            capture_node_with_legacy_octal(&mut replay, cfg.legacy_octal_numbers)?;
                         batches.push(pending_entries_from_events(
                             element.take_events(),
                             element.location(),
                             element_ref_loc,
-                            merge_keys,
-                            duplicate_keys,
-                            legacy_octal_numbers,
+                            cfg,
                             #[cfg(feature = "properties")]
                             property_interpolation.clone(),
                         )?); // recursive
@@ -793,9 +818,7 @@ pub(super) fn pending_entries_from_events<'a>(
 pub(super) fn pending_entries_from_live_events<'a>(
     ev: &mut dyn Events<'a>,
     merge_reference_location: Location,
-    merge_keys: MergeKeyPolicy,
-    duplicate_keys: DuplicateKeyPolicy,
-    legacy_octal_numbers: bool,
+    cfg: Cfg,
 ) -> Result<Vec<PendingEntry<'a>>, Error> {
     #[cfg(feature = "properties")]
     let property_interpolation = ev.property_interpolation().clone();
@@ -817,14 +840,12 @@ pub(super) fn pending_entries_from_live_events<'a>(
             location: *location,
         }),
         Some(Ev::MapStart { .. }) => {
-            let mut node = capture_node_with_legacy_octal(ev, legacy_octal_numbers)?;
+            let mut node = capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
             pending_entries_from_events(
                 node.take_events(),
                 node.location(),
                 merge_reference_location,
-                merge_keys,
-                duplicate_keys,
-                legacy_octal_numbers,
+                cfg,
                 #[cfg(feature = "properties")]
                 property_interpolation,
             )
@@ -841,14 +862,12 @@ pub(super) fn pending_entries_from_live_events<'a>(
                     Some(_) => {
                         let _ = ev.peek()?;
                         let element_ref_loc = ev.reference_location();
-                        let mut element = capture_node_with_legacy_octal(ev, legacy_octal_numbers)?;
+                        let mut element = capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
                         batches.push(pending_entries_from_events(
                             element.take_events(),
                             element.location(),
                             element_ref_loc,
-                            merge_keys,
-                            duplicate_keys,
-                            legacy_octal_numbers,
+                            cfg,
                             #[cfg(feature = "properties")]
                             property_interpolation.clone(),
                         )?);
@@ -882,9 +901,7 @@ pub(super) fn pending_entries_from_live_events<'a>(
 pub(super) fn collect_entries_from_map<'a>(
     ev: &mut dyn Events<'a>,
     reference_location: Location,
-    merge_keys: MergeKeyPolicy,
-    duplicate_keys: DuplicateKeyPolicy,
-    legacy_octal_numbers: bool,
+    cfg: Cfg,
 ) -> Result<Vec<PendingEntry<'a>>, Error> {
     let Some(Ev::MapStart { .. }) = ev.next()? else {
         return Err(Error::MergeValueNotMapOrSeqOfMaps {
@@ -903,22 +920,16 @@ pub(super) fn collect_entries_from_map<'a>(
             }
             Some(_) => {
                 let key_comments = ev.take_leading_comments_for_next_node()?;
-                let key = capture_node_with_legacy_octal(ev, legacy_octal_numbers)?;
+                let key = capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
                 if is_merge_key(&key) {
-                    match merge_keys {
+                    match cfg.merge_keys {
                         MergeKeyPolicy::Merge => {
                             // Preserve where the merge value is referenced (use-site). For alias
                             // merges inside merged mappings, node locations point at the anchored
                             // mapping, but we want `referenced` to point at the alias token.
                             let _ = ev.peek()?;
                             let merge_ref_loc = ev.reference_location();
-                            merges.push(pending_entries_from_live_events(
-                                ev,
-                                merge_ref_loc,
-                                merge_keys,
-                                duplicate_keys,
-                                legacy_octal_numbers,
-                            )?);
+                            merges.push(pending_entries_from_live_events(ev, merge_ref_loc, cfg)?);
                             continue;
                         }
                         MergeKeyPolicy::AsOrdinary => {}
@@ -929,10 +940,13 @@ pub(super) fn collect_entries_from_map<'a>(
                         }
                     }
                 }
+                if cfg.reject_tagged_field_names {
+                    key.validate_field_name_tag()?;
+                }
                 let field_comments = key_comments;
                 let value_separator_comments = ev.take_separator_comments_before_mapping_value()?;
                 let value_comments = ev.take_leading_comments_for_next_node()?;
-                let value = capture_node_with_legacy_octal(ev, legacy_octal_numbers)?;
+                let value = capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
                 fields.push(PendingEntry {
                     key,
                     value,
@@ -948,7 +962,7 @@ pub(super) fn collect_entries_from_map<'a>(
         }
     }
 
-    let mut entries = apply_duplicate_key_policy_to_entries(fields, duplicate_keys, merge_keys)?;
+    let mut entries = apply_duplicate_key_policy_to_entries(fields, cfg.dup_policy, cfg.merge_keys)?;
     for mut nested in merges {
         entries.append(&mut nested);
     }

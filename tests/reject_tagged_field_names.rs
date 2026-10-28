@@ -126,6 +126,118 @@ fn buffered_duplicate_policy_checks_field_names() {
     assert_eq!(entry.count, Some(2));
 }
 
+fn assert_rejected_with_duplicate_policy(yaml: &str, duplicate_keys: DuplicateKeyPolicy) {
+    let error = from_str_with_options::<Entry>(
+        yaml,
+        options! { reject_tagged_field_names: true, duplicate_keys: duplicate_keys },
+    )
+    .unwrap_err();
+    assert!(
+        matches!(inner_error(&error), Error::TaggedFieldName { tag, .. } if tag == "!str"),
+        "{duplicate_keys:?}, {yaml:?}: unexpected error: {error:?}"
+    );
+    assert!(error.location().is_some());
+}
+
+#[test]
+fn forbidden_tags_are_checked_before_duplicate_fields_are_discarded() {
+    for (policy, expected) in [
+        (DuplicateKeyPolicy::FirstWins, 1),
+        (DuplicateKeyPolicy::LastWins, 2),
+    ] {
+        for yaml in [
+            "{name: a, count: 1, !str count: 2}",
+            "{name: a, !str count: 1, count: 2}",
+            "{name: &key !str count, count: 1, *key : 2}",
+            "{name: &key !str count, *key : 1, count: 2}",
+        ] {
+            assert_rejected_with_duplicate_policy(yaml, policy);
+        }
+
+        let entry: Entry = from_str_with_options(
+            "{name: a, !!str count: 1, count: 2}",
+            options! { reject_tagged_field_names: true, duplicate_keys: policy },
+        )
+        .unwrap();
+        assert_eq!(entry.count, Some(expected));
+    }
+}
+
+#[test]
+fn forbidden_tags_are_checked_before_merge_precedence_discards_fields() {
+    for policy in [DuplicateKeyPolicy::FirstWins, DuplicateKeyPolicy::LastWins] {
+        for yaml in [
+            "{name: a, count: 9, <<: {!str count: 1}}",
+            "{name: a, <<: {count: 1, !str count: 2}}",
+            "{name: a, <<: {!str count: 1, count: 2}}",
+            "{name: a, <<: [{count: 1}, {!str count: 2}]}",
+            "{name: a, <<: {count: 1, <<: {!str count: 2}}}",
+            "{name: &key !str count, count: 9, <<: {*key : 1}}",
+        ] {
+            assert_rejected_with_duplicate_policy(yaml, policy);
+        }
+    }
+    assert_rejected_with_duplicate_policy(
+        "{name: a, count: 9, <<: {!str count: 1}}",
+        DuplicateKeyPolicy::Error,
+    );
+}
+
+#[test]
+fn duplicate_and_merged_map_keys_keep_their_existing_behavior() {
+    #[derive(Debug, Deserialize)]
+    struct WithMap {
+        values: BTreeMap<String, u32>,
+    }
+
+    for (policy, expected) in [
+        (DuplicateKeyPolicy::FirstWins, 1),
+        (DuplicateKeyPolicy::LastWins, 2),
+    ] {
+        let map: BTreeMap<String, u32> = from_str_with_options(
+            "{count: 1, !str count: 2}",
+            options! { reject_tagged_field_names: true, duplicate_keys: policy },
+        )
+        .unwrap();
+        assert_eq!(map.get("count"), Some(&expected));
+
+        for (yaml, winner) in [
+            ("{values: {count: 1, !str count: 2}}", expected),
+            ("{values: {count: 9, <<: {!str count: 1}}}", 9),
+        ] {
+            let value: WithMap = from_str_with_options(
+                yaml,
+                options! { reject_tagged_field_names: true, duplicate_keys: policy },
+            )
+            .unwrap();
+            assert_eq!(value.values.get("count"), Some(&winner), "{policy:?}, {yaml:?}");
+        }
+    }
+}
+
+#[test]
+fn struct_values_inside_maps_still_validate_field_tags() {
+    for policy in [DuplicateKeyPolicy::FirstWins, DuplicateKeyPolicy::LastWins] {
+        for error in [
+            from_str_with_options::<BTreeMap<String, Entry>>(
+                "{item: {name: a, !str count: 1}}",
+                options! { reject_tagged_field_names: true, duplicate_keys: policy },
+            )
+            .unwrap_err(),
+            from_str_with_options::<BTreeMap<usize, Entry>>(
+                "{7: {name: a, !str count: 1}}",
+                options! { reject_tagged_field_names: true, duplicate_keys: policy },
+            )
+            .unwrap_err(),
+        ] {
+            assert!(
+                matches!(inner_error(&error), Error::TaggedFieldName { tag, .. } if tag == "!str"),
+                "{policy:?}: unexpected error: {error:?}"
+            );
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct Outer {
     #[allow(dead_code)]
