@@ -960,6 +960,7 @@ Enable the `properties-custom-fmt` feature and select `PropertySyntax::Custom` t
 - Mappings and sequences are parsed as regular YAML. Every value scalar under them (mapping values and sequence items at any depth, plain, quoted, or block) is passed whole to the formatter, and its output is what gets deserialized.
 - `$` has no special meaning, and no property map is needed. Mapping keys and `!!binary` scalars are not formatted.
 - The formatter runs before typed parsing, so its output may still deserialize into numbers or booleans.
+- Returning `""` for a non-empty value yields an empty string, not null. Return `~` or `null` to produce null.
 - Returning `FormatterError` fails deserialization with `Error::PropertyFormatterFailed`, pointing at the scalar's source location.
 - The formatter is a plain `fn` pointer and cannot capture state.
 

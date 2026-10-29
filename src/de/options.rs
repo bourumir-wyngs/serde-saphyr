@@ -107,7 +107,8 @@ pub enum PropertySyntax {
 
     /// Every value scalar (map values and sequence items at any depth, any style) is passed
     /// whole to a custom formatter whose output replaces it. Keys and `!!binary` are untouched,
-    /// `$` has no special meaning, and no property map is needed. Cannot be (de)serialized.
+    /// `$` has no special meaning, and no property map is needed. A non-empty value formatted
+    /// to `""` stays an empty string; `~` or `null` output is null. Cannot be (de)serialized.
     #[cfg(feature = "properties-custom-fmt")]
     #[cfg_attr(feature = "serde_derived_types", serde(skip))]
     Custom(PropertyCustomFormatter),

@@ -137,3 +137,43 @@ fn rendered_error_shows_message_and_snippet() {
     );
     assert!(rendered.contains("port: vault:nope"), "{rendered}");
 }
+
+/// Maps `blank` to `""`, `nil` to `~`, and leaves everything else as written.
+fn nullable(input: Cow<'_, str>) -> Result<Cow<'_, str>, FormatterError> {
+    match input.as_ref() {
+        "blank" => Ok(Cow::Borrowed("")),
+        "nil" => Ok(Cow::Borrowed("~")),
+        _ => Ok(input),
+    }
+}
+
+fn nullable_options() -> serde_saphyr::Options {
+    let mut options = serde_saphyr::options! {};
+    options.property_syntax = PropertySyntax::Custom(PropertyCustomFormatter::new(nullable));
+    options
+}
+
+#[rstest]
+#[case::formatted_to_empty_is_a_string("v: blank\n", Some(""))]
+#[case::formatted_to_tilde_is_null("v: nil\n", None)]
+#[case::literal_null_is_null("v: null\n", None)]
+#[case::literal_empty_is_null("v:\n", None)]
+#[case::quoted_empty_is_a_string("v: ''\n", Some(""))]
+fn formatter_output_null_handling_for_option(#[case] yaml: &str, #[case] expected: Option<&str>) {
+    let parsed: BTreeMap<String, Option<String>> =
+        from_str_with_options(yaml, nullable_options()).unwrap();
+    assert_eq!(parsed["v"].as_deref(), expected);
+}
+
+#[rstest]
+#[case::formatted_to_empty_is_a_string("v: blank\n", serde_json::json!(""))]
+#[case::formatted_to_tilde_is_null("v: nil\n", serde_json::Value::Null)]
+#[case::literal_empty_is_null("v:\n", serde_json::Value::Null)]
+fn formatter_output_null_handling_for_untyped(
+    #[case] yaml: &str,
+    #[case] expected: serde_json::Value,
+) {
+    let parsed: BTreeMap<String, serde_json::Value> =
+        from_str_with_options(yaml, nullable_options()).unwrap();
+    assert_eq!(parsed["v"], expected);
+}
