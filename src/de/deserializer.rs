@@ -442,6 +442,23 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         Error::quoting_required(view.raw.as_ref(), view.interpolated).with_location(view.location)
     }
 
+    /// Under [`PropertySyntax::Custom`], a non-empty value the formatter rewrote to `""` is an
+    /// empty string rather than YAML null. Formatter output such as `~` or `null` is still null.
+    #[cfg(feature = "properties-custom-fmt")]
+    fn is_formatted_empty(&self, view: &ScalarView<'_>) -> bool {
+        view.interpolated
+            && view.effective.is_empty()
+            && matches!(
+                self.ev.property_interpolation().syntax(),
+                PropertySyntax::Custom(_)
+            )
+    }
+
+    #[cfg(not(feature = "properties-custom-fmt"))]
+    fn is_formatted_empty(&self, _view: &ScalarView<'_>) -> bool {
+        false
+    }
+
     #[cfg(feature = "properties")]
     fn interpolation_possible(&self, tag: SfTag, style: ScalarStyle) -> bool {
         if self.in_key || tag == SfTag::Binary {
@@ -449,6 +466,11 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         }
 
         let properties = self.ev.property_interpolation();
+        // A custom formatter sees every value scalar, whatever its style, and needs no map.
+        #[cfg(feature = "properties-custom-fmt")]
+        if matches!(properties.syntax(), PropertySyntax::Custom(_)) {
+            return true;
+        }
         if properties.property_map().is_none() {
             return false;
         }
@@ -697,15 +719,27 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         location: Location,
     ) -> Result<Cow<'de, str>, Error> {
         let properties = self.ev.property_interpolation();
+        let syntax = properties.syntax();
+
+        #[cfg(feature = "properties-custom-fmt")]
+        if let PropertySyntax::Custom(formatter) = syntax {
+            let raw = value.clone();
+            return formatter
+                .format(value)
+                .map_err(|error| Error::PropertyFormatterFailed {
+                    value: raw.into_owned(),
+                    reason: error.reason().to_owned(),
+                    location,
+                });
+        }
+
         let Some(vars) = properties.property_map() else {
             return Ok(value);
         };
-        let vars = vars.as_ref();
-        let syntax = properties.syntax();
 
         match interpolate_compose_style_with_limits(
             value,
-            vars,
+            vars.as_ref(),
             syntax,
             properties.max_expansion_depth(),
             properties.max_total_work(),
@@ -827,7 +861,10 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             return YamlDeserializer::new(&mut replay, self.cfg).deserialize_map(visitor);
         }
 
-        if let Some((value, tag, style, location)) = self.peek_effective_scalar()? {
+        if let Some(view) = self.peek_scalar_view()? {
+            let formatted_empty = self.is_formatted_empty(&view);
+            let (value, tag, style, location) =
+                (view.effective, view.tag, view.style, view.location);
             // Explicit scalar types take precedence over implicit null and string inference,
             // including for quoted and block scalars buffered by Serde's flatten support.
             match tag {
@@ -864,7 +901,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             }
             let is_plain = matches!(style, ScalarStyle::Plain);
             // String tags (!!str and !) preserve null-like text (null, ~, empty).
-            if scalar_is_null(&tag, &value, &style) {
+            if scalar_is_null(&tag, &value, &style) && !formatted_empty {
                 let _ = self.ev.next()?; // consume
                 return visitor.visit_unit();
             }
@@ -1378,8 +1415,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             return visitor.visit_none();
         }
 
-        if let Some((value, tag, style, _location)) = self.peek_effective_scalar()?
-            && scalar_is_null(&tag, &value, &style)
+        if let Some(view) = self.peek_scalar_view()?
+            && scalar_is_null(&view.tag, &view.effective, &view.style)
+            && !self.is_formatted_empty(&view)
         {
             let _ = self.ev.next()?; // consume the scalar
             return visitor.visit_none();

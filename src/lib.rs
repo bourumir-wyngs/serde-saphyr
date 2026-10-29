@@ -16,6 +16,8 @@ compile_error!(
 
 #[cfg(all(feature = "deserialize", feature = "properties"))]
 pub use self::de::PropertySyntax;
+#[cfg(feature = "properties-custom-fmt")]
+pub use self::de::{FormatterError, FormatterFn, PropertyCustomFormatter};
 #[cfg(all(feature = "deserialize", any(feature = "garde", feature = "validator")))]
 pub use self::de_error::{ValidationIssue, ValidationSource};
 #[cfg(all(feature = "serialize", feature = "comments"))]
@@ -57,6 +59,8 @@ pub use de::miette;
 pub use de::path_map;
 #[cfg(feature = "properties")]
 pub use de::properties;
+#[cfg(feature = "properties-custom-fmt")]
+pub use de::properties_formatter;
 #[cfg(feature = "robotics")]
 pub use de::robotics;
 #[cfg(all(feature = "deserialize", feature = "include_fs"))]
