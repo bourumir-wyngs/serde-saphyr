@@ -1,4 +1,6 @@
 use crate::budget::Budget;
+#[cfg(feature = "properties-custom-fmt")]
+use crate::de::properties_formatter::PropertyCustomFormatter;
 use crate::indentation::RequireIndent;
 #[cfg(feature = "properties")]
 use std::collections::HashMap;
@@ -102,6 +104,13 @@ pub enum PropertySyntax {
     /// Property interpolation compatible with [Docker Compose]'s syntax and value expansion.
     /// [Docker Compose]: https://docs.docker.com/reference/compose-file/interpolation/
     DockerCompose,
+
+    /// Every value scalar (map values and sequence items at any depth, any style) is passed
+    /// whole to a custom formatter whose output replaces it. Keys and `!!binary` are untouched,
+    /// `$` has no special meaning, and no property map is needed. Cannot be (de)serialized.
+    #[cfg(feature = "properties-custom-fmt")]
+    #[cfg_attr(feature = "serde_derived_types", serde(skip))]
+    Custom(PropertyCustomFormatter),
 }
 
 /// Merge key handling policy for YAML mappings.

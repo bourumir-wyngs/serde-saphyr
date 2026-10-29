@@ -449,6 +449,11 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         }
 
         let properties = self.ev.property_interpolation();
+        // A custom formatter sees every value scalar, whatever its style, and needs no map.
+        #[cfg(feature = "properties-custom-fmt")]
+        if matches!(properties.syntax(), PropertySyntax::Custom(_)) {
+            return true;
+        }
         if properties.property_map().is_none() {
             return false;
         }
@@ -697,15 +702,27 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         location: Location,
     ) -> Result<Cow<'de, str>, Error> {
         let properties = self.ev.property_interpolation();
+        let syntax = properties.syntax();
+
+        #[cfg(feature = "properties-custom-fmt")]
+        if let PropertySyntax::Custom(formatter) = syntax {
+            let raw = value.clone();
+            return formatter
+                .format(value)
+                .map_err(|error| Error::PropertyFormatterFailed {
+                    value: raw.into_owned(),
+                    reason: error.reason().to_owned(),
+                    location,
+                });
+        }
+
         let Some(vars) = properties.property_map() else {
             return Ok(value);
         };
-        let vars = vars.as_ref();
-        let syntax = properties.syntax();
 
         match interpolate_compose_style_with_limits(
             value,
-            vars,
+            vars.as_ref(),
             syntax,
             properties.max_expansion_depth(),
             properties.max_total_work(),

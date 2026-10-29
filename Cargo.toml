@@ -53,6 +53,9 @@ serde_derived_types = ["dep:serde", "deserialize"]
 # Enables configurable `${VAR}` / `$VAR` property interpolation in scalar values.
 properties = ["deserialize"]
 
+# Adds `PropertySyntax::Custom`: a user function rewrites every scalar value before it is deserialized.
+properties-custom-fmt = ["properties"]
+
 # Enables !include tag processing (also resolver must be set)
 include = ["deserialize"]
 

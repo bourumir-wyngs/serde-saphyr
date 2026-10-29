@@ -1233,6 +1233,15 @@ pub enum Error {
         message: String,
         location: Location,
     },
+    /// The custom value formatter ([`crate::PropertySyntax::Custom`]) rejected a scalar value.
+    #[cfg(feature = "properties-custom-fmt")]
+    PropertyFormatterFailed {
+        /// The scalar value as parsed from YAML, before formatting.
+        value: String,
+        /// The reason reported by the formatter.
+        reason: String,
+        location: Location,
+    },
     /// A YAML budget limit was exceeded.
     Budget {
         breach: BudgetBreach,
@@ -1773,6 +1782,10 @@ impl Error {
             Error::ValidationErrors { .. } => {
                 // Aggregate validation errors carry their own per-entry locations.
             }
+            #[cfg(feature = "properties-custom-fmt")]
+            Error::PropertyFormatterFailed { location, .. } => {
+                *location = set_location;
+            }
         }
         self
     }
@@ -1883,6 +1896,8 @@ impl Error {
                 .map(|(locs, _)| locs),
             #[cfg(any(feature = "garde", feature = "validator"))]
             Error::ValidationErrors { errors, .. } => errors.first().and_then(Error::locations),
+            #[cfg(feature = "properties-custom-fmt")]
+            Error::PropertyFormatterFailed { location, .. } => Locations::same(location),
         }
     }
 

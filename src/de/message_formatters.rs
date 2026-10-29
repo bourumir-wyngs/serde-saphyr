@@ -413,6 +413,10 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
                 .localizer()
                 .validation_failed_documents(errors.len()),
         ),
+        #[cfg(feature = "properties-custom-fmt")]
+        Error::PropertyFormatterFailed { value, reason, .. } => {
+            Cow::Owned(format!("cannot format value `{value}`: {reason}"))
+        }
     }
 }
 
@@ -730,6 +734,14 @@ mod tests {
         Error::InvalidPropertyName { name: "${ab-cd}".to_owned(), location: loc() },
         "Invalid name: '${ab-cd}'"
     )]
+    #[cfg_attr(feature = "properties-custom-fmt", case::property_formatter_failed(
+        Error::PropertyFormatterFailed {
+            value: "vault:db".to_owned(),
+            reason: "vault sealed".to_owned(),
+            location: loc(),
+        },
+        "cannot format value `vault:db`: vault sealed"
+    ))]
     #[case::property_expansion_depth_limit(
         Error::Budget {
             breach: BudgetBreach::PropertyExpansionDepth {

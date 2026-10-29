@@ -51,6 +51,8 @@ pub mod options;
 pub mod path_map;
 #[cfg(feature = "properties")]
 pub mod properties;
+#[cfg(feature = "properties-custom-fmt")]
+pub mod properties_formatter;
 #[cfg(feature = "deserialize")]
 pub(crate) mod properties_redaction;
 #[cfg(feature = "deserialize")]
@@ -91,6 +93,8 @@ pub use self::options::PropertySyntax;
 pub use self::options::{
     AliasLimits, DuplicateKeyPolicy, MergeKeyPolicy, NonFiniteFloatPolicy, Options,
 };
+#[cfg(feature = "properties-custom-fmt")]
+pub use self::properties_formatter::{FormatterError, FormatterFn, PropertyCustomFormatter};
 pub use crate::location::Location;
 
 pub(crate) use self::cfg::Cfg;
