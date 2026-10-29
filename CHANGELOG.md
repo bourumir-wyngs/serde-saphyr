@@ -22,6 +22,11 @@
   multimap visitors ([#226](https://github.com/bourumir-wyngs/serde-saphyr/issues/226)).
   The default remains `Error`; merge expansion retains its precedence rules. See the README
   migration note for the scope of this option.
+- Added the opt-in `properties-custom-fmt` feature with `PropertySyntax::Custom`. A user
+  `fn` receives every value scalar (mapping values and sequence items at any depth, any
+  style) and its output is deserialized instead. Keys and `!!binary` scalars are untouched,
+  and no property map is needed. A `FormatterError` is reported as
+  `Error::PropertyFormatterFailed` at the scalar's source location.
 
 ### Deprecated
 

@@ -43,7 +43,7 @@ See [release history](https://github.com/bourumir-wyngs/serde-saphyr/releases) o
 - Optional **!include** support with a custom or default resolver (inclusion of either a complete document or the node referenced by a specified anchor).
 - **Tag support:** The [`Tagged<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Tagged.html) wrapper captures and emits a node's resolved YAML tag.
 - **Comment support**. Wrapper [`Commented<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Commented.html) both captures and emits comments.
-- **Optional property support**, with redaction (removal) of property values from crate-generated diagnostics.
+- **Optional property support**, with redaction (removal) of property values from crate-generated diagnostics, or a custom formatter for every scalar value.
 - **Serializer supports emitting anchors** (Rc, Arc, Weak) if they are properly wrapped (see below).
 - **Declarative validation with optional [`validator`](https://crates.io/crates/validator) ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/validator_validate.rs))** or **[`garde`](https://crates.io/crates/garde)** ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/garde_validate.rs)).
 - **Optional [`miette`](https://crates.io/crates/miette)** ([example](https://github.com/bourumir-wyngs/serde-saphyr/blob/master/examples/miette.rs)) integration for more advanced error reporting.
@@ -954,6 +954,50 @@ Select `PropertySyntax::DockerCompose` for [Docker Compose interpolation semanti
 - Selected default, replacement, and error text recursively expands both reference forms and `$$` escapes. Property-map values are not expanded again.
 - Malformed or unclosed braced references fail. Each braced reference must fit on one line, and literal braces inside operator text follow Compose's delimiter matching.
 - Expanded strings remain strings when deserializing generic values, even when they contain `null`, `true`, or a number. Explicitly requested numeric types can still parse expanded values.
+
+Enable the `properties-custom-fmt` feature and select `PropertySyntax::Custom` to replace interpolation with your own function:
+
+- Mappings and sequences are parsed as regular YAML. Every value scalar under them (mapping values and sequence items at any depth, plain, quoted, or block) is passed whole to the formatter, and its output is what gets deserialized.
+- `$` has no special meaning, and no property map is needed. Mapping keys and `!!binary` scalars are not formatted.
+- The formatter runs before typed parsing, so its output may still deserialize into numbers or booleans.
+- Returning `FormatterError` fails deserialization with `Error::PropertyFormatterFailed`, pointing at the scalar's source location.
+- The formatter is a plain `fn` pointer and cannot capture state.
+
+```rust
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct Config {
+    user: String,
+    port: u16,
+}
+
+#[cfg(feature = "properties-custom-fmt")]
+fn main() -> Result<(), serde_saphyr::Error> {
+    use serde_saphyr::{
+        FormatterError, PropertyCustomFormatter, PropertySyntax, from_str_with_options, options,
+    };
+    use std::borrow::Cow;
+
+    fn secrets(value: Cow<'_, str>) -> Result<Cow<'_, str>, FormatterError> {
+        match value.strip_prefix("secret:") {
+            None => Ok(value),
+            Some("user") => Ok(Cow::Borrowed("alice")),
+            Some("port") => Ok(Cow::Borrowed("5432")),
+            Some(name) => Err(FormatterError::new(format!("no secret named `{name}`"))),
+        }
+    }
+
+    let opts = options! {
+        property_syntax: PropertySyntax::Custom(PropertyCustomFormatter::new(secrets)),
+    };
+    let parsed: Config = from_str_with_options("user: secret:user\nport: 'secret:port'\n", opts)?;
+    assert_eq!(parsed, Config { user: "alice".to_string(), port: 5432 });
+    Ok(())
+}
+# #[cfg(not(feature = "properties-custom-fmt"))]
+# fn main() {}
+```
 
 When the property values are secrets, interpolation resolves the final value before Serde finishes deserializing the surrounding type, so a downstream custom deserializer or validation path could otherwise echo the resolved secret.
 `serde-saphyr` tracks interpolated values and redacts them back to their `${...}` form in later error messages.
