@@ -903,7 +903,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 if let Some(b) = parse_yaml12_bool(&effective) {
                     return visitor.visit_bool(b);
                 }
-            } else if let Ok(b) = parse_yaml11_bool(&effective) {
+            } else if let Some(b) = parse_yaml11_bool(&effective) {
                 return visitor.visit_bool(b);
             }
 
@@ -996,7 +996,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         let b: bool = if self.cfg.strict_booleans {
             parse_yaml12_bool(s).ok_or(Error::InvalidBooleanStrict { location })?
         } else {
-            parse_yaml11_bool(s).map_err(|_| Error::InvalidScalar {
+            parse_yaml11_bool(s).ok_or(Error::InvalidScalar {
                 ty: "boolean",
                 location,
             })?

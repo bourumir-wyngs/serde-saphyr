@@ -200,6 +200,24 @@ mod deserialize {
         });
     }
 
+    /// Ordinary plain strings reject the YAML 1.1 boolean probe. Strict mode
+    /// uses the YAML 1.2 probe instead, providing a control for error allocation.
+    #[divan::bench(args = [false, true])]
+    fn untyped_strings(bencher: Bencher, strict_booleans: bool) {
+        let yaml: String = (0..64).map(|i| format!("- service-{i}\n")).collect();
+        let options = || serde_saphyr::options! { strict_booleans: strict_booleans };
+        let parsed: serde_json::Value =
+            serde_saphyr::from_str_with_options(&yaml, options()).unwrap();
+        let values = parsed.as_array().unwrap();
+        assert_eq!(values.len(), 64);
+        assert!(values.iter().all(serde_json::Value::is_string));
+
+        bencher.bench(|| {
+            serde_saphyr::from_str_with_options::<serde_json::Value>(black_box(&yaml), options())
+                .unwrap()
+        });
+    }
+
     #[divan::bench(args = SIZES)]
     fn merge_keys(bencher: Bencher, entries: usize) {
         let yaml = build_merge_keys_yaml(entries);
@@ -242,6 +260,118 @@ mod serialize {
     fn multi_document(bencher: Bencher, docs: usize) {
         let services = build_config(docs).services;
         bencher.bench(|| serde_saphyr::to_string_multiple(black_box(&services)).unwrap());
+    }
+}
+
+/// Focused workloads for scalar scanning and quoted output. Build fixtures outside
+/// the timed closure; each benchmark still exercises the public serializer API.
+mod strings {
+    use super::*;
+    use serde_saphyr::{DoubleQuoted, SingleQuoted};
+
+    const KINDS: &[&str] = &["ascii", "unicode", "sparse_escapes", "dense_escapes"];
+
+    fn text(kind: &str) -> String {
+        match kind {
+            "ascii" => "ordinary text with spaces ".repeat(64),
+            "unicode" => "Žąsis 日本語 🦀 café ".repeat(64),
+            "sparse_escapes" => {
+                "a long ordinary stretch of text before a quote: \" and slash: \\ ".repeat(32)
+            }
+            "dense_escapes" => "\"\\\t\n\0\u{85}\u{2028}".repeat(128),
+            _ => unreachable!(),
+        }
+    }
+
+    #[divan::bench(args = KINDS)]
+    fn double_quoted(bencher: Bencher, kind: &str) {
+        let value = DoubleQuoted(text(kind));
+        bencher.bench(|| serde_saphyr::to_string(black_box(&value)).unwrap());
+    }
+
+    #[divan::bench(args = KINDS)]
+    fn double_quoted_io(bencher: Bencher, kind: &str) {
+        let value = DoubleQuoted(text(kind));
+        bencher.bench(|| {
+            let mut out = Vec::new();
+            serde_saphyr::to_io_writer(&mut out, black_box(&value)).unwrap();
+            out
+        });
+    }
+
+    #[divan::bench(args = ["ascii", "unicode", "apostrophes"])]
+    fn single_quoted(bencher: Bencher, kind: &str) {
+        let value = SingleQuoted(single_quoted_text(kind));
+        bencher.bench(|| serde_saphyr::to_string(black_box(&value)).unwrap());
+    }
+
+    fn single_quoted_text(kind: &str) -> String {
+        if kind == "apostrophes" {
+            "it's a quoted string with an apostrophe ".repeat(64)
+        } else {
+            text(kind)
+        }
+    }
+
+    /// Exercise batched literal writes through the fmt-to-I/O adapter as well.
+    #[divan::bench(args = ["ascii", "unicode", "apostrophes"])]
+    fn single_quoted_io(bencher: Bencher, kind: &str) {
+        let value = SingleQuoted(single_quoted_text(kind));
+        bencher.bench(|| {
+            let mut out = Vec::new();
+            serde_saphyr::to_io_writer(&mut out, black_box(&value)).unwrap();
+            out
+        });
+    }
+
+    /// Isolate automatic folding from YAML 1.1 boolean probes. Unicode cases
+    /// have more bytes than the width, so they still need a character count.
+    #[divan::bench(args = [
+        "short_ascii", "at_width_ascii", "over_width_ascii",
+        "short_unicode", "at_width_unicode", "over_width_unicode",
+    ])]
+    fn automatic_folding(bencher: Bencher, kind: &str) {
+        let (unit, count) = match kind {
+            "short_ascii" => ("a", 32),
+            "at_width_ascii" => ("a", 80),
+            "over_width_ascii" => ("a", 81),
+            "short_unicode" => ("é", 48),
+            "at_width_unicode" => ("é", 80),
+            "over_width_unicode" => ("é", 81),
+            _ => unreachable!(),
+        };
+        let value = unit.repeat(count);
+        let options = || {
+            serde_saphyr::ser_options! {
+                yaml_12: true,
+                no_lang_directive: true,
+                folded_wrap_chars: 80,
+            }
+        };
+        // Guard the intended path outside the measurement, including the case
+        // where byte length exceeds the width but character count does not.
+        let yaml = serde_saphyr::to_string_with_options(&value, options()).unwrap();
+        assert_eq!(yaml.contains(">-\n"), count > 80);
+        bencher
+            .bench(|| serde_saphyr::to_string_with_options(black_box(&value), options()).unwrap());
+    }
+
+    #[divan::bench(args = ["ascii", "unicode", "hashes", "comment"])]
+    fn plain(bencher: Bencher, kind: &str) {
+        let value = match kind {
+            "hashes" => "path#fragment ".repeat(128),
+            "comment" => "ordinary text with spaces ".repeat(64) + "\u{2003}#comment",
+            _ => text(kind),
+        };
+        // Keep these scalars plain; trailing spaces would benchmark quoting instead.
+        let value = value.trim_end();
+        bencher.bench(|| {
+            serde_saphyr::to_string_with_options(
+                black_box(&value),
+                serde_saphyr::ser_options! { prefer_block_scalars: false },
+            )
+            .unwrap()
+        });
     }
 }
 
