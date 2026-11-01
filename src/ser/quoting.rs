@@ -208,7 +208,7 @@ fn is_ambiguous(s: &str, yaml_12: bool) -> bool {
         || s.eq_ignore_ascii_case("+inf")
         || s.eq_ignore_ascii_case("-inf")
         || (!yaml_12
-            && (parse_yaml11_bool(s).is_ok()
+            && (parse_yaml11_bool(s).is_some()
                 || is_yaml11_timestamp(s)
                 || matches!(s, "<<" | "=")))
 }

@@ -18,6 +18,7 @@ fn single_quoted_literal_runs_preserve_utf8_at_apostrophe_boundaries() {
 
 #[test]
 fn single_quoted_writer_failure_after_literal_prefix_is_preserved() {
+    // Assumes the current unbuffered to_io_writer adapter: one write_all per write_str.
     struct LimitedWriter {
         bytes: Vec<u8>,
         limit: usize,
@@ -94,6 +95,8 @@ fn automatic_folding_uses_character_threshold_not_utf8_bytes() {
 
 #[test]
 fn comment_detection_preserves_unicode_whitespace_before_hash() {
+    // Preserve conservative quoting here; YAML s-white is only space/tab, so a
+    // future change to follow that narrower rule must deliberately update this test.
     for whitespace in ['\u{a0}', '\u{2003}', '\u{202f}', '\u{3000}'] {
         let value = format!("é{whitespace}#終");
         let yaml = to_string(&value).unwrap();

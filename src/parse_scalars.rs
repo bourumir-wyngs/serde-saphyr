@@ -35,26 +35,26 @@ pub(crate) fn parse_yaml12_bool(s: &str) -> Option<bool> {
 /// Accepted FALSE literals (case-insensitive): "n", "no", "false", "off"
 ///
 /// Returns:
-/// - Ok(true/false) on success
-/// - Err(()) if the input is not a YAML 1.1 boolean literal
+/// - Some(true/false) on success
+/// - None if the input is not a YAML 1.1 boolean literal
 ///
 /// This is also a scalar-classification probe; callers supply error context.
-pub(crate) fn parse_yaml11_bool(s: &str) -> Result<bool, ()> {
+pub(crate) fn parse_yaml11_bool(s: &str) -> Option<bool> {
     let t = yaml_trim(s);
     if t.eq_ignore_ascii_case("true")
         || t.eq_ignore_ascii_case("yes")
         || t.eq_ignore_ascii_case("y")
         || t.eq_ignore_ascii_case("on")
     {
-        Ok(true)
+        Some(true)
     } else if t.eq_ignore_ascii_case("false")
         || t.eq_ignore_ascii_case("no")
         || t.eq_ignore_ascii_case("n")
         || t.eq_ignore_ascii_case("off")
     {
-        Ok(false)
+        Some(false)
     } else {
-        Err(())
+        None
     }
 }
 
@@ -421,7 +421,7 @@ fn maybe_bool(s: &str, strict: bool) -> bool {
     if strict {
         parse_yaml12_bool(s).is_some()
     } else {
-        parse_yaml11_bool(s).is_ok()
+        parse_yaml11_bool(s).is_some()
     }
 }
 
@@ -513,8 +513,8 @@ mod tests {
     }
 
     #[test]
-    fn yaml11_bool_reports_error_for_invalid_literal() {
-        assert!(parse_yaml11_bool("maybe").is_err());
+    fn yaml11_bool_rejects_invalid_literal() {
+        assert!(parse_yaml11_bool("maybe").is_none());
     }
 
     #[test]
