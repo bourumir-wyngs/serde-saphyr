@@ -36,8 +36,10 @@ pub(crate) fn parse_yaml12_bool(s: &str) -> Option<bool> {
 ///
 /// Returns:
 /// - Ok(true/false) on success
-/// - Err(...) if the input is not a YAML 1.1 boolean literal
-pub(crate) fn parse_yaml11_bool(s: &str) -> Result<bool, String> {
+/// - Err(()) if the input is not a YAML 1.1 boolean literal
+///
+/// This is also a scalar-classification probe; callers supply error context.
+pub(crate) fn parse_yaml11_bool(s: &str) -> Result<bool, ()> {
     let t = yaml_trim(s);
     if t.eq_ignore_ascii_case("true")
         || t.eq_ignore_ascii_case("yes")
@@ -52,7 +54,7 @@ pub(crate) fn parse_yaml11_bool(s: &str) -> Result<bool, String> {
     {
         Ok(false)
     } else {
-        Err(format!("invalid YAML 1.1 bool: `{s}`"))
+        Err(())
     }
 }
 
@@ -512,8 +514,7 @@ mod tests {
 
     #[test]
     fn yaml11_bool_reports_error_for_invalid_literal() {
-        let err = parse_yaml11_bool("maybe").unwrap_err();
-        assert!(err.contains("invalid YAML 1.1 bool"));
+        assert!(parse_yaml11_bool("maybe").is_err());
     }
 
     #[test]

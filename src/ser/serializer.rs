@@ -683,12 +683,16 @@ impl<'a, W: Write> YamlSerializer<'a, W> {
     /// Write a single-quoted string. Single quotes inside the string are escaped by doubling them.
     fn write_single_quoted(&mut self, s: &str) -> Result<()> {
         self.out.write_char('\'')?;
-        for ch in s.chars() {
-            if ch == '\'' {
-                self.out.write_str("''")?; // escape single quote by doubling
-            } else {
-                self.out.write_char(ch)?;
+        let mut start = 0;
+        for (index, _) in s.match_indices('\'') {
+            if start < index {
+                self.out.write_str(&s[start..index])?;
             }
+            self.out.write_str("''")?;
+            start = index + 1;
+        }
+        if start < s.len() {
+            self.out.write_str(&s[start..])?;
         }
         self.out.write_char('\'')?;
         Ok(())
@@ -1340,7 +1344,10 @@ impl<'a, 'b, W: Write> Serializer for &'a mut YamlSerializer<'b, W> {
                     self.state.pending_str_style =
                         Some(PendingStrStyle::Automatic(StrStyle::Literal));
                 }
-            } else if self.settings.prefer_block_scalars {
+            } else if self.settings.prefer_block_scalars
+                // UTF-8 byte length bounds the character count from above.
+                && v.len() > self.settings.folded_wrap_col
+            {
                 // Single-line string. If it needs quoting as a value, don't auto-fold.
                 // Folded block scalars can preserve trailing ASCII spaces, unlike plain
                 // scalars, so ignore only those spaces for the eligibility probe.

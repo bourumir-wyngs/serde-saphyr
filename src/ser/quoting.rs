@@ -423,10 +423,12 @@ fn contains_any_or_is_control(string: &str, values: &[char]) -> bool {
 
 fn has_comment_start(string: &str) -> bool {
     // In plain style, `#` starts a comment only when separated by whitespace.
-    string
-        .chars()
-        .zip(string.chars().skip(1))
-        .any(|(prev, curr)| prev.is_whitespace() && curr == '#')
+    string.match_indices('#').any(|(index, _)| {
+        string[..index]
+            .chars()
+            .next_back()
+            .is_some_and(char::is_whitespace)
+    })
 }
 
 #[cfg(test)]
