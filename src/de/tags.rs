@@ -2,8 +2,6 @@
 
 use granit_parser::Tag;
 use std::borrow::Cow;
-use std::collections::BTreeMap;
-use std::sync::LazyLock;
 
 use crate::tag::YAML_TAG_NAMESPACE;
 
@@ -11,12 +9,6 @@ const INCLUDE_TAG_PLAIN: [&str; 3] = [
     "!include",
     "tag:yaml.org,2002:include",
     "tag:yaml.org,2002:!include",
-];
-
-const INCLUDE_TAG_WITH_FRAGMENT_PREFIX: [&str; 3] = [
-    "!include#",
-    "tag:yaml.org,2002:include#",
-    "tag:yaml.org,2002:!include#",
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -32,13 +24,14 @@ pub(crate) fn parse_include_tag(tag: &Option<Cow<Tag>>) -> IncludeTag {
         return IncludeTag::NotInclude;
     };
 
-    let raw = tag.to_string();
-    if INCLUDE_TAG_PLAIN.contains(&raw.as_str()) {
-        return IncludeTag::Plain;
-    }
-
-    for prefix in INCLUDE_TAG_WITH_FRAGMENT_PREFIX {
-        if let Some(fragment) = raw.strip_prefix(prefix) {
+    for prefix in INCLUDE_TAG_PLAIN {
+        let Some(rest) = tag.suffix_in_namespace(prefix) else {
+            continue;
+        };
+        if rest.is_empty() {
+            return IncludeTag::Plain;
+        }
+        if let Some(fragment) = rest.strip_prefix('#') {
             if fragment.is_empty() {
                 return IncludeTag::InvalidFragment;
             }
@@ -111,75 +104,50 @@ pub(crate) enum TagNodeKind {
     Mapping,
 }
 
-static TAG_LOOKUP_MAP: LazyLock<BTreeMap<&'static str, SfTag>> = LazyLock::new(|| {
-    BTreeMap::from([
-        // Core-like spellings kept for compatibility. Resolved YAML 1.2.2 Core Schema tags are
-        // handled first via `Tag::core_suffix()`, which is independent of source handle spelling.
-        // int
-        ("!!int", SfTag::Int),
-        ("!int", SfTag::Int),
-        ("tag:yaml.org,2002:int", SfTag::Int),
-        ("tag:yaml.org,2002:!int", SfTag::Int),
-        // float
-        ("!!float", SfTag::Float),
-        ("!float", SfTag::Float),
-        ("tag:yaml.org,2002:float", SfTag::Float),
-        ("tag:yaml.org,2002:!float", SfTag::Float),
-        // bool
-        ("!!bool", SfTag::Bool),
-        ("!bool", SfTag::Bool),
-        ("tag:yaml.org,2002:bool", SfTag::Bool),
-        ("tag:yaml.org,2002:!bool", SfTag::Bool),
-        // null
-        ("!!null", SfTag::Null),
-        ("!null", SfTag::Null),
-        ("tag:yaml.org,2002:null", SfTag::Null),
-        ("tag:yaml.org,2002:!null", SfTag::Null),
-        // seq
-        ("!!seq", SfTag::Seq),
-        ("!seq", SfTag::Seq),
-        ("tag:yaml.org,2002:seq", SfTag::Seq),
-        ("tag:yaml.org,2002:!seq", SfTag::Seq),
-        // map
-        ("!!map", SfTag::Map),
-        ("!map", SfTag::Map),
-        ("tag:yaml.org,2002:map", SfTag::Map),
-        ("tag:yaml.org,2002:!map", SfTag::Map),
-        // string (null key or value with this tag can be serialized into empty string)
-        ("!!str", SfTag::String),
-        ("!str", SfTag::String),
-        ("tag:yaml.org,2002:str", SfTag::String),
-        ("tag:yaml.org,2002:!str", SfTag::String),
-        // standard timestamp
-        ("!!timestamp", SfTag::TimeStamp),
-        ("!timestamp", SfTag::TimeStamp),
-        ("tag:yaml.org,2002:timestamp", SfTag::TimeStamp),
-        ("tag:yaml.org,2002:!timestamp", SfTag::TimeStamp),
-        // time duration aliases (custom)
-        ("!time", SfTag::Time),
-        ("tag:yaml.org,2002:time", SfTag::Time),
-        ("tag:yaml.org,2002:!time", SfTag::Time),
-        // binary
-        ("!!binary", SfTag::Binary),
-        ("!binary", SfTag::Binary),
-        ("tag:yaml.org,2002:binary", SfTag::Binary),
-        ("tag:yaml.org,2002:!binary", SfTag::Binary),
-        // include
-        ("!include", SfTag::Include),
-        ("tag:yaml.org,2002:include", SfTag::Include),
-        ("tag:yaml.org,2002:!include", SfTag::Include),
-        // angles (custom)
-        ("!degrees", SfTag::Degrees),
-        ("tag:yaml.org,2002:degrees", SfTag::Degrees),
-        ("tag:yaml.org,2002:!degrees", SfTag::Degrees),
-        ("!radians", SfTag::Radians),
-        ("tag:yaml.org,2002:radians", SfTag::Radians),
-        ("tag:yaml.org,2002:!radians", SfTag::Radians),
-        // non-specific ("!", "!!"), should force into string.
-        ("!", SfTag::NonSpecific),
-        ("!!", SfTag::NonSpecific),
-    ])
-});
+fn tag_to_sf_tag(tag: &Tag) -> SfTag {
+    // Core-like spellings kept for compatibility. Resolved YAML 1.2.2 Core Schema tags are
+    // handled first via `Tag::core_suffix()`, which is independent of source handle spelling.
+    // Borrow common spellings; the parser joins only names split across a %TAG directive.
+    if let Some(suffix) = tag.suffix_in_namespace(YAML_TAG_NAMESPACE) {
+        return tag_name_to_sf_tag(suffix.strip_prefix('!').unwrap_or(&suffix));
+    }
+
+    let Some(suffix) = tag.suffix_in_namespace("!") else {
+        return SfTag::Other;
+    };
+    match suffix.as_ref() {
+        // Non-specific tags force string handling.
+        "" | "!" => SfTag::NonSpecific,
+        "!timestamp" => SfTag::TimeStamp,
+        "!binary" => SfTag::Binary,
+        name => match name.strip_prefix('!') {
+            // Double-bang compatibility spellings exclude custom time/include/angle tags.
+            Some(name) => core_suffix_to_sf_tag(name).unwrap_or(SfTag::Other),
+            None => tag_name_to_sf_tag(name),
+        },
+    }
+}
+
+fn tag_name_to_sf_tag(name: &str) -> SfTag {
+    match name {
+        "int" => SfTag::Int,
+        "float" => SfTag::Float,
+        "bool" => SfTag::Bool,
+        "null" => SfTag::Null,
+        "seq" => SfTag::Seq,
+        "map" => SfTag::Map,
+        // A null key or value with this tag can be serialized into an empty string.
+        "str" => SfTag::String,
+        "timestamp" => SfTag::TimeStamp,
+        // Custom time duration aliases, distinct from standard timestamps.
+        "time" => SfTag::Time,
+        "binary" => SfTag::Binary,
+        "include" => SfTag::Include,
+        "degrees" => SfTag::Degrees,
+        "radians" => SfTag::Radians,
+        _ => SfTag::Other,
+    }
+}
 
 fn core_suffix_to_sf_tag(suffix: &str) -> Option<SfTag> {
     match suffix {
@@ -242,11 +210,7 @@ impl SfTag {
                     return SfTag::Value;
                 }
 
-                let key = cow.to_string();
-                TAG_LOOKUP_MAP
-                    .get(key.as_str())
-                    .copied()
-                    .unwrap_or(SfTag::Other)
+                tag_to_sf_tag(cow)
             }
             None => SfTag::None,
         }
@@ -321,7 +285,10 @@ fn is_yaml_value_tag(tag: &Tag) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{SfTag, TagNodeKind, core_suffix_to_sf_tag, is_yaml_merge_tag, is_yaml_value_tag};
+    use super::{
+        IncludeTag, SfTag, TagNodeKind, core_suffix_to_sf_tag, is_yaml_merge_tag,
+        is_yaml_value_tag, parse_include_tag,
+    };
     use granit_parser::Tag;
     use rstest::rstest;
     use std::borrow::Cow;
@@ -387,6 +354,65 @@ mod tests {
         assert_eq!(sf_tag(timestamp), SfTag::TimeStamp);
         assert_eq!(sf_tag(binary), SfTag::Binary);
         assert_eq!(sf_tag(unknown), SfTag::Other);
+    }
+
+    #[test]
+    fn preserves_tag_classification_across_directive_splits() {
+        for (raw, expected) in [
+            ("!timestamp", SfTag::TimeStamp),
+            ("!!timestamp", SfTag::TimeStamp),
+            ("tag:yaml.org,2002:!binary", SfTag::Binary),
+            ("tag:yaml.org,2002:!time", SfTag::Time),
+            ("tag:yaml.org,2002:degrees", SfTag::Degrees),
+            ("!radians", SfTag::Radians),
+            ("!", SfTag::NonSpecific),
+            ("!!", SfTag::NonSpecific),
+            ("!!time", SfTag::Other),
+            ("!!include", SfTag::Other),
+            ("!!degrees", SfTag::Other),
+            ("!!radians", SfTag::Other),
+            ("tag:yaml.org,2002:!", SfTag::Other),
+            ("tag:yaml.org,2002:!!binary", SfTag::Other),
+            ("tag:example.org:timestamp", SfTag::Other),
+            ("!timestämp", SfTag::Other),
+            ("timestamp", SfTag::Other),
+            ("", SfTag::Other),
+        ] {
+            for split in (0..=raw.len()).filter(|&split| raw.is_char_boundary(split)) {
+                let tag = Tag::with_original_handle(&raw[..split], &raw[split..], "!custom!");
+                assert_eq!(sf_tag(tag), expected, "tag {raw:?}, split {split}");
+            }
+        }
+    }
+
+    #[test]
+    fn preserves_include_fragments_across_directive_splits() {
+        for prefix in [
+            "!include",
+            "tag:yaml.org,2002:include",
+            "tag:yaml.org,2002:!include",
+        ] {
+            for (tail, expected) in [
+                ("", IncludeTag::Plain),
+                ("#", IncludeTag::InvalidFragment),
+                ("#séction", IncludeTag::WithFragment("séction".to_owned())),
+                ("_other", IncludeTag::NotInclude),
+            ] {
+                let raw = format!("{prefix}{tail}");
+                for split in (0..=raw.len()).filter(|&split| raw.is_char_boundary(split)) {
+                    let tag = Some(Cow::Owned(Tag::with_original_handle(
+                        &raw[..split],
+                        &raw[split..],
+                        "!custom!",
+                    )));
+                    assert_eq!(
+                        parse_include_tag(&tag),
+                        expected,
+                        "tag {raw:?}, split {split}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
