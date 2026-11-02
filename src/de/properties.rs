@@ -422,7 +422,11 @@ fn resolve_brace_action<'a>(
 ///
 /// [`PropertySyntax::DockerComposeWithNulls`] makes such a value null. The expanded text
 /// cannot tell this apart from an explicitly empty property, so the source is checked instead.
-pub(crate) fn is_sole_unset_reference(input: &str, vars: &HashMap<String, String>) -> bool {
+pub(crate) fn is_sole_unset_reference(
+    input: &str,                    // Original scalar before expansion.
+    vars: &HashMap<String, String>, // Configured property values.
+    syntax: PropertySyntax,         // Syntax used to recognize property names.
+) -> bool {
     let Some(body) = input.strip_prefix('$') else {
         return false;
     };
@@ -436,7 +440,6 @@ pub(crate) fn is_sole_unset_reference(input: &str, vars: &HashMap<String, String
     let Some(first) = name.chars().next() else {
         return false;
     };
-    let syntax = PropertySyntax::DockerCompose;
     is_var_start(first, syntax)
         && name.chars().all(|ch| is_var_continue(ch, syntax))
         && !vars.contains_key(name)
@@ -1227,6 +1230,10 @@ mod tests {
     #[case::lone_dollar("$", false)]
     #[case::no_dollar("MISSING", false)]
     fn sole_unset_reference(#[case] input: &str, #[case] expected: bool) {
-        assert_eq!(is_sole_unset_reference(input, &vars()), expected, "{input}");
+        assert_eq!(
+            is_sole_unset_reference(input, &vars(), PropertySyntax::DockerComposeWithNulls),
+            expected,
+            "{input}"
+        );
     }
 }

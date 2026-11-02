@@ -1483,6 +1483,19 @@ impl Error {
         }
     }
 
+    /// Whether a persistent interpolation-budget breach ended this operation,
+    /// including errors wrapped with alias locations or source snippets.
+    pub(crate) fn is_property_interpolation_budget_breach(&self) -> bool {
+        matches!(
+            original_error(self),
+            Error::Budget {
+                breach: BudgetBreach::PropertyExpansionDepth { .. }
+                    | BudgetBreach::PropertyInterpolationWork { .. },
+                ..
+            }
+        )
+    }
+
     /// Render this error using the built-in developer formatter.
     ///
     /// This is the deferred-rendering entrypoint. It is equivalent to `Display`/`to_string()`

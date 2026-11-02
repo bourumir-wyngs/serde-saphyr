@@ -1,4 +1,5 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
+use rstest::rstest;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -23,6 +24,47 @@ fn tagged_null_payloads_are_preserved_as_documents() {
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
     assert_eq!(values, expected);
+}
+
+#[rstest]
+#[case::null("!Foo null")]
+#[case::tilde("!Foo ~")]
+#[case::empty("!Foo")]
+fn application_tagged_null_documents_reach_option_targets(#[case] document: &str) {
+    let yaml = format!("{document}\n---\npresent\n");
+    let expected = vec![None, Some("present".to_owned())];
+
+    let values = serde_saphyr::from_multiple::<Option<String>>(&yaml).unwrap();
+    assert_eq!(values, expected);
+
+    let mut reader = yaml.as_bytes();
+    let values = serde_saphyr::read::<_, Option<String>>(&mut reader)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(values, expected);
+}
+
+#[rstest]
+#[case::null("!Foo null")]
+#[case::tilde("!Foo ~")]
+#[case::empty("!Foo")]
+fn application_tagged_null_documents_report_string_errors(#[case] document: &str) {
+    let yaml = format!("{document}\n---\npresent\n");
+    let error = serde_saphyr::from_multiple::<String>(&yaml).unwrap_err();
+    assert!(matches!(
+        error.without_snippet(),
+        serde_saphyr::Error::NullIntoString { .. }
+    ));
+
+    let mut reader = yaml.as_bytes();
+    let mut values = serde_saphyr::read::<_, String>(&mut reader);
+    let error = values.next().unwrap().unwrap_err();
+    assert!(matches!(
+        error.without_snippet(),
+        serde_saphyr::Error::NullIntoString { .. }
+    ));
+    assert_eq!(values.next().unwrap().unwrap(), "present");
+    assert!(values.next().is_none());
 }
 
 #[test]

@@ -507,3 +507,26 @@ fn null_document_probe_redacts_required_property_hints() {
         assert!(!error.to_string().contains(secret), "{error}");
     }
 }
+
+#[test]
+fn aliased_interpolation_budget_error_ends_reader() {
+    // Anchor a key so Compose interpolation only runs when its alias becomes a value.
+    let yaml = "&a $SET: ignored\nvalue: *a\n---\nvalue: ok\n";
+    let mut options = with_nulls();
+    // Let the alias redaction peek finish; fail inside the alias's deserialization.
+    options.budget = serde_saphyr::budget! { max_total_property_interpolation_work: 20 };
+    let mut reader = yaml.as_bytes();
+    let mut values = read_with_options::<_, BTreeMap<String, String>>(&mut reader, options);
+    let error = values.next().unwrap().unwrap_err();
+    let Error::AliasError { error, .. } = error.without_snippet() else {
+        panic!("expected an alias error: {error:?}");
+    };
+    assert!(matches!(
+        error.without_snippet(),
+        Error::Budget {
+            breach: BudgetBreach::PropertyInterpolationWork { .. },
+            ..
+        }
+    ));
+    assert!(values.next().is_none());
+}

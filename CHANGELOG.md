@@ -36,6 +36,17 @@
 
 ### Fixed
 
+- Preserve application-tagged null-like documents in multi-document APIs, including
+  the `garde` and `validator` integrations. A document such as `!Maybe null` now reaches
+  enum dispatch instead of being skipped. This also affects default options: an
+  `Option<String>` target receives a `None` item for `!Foo null`, while a `String` target
+  reports `NullIntoString`. Untagged null documents and explicit `!!null` are still skipped.
+- Resolve tagged enum payloads according to their target type under `no_schema`:
+  `!Number 42` can deserialize into a numeric payload, while a string payload still
+  requires quoting, as in `!Text "42"`. This applies independently of property interpolation.
+- Keep validated and ordinary multi-document APIs consistent for interpolated nulls
+  and interpolation work budgets. Reader iterators stop after an interpolation-budget
+  breach, including breaches reported through an alias.
 - Emit empty lines in literal and folded block scalars without indentation,
   avoiding trailing whitespace while preserving whitespace in the string content
   ([#249](https://github.com/bourumir-wyngs/serde-saphyr/issues/249)).

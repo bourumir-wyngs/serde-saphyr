@@ -776,7 +776,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
             && (matches!(effective, "~" | "null" | "Null" | "NULL")
                 || properties
                     .property_map()
-                    .is_some_and(|vars| is_sole_unset_reference(raw, vars)));
+                    .is_some_and(|vars| is_sole_unset_reference(raw, vars, syntax)));
         if becomes_null {
             SfTag::Null
         } else {

@@ -4,7 +4,7 @@ use serde_core::de::DeserializeOwned;
 
 use super::with_deserializer::deserialize_document_unless_null;
 use super::{Error, Events, Options, ring_reader};
-use crate::budget::{BudgetBreach, EnforcingPolicy};
+use crate::budget::EnforcingPolicy;
 use crate::live_events::LiveEvents;
 
 #[cfg(all(feature = "deserialize", feature = "include"))]
@@ -384,7 +384,8 @@ pub(crate) fn maybe_with_snippet_from_events(
 }
 
 /// Deserialize multiple YAML documents from a single string into a vector of `T`.
-/// Completely empty and plain null-like documents are skipped.
+/// Completely empty documents, untagged plain null-like documents, and explicit `!!null`
+/// documents are skipped. Application-tagged roots are deserialized, even with null payloads.
 ///
 /// Supports both owned values and values borrowing from the input string. Borrowed values
 /// cannot outlive the input, and strings requiring transformation cannot be borrowed as `&str`;
@@ -429,9 +430,10 @@ where
 
 /// Deserialize multiple YAML documents into a vector with configurable [`Options`].
 ///
-/// Like [`from_multiple`], this supports owned and borrowed values and skips completely
-/// empty and plain null-like documents. Use [`from_str_multiple_with_options`] to collect
-/// into other collection types.
+/// Like [`from_multiple`], this supports owned and borrowed values and skips empty,
+/// untagged null-like, and explicit `!!null` documents. With `DockerComposeWithNulls`,
+/// interpolated nulls are also skipped. Application-tagged roots are deserialized.
+/// Use [`from_str_multiple_with_options`] to collect into other collection types.
 ///
 /// Since 2.0, function pointers or callbacks accepting any input lifetime may need a
 /// forwarding closure such as `|input, options| from_multiple_with_options::<String>(input, options)`.
@@ -481,7 +483,8 @@ where
 }
 
 /// Deserialize multiple YAML documents from a string into a collection, supporting borrowed values.
-/// Completely empty and plain null-like documents are skipped, as with [`from_multiple`].
+/// Empty, untagged null-like, and explicit `!!null` documents are skipped, as with
+/// [`from_multiple`]. Application-tagged roots are deserialized, even with null payloads.
 ///
 /// The collection is initialized with [`Default`] and extended with each document in input
 /// order. Any `C: Default + Extend<T>` is supported, including `Vec<T>`, `VecDeque<T>`,
@@ -523,7 +526,8 @@ where
 }
 
 /// Deserialize multiple YAML documents into a collection with configurable [`Options`], supporting borrowed values.
-/// Completely empty and plain null-like documents are skipped, as with [`from_multiple_with_options`].
+/// Null documents are skipped as described in [`from_multiple_with_options`].
+/// Application-tagged roots are deserialized, even with null payloads.
 ///
 /// Like [`from_str_multiple`], this function supports both owned values and values borrowing
 /// from the input string, collected into any `C: Default + Extend<T>`.
@@ -662,7 +666,8 @@ where
 }
 
 /// Deserialize multiple YAML documents from a UTF-8 byte slice into a vector of `T`.
-/// Completely empty and plain null-like documents are skipped.
+/// Empty, untagged null-like, and explicit `!!null` documents are skipped, as with
+/// [`from_multiple`]. Application-tagged roots are deserialized, even with null payloads.
 ///
 /// Supports both owned values and values borrowing from the input byte slice. Borrowed
 /// values cannot outlive the input, and strings requiring transformation cannot be borrowed
@@ -708,8 +713,8 @@ where
 
 /// Deserialize multiple YAML documents from a UTF-8 byte slice into a vector with configurable [`Options`].
 ///
-/// Like [`from_slice_multiple`], this supports owned and borrowed values and skips completely
-/// empty and plain null-like documents. Invalid UTF-8 returns [`Error::InvalidUtf8Input`].
+/// Like [`from_multiple_with_options`], this supports owned and borrowed values and skips
+/// null documents unless application-tagged. Invalid UTF-8 returns [`Error::InvalidUtf8Input`].
 /// Use [`from_bytes_multiple_with_options`] to collect into other collection types.
 ///
 /// Since 2.0, function pointers or callbacks accepting any input lifetime may need a
@@ -760,7 +765,8 @@ where
 }
 
 /// Deserialize multiple YAML documents from a UTF-8 byte slice into a collection, supporting borrowed values.
-/// Completely empty and plain null-like documents are skipped, as with [`from_str_multiple`].
+/// Empty, untagged null-like, and explicit `!!null` documents are skipped, as with
+/// [`from_str_multiple`]. Application-tagged roots are deserialized, even with null payloads.
 ///
 /// This is equivalent to [`from_str_multiple`], but validates that the bytes are UTF-8
 /// before parsing. Invalid UTF-8 returns [`Error::InvalidUtf8Input`]. For UTF-16 streams,
@@ -801,7 +807,8 @@ where
 
 /// Deserialize multiple YAML documents from UTF-8 bytes into a collection with configurable [`Options`],
 /// supporting borrowed values.
-/// Completely empty and plain null-like documents are skipped, as with [`from_str_multiple_with_options`].
+/// Null documents are skipped as described in [`from_str_multiple_with_options`].
+/// Application-tagged roots are deserialized, even with null payloads.
 ///
 /// Like [`from_bytes_multiple`], this function supports owned values and values borrowing
 /// from the input byte slice, collected into any `C: Default + Extend<T>`.
@@ -936,7 +943,8 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
 ///
 /// - It streams the reader without loading the whole input into memory.
 /// - Each item produced by the returned iterator is one deserialized YAML document of type `T`.
-/// - Documents that are completely empty or null-like (e.g., `"", ~, null`) are skipped.
+/// - Empty, untagged null-like, and explicit `!!null` documents are skipped.
+///   Application-tagged roots are deserialized, even with null payloads.
 ///
 /// Generic parameters
 /// - `R`: the concrete reader type implementing [`std::io::Read`]. You almost never need to
@@ -994,7 +1002,7 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
 /// - After a **deserialization error** (e.g., type mismatch, missing field), the iterator
 ///   skips to the next document boundary (`---`) and continues.
 /// - After a **syntax error** or **budget/alias limit exceeded**, the iterator ends.
-/// - Empty/null-like documents are skipped and produce no items.
+/// - Null documents without an application tag are skipped and produce no items.
 ///
 /// *Note* Some content of the next document is read before the current parsed document is emitted.
 /// Hence, while streaming is good for safely parsing large files with multiple documents without
@@ -1021,7 +1029,9 @@ where
 /// This is the multi-document counterpart to [`from_reader_with_options`]. It does not load
 /// the entire input into memory. Instead, it streams the reader, deserializing one document
 /// at a time into values of type `T`, yielding them through the returned iterator. Documents
-/// that are completely empty or null-like (e.g., `""`, `~`, or `null`) are skipped.
+/// that are empty, untagged null-like, or explicitly tagged `!!null` are skipped.
+/// With `DockerComposeWithNulls`, interpolated nulls are also skipped.
+/// Application-tagged roots are deserialized, even with null payloads.
 /// Like [`from_reader_with_options`], BOM-marked UTF-8, UTF-16LE, and UTF-16BE
 /// inputs are transcoded to UTF-8 internally before parsing. If no recognized
 /// BOM is present, the input bytes are treated as UTF-8.
@@ -1084,7 +1094,7 @@ where
 ///   iteration. This allows processing subsequent valid documents even when some fail.
 /// - After a **syntax error** or **budget/alias limit exceeded**, the iterator ends because
 ///   the parser state may be unrecoverable.
-/// - Empty/null-like documents are skipped and produce no items.
+/// - Null documents without an application tag are skipped and produce no items.
 #[cfg(feature = "deserialize")]
 pub fn read_with_options<'a, R, T>(
     reader: &'a mut R, // iterator must not outlive this borrow
@@ -1122,16 +1132,7 @@ where
                         ) {
                             Ok(None) => continue,
                             Ok(Some(value)) => Ok(value),
-                            Err(e)
-                                if matches!(
-                                    e.without_snippet(),
-                                    Error::Budget {
-                                        breach: BudgetBreach::PropertyExpansionDepth { .. }
-                                            | BudgetBreach::PropertyInterpolationWork { .. },
-                                        ..
-                                    }
-                                ) =>
-                            {
+                            Err(e) if e.is_property_interpolation_budget_breach() => {
                                 // Property interpolation records breaches across documents;
                                 // ordinary per-document budgets keep their recovery path.
                                 self.finished = true;
