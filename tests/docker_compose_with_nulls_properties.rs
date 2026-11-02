@@ -4,8 +4,8 @@ use rstest::rstest;
 use serde::Deserialize;
 use serde_saphyr::{
     DuplicateKeyPolicy, Error, Options, PropertySyntax, budget::BudgetBreach,
-    from_multiple_with_options, from_str_multiple_with_options, from_str_with_options,
-    read_with_options,
+    from_multiple_with_options, from_slice_multiple_with_options, from_str_multiple_with_options,
+    from_str_with_options, read_with_options,
 };
 use std::collections::BTreeMap;
 
@@ -227,15 +227,21 @@ fn works_without_a_property_map() {
     );
 }
 
-fn document_values<T: for<'de> Deserialize<'de>>(yaml: &str, options: Options) -> [Vec<T>; 3] {
+fn document_results<T: for<'de> Deserialize<'de>>(
+    yaml: &str,
+    options: Options,
+) -> [Result<Vec<T>, Error>; 4] {
     let mut reader = yaml.as_bytes();
     [
-        from_multiple_with_options(yaml, options.clone()).unwrap(),
-        from_str_multiple_with_options(yaml, options.clone()).unwrap(),
-        read_with_options(&mut reader, options)
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap(),
+        from_multiple_with_options(yaml, options.clone()),
+        from_str_multiple_with_options(yaml, options.clone()),
+        from_slice_multiple_with_options(yaml.as_bytes(), options.clone()),
+        read_with_options(&mut reader, options).collect(),
     ]
+}
+
+fn document_values<T: for<'de> Deserialize<'de>>(yaml: &str, options: Options) -> [Vec<T>; 4] {
+    document_results(yaml, options).map(Result::unwrap)
 }
 
 #[rstest]
@@ -364,12 +370,14 @@ fn null_document_probe_preserves_required_errors_and_reader_recovery() {
     assert!(values.next().is_none());
 }
 
-#[test]
-fn null_document_probe_enforces_interpolation_work_budget() {
+#[rstest]
+#[case::missing("$MISSING")]
+#[case::required("${MISSING:?required}")]
+fn null_document_probe_enforces_interpolation_work_budget(#[case] first_document: &str) {
     let mut options = with_nulls();
     options.budget = serde_saphyr::budget! { max_total_property_interpolation_work: 0 };
-    let yaml = "$MISSING\n---\nkept\n";
-    let error = from_multiple_with_options::<String>(yaml, options.clone()).unwrap_err();
+    let yaml = format!("{first_document}\n---\nkept\n");
+    let error = from_multiple_with_options::<String>(&yaml, options.clone()).unwrap_err();
     assert!(matches!(
         error.without_snippet(),
         Error::Budget {
@@ -389,4 +397,113 @@ fn null_document_probe_enforces_interpolation_work_budget() {
         }
     ));
     assert!(values.next().is_none());
+}
+
+#[rstest]
+#[case::literal("!Maybe null", NullPayload::Maybe(None))]
+#[case::missing("!Maybe $MISSING", NullPayload::Maybe(None))]
+#[case::marker("!Maybe $NUL", NullPayload::Maybe(None))]
+#[case::default("!Maybe ${MISSING:-null}", NullPayload::Maybe(None))]
+#[case::quoted("!Maybe '$MISSING'", NullPayload::Maybe(None))]
+#[case::unit("!Unit $MISSING", NullPayload::Unit)]
+fn tagged_documents_preserve_null_payloads(#[case] yaml: &str, #[case] expected: NullPayload) {
+    let single: NullPayload = from_str_with_options(yaml, with_nulls()).unwrap();
+    assert_eq!(single, expected);
+    let stream = format!("{yaml}\n---\n!Number 42\n");
+    for values in document_values::<NullPayload>(&stream, with_nulls()) {
+        assert_eq!(values.len(), 2);
+        assert_eq!(values[0], expected);
+        assert_eq!(values[1], NullPayload::Number(42));
+    }
+}
+
+#[test]
+fn tagged_documents_do_not_hide_invalid_null_payloads() {
+    for result in document_results::<NullPayload>("!Text $MISSING", with_nulls()) {
+        assert!(matches!(
+            result.unwrap_err().without_snippet(),
+            Error::NullIntoString { .. }
+        ));
+    }
+}
+
+fn with_work_budget(max_work: usize) -> Options {
+    let mut options = with_nulls();
+    options.budget = serde_saphyr::budget! {
+        max_total_property_interpolation_work: max_work,
+    };
+    options
+}
+
+#[rstest]
+#[case::property("$SET", "value")]
+#[case::literal("literal", "literal")]
+#[case::escaped_dollar("$$SET", "$SET")]
+fn null_probe_work_budget_matches_single_document(#[case] yaml: &str, #[case] expected: &str) {
+    // Find the single-document boundary rather than coupling the test to the number
+    // of internal scalar peeks. Multi-document probing must not add charged work.
+    let required_work = (0..=yaml.len() * 8 + 8)
+        .find(|&max_work| from_str_with_options::<String>(yaml, with_work_budget(max_work)).is_ok())
+        .expect("single scalar must fit the bounded test budget");
+    assert!(required_work > 0);
+    let value: String = from_str_with_options(yaml, with_work_budget(required_work)).unwrap();
+    assert_eq!(value, expected);
+    for values in document_values::<String>(yaml, with_work_budget(required_work)) {
+        assert_eq!(values, [expected]);
+    }
+
+    let error =
+        from_str_with_options::<String>(yaml, with_work_budget(required_work - 1)).unwrap_err();
+    assert!(matches!(
+        error.without_snippet(),
+        Error::Budget {
+            breach: BudgetBreach::PropertyInterpolationWork { .. },
+            ..
+        }
+    ));
+    for result in document_results::<String>(yaml, with_work_budget(required_work - 1)) {
+        assert!(matches!(
+            result.unwrap_err().without_snippet(),
+            Error::Budget {
+                breach: BudgetBreach::PropertyInterpolationWork { .. },
+                ..
+            }
+        ));
+    }
+}
+
+#[test]
+fn skipped_null_documents_share_the_work_budget() {
+    // Each bare missing reference costs ten byte inspections. Skipping the first
+    // document must neither reset the counter nor expand the second one twice.
+    let yaml = "$MISSING\n---\n$MISSING\n";
+    for values in document_values::<String>(yaml, with_work_budget(20)) {
+        assert!(values.is_empty());
+    }
+    for result in document_results::<String>(yaml, with_work_budget(19)) {
+        assert!(matches!(
+            result.unwrap_err().without_snippet(),
+            Error::Budget {
+                breach: BudgetBreach::PropertyInterpolationWork { .. },
+                ..
+            }
+        ));
+    }
+}
+
+#[test]
+fn null_document_probe_redacts_required_property_hints() {
+    let secret = "sentinel-secret-never-in-errors";
+    let options = with_nulls().with_properties(std::collections::HashMap::from([(
+        "SECRET".to_owned(),
+        secret.to_owned(),
+    )]));
+    for result in document_results::<String>("${MISSING:?${SECRET}}", options) {
+        let error = result.unwrap_err();
+        assert!(matches!(
+            error.without_snippet(),
+            Error::PropertyRequiredButUnset { .. }
+        ));
+        assert!(!error.to_string().contains(secret), "{error}");
+    }
 }

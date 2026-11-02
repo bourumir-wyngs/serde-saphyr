@@ -73,6 +73,28 @@ where
     deserialize_with_scope_and_null_policy(src, cfg, f, wrap_err, |_| true)
 }
 
+/// Deserialize one stream document, returning `None` when its root is null.
+/// Keeps deserialization, error wrapping, and budget finalization within the document scope.
+pub(crate) fn deserialize_document_unless_null<'de, R, F, W>(
+    src: &mut LiveEvents<'de>, // Event source positioned at the document's root.
+    cfg: Cfg,                  // Deserialization policies.
+    f: F,                      // Callback for non-null documents.
+    wrap_err: W,               // Attaches source context to errors.
+) -> Result<Option<R>, Error>
+where
+    for<'e> F: FnOnce(crate::Deserializer<'de, 'e>) -> Result<R, Error>,
+    W: Fn(Error, &LiveEvents<'de>) -> Error,
+{
+    run_with_document_scope(
+        src,
+        |src| {
+            super::deserializer::with_root_redaction_unless_null(YamlDeserializer::new(src, cfg), f)
+        },
+        wrap_err,
+        |_| false,
+    )
+}
+
 pub(crate) fn enforce_single_document_and_finish<'de, W>(
     src: &mut LiveEvents<'de>,
     multiple_docs_hint: &'static str,

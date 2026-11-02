@@ -2,9 +2,9 @@ use std::io::Read;
 
 use serde_core::de::DeserializeOwned;
 
-use super::with_deserializer::deserialize_with_scope_and_null_policy;
-use super::{Error, Events, Options, YamlDeserializer, ring_reader};
-use crate::budget::EnforcingPolicy;
+use super::with_deserializer::deserialize_document_unless_null;
+use super::{Error, Events, Options, ring_reader};
+use crate::budget::{BudgetBreach, EnforcingPolicy};
 use crate::live_events::LiveEvents;
 
 #[cfg(all(feature = "deserialize", feature = "include"))]
@@ -558,22 +558,13 @@ where
     loop {
         match src.peek() {
             Ok(Some(_)) => {
-                // Include nulls produced by the opt-in Compose interpolation mode.
-                if YamlDeserializer::new(&mut src, cfg)
-                    .peek_null_value()
-                    .map_err(|e| wrap_err(e, &src))?
-                {
-                    let _ = src.next()?;
-                    continue;
-                }
-                let value = deserialize_with_scope_and_null_policy(
+                let value = deserialize_document_unless_null(
                     &mut src,
                     cfg,
                     |de| T::deserialize(de),
                     wrap_err,
-                    |_| false,
                 )?;
-                values.extend(std::iter::once(value));
+                values.extend(value);
             }
             Ok(None) => break,
             Err(e) => {
@@ -1123,23 +1114,26 @@ where
             loop {
                 match self.src.peek() {
                     Ok(Some(_)) => {
-                        let res = match YamlDeserializer::new(&mut self.src, self.cfg)
-                            .peek_null_value()
-                        {
-                            Ok(true) => {
-                                let _ = self.src.next();
-                                continue;
-                            }
-                            Ok(false) => deserialize_with_scope_and_null_policy(
-                                &mut self.src,
-                                self.cfg,
-                                |de| T::deserialize(de),
-                                |e, _| e,
-                                |_| false,
-                            ),
-                            Err(e) if matches!(e.without_snippet(), Error::Budget { .. }) => {
-                                // Interpolation work is shared across documents, so a new
-                                // document cannot recover from an exhausted budget.
+                        let res = match deserialize_document_unless_null(
+                            &mut self.src,
+                            self.cfg,
+                            |de| T::deserialize(de),
+                            |e, _| e,
+                        ) {
+                            Ok(None) => continue,
+                            Ok(Some(value)) => Ok(value),
+                            Err(e)
+                                if matches!(
+                                    e.without_snippet(),
+                                    Error::Budget {
+                                        breach: BudgetBreach::PropertyExpansionDepth { .. }
+                                            | BudgetBreach::PropertyInterpolationWork { .. },
+                                        ..
+                                    }
+                                ) =>
+                            {
+                                // Property interpolation records breaches across documents;
+                                // ordinary per-document budgets keep their recovery path.
                                 self.finished = true;
                                 let _ = self.src.finish();
                                 return Some(Err(e));

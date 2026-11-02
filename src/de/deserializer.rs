@@ -312,6 +312,48 @@ pub(crate) fn with_root_redaction<'de, 'e, T>(
     f(de)
 }
 
+/// Deserialize a document unless its root denotes a null document.
+///
+/// Share the root scalar view between null detection and redaction so probing a document
+/// does not add an interpolation pass. Application tags must reach the target's dispatch.
+#[cfg_attr(not(feature = "properties"), allow(unused_mut))]
+pub(crate) fn with_root_redaction_unless_null<'de, 'e, T>(
+    mut de: YamlDeserializer<'de, 'e>,
+    f: impl FnOnce(YamlDeserializer<'de, 'e>) -> Result<T, Error>,
+) -> Result<Option<T>, Error> {
+    if let Some(Ev::Scalar {
+        value, tag, style, ..
+    }) = de.ev.peek()?
+    {
+        let keep_tagged = *tag == SfTag::Other;
+        if !keep_tagged && scalar_is_null(tag, value, style) {
+            let _ = de.ev.next()?;
+            return Ok(None);
+        }
+
+        #[cfg(feature = "properties")]
+        {
+            let (tag, style) = (*tag, *style);
+            if de.interpolation_possible(tag, style) {
+                let Some(view) = de.peek_scalar_view()? else {
+                    return Err(eof_with_loc(de.ev));
+                };
+                if !keep_tagged
+                    && de.ev.property_interpolation().syntax()
+                        == PropertySyntax::DockerComposeWithNulls
+                    && view.tag == SfTag::Null
+                {
+                    let _ = de.ev.next()?;
+                    return Ok(None);
+                }
+                return with_subtree_redaction(view.redaction_ctx(), || f(de)).map(Some);
+            }
+        }
+    }
+
+    with_root_redaction(de, f).map(Some)
+}
+
 struct EnumScalarId<'de> {
     raw: Cow<'de, str>,
     effective: Cow<'de, str>,

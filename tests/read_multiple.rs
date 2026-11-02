@@ -7,6 +7,25 @@ struct Simple {
 }
 
 #[test]
+fn tagged_null_payloads_are_preserved_as_documents() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    enum Value {
+        Maybe(Option<String>),
+    }
+
+    let yaml = "null\n---\n!Maybe null\n---\n!Maybe present\n";
+    let expected = vec![Value::Maybe(None), Value::Maybe(Some("present".into()))];
+    let values: Vec<Value> = serde_saphyr::from_multiple(yaml).unwrap();
+    assert_eq!(values, expected);
+
+    let mut reader = yaml.as_bytes();
+    let values = serde_saphyr::read::<_, Value>(&mut reader)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(values, expected);
+}
+
+#[test]
 fn read_multiple_documents_iterator_skips_null_and_reads_values() {
     // Multiple documents: valid, null-like (should be skipped), valid, empty (just separator), valid
     let yaml = "id: 1\n---\n~\n---\nid: 2\n---\n---\nid: 3\n";
