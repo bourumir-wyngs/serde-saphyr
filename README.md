@@ -955,6 +955,14 @@ Select `PropertySyntax::DockerCompose` for [Docker Compose interpolation semanti
 - Malformed or unclosed braced references fail. Each braced reference must fit on one line, and literal braces inside operator text follow Compose's delimiter matching.
 - Expanded strings remain strings when deserializing generic values, even when they contain `null`, `true`, or a number. Explicitly requested numeric types can still parse expanded values.
 
+Select `PropertySyntax::DockerComposeWithNulls` for the same interpolation when an expansion should be able to produce YAML null, as configuration loaders that previously expanded environment variables in a `Value` tree often expect:
+
+- A value consisting solely of `$NAME` or `${NAME}` is null when `NAME` is unset, so it deserializes into `None` for an `Option` field.
+- A value whose expansion is exactly `null`, `Null`, `NULL`, or `~` is null.
+- An explicitly empty property is still an empty string (`Some("")` for `Option<String>`), and so is an empty selected default such as `${A:-${B}}` with both unset. Surrounding text is kept: `prefix-$MISSING` is `prefix-`.
+- These rules apply to the scalar's text whatever its style, so `"$NAME"` is null as well, while a `|` block keeps its trailing newline and is not a sole reference. `!!str` and `!` keep the value a string, and scalars without an expansion resolve as usual.
+- A value that becomes null behaves exactly like a literal `null`; numbers and booleans convert as in `DockerCompose`.
+
 When the property values are secrets, interpolation resolves the final value before Serde finishes deserializing the surrounding type, so a downstream custom deserializer or validation path could otherwise echo the resolved secret.
 `serde-saphyr` tracks interpolated values and redacts them back to their `${...}` form in later error messages.
 Treat the property map itself as sensitive - do not log or format it directly.

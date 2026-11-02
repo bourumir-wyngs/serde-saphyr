@@ -47,8 +47,8 @@ impl PropertyInterpolation {
                     budget.max_total_property_interpolation_work,
                 )
             });
-        let property_map = property_map
-            .or_else(|| (syntax == PropertySyntax::DockerCompose).then(|| Rc::new(HashMap::new())));
+        let property_map =
+            property_map.or_else(|| syntax.is_docker_compose().then(|| Rc::new(HashMap::new())));
         Self {
             property_map,
             syntax,
@@ -61,7 +61,7 @@ impl PropertyInterpolation {
 
     pub(super) fn for_key(&self) -> Self {
         let mut properties = self.clone();
-        if properties.syntax == PropertySyntax::DockerCompose {
+        if properties.syntax.is_docker_compose() {
             // Nested deserializers for sequence/mapping keys share this replay source.
             properties.property_map = None;
         }

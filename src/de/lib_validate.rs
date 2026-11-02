@@ -1,14 +1,14 @@
 use super::api::{ReaderSnippetContext, StrSnippetContext};
+use super::deserializer::with_root_redaction_unless_null;
 use super::with_deserializer::{enforce_single_document_and_finish, run_with_document_scope};
 use crate::budget::EnforcingPolicy;
-use crate::de::{Error, Ev, Events, Options};
+use crate::de::{Error, Events, Options};
 #[cfg(feature = "garde")]
 use crate::de_error::collect_garde_issues;
 #[cfg(feature = "validator")]
 use crate::de_error::collect_validator_issues;
 use crate::de_error::redact_issue;
 use crate::live_events::LiveEvents;
-use crate::parse_scalars::scalar_is_null;
 use crate::path_map::PathMap;
 use serde_core::de::DeserializeOwned;
 use std::io::Read;
@@ -135,6 +135,7 @@ where
 }
 
 /// Deserialize multiple YAML documents from a YAML string and validate each with `garde`.
+/// Null-document handling follows [`from_multiple_with_options_valid`].
 /// The error message will contain a snippet with exact location information, and if the
 /// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
 #[cfg(feature = "garde")]
@@ -147,6 +148,12 @@ where
     from_multiple_with_options_valid(input, Options::default())
 }
 
+/// Return the non-null documents or the collected validation errors.
+///
+/// - `input`: YAML document stream.
+/// - `options`: parsing, interpolation, and resource-limit policies.
+/// - `source`: validation backend named in aggregated errors.
+/// - `validate`: validates a value using its recorded source paths.
 fn from_multiple_with_options_validated<T, F>(
     input: &str,
     options: Options,
@@ -171,37 +178,31 @@ where
         };
 
         match peeked {
-            // Skip documents that are explicit null-like scalars ("", "~", or "null").
-            Some(Ev::Scalar {
-                value: s,
-                style,
-                tag,
-                ..
-            }) if scalar_is_null(tag, s, style) => {
-                let _ = src.next()?; // consume the null scalar document
-                continue;
-            }
             Some(_) => {
                 let mut recorder = crate::path_map::PathRecorder::new();
-                let value_res: Result<T, Error> = run_with_document_scope(
+                let value_res: Result<Option<T>, Error> = run_with_document_scope(
                     &mut src,
                     |src| {
-                        let value = crate::de::with_root_redaction(
+                        let Some(value) = with_root_redaction_unless_null(
                             crate::de::YamlDeserializer::new_with_path_recorder(
                                 src,
                                 cfg,
                                 &mut recorder,
                             ),
                             |de| T::deserialize(de),
-                        )?;
+                        )?
+                        else {
+                            return Ok(None);
+                        };
                         validate(&value, &recorder.map)?;
-                        Ok(value)
+                        Ok(Some(value))
                     },
                     |e, _| e,
                     |_| false,
                 );
                 let value = match value_res {
-                    Ok(v) => v,
+                    Ok(Some(v)) => v,
+                    Ok(None) => continue,
                     Err(e) if e.is_validation_error() => {
                         validation_errors.push(wrap_err(e, &src));
                         continue;
@@ -229,6 +230,11 @@ where
 }
 
 /// Deserialize multiple YAML documents with configurable [`Options`] and validate each with `garde`.
+///
+/// Empty documents, untagged plain nulls, and explicit `!!null` documents are skipped.
+/// `PropertySyntax::DockerComposeWithNulls` also skips interpolated nulls. Application-tagged
+/// roots, such as `!Variant null`, are deserialized and validated.
+///
 /// The error message will contain a snippet with exact location information, and if the
 /// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
 #[cfg(feature = "garde")]
@@ -269,6 +275,7 @@ where
 }
 
 /// Deserialize multiple YAML documents from bytes with options and validate each with `garde`.
+/// Null-document handling follows [`from_multiple_with_options_valid`].
 /// The error message will contain a snippet with exact location information, and if the
 /// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
 #[cfg(feature = "garde")]
@@ -356,6 +363,7 @@ where
 }
 
 /// Create an iterator over validated YAML documents from a reader.
+/// Null-document handling follows [`read_with_options_valid`].
 /// Root streamed input gets snippets on a best-effort basis; included text sources retain full
 /// snippets, while included reader sources may not have snippet text available.
 #[cfg(feature = "garde")]
@@ -368,6 +376,11 @@ where
     read_with_options_valid(reader, Options::default())
 }
 
+/// Return an iterator that skips null documents and validates each remaining value.
+///
+/// - `reader`: source borrowed for the lifetime of the iterator.
+/// - `options`: parsing, interpolation, and resource-limit policies.
+/// - `validate`: validates a value using its recorded source paths.
 fn read_with_options_validated<'a, R, T, F>(
     reader: &'a mut R,
     options: Options,
@@ -401,33 +414,37 @@ where
             }
             loop {
                 match self.src.peek() {
-                    Ok(Some(Ev::Scalar {
-                        value, style, tag, ..
-                    })) if scalar_is_null(tag, value, style) => {
-                        let _ = self.src.next();
-                    }
                     Ok(Some(_)) => {
                         let mut recorder = crate::path_map::PathRecorder::new();
                         let validate = &self.validate;
                         let value_res = run_with_document_scope(
                             &mut self.src,
                             |src| {
-                                let value = crate::de::with_root_redaction(
+                                let Some(value) = with_root_redaction_unless_null(
                                     crate::de::YamlDeserializer::new_with_path_recorder(
                                         src,
                                         self.cfg,
                                         &mut recorder,
                                     ),
                                     T::deserialize,
-                                )?;
+                                )?
+                                else {
+                                    return Ok(None);
+                                };
                                 validate(&value, &recorder.map)?;
-                                Ok(value)
+                                Ok(Some(value))
                             },
                             |e, src| self.snippet_ctx.attach_snippet(e, src),
                             |_| false,
                         );
                         let value = match value_res {
-                            Ok(v) => v,
+                            Ok(Some(v)) => v,
+                            Ok(None) => continue,
+                            Err(e) if e.is_property_interpolation_budget_breach() => {
+                                self.finished = true;
+                                let _ = self.src.finish();
+                                return Some(Err(e));
+                            }
                             Err(e) => {
                                 // After a deserialization error, skip remaining events in the
                                 // current document and try to recover at the next document boundary.
@@ -474,6 +491,11 @@ where
 }
 
 /// Create an iterator over validated YAML documents from a reader with configurable options.
+///
+/// Empty documents, untagged plain nulls, and explicit `!!null` documents are skipped.
+/// `PropertySyntax::DockerComposeWithNulls` also skips interpolated nulls. Application-tagged
+/// roots, such as `!Variant null`, are deserialized and validated.
+///
 /// Root streamed input gets snippets on a best-effort basis; included text sources retain full
 /// snippets, while included reader sources may not have snippet text available.
 #[cfg(feature = "garde")]
@@ -517,6 +539,7 @@ where
 }
 
 /// Deserialize multiple YAML documents from a YAML string and validate each with `validator`.
+/// Null-document handling follows [`from_multiple_with_options_validate`].
 /// The error message will contain a snippet with exact location information, and if the
 /// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
 #[cfg(feature = "validator")]
@@ -527,6 +550,11 @@ pub fn from_multiple_validate<T: DeserializeOwned + ValidatorValidate>(
 }
 
 /// Deserialize multiple YAML documents with configurable [`Options`] and validate each with `validator`.
+///
+/// Empty documents, untagged plain nulls, and explicit `!!null` documents are skipped.
+/// `PropertySyntax::DockerComposeWithNulls` also skips interpolated nulls. Application-tagged
+/// roots, such as `!Variant null`, are deserialized and validated.
+///
 /// The error message will contain a snippet with exact location information, and if the
 /// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
 #[cfg(feature = "validator")]
@@ -571,6 +599,7 @@ pub fn from_slice_with_options_validate<T: DeserializeOwned + ValidatorValidate>
 }
 
 /// Deserialize multiple YAML documents from bytes with options and validate each with `validator`.
+/// Null-document handling follows [`from_multiple_with_options_validate`].
 /// The error message will contain a snippet with exact location information, and if the
 /// invalid value comes from anchor, serde-saphyr will also tell where it is defined.
 #[cfg(feature = "validator")]
@@ -619,6 +648,7 @@ where
 }
 
 /// Create an iterator over validated YAML documents from a reader.
+/// Null-document handling follows [`read_with_options_validate`].
 /// Root streamed input gets snippets on a best-effort basis; included text sources retain full
 /// snippets, while included reader sources may not have snippet text available.
 #[cfg(feature = "validator")]
@@ -631,6 +661,11 @@ where
 }
 
 /// Create an iterator over validated YAML documents from a reader with configurable options.
+///
+/// Empty documents, untagged plain nulls, and explicit `!!null` documents are skipped.
+/// `PropertySyntax::DockerComposeWithNulls` also skips interpolated nulls. Application-tagged
+/// roots, such as `!Variant null`, are deserialized and validated.
+///
 /// Root streamed input gets snippets on a best-effort basis; included text sources retain full
 /// snippets, while included reader sources may not have snippet text available.
 #[cfg(feature = "validator")]

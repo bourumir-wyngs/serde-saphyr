@@ -102,6 +102,30 @@ pub enum PropertySyntax {
     /// Property interpolation compatible with [Docker Compose]'s syntax and value expansion.
     /// [Docker Compose]: https://docs.docker.com/reference/compose-file/interpolation/
     DockerCompose,
+
+    /// [`DockerCompose`](Self::DockerCompose) interpolation, except that an expanded value
+    /// can become YAML null:
+    ///
+    /// - A value consisting solely of `$NAME` or `${NAME}` is null when `NAME` is unset.
+    /// - A value whose expansion is exactly `null`, `Null`, `NULL`, or `~` is null.
+    ///
+    /// Everything else keeps the Compose behavior: an explicitly empty property and an empty
+    /// selected default (`${A:-${B}}` with both unset) are empty strings, surrounding text is
+    /// kept (`prefix-$MISSING` is `prefix-`), and numbers and booleans convert as before.
+    ///
+    /// The rules apply to the scalar's text whatever its style, so a quoted `"$NAME"` is null
+    /// as well, while a `|` block keeps its trailing newline and is therefore not a sole
+    /// reference. String-forcing tags (`!!str`, `!`) and other explicit tags keep their
+    /// meaning, and scalars without an expansion are resolved exactly as in other modes.
+    DockerComposeWithNulls,
+}
+
+#[cfg(feature = "properties")]
+impl PropertySyntax {
+    /// Whether this syntax uses Docker Compose interpolation rules.
+    pub(crate) const fn is_docker_compose(self) -> bool {
+        matches!(self, Self::DockerCompose | Self::DockerComposeWithNulls)
+    }
 }
 
 /// Merge key handling policy for YAML mappings.
@@ -560,8 +584,8 @@ impl Options {
 
     /// Installs a property map used for `${NAME}` interpolation.
     ///
-    /// [`PropertySyntax::DockerCompose`] also interpolates quoted and block string values;
-    /// the other modes interpolate only plain scalars.
+    /// [`PropertySyntax::DockerCompose`] and [`PropertySyntax::DockerComposeWithNulls`] also
+    /// interpolate quoted and block string values; the other modes interpolate only plain scalars.
     ///
     /// This is the intended public API for the `properties` feature. It consumes the provided
     /// [`HashMap`] and stores it in the internal shared representation used by nested

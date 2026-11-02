@@ -186,8 +186,9 @@ pub struct Budget {
     /// Maximum nested operator-text expansions in one property interpolation.
     ///
     /// The root scalar is not included. This limit is used only when the `properties`
-    /// feature is enabled and a property map is configured, or when the
-    /// `PropertySyntax::DockerCompose` mode is selected with an empty map.
+    /// feature is enabled and a property map is configured, or when
+    /// `PropertySyntax::DockerCompose` or `PropertySyntax::DockerComposeWithNulls` is selected
+    /// with an empty map.
     ///
     /// Default: 64
     #[cfg_attr(
@@ -199,8 +200,9 @@ pub struct Budget {
     ///
     /// Work is measured in attacker-controlled input bytes inspected while scanning property
     /// references and nested operator text. This limit is used only when the `properties`
-    /// feature is enabled and a property map is configured, or when the
-    /// `PropertySyntax::DockerCompose` mode is selected with an empty map.
+    /// feature is enabled and a property map is configured, or when
+    /// `PropertySyntax::DockerCompose` or `PropertySyntax::DockerComposeWithNulls` is selected
+    /// with an empty map.
     ///
     /// Default: 268,435,456 (256 MiB of byte inspections)
     #[cfg_attr(

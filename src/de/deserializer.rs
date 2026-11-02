@@ -25,7 +25,7 @@ use super::options::{DuplicateKeyPolicy, MergeKeyPolicy, NonFiniteFloatPolicy};
 #[cfg(any(feature = "garde", feature = "validator"))]
 use super::path_map::PathRecorder;
 #[cfg(feature = "properties")]
-use super::properties::interpolate_compose_style_with_limits;
+use super::properties::{interpolate_compose_style_with_limits, is_sole_unset_reference};
 use super::properties_redaction::{
     ScalarRedactionCtx, ScalarRedactionGuard, with_interp_redaction_scope,
 };
@@ -312,6 +312,48 @@ pub(crate) fn with_root_redaction<'de, 'e, T>(
     f(de)
 }
 
+/// Deserialize a document unless its root denotes a null document.
+///
+/// Share the root scalar view between null detection and redaction so probing a document
+/// does not add an interpolation pass. Application tags must reach the target's dispatch.
+#[cfg_attr(not(feature = "properties"), allow(unused_mut))]
+pub(crate) fn with_root_redaction_unless_null<'de, 'e, T>(
+    mut de: YamlDeserializer<'de, 'e>,
+    f: impl FnOnce(YamlDeserializer<'de, 'e>) -> Result<T, Error>,
+) -> Result<Option<T>, Error> {
+    if let Some(Ev::Scalar {
+        value, tag, style, ..
+    }) = de.ev.peek()?
+    {
+        let keep_tagged = *tag == SfTag::Other;
+        if !keep_tagged && scalar_is_null(tag, value, style) {
+            let _ = de.ev.next()?;
+            return Ok(None);
+        }
+
+        #[cfg(feature = "properties")]
+        {
+            let (tag, style) = (*tag, *style);
+            if de.interpolation_possible(tag, style) {
+                let Some(view) = de.peek_scalar_view()? else {
+                    return Err(eof_with_loc(de.ev));
+                };
+                if !keep_tagged
+                    && de.ev.property_interpolation().syntax()
+                        == PropertySyntax::DockerComposeWithNulls
+                    && view.tag == SfTag::Null
+                {
+                    let _ = de.ev.next()?;
+                    return Ok(None);
+                }
+                return with_subtree_redaction(view.redaction_ctx(), || f(de)).map(Some);
+            }
+        }
+    }
+
+    with_root_redaction(de, f).map(Some)
+}
+
 struct EnumScalarId<'de> {
     raw: Cow<'de, str>,
     effective: Cow<'de, str>,
@@ -454,7 +496,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         }
 
         match properties.syntax() {
-            PropertySyntax::DockerCompose => tag.can_parse_into_string(),
+            syntax if syntax.is_docker_compose() => tag.can_parse_into_string(),
             _ => style == ScalarStyle::Plain,
         }
     }
@@ -633,6 +675,39 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         Ok(Some((view.effective, view.tag, view.style, view.location)))
     }
 
+    /// Check for a null scalar without consuming it.
+    ///
+    /// Structural consumers historically inspect the raw event. Only the opt-in Compose
+    /// null mode also resolves an eligible interpolation here; other modes keep that behavior.
+    pub(super) fn peek_null_value(&mut self) -> Result<bool, Error> {
+        match self.ev.peek()? {
+            Some(Ev::Scalar {
+                value, tag, style, ..
+            }) => {
+                if scalar_is_null(tag, value, style) {
+                    return Ok(true);
+                }
+
+                #[cfg(feature = "properties")]
+                {
+                    let (tag, style) = (*tag, *style);
+                    if self.ev.property_interpolation().syntax()
+                        == PropertySyntax::DockerComposeWithNulls
+                        && !tag.forces_string()
+                        && self.interpolation_possible(tag, style)
+                    {
+                        return Ok(self
+                            .peek_scalar_view()?
+                            .is_some_and(|view| view.tag == SfTag::Null));
+                    }
+                }
+
+                Ok(false)
+            }
+            _ => Ok(false),
+        }
+    }
+
     fn peek_scalar_view(&mut self) -> Result<Option<ScalarView<'de>>, Error> {
         let (value, tag, style, location) = match self.ev.peek()? {
             Some(Ev::Scalar {
@@ -665,17 +740,8 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         };
         let interpolated = can_interpolate && raw.as_ref() != effective.as_ref();
         #[cfg(feature = "properties")]
-        let tag = if interpolated
-            && self.ev.property_interpolation().syntax()
-                == super::options::PropertySyntax::DockerCompose
-            && tag.can_parse_into_string()
-            && !tag.forces_string()
-        {
-            // Compose parses YAML before interpolation. An expanded string stays a
-            // string even when its contents look like null, a boolean, or a number.
-            // The non-specific tag preserves this for generic visitors while still
-            // allowing explicitly requested numeric types to parse the result.
-            SfTag::NonSpecific
+        let tag = if interpolated {
+            self.compose_expansion_tag(&raw, &effective, tag)
         } else {
             tag
         };
@@ -687,6 +753,35 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
             location,
             interpolated,
         })
+    }
+
+    /// How an interpolated scalar is resolved under the Compose syntaxes.
+    ///
+    /// Compose parses YAML before interpolation. An expanded string stays a string even
+    /// when its contents look like null, a boolean, or a number. The non-specific tag
+    /// preserves this for generic visitors while still allowing explicitly requested
+    /// numeric types to parse the result.
+    ///
+    /// [`PropertySyntax::DockerComposeWithNulls`] instead tags a value that should be null
+    /// (see its docs) as `!!null`, so every target treats it exactly like a literal null.
+    /// Explicit and string-forcing tags are left alone by both modes.
+    #[cfg(feature = "properties")]
+    fn compose_expansion_tag(&self, raw: &str, effective: &str, tag: SfTag) -> SfTag {
+        let properties = self.ev.property_interpolation();
+        let syntax = properties.syntax();
+        if !syntax.is_docker_compose() || !tag.can_parse_into_string() || tag.forces_string() {
+            return tag;
+        }
+        let becomes_null = syntax == PropertySyntax::DockerComposeWithNulls
+            && (matches!(effective, "~" | "null" | "Null" | "NULL")
+                || properties
+                    .property_map()
+                    .is_some_and(|vars| is_sole_unset_reference(raw, vars, syntax)));
+        if becomes_null {
+            SfTag::Null
+        } else {
+            SfTag::NonSpecific
+        }
     }
 
     /// Expand properties after the caller has checked scalar interpolation eligibility.
@@ -2536,41 +2631,43 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 if let Some(tag_name) = simple_tagged_enum_name(&raw_tag, &tag) {
                     tagged_enum = Some((tag_name, location));
                 }
-                let Some(view) = self.peek_scalar_view()? else {
-                    return Err(eof_with_loc(self.ev));
-                };
-                self.validate_scalar_tag(view.tag, SfTag::String, "enum variant", view.location)?;
-                if self.cfg.no_schema
-                    && !view.tag.forces_string()
-                    && maybe_not_string(&view.effective, &style, self.cfg.strict_booleans)
+                // A matching application tag selects the variant. Resolve and validate the
+                // scalar as its payload, which may be null or a non-string in no_schema mode.
+                if let Some((ref tag_name, tag_loc)) = tagged_enum
+                    && variants.contains(&tag_name.as_str())
                 {
-                    let view = self.take_scalar_view()?;
-                    return Err(Self::quoting_required_for_scalar(&view));
-                }
-                // If the tag matches a variant name, use tag as variant selector
-                // and the scalar value as newtype payload.
-                if let Some((ref tag_name, tag_loc)) = tagged_enum {
-                    if variants.contains(&tag_name.as_str()) {
-                        let variant_name = EnumScalarId {
-                            raw: Cow::Owned(tag_name.clone()),
-                            effective: Cow::Owned(tag_name.clone()),
-                            interpolated: false,
-                            location: tag_loc,
-                        };
-                        // Consume the scalar and re-emit it without the tag for payload deserialization
-                        let origin = self.ev.node_origin();
-                        let Some(mut ev) = self.ev.next()? else {
-                            return Err(eof_with_loc(self.ev));
-                        };
-                        ev.strip_node_tag();
-                        let replay = RecordedEvents::from_event(ev, origin);
-                        tagged_enum = None; // prevent mismatch check
-                        Mode::TaggedNewtype(variant_name, replay)
-                    } else {
-                        let view = self.take_scalar_view()?;
-                        Mode::Unit(EnumScalarId::from_view(view))
-                    }
+                    let variant_name = EnumScalarId {
+                        raw: Cow::Owned(tag_name.clone()),
+                        effective: Cow::Owned(tag_name.clone()),
+                        interpolated: false,
+                        location: tag_loc,
+                    };
+                    // Consume the scalar and re-emit it without the tag for payload deserialization.
+                    let origin = self.ev.node_origin();
+                    let Some(mut ev) = self.ev.next()? else {
+                        return Err(eof_with_loc(self.ev));
+                    };
+                    ev.strip_node_tag();
+                    let replay = RecordedEvents::from_event(ev, origin);
+                    tagged_enum = None; // prevent mismatch check
+                    Mode::TaggedNewtype(variant_name, replay)
                 } else {
+                    let Some(view) = self.peek_scalar_view()? else {
+                        return Err(eof_with_loc(self.ev));
+                    };
+                    self.validate_scalar_tag(
+                        view.tag,
+                        SfTag::String,
+                        "enum variant",
+                        view.location,
+                    )?;
+                    if self.cfg.no_schema
+                        && !view.tag.forces_string()
+                        && maybe_not_string(&view.effective, &style, self.cfg.strict_booleans)
+                    {
+                        let view = self.take_scalar_view()?;
+                        return Err(Self::quoting_required_for_scalar(&view));
+                    }
                     let view = self.take_scalar_view()?;
                     Mode::Unit(EnumScalarId::from_view(view))
                 }
@@ -2791,19 +2888,14 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             /// Handle unit variants: `Variant` or `{ Variant: null/~ }`.
             fn unit_variant(mut self) -> Result<(), Error> {
                 if self.map_mode {
+                    if YamlDeserializer::new(self.ev, self.cfg).peek_null_value()? {
+                        let _ = self.ev.next()?; // consume the null-like scalar
+                        return self.expect_map_end();
+                    }
                     match self.ev.peek()? {
                         Some(Ev::MapEnd { .. }) => {
                             let _ = self.ev.next()?;
                             Ok(())
-                        }
-                        Some(Ev::Scalar {
-                            value: s,
-                            tag,
-                            style,
-                            ..
-                        }) if scalar_is_null(tag, s, style) => {
-                            let _ = self.ev.next()?; // consume the null-like scalar
-                            self.expect_map_end()
                         }
                         Some(other) => Err(Error::UnexpectedValueForUnitEnumVariant {
                             location: other.location(),

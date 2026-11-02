@@ -29,7 +29,7 @@ fn is_var_start(ch: char, syntax: PropertySyntax) -> bool {
     ch == '_'
         || ch.is_ascii_alphabetic()
         // Compose's case-insensitive [a-z] regex also includes these Unicode folds.
-        || (syntax == PropertySyntax::DockerCompose && matches!(ch, '\u{212a}' | '\u{017f}'))
+        || (syntax.is_docker_compose() && matches!(ch, '\u{212a}' | '\u{017f}'))
 }
 
 /// Checks whether a character is valid as a continuing character of a variable name.
@@ -129,7 +129,7 @@ fn parse_braced_reference<'a>(
 ) -> Result<Option<(BraceRef<'a>, usize)>, PropertyError> {
     let body_start = start + 2;
     let Some(close) = find_braced_reference_close(input, body_start, syntax, work)? else {
-        if syntax == PropertySyntax::DockerCompose {
+        if syntax.is_docker_compose() {
             return Err(PropertyError::InvalidName(input[start..].to_owned()));
         }
         return Ok(None);
@@ -166,7 +166,7 @@ fn find_braced_reference_close(
     syntax: PropertySyntax,
     work: &mut WorkBudget<'_>,
 ) -> Result<Option<usize>, PropertyError> {
-    if syntax == PropertySyntax::DockerCompose {
+    if syntax.is_docker_compose() {
         return find_compose_braced_reference_close(input, body_start, work);
     }
     let bytes = input.as_bytes();
@@ -373,9 +373,7 @@ fn resolve_brace_action<'a>(
     let value = vars.get(name).map(String::as_str);
     match (brace.op, value) {
         (BraceOp::Required, Some(value)) => BraceAction::AppendProperty(value),
-        (BraceOp::Required, None) if syntax == PropertySyntax::DockerCompose => {
-            BraceAction::Append("")
-        }
+        (BraceOp::Required, None) if syntax.is_docker_compose() => BraceAction::Append(""),
         (BraceOp::Required, None) => BraceAction::Error(PropertyError::Unresolved(name.to_owned())),
         (BraceOp::DefaultIfUnset(text), None)
         | (BraceOp::DefaultIfUnsetOrEmpty(text), None | Some("")) => BraceAction::Interpolate {
@@ -417,6 +415,34 @@ fn resolve_brace_action<'a>(
             completion: FrameCompletion::RequiredButUnset(name.to_owned()),
         },
     }
+}
+
+/// Whether `input` is exactly one Compose reference, `$NAME` or `${NAME}`, naming a property
+/// absent from `vars`.
+///
+/// [`PropertySyntax::DockerComposeWithNulls`] makes such a value null. The expanded text
+/// cannot tell this apart from an explicitly empty property, so the source is checked instead.
+pub(crate) fn is_sole_unset_reference(
+    input: &str,                    // Original scalar before expansion.
+    vars: &HashMap<String, String>, // Configured property values.
+    syntax: PropertySyntax,         // Syntax used to recognize property names.
+) -> bool {
+    let Some(body) = input.strip_prefix('$') else {
+        return false;
+    };
+    let name = match body.strip_prefix('{') {
+        Some(braced) => match braced.strip_suffix('}') {
+            Some(name) => name,
+            None => return false,
+        },
+        None => body,
+    };
+    let Some(first) = name.chars().next() else {
+        return false;
+    };
+    is_var_start(first, syntax)
+        && name.chars().all(|ch| is_var_continue(ch, syntax))
+        && !vars.contains_key(name)
 }
 
 /// Expands docker-compose-style `${...}` references in `input` against `vars`.
@@ -561,12 +587,12 @@ pub(crate) fn interpolate_compose_style_with_limits<'s>(
                     // The scan itself is charged because repeating it at each selected level is
                     // the source of the historical quadratic behavior.
                     work.charge(text.len())?;
-                    let nested_syntax = if syntax == PropertySyntax::DockerCompose {
-                        PropertySyntax::DockerCompose
+                    let nested_syntax = if syntax.is_docker_compose() {
+                        syntax
                     } else {
                         PropertySyntax::Braced
                     };
-                    let needs_expansion = if syntax == PropertySyntax::DockerCompose {
+                    let needs_expansion = if syntax.is_docker_compose() {
                         text.match_indices('$').any(|(index, _)| {
                             text[index + 1..].chars().next().is_some_and(|next| {
                                 next == '$' || next == '{' || is_var_start(next, syntax)
@@ -625,7 +651,7 @@ pub(crate) fn interpolate_compose_style_with_limits<'s>(
             };
             let value = match vars.get(name) {
                 Some(value) => value.as_str(),
-                None if frame.syntax == PropertySyntax::DockerCompose => "",
+                None if frame.syntax.is_docker_compose() => "",
                 None => return Err(PropertyError::Unresolved(name.to_owned())),
             };
             frame.append_replacement(i, next + name.len(), value);
@@ -638,7 +664,7 @@ pub(crate) fn interpolate_compose_style_with_limits<'s>(
 mod tests {
     use super::{
         PropertyError, PropertySyntax, interpolate_compose_style,
-        interpolate_compose_style_with_limits,
+        interpolate_compose_style_with_limits, is_sole_unset_reference,
     };
     use crate::Budget;
     use rstest::rstest;
@@ -1182,6 +1208,32 @@ mod tests {
         assert_eq!(
             output.as_ref(),
             "${INVALID!} $$SET $set ${INVALID!} $$SET $set lowercase underscore ${INVALID!} $$SET $set"
+        );
+    }
+
+    #[rstest]
+    #[case::bare_unset("$MISSING", true)]
+    #[case::braced_unset("${MISSING}", true)]
+    #[case::bare_set("$SET", false)]
+    #[case::bare_empty("$EMPTY", false)]
+    #[case::braced_empty("${EMPTY}", false)]
+    #[case::operator("${MISSING:-x}", false)]
+    #[case::empty_default("${MISSING-}", false)]
+    #[case::prefix("a$MISSING", false)]
+    #[case::suffix("$MISSING-", false)]
+    #[case::two_references("$MISSING$MISSING", false)]
+    #[case::escaped("$$MISSING", false)]
+    #[case::unclosed("${MISSING", false)]
+    #[case::extra_brace("${MISSING}}", false)]
+    #[case::digit_start("$1A", false)]
+    #[case::empty_name("${}", false)]
+    #[case::lone_dollar("$", false)]
+    #[case::no_dollar("MISSING", false)]
+    fn sole_unset_reference(#[case] input: &str, #[case] expected: bool) {
+        assert_eq!(
+            is_sole_unset_reference(input, &vars(), PropertySyntax::DockerComposeWithNulls),
+            expected,
+            "{input}"
         );
     }
 }
