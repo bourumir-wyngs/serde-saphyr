@@ -5,6 +5,7 @@ use std::mem;
 use granit_parser::ScalarStyle;
 
 use super::cfg::Cfg;
+use super::deserializer::YamlDeserializer;
 use super::error::Error;
 #[cfg(feature = "properties")]
 use super::events::PropertyInterpolation;
@@ -757,10 +758,10 @@ pub(super) fn pending_entries_from_events<'a>(
         #[cfg(feature = "properties")]
         property_interpolation.clone(),
     );
+    if YamlDeserializer::new(&mut replay, cfg).peek_null_value()? {
+        return Ok(Vec::new());
+    }
     match replay.peek()? {
-        Some(Ev::Scalar {
-            value, tag, style, ..
-        }) if scalar_is_null(tag, value, style) => Ok(Vec::new()),
         Some(Ev::Scalar { location, .. }) => Err(Error::MergeValueNotMapOrSeqOfMaps {
             location: *location,
         }),
@@ -829,17 +830,15 @@ pub(super) fn pending_entries_from_live_events<'a>(
 ) -> Result<Vec<PendingEntry<'a>>, Error> {
     #[cfg(feature = "properties")]
     let property_interpolation = ev.property_interpolation().clone();
+    if YamlDeserializer::new(&mut *ev, cfg).peek_null_value()? {
+        let _ = ev.next()?;
+        return Ok(Vec::new());
+    }
     match ev.peek()? {
         Some(event @ Ev::RecursiveAlias { .. }) => {
             // A supported recursive merge is the same empty placeholder as on the live
             // typed path. Validate it even when the enclosing collector defers aliases.
             event.clone().resolve_recursive_alias()?;
-            let _ = ev.next()?;
-            Ok(Vec::new())
-        }
-        Some(Ev::Scalar {
-            value, tag, style, ..
-        }) if scalar_is_null(tag, value, style) => {
             let _ = ev.next()?;
             Ok(Vec::new())
         }

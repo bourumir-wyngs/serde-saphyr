@@ -2,7 +2,11 @@
 
 use rstest::rstest;
 use serde::Deserialize;
-use serde_saphyr::{Options, PropertySyntax, from_str_with_options};
+use serde_saphyr::{
+    DuplicateKeyPolicy, Error, Options, PropertySyntax, budget::BudgetBreach,
+    from_multiple_with_options, from_str_multiple_with_options, from_str_with_options,
+    read_with_options,
+};
 use std::collections::BTreeMap;
 
 const VARS: &[(&str, &str)] = &[
@@ -221,4 +225,168 @@ fn works_without_a_property_map() {
         load::<Option<String>>("value: a-$MISSING\n", options),
         Ok(Some("a-".to_owned()))
     );
+}
+
+fn document_values<T: for<'de> Deserialize<'de>>(yaml: &str, options: Options) -> [Vec<T>; 3] {
+    let mut reader = yaml.as_bytes();
+    [
+        from_multiple_with_options(yaml, options.clone()).unwrap(),
+        from_str_multiple_with_options(yaml, options.clone()).unwrap(),
+        read_with_options(&mut reader, options)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap(),
+    ]
+}
+
+#[rstest]
+#[case::literal("null")]
+#[case::missing("$MISSING")]
+#[case::marker("$NUL")]
+#[case::quoted("'${MISSING}'")]
+#[case::default("${MISSING:-null}")]
+fn null_documents_are_skipped(#[case] scalar: &str) {
+    let yaml = format!("{scalar}\n---\nkept\n");
+    for values in document_values::<String>(&yaml, with_nulls()) {
+        assert_eq!(values, ["kept"]);
+    }
+    for values in document_values::<Option<String>>(&yaml, with_nulls()) {
+        assert_eq!(values, [Some("kept".to_owned())]);
+    }
+}
+
+#[rstest]
+#[case::empty("$EMPTY", "")]
+#[case::string_tag("!!str $MISSING", "")]
+#[case::non_specific_tag("! $MISSING", "")]
+#[case::quoted_literal("'null'", "null")]
+fn non_null_documents_are_preserved(#[case] scalar: &str, #[case] expected: &str) {
+    let yaml = format!("{scalar}\n---\nkept\n");
+    for values in document_values::<String>(&yaml, with_nulls()) {
+        assert_eq!(values, [expected, "kept"]);
+    }
+}
+
+#[test]
+fn docker_compose_keeps_expanded_null_documents_as_strings() {
+    for values in document_values::<String>(
+        "$MISSING\n---\n$NUL\n",
+        options(PropertySyntax::DockerCompose),
+    ) {
+        assert_eq!(values, ["", "null"]);
+    }
+}
+
+#[rstest]
+#[case::literal("value:\n  <<: null\n  name: kept\n")]
+#[case::live("value:\n  <<: $MISSING\n  name: kept\n")]
+#[case::marker("value:\n  <<: $NUL\n  name: kept\n")]
+#[case::replay("value:\n  <<: [$MISSING, {name: kept}]\n")]
+#[case::alias("anchor: &x $MISSING\nvalue:\n  <<: *x\n  name: kept\n")]
+fn null_merge_values_are_no_ops(
+    #[case] yaml: &str,
+    #[values(DuplicateKeyPolicy::Error, DuplicateKeyPolicy::LastWins)] policy: DuplicateKeyPolicy,
+) {
+    let mut options = with_nulls();
+    options.duplicate_keys = policy;
+    let value: BTreeMap<String, String> = load(yaml, options).unwrap();
+    assert_eq!(value, BTreeMap::from([("name".into(), "kept".into())]));
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+enum NullPayload {
+    Unit,
+    Maybe(Option<String>),
+    Text(String),
+    Number(u16),
+}
+
+#[rstest]
+#[case::mapping_literal("Unit: null", NullPayload::Unit)]
+#[case::mapping_missing("Unit: $MISSING", NullPayload::Unit)]
+#[case::mapping_marker("Unit: $NUL", NullPayload::Unit)]
+#[case::tagged_literal("!Unit null", NullPayload::Unit)]
+#[case::tagged_missing("!Unit $MISSING", NullPayload::Unit)]
+#[case::newtype_literal("!Maybe null", NullPayload::Maybe(None))]
+#[case::newtype_missing("!Maybe $MISSING", NullPayload::Maybe(None))]
+#[case::newtype_default("!Maybe ${MISSING:-null}", NullPayload::Maybe(None))]
+fn enum_payloads_accept_null(#[case] yaml: &str, #[case] expected: NullPayload) {
+    let value: NullPayload = from_str_with_options(yaml, with_nulls()).unwrap();
+    assert_eq!(value, expected);
+}
+
+#[rstest]
+#[case::string_payload("!Text $MISSING")]
+#[case::standard_tag("!!null $MISSING")]
+#[case::unmatched_tag("!Unknown $MISSING")]
+fn enum_tags_and_payload_types_remain_checked(#[case] yaml: &str) {
+    assert!(from_str_with_options::<NullPayload>(yaml, with_nulls()).is_err());
+}
+
+#[rstest]
+fn string_forcing_tags_are_not_null_merge_or_unit_payloads(#[values("!!str", "!")] tag: &str) {
+    let merge = format!("value:\n  <<: {tag} $MISSING\n");
+    assert!(load::<BTreeMap<String, String>>(&merge, with_nulls()).is_err());
+    let unit = format!("Unit: {tag} $MISSING\n");
+    assert!(from_str_with_options::<NullPayload>(&unit, with_nulls()).is_err());
+}
+
+#[test]
+fn enum_dispatch_preserves_compose_strings_and_checks_payload_schema() {
+    let value: NullPayload =
+        from_str_with_options("!Maybe $MISSING", options(PropertySyntax::DockerCompose)).unwrap();
+    assert_eq!(value, NullPayload::Maybe(Some(String::new())));
+
+    let mut options = with_nulls();
+    options.no_schema = true;
+    let value: NullPayload = from_str_with_options("!Number 42", options.clone()).unwrap();
+    assert_eq!(value, NullPayload::Number(42));
+    assert!(from_str_with_options::<NullPayload>("!Text 42", options).is_err());
+}
+
+#[test]
+fn null_document_probe_preserves_required_errors_and_reader_recovery() {
+    let yaml = "${MISSING:?required}\n---\nkept\n";
+    let error = from_multiple_with_options::<String>(yaml, with_nulls()).unwrap_err();
+    assert!(matches!(
+        error.without_snippet(),
+        Error::PropertyRequiredButUnset { .. }
+    ));
+    assert!(error.to_string().contains("line 1 column 1"), "{error}");
+
+    let mut reader = yaml.as_bytes();
+    let mut values = read_with_options::<_, String>(&mut reader, with_nulls());
+    let error = values.next().unwrap().unwrap_err();
+    assert!(matches!(
+        error.without_snippet(),
+        Error::PropertyRequiredButUnset { .. }
+    ));
+    assert_eq!(values.next().unwrap().unwrap(), "kept");
+    assert!(values.next().is_none());
+}
+
+#[test]
+fn null_document_probe_enforces_interpolation_work_budget() {
+    let mut options = with_nulls();
+    options.budget = serde_saphyr::budget! { max_total_property_interpolation_work: 0 };
+    let yaml = "$MISSING\n---\nkept\n";
+    let error = from_multiple_with_options::<String>(yaml, options.clone()).unwrap_err();
+    assert!(matches!(
+        error.without_snippet(),
+        Error::Budget {
+            breach: BudgetBreach::PropertyInterpolationWork { .. },
+            ..
+        }
+    ));
+
+    let mut reader = yaml.as_bytes();
+    let mut values = read_with_options::<_, String>(&mut reader, options);
+    let error = values.next().unwrap().unwrap_err();
+    assert!(matches!(
+        error.without_snippet(),
+        Error::Budget {
+            breach: BudgetBreach::PropertyInterpolationWork { .. },
+            ..
+        }
+    ));
+    assert!(values.next().is_none());
 }

@@ -3,10 +3,9 @@ use std::io::Read;
 use serde_core::de::DeserializeOwned;
 
 use super::with_deserializer::deserialize_with_scope_and_null_policy;
-use super::{Error, Ev, Events, Options, ring_reader};
+use super::{Error, Events, Options, YamlDeserializer, ring_reader};
 use crate::budget::EnforcingPolicy;
 use crate::live_events::LiveEvents;
-use crate::parse_scalars::scalar_is_null;
 
 #[cfg(all(feature = "deserialize", feature = "include"))]
 pub(crate) fn resolver_from_options<'a>(
@@ -558,18 +557,15 @@ where
 
     loop {
         match src.peek() {
-            // Skip documents that are explicit null-like scalars ("", "~", or "null").
-            Ok(Some(Ev::Scalar {
-                value: s,
-                style,
-                tag,
-                ..
-            })) if scalar_is_null(tag, s, style) => {
-                let _ = src.next()?; // consume the null scalar document
-                // Do not add anything for this document; move to the next one.
-                continue;
-            }
             Ok(Some(_)) => {
+                // Include nulls produced by the opt-in Compose interpolation mode.
+                if YamlDeserializer::new(&mut src, cfg)
+                    .peek_null_value()
+                    .map_err(|e| wrap_err(e, &src))?
+                {
+                    let _ = src.next()?;
+                    continue;
+                }
                 let value = deserialize_with_scope_and_null_policy(
                     &mut src,
                     cfg,
@@ -1126,20 +1122,32 @@ where
             }
             loop {
                 match self.src.peek() {
-                    Ok(Some(Ev::Scalar {
-                        value, style, tag, ..
-                    })) if scalar_is_null(tag, value, style) => {
-                        let _ = self.src.next();
-                        continue;
-                    }
                     Ok(Some(_)) => {
-                        let res = deserialize_with_scope_and_null_policy(
-                            &mut self.src,
-                            self.cfg,
-                            |de| T::deserialize(de),
-                            |e, _| e,
-                            |_| false,
-                        );
+                        let res = match YamlDeserializer::new(&mut self.src, self.cfg)
+                            .peek_null_value()
+                        {
+                            Ok(true) => {
+                                let _ = self.src.next();
+                                continue;
+                            }
+                            Ok(false) => deserialize_with_scope_and_null_policy(
+                                &mut self.src,
+                                self.cfg,
+                                |de| T::deserialize(de),
+                                |e, _| e,
+                                |_| false,
+                            ),
+                            Err(e) if matches!(e.without_snippet(), Error::Budget { .. }) => {
+                                // Interpolation work is shared across documents, so a new
+                                // document cannot recover from an exhausted budget.
+                                self.finished = true;
+                                let _ = self.src.finish();
+                                return Some(Err(e));
+                            }
+                            // Interpolation errors recover at the next document just like
+                            // errors encountered while deserializing the document's value.
+                            Err(e) => Err(e),
+                        };
                         if res.is_err() {
                             // After a deserialization error, skip remaining events in the
                             // current document and try to recover at the next document boundary.
