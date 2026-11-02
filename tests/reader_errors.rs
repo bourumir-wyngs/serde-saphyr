@@ -129,6 +129,26 @@ fn from_reader_preserves_raw_os_error() {
     assert_eq!(source.raw_os_error(), Some(RAW_OS_ERROR));
 }
 
+#[test]
+fn read_preserves_raw_os_error_and_stops() {
+    const RAW_OS_ERROR: i32 = 12_345;
+    let mut reader =
+        ErrorAfterPrefix::new(b"id: 7\n...\n", io::Error::from_raw_os_error(RAW_OS_ERROR));
+    let mut documents = serde_saphyr::read::<_, Simple>(&mut reader);
+    let error = documents
+        .by_ref()
+        .find_map(Result::err)
+        .expect("reader failure must be returned");
+
+    // The original error must be inspectable even while the iterator is alive.
+    assert_eq!(
+        assert_io_error_source(&error).raw_os_error(),
+        Some(RAW_OS_ERROR)
+    );
+    assert!(documents.next().is_none());
+    assert!(documents.next().is_none());
+}
+
 #[derive(Debug)]
 struct InjectedCause {
     marker: &'static str,

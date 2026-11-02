@@ -148,14 +148,26 @@ pub(crate) enum GranitParser<'a> {
     #[cfg(not(feature = "include"))]
     StringParser(BaseParser<'a, StrInput<'a>>),
     StreamParser(StreamParser<'a>),
+    #[cfg(not(feature = "include"))]
+    Finished,
 }
 
 impl<'input> GranitParser<'input> {
     fn next(&mut self) -> Option<Result<(Event<'input>, Span), ScanError>> {
-        match self {
+        let item = match self {
             GranitParser::StringParser(parser) => parser.next(),
             GranitParser::StreamParser(parser) => parser.next(),
+            #[cfg(not(feature = "include"))]
+            GranitParser::Finished => None,
+        };
+        #[cfg(not(feature = "include"))]
+        if matches!(item, Some(Err(_))) {
+            // Parser errors are terminal. Drop the parser's cached error before
+            // converting the returned error so its original io::Error can be
+            // recovered without another wrapper. ParserStack already does this.
+            *self = GranitParser::Finished;
         }
+        item
     }
 
     #[cfg(feature = "include")]
