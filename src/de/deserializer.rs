@@ -173,6 +173,13 @@ fn drain_remaining_sequence(ev: &mut dyn Events<'_>) -> Result<(), Error> {
     }
 }
 
+/// Whether a mapping must remember the keys it has seen: duplicate-key policies and merge
+/// expansion read them back, but passing duplicates through without merging never does.
+fn remembers_seen_keys(cfg: &Cfg) -> bool {
+    !matches!(cfg.dup_policy, DuplicateKeyPolicy::PassThrough)
+        || cfg.merge_keys == MergeKeyPolicy::Merge
+}
+
 /// Whether `V` is Serde's private visitor for buffering an arbitrary value as
 /// `Content`, as used by `#[serde(untagged)]` and `#[serde(flatten)]`.
 ///
@@ -2201,7 +2208,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             self.pending_path_segment = key_path_segment;
                         }
 
-                        self.seen.insert(fingerprint);
+                        if remembers_seen_keys(&self.cfg) {
+                            self.seen.insert(fingerprint);
+                        }
                         return Ok(Some(key_value));
                     }
 
@@ -2321,7 +2330,8 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             let kemn_direct =
                                 is_empty_mapping_key_fingerprint(fingerprint.as_ref());
                             // Deserialize the key from recorded events and read the value live.
-                            let fingerprint = fingerprint.into_owned();
+                            let fingerprint =
+                                remembers_seen_keys(&self.cfg).then(|| fingerprint.into_owned());
                             let location = key_node.location();
                             #[cfg(any(feature = "garde", feature = "validator"))]
                             let key_path_segment =
@@ -2353,7 +2363,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                                 self.pending_path_segment = key_path_segment;
                             }
 
-                            self.seen.insert(fingerprint);
+                            if let Some(fingerprint) = fingerprint {
+                                self.seen.insert(fingerprint);
+                            }
                             return Ok(Some(key_value));
                         }
                         None => return Err(eof_with_loc(self.ev)),
@@ -2561,7 +2573,11 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             #[cfg(any(feature = "garde", feature = "validator"))]
             pending_path_segment: None,
 
-            seen: HashSet::with_capacity(8),
+            seen: if remembers_seen_keys(&child_cfg) {
+                HashSet::with_capacity(8)
+            } else {
+                HashSet::new()
+            },
             pending,
             merge_stack: VecDeque::new(),
             flushing_merges: false,
