@@ -329,7 +329,7 @@ pub(crate) enum NodeOrigin {
 /// that buffering an ordinary container does not erase any aliases nested inside it.
 #[derive(Debug, Default)]
 pub(super) struct RecordedEvents<'a> {
-    events: Vec<Ev<'a>>,
+    events: SmallVec<[Ev<'a>; 1]>,
     origins: SmallVec<[(usize, NodeOrigin); 1]>,
 }
 
@@ -340,7 +340,7 @@ impl<'a> RecordedEvents<'a> {
 
     pub(super) fn from_event(event: Ev<'a>, origin: NodeOrigin) -> Self {
         Self {
-            events: vec![event],
+            events: smallvec![event],
             origins: if origin == NodeOrigin::Direct {
                 SmallVec::new()
             } else {
@@ -381,7 +381,7 @@ impl<'a> RecordedEvents<'a> {
 impl<'a> From<Vec<Ev<'a>>> for RecordedEvents<'a> {
     fn from(events: Vec<Ev<'a>>) -> Self {
         Self {
-            events,
+            events: SmallVec::from_vec(events),
             origins: SmallVec::new(),
         }
     }
