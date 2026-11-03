@@ -420,9 +420,9 @@ impl<'a> LiveEvents<'a> {
             pending_trailing_comments: Vec::new(),
             #[cfg(feature = "comments")]
             produced_leading_comments: Vec::new(),
-            inject: Vec::with_capacity(2),
-            anchors: Vec::with_capacity(8),
-            rec_stack: Vec::with_capacity(2),
+            inject: Vec::new(),
+            anchors: Vec::new(),
+            rec_stack: Vec::new(),
             budget: budget.map(|budget| BudgetEnforcer::new(budget, scope, merge_keys)),
 
             budget_report,
@@ -516,9 +516,9 @@ impl<'a> LiveEvents<'a> {
             pending_trailing_comments: Vec::new(),
             #[cfg(feature = "comments")]
             produced_leading_comments: Vec::new(),
-            inject: Vec::with_capacity(2),
-            anchors: Vec::with_capacity(8),
-            rec_stack: Vec::with_capacity(2),
+            inject: Vec::new(),
+            anchors: Vec::new(),
+            rec_stack: Vec::new(),
             budget: budget
                 .map(|budget| BudgetEnforcer::new(budget, EnforcingPolicy::AllContent, merge_keys)),
 
