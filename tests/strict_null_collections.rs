@@ -41,8 +41,6 @@ fn assert_rejected_by_single_document_apis<T: DeserializeOwned + Debug>(yaml: &s
 #[case::title_case("Null")]
 #[case::uppercase("NULL")]
 #[case::tilde("~")]
-#[case::empty_stream("")]
-#[case::comment_only("# comment\n")]
 #[case::empty("---\n")]
 #[case::tagged_empty("!!null")]
 #[case::tagged_null("!!null null")]

@@ -229,6 +229,12 @@ settings: {}  # Instead of settings: or settings: null
 
 `Option<T>` continues to accept null as `None`.
 
+For compatibility, single-document APIs accept a stream with no documents (empty,
+whitespace-only, or comment-only input) as an empty collection or a struct whose fields
+can all be omitted. This is an API default for absent input. An explicit empty document
+(`---`) has a null root and follows the null rules above. Multi-document APIs return
+no items for a stream with no documents.
+
 `SerializerOptions::empty_as_braces` is deprecated since 2.1.0. Omit this setting to keep
 the default `true`, which emits `[]` and `{}` for empty collections. Setting it to `false`
 emits blank values for empty block collections without tags or anchors. These values are

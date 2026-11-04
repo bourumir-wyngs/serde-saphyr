@@ -494,16 +494,16 @@ fn test_ignore_tag() {
 }
 
 #[test]
-fn test_empty_document_is_null_even_without_required_fields() {
+fn test_empty_stream_defaults_without_required_fields() {
     #[derive(Deserialize, PartialEq, Debug)]
     pub struct NoRequiredFields {
         optional: Option<usize>,
     }
 
     for document in ["", "# comment\n"] {
-        assert!(serde_saphyr::from_str::<NoRequiredFields>(document).is_err());
-        assert!(serde_saphyr::from_str::<Vec<String>>(document).is_err());
-        assert!(serde_saphyr::from_str::<BTreeMap<char, usize>>(document).is_err());
+        test_de(document, &NoRequiredFields { optional: None });
+        test_de(document, &Vec::<String>::new());
+        test_de(document, &BTreeMap::<char, usize>::new());
 
         let expected = None;
         let deserialized: Option<String> = serde_saphyr::from_str(document).unwrap();
@@ -512,6 +512,12 @@ fn test_empty_document_is_null_even_without_required_fields() {
         let expected = Value::Null;
         let deserialized: Value = serde_saphyr::from_str(document).unwrap();
         assert_eq!(expected, deserialized);
+    }
+
+    for document in ["---", "---\n# comment\n", "null"] {
+        assert!(serde_saphyr::from_str::<NoRequiredFields>(document).is_err());
+        assert!(serde_saphyr::from_str::<Vec<String>>(document).is_err());
+        assert!(serde_saphyr::from_str::<BTreeMap<char, usize>>(document).is_err());
     }
 
     test_de("{}", &NoRequiredFields { optional: None });

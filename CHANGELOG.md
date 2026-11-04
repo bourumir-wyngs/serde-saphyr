@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Restore empty-stream deserialization into empty collections and structs whose fields
+  can be omitted ([#264](https://github.com/bourumir-wyngs/serde-saphyr/issues/264)).
+  Empty, whitespace-only, and comment-only input use this compatibility behavior.
+  Explicit empty documents (`---`) and YAML null still require a null-compatible target.
+
 ## 2.1.0 
 
 ### Added

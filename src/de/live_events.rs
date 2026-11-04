@@ -245,7 +245,7 @@ pub(crate) struct LiveEvents<'a> {
 
     /// Whether any content event has been produced in the current stream.
     produced_any_in_doc: bool,
-    /// Whether we emitted a synthetic null scalar to represent an empty document.
+    /// Whether we emitted a synthetic null scalar for a stream with no documents.
     synthesized_null_emitted: bool,
     /// Single-item lookahead buffer (peeked event not yet consumed).
     look: Option<Ev<'a>>,
@@ -1325,8 +1325,8 @@ impl<'a> LiveEvents<'a> {
             }
         }
 
-        // True EOF. If we have not produced any content in the current document,
-        // synthesize a single null scalar event to represent an empty document.
+        // True EOF without any content events means a stream with no documents.
+        // Explicit empty documents already produce a scalar in the parser.
         if !self.produced_any_in_doc {
             let ev = Ev::Scalar {
                 value: String::new().into(),
@@ -1644,6 +1644,17 @@ impl<'de> Events<'de> for LiveEvents<'de> {
         }
 
         Ok((&self.look).into())
+    }
+
+    fn take_empty_stream(&mut self) -> Result<bool, Error> {
+        let _ = self.peek()?;
+        // Synthesis happens only at EOF. Requiring a pending event prevents
+        // another deserialize call from consuming the same empty stream twice.
+        if self.synthesized_null_emitted && self.look.is_some() {
+            let _ = self.next()?;
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     fn strip_peeked_node_tag(&mut self) -> Result<(), Error> {

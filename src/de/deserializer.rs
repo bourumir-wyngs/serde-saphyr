@@ -1072,10 +1072,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             }),
             None => {
                 // When deserializing typeless positions (for example
-                // `serde_json::Value`) a completely empty document should be
-                // treated as YAML null rather than an EOF error. Structured
-                // entry points like `deserialize_map` still surface EOF
-                // through their dedicated `expect_*` helpers.
+                // `serde_json::Value`) exhausted input is treated as null.
                 visitor.visit_unit()
             }
             Some(Ev::Taken { location }) => {
@@ -1633,6 +1630,11 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     /// `!!binary` scalar as a byte *sequence* view when the caller expects a
     /// sequence of u8.
     fn deserialize_seq<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
+        if self.ev.take_empty_stream()? {
+            return visitor.visit_seq(de::value::SeqDeserializer::<_, Error>::new(
+                std::iter::empty::<()>(),
+            ));
+        }
         if let Some((_, SfTag::Binary, _, _)) = self.peek_effective_scalar()? {
             let (scalar, data_location) = match self.ev.next()? {
                 Some(Ev::Scalar {
@@ -1825,6 +1827,33 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     /// Caller: Serde field visitors for maps and for Rust structs
     /// (which Serde also requests via `deserialize_map`).
     fn deserialize_map<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
+        if self.ev.take_empty_stream()? {
+            struct EmptyMap {
+                location: Location,
+            }
+            impl<'de> de::MapAccess<'de> for EmptyMap {
+                type Error = Error;
+
+                fn next_key_seed<K>(&mut self, _seed: K) -> Result<Option<K::Value>, Error>
+                where
+                    K: de::DeserializeSeed<'de>,
+                {
+                    Ok(None)
+                }
+
+                fn next_value_seed<V>(&mut self, _seed: V) -> Result<V::Value, Error>
+                where
+                    V: de::DeserializeSeed<'de>,
+                {
+                    Err(Error::ValueRequestedBeforeKey {
+                        location: self.location,
+                    })
+                }
+            }
+            return visitor.visit_map(EmptyMap {
+                location: self.ev.last_location(),
+            });
+        }
         // Same-line separator comments on the parent field belong to this mapping node.
         // `Commented<Container>` consumes those comments before this point; a plain map
         // must not reattach them to the first child key.
