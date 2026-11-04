@@ -430,6 +430,12 @@ pub(crate) trait Events<'de> {
     /// - Lookahead logic (merge, container boundaries, option/unit handling).
     fn peek(&mut self) -> Result<Option<&Ev<'de>>, Error>;
 
+    /// Consume the synthetic null representing a stream with no documents.
+    /// Returns false for actual YAML nodes and replayed events.
+    fn take_empty_stream(&mut self) -> Result<bool, Error> {
+        Ok(false)
+    }
+
     /// Strip the tag from the node currently exposed by [`Self::peek`].
     ///
     /// This lets typed enum handling reinterpret a YAML tag as the enum variant while
