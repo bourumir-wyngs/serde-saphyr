@@ -2665,6 +2665,17 @@ fn maybe_attach_fallback_location(mut err: Error) -> Error {
     err
 }
 
+/// Renders a Serde `Unexpected` into a string sized up front: its `Display` writes in several
+/// pieces, which would otherwise regrow the string a few times for every type mismatch, and
+/// untagged enums produce one such mismatch per variant they try.
+fn unexpected_text(unexp: &de::Unexpected<'_>) -> String {
+    use std::fmt::Write as _;
+
+    let mut text = String::with_capacity(64);
+    let _ = write!(text, "{unexp}");
+    text
+}
+
 impl de::Error for Error {
     #[cold]
     #[inline(never)]
@@ -2680,7 +2691,7 @@ impl de::Error for Error {
     fn invalid_type(unexp: de::Unexpected, exp: &dyn de::Expected) -> Self {
         // Mirror serde’s default formatting, but add a best-effort location.
         maybe_attach_fallback_location(Error::SerdeInvalidType {
-            unexpected: redact_dynamic_value(unexp.to_string(), "an interpolated value"),
+            unexpected: redact_dynamic_value(unexpected_text(&unexp), "an interpolated value"),
             expected: exp.to_string(),
             location: Location::UNKNOWN,
         })
@@ -2690,7 +2701,7 @@ impl de::Error for Error {
     #[inline(never)]
     fn invalid_value(unexp: de::Unexpected, exp: &dyn de::Expected) -> Self {
         maybe_attach_fallback_location(Error::SerdeInvalidValue {
-            unexpected: redact_dynamic_value(unexp.to_string(), "an interpolated value"),
+            unexpected: redact_dynamic_value(unexpected_text(&unexp), "an interpolated value"),
             expected: exp.to_string(),
             location: Location::UNKNOWN,
         })

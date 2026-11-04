@@ -577,7 +577,7 @@ impl BudgetEnforcer {
             budget,
             report: BudgetReport::default(),
             depth: 0,
-            defined_anchors: HashSet::with_capacity(256),
+            defined_anchors: HashSet::new(),
             containers: SmallVec::new(),
             scope,
             merge_keys,
