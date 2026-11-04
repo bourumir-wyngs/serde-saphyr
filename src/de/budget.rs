@@ -216,7 +216,7 @@ pub struct Budget {
     /// The separate [`Self::flow_nesting_limit`] remains an independent cap on
     /// flow collections.
     ///
-    /// Default: 54
+    /// Default: 64
     pub max_depth: usize,
     /// Maximum allowed `!include` nesting depth.
     ///
@@ -289,7 +289,7 @@ impl Default for Budget {
             max_recorded_anchor_bytes: 64 * 1024 * 1024,
             max_property_expansion_depth: DEFAULT_MAX_PROPERTY_EXPANSION_DEPTH,
             max_total_property_interpolation_work: DEFAULT_MAX_TOTAL_PROPERTY_INTERPOLATION_WORK,
-            max_depth: 54, // protects stack/CPU
+            max_depth: 64, // protects stack/CPU
             max_inclusion_depth: 24,
             max_documents: 1_024, // doc separator storms
             max_nodes: 250_000,   // sequences + maps + scalars

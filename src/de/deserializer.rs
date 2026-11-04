@@ -1983,7 +1983,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             merge_stack: VecDeque<Vec<PendingEntry<'de>>>,
             flushing_merges: bool,
             live_done: bool,
-            pending_value: Option<(RecordedEvents<'de>, Location)>,
+            pending_value: Option<Box<(RecordedEvents<'de>, Location)>>,
             pending_field_comments: Vec<Cow<'de, str>>,
             pending_value_separator_comments: Vec<Cow<'de, str>>,
             pending_value_comments: Vec<Cow<'de, str>>,
@@ -2201,7 +2201,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                         self.pending_field_comments = field_comments;
                         self.pending_value_separator_comments = value_separator_comments;
                         self.pending_value_comments = value_comments;
-                        self.pending_value = Some((value_events, reference_location));
+                        self.pending_value = Some(Box::new((value_events, reference_location)));
 
                         #[cfg(any(feature = "garde", feature = "validator"))]
                         {
@@ -2394,7 +2394,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 let mut value_comments = std::mem::take(&mut self.pending_value_comments);
 
                 if let Some(events) = self.pending_value.take() {
-                    let (events, fallback_reference_location) = events;
+                    let (events, fallback_reference_location) = *events;
                     // Each captured node retains its own origin. Fixing the reference to
                     // the outer value would mistake ordinary descendants for aliases.
                     let mut replay = ReplayEvents::new(
