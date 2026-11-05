@@ -87,16 +87,27 @@ fn explicit_null_documents_still_reject_collection_targets() {
             serde_saphyr::from_str::<Vec<String>>(input).is_err(),
             "{input:?}"
         );
-        assert!(serde_saphyr::from_str::<Config>(input).is_err(), "{input:?}");
+        assert!(
+            serde_saphyr::from_str::<Config>(input).is_err(),
+            "{input:?}"
+        );
     }
     assert!(serde_saphyr::from_str::<Map>("{}").unwrap().is_empty());
-    assert!(serde_saphyr::from_str::<Vec<String>>("[]").unwrap().is_empty());
+    assert!(
+        serde_saphyr::from_str::<Vec<String>>("[]")
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
 fn empty_streams_do_not_add_documents_to_multi_document_results() {
     for input in EMPTY_INPUTS {
-        assert!(serde_saphyr::from_multiple::<Map>(input).unwrap().is_empty());
+        assert!(
+            serde_saphyr::from_multiple::<Map>(input)
+                .unwrap()
+                .is_empty()
+        );
         assert!(
             serde_saphyr::from_slice_multiple::<Map>(input.as_bytes())
                 .unwrap()
@@ -123,7 +134,10 @@ fn reader_errors_are_never_treated_as_empty_streams() {
     struct FailingReader;
     impl Read for FailingReader {
         fn read(&mut self, _buffer: &mut [u8]) -> io::Result<usize> {
-            Err(io::Error::new(io::ErrorKind::ConnectionReset, "reader failed"))
+            Err(io::Error::new(
+                io::ErrorKind::ConnectionReset,
+                "reader failed",
+            ))
         }
     }
     let error = serde_saphyr::from_reader::<_, Map>(FailingReader).unwrap_err();
