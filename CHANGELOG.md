@@ -1,16 +1,15 @@
 # Changelog
 
-## Unreleased
+## 2.1.1
 
 ### Fixed
+- Fixed 2.1.0 regression empty documents producing errors (#265). Empty document is a valid YAML document.
 
-- Restore empty-stream deserialization into empty collections and structs whose fields
-  can be omitted ([#264](https://github.com/bourumir-wyngs/serde-saphyr/issues/264)).
-  Empty, whitespace-only, and comment-only input use this compatibility behavior.
-  Explicit empty documents (`---`) and YAML null still require a null-compatible target.
+### Performance improvements
+- Significantly reduced allocations when deserializing (#262)
 
 ## 2.1.0 
-
+–
 ### Added
 
 - Added `PropertySyntax::DockerComposeWithNulls`: Compose interpolation where a value that is
