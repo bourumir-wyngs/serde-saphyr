@@ -364,6 +364,19 @@ pub struct Options {
     /// are rejected for boolean targets and are not inferred as booleans.
     /// Default: false (accept YAML 1.1 boolean forms).
     pub strict_booleans: bool,
+    /// Preserve plain null-like scalars (`null`, `Null`, `NULL`, `~`, and empty)
+    /// as their text when deserializing directly into a string target.
+    ///
+    /// Applies to both mapping keys and values, including `String`, `&str`, and
+    /// `Cow<str>`. Borrowed targets retain the usual input borrowing requirements.
+    /// Default: false (reject null-like scalars for string targets).
+    ///
+    /// Explicit `!!null` tags remain errors for string targets. `Option<T>`, unit,
+    /// and implicit type inference (`deserialize_any`, including untyped values,
+    /// untagged enums, and flattened fields) retain their existing null semantics.
+    /// [`Self::no_schema`] still requires ambiguous plain strings to be quoted.
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
+    pub null_as_string: bool,
     /// When a field marked with the `!!binary` tag is deserialized into a `String`,
     /// `serde-saphyr` normally expects the value to be base64-encoded UTF-8.
     /// If you want to treat the value as a plain string and ignore the `!!binary` tag,
@@ -746,6 +759,7 @@ impl Default for Options {
             leading_zero_numbers_as_strings: false,
             underscored_numbers_as_strings: false,
             strict_booleans: false,
+            null_as_string: false,
             angle_conversions: false,
             ignore_binary_tag_for_string: false,
             no_schema: false,
@@ -799,6 +813,7 @@ impl std::fmt::Debug for Options {
                 &self.underscored_numbers_as_strings,
             )
             .field("strict_booleans", &self.strict_booleans)
+            .field("null_as_string", &self.null_as_string)
             .field(
                 "ignore_binary_tag_for_string",
                 &self.ignore_binary_tag_for_string,
@@ -884,6 +899,7 @@ mod tests {
         assert!(!opts.leading_zero_numbers_as_strings);
         assert!(!opts.underscored_numbers_as_strings);
         assert!(!opts.strict_booleans);
+        assert!(!opts.null_as_string);
         assert!(!opts.ignore_binary_tag_for_string);
         assert!(!opts.angle_conversions);
         assert!(!opts.no_schema);
@@ -918,6 +934,19 @@ mod tests {
             DuplicateKeyPolicy::LastWins
         ));
         assert!(serde_json::from_str::<DuplicateKeyPolicy>("\"FirstWins\"").is_err());
+    }
+
+    #[cfg(feature = "serde_derived_types")]
+    #[test]
+    fn null_as_string_serde_roundtrip_and_missing_default() {
+        let options = crate::options! { null_as_string: true };
+        let mut json = serde_json::to_value(&options).unwrap();
+        let restored: Options = serde_json::from_value(json.clone()).unwrap();
+        assert!(restored.null_as_string);
+
+        json.as_object_mut().unwrap().remove("null_as_string");
+        let legacy: Options = serde_json::from_value(json).unwrap();
+        assert!(!legacy.null_as_string);
     }
 
     #[cfg(feature = "serde_derived_types")]

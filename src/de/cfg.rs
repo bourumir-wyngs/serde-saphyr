@@ -17,6 +17,8 @@ pub(crate) struct Cfg {
     pub(crate) underscored_numbers_as_strings: bool,
     /// If true, accept only the six YAML 1.2 Core boolean spellings.
     pub(crate) strict_booleans: bool,
+    /// Preserve plain null-like text when a string target is requested.
+    pub(crate) null_as_string: bool,
     /// If true, ROS-compliant angle resolver is enabled
     pub(crate) angle_conversions: bool,
     /// Ignore !!binary for string
@@ -46,6 +48,7 @@ impl Cfg {
             leading_zero_numbers_as_strings: options.leading_zero_numbers_as_strings,
             underscored_numbers_as_strings: options.underscored_numbers_as_strings,
             strict_booleans: options.strict_booleans,
+            null_as_string: options.null_as_string,
             angle_conversions: options.angle_conversions,
             ignore_binary_tag_for_string: options.ignore_binary_tag_for_string,
             no_schema: options.no_schema,

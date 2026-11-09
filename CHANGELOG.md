@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- Added opt-in `Options::null_as_string` (default: `false`) to preserve plain
+  `null`, `Null`, `NULL`, `~`, and empty scalars as text for string targets in both
+  mapping keys and values, including `String`, `&str`, and `Cow<str>`
+  ([#267](https://github.com/bourumir-wyngs/serde-saphyr/issues/267)). Explicit `!!null`
+  tags remain rejected for strings; `Option<T>`, untyped null inference, mapping-key
+  comparison, and `no_schema` quoting requirements keep their existing behavior.
+
 ### Fixed
 - Preserve uppercase radix prefixes (`0X`, `0O`, `0B`, including signed forms) as
   strings during implicit type inference, including untagged enums and flattened

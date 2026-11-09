@@ -191,8 +191,9 @@ The options do not change [mapping-key comparison](#duplicate-keys): for example
 #### Null values for string fields
 
 For a field declared as `hi: String`, `serde_yaml` accepts the plain null forms below
-as their original text. `serde-saphyr` treats these forms as null and reports
-`Error::NullIntoString`. This also applies with the default `no_schema: false` setting.
+as their original text. By default, `serde-saphyr` treats these forms as null and reports
+`Error::NullIntoString`. This also applies with the default `no_schema: false` setting,
+and to string mapping keys.
 
 | YAML input | `serde_yaml` string value | `serde-saphyr` result |
 | --- | --- | --- |
@@ -207,6 +208,32 @@ Here, `hi:` supplies an empty mapping value, which is YAML null.
 - If text is intended, quote the value: `hi: ""`, `hi: "~"`, or `hi: "null"`.
   These produce `""`, `"~"`, and `"null"`, respectively. An explicit string tag also works,
   for example `hi: !!str null` produces `"null"`.
+
+To accept the original text of plain null-like scalars for string targets, enable
+`null_as_string` (default: `false`). It applies to both mapping keys and values,
+including `null`, `Null`, `NULL`, `~`, and empty scalars:
+
+```rust
+let options = serde_saphyr::options! {
+    null_as_string: true,
+};
+let values: std::collections::HashMap<String, String> =
+    serde_saphyr::from_str_with_options("null: ~\nempty:\n", options).unwrap();
+assert_eq!(values["null"], "~");
+assert_eq!(values["empty"], "");
+```
+
+This also supports `&str` and `Cow<str>`. Borrowing retains the usual input constraints:
+use an in-memory input such as `from_str_with_options` or `from_slice_with_options`,
+and `#[serde(borrow)]` on `Cow<str>` fields when borrowing is wanted.
+
+The option changes direct string deserialization only. `Option<T>` still receives
+`None`, and untyped values still infer null, including Serde's buffering for untagged
+enums and flattened fields. A `serde_json::Value` object can use `"null"` as a key
+because its keys deserialize as strings; null values inside it remain JSON null.
+Explicit `!!null` tags still reject string targets, and `no_schema: true` still requires
+quoting null-like strings. Mapping-key comparison and the skipping of null documents
+in multi-document APIs are unchanged.
 
 ### Migrating from 2.0
 
@@ -410,7 +437,8 @@ Other capitalization, such as `tRuE`, remains a string during type inference and
 
 To address the “Norway problem,” the target Rust types serve as an explicit schema. Because the parser knows whether a field expects a string or a boolean, it can correctly accept `1.2` either as a number or as the string `"1.2"`, and interpret the common YAML boolean shorthands (`y`, `on`, `n`, `off`) as actual booleans when appropriate (can be disabled). Likewise, `0x2A` is parsed as a hexadecimal integer when the target field is numeric, and as a string when the target is `String`. As with [StrictYAML](https://hitchdev.com/strictyaml/why/implicit-typing-removed/), **serde-saphyr** uses the Rust type system as the schema for typed deserialization. Integer key comparison is an exception: [duplicate checking](#duplicate-keys) uses the integer's numeric meaning while preserving its original spelling for string targets.
 
-YAML null values are rejected for `String` fields. See
+YAML null values are rejected for string targets by default. Set `null_as_string: true`
+to accept plain null-like scalars as their text in string keys and values. See
 [null values for string fields](#null-values-for-string-fields) for the difference from
 `serde_yaml` and the available representations.
 

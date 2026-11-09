@@ -272,12 +272,29 @@ struct ScalarView<'de> {
 
 type EffectiveScalar<'de> = (Cow<'de, str>, SfTag, ScalarStyle, Location);
 
-impl ScalarView<'_> {
+impl<'de> ScalarView<'de> {
     fn redaction_ctx(&self) -> Option<ScalarRedactionCtx> {
         self.interpolated.then(|| ScalarRedactionCtx {
             raw: self.raw.as_ref().to_owned(),
             effective: self.effective.as_ref().to_owned(),
         })
+    }
+
+    /// Recover omitted scalar text for string targets without changing the
+    /// recorded events used for null inference and mapping-key comparison.
+    fn into_string_value(self, null_as_string: bool) -> Cow<'de, str> {
+        // granit-parser represents an omitted plain scalar as "~" with an empty
+        // span. Alias replay retains the definition span, including for readers.
+        if null_as_string
+            && !self.interpolated
+            && self.style == ScalarStyle::Plain
+            && self.raw == "~"
+            && self.location.span().is_empty()
+        {
+            Cow::Borrowed("")
+        } else {
+            self.effective
+        }
     }
 }
 
@@ -1248,10 +1265,12 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     fn deserialize_str<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let view = match self.peek_scalar_view()? {
             Some(view) => {
-                // Check for null - not valid for string deserialization. A deliberately
-                // substituted ${...} that resolved to "" stays a string, not null.
+                // Plain null-like text requires opt-in for string targets; explicit
+                // null tags remain errors. An interpolated "" stays a string.
                 if (view.tag == SfTag::Null
-                    || (!view.interpolated && scalar_is_nullish(&view.effective, &view.style)))
+                    || (!self.cfg.null_as_string
+                        && !view.interpolated
+                        && scalar_is_nullish(&view.effective, &view.style)))
                     && !view.tag.forces_string()
                 {
                     let loc = view.location;
@@ -1307,13 +1326,13 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         };
 
         let view = self.take_peeked_scalar_view(view)?;
-        if let Cow::Borrowed(b) = view.effective {
+        let value = view.into_string_value(self.cfg.null_as_string);
+        if let Cow::Borrowed(b) = value {
             return visitor.visit_borrowed_str(b);
         }
 
-        let res: Result<V::Value, Self::Error> = with_scalar_redaction(redaction_ctx, || {
-            visitor.visit_string(view.effective.into_owned())
-        });
+        let res: Result<V::Value, Self::Error> =
+            with_scalar_redaction(redaction_ctx, || visitor.visit_string(value.into_owned()));
         match res {
             Ok(v) => Ok(v),
             Err(err) => {
@@ -1330,18 +1349,21 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     /// Deserialize an owned string (with `!!binary` UTF-8 support).
     ///
     /// Null semantics:
-    /// - Tagged null or plain null-like scalars (empty, `~`, `null`, `Null`, or `NULL`) are not valid `String`.
-    ///   Suggest using `Option<String>` for such YAML values.
+    /// - Plain null-like scalars (empty, `~`, `null`, `Null`, or `NULL`) are only
+    ///   accepted as their text when `null_as_string` is enabled.
+    /// - Explicitly tagged null is not a valid `String`; use `Option<String>`.
     /// - Quoted "null" and quoted empty strings are treated as normal strings and allowed.
     ///
     /// **From/To:** scalar text (or base64-decoded bytes) → `Visitor::visit_string`.
     fn deserialize_string<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        // Reject YAML null when deserializing into String. Allow quoted forms.
+        // Apply the same null policy as borrowed string deserialization.
         let view = if let Some(view) = self.peek_scalar_view()? {
-            // If explicitly tagged as null, or plain null-like, this is not a valid String.
-            // A ${...} that the user deliberately substituted to "" is a legitimate string.
+            // Plain null-like text requires opt-in; explicit null tags remain errors.
+            // A ${...} deliberately substituted to "" is a legitimate string.
             if (view.tag == SfTag::Null
-                || (!view.interpolated && scalar_is_nullish(&view.effective, &view.style)))
+                || (!self.cfg.null_as_string
+                    && !view.interpolated
+                    && scalar_is_nullish(&view.effective, &view.style)))
                 && !view.tag.forces_string()
             {
                 // Consume the scalar to anchor the error at the correct location.
@@ -1374,7 +1396,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
         let redaction_ctx = view.redaction_ctx();
         let view = self.take_peeked_scalar_view(view)?;
-        match view.effective {
+        match view.into_string_value(self.cfg.null_as_string) {
             Cow::Borrowed(b) => {
                 with_scalar_redaction(redaction_ctx, || visitor.visit_borrowed_str(b))
             }
