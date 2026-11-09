@@ -153,6 +153,14 @@ of complete `serde_yaml` compatibility. YAML requires unique mapping keys;
 
 #### Numeric-looking strings in untyped values
 
+Plain scalars with uppercase radix prefixes (`0X1F`, `0O17`, `0B101`, including
+optional `+` or `-` signs) are preserved as strings during implicit type inference.
+Lowercase prefixes still infer integers, including hexadecimal digits `A`–`F`.
+This also applies to untagged enums and flattened fields. Direct typed integer
+deserialization, explicit `!!int` tags, and mapping-key comparison retain their
+existing behavior. Lowercase binary notation (`0b101`) remains a supported extension
+to the YAML 1.2 Core schema.
+
 When migrating code that reads generic values such as `serde_json::Value`, enable
 either of these independent options to preserve numeric spellings as strings:
 

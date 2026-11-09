@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.2.0 (unreleased)
+## Unreleased
 
 ### Added
 
@@ -10,6 +10,12 @@
   ([#267](https://github.com/bourumir-wyngs/serde-saphyr/issues/267)). Explicit `!!null`
   tags remain rejected for strings; `Option<T>`, untyped null inference, mapping-key
   comparison, and `no_schema` quoting requirements keep their existing behavior.
+
+### Fixed
+- Preserve uppercase radix prefixes (`0X`, `0O`, `0B`, including signed forms) as
+  strings during implicit type inference, including untagged enums and flattened
+  fields (#266). Direct typed integer parsing, explicit `!!int` tags, and mapping-key
+  comparison retain their existing behavior.
 
 ## 2.1.1
 

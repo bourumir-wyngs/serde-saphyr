@@ -1029,7 +1029,10 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             let t = yaml_trim(&effective);
             // Preserve selected spellings before either numeric parser can consume
             // them. Explicit numeric tags have already dispatched above.
-            if (self.cfg.leading_zero_numbers_as_strings && leading_zero_decimal(t))
+            let unsigned = t.strip_prefix(['+', '-']).unwrap_or(t);
+            let uppercase_radix = matches!(unsigned.as_bytes(), [b'0', b'X' | b'O' | b'B', ..]);
+            if uppercase_radix
+                || (self.cfg.leading_zero_numbers_as_strings && leading_zero_decimal(t))
                 || (self.cfg.underscored_numbers_as_strings && t.contains('_'))
             {
                 return match effective {
