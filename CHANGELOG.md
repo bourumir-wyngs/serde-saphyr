@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- Preserve uppercase radix prefixes (`0X`, `0O`, `0B`, including signed forms) as
+  strings during implicit type inference, including untagged enums and flattened
+  fields (#266). Direct typed integer parsing, explicit `!!int` tags, and mapping-key
+  comparison retain their existing behavior.
+
 ## 2.1.1
 
 ### Fixed
