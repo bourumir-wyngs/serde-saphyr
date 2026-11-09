@@ -184,6 +184,7 @@ fn cfg_and_replay_events_follow_options_and_reference_overrides() {
         leading_zero_numbers_as_strings: true,
         underscored_numbers_as_strings: true,
         strict_booleans: true,
+        null_as_string: true,
         angle_conversions: true,
         ignore_binary_tag_for_string: true,
         no_schema: true,
@@ -198,6 +199,7 @@ fn cfg_and_replay_events_follow_options_and_reference_overrides() {
     assert!(cfg.leading_zero_numbers_as_strings);
     assert!(cfg.underscored_numbers_as_strings);
     assert!(cfg.strict_booleans);
+    assert!(cfg.null_as_string);
     assert!(cfg.angle_conversions);
     assert!(cfg.ignore_binary_tag_for_string);
     assert!(cfg.no_schema);
