@@ -306,6 +306,21 @@ fn parse_yaml12_non_finite_float<T: num_traits::Float>(t: &str) -> Option<T> {
     }
 }
 
+/// Preserve the sign of a signed NaN spelling only for an explicit float tag.
+/// `t` must already be trimmed; other spellings and tags use the existing parser.
+#[cfg(feature = "deserialize")]
+fn parse_tagged_signed_nan<T: num_traits::Float>(t: &str, tag: SfTag) -> Option<T> {
+    if tag != SfTag::Float || !is_signed_nan(t) {
+        return None;
+    }
+    let sign = if t.starts_with('-') {
+        -T::one()
+    } else {
+        T::one()
+    };
+    Some(T::nan().copysign(sign))
+}
+
 #[cfg(feature = "deserialize")]
 fn parse_yaml12_finite_float_fallback<T>(t: &str, location: Location) -> Result<T, Error>
 where
@@ -338,10 +353,13 @@ where
     T: FromStr + crate::robotics::FromF64,
     T: num_traits::Float,
 {
+    let t = yaml_trim(s);
+    if let Some(value) = parse_tagged_signed_nan(t, tag) {
+        return Ok(value);
+    }
     if angle_conversions {
         return crate::robotics::parse_yaml12_float_angle_converting(s, location, tag);
     }
-    let t = yaml_trim(s);
     match parse_yaml12_non_finite_float(t) {
         Some(value) => Ok(value),
         None => parse_yaml12_finite_float_fallback(t, location),
@@ -352,7 +370,7 @@ where
 pub(crate) fn parse_yaml12_float<T>(
     s: &str,
     location: Location,
-    _tag: SfTag,
+    tag: SfTag,
     _angle_conversions: bool,
 ) -> Result<T, Error>
 where
@@ -360,6 +378,9 @@ where
     T: num_traits::Float,
 {
     let t = yaml_trim(s);
+    if let Some(value) = parse_tagged_signed_nan(t, tag) {
+        return Ok(value);
+    }
     match parse_yaml12_non_finite_float(t) {
         Some(value) => Ok(value),
         None => parse_yaml12_finite_float_fallback(t, location),

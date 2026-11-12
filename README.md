@@ -678,7 +678,8 @@ YAML non-finite spellings and reject overflowing decimal literals.
 The YAML 1.2 Core schema allows a sign on `.inf` only, so plain `+.nan` and `-.nan` infer as
 strings under every policy. These spellings also remain valid unquoted string values and
 mapping keys with `no_schema: true`. Direct `f32`/`f64` targets and explicit `!!float` tags
-still read them as NaN.
+still read them as NaN. Explicit `!!float` scalars preserve the supplied NaN sign when
+deserialized as floats; direct untagged float targets keep their existing behavior.
 
 ### Borrowed string deserialization
 
