@@ -104,7 +104,6 @@ fn options_deserialization_without_non_finite_flags_preserves_legacy_strings() {
     ] {
         for (literal, canonical) in [
             (".nan", ".nan"),
-            ("+.NaN", ".nan"),
             (".inf", ".inf"),
             ("+.INF", ".inf"),
             ("-.inf", "-.inf"),

@@ -1031,7 +1031,11 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             // them. Explicit numeric tags have already dispatched above.
             let unsigned = t.strip_prefix(['+', '-']).unwrap_or(t);
             let uppercase_radix = matches!(unsigned.as_bytes(), [b'0', b'X' | b'O' | b'B', ..]);
+            // YAML 1.2 Core allows a sign on `.inf` only, so `+.nan` and `-.nan` are strings.
+            let signed_nan =
+                unsigned.len() < t.len() && matches!(unsigned, ".nan" | ".NaN" | ".NAN");
             if uppercase_radix
+                || signed_nan
                 || (self.cfg.leading_zero_numbers_as_strings && leading_zero_decimal(t))
                 || (self.cfg.underscored_numbers_as_strings && t.contains('_'))
             {

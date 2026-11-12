@@ -13,8 +13,6 @@ const NON_FINITE_CASES: &[(&str, f64, &str)] = &[
     (".nan", f64::NAN, ".nan"),
     (".NaN", f64::NAN, ".nan"),
     (".NAN", f64::NAN, ".nan"),
-    ("+.nan", f64::NAN, ".nan"),
-    ("-.NaN", f64::NAN, ".nan"),
     (".inf", f64::INFINITY, ".inf"),
     (".Inf", f64::INFINITY, ".inf"),
     (".INF", f64::INFINITY, ".inf"),
