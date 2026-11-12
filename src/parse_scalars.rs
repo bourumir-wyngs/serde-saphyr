@@ -291,7 +291,7 @@ fn normalize_prefixed_digits(legacy_octal: bool, digits: &str) -> &str {
     }
 }
 
-/// Parse the YAML 1.2 Core spellings of infinity and NaN, with an optional sign.
+/// Parse supported non-finite float spellings, including legacy signed NaN.
 #[cfg(feature = "deserialize")]
 fn parse_yaml12_non_finite_float<T: num_traits::Float>(t: &str) -> Option<T> {
     let (negative, unsigned) = match t.strip_prefix('-') {
@@ -403,11 +403,26 @@ pub(crate) fn try_parse_float_incl_overflow(
     }
 }
 
+/// Return whether trimmed scalar text is a signed NaN spelling that YAML Core treats as a string.
 #[cfg(feature = "deserialize")]
-/// If we are not using Rust struct as schema, check if we should not be quoting the value.
+#[inline]
+pub(crate) fn is_signed_nan(t: &str) -> bool {
+    t.strip_prefix(['+', '-'])
+        .is_some_and(|unsigned| matches!(unsigned, ".nan" | ".NaN" | ".NAN"))
+}
+
+/// Check whether a string target requires quoting in `no_schema` mode.
+///
+/// - `s`: scalar text before trimming.
+/// - `style`: scalar style; only plain scalars require this check.
+/// - `strict_booleans`: whether to recognize only YAML 1.2 boolean spellings.
+///
+/// Returns `true` for ambiguous boolean, numeric, or null-like plain scalars.
+#[cfg(feature = "deserialize")]
 pub(crate) fn maybe_not_string(s: &str, style: &ScalarStyle, strict_booleans: bool) -> bool {
     let location = Location::UNKNOWN;
     style == &ScalarStyle::Plain
+        && !is_signed_nan(yaml_trim(s))
         && (parse_yaml12_float::<f64>(s, location, SfTag::None, false).is_ok()
             || parse_int_signed::<i128>(s, "i128", location, false).is_ok()
             || maybe_bool(s, strict_booleans)

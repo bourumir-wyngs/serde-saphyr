@@ -41,7 +41,7 @@ use crate::location::Location;
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::location::Locations;
 use crate::parse_scalars::{
-    leading_zero_decimal, maybe_not_string, parse_int_signed, parse_int_unsigned,
+    is_signed_nan, leading_zero_decimal, maybe_not_string, parse_int_signed, parse_int_unsigned,
     parse_yaml11_bool, parse_yaml12_bool, parse_yaml12_float, scalar_is_null, scalar_is_nullish,
     try_parse_float_incl_overflow, yaml_trim,
 };
@@ -1031,11 +1031,8 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             // them. Explicit numeric tags have already dispatched above.
             let unsigned = t.strip_prefix(['+', '-']).unwrap_or(t);
             let uppercase_radix = matches!(unsigned.as_bytes(), [b'0', b'X' | b'O' | b'B', ..]);
-            // YAML 1.2 Core allows a sign on `.inf` only, so `+.nan` and `-.nan` are strings.
-            let signed_nan =
-                unsigned.len() < t.len() && matches!(unsigned, ".nan" | ".NaN" | ".NAN");
             if uppercase_radix
-                || signed_nan
+                || is_signed_nan(t)
                 || (self.cfg.leading_zero_numbers_as_strings && leading_zero_decimal(t))
                 || (self.cfg.underscored_numbers_as_strings && t.contains('_'))
             {

@@ -392,6 +392,8 @@ pub struct Options {
     /// unquoted strings. This flag is intended for teams that want to enforce
     /// compatibility with YAML parsers that infer types from unquoted values,
     /// requiring such strings to be explicitly quoted.
+    /// Signed NaN spellings such as `+.nan` and `-.nan` remain strings, matching
+    /// implicit inference, even though direct float targets accept them as NaN.
     /// The default is false (a number or boolean will be stored in the string
     /// field exactly as provided, without quoting).
     pub no_schema: bool,
