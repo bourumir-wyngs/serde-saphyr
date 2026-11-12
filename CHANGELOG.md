@@ -18,8 +18,10 @@
   comparison retain their existing behavior.
 - Infer plain signed not-a-number spellings (`+.nan`, `-.NaN`, `-.NAN`) as strings
   during implicit type inference, since the YAML 1.2 Core schema allows a sign on
-  `.inf` only (#271, #272). This applies under every `NonFiniteFloatPolicy`, including
-  untagged enums and flattened fields. Also accept these spellings without quotes
+  `.inf` only (#271; [#272](https://github.com/bourumir-wyngs/serde-saphyr/pull/272),
+  [#273](https://github.com/bourumir-wyngs/serde-saphyr/pull/273)). This applies under
+  every `NonFiniteFloatPolicy`, including untagged enums and flattened fields.
+  Also accept these spellings without quotes
   when `no_schema: true` for string values and mapping keys, including `String`,
   `&str`, and `Cow<str>`. Direct typed float parsing and explicit `!!float` tags retain
   their existing behavior.
