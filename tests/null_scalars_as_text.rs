@@ -6,7 +6,9 @@ use std::fmt::Debug;
 use rstest::rstest;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use serde_saphyr::{Error, Options, from_reader_with_options, from_str_with_options};
+use serde_saphyr::{
+    DuplicateKeyPolicy, Error, Options, from_reader_with_options, from_str_with_options,
+};
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct Field<T> {
@@ -181,4 +183,63 @@ fn non_empty_or_quoted_null_is_not_a_collection(#[case] yaml: &str) {
     assert!(read::<Field<Vec<String>>>(yaml, as_text()).is_err());
     assert!(read::<Field<BTreeMap<String, String>>>(yaml, as_text()).is_err());
     assert!(read::<Field<Defaulted>>(yaml, as_text()).is_err());
+}
+
+#[rstest]
+#[case::tagged_null("items: !!null\n")]
+#[case::tagged_str("items: !!str\n")]
+#[case::custom_tag("items: !custom\n")]
+fn tagged_empty_scalar_is_not_a_collection(#[case] yaml: &str) {
+    for options in [Options::default(), as_text()] {
+        assert!(read::<Field<Vec<String>>>(yaml, options.clone()).is_err());
+        assert!(read::<Field<BTreeMap<String, String>>>(yaml, options.clone()).is_err());
+        assert!(read::<Field<Defaulted>>(yaml, options).is_err());
+    }
+}
+
+#[rstest]
+#[case::null("null: a\n'null': b\n", "null")]
+#[case::tilde("~: a\n'~': b\n", "~")]
+#[case::empty("?\n: a\n'': b\n", "")]
+fn null_like_key_duplicates_its_quoted_spelling(#[case] yaml: &str, #[case] key: &str) {
+    assert!(matches!(
+        read::<BTreeMap<String, String>>(yaml, as_text())
+            .unwrap_err()
+            .without_snippet(),
+        Error::DuplicateMappingKey { .. }
+    ));
+    for (policy, expected) in [
+        (DuplicateKeyPolicy::FirstWins, "a"),
+        (DuplicateKeyPolicy::LastWins, "b"),
+    ] {
+        let mut options = as_text();
+        options.duplicate_keys = policy;
+        let map = read::<BTreeMap<String, String>>(yaml, options).unwrap();
+        assert_eq!(map.len(), 1, "{yaml:?}");
+        assert_eq!(map[key], expected, "{yaml:?}");
+    }
+}
+
+#[test]
+fn distinct_null_like_keys_are_distinct_strings() {
+    let map = read::<BTreeMap<String, String>>("null: a\n~: b\nNULL: c\n", as_text()).unwrap();
+    assert_eq!(map.len(), 3);
+    assert_eq!(map["null"], "a");
+    assert_eq!(map["~"], "b");
+    assert_eq!(map["NULL"], "c");
+}
+
+#[test]
+fn struct_field_names_accept_null_like_keys() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct NullField {
+        null: String,
+    }
+    assert!(read::<NullField>("null: x\n", Options::default()).is_err());
+    assert_eq!(
+        read::<NullField>("null: x\n", as_text()).unwrap(),
+        NullField {
+            null: "x".to_owned()
+        }
+    );
 }

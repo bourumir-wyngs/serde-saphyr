@@ -315,20 +315,23 @@ pub(super) struct PendingEntry<'a> {
 /// Called by:
 /// - Mapping deserialization to stage keys and values, and by merge processing.
 pub(super) fn capture_node<'a>(ev: &mut dyn Events<'a>) -> Result<KeyNode<'a>, Error> {
-    capture_node_with_legacy_octal(ev, false)
+    with_deferred_recursive_aliases(ev, |ev| capture_node_inner(ev, false, false))
 }
 
-/// Capture a node using the configured integer syntax for key comparisons.
-pub(super) fn capture_node_with_legacy_octal<'a>(
+/// Capture a node using the configured integer and null syntax for key comparisons.
+pub(super) fn capture_node_with_cfg<'a>(
     ev: &mut dyn Events<'a>,
-    legacy_octal_numbers: bool,
+    cfg: Cfg,
 ) -> Result<KeyNode<'a>, Error> {
-    with_deferred_recursive_aliases(ev, |ev| capture_node_inner(ev, legacy_octal_numbers))
+    with_deferred_recursive_aliases(ev, |ev| {
+        capture_node_inner(ev, cfg.legacy_octal_numbers, cfg.null_scalars_as_text)
+    })
 }
 
 fn capture_node_inner<'a>(
     ev: &mut dyn Events<'a>,
     legacy_octal_numbers: bool,
+    null_scalars_as_text: bool,
 ) -> Result<KeyNode<'a>, Error> {
     // Fill live lookahead before capturing origin: pumping the next event can enter
     // or leave an alias-injection frame.
@@ -357,7 +360,16 @@ fn capture_node_inner<'a>(
             location,
         } => {
             let integer_fingerprint =
-                integer_key_fingerprint(&value, tag, style, legacy_octal_numbers);
+                integer_key_fingerprint(&value, tag, style, legacy_octal_numbers).or_else(|| {
+                    // Null-like keys read as their text, so compare them as strings.
+                    (null_scalars_as_text
+                        && tag == SfTag::None
+                        && scalar_is_null(&tag, &value, &style))
+                    .then(|| KeyFingerprint::Scalar {
+                        tag: canonical_scalar_key_tag(tag, &raw_tag),
+                        value: value.clone(),
+                    })
+                });
             let scalar_ev = Ev::Scalar {
                 value,
                 tag,
@@ -404,7 +416,8 @@ fn capture_node_inner<'a>(
                         break;
                     }
                     Some(_) => {
-                        let mut child = capture_node_inner(ev, legacy_octal_numbers)?;
+                        let mut child =
+                            capture_node_inner(ev, legacy_octal_numbers, null_scalars_as_text)?;
                         let fp = child.take_fingerprint();
                         let child_events = child.take_events();
                         elements.push(fp);
@@ -457,9 +470,11 @@ fn capture_node_inner<'a>(
                         break;
                     }
                     Some(_) => {
-                        let mut key = capture_node_inner(ev, legacy_octal_numbers)?;
+                        let mut key =
+                            capture_node_inner(ev, legacy_octal_numbers, null_scalars_as_text)?;
                         let key_fp = key.take_fingerprint();
-                        let mut value = capture_node_inner(ev, legacy_octal_numbers)?;
+                        let mut value =
+                            capture_node_inner(ev, legacy_octal_numbers, null_scalars_as_text)?;
                         let value_fp = value.take_fingerprint();
                         entries.push((key_fp, value_fp));
                         let key_events = key.take_events();
@@ -781,8 +796,7 @@ pub(super) fn pending_entries_from_events<'a>(
                         // point at the alias token.
                         let _ = replay.peek()?;
                         let element_ref_loc = replay.reference_location();
-                        let mut element =
-                            capture_node_with_legacy_octal(&mut replay, cfg.legacy_octal_numbers)?;
+                        let mut element = capture_node_with_cfg(&mut replay, cfg)?;
                         batches.push(pending_entries_from_events(
                             element.take_events(),
                             element.location(),
@@ -846,7 +860,7 @@ pub(super) fn pending_entries_from_live_events<'a>(
             location: *location,
         }),
         Some(Ev::MapStart { .. }) => {
-            let mut node = capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
+            let mut node = capture_node_with_cfg(ev, cfg)?;
             pending_entries_from_events(
                 node.take_events(),
                 node.location(),
@@ -868,8 +882,7 @@ pub(super) fn pending_entries_from_live_events<'a>(
                     Some(_) => {
                         let _ = ev.peek()?;
                         let element_ref_loc = ev.reference_location();
-                        let mut element =
-                            capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
+                        let mut element = capture_node_with_cfg(ev, cfg)?;
                         batches.push(pending_entries_from_events(
                             element.take_events(),
                             element.location(),
@@ -927,7 +940,7 @@ pub(super) fn collect_entries_from_map<'a>(
             }
             Some(_) => {
                 let key_comments = ev.take_leading_comments_for_next_node()?;
-                let key = capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
+                let key = capture_node_with_cfg(ev, cfg)?;
                 if is_merge_key(&key) {
                     match cfg.merge_keys {
                         MergeKeyPolicy::Merge => {
@@ -953,7 +966,7 @@ pub(super) fn collect_entries_from_map<'a>(
                 let field_comments = key_comments;
                 let value_separator_comments = ev.take_separator_comments_before_mapping_value()?;
                 let value_comments = ev.take_leading_comments_for_next_node()?;
-                let value = capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
+                let value = capture_node_with_cfg(ev, cfg)?;
                 fields.push(PendingEntry {
                     key,
                     value,

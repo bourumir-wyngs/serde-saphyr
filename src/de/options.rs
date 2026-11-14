@@ -386,10 +386,13 @@ pub struct Options {
     ///
     /// - such a scalar deserializes into a string as its source text (`""`,
     ///   `"~"`, `"null"`, ...). An explicit `!!null` tag is still rejected;
-    /// - an empty plain scalar (as in `key:` or a document that is only `---`)
+    /// - an untagged empty plain scalar (as in `key:` or a document that is only `---`)
     ///   deserializes into a sequence, tuple, map, or struct as an empty one, so a
     ///   struct gets each field's missing-field behavior. `~` and `null` are still
-    ///   rejected for these targets, as in `serde_yaml`.
+    ///   rejected for these targets, as in `serde_yaml`;
+    /// - plain null-like mapping keys are read, and compared for
+    ///   [`Self::duplicate_keys`], as strings, so `null` and `'null'` are the same key and
+    ///   struct field names accept null-like keys, as in `serde_yaml`.
     ///
     /// `Option` targets still read null as `None`, and untyped values still read it as
     /// null. Default: false.

@@ -15,7 +15,7 @@ use super::events::{
 };
 use super::key_nodes::{
     KeyFingerprint, KeyNode, PendingEntry, apply_duplicate_key_policy_to_entries,
-    capture_node_with_legacy_octal, capture_simple_tagged_node_as_map_events,
+    capture_node_with_cfg, capture_simple_tagged_node_as_map_events,
     is_empty_mapping_key_fingerprint, is_merge_key, pending_entries_from_live_events,
     simple_tagged_enum_name, validate_no_merge_keys_in_node_events,
 };
@@ -675,15 +675,20 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         }
     }
 
-    /// With `null_scalars_as_text`, consume an empty plain scalar (an omitted value
-    /// or an empty document) that a sequence or mapping target reads as empty.
+    /// With `null_scalars_as_text`, consume an untagged empty plain scalar (an omitted
+    /// value or an empty document) that a sequence or mapping target reads as empty.
     fn take_omitted_collection(&mut self) -> Result<bool, Error> {
         if !self.cfg.null_scalars_as_text {
             return Ok(false);
         }
         let omitted = matches!(
             self.ev.peek()?,
-            Some(Ev::Scalar { value, style: ScalarStyle::Plain, .. }) if value.is_empty()
+            Some(Ev::Scalar {
+                value,
+                tag: SfTag::None,
+                style: ScalarStyle::Plain,
+                ..
+            }) if value.is_empty()
         );
         if omitted {
             let _ = self.ev.next()?;
@@ -1957,8 +1962,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             Some(_) => {
                                 let mut key_comments = std::mem::take(&mut first_key_comments);
                                 key_comments.extend(ev.take_leading_comments_for_next_node()?);
-                                let key =
-                                    capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
+                                let key = capture_node_with_cfg(ev, cfg)?;
                                 (key, key_comments)
                             }
                             None => return Err(eof_with_loc(ev)),
@@ -1996,7 +2000,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     // before recording its use site for replay.
                     let _ = ev.peek()?;
                     let reference_location = ev.reference_location();
-                    let value = capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
+                    let value = capture_node_with_cfg(ev, cfg)?;
                     explicit_entries.push(PendingEntry {
                         key,
                         value,
@@ -2070,8 +2074,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             /// - `DuplicateKeyPolicy::FirstWins` to discard a later value.
             fn skip_one_node(&mut self) -> Result<(), Error> {
                 if self.cfg.merge_keys == MergeKeyPolicy::Error {
-                    let node =
-                        capture_node_with_legacy_octal(self.ev, self.cfg.legacy_octal_numbers)?;
+                    let node = capture_node_with_cfg(self.ev, self.cfg)?;
                     return validate_no_merge_keys_in_node_events(node.events());
                 }
 
@@ -2319,10 +2322,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             let mut key_comments =
                                 std::mem::take(&mut self.pending_first_key_comments);
                             key_comments.extend(self.ev.take_leading_comments_for_next_node()?);
-                            let mut key_node = capture_node_with_legacy_octal(
-                                self.ev,
-                                self.cfg.legacy_octal_numbers,
-                            )?;
+                            let mut key_node = capture_node_with_cfg(self.ev, self.cfg)?;
                             if is_merge_key(&key_node) {
                                 match self.cfg.merge_keys {
                                     MergeKeyPolicy::Merge => {
