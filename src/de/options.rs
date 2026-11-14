@@ -316,6 +316,15 @@ pub struct Options {
     /// ```
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub strict_indentation: bool,
+    /// Read a byte-order mark (U+FEFF) inside a document as ordinary content.
+    ///
+    /// By default, a BOM is accepted only before a document's content; a BOM where a
+    /// token would begin inside a document is a parse error. When `true`, such a BOM
+    /// starts a plain scalar and is kept in its text, as libyaml (and therefore
+    /// `serde_yaml`) does. A BOM before any content, at the start of the stream or after
+    /// a `...` document end marker, is still skipped. Default: false.
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
+    pub bom_inside_document_as_content: bool,
 
     /// Policy for duplicate keys.
     pub duplicate_keys: DuplicateKeyPolicy,
@@ -358,6 +367,34 @@ pub struct Options {
     /// retain their existing behavior. Default: false.
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub underscored_numbers_as_strings: bool,
+    /// Recognize only the lowercase radix prefixes `0x`, `0o`, and `0b`.
+    ///
+    /// By default, the uppercase prefixes `0X`, `0O`, and `0B` are accepted as well.
+    /// When `true`, plain scalars such as `0XFF` or `-0B1` are not integers: implicit
+    /// type inference (`deserialize_any`, untagged enums, and flattened fields) keeps
+    /// them as strings, and integer targets reject them as invalid integers. This
+    /// supports compatibility with `serde_yaml`. Mapping-key equality retains its
+    /// existing behavior. Default: false.
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
+    pub lowercase_radix_prefixes_only: bool,
+    /// Read plain null-like scalars as text for string targets, and an omitted value
+    /// as an empty sequence or mapping, as `serde_yaml` does.
+    ///
+    /// By default, an untagged plain null-like scalar (empty, `~`, `null`, `Null`, or
+    /// `NULL`) cannot be deserialized into a string, and no null is an empty
+    /// collection. When `true`:
+    ///
+    /// - such a scalar deserializes into a string as its source text (`""`,
+    ///   `"~"`, `"null"`, ...). An explicit `!!null` tag is still rejected;
+    /// - an empty plain scalar (as in `key:` or a document that is only `---`)
+    ///   deserializes into a sequence, tuple, map, or struct as an empty one, so a
+    ///   struct gets each field's missing-field behavior. `~` and `null` are still
+    ///   rejected for these targets, as in `serde_yaml`.
+    ///
+    /// `Option` targets still read null as `None`, and untyped values still read it as
+    /// null. Default: false.
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
+    pub null_scalars_as_text: bool,
     /// If true, accept only YAML 1.2 Core boolean spellings:
     /// `true`, `True`, `TRUE`, `false`, `False`, and `FALSE`.
     /// Other spellings, including YAML 1.1 forms such as `yes`/`no`/`on`/`off`,
@@ -551,6 +588,7 @@ impl Options {
             parser_options.emit_comments = self.emit_comments;
         }
         parser_options.strict_indentation = self.strict_indentation;
+        parser_options.bom_inside_document_as_content = self.bom_inside_document_as_content;
         parser_options
     }
 
@@ -739,12 +777,15 @@ impl Default for Options {
             #[cfg(feature = "comments")]
             emit_comments: true,
             strict_indentation: false,
+            bom_inside_document_as_content: false,
             duplicate_keys: DuplicateKeyPolicy::Error,
             merge_keys: MergeKeyPolicy::Merge,
             alias_limits: AliasLimits::default(),
             legacy_octal_numbers: false,
             leading_zero_numbers_as_strings: false,
             underscored_numbers_as_strings: false,
+            lowercase_radix_prefixes_only: false,
+            null_scalars_as_text: false,
             strict_booleans: false,
             angle_conversions: false,
             ignore_binary_tag_for_string: false,
@@ -786,6 +827,10 @@ impl std::fmt::Debug for Options {
         debug.field("emit_comments", &self.emit_comments);
         debug
             .field("strict_indentation", &self.strict_indentation)
+            .field(
+                "bom_inside_document_as_content",
+                &self.bom_inside_document_as_content,
+            )
             .field("duplicate_keys", &self.duplicate_keys)
             .field("merge_keys", &self.merge_keys)
             .field("alias_limits", &self.alias_limits)
@@ -798,6 +843,11 @@ impl std::fmt::Debug for Options {
                 "underscored_numbers_as_strings",
                 &self.underscored_numbers_as_strings,
             )
+            .field(
+                "lowercase_radix_prefixes_only",
+                &self.lowercase_radix_prefixes_only,
+            )
+            .field("null_scalars_as_text", &self.null_scalars_as_text)
             .field("strict_booleans", &self.strict_booleans)
             .field(
                 "ignore_binary_tag_for_string",
@@ -877,12 +927,15 @@ mod tests {
         #[cfg(feature = "comments")]
         assert!(opts.emit_comments);
         assert!(!opts.strict_indentation);
+        assert!(!opts.bom_inside_document_as_content);
         assert!(matches!(opts.duplicate_keys, DuplicateKeyPolicy::Error));
         assert!(matches!(opts.merge_keys, MergeKeyPolicy::Merge));
         assert_eq!(opts.alias_limits.max_total_replayed_events, 1_000_000);
         assert!(!opts.legacy_octal_numbers);
         assert!(!opts.leading_zero_numbers_as_strings);
         assert!(!opts.underscored_numbers_as_strings);
+        assert!(!opts.lowercase_radix_prefixes_only);
+        assert!(!opts.null_scalars_as_text);
         assert!(!opts.strict_booleans);
         assert!(!opts.ignore_binary_tag_for_string);
         assert!(!opts.angle_conversions);

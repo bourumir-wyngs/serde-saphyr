@@ -460,6 +460,15 @@ pub(crate) fn scalar_is_null(tag: &SfTag, value: &str, style: &ScalarStyle) -> b
 }
 
 #[cfg(feature = "deserialize")]
+/// Returns `true` if the string, after an optional sign, starts with an uppercase radix
+/// prefix (`0X`, `0O`, or `0B`).
+pub(crate) fn uppercase_radix_prefix(t: &str) -> bool {
+    let s = yaml_trim(t);
+    let digits = s.strip_prefix(['+', '-']).unwrap_or(s);
+    digits.starts_with("0X") || digits.starts_with("0O") || digits.starts_with("0B")
+}
+
+#[cfg(feature = "deserialize")]
 /// Returns `true` if the string represents a decimal integer with a redundant leading zero,
 /// such as `0127`, `+0127`, or `-0127`.
 /// Floating-point spellings, underscores, and explicit radices (`0x`, `0o`, `0b`)

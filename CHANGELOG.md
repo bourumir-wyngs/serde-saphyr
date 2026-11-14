@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Added opt-in `serde_yaml` compatibility options, all defaulting to `false`:
+  - `Options::null_scalars_as_text` reads plain null-like scalars (empty, `~`, `null`, ...)
+    into `String` as their text, and an omitted value or an empty document as an empty
+    sequence, map, or struct.
+  - `Options::lowercase_radix_prefixes_only` treats `0X`, `0O`, and `0B` as non-integers:
+    strings when inferred, invalid for integer targets.
+  - `Options::bom_inside_document_as_content` reads a byte-order mark inside a document as
+    plain scalar content, as libyaml does (requires `granit-parser`'s matching option).
+
 ## 2.1.1
 
 ### Fixed

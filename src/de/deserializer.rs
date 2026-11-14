@@ -43,7 +43,7 @@ use crate::location::Locations;
 use crate::parse_scalars::{
     leading_zero_decimal, maybe_not_string, parse_int_signed, parse_int_unsigned,
     parse_yaml11_bool, parse_yaml12_bool, parse_yaml12_float, scalar_is_null, scalar_is_nullish,
-    try_parse_float_incl_overflow, yaml_trim,
+    try_parse_float_incl_overflow, uppercase_radix_prefix, yaml_trim,
 };
 
 struct TupleLenExpected {
@@ -675,6 +675,35 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         }
     }
 
+    /// With `null_scalars_as_text`, consume an empty plain scalar (an omitted value
+    /// or an empty document) that a sequence or mapping target reads as empty.
+    fn take_omitted_collection(&mut self) -> Result<bool, Error> {
+        if !self.cfg.null_scalars_as_text {
+            return Ok(false);
+        }
+        let omitted = matches!(
+            self.ev.peek()?,
+            Some(Ev::Scalar { value, style: ScalarStyle::Plain, .. }) if value.is_empty()
+        );
+        if omitted {
+            let _ = self.ev.next()?;
+        }
+        Ok(omitted)
+    }
+
+    /// With `lowercase_radix_prefixes_only`, reject `0X`/`0O`/`0B` integer spellings.
+    fn check_radix_prefix(
+        &self,
+        s: &str,
+        ty: &'static str,
+        location: Location,
+    ) -> Result<(), Error> {
+        if self.cfg.lowercase_radix_prefixes_only && uppercase_radix_prefix(s) {
+            return Err(Error::InvalidScalar { ty, location });
+        }
+        Ok(())
+    }
+
     fn peek_effective_scalar(&mut self) -> Result<Option<EffectiveScalar<'de>>, Error> {
         let Some(view) = self.peek_scalar_view()? else {
             return Ok(None);
@@ -1014,6 +1043,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             // them. Explicit numeric tags have already dispatched above.
             if (self.cfg.leading_zero_numbers_as_strings && leading_zero_decimal(t))
                 || (self.cfg.underscored_numbers_as_strings && t.contains('_'))
+                || (self.cfg.lowercase_radix_prefixes_only && uppercase_radix_prefix(t))
             {
                 return match effective {
                     Cow::Borrowed(b) => visitor.visit_borrowed_str(b),
@@ -1107,6 +1137,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     fn deserialize_i8<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, tag, location) = self.take_scalar_cow_event()?;
         self.validate_scalar_tag(tag, SfTag::Int, "i8", location)?;
+        self.check_radix_prefix(s.as_ref(), "i8", location)?;
         let v: i8 = parse_int_signed(s.as_ref(), "i8", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i8(v)
     }
@@ -1114,6 +1145,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     fn deserialize_i16<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, tag, location) = self.take_scalar_cow_event()?;
         self.validate_scalar_tag(tag, SfTag::Int, "i16", location)?;
+        self.check_radix_prefix(s.as_ref(), "i16", location)?;
         let v: i16 = parse_int_signed(s.as_ref(), "i16", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i16(v)
     }
@@ -1121,6 +1153,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     fn deserialize_i32<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, tag, location) = self.take_scalar_cow_event()?;
         self.validate_scalar_tag(tag, SfTag::Int, "i32", location)?;
+        self.check_radix_prefix(s.as_ref(), "i32", location)?;
         let v: i32 = parse_int_signed(s.as_ref(), "i32", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i32(v)
     }
@@ -1128,6 +1161,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     fn deserialize_i64<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, tag, location) = self.take_scalar_cow_event()?;
         self.validate_scalar_tag(tag, SfTag::Int, "i64", location)?;
+        self.check_radix_prefix(s.as_ref(), "i64", location)?;
         let v: i64 = parse_int_signed(s.as_ref(), "i64", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i64(v)
     }
@@ -1135,6 +1169,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     fn deserialize_i128<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, tag, location) = self.take_scalar_cow_event()?;
         self.validate_scalar_tag(tag, SfTag::Int, "i128", location)?;
+        self.check_radix_prefix(s.as_ref(), "i128", location)?;
         let v: i128 =
             parse_int_signed(s.as_ref(), "i128", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_i128(v)
@@ -1144,6 +1179,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     fn deserialize_u8<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, tag, location) = self.take_scalar_cow_event()?;
         self.validate_scalar_tag(tag, SfTag::Int, "u8", location)?;
+        self.check_radix_prefix(s.as_ref(), "u8", location)?;
         let v: u8 = parse_int_unsigned(s.as_ref(), "u8", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u8(v)
     }
@@ -1151,6 +1187,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     fn deserialize_u16<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, tag, location) = self.take_scalar_cow_event()?;
         self.validate_scalar_tag(tag, SfTag::Int, "u16", location)?;
+        self.check_radix_prefix(s.as_ref(), "u16", location)?;
         let v: u16 =
             parse_int_unsigned(s.as_ref(), "u16", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u16(v)
@@ -1159,6 +1196,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     fn deserialize_u32<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, tag, location) = self.take_scalar_cow_event()?;
         self.validate_scalar_tag(tag, SfTag::Int, "u32", location)?;
+        self.check_radix_prefix(s.as_ref(), "u32", location)?;
         let v: u32 =
             parse_int_unsigned(s.as_ref(), "u32", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u32(v)
@@ -1167,6 +1205,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     fn deserialize_u64<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, tag, location) = self.take_scalar_cow_event()?;
         self.validate_scalar_tag(tag, SfTag::Int, "u64", location)?;
+        self.check_radix_prefix(s.as_ref(), "u64", location)?;
         let v: u64 =
             parse_int_unsigned(s.as_ref(), "u64", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u64(v)
@@ -1175,6 +1214,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     fn deserialize_u128<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         let (s, tag, location) = self.take_scalar_cow_event()?;
         self.validate_scalar_tag(tag, SfTag::Int, "u128", location)?;
+        self.check_radix_prefix(s.as_ref(), "u128", location)?;
         let v: u128 =
             parse_int_unsigned(s.as_ref(), "u128", location, self.cfg.legacy_octal_numbers)?;
         visitor.visit_u128(v)
@@ -1248,7 +1288,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 // Check for null - not valid for string deserialization. A deliberately
                 // substituted ${...} that resolved to "" stays a string, not null.
                 if (view.tag == SfTag::Null
-                    || (!view.interpolated && scalar_is_nullish(&view.effective, &view.style)))
+                    || (!view.interpolated
+                        && !self.cfg.null_scalars_as_text
+                        && scalar_is_nullish(&view.effective, &view.style)))
                     && !view.tag.forces_string()
                 {
                     let loc = view.location;
@@ -1338,7 +1380,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             // If explicitly tagged as null, or plain null-like, this is not a valid String.
             // A ${...} that the user deliberately substituted to "" is a legitimate string.
             if (view.tag == SfTag::Null
-                || (!view.interpolated && scalar_is_nullish(&view.effective, &view.style)))
+                || (!view.interpolated
+                    && !self.cfg.null_scalars_as_text
+                    && scalar_is_nullish(&view.effective, &view.style)))
                 && !view.tag.forces_string()
             {
                 // Consume the scalar to anchor the error at the correct location.
@@ -1630,7 +1674,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     /// `!!binary` scalar as a byte *sequence* view when the caller expects a
     /// sequence of u8.
     fn deserialize_seq<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        if self.ev.take_empty_stream()? {
+        if self.ev.take_empty_stream()? || self.take_omitted_collection()? {
             return visitor.visit_seq(de::value::SeqDeserializer::<_, Error>::new(
                 std::iter::empty::<()>(),
             ));
@@ -1827,7 +1871,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     /// Caller: Serde field visitors for maps and for Rust structs
     /// (which Serde also requests via `deserialize_map`).
     fn deserialize_map<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        if self.ev.take_empty_stream()? {
+        if self.ev.take_empty_stream()? || self.take_omitted_collection()? {
             struct EmptyMap {
                 location: Location,
             }
