@@ -11,9 +11,9 @@ pub(crate) struct Cfg {
     pub(crate) merge_keys: MergeKeyPolicy,
     /// If true, accept legacy octal numbers that start with `0`.
     pub(crate) legacy_octal_numbers: bool,
-    /// Preserve redundant-zero decimal integer spellings during implicit inference.
+    /// Preserve redundant-zero decimal integers during implicit inference and key comparison.
     pub(crate) leading_zero_numbers_as_strings: bool,
-    /// Preserve scalars containing underscores during implicit inference.
+    /// Preserve scalars containing underscores during implicit inference and key comparison.
     pub(crate) underscored_numbers_as_strings: bool,
     /// If true, accept only the six YAML 1.2 Core boolean spellings.
     pub(crate) strict_booleans: bool,

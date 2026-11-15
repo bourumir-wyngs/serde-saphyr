@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use rstest::rstest;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use serde_saphyr::{
@@ -229,19 +230,252 @@ fn aliases_and_merged_values_keep_numeric_spelling() {
     );
 }
 
-#[test]
-fn mapping_key_identity_keeps_existing_integer_equivalence() {
-    let yaml = "1_000: first\n1000: second\n";
-    let error =
-        from_str_with_options::<BTreeMap<String, Value>>(yaml, preserve_both()).unwrap_err();
-    assert!(matches!(
-        error.without_snippet(),
-        Error::DuplicateMappingKey { .. }
-    ));
+fn assert_distinct_key_spellings(keys: (&str, &str), options: Options) {
+    for (first, second) in [keys, (keys.1, keys.0)] {
+        let yaml = format!("{first}: first\n{second}: second\n");
+        let expected = BTreeMap::from([
+            (first.to_owned(), "first".to_owned()),
+            (second.to_owned(), "second".to_owned()),
+        ]);
+        let actual: BTreeMap<String, String> =
+            from_str_with_options(&yaml, options.clone()).unwrap();
+        assert_eq!(actual, expected);
+        assert_inferred(&yaml, json!(expected), options.clone());
+    }
+}
 
+fn assert_duplicate_key(yaml: &str, options: Options) {
+    for error in [
+        from_str_with_options::<serde::de::IgnoredAny>(yaml, options.clone()).unwrap_err(),
+        from_reader_with_options::<_, serde::de::IgnoredAny>(yaml.as_bytes(), options).unwrap_err(),
+    ] {
+        assert!(matches!(
+            error.without_snippet(),
+            Error::DuplicateMappingKey { .. }
+        ));
+    }
+}
+
+#[rstest]
+#[case::decimal(("1000", "1_000"))]
+#[case::positive(("+1000", "+1_000"))]
+#[case::negative(("-1000", "-1_000"))]
+#[case::hexadecimal(("0xFF", "0xF_F"))]
+#[case::octal(("0o755", "0o7_55"))]
+#[case::binary(("0b1010", "0b10_10"))]
+fn underscored_mapping_keys_stay_distinct(
+    #[case] keys: (&str, &str),
+    #[values(
+        DuplicateKeyPolicy::Error,
+        DuplicateKeyPolicy::FirstWins,
+        DuplicateKeyPolicy::LastWins
+    )]
+    policy: DuplicateKeyPolicy,
+) {
+    let options = serde_saphyr::options! {
+        underscored_numbers_as_strings: true,
+        duplicate_keys: policy,
+    };
+    assert_distinct_key_spellings(keys, options);
+}
+
+#[rstest]
+#[case::positive(("493", "0755"))]
+#[case::negative(("-493", "-0755"))]
+#[case::zero(("0", "+00"))]
+fn leading_zero_mapping_keys_override_legacy_octal(
+    #[case] keys: (&str, &str),
+    #[values(
+        DuplicateKeyPolicy::Error,
+        DuplicateKeyPolicy::FirstWins,
+        DuplicateKeyPolicy::LastWins
+    )]
+    policy: DuplicateKeyPolicy,
+) {
+    let options = serde_saphyr::options! {
+        leading_zero_numbers_as_strings: true,
+        legacy_octal_numbers: true,
+        duplicate_keys: policy,
+    };
+    assert_distinct_key_spellings(keys, options);
+}
+
+#[rstest]
+#[case::leading_zero_only("1_000: first\n1000: second\n", true)]
+#[case::underscore_only("0755: first\n493: second\n", false)]
+fn key_preservation_flags_are_independent(#[case] yaml: &str, #[case] leading_zero: bool) {
+    let options = serde_saphyr::options! {
+        leading_zero_numbers_as_strings: leading_zero,
+        underscored_numbers_as_strings: !leading_zero,
+        legacy_octal_numbers: true,
+    };
+    assert_duplicate_key(yaml, options);
+}
+
+#[rstest]
+#[case::underscore("!!int 1_000: first\n1000: second\n")]
+#[case::quoted_underscore("!!int '1_000': first\n1000: second\n")]
+#[case::leading_zero("!!int 0755: first\n493: second\n")]
+#[case::quoted_leading_zero("!!int '0755': first\n493: second\n")]
+fn explicit_integer_keys_keep_numeric_equality(#[case] yaml: &str) {
     let mut options = preserve_both();
-    options.duplicate_keys = DuplicateKeyPolicy::LastWins;
-    assert_inferred(yaml, json!({"1000": "second"}), options);
+    options.legacy_octal_numbers = true;
+    assert_duplicate_key(yaml, options);
+}
+
+#[rstest]
+#[case::plain(("1_000", "1_000"))]
+#[case::quoted(("1_000", "'1_000'"))]
+#[case::string_tag(("1_000", "!!str 1_000"))]
+#[case::non_specific_tag(("1_000", "! 1_000"))]
+#[case::leading_zero(("0755", "!!str 0755"))]
+#[case::alias(("&key 1_000", "*key"))]
+fn preserved_keys_still_detect_string_duplicates(
+    #[case] keys: (&str, &str),
+    #[values(
+        DuplicateKeyPolicy::Error,
+        DuplicateKeyPolicy::FirstWins,
+        DuplicateKeyPolicy::LastWins
+    )]
+    policy: DuplicateKeyPolicy,
+) {
+    let yaml = format!("{} : first\n{} : second\n", keys.0, keys.1);
+    let mut options = preserve_both();
+    options.legacy_octal_numbers = true;
+    options.duplicate_keys = policy;
+    if matches!(policy, DuplicateKeyPolicy::Error) {
+        assert_duplicate_key(&yaml, options);
+    } else {
+        let spelling = if keys.0 == "0755" { "0755" } else { "1_000" };
+        let value = if matches!(policy, DuplicateKeyPolicy::FirstWins) {
+            "first"
+        } else {
+            "second"
+        };
+        assert_inferred(&yaml, json!({spelling: value}), options);
+    }
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(untagged)]
+enum PreservedKey {
+    Integer(i64),
+    Text(String),
+}
+
+#[rstest]
+#[case::underscore(("1_000", 1000))]
+#[case::leading_zero(("0755", 493))]
+fn explicit_integer_and_preserved_string_keys_stay_distinct(
+    #[case] spelling: (&str, i64),
+    #[values(
+        DuplicateKeyPolicy::Error,
+        DuplicateKeyPolicy::FirstWins,
+        DuplicateKeyPolicy::LastWins
+    )]
+    policy: DuplicateKeyPolicy,
+) {
+    let mut options = preserve_both();
+    options.legacy_octal_numbers = true;
+    options.duplicate_keys = policy;
+    let yaml = format!("!!int {}: integer\n{}: string\n", spelling.0, spelling.0);
+    let actual: BTreeMap<PreservedKey, String> = from_str_with_options(&yaml, options).unwrap();
+    assert_eq!(
+        actual,
+        BTreeMap::from([
+            (PreservedKey::Integer(spelling.1), "integer".to_owned()),
+            (
+                PreservedKey::Text(spelling.0.to_owned()),
+                "string".to_owned()
+            ),
+        ])
+    );
+}
+
+#[rstest]
+#[case::underscore(("1000", "1_000"))]
+#[case::leading_zero(("493", "0755"))]
+fn preservation_applies_inside_composite_keys(
+    #[case] keys: (&str, &str),
+    #[values(
+        DuplicateKeyPolicy::Error,
+        DuplicateKeyPolicy::FirstWins,
+        DuplicateKeyPolicy::LastWins
+    )]
+    policy: DuplicateKeyPolicy,
+) {
+    let mut options = preserve_both();
+    options.legacy_octal_numbers = true;
+    options.duplicate_keys = policy;
+    let yaml = format!("? [{}]\n: integer\n? [{}]\n: string\n", keys.0, keys.1);
+    let actual: BTreeMap<Vec<String>, String> =
+        from_str_with_options(&yaml, options.clone()).unwrap();
+    let expected = BTreeMap::from([
+        (vec![keys.0.to_owned()], "integer".to_owned()),
+        (vec![keys.1.to_owned()], "string".to_owned()),
+    ]);
+    assert_eq!(actual, expected);
+
+    // Values within mapping-valued keys participate in the outer key's identity.
+    let yaml = format!(
+        "? {{ids: [{}]}}\n: integer\n? {{ids: [{}]}}\n: string\n",
+        keys.0, keys.1
+    );
+    type Mapping = BTreeMap<BTreeMap<String, Vec<String>>, String>;
+    let actual: Mapping = from_str_with_options(&yaml, options).unwrap();
+    let expected = expected
+        .into_iter()
+        .map(|(key, value)| (BTreeMap::from([("ids".to_owned(), key)]), value))
+        .collect::<Mapping>();
+    assert_eq!(actual, expected);
+}
+
+#[rstest]
+#[case::explicit("<<: {1000: integer}\n1_000: string\n")]
+#[case::merged("<<: {1_000: string}\n1000: integer\n")]
+#[case::sequence("<<: [{1000: integer}, {1_000: string}]\n")]
+#[case::alias("? &key 1_000\n: string\n<<: {1000: integer, *key : overridden}\n")]
+fn preservation_applies_to_merge_key_identity(
+    #[case] yaml: &str,
+    #[values(
+        DuplicateKeyPolicy::Error,
+        DuplicateKeyPolicy::FirstWins,
+        DuplicateKeyPolicy::LastWins,
+        DuplicateKeyPolicy::PassThrough
+    )]
+    policy: DuplicateKeyPolicy,
+) {
+    let mut options = preserve_both();
+    options.duplicate_keys = policy;
+    assert_inferred(yaml, json!({"1000": "integer", "1_000": "string"}), options);
+}
+
+#[rstest]
+#[case::explicit("<<: {493: integer}\n0755: string\n")]
+#[case::sequence("<<: [{493: integer}, {0755: string}]\n")]
+fn leading_zero_preservation_overrides_legacy_octal_in_merges(#[case] yaml: &str) {
+    let options = serde_saphyr::options! {
+        leading_zero_numbers_as_strings: true,
+        legacy_octal_numbers: true,
+    };
+    assert_inferred(yaml, json!({"493": "integer", "0755": "string"}), options);
+}
+
+#[rstest]
+fn typed_numeric_keys_can_coalesce_distinct_preserved_keys(
+    #[values(
+        DuplicateKeyPolicy::Error,
+        DuplicateKeyPolicy::FirstWins,
+        DuplicateKeyPolicy::LastWins
+    )]
+    policy: DuplicateKeyPolicy,
+) {
+    let mut options = preserve_both();
+    options.duplicate_keys = policy;
+    // Duplicate policies compare YAML keys before typed numeric conversion.
+    let actual: BTreeMap<i64, String> =
+        from_str_with_options("1000: first\n1_000: second\n", options).unwrap();
+    assert_eq!(actual, BTreeMap::from([(1000, "second".to_owned())]));
 }
 
 #[cfg(feature = "robotics")]

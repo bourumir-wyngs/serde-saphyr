@@ -12,6 +12,11 @@
   comparison, and `no_schema` quoting requirements keep their existing behavior.
 
 ### Fixed
+- Honor `leading_zero_numbers_as_strings` and `underscored_numbers_as_strings`
+  when comparing plain mapping keys for duplicates and merge precedence, including
+  scalars inside composite keys ([#278](https://github.com/bourumir-wyngs/serde-saphyr/issues/278)).
+  Preserved strings no longer collide with their integer equivalents. Explicit
+  `!!int` tags and direct typed numeric parsing retain their existing behavior.
 - Preserve uppercase radix prefixes (`0X`, `0O`, `0B`, including signed forms) as
   strings during implicit type inference, including untagged enums and flattened
   fields (#266). Direct typed integer parsing, explicit `!!int` tags, and mapping-key

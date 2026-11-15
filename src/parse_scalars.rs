@@ -509,6 +509,23 @@ pub(crate) fn leading_zero_decimal(t: &str) -> bool {
     digits.len() > 1 && digits.starts_with('0') && digits.bytes().all(|b| b.is_ascii_digit())
 }
 
+/// Whether numeric spelling options preserve an implicit scalar as a string.
+///
+/// - `value`: scalar text, with an optional sign.
+/// - `leading_zero_numbers_as_strings`: preserve redundant-zero decimal integers.
+/// - `underscored_numbers_as_strings`: preserve spellings containing underscores.
+///
+/// Returns `true` when either enabled preservation rule matches.
+#[cfg(feature = "deserialize")]
+pub(crate) fn preserve_numeric_spelling(
+    value: &str,
+    leading_zero_numbers_as_strings: bool,
+    underscored_numbers_as_strings: bool,
+) -> bool {
+    (leading_zero_numbers_as_strings && leading_zero_decimal(value))
+        || (underscored_numbers_as_strings && value.contains('_'))
+}
+
 #[cfg(all(test, feature = "deserialize"))]
 mod tests {
     use super::*;

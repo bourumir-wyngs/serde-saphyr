@@ -19,6 +19,9 @@ const fn default_emit_comments() -> bool {
 /// parsed integer value, so `0xB` and `11` are duplicates even when the target
 /// key type is `String`. The retained key preserves its original spelling when
 /// deserialized into a string. Merge expansion always uses YAML key identity.
+/// Plain scalars preserved by [`Options::leading_zero_numbers_as_strings`] or
+/// [`Options::underscored_numbers_as_strings`] compare as strings instead, including
+/// inside composite keys. Explicit `!!int` tags retain integer identity.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(
@@ -342,9 +345,11 @@ pub struct Options {
     /// Default: false.
     ///
     /// Applies to untyped values and Serde's buffering for untagged enums and
-    /// flattened fields. Takes precedence over [`Self::legacy_octal_numbers`]
-    /// during inference. Direct typed deserialization, explicit `!!int`/`!!float`
-    /// tags, and mapping-key equality retain their existing behavior.
+    /// flattened fields. Preserved scalars also compare as strings for duplicate
+    /// keys and merge precedence, including inside composite keys. Takes precedence
+    /// over [`Self::legacy_octal_numbers`] during inference and key comparison.
+    /// Direct typed deserialization and explicit `!!int`/`!!float` tags retain
+    /// their existing behavior.
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub leading_zero_numbers_as_strings: bool,
     /// Preserve plain scalars containing underscores as strings during implicit
@@ -352,10 +357,11 @@ pub struct Options {
     /// `1_000`, `0xFF_FF`, and `0b10_01`.
     ///
     /// This supports compatibility with `serde_yaml` when reading untyped values.
-    /// It also applies to untagged enums and flattened fields, and takes precedence
-    /// over [`Self::legacy_octal_numbers`] during inference. Direct typed
-    /// deserialization, explicit `!!int`/`!!float` tags, and mapping-key equality
-    /// retain their existing behavior. Default: false.
+    /// It also applies to untagged enums and flattened fields. Preserved scalars
+    /// compare as strings for duplicate keys and merge precedence, including inside
+    /// composite keys. Takes precedence over [`Self::legacy_octal_numbers`] during
+    /// inference and key comparison. Direct typed deserialization and explicit
+    /// `!!int`/`!!float` tags retain their existing behavior. Default: false.
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub underscored_numbers_as_strings: bool,
     /// If true, accept only YAML 1.2 Core boolean spellings:
