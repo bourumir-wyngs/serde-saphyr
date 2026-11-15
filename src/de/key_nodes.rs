@@ -17,7 +17,7 @@ use super::options::{DuplicateKeyPolicy, MergeKeyPolicy};
 use super::tags::SfTag;
 use crate::location::Location;
 use crate::parse_scalars::{
-    parse_int_signed, parse_int_unsigned, preserve_numeric_spelling, scalar_is_null, yaml_trim,
+    NumericPolicy, parse_int_signed, parse_int_unsigned, scalar_is_null, yaml_trim,
 };
 use crate::tag::simple_enum_variant_name;
 
@@ -117,14 +117,6 @@ pub(super) fn canonical_scalar_key_tag<'a>(
     canonical_node_key_tag(tag, raw_tag, SfTag::String)
 }
 
-/// Numeric options carried through recursive key capture.
-#[derive(Clone, Copy, Default)]
-struct KeyScalarOptions {
-    legacy_octal_numbers: bool,
-    leading_zero_numbers_as_strings: bool,
-    underscored_numbers_as_strings: bool,
-}
-
 /// Return integer identity for a scalar that resolves as an integer key.
 ///
 /// - `value`: original scalar text.
@@ -137,24 +129,13 @@ fn integer_key_fingerprint(
     value: &str,
     tag: SfTag,
     style: ScalarStyle,
-    options: KeyScalarOptions,
+    options: NumericPolicy,
 ) -> Option<KeyFingerprint<'static>> {
-    if tag != SfTag::Int && !(tag == SfTag::None && style == ScalarStyle::Plain) {
+    if !options.allows_integer_key(value, tag, style) {
         return None;
     }
 
     let value = yaml_trim(value);
-    // Explicit !!int takes precedence over implicit string preservation.
-    if tag == SfTag::None
-        && preserve_numeric_spelling(
-            value,
-            options.leading_zero_numbers_as_strings,
-            options.underscored_numbers_as_strings,
-        )
-    {
-        return None;
-    }
-
     let (negative, magnitude) = if value.starts_with('-') {
         let parsed = parse_int_signed::<i128>(
             value,
@@ -352,7 +333,7 @@ pub(super) struct PendingEntry<'a> {
 /// Called by:
 /// - Mapping deserialization to stage keys and values, and by merge processing.
 pub(super) fn capture_node<'a>(ev: &mut dyn Events<'a>) -> Result<KeyNode<'a>, Error> {
-    with_deferred_recursive_aliases(ev, |ev| capture_node_inner(ev, KeyScalarOptions::default()))
+    with_deferred_recursive_aliases(ev, |ev| capture_node_inner(ev, NumericPolicy::default()))
 }
 
 /// Capture a node using configured integer syntax and string preservation for key comparisons.
@@ -360,17 +341,12 @@ pub(super) fn capture_node_with_config<'a>(
     ev: &mut dyn Events<'a>,
     cfg: Cfg,
 ) -> Result<KeyNode<'a>, Error> {
-    let options = KeyScalarOptions {
-        legacy_octal_numbers: cfg.legacy_octal_numbers,
-        leading_zero_numbers_as_strings: cfg.leading_zero_numbers_as_strings,
-        underscored_numbers_as_strings: cfg.underscored_numbers_as_strings,
-    };
-    with_deferred_recursive_aliases(ev, |ev| capture_node_inner(ev, options))
+    with_deferred_recursive_aliases(ev, |ev| capture_node_inner(ev, cfg.numeric))
 }
 
 fn capture_node_inner<'a>(
     ev: &mut dyn Events<'a>,
-    options: KeyScalarOptions,
+    options: NumericPolicy,
 ) -> Result<KeyNode<'a>, Error> {
     // Fill live lookahead before capturing origin: pumping the next event can enter
     // or leave an alias-injection frame.

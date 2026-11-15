@@ -1,6 +1,7 @@
 use super::options::{DuplicateKeyPolicy, MergeKeyPolicy, NonFiniteFloatPolicy, Options};
 use super::{Error, Location};
 use crate::budget::BudgetBreach;
+use crate::parse_scalars::NumericPolicy;
 
 /// Small immutable runtime configuration that `YamlDeserializer` needs.
 #[derive(Copy, Clone)]
@@ -9,12 +10,8 @@ pub(crate) struct Cfg {
     pub(crate) dup_policy: DuplicateKeyPolicy,
     /// Policy for YAML merge keys (`<<`).
     pub(crate) merge_keys: MergeKeyPolicy,
-    /// If true, accept legacy octal numbers that start with `0`.
-    pub(crate) legacy_octal_numbers: bool,
-    /// Preserve redundant-zero decimal integers during implicit inference and key comparison.
-    pub(crate) leading_zero_numbers_as_strings: bool,
-    /// Preserve scalars containing underscores during implicit inference and key comparison.
-    pub(crate) underscored_numbers_as_strings: bool,
+    /// Numeric syntax and resolution rules shared by scalar parsing and key comparison.
+    pub(crate) numeric: NumericPolicy,
     /// If true, accept only the six YAML 1.2 Core boolean spellings.
     pub(crate) strict_booleans: bool,
     /// Preserve plain null-like text when a string target is requested.
@@ -44,9 +41,11 @@ impl Cfg {
         Self {
             dup_policy: options.duplicate_keys,
             merge_keys: options.merge_keys,
-            legacy_octal_numbers: options.legacy_octal_numbers,
-            leading_zero_numbers_as_strings: options.leading_zero_numbers_as_strings,
-            underscored_numbers_as_strings: options.underscored_numbers_as_strings,
+            numeric: NumericPolicy {
+                legacy_octal_numbers: options.legacy_octal_numbers,
+                leading_zero_numbers_as_strings: options.leading_zero_numbers_as_strings,
+                underscored_numbers_as_strings: options.underscored_numbers_as_strings,
+            },
             strict_booleans: options.strict_booleans,
             null_as_string: options.null_as_string,
             angle_conversions: options.angle_conversions,

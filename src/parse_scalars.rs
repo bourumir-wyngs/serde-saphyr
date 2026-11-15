@@ -509,21 +509,49 @@ pub(crate) fn leading_zero_decimal(t: &str) -> bool {
     digits.len() > 1 && digits.starts_with('0') && digits.bytes().all(|b| b.is_ascii_digit())
 }
 
-/// Whether numeric spelling options preserve an implicit scalar as a string.
-///
-/// - `value`: scalar text, with an optional sign.
-/// - `leading_zero_numbers_as_strings`: preserve redundant-zero decimal integers.
-/// - `underscored_numbers_as_strings`: preserve spellings containing underscores.
-///
-/// Returns `true` when either enabled preservation rule matches.
+/// Numeric syntax and resolution policy shared by inference and key comparison.
+/// Integer widths, error reporting, and canonical zero handling belong to callers.
 #[cfg(feature = "deserialize")]
-pub(crate) fn preserve_numeric_spelling(
-    value: &str,
-    leading_zero_numbers_as_strings: bool,
-    underscored_numbers_as_strings: bool,
-) -> bool {
-    (leading_zero_numbers_as_strings && leading_zero_decimal(value))
-        || (underscored_numbers_as_strings && value.contains('_'))
+#[derive(Clone, Copy, Default)]
+pub(crate) struct NumericPolicy {
+    /// Accept legacy octal integer spellings such as `0755`.
+    pub(crate) legacy_octal_numbers: bool,
+    /// Preserve redundant-zero decimal integers as strings during implicit resolution.
+    pub(crate) leading_zero_numbers_as_strings: bool,
+    /// Preserve underscored scalars as strings during implicit resolution.
+    pub(crate) underscored_numbers_as_strings: bool,
+}
+
+#[cfg(feature = "deserialize")]
+impl NumericPolicy {
+    /// Whether either configured string-preservation rule matches this scalar.
+    fn preserves_numeric_spelling(self, value: &str) -> bool {
+        (self.leading_zero_numbers_as_strings && leading_zero_decimal(value))
+            || (self.underscored_numbers_as_strings && value.contains('_'))
+    }
+
+    /// Whether trimmed, implicitly resolved scalar text must stay text before numeric parsing.
+    /// Callers handle explicit tags, quoted scalars, nulls, and booleans first.
+    pub(crate) fn preserve_for_inference(self, value: &str) -> bool {
+        let unsigned = value.strip_prefix(['+', '-']).unwrap_or(value);
+        let uppercase_radix = matches!(unsigned.as_bytes(), [b'0', b'X' | b'O' | b'B', ..]);
+        uppercase_radix || is_signed_nan(value) || self.preserves_numeric_spelling(value)
+    }
+
+    /// Whether a scalar is eligible for integer key comparison.
+    ///
+    /// - `value`: original scalar text.
+    /// - `tag`: resolved explicit tag, or `None` for an implicit scalar.
+    /// - `style`: scalar style, used to exclude implicitly quoted strings.
+    ///
+    /// Returns `true` for explicit integers or unpreserved implicit plain scalars.
+    /// Unlike inference, key comparison retains numeric uppercase-radix spellings.
+    pub(crate) fn allows_integer_key(self, value: &str, tag: SfTag, style: ScalarStyle) -> bool {
+        tag == SfTag::Int
+            || (tag == SfTag::None
+                && style == ScalarStyle::Plain
+                && !self.preserves_numeric_spelling(value))
+    }
 }
 
 #[cfg(all(test, feature = "deserialize"))]

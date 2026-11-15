@@ -478,6 +478,42 @@ fn typed_numeric_keys_can_coalesce_distinct_preserved_keys(
     assert_eq!(actual, BTreeMap::from([(1000, "second".to_owned())]));
 }
 
+#[rstest]
+#[case::hexadecimal(("0X1F", 31))]
+#[case::positive_octal(("+0O17", 15))]
+#[case::negative_binary(("-0B101", -5))]
+fn uppercase_radix_inference_keeps_its_distinct_key_policy(#[case] scalar: (&str, i64)) {
+    assert_inferred(scalar.0, json!(scalar.0), preserve_both());
+    let typed: i64 = from_str_with_options(scalar.0, preserve_both()).unwrap();
+    assert_eq!(typed, scalar.1);
+    let yaml = format!("{}: first\n{}: second\n", scalar.0, scalar.1);
+    assert_duplicate_key(&yaml, preserve_both());
+}
+
+#[rstest]
+#[case::positive(("18446744073709551616", "0x10000000000000000", 1_i128 << 64))]
+#[case::negative(("-18446744073709551616", "-0x10000000000000000", -(1_i128 << 64)))]
+fn integer_key_identity_keeps_a_wider_range_than_inference(#[case] scalar: (&str, &str, i128)) {
+    // These powers of two are exact f64 values but outside the inferred integer range.
+    assert_inferred(scalar.0, json!(scalar.2 as f64), preserve_both());
+    let typed: i128 = from_str_with_options(scalar.0, preserve_both()).unwrap();
+    assert_eq!(typed, scalar.2);
+    let yaml = format!("{}: first\n{}: second\n", scalar.0, scalar.1);
+    assert_duplicate_key(&yaml, preserve_both());
+}
+
+#[rstest]
+fn integer_key_normalization_does_not_allow_negative_unsigned_zero(
+    #[values("-0", "-0x0", "-0b0")] scalar: &str,
+) {
+    assert_inferred(scalar, json!(0), preserve_both());
+    let signed: i128 = from_str_with_options(scalar, preserve_both()).unwrap();
+    assert_eq!(signed, 0);
+    assert!(from_str_with_options::<u128>(scalar, preserve_both()).is_err());
+    let yaml = format!("{scalar}: first\n0: second\n");
+    assert_duplicate_key(&yaml, preserve_both());
+}
+
 #[cfg(feature = "robotics")]
 #[test]
 fn underscore_preservation_precedes_implicit_robotics_float_parsing() {

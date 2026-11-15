@@ -195,9 +195,9 @@ fn cfg_and_replay_events_follow_options_and_reference_overrides() {
     let cfg = Cfg::from_options(&options);
     assert!(matches!(cfg.dup_policy, DuplicateKeyPolicy::LastWins));
     assert!(matches!(cfg.merge_keys, MergeKeyPolicy::AsOrdinary));
-    assert!(cfg.legacy_octal_numbers);
-    assert!(cfg.leading_zero_numbers_as_strings);
-    assert!(cfg.underscored_numbers_as_strings);
+    assert!(cfg.numeric.legacy_octal_numbers);
+    assert!(cfg.numeric.leading_zero_numbers_as_strings);
+    assert!(cfg.numeric.underscored_numbers_as_strings);
     assert!(cfg.strict_booleans);
     assert!(cfg.null_as_string);
     assert!(cfg.angle_conversions);
