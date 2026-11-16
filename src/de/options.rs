@@ -356,6 +356,8 @@ pub struct Options {
     /// targets reject scalars containing underscores, for both mapping keys and
     /// values. Explicit `!!int` and `!!float` tags do not override this restriction.
     /// This takes precedence over [`Self::legacy_octal_numbers`].
+    /// Rejected numeric scalars return
+    /// [`Error::NumericUnderscoresDisabled`](crate::Error::NumericUnderscoresDisabled).
     ///
     /// Mapping-key comparison follows the same rule: plain `1_000` and `1000`
     /// are distinct keys when this option is enabled, including inside composite

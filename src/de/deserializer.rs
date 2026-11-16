@@ -968,11 +968,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                         view.tag,
                         self.cfg.angle_conversions,
                         !self.cfg.underscored_numbers_as_strings,
-                    )
-                    .ok_or(Error::InvalidScalar {
-                        ty: "floating point",
-                        location: view.location,
-                    })?;
+                    )?;
                     return self.visit_typeless_float(
                         value,
                         view.raw.into_owned(),
@@ -1067,7 +1063,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
             // Try float per YAML 1.2 forms, treating an f64-overflowing literal (e.g.
             // `1e999`) as non-finite too, so both shapes are handled consistently below.
-            if let Some(v) = try_parse_float_incl_overflow(
+            if let Ok(v) = try_parse_float_incl_overflow(
                 &effective,
                 location,
                 view.tag,

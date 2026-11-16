@@ -186,21 +186,19 @@ fn parse_decimal_signed_i128(digits: &str, neg: bool) -> Option<i128> {
 /// Enforce the underscore policy before any numeric conversion.
 ///
 /// - `s`: scalar text, including any sign or radix prefix.
-/// - `ty`: numeric target name used in diagnostics.
 /// - `location`: source location for a rejected scalar.
 /// - `allow_underscores`: whether numeric syntax may contain digit separators.
 ///
-/// Returns an invalid-scalar error if underscores are disabled and present.
+/// Returns [`Error::NumericUnderscoresDisabled`] if underscores are disabled and present.
 #[cfg(feature = "deserialize")]
 #[inline]
 fn check_numeric_underscores(
     s: &str,
-    ty: &'static str,
     location: Location,
     allow_underscores: bool,
 ) -> Result<(), Error> {
     if !allow_underscores && s.contains('_') {
-        return Err(Error::InvalidScalar { ty, location });
+        return Err(Error::NumericUnderscoresDisabled { location });
     }
     Ok(())
 }
@@ -225,7 +223,7 @@ pub(crate) fn parse_int_signed<T>(
 where
     T: TryFrom<i128>,
 {
-    check_numeric_underscores(s, ty, location, allow_underscores)?;
+    check_numeric_underscores(s, location, allow_underscores)?;
     let invalid = || Error::InvalidScalar { ty, location };
 
     let t = yaml_trim(s);
@@ -274,7 +272,7 @@ pub(crate) fn parse_int_unsigned<T>(
 where
     T: TryFrom<u128>,
 {
-    check_numeric_underscores(s, ty, location, allow_underscores)?;
+    check_numeric_underscores(s, location, allow_underscores)?;
     let invalid = || Error::InvalidScalar { ty, location };
 
     let t = yaml_trim(s);
@@ -395,7 +393,7 @@ where
     T: FromStr + crate::robotics::FromF64,
     T: num_traits::Float,
 {
-    check_numeric_underscores(s, "floating point", location, allow_underscores)?;
+    check_numeric_underscores(s, location, allow_underscores)?;
     let t = yaml_trim(s);
     if let Some(value) = parse_tagged_signed_nan(t, tag) {
         return Ok(value);
@@ -425,7 +423,7 @@ where
     T: FromStr,
     T: num_traits::Float,
 {
-    check_numeric_underscores(s, "floating point", location, allow_underscores)?;
+    check_numeric_underscores(s, location, allow_underscores)?;
     let t = yaml_trim(s);
     if let Some(value) = parse_tagged_signed_nan(t, tag) {
         return Ok(value);
@@ -453,28 +451,30 @@ where
 /// considered here.
 ///
 /// `s`, `location`, `tag`, `angle_conversions`, and `allow_underscores` have the same
-/// meaning as in [`parse_yaml12_float`]. Return `None` for invalid numeric syntax.
+/// meaning as in [`parse_yaml12_float`]. Preserve its error for invalid numeric
+/// syntax so explicit tags retain configuration-specific diagnostics.
 pub(crate) fn try_parse_float_incl_overflow(
     s: &str,
     location: Location,
     tag: SfTag,
     angle_conversions: bool,
     allow_underscores: bool,
-) -> Option<f64> {
-    if let Ok(v) = parse_yaml12_float::<f64>(s, location, tag, angle_conversions, allow_underscores)
-    {
-        return Some(v);
-    }
+) -> Result<f64, Error> {
+    let error =
+        match parse_yaml12_float::<f64>(s, location, tag, angle_conversions, allow_underscores) {
+            Ok(v) => return Ok(v),
+            Err(error) => error,
+        };
 
     let t = yaml_trim(s);
     let unsigned = t.strip_prefix(['+', '-']).unwrap_or(t);
     if !unsigned.as_bytes().first().is_some_and(u8::is_ascii_digit) {
-        return None;
+        return Err(error);
     }
 
     match t.parse::<f64>() {
-        Ok(v) if v.is_infinite() => Some(v),
-        _ => None,
+        Ok(v) if v.is_infinite() => Ok(v),
+        _ => Err(error),
     }
 }
 

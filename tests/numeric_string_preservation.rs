@@ -5,7 +5,10 @@ use std::{borrow::Cow, collections::BTreeMap};
 use rstest::rstest;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use serde_saphyr::{DuplicateKeyPolicy, Options, from_reader_with_options, from_str_with_options};
+use serde_saphyr::{
+    DefaultMessageFormatter, DuplicateKeyPolicy, Error, MessageFormatter, Options,
+    UserMessageFormatter, from_reader_with_options, from_str_with_options,
+};
 
 fn preserve_both() -> Options {
     serde_saphyr::options! {
@@ -19,6 +22,32 @@ fn assert_inferred(yaml: &str, expected: Value, options: Options) {
     let from_reader: Value = from_reader_with_options(yaml.as_bytes(), options).unwrap();
     assert_eq!(from_str, expected, "string input: {yaml}");
     assert_eq!(from_reader, expected, "reader input: {yaml}");
+}
+
+#[track_caller]
+fn assert_underscore_diagnostic(error: &Error) {
+    assert!(matches!(
+        error.without_snippet(),
+        Error::NumericUnderscoresDisabled { .. }
+    ));
+    assert_eq!(
+        DefaultMessageFormatter.format_message(error),
+        "Underscores are disabled in configuration"
+    );
+    assert_eq!(
+        UserMessageFormatter.format_message(error),
+        "Underscores not allowed"
+    );
+    assert!(
+        error
+            .render()
+            .contains("Underscores are disabled in configuration")
+    );
+    assert!(
+        error
+            .render_with_formatter(&UserMessageFormatter)
+            .contains("Underscores not allowed")
+    );
 }
 
 #[test]
@@ -378,9 +407,11 @@ fn sequence_keys_keep_both_spellings_and_reject_integer_elements(#[case] yaml: &
 fn every_integer_target_rejects_disallowed_underscores(#[case] yaml: &str) {
     macro_rules! check {
         ($($ty:ty),+ $(,)?) => {$(
-            assert!(from_str_with_options::<$ty>(yaml, preserve_both()).is_err());
-            assert!(
-                from_reader_with_options::<_, $ty>(yaml.as_bytes(), preserve_both()).is_err()
+            assert_underscore_diagnostic(
+                &from_str_with_options::<$ty>(yaml, preserve_both()).unwrap_err(),
+            );
+            assert_underscore_diagnostic(
+                &from_reader_with_options::<_, $ty>(yaml.as_bytes(), preserve_both()).unwrap_err(),
             );
             let allowed: $ty = from_str_with_options(yaml, Options::default()).unwrap();
             assert_eq!(allowed, 10);
@@ -410,8 +441,19 @@ fn numeric_mapping_keys_and_values_obey_underscore_restriction(
     assert_eq!(keys[&expected], "value");
     assert_eq!(values["value"], expected);
     options.underscored_numbers_as_strings = true;
-    assert!(from_str_with_options::<BTreeMap<i64, String>>(&key_yaml, options.clone()).is_err());
-    assert!(from_str_with_options::<BTreeMap<String, i64>>(&value_yaml, options).is_err());
+    let key_error =
+        from_str_with_options::<BTreeMap<i64, String>>(&key_yaml, options.clone()).unwrap_err();
+    assert_underscore_diagnostic(&key_error);
+    let location = key_error.location().unwrap();
+    assert_eq!((location.line(), location.column()), (1, 1));
+    assert_eq!(location.span().offset(), 0);
+
+    let value_error =
+        from_str_with_options::<BTreeMap<String, i64>>(&value_yaml, options).unwrap_err();
+    assert_underscore_diagnostic(&value_error);
+    let location = value_error.location().unwrap();
+    assert_eq!((location.line(), location.column()), (1, 8));
+    assert_eq!(location.span().offset(), 7);
 }
 
 #[rstest]
@@ -424,9 +466,41 @@ fn numeric_mapping_keys_and_values_obey_underscore_restriction(
 fn float_targets_reject_disallowed_underscores(#[case] yaml: &str) {
     let mut options = preserve_both();
     options.angle_conversions = cfg!(feature = "robotics");
-    assert!(from_str_with_options::<f32>(yaml, options.clone()).is_err());
-    assert!(from_str_with_options::<f64>(yaml, options.clone()).is_err());
-    assert!(from_reader_with_options::<_, f64>(yaml.as_bytes(), options).is_err());
+    assert_underscore_diagnostic(&from_str_with_options::<f32>(yaml, options.clone()).unwrap_err());
+    assert_underscore_diagnostic(&from_str_with_options::<f64>(yaml, options.clone()).unwrap_err());
+    assert_underscore_diagnostic(
+        &from_reader_with_options::<_, f64>(yaml.as_bytes(), options).unwrap_err(),
+    );
+}
+
+#[rstest]
+#[case::integer("!!int 1_000")]
+#[case::signed_integer("!!int -1_000")]
+#[case::float("!!float 1_000.0")]
+#[case::quoted_float("!!float '1_000.0'")]
+#[case::verbatim_float_tag("!<tag:yaml.org,2002:float> 1_000.0")]
+fn explicit_numeric_tags_preserve_underscore_diagnostic(#[case] yaml: &str) {
+    assert_underscore_diagnostic(
+        &from_str_with_options::<Value>(yaml, preserve_both()).unwrap_err(),
+    );
+    assert_underscore_diagnostic(
+        &from_reader_with_options::<_, Value>(yaml.as_bytes(), preserve_both()).unwrap_err(),
+    );
+}
+
+#[test]
+fn float_value_underscore_diagnostic_preserves_source_location() {
+    let yaml = "value:\n  1_000.0\n";
+    for error in [
+        from_str_with_options::<BTreeMap<String, f64>>(yaml, preserve_both()).unwrap_err(),
+        from_reader_with_options::<_, BTreeMap<String, f64>>(yaml.as_bytes(), preserve_both())
+            .unwrap_err(),
+    ] {
+        assert_underscore_diagnostic(&error);
+        let location = error.location().unwrap();
+        assert_eq!((location.line(), location.column()), (2, 3));
+        assert_eq!(location.span().offset(), 9);
+    }
 }
 
 #[rstest]
@@ -468,10 +542,10 @@ fn robotics_cannot_override_underscore_restriction(#[case] yaml: &str, #[case] e
     let typed: f64 = from_str_with_options(yaml, options.clone()).unwrap();
     assert_eq!(typed, expected);
     options.underscored_numbers_as_strings = true;
-    assert!(from_str_with_options::<f32>(yaml, options.clone()).is_err());
-    assert!(from_str_with_options::<f64>(yaml, options.clone()).is_err());
+    assert_underscore_diagnostic(&from_str_with_options::<f32>(yaml, options.clone()).unwrap_err());
+    assert_underscore_diagnostic(&from_str_with_options::<f64>(yaml, options.clone()).unwrap_err());
     if yaml.starts_with('!') {
-        assert!(from_str_with_options::<Value>(yaml, options).is_err());
+        assert_underscore_diagnostic(&from_str_with_options::<Value>(yaml, options).unwrap_err());
     } else {
         assert_inferred(yaml, json!(yaml), options);
     }

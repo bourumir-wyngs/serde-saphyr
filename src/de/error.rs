@@ -1075,6 +1075,13 @@ pub enum Error {
         location: Location,
     },
 
+    /// Numeric parsing encountered an underscore while
+    /// [`Options::underscored_numbers_as_strings`](crate::Options::underscored_numbers_as_strings)
+    /// was enabled.
+    NumericUnderscoresDisabled {
+        location: Location,
+    },
+
     /// In a typeless position (e.g. `deserialize_any` targeting `serde_json::Value`), a
     /// scalar resolved to a non-finite float — NaN, ±Inf, or a decimal literal that
     /// overflows `f64` to infinity (e.g. `1e999`) — and
@@ -1741,6 +1748,7 @@ impl Error {
             | Error::InternalRecursionStackEmpty { location }
             | Error::RecursiveReferencesRequireWeakTypes { location }
             | Error::InvalidScalar { location, .. }
+            | Error::NumericUnderscoresDisabled { location }
             | Error::NonFiniteFloat { location, .. }
             | Error::SerdeInvalidType { location, .. }
             | Error::SerdeInvalidValue { location, .. }
@@ -1857,6 +1865,7 @@ impl Error {
             | Error::InternalRecursionStackEmpty { location }
             | Error::RecursiveReferencesRequireWeakTypes { location }
             | Error::InvalidScalar { location, .. }
+            | Error::NumericUnderscoresDisabled { location }
             | Error::NonFiniteFloat { location, .. }
             | Error::SerdeInvalidType { location, .. }
             | Error::SerdeInvalidValue { location, .. }
