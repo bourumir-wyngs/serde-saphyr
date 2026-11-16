@@ -1589,8 +1589,8 @@ impl Error {
         // that may be used for attack)
         let location = Location::UNKNOWN;
         let value = if !interpolated
-            && (parse_yaml12_float::<f64>(value, location, SfTag::None, false).is_ok()
-                || parse_int_signed::<i128>(value, "i128", location, false).is_ok()
+            && (parse_yaml12_float::<f64>(value, location, SfTag::None, false, true).is_ok()
+                || parse_int_signed::<i128>(value, "i128", location, false, true).is_ok()
                 || parse_yaml11_bool(value).is_some()
                 || scalar_is_nullish(value, &ScalarStyle::Plain))
         {

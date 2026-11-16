@@ -13,7 +13,7 @@ pub(crate) struct Cfg {
     pub(crate) legacy_octal_numbers: bool,
     /// Preserve redundant-zero decimal integer spellings during implicit inference.
     pub(crate) leading_zero_numbers_as_strings: bool,
-    /// Preserve scalars containing underscores during implicit inference.
+    /// Disallow underscores in numeric parsing, preserving untagged scalars as strings.
     pub(crate) underscored_numbers_as_strings: bool,
     /// If true, accept only the six YAML 1.2 Core boolean spellings.
     pub(crate) strict_booleans: bool,

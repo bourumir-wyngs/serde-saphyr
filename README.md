@@ -179,14 +179,21 @@ assert_eq!(value, serde_json::json!(["0755", "-007", "+00", "1_000", "0xFF_FF"])
 Both options default to `false`. `leading_zero_numbers_as_strings` preserves
 digit-only decimal spellings with redundant leading zeros and an optional sign;
 floats such as `0.5`, `00.5`, and `01e2` still infer as numbers.
-`underscored_numbers_as_strings` preserves numeric spellings containing underscores.
+This option affects implicit type inference through Serde's `deserialize_any`,
+including buffering for `#[serde(untagged)]` and `#[serde(flatten)]`, and takes
+precedence over `legacy_octal_numbers` during inference. Direct typed parsing,
+explicit numeric tags, and mapping-key comparison retain their existing behavior.
 
-These options apply to implicit type inference through Serde's `deserialize_any`,
-including buffering for `#[serde(untagged)]` and `#[serde(flatten)]`. Direct typed
-deserialization and explicit `!!int` or `!!float` tags retain their existing behavior.
-Preservation takes precedence over `legacy_octal_numbers` during implicit inference.
-The options do not change [mapping-key comparison](#duplicate-keys): for example,
-`1_000` and `1000` still compare as the same integer key.
+`underscored_numbers_as_strings` disallows underscores in numbers everywhere.
+Plain scalars such as `1_000`, `0xFF_FF`, and `1_000.5` remain strings during
+implicit inference, including untagged enums and flattened fields. Integer and
+float targets reject these spellings, for both keys and values, even with explicit
+`!!int` or `!!float` tags or with `legacy_octal_numbers: true`.
+[Mapping-key comparison](#duplicate-keys) follows the same rule: `1_000` and `1000`
+are distinct keys, including inside composite keys and during merge expansion.
+Leave this option `false` to retain the supported numeric underscore syntax and
+compare underscored integer keys by their numeric value. This does not add new
+syntax: underscored floats still require robotics angle conversions.
 
 #### Null values for string fields
 
@@ -419,6 +426,12 @@ Duplicate key handling is configurable. By default it’s an error; “first win
 
 With `Error`, `FirstWins`, and `LastWins`, YAML integer keys are parsed to their numeric meaning before checking for duplicates, regardless of the target Rust type. For example, `0xB` and `11` are the same integer key, even in a `HashMap<String, _>`. This comparison uses exact integer values within the supported `i128`/`u128` range and respects `legacy_octal_numbers`; values outside that range retain text-based comparison. The same rule applies inside composite keys. Merge expansion uses this comparison under every duplicate key policy.
 
+With `underscored_numbers_as_strings: true`, underscores are disallowed in numbers,
+so plain `1_000` is a string key distinct from the integer key `1000`. The same
+restriction applies inside composite keys and during merge expansion. Deserializing
+an underscored key into an integer is an error; an explicit `!!int` tag does not
+override the restriction.
+
 Deserialization into a string still preserves the original scalar spelling: `0xB` becomes `"0xB"`. “First wins” and “last wins” retain the selected entry's spelling and value; when integer keys require numeric comparison, “last wins” buffers the remaining mapping to select entries before passing them to Serde. Quoted keys and keys tagged `!!str` remain strings, so `"0xB"` and `"11"` are distinct keys. Duplicate checking uses YAML key identity; the target Rust map can still combine distinct YAML keys if they become equal after deserialization.
 
 Buffered “last wins” entries use the same replay mechanism as struct fields: trailing comments and comments nested inside buffered values are not preserved, and nested `Spanned::referenced` locations use the buffered value's reference location. The default error policy and “first wins” do not require this additional buffering.
@@ -447,6 +460,8 @@ Schema-based parsing can be disabled by setting `no_schema` to true in [`Options
 Legacy octal notation such as `0052` can be enabled via `Options`, but it is disabled by default.
 For untyped values, [numeric spelling options](#numeric-looking-strings-in-untyped-values)
 can preserve leading-zero and underscored numbers as strings.
+The underscore option also rejects underscored spellings for numeric targets and
+explicit numeric tags.
 
 The concept that “Rust code is the schema” naturally extends to implemented support for [`validator`](https://crates.io/crates/validator) and [`garde`](https://crates.io/crates/garde), as these crates allow annotations to be added directly to Rust types, providing even stricter control over permissible values.
 

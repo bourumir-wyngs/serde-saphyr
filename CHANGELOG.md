@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Breaking changes (planned for 3.x)
+
+- Make `Options::underscored_numbers_as_strings: true` disallow underscores in all
+  numeric parsing, including typed integer and float keys and values and explicit
+  `!!int`/`!!float` tags. Plain underscored scalars remain strings during inference;
+  `1_000` and `1000` now stay distinct during duplicate-key checks and merge
+  expansion, including inside composite keys
+  ([#278](https://github.com/bourumir-wyngs/serde-saphyr/issues/278)). Leave the option
+  `false` (the default) to accept numeric underscore separators. The independent
+  `leading_zero_numbers_as_strings` option keeps its existing behavior.
+
 ### Added
 
 - Added opt-in `Options::null_as_string` (default: `false`) to preserve plain

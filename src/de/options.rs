@@ -347,15 +347,20 @@ pub struct Options {
     /// tags, and mapping-key equality retain their existing behavior.
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub leading_zero_numbers_as_strings: bool,
-    /// Preserve plain scalars containing underscores as strings during implicit
-    /// type inference (`deserialize_any`), including numeric spellings such as
-    /// `1_000`, `0xFF_FF`, and `0b10_01`.
+    /// Disallow underscores in numbers and preserve plain scalars containing
+    /// underscores as strings during implicit type inference (`deserialize_any`).
+    /// Examples include `1_000`, `0xFF_FF`, `0b10_01`, and `1_000.5`.
     ///
     /// This supports compatibility with `serde_yaml` when reading untyped values.
-    /// It also applies to untagged enums and flattened fields, and takes precedence
-    /// over [`Self::legacy_octal_numbers`] during inference. Direct typed
-    /// deserialization, explicit `!!int`/`!!float` tags, and mapping-key equality
-    /// retain their existing behavior. Default: false.
+    /// It also applies to untagged enums and flattened fields. Integer and float
+    /// targets reject scalars containing underscores, for both mapping keys and
+    /// values. Explicit `!!int` and `!!float` tags do not override this restriction.
+    /// This takes precedence over [`Self::legacy_octal_numbers`].
+    ///
+    /// Mapping-key comparison follows the same rule: plain `1_000` and `1000`
+    /// are distinct keys when this option is enabled, including inside composite
+    /// keys and during merge expansion. Default: false (allow valid numeric
+    /// underscore separators).
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub underscored_numbers_as_strings: bool,
     /// If true, accept only YAML 1.2 Core boolean spellings:
