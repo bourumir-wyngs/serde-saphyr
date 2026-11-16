@@ -15,9 +15,10 @@
   ([#278](https://github.com/bourumir-wyngs/serde-saphyr/issues/278)). Leave the option
   `true` (the default) to accept numeric underscore separators. The independent
   `leading_zero_numbers_as_strings` option keeps its existing behavior.
-  Rejected numeric targets and explicit numeric tags report
+  Disallowed underscores in otherwise valid numbers report
   `Error::NumericUnderscoresDisabled`, rendered as "Underscores are disabled in
-  configuration" for developers and "Underscores not allowed" for users.
+  configuration" for developers and "Underscores not allowed" for users. Invalid
+  syntax and target-range failures keep their original parser errors.
 
 ### Added
 

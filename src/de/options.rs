@@ -363,8 +363,9 @@ pub struct Options {
     /// Integer and float targets reject these scalars, for both mapping keys and
     /// values. Explicit `!!int` and `!!float` tags and [`Self::legacy_octal_numbers`]
     /// do not override this restriction.
-    /// Rejected numeric scalars return
+    /// Otherwise valid numeric scalars return
     /// [`Error::NumericUnderscoresDisabled`](crate::Error::NumericUnderscoresDisabled).
+    /// Invalid syntax and target-range failures retain the parser's original error.
     ///
     /// Mapping-key comparison follows the same rule: plain `1_000` and `1000`
     /// are distinct keys when this option is false, including inside composite

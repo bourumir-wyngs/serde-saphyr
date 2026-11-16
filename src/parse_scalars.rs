@@ -203,24 +203,27 @@ impl Default for IntSyntax {
     }
 }
 
-/// Enforce the underscore policy before any numeric conversion.
+/// Enforce the underscore policy after a successful numeric conversion.
 ///
+/// - `value`: successfully parsed numeric value, including target-range validation.
 /// - `s`: scalar text, including any sign or radix prefix.
 /// - `location`: source location for a rejected scalar.
 /// - `allow_underscores`: whether numeric syntax may contain digit separators.
 ///
-/// Returns [`Error::NumericUnderscoresDisabled`] if underscores are disabled and present.
+/// Returns `value`, or [`Error::NumericUnderscoresDisabled`] if underscores are
+/// disabled and present. Callers retain parsing errors without invoking this check.
 #[cfg(feature = "deserialize")]
 #[inline]
-fn check_numeric_underscores(
+fn check_numeric_underscores<T>(
+    value: T,
     s: &str,
     location: Location,
     allow_underscores: bool,
-) -> Result<(), Error> {
+) -> Result<T, Error> {
     if !allow_underscores && s.contains('_') {
         return Err(Error::NumericUnderscoresDisabled { location });
     }
-    Ok(())
+    Ok(value)
 }
 
 /// Parse a signed integer using the configured numeric syntax.
@@ -241,7 +244,6 @@ pub(crate) fn parse_int_signed<T>(
 where
     T: TryFrom<i128>,
 {
-    check_numeric_underscores(s, location, syntax.allow_underscores)?;
     let invalid = || Error::InvalidScalar { ty, location };
 
     let t = yaml_trim(s);
@@ -260,7 +262,8 @@ where
             return Err(invalid());
         }
         let val_i128 = parse_decimal_signed_i128(digits, neg).ok_or_else(invalid)?;
-        return T::try_from(val_i128).map_err(|_| invalid());
+        let value = T::try_from(val_i128).map_err(|_| invalid())?;
+        return check_numeric_underscores(value, s, location, syntax.allow_underscores);
     }
 
     let mag = parse_digits_u128(digits, radix).ok_or_else(invalid)?;
@@ -274,7 +277,8 @@ where
     } else {
         mag.try_into().map_err(|_| invalid())?
     };
-    T::try_from(val_i128).map_err(|_| invalid())
+    let value = T::try_from(val_i128).map_err(|_| invalid())?;
+    check_numeric_underscores(value, s, location, syntax.allow_underscores)
 }
 
 /// Parse an unsigned integer with the same arguments and syntax as [`parse_int_signed`].
@@ -289,7 +293,6 @@ pub(crate) fn parse_int_unsigned<T>(
 where
     T: TryFrom<u128>,
 {
-    check_numeric_underscores(s, location, syntax.allow_underscores)?;
     let invalid = || Error::InvalidScalar { ty, location };
 
     let t = yaml_trim(s);
@@ -305,11 +308,13 @@ where
             return Err(invalid());
         }
         let val_u128 = parse_decimal_unsigned_u128(digits).ok_or_else(invalid)?;
-        return T::try_from(val_u128).map_err(|_| invalid());
+        let value = T::try_from(val_u128).map_err(|_| invalid())?;
+        return check_numeric_underscores(value, s, location, syntax.allow_underscores);
     }
 
     let mag = parse_digits_u128(digits, radix).ok_or_else(invalid)?;
-    T::try_from(mag).map_err(|_| invalid())
+    let value = T::try_from(mag).map_err(|_| invalid())?;
+    check_numeric_underscores(value, s, location, syntax.allow_underscores)
 }
 
 #[cfg(feature = "deserialize")]
@@ -396,7 +401,7 @@ where
 
 /// Parse scalar `s` as a float, reporting errors at `location`.
 /// `tag` controls explicit numeric semantics, `angle_conversions` enables robotics
-/// expressions, and `allow_underscores` controls digit separators before parsing.
+/// expressions, and `allow_underscores` checks digit separators after successful parsing.
 /// Return the float or an invalid-scalar/expression error.
 #[cfg(all(feature = "deserialize", feature = "robotics"))]
 pub(crate) fn parse_yaml12_float<T>(
@@ -410,23 +415,26 @@ where
     T: FromStr + crate::robotics::FromF64,
     T: num_traits::Float,
 {
-    check_numeric_underscores(s, location, allow_underscores)?;
     let t = yaml_trim(s);
     if let Some(value) = parse_tagged_signed_nan(t, tag) {
         return Ok(value);
     }
     if angle_conversions {
-        return crate::robotics::parse_yaml12_float_angle_converting(s, location, tag);
+        let value = crate::robotics::parse_yaml12_float_angle_converting(s, location, tag)?;
+        return check_numeric_underscores(value, s, location, allow_underscores);
     }
     match parse_yaml12_non_finite_float(t) {
         Some(value) => Ok(value),
-        None => parse_yaml12_finite_float_fallback(t, location),
+        None => {
+            let value = parse_yaml12_finite_float_fallback(t, location)?;
+            check_numeric_underscores(value, s, location, allow_underscores)
+        }
     }
 }
 
 /// Parse scalar `s` as a float, reporting errors at `location`.
 /// `tag` controls explicit numeric semantics, `_angle_conversions` is inactive
-/// without robotics, and `allow_underscores` controls digit separators.
+/// without robotics, and `allow_underscores` checks separators after successful parsing.
 /// Return the float or an invalid-scalar error.
 #[cfg(all(feature = "deserialize", not(feature = "robotics")))]
 pub(crate) fn parse_yaml12_float<T>(
@@ -440,14 +448,16 @@ where
     T: FromStr,
     T: num_traits::Float,
 {
-    check_numeric_underscores(s, location, allow_underscores)?;
     let t = yaml_trim(s);
     if let Some(value) = parse_tagged_signed_nan(t, tag) {
         return Ok(value);
     }
     match parse_yaml12_non_finite_float(t) {
         Some(value) => Ok(value),
-        None => parse_yaml12_finite_float_fallback(t, location),
+        None => {
+            let value = parse_yaml12_finite_float_fallback(t, location)?;
+            check_numeric_underscores(value, s, location, allow_underscores)
+        }
     }
 }
 
@@ -492,7 +502,7 @@ pub(crate) fn try_parse_float_incl_overflow(
     }
 
     match t.parse::<f64>() {
-        Ok(v) if v.is_infinite() => Ok(v),
+        Ok(v) if v.is_infinite() => check_numeric_underscores(v, s, location, allow_underscores),
         _ => Err(error),
     }
 }

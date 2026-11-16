@@ -1075,7 +1075,7 @@ pub enum Error {
         location: Location,
     },
 
-    /// Numeric parsing encountered an underscore while
+    /// An otherwise successful numeric conversion contained an underscore while
     /// [`Options::allow_numeric_underscores`](crate::Options::allow_numeric_underscores)
     /// was disabled.
     NumericUnderscoresDisabled {

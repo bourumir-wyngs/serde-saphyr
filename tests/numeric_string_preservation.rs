@@ -50,6 +50,30 @@ fn assert_underscore_diagnostic(error: &Error) {
     );
 }
 
+#[track_caller]
+fn assert_invalid_scalar(error: &Error, expected_type: &str) {
+    assert!(matches!(
+        error.without_snippet(),
+        Error::InvalidScalar { ty, .. } if *ty == expected_type
+    ));
+    let expected_message = format!("invalid {expected_type}");
+    assert_eq!(
+        DefaultMessageFormatter.format_message(error),
+        expected_message
+    );
+    assert_eq!(UserMessageFormatter.format_message(error), expected_message);
+}
+
+#[track_caller]
+fn assert_float_underscore_rejection(error: &Error, supports_underscores: bool) {
+    if supports_underscores {
+        assert_underscore_diagnostic(error);
+    } else {
+        // Without robotics conversions, the float syntax itself rejects underscores.
+        assert_invalid_scalar(error, "floating point");
+    }
+}
+
 #[test]
 fn preservation_defaults_off() {
     let options = Options::default();
@@ -126,14 +150,16 @@ fn overflowing_underscored_exponents_stay_strings(
         options.clone(),
     );
 
-    // An explicit numeric tag must preserve the disabled-underscore diagnostic
-    // rather than reaching the overflow-to-infinity fallback.
+    // A numeric tag reports the underscore policy only if the enabled parser
+    // accepts this spelling; ordinary float parsing rejects the syntax itself.
     let tagged = format!("!!float '{scalar}'");
-    assert_underscore_diagnostic(
+    assert_float_underscore_rejection(
         &from_str_with_options::<Value>(&tagged, options.clone()).unwrap_err(),
+        options.angle_conversions,
     );
-    assert_underscore_diagnostic(
-        &from_reader_with_options::<_, Value>(tagged.as_bytes(), options).unwrap_err(),
+    assert_float_underscore_rejection(
+        &from_reader_with_options::<_, Value>(tagged.as_bytes(), options.clone()).unwrap_err(),
+        options.angle_conversions,
     );
 }
 
@@ -457,6 +483,90 @@ fn every_integer_target_rejects_disallowed_underscores(#[case] yaml: &str) {
 }
 
 #[rstest]
+#[case::non_numeric("not_a_number")]
+#[case::underscore_only("_")]
+#[case::repeated_separator("1__000")]
+#[case::trailing_separator("1000_")]
+#[case::leading_separator("_1000")]
+#[case::invalid_radix_digit("0xF_G")]
+fn invalid_integer_syntax_keeps_parser_error(
+    #[case] scalar: &str,
+    #[values(true, false)] allow_numeric_underscores: bool,
+) {
+    let options = serde_saphyr::options! { allow_numeric_underscores: allow_numeric_underscores };
+    let key_yaml = format!("{scalar}: value\n");
+    let value_yaml = format!("value: {scalar}\n");
+    macro_rules! check {
+        ($($ty:ty),+ $(,)?) => {$(
+            for error in [
+                from_str_with_options::<$ty>(scalar, options.clone()).unwrap_err(),
+                from_reader_with_options::<_, $ty>(scalar.as_bytes(), options.clone()).unwrap_err(),
+                from_str_with_options::<BTreeMap<$ty, String>>(&key_yaml, options.clone()).unwrap_err(),
+                from_str_with_options::<BTreeMap<String, $ty>>(&value_yaml, options.clone()).unwrap_err(),
+            ] {
+                assert_invalid_scalar(&error, stringify!($ty));
+            }
+        )+};
+    }
+    check!(i32, u32);
+}
+
+#[rstest]
+fn invalid_integer_ranges_keep_parser_error(
+    #[values(true, false)] allow_numeric_underscores: bool,
+) {
+    let options = serde_saphyr::options! { allow_numeric_underscores: allow_numeric_underscores };
+    macro_rules! check {
+        ($ty:ty, $scalar:literal) => {
+            assert_invalid_scalar(
+                &from_str_with_options::<$ty>($scalar, options.clone()).unwrap_err(),
+                stringify!($ty),
+            );
+            assert_invalid_scalar(
+                &from_reader_with_options::<_, $ty>($scalar.as_bytes(), options.clone())
+                    .unwrap_err(),
+                stringify!($ty),
+            );
+        };
+    }
+    check!(u8, "1_000");
+    check!(i8, "1_000");
+    check!(u32, "-1_0");
+    check!(u32, "4_294_967_296");
+    check!(u32, "0x1_00000000");
+    check!(i32, "2_147_483_648");
+    check!(i32, "-2_147_483_649");
+    check!(i32, "0x8000_0000");
+    check!(i128, "170141183460469231731687303715884105728_0");
+    check!(u128, "340282366920938463463374607431768211456_0");
+}
+
+#[rstest]
+#[case::non_numeric("foo_bar")]
+#[case::underscore_only("_")]
+#[case::repeated_separator("1__000.0")]
+#[case::invalid_exponent("1e_2")]
+#[case::underscored_float("1_000.0")]
+#[case::overflowing_exponent("1_000e999")]
+fn invalid_standard_float_syntax_keeps_parser_error(
+    #[case] yaml: &str,
+    #[values(true, false)] allow_numeric_underscores: bool,
+) {
+    // Keep the standard float parser active even in builds with robotics enabled.
+    let options = serde_saphyr::options! {
+        allow_numeric_underscores: allow_numeric_underscores,
+        angle_conversions: false,
+    };
+    for error in [
+        from_str_with_options::<f32>(yaml, options.clone()).unwrap_err(),
+        from_str_with_options::<f64>(yaml, options.clone()).unwrap_err(),
+        from_reader_with_options::<_, f64>(yaml.as_bytes(), options).unwrap_err(),
+    ] {
+        assert_invalid_scalar(&error, "floating point");
+    }
+}
+
+#[rstest]
 #[case::decimal("1_000", 1000)]
 #[case::negative("-1_000", -1000)]
 #[case::hexadecimal("0xF_F", 255)]
@@ -502,37 +612,52 @@ fn numeric_mapping_keys_and_values_obey_underscore_restriction(
 fn float_targets_reject_disallowed_underscores(#[case] yaml: &str) {
     let mut options = preserve_both();
     options.angle_conversions = cfg!(feature = "robotics");
-    assert_underscore_diagnostic(&from_str_with_options::<f32>(yaml, options.clone()).unwrap_err());
-    assert_underscore_diagnostic(&from_str_with_options::<f64>(yaml, options.clone()).unwrap_err());
-    assert_underscore_diagnostic(
-        &from_reader_with_options::<_, f64>(yaml.as_bytes(), options).unwrap_err(),
+    assert_float_underscore_rejection(
+        &from_str_with_options::<f32>(yaml, options.clone()).unwrap_err(),
+        options.angle_conversions,
+    );
+    assert_float_underscore_rejection(
+        &from_str_with_options::<f64>(yaml, options.clone()).unwrap_err(),
+        options.angle_conversions,
+    );
+    assert_float_underscore_rejection(
+        &from_reader_with_options::<_, f64>(yaml.as_bytes(), options.clone()).unwrap_err(),
+        options.angle_conversions,
     );
 }
 
 #[rstest]
-#[case::integer("!!int 1_000")]
-#[case::signed_integer("!!int -1_000")]
-#[case::float("!!float 1_000.0")]
-#[case::quoted_float("!!float '1_000.0'")]
-#[case::verbatim_float_tag("!<tag:yaml.org,2002:float> 1_000.0")]
-fn explicit_numeric_tags_preserve_underscore_diagnostic(#[case] yaml: &str) {
-    assert_underscore_diagnostic(
-        &from_str_with_options::<Value>(yaml, preserve_both()).unwrap_err(),
-    );
-    assert_underscore_diagnostic(
-        &from_reader_with_options::<_, Value>(yaml.as_bytes(), preserve_both()).unwrap_err(),
-    );
+#[case::integer("!!int 1_000", true)]
+#[case::signed_integer("!!int -1_000", true)]
+#[case::float("!!float 1_000.0", false)]
+#[case::quoted_float("!!float '1_000.0'", false)]
+#[case::verbatim_float_tag("!<tag:yaml.org,2002:float> 1_000.0", false)]
+fn explicit_numeric_tags_preserve_parser_diagnostic(#[case] yaml: &str, #[case] integer_tag: bool) {
+    let mut options = preserve_both();
+    options.angle_conversions = cfg!(feature = "robotics");
+    for error in [
+        from_str_with_options::<Value>(yaml, options.clone()).unwrap_err(),
+        from_reader_with_options::<_, Value>(yaml.as_bytes(), options.clone()).unwrap_err(),
+    ] {
+        if integer_tag {
+            assert_underscore_diagnostic(&error);
+        } else {
+            assert_float_underscore_rejection(&error, options.angle_conversions);
+        }
+    }
 }
 
 #[test]
 fn float_value_underscore_diagnostic_preserves_source_location() {
     let yaml = "value:\n  1_000.0\n";
+    let mut options = preserve_both();
+    options.angle_conversions = cfg!(feature = "robotics");
     for error in [
-        from_str_with_options::<BTreeMap<String, f64>>(yaml, preserve_both()).unwrap_err(),
-        from_reader_with_options::<_, BTreeMap<String, f64>>(yaml.as_bytes(), preserve_both())
+        from_str_with_options::<BTreeMap<String, f64>>(yaml, options.clone()).unwrap_err(),
+        from_reader_with_options::<_, BTreeMap<String, f64>>(yaml.as_bytes(), options.clone())
             .unwrap_err(),
     ] {
-        assert_underscore_diagnostic(&error);
+        assert_float_underscore_rejection(&error, options.angle_conversions);
         let location = error.location().unwrap();
         assert_eq!((location.line(), location.column()), (2, 3));
         assert_eq!(location.span().offset(), 9);
@@ -584,6 +709,40 @@ fn robotics_cannot_override_underscore_restriction(#[case] yaml: &str, #[case] e
         assert_underscore_diagnostic(&from_str_with_options::<Value>(yaml, options).unwrap_err());
     } else {
         assert_inferred(yaml, json!(yaml), options);
+    }
+}
+
+#[cfg(feature = "robotics")]
+#[rstest]
+#[case::non_numeric("foo_bar")]
+#[case::underscore_only("_")]
+#[case::invalid_separator("1__000.0")]
+#[case::invalid_operand("1_000 + foo")]
+#[case::tagged_non_numeric("!degrees foo_bar")]
+fn invalid_robotics_syntax_keeps_parser_error(#[case] yaml: &str) {
+    let mut options = serde_saphyr::options! { angle_conversions: true };
+    let original = from_str_with_options::<f64>(yaml, options.clone()).unwrap_err();
+    options.allow_numeric_underscores = false;
+    for error in [
+        from_str_with_options::<f64>(yaml, options.clone()).unwrap_err(),
+        from_reader_with_options::<_, f64>(yaml.as_bytes(), options.clone()).unwrap_err(),
+    ] {
+        assert!(!matches!(
+            error.without_snippet(),
+            Error::NumericUnderscoresDisabled { .. }
+        ));
+        assert_eq!(
+            std::mem::discriminant(error.without_snippet()),
+            std::mem::discriminant(original.without_snippet()),
+        );
+        assert_eq!(
+            DefaultMessageFormatter.format_message(&error),
+            DefaultMessageFormatter.format_message(&original),
+        );
+        assert_eq!(
+            UserMessageFormatter.format_message(&error),
+            UserMessageFormatter.format_message(&original),
+        );
     }
 }
 
