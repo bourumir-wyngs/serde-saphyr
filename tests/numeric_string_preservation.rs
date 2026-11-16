@@ -6,8 +6,8 @@ use rstest::rstest;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use serde_saphyr::{
-    DefaultMessageFormatter, DuplicateKeyPolicy, Error, MessageFormatter, Options,
-    UserMessageFormatter, from_reader_with_options, from_str_with_options,
+    DefaultMessageFormatter, DuplicateKeyPolicy, Error, MessageFormatter, NonFiniteFloatPolicy,
+    Options, UserMessageFormatter, from_reader_with_options, from_str_with_options,
 };
 
 fn preserve_both() -> Options {
@@ -99,6 +99,42 @@ fn underscore_option_preserves_decimal_and_radix_spellings() {
 
     // The leading-zero option remains disabled.
     assert_inferred("0755", json!(755.0), options);
+}
+
+#[rstest]
+#[case::positive("1_000e999")]
+#[case::negative("-1_0e999")]
+fn overflowing_underscored_exponents_stay_strings(
+    #[case] scalar: &str,
+    #[values(
+        NonFiniteFloatPolicy::Default,
+        NonFiniteFloatPolicy::Reject,
+        NonFiniteFloatPolicy::PassThrough,
+        NonFiniteFloatPolicy::AsString
+    )]
+    policy: NonFiniteFloatPolicy,
+) {
+    let options = serde_saphyr::options! {
+        underscored_numbers_as_strings: true,
+        non_finite_float_policy: policy,
+        angle_conversions: cfg!(feature = "robotics"),
+    };
+    assert_inferred(scalar, json!(scalar), options.clone());
+    assert_inferred(
+        &format!("value: {scalar}\n"),
+        json!({"value": scalar}),
+        options.clone(),
+    );
+
+    // An explicit numeric tag must preserve the disabled-underscore diagnostic
+    // rather than reaching the overflow-to-infinity fallback.
+    let tagged = format!("!!float '{scalar}'");
+    assert_underscore_diagnostic(
+        &from_str_with_options::<Value>(&tagged, options.clone()).unwrap_err(),
+    );
+    assert_underscore_diagnostic(
+        &from_reader_with_options::<_, Value>(tagged.as_bytes(), options).unwrap_err(),
+    );
 }
 
 #[test]

@@ -179,7 +179,7 @@ assert_eq!(value, serde_json::json!(["0755", "-007", "+00", "1_000", "0xFF_FF"])
 Both options default to `false`. `leading_zero_numbers_as_strings` preserves
 digit-only decimal spellings with redundant leading zeros and an optional sign;
 floats such as `0.5`, `00.5`, and `01e2` still infer as numbers.
-This option affects implicit type inference through Serde's `deserialize_any`,
+`leading_zero_numbers_as_strings` affects implicit type inference through Serde's `deserialize_any`,
 including buffering for `#[serde(untagged)]` and `#[serde(flatten)]`, and takes
 precedence over `legacy_octal_numbers` during inference. Direct typed parsing,
 explicit numeric tags, and mapping-key comparison retain their existing behavior.

@@ -183,6 +183,26 @@ fn parse_decimal_signed_i128(digits: &str, neg: bool) -> Option<i128> {
     }
 }
 
+/// Integer syntax shared by scalar parsing and mapping-key fingerprints.
+#[cfg(feature = "deserialize")]
+#[derive(Clone, Copy)]
+pub(crate) struct IntSyntax {
+    /// Accept legacy octal numbers and separators after radix prefixes.
+    pub(crate) legacy_octal: bool,
+    /// Accept otherwise valid underscore digit separators.
+    pub(crate) allow_underscores: bool,
+}
+
+#[cfg(feature = "deserialize")]
+impl Default for IntSyntax {
+    fn default() -> Self {
+        Self {
+            legacy_octal: false,
+            allow_underscores: true,
+        }
+    }
+}
+
 /// Enforce the underscore policy before any numeric conversion.
 ///
 /// - `s`: scalar text, including any sign or radix prefix.
@@ -208,8 +228,7 @@ fn check_numeric_underscores(
 /// - `s`: scalar text, including any sign or radix prefix.
 /// - `ty`: numeric target name used in diagnostics.
 /// - `location`: source location for a rejected scalar.
-/// - `legacy_octal`: whether to accept legacy octal and prefix separators.
-/// - `allow_underscores`: whether to accept otherwise valid digit separators.
+/// - `syntax`: whether legacy octal and underscore separators are accepted.
 ///
 /// Returns the integer, or an error for invalid syntax or target overflow.
 #[cfg(feature = "deserialize")]
@@ -217,13 +236,12 @@ pub(crate) fn parse_int_signed<T>(
     s: &str,
     ty: &'static str,
     location: Location,
-    legacy_octal: bool,
-    allow_underscores: bool,
+    syntax: IntSyntax,
 ) -> Result<T, Error>
 where
     T: TryFrom<i128>,
 {
-    check_numeric_underscores(s, location, allow_underscores)?;
+    check_numeric_underscores(s, location, syntax.allow_underscores)?;
     let invalid = || Error::InvalidScalar { ty, location };
 
     let t = yaml_trim(s);
@@ -235,7 +253,7 @@ where
         },
     };
 
-    let (radix, digits) = radix_and_digits(legacy_octal, rest);
+    let (radix, digits) = radix_and_digits(syntax.legacy_octal, rest);
     if radix == 10 {
         // Keep zero-prefixed integer spellings opt-in through legacy octal parsing.
         if digits.starts_with('0') && digits != "0" {
@@ -266,13 +284,12 @@ pub(crate) fn parse_int_unsigned<T>(
     s: &str,
     ty: &'static str,
     location: Location,
-    legacy_octal: bool,
-    allow_underscores: bool,
+    syntax: IntSyntax,
 ) -> Result<T, Error>
 where
     T: TryFrom<u128>,
 {
-    check_numeric_underscores(s, location, allow_underscores)?;
+    check_numeric_underscores(s, location, syntax.allow_underscores)?;
     let invalid = || Error::InvalidScalar { ty, location };
 
     let t = yaml_trim(s);
@@ -280,7 +297,7 @@ where
         return Err(invalid());
     }
     let rest = t.strip_prefix('+').unwrap_or(t);
-    let (radix, digits) = radix_and_digits(legacy_octal, rest);
+    let (radix, digits) = radix_and_digits(syntax.legacy_octal, rest);
 
     if radix == 10 {
         // Keep zero-prefixed integer spellings opt-in through legacy octal parsing.
@@ -463,6 +480,8 @@ pub(crate) fn try_parse_float_incl_overflow(
     let error =
         match parse_yaml12_float::<f64>(s, location, tag, angle_conversions, allow_underscores) {
             Ok(v) => return Ok(v),
+            // A configuration rejection must not reach the permissive overflow fallback.
+            Err(error @ Error::NumericUnderscoresDisabled { .. }) => return Err(error),
             Err(error) => error,
         };
 
@@ -505,7 +524,16 @@ pub(crate) fn maybe_not_string(
     style == &ScalarStyle::Plain
         && !is_signed_nan(yaml_trim(s))
         && (parse_yaml12_float::<f64>(s, location, SfTag::None, false, allow_underscores).is_ok()
-            || parse_int_signed::<i128>(s, "i128", location, false, allow_underscores).is_ok()
+            || parse_int_signed::<i128>(
+                s,
+                "i128",
+                location,
+                IntSyntax {
+                    allow_underscores,
+                    ..IntSyntax::default()
+                },
+            )
+            .is_ok()
             || maybe_bool(s, strict_booleans)
             || scalar_is_nullish(s, &ScalarStyle::Plain))
 }
@@ -574,6 +602,13 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
+    fn legacy_int_syntax() -> IntSyntax {
+        IntSyntax {
+            legacy_octal: true,
+            ..IntSyntax::default()
+        }
+    }
+
     fn sample_location() -> Location {
         Location {
             line: 42,
@@ -616,10 +651,10 @@ mod tests {
     #[test]
     fn parse_int_signed_supports_alternate_radices_and_underscores() {
         let loc = sample_location();
-        let value: i64 = parse_int_signed("0x7_fF", "i64", loc, false, true).unwrap();
+        let value: i64 = parse_int_signed("0x7_fF", "i64", loc, IntSyntax::default()).unwrap();
         assert_eq!(value, 0x7ff);
 
-        let value: i32 = parse_int_signed("0b1010_1010", "i32", loc, false, true).unwrap();
+        let value: i32 = parse_int_signed("0b1010_1010", "i32", loc, IntSyntax::default()).unwrap();
         assert_eq!(value, 0b1010_1010);
     }
 
@@ -630,12 +665,12 @@ mod tests {
             "-0x80000000000000000000000000000000",
             "i128",
             loc,
-            false,
-            true,
+            IntSyntax::default(),
         )
         .unwrap();
         let binary_min = format!("-0b1{}", "0".repeat(127));
-        let binary: i128 = parse_int_signed(&binary_min, "i128", loc, false, true).unwrap();
+        let binary: i128 =
+            parse_int_signed(&binary_min, "i128", loc, IntSyntax::default()).unwrap();
 
         assert_eq!(hex, i128::MIN);
         assert_eq!(binary, i128::MIN);
@@ -644,8 +679,7 @@ mod tests {
                 "0x80000000000000000000000000000000",
                 "i128",
                 loc,
-                false,
-                true
+                IntSyntax::default()
             )
             .is_err()
         );
@@ -655,19 +689,19 @@ mod tests {
     fn parse_int_signed_rejects_invalid_underscores() {
         let loc = sample_location();
         // Leading underscore
-        assert!(parse_int_signed::<i32>("_1", "i32", loc, false, true).is_err());
+        assert!(parse_int_signed::<i32>("_1", "i32", loc, IntSyntax::default()).is_err());
         // Trailing underscore
-        assert!(parse_int_signed::<i32>("1000_", "i32", loc, false, true).is_err());
+        assert!(parse_int_signed::<i32>("1000_", "i32", loc, IntSyntax::default()).is_err());
         // Double underscore
-        assert!(parse_int_signed::<i32>("1__0", "i32", loc, false, true).is_err());
+        assert!(parse_int_signed::<i32>("1__0", "i32", loc, IntSyntax::default()).is_err());
         // Valid underscores
-        assert!(parse_int_signed::<i32>("1000_1000", "i32", loc, false, true).is_ok());
+        assert!(parse_int_signed::<i32>("1000_1000", "i32", loc, IntSyntax::default()).is_ok());
     }
 
     #[test]
     fn parse_int_signed_honors_legacy_octal_prefixes() {
         let loc = sample_location();
-        let value: i32 = parse_int_signed("00077", "i32", loc, true, true).unwrap();
+        let value: i32 = parse_int_signed("00077", "i32", loc, legacy_int_syntax()).unwrap();
         assert_eq!(value, 0o77);
     }
 
@@ -675,12 +709,14 @@ mod tests {
     fn parse_int_signed_honors_legacy_prefix_underscores() {
         let loc = sample_location();
 
-        let octal: i32 = parse_int_signed("0_10", "i32", loc, true, true).unwrap();
-        let plus_octal: i32 = parse_int_signed("+0_10", "i32", loc, true, true).unwrap();
-        let negative_octal: i32 = parse_int_signed("-0_10", "i32", loc, true, true).unwrap();
-        let hex: i32 = parse_int_signed("0x_10", "i32", loc, true, true).unwrap();
-        let explicit_octal: i32 = parse_int_signed("0o_10", "i32", loc, true, true).unwrap();
-        let binary: i32 = parse_int_signed("0b_10", "i32", loc, true, true).unwrap();
+        let octal: i32 = parse_int_signed("0_10", "i32", loc, legacy_int_syntax()).unwrap();
+        let plus_octal: i32 = parse_int_signed("+0_10", "i32", loc, legacy_int_syntax()).unwrap();
+        let negative_octal: i32 =
+            parse_int_signed("-0_10", "i32", loc, legacy_int_syntax()).unwrap();
+        let hex: i32 = parse_int_signed("0x_10", "i32", loc, legacy_int_syntax()).unwrap();
+        let explicit_octal: i32 =
+            parse_int_signed("0o_10", "i32", loc, legacy_int_syntax()).unwrap();
+        let binary: i32 = parse_int_signed("0b_10", "i32", loc, legacy_int_syntax()).unwrap();
 
         assert_eq!(octal, 0o10);
         assert_eq!(plus_octal, 0o10);
@@ -694,15 +730,15 @@ mod tests {
     fn parse_int_signed_keeps_prefix_underscores_opt_in() {
         let loc = sample_location();
 
-        assert!(parse_int_signed::<i32>("0_10", "i32", loc, false, true).is_err());
-        assert!(parse_int_signed::<i32>("0x_10", "i32", loc, false, true).is_err());
+        assert!(parse_int_signed::<i32>("0_10", "i32", loc, IntSyntax::default()).is_err());
+        assert!(parse_int_signed::<i32>("0x_10", "i32", loc, IntSyntax::default()).is_err());
     }
 
     #[test]
     fn parse_int_signed_preserves_error_location() {
         let loc = sample_location();
-        let err =
-            parse_int_signed::<i64>("0x8000000000000000", "i64", loc, false, true).unwrap_err();
+        let err = parse_int_signed::<i64>("0x8000000000000000", "i64", loc, IntSyntax::default())
+            .unwrap_err();
         match err {
             Error::InvalidScalar { location, .. } => assert_eq!(location, loc),
             other => panic!("unexpected error variant: {:?}", other),
@@ -712,7 +748,7 @@ mod tests {
     #[test]
     fn parse_int_unsigned_rejects_negative_inputs() {
         let loc = sample_location();
-        let err = parse_int_unsigned::<u32>("-5", "u32", loc, false, true).unwrap_err();
+        let err = parse_int_unsigned::<u32>("-5", "u32", loc, IntSyntax::default()).unwrap_err();
         match err {
             Error::InvalidScalar { location, .. } => assert_eq!(location, loc),
             other => panic!("unexpected error variant: {:?}", other),
@@ -723,11 +759,12 @@ mod tests {
     fn parse_int_unsigned_honors_legacy_prefix_underscores() {
         let loc = sample_location();
 
-        let octal: u32 = parse_int_unsigned("0_10", "u32", loc, true, true).unwrap();
-        let plus_octal: u32 = parse_int_unsigned("+0_10", "u32", loc, true, true).unwrap();
-        let hex: u32 = parse_int_unsigned("0x_10", "u32", loc, true, true).unwrap();
-        let explicit_octal: u32 = parse_int_unsigned("0o_10", "u32", loc, true, true).unwrap();
-        let binary: u32 = parse_int_unsigned("0b_10", "u32", loc, true, true).unwrap();
+        let octal: u32 = parse_int_unsigned("0_10", "u32", loc, legacy_int_syntax()).unwrap();
+        let plus_octal: u32 = parse_int_unsigned("+0_10", "u32", loc, legacy_int_syntax()).unwrap();
+        let hex: u32 = parse_int_unsigned("0x_10", "u32", loc, legacy_int_syntax()).unwrap();
+        let explicit_octal: u32 =
+            parse_int_unsigned("0o_10", "u32", loc, legacy_int_syntax()).unwrap();
+        let binary: u32 = parse_int_unsigned("0b_10", "u32", loc, legacy_int_syntax()).unwrap();
 
         assert_eq!(octal, 0o10);
         assert_eq!(plus_octal, 0o10);

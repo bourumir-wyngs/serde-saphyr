@@ -1,6 +1,7 @@
 use super::options::{DuplicateKeyPolicy, MergeKeyPolicy, NonFiniteFloatPolicy, Options};
 use super::{Error, Location};
 use crate::budget::BudgetBreach;
+use crate::parse_scalars::IntSyntax;
 
 /// Small immutable runtime configuration that `YamlDeserializer` needs.
 #[derive(Copy, Clone)]
@@ -38,6 +39,21 @@ pub(crate) struct Cfg {
 }
 
 impl Cfg {
+    /// Whether numeric parsing permits underscore digit separators.
+    #[inline]
+    pub(crate) fn allow_numeric_underscores(self) -> bool {
+        !self.underscored_numbers_as_strings
+    }
+
+    /// Integer syntax used for both scalar values and key fingerprints.
+    #[inline]
+    pub(crate) fn int_syntax(self) -> IntSyntax {
+        IntSyntax {
+            legacy_octal: self.legacy_octal_numbers,
+            allow_underscores: self.allow_numeric_underscores(),
+        }
+    }
+
     #[inline]
     #[allow(deprecated)] // Resolve the compatibility default using the legacy flag.
     pub(crate) fn from_options(options: &Options) -> Self {
