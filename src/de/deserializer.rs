@@ -967,7 +967,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                         view.location,
                         view.tag,
                         self.cfg.angle_conversions,
-                        self.cfg.allow_numeric_underscores(),
+                        self.cfg.allow_numeric_underscores,
                     )?;
                     return self.visit_typeless_float(
                         value,
@@ -1059,7 +1059,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 location,
                 view.tag,
                 self.cfg.angle_conversions,
-                self.cfg.allow_numeric_underscores(),
+                self.cfg.allow_numeric_underscores,
             ) {
                 return self.visit_typeless_float(v, view.raw.into_owned(), location, visitor);
             }
@@ -1200,7 +1200,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             location,
             tag,
             self.cfg.angle_conversions,
-            self.cfg.allow_numeric_underscores(),
+            self.cfg.allow_numeric_underscores,
         )?;
         visitor.visit_f32(v)
     }
@@ -1213,7 +1213,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             location,
             tag,
             self.cfg.angle_conversions,
-            self.cfg.allow_numeric_underscores(),
+            self.cfg.allow_numeric_underscores,
         )?;
         visitor.visit_f64(v)
     }
@@ -1239,7 +1239,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     &view.effective,
                     &view.style,
                     self.cfg.strict_booleans,
-                    self.cfg.allow_numeric_underscores(),
+                    self.cfg.allow_numeric_underscores,
                 )
             {
                 // Require quoting for ambiguous plain scalars in no_schema mode.
@@ -1289,7 +1289,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                         &view.effective,
                         &view.style,
                         self.cfg.strict_booleans,
-                        self.cfg.allow_numeric_underscores(),
+                        self.cfg.allow_numeric_underscores,
                     )
                     && !view.tag.forces_string()
                 {
@@ -1387,7 +1387,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     &view.effective,
                     &view.style,
                     self.cfg.strict_booleans,
-                    self.cfg.allow_numeric_underscores(),
+                    self.cfg.allow_numeric_underscores,
                 )
                 && !view.tag.forces_string()
             {
@@ -2751,7 +2751,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             &view.effective,
                             &style,
                             self.cfg.strict_booleans,
-                            self.cfg.allow_numeric_underscores(),
+                            self.cfg.allow_numeric_underscores,
                         )
                     {
                         let view = self.take_scalar_view()?;
@@ -2810,7 +2810,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             &view.raw,
                             &view.style,
                             self.cfg.strict_booleans,
-                            self.cfg.allow_numeric_underscores(),
+                            self.cfg.allow_numeric_underscores,
                         )
                     {
                         let view = key_de.take_scalar_view()?;

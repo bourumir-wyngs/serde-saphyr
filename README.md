@@ -161,13 +161,13 @@ deserialization, explicit `!!int` tags, and mapping-key comparison retain their
 existing behavior. Lowercase binary notation (`0b101`) remains a supported extension
 to the YAML 1.2 Core schema.
 
-When migrating code that reads generic values such as `serde_json::Value`, enable
-either of these independent options to preserve numeric spellings as strings:
+When migrating code that reads generic values such as `serde_json::Value`, configure
+these independent options to preserve numeric spellings as strings:
 
 ```rust
 let options = serde_saphyr::options! {
     leading_zero_numbers_as_strings: true,
-    underscored_numbers_as_strings: true,
+    allow_numeric_underscores: false,
 };
 let value: serde_json::Value = serde_saphyr::from_str_with_options(
     "[0755, -007, +00, 1_000, 0xFF_FF]",
@@ -176,7 +176,7 @@ let value: serde_json::Value = serde_saphyr::from_str_with_options(
 assert_eq!(value, serde_json::json!(["0755", "-007", "+00", "1_000", "0xFF_FF"]));
 ```
 
-Both options default to `false`. `leading_zero_numbers_as_strings` preserves
+`leading_zero_numbers_as_strings` defaults to `false`. Enabling it preserves
 digit-only decimal spellings with redundant leading zeros and an optional sign;
 floats such as `0.5`, `00.5`, and `01e2` still infer as numbers.
 `leading_zero_numbers_as_strings` affects implicit type inference through Serde's `deserialize_any`,
@@ -184,14 +184,15 @@ including buffering for `#[serde(untagged)]` and `#[serde(flatten)]`, and takes
 precedence over `legacy_octal_numbers` during inference. Direct typed parsing,
 explicit numeric tags, and mapping-key comparison retain their existing behavior.
 
-`underscored_numbers_as_strings` disallows underscores in numbers everywhere.
+`allow_numeric_underscores` defaults to `true`. Setting it to `false` disallows
+underscores in numbers everywhere.
 Plain scalars such as `1_000`, `0xFF_FF`, and `1_000.5` remain strings during
 implicit inference, including untagged enums and flattened fields. Integer and
 float targets reject these spellings, for both keys and values, even with explicit
 `!!int` or `!!float` tags or with `legacy_octal_numbers: true`.
 [Mapping-key comparison](#duplicate-keys) follows the same rule: `1_000` and `1000`
 are distinct keys, including inside composite keys and during merge expansion.
-Leave this option `false` to retain the supported numeric underscore syntax and
+Leave this option `true` to retain the supported numeric underscore syntax and
 compare underscored integer keys by their numeric value. This does not add new
 syntax: underscored floats still require robotics angle conversions.
 
@@ -426,7 +427,7 @@ Duplicate key handling is configurable. By default it’s an error; “first win
 
 With `Error`, `FirstWins`, and `LastWins`, YAML integer keys are parsed to their numeric meaning before checking for duplicates, regardless of the target Rust type. For example, `0xB` and `11` are the same integer key, even in a `HashMap<String, _>`. This comparison uses exact integer values within the supported `i128`/`u128` range and respects `legacy_octal_numbers`; values outside that range retain text-based comparison. The same rule applies inside composite keys. Merge expansion uses this comparison under every duplicate key policy.
 
-With `underscored_numbers_as_strings: true`, underscores are disallowed in numbers,
+With `allow_numeric_underscores: false`, underscores are disallowed in numbers,
 so plain `1_000` is a string key distinct from the integer key `1000`. The same
 restriction applies inside composite keys and during merge expansion. Deserializing
 an underscored key into an integer is an error; an explicit `!!int` tag does not

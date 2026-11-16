@@ -1076,8 +1076,8 @@ pub enum Error {
     },
 
     /// Numeric parsing encountered an underscore while
-    /// [`Options::underscored_numbers_as_strings`](crate::Options::underscored_numbers_as_strings)
-    /// was enabled.
+    /// [`Options::allow_numeric_underscores`](crate::Options::allow_numeric_underscores)
+    /// was disabled.
     NumericUnderscoresDisabled {
         location: Location,
     },

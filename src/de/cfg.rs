@@ -14,8 +14,8 @@ pub(crate) struct Cfg {
     pub(crate) legacy_octal_numbers: bool,
     /// Preserve redundant-zero decimal integer spellings during implicit inference.
     pub(crate) leading_zero_numbers_as_strings: bool,
-    /// Disallow underscores in numeric parsing, preserving untagged scalars as strings.
-    pub(crate) underscored_numbers_as_strings: bool,
+    /// Allow underscore digit separators in numeric parsing. Default: true.
+    pub(crate) allow_numeric_underscores: bool,
     /// If true, accept only the six YAML 1.2 Core boolean spellings.
     pub(crate) strict_booleans: bool,
     /// Preserve plain null-like text when a string target is requested.
@@ -39,18 +39,12 @@ pub(crate) struct Cfg {
 }
 
 impl Cfg {
-    /// Whether numeric parsing permits underscore digit separators.
-    #[inline]
-    pub(crate) fn allow_numeric_underscores(self) -> bool {
-        !self.underscored_numbers_as_strings
-    }
-
     /// Integer syntax used for both scalar values and key fingerprints.
     #[inline]
     pub(crate) fn int_syntax(self) -> IntSyntax {
         IntSyntax {
             legacy_octal: self.legacy_octal_numbers,
-            allow_underscores: self.allow_numeric_underscores(),
+            allow_underscores: self.allow_numeric_underscores,
         }
     }
 
@@ -62,7 +56,7 @@ impl Cfg {
             merge_keys: options.merge_keys,
             legacy_octal_numbers: options.legacy_octal_numbers,
             leading_zero_numbers_as_strings: options.leading_zero_numbers_as_strings,
-            underscored_numbers_as_strings: options.underscored_numbers_as_strings,
+            allow_numeric_underscores: options.allow_numeric_underscores,
             strict_booleans: options.strict_booleans,
             null_as_string: options.null_as_string,
             angle_conversions: options.angle_conversions,

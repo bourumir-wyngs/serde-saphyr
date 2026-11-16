@@ -13,7 +13,7 @@ use serde_saphyr::{
 fn preserve_both() -> Options {
     serde_saphyr::options! {
         leading_zero_numbers_as_strings: true,
-        underscored_numbers_as_strings: true,
+        allow_numeric_underscores: false,
     }
 }
 
@@ -54,7 +54,7 @@ fn assert_underscore_diagnostic(error: &Error) {
 fn preservation_defaults_off() {
     let options = Options::default();
     assert!(!options.leading_zero_numbers_as_strings);
-    assert!(!options.underscored_numbers_as_strings);
+    assert!(options.allow_numeric_underscores);
 
     for (yaml, expected) in [
         ("0755", json!(755.0)),
@@ -81,7 +81,7 @@ fn leading_zero_option_preserves_signed_digit_only_spellings() {
 
 #[test]
 fn underscore_option_preserves_decimal_and_radix_spellings() {
-    let options = serde_saphyr::options! { underscored_numbers_as_strings: true };
+    let options = serde_saphyr::options! { allow_numeric_underscores: false };
     for yaml in [
         "1_000",
         "+1_000",
@@ -115,7 +115,7 @@ fn overflowing_underscored_exponents_stay_strings(
     policy: NonFiniteFloatPolicy,
 ) {
     let options = serde_saphyr::options! {
-        underscored_numbers_as_strings: true,
+        allow_numeric_underscores: false,
         non_finite_float_policy: policy,
         angle_conversions: cfg!(feature = "robotics"),
     };
@@ -210,7 +210,7 @@ fn direct_numeric_and_string_targets_obey_underscore_restriction() {
 fn preservation_takes_precedence_over_implicit_legacy_octal() {
     let options = serde_saphyr::options! {
         leading_zero_numbers_as_strings: true,
-        underscored_numbers_as_strings: true,
+        allow_numeric_underscores: false,
         legacy_octal_numbers: true,
     };
     for yaml in ["0755", "-0755", "009", "0_10", "+0_10", "0x_FF"] {
@@ -312,7 +312,7 @@ fn underscored_mapping_keys_are_distinct_from_integers(
     policy: DuplicateKeyPolicy,
 ) {
     let options = serde_saphyr::options! {
-        underscored_numbers_as_strings: true,
+        allow_numeric_underscores: false,
         duplicate_keys: policy,
     };
     let expected = BTreeMap::from([
@@ -348,7 +348,7 @@ fn repeated_underscored_string_keys_still_follow_duplicate_policy(
 ) {
     let yaml = "1_000: first\n1_000: second\n";
     let options = serde_saphyr::options! {
-        underscored_numbers_as_strings: true,
+        allow_numeric_underscores: false,
         duplicate_keys: policy,
     };
     for result in [
@@ -385,7 +385,7 @@ fn merges_keep_underscored_string_keys_distinct_and_reject_numeric_targets(
     policy: DuplicateKeyPolicy,
 ) {
     let options = serde_saphyr::options! {
-        underscored_numbers_as_strings: true,
+        allow_numeric_underscores: false,
         duplicate_keys: policy,
     };
     let expected = BTreeMap::from([
@@ -476,7 +476,7 @@ fn numeric_mapping_keys_and_values_obey_underscore_restriction(
         from_str_with_options(&value_yaml, options.clone()).unwrap();
     assert_eq!(keys[&expected], "value");
     assert_eq!(values["value"], expected);
-    options.underscored_numbers_as_strings = true;
+    options.allow_numeric_underscores = false;
     let key_error =
         from_str_with_options::<BTreeMap<i64, String>>(&key_yaml, options.clone()).unwrap_err();
     assert_underscore_diagnostic(&key_error);
@@ -545,7 +545,7 @@ fn float_value_underscore_diagnostic_preserves_source_location() {
 #[case::signed("-1_000")]
 fn no_schema_accepts_disallowed_underscore_numbers_as_strings(#[case] scalar: &str) {
     let options = serde_saphyr::options! {
-        underscored_numbers_as_strings: true,
+        allow_numeric_underscores: false,
         no_schema: true,
     };
     assert_eq!(
@@ -577,7 +577,7 @@ fn robotics_cannot_override_underscore_restriction(#[case] yaml: &str, #[case] e
     let mut options = serde_saphyr::options! { angle_conversions: true };
     let typed: f64 = from_str_with_options(yaml, options.clone()).unwrap();
     assert_eq!(typed, expected);
-    options.underscored_numbers_as_strings = true;
+    options.allow_numeric_underscores = false;
     assert_underscore_diagnostic(&from_str_with_options::<f32>(yaml, options.clone()).unwrap_err());
     assert_underscore_diagnostic(&from_str_with_options::<f64>(yaml, options.clone()).unwrap_err());
     if yaml.starts_with('!') {
@@ -601,7 +601,7 @@ fn interpolated_numbers_obey_underscore_restriction(#[case] yaml: &str) {
         from_str_with_options::<u64>(yaml, options.clone()).unwrap(),
         1000
     );
-    options.underscored_numbers_as_strings = true;
+    options.allow_numeric_underscores = false;
     assert!(from_str_with_options::<u64>(yaml, options.clone()).is_err());
     if yaml.starts_with("!!int") {
         assert!(from_str_with_options::<Value>(yaml, options).is_err());
@@ -612,17 +612,19 @@ fn interpolated_numbers_obey_underscore_restriction(#[case] yaml: &str) {
 
 #[cfg(feature = "serde_derived_types")]
 #[test]
-fn serialized_options_round_trip_and_older_configurations_default_to_false() {
+fn serialized_options_round_trip_and_missing_fields_use_defaults() {
     let serialized = serde_json::to_value(preserve_both()).unwrap();
+    assert_eq!(serialized["allow_numeric_underscores"], json!(false));
+    assert!(serialized.get("underscored_numbers_as_strings").is_none());
     let configured: Options = serde_json::from_value(serialized.clone()).unwrap();
     assert!(configured.leading_zero_numbers_as_strings);
-    assert!(configured.underscored_numbers_as_strings);
+    assert!(!configured.allow_numeric_underscores);
 
     let mut older = serialized;
     let fields = older.as_object_mut().unwrap();
     fields.remove("leading_zero_numbers_as_strings");
-    fields.remove("underscored_numbers_as_strings");
+    fields.remove("allow_numeric_underscores");
     let configured: Options = serde_json::from_value(older).unwrap();
     assert!(!configured.leading_zero_numbers_as_strings);
-    assert!(!configured.underscored_numbers_as_strings);
+    assert!(configured.allow_numeric_underscores);
 }

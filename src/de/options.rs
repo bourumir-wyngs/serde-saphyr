@@ -8,6 +8,11 @@ use std::io;
 use std::path::Path;
 use std::rc::Rc;
 
+#[cfg(feature = "serde_derived_types")]
+const fn default_allow_numeric_underscores() -> bool {
+    true
+}
+
 #[cfg(all(feature = "serde_derived_types", feature = "comments"))]
 const fn default_emit_comments() -> bool {
     true
@@ -347,24 +352,28 @@ pub struct Options {
     /// tags, and mapping-key equality retain their existing behavior.
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub leading_zero_numbers_as_strings: bool,
-    /// Disallow underscores in numbers and preserve plain scalars containing
-    /// underscores as strings during implicit type inference (`deserialize_any`).
-    /// Examples include `1_000`, `0xFF_FF`, `0b10_01`, and `1_000.5`.
+    /// Allow supported underscore digit separators in numbers. Default: true.
+    /// This does not enable additional syntax: underscored floats still require
+    /// robotics angle conversions.
     ///
+    /// When false, plain scalars containing underscores remain strings during
+    /// implicit type inference (`deserialize_any`), including untagged enums and
+    /// flattened fields. Examples include `1_000`, `0xFF_FF`, `0b10_01`, and `1_000.5`.
     /// This supports compatibility with `serde_yaml` when reading untyped values.
-    /// It also applies to untagged enums and flattened fields. Integer and float
-    /// targets reject scalars containing underscores, for both mapping keys and
-    /// values. Explicit `!!int` and `!!float` tags do not override this restriction.
-    /// This takes precedence over [`Self::legacy_octal_numbers`].
+    /// Integer and float targets reject these scalars, for both mapping keys and
+    /// values. Explicit `!!int` and `!!float` tags and [`Self::legacy_octal_numbers`]
+    /// do not override this restriction.
     /// Rejected numeric scalars return
     /// [`Error::NumericUnderscoresDisabled`](crate::Error::NumericUnderscoresDisabled).
     ///
     /// Mapping-key comparison follows the same rule: plain `1_000` and `1000`
-    /// are distinct keys when this option is enabled, including inside composite
-    /// keys and during merge expansion. Default: false (allow valid numeric
-    /// underscore separators).
-    #[cfg_attr(feature = "serde_derived_types", serde(default))]
-    pub underscored_numbers_as_strings: bool,
+    /// are distinct keys when this option is false, including inside composite
+    /// keys and during merge expansion.
+    #[cfg_attr(
+        feature = "serde_derived_types",
+        serde(default = "default_allow_numeric_underscores")
+    )]
+    pub allow_numeric_underscores: bool,
     /// If true, accept only YAML 1.2 Core boolean spellings:
     /// `true`, `True`, `TRUE`, `false`, `False`, and `FALSE`.
     /// Other spellings, including YAML 1.1 forms such as `yes`/`no`/`on`/`off`,
@@ -766,7 +775,7 @@ impl Default for Options {
             alias_limits: AliasLimits::default(),
             legacy_octal_numbers: false,
             leading_zero_numbers_as_strings: false,
-            underscored_numbers_as_strings: false,
+            allow_numeric_underscores: true,
             strict_booleans: false,
             null_as_string: false,
             angle_conversions: false,
@@ -817,10 +826,7 @@ impl std::fmt::Debug for Options {
                 "leading_zero_numbers_as_strings",
                 &self.leading_zero_numbers_as_strings,
             )
-            .field(
-                "underscored_numbers_as_strings",
-                &self.underscored_numbers_as_strings,
-            )
+            .field("allow_numeric_underscores", &self.allow_numeric_underscores)
             .field("strict_booleans", &self.strict_booleans)
             .field("null_as_string", &self.null_as_string)
             .field(
@@ -906,7 +912,7 @@ mod tests {
         assert_eq!(opts.alias_limits.max_total_replayed_events, 1_000_000);
         assert!(!opts.legacy_octal_numbers);
         assert!(!opts.leading_zero_numbers_as_strings);
-        assert!(!opts.underscored_numbers_as_strings);
+        assert!(opts.allow_numeric_underscores);
         assert!(!opts.strict_booleans);
         assert!(!opts.null_as_string);
         assert!(!opts.ignore_binary_tag_for_string);
