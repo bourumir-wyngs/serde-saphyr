@@ -19,7 +19,10 @@ fn uppercase_prefixes_infer_as_strings(
 ) {
     let scalar = format!("{sign}{scalar}");
     assert_inferred(&scalar, json!(scalar));
-    assert_inferred(&format!("example: {scalar}\n"), json!({ "example": scalar }));
+    assert_inferred(
+        &format!("example: {scalar}\n"),
+        json!({ "example": scalar }),
+    );
 }
 
 #[rstest]
@@ -52,7 +55,10 @@ fn typed_and_explicit_integers_keep_uppercase_prefixes(
 ) {
     assert_eq!(serde_saphyr::from_str::<i64>(scalar).unwrap(), expected);
     if expected >= 0 {
-        assert_eq!(serde_saphyr::from_str::<u64>(scalar).unwrap(), expected as u64);
+        assert_eq!(
+            serde_saphyr::from_str::<u64>(scalar).unwrap(),
+            expected as u64
+        );
     }
     assert_inferred(&format!("!!int {scalar}"), json!(expected));
     assert_inferred(&format!("!!int '{scalar}'"), json!(expected));
