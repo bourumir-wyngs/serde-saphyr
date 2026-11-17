@@ -1,6 +1,7 @@
 use super::options::{DuplicateKeyPolicy, MergeKeyPolicy, NonFiniteFloatPolicy, Options};
 use super::{Error, Location};
 use crate::budget::BudgetBreach;
+use crate::parse_scalars::IntSyntax;
 
 /// Small immutable runtime configuration that `YamlDeserializer` needs.
 #[derive(Copy, Clone)]
@@ -13,16 +14,22 @@ pub(crate) struct Cfg {
     pub(crate) legacy_octal_numbers: bool,
     /// Preserve redundant-zero decimal integer spellings during implicit inference.
     pub(crate) leading_zero_numbers_as_strings: bool,
-    /// Preserve scalars containing underscores during implicit inference.
-    pub(crate) underscored_numbers_as_strings: bool,
+    /// Allow underscore digit separators in numeric parsing. Default: true.
+    pub(crate) allow_numeric_underscores: bool,
+    /// Reject uppercase radix prefixes during integer parsing. Default: false.
+    pub(crate) lowercase_radix_prefixes_only: bool,
     /// If true, accept only the six YAML 1.2 Core boolean spellings.
     pub(crate) strict_booleans: bool,
+    /// Preserve plain null-like text when a string target is requested.
+    pub(crate) null_as_string: bool,
     /// If true, ROS-compliant angle resolver is enabled
     pub(crate) angle_conversions: bool,
     /// Ignore !!binary for string
     pub(crate) ignore_binary_tag_for_string: bool,
     /// Do not take into String type that looks like number or boolean (require quoting)
     pub(crate) no_schema: bool,
+    /// Reject tags other than standard string tags on Rust struct field names.
+    pub(crate) reject_tagged_field_names: bool,
     /// Effective handling of non-finite floats in `deserialize_any`, with the legacy
     /// boolean already resolved.
     pub(crate) non_finite_float_policy: NonFiniteFloatPolicy,
@@ -34,6 +41,16 @@ pub(crate) struct Cfg {
 }
 
 impl Cfg {
+    /// Integer syntax used for both scalar values and key fingerprints.
+    #[inline]
+    pub(crate) fn int_syntax(self) -> IntSyntax {
+        IntSyntax {
+            legacy_octal: self.legacy_octal_numbers,
+            allow_underscores: self.allow_numeric_underscores,
+            lowercase_radix_prefixes_only: self.lowercase_radix_prefixes_only,
+        }
+    }
+
     #[inline]
     #[allow(deprecated)] // Resolve the compatibility default using the legacy flag.
     pub(crate) fn from_options(options: &Options) -> Self {
@@ -42,11 +59,14 @@ impl Cfg {
             merge_keys: options.merge_keys,
             legacy_octal_numbers: options.legacy_octal_numbers,
             leading_zero_numbers_as_strings: options.leading_zero_numbers_as_strings,
-            underscored_numbers_as_strings: options.underscored_numbers_as_strings,
+            allow_numeric_underscores: options.allow_numeric_underscores,
+            lowercase_radix_prefixes_only: options.lowercase_radix_prefixes_only,
             strict_booleans: options.strict_booleans,
+            null_as_string: options.null_as_string,
             angle_conversions: options.angle_conversions,
             ignore_binary_tag_for_string: options.ignore_binary_tag_for_string,
             no_schema: options.no_schema,
+            reject_tagged_field_names: options.reject_tagged_field_names,
             non_finite_float_policy: match options.non_finite_float_policy {
                 NonFiniteFloatPolicy::Default if options.reject_non_finite_typeless_float => {
                     NonFiniteFloatPolicy::Reject

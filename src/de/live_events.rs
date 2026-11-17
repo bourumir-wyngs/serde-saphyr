@@ -223,14 +223,26 @@ pub(crate) enum GranitParser<'a> {
     #[cfg(not(feature = "include"))]
     StringParser(BaseParser<'a, StrInput<'a>>),
     StreamParser(StreamParser<'a>),
+    #[cfg(not(feature = "include"))]
+    Finished,
 }
 
 impl<'input> GranitParser<'input> {
     fn next(&mut self) -> Option<Result<(Event<'input>, Span), ScanError>> {
-        match self {
+        let item = match self {
             GranitParser::StringParser(parser) => parser.next(),
             GranitParser::StreamParser(parser) => parser.next(),
+            #[cfg(not(feature = "include"))]
+            GranitParser::Finished => None,
+        };
+        #[cfg(not(feature = "include"))]
+        if matches!(item, Some(Err(_))) {
+            // Parser errors are terminal. Drop the parser's cached error before
+            // converting the returned error so its original io::Error can be
+            // recovered without another wrapper. ParserStack already does this.
+            *self = GranitParser::Finished;
         }
+        item
     }
 
     #[cfg(feature = "include")]
@@ -308,7 +320,7 @@ pub(crate) struct LiveEvents<'a> {
 
     /// Whether any content event has been produced in the current stream.
     produced_any_in_doc: bool,
-    /// Whether we emitted a synthetic null scalar to represent an empty document.
+    /// Whether we emitted a synthetic null scalar for a stream with no documents.
     synthesized_null_emitted: bool,
     /// Single-item lookahead buffer (peeked event not yet consumed).
     look: Option<Ev<'a>>,
@@ -366,6 +378,9 @@ pub(crate) struct LiveEvents<'a> {
 
     /// Whether explicitly tagged nodes whose tags are unknown to this crate are rejected.
     reject_unsupported_tags: bool,
+
+    /// Retain scalar tag spellings for struct field-name diagnostics.
+    preserve_original_tags: bool,
 
     /// Whether robotics-only angle tags are supported in strict mode.
     angle_conversions: bool,
@@ -433,6 +448,7 @@ impl<'a> LiveEvents<'a> {
         let merge_keys = options.merge_keys;
         let pending_error = options.validate().err();
         let reject_unsupported_tags = options.reject_unsupported_tags;
+        let preserve_original_tags = options.reject_tagged_field_names;
         let angle_conversions = options.angle_conversions;
         let require_indent = options.require_indent;
         #[cfg(feature = "properties")]
@@ -479,9 +495,9 @@ impl<'a> LiveEvents<'a> {
             pending_trailing_comments: Vec::new(),
             #[cfg(feature = "comments")]
             produced_leading_comments: Vec::new(),
-            inject: Vec::with_capacity(2),
-            anchors: Vec::with_capacity(8),
-            rec_stack: Vec::with_capacity(2),
+            inject: Vec::new(),
+            anchors: Vec::new(),
+            rec_stack: Vec::new(),
             budget: budget.map(|budget| BudgetEnforcer::new(budget, scope, merge_keys)),
 
             budget_report,
@@ -501,6 +517,7 @@ impl<'a> LiveEvents<'a> {
 
             pending_error,
             reject_unsupported_tags,
+            preserve_original_tags,
             angle_conversions,
             tag_context: SmallVec::new(),
 
@@ -530,6 +547,7 @@ impl<'a> LiveEvents<'a> {
         let merge_keys = options.merge_keys;
         let pending_error = options.validate().err();
         let reject_unsupported_tags = options.reject_unsupported_tags;
+        let preserve_original_tags = options.reject_tagged_field_names;
         let angle_conversions = options.angle_conversions;
         let require_indent = options.require_indent;
         #[cfg(feature = "properties")]
@@ -573,9 +591,9 @@ impl<'a> LiveEvents<'a> {
             pending_trailing_comments: Vec::new(),
             #[cfg(feature = "comments")]
             produced_leading_comments: Vec::new(),
-            inject: Vec::with_capacity(2),
-            anchors: Vec::with_capacity(8),
-            rec_stack: Vec::with_capacity(2),
+            inject: Vec::new(),
+            anchors: Vec::new(),
+            rec_stack: Vec::new(),
             budget: budget
                 .map(|budget| BudgetEnforcer::new(budget, EnforcingPolicy::AllContent, merge_keys)),
 
@@ -596,6 +614,7 @@ impl<'a> LiveEvents<'a> {
 
             pending_error,
             reject_unsupported_tags,
+            preserve_original_tags,
             angle_conversions,
             tag_context: SmallVec::new(),
 
@@ -1110,7 +1129,6 @@ impl<'a> LiveEvents<'a> {
                         self.pending_include_anchor = 0;
                     }
 
-                    let raw_tag = tag.as_ref().map(|t| Cow::Owned(t.to_string()));
                     self.validate_scalar_tag(
                         tag_s,
                         || tag.as_deref().map_or_else(String::new, Tag::original),
@@ -1118,10 +1136,20 @@ impl<'a> LiveEvents<'a> {
                         location,
                     )?;
 
+                    let raw_tag = tag.as_ref().map(|tag| Cow::Owned(tag.to_string()));
+                    let original_tag = if self.preserve_original_tags {
+                        tag.as_deref()
+                            .map(Tag::original)
+                            .filter(|original| Some(original.as_str()) != raw_tag.as_deref())
+                            .map(String::into_boxed_str)
+                    } else {
+                        None
+                    };
                     let ev = Ev::Scalar {
                         value: val,
                         tag: tag_s,
                         raw_tag,
+                        original_tag,
                         style,
                         anchor: anchor_id,
                         location,
@@ -1394,13 +1422,14 @@ impl<'a> LiveEvents<'a> {
             }
         }
 
-        // True EOF. If we have not produced any content in the current document,
-        // synthesize a single null scalar event to represent an empty document.
+        // True EOF without any content events means a stream with no documents.
+        // Explicit empty documents already produce a scalar in the parser.
         if !self.produced_any_in_doc {
             let ev = Ev::Scalar {
                 value: String::new().into(),
                 tag: SfTag::Null,
                 raw_tag: None,
+                original_tag: None,
                 style: ScalarStyle::Plain,
                 anchor: 0,
                 location: self.last_location,
@@ -1712,6 +1741,17 @@ impl<'de> Events<'de> for LiveEvents<'de> {
         }
 
         Ok((&self.look).into())
+    }
+
+    fn take_empty_stream(&mut self) -> Result<bool, Error> {
+        let _ = self.peek()?;
+        // Synthesis happens only at EOF. Requiring a pending event prevents
+        // another deserialize call from consuming the same empty stream twice.
+        if self.synthesized_null_emitted && self.look.is_some() {
+            let _ = self.next()?;
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     fn strip_peeked_node_tag(&mut self) -> Result<(), Error> {

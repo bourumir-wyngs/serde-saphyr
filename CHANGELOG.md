@@ -10,42 +10,6 @@ incompatibilities even when existing Rust code compiles. The corrected semantics
 are the defaults; no legacy alias mode is provided. See
 [YAML changes in 3.0.0](README.md#yaml-changes-in-300) for all migration details.
 
-- Tags selecting unit enum variants now reject non-null payloads instead of silently
-  discarding them (#236). Use a bare variant name, a tag with empty content, or a
-  tag followed by `~` or `null`; quoted strings and collections are rejected.
-- Recognize only the standard plain null spellings: empty, `~`, `null`, `Null`, and `NULL`.
-  Other capitalization such as `NulL` remains a string instead of being rejected, converted
-  to an empty value, or skipped as a document ([#234](https://github.com/bourumir-wyngs/serde-saphyr/issues/234)).
-- `strict_booleans: true` now recognizes only the six YAML 1.2 Core boolean spellings.
-  Other capitalization such as `tRuE` remains a string during inference, is accepted
-  as unquoted text with `no_schema`, and is rejected for boolean targets.
-
-### Added
-
-- Added `Options::leading_zero_numbers_as_strings` and
-  `Options::underscored_numbers_as_strings` to preserve numeric spellings such as
-  `0755` and `1_000` as strings in untyped values, including untagged enums and
-  flattened fields ([#225](https://github.com/bourumir-wyngs/serde-saphyr/issues/225)).
-  Both default to `false`; direct typed parsing, explicit numeric tags, and
-  mapping-key comparison keep their existing behavior.
-- Added `Error::render_to` to append diagnostics to any `std::fmt::Write` using
-  `RenderOptions`, without collecting the complete output in an intermediate string
-  ([#221](https://github.com/bourumir-wyngs/serde-saphyr/issues/221)).
-- Added `DuplicateKeyPolicy::PassThrough` to delegate repeated explicit mapping entries
-  to Serde visitors, matching `serde_yaml`'s handling for structs, standard maps, and custom
-  multimap visitors ([#226](https://github.com/bourumir-wyngs/serde-saphyr/issues/226)).
-  The default remains `Error`; merge expansion retains its precedence rules. See the README
-  migration note for the scope of this option.
-
-### Deprecated
-
-- Deprecated `SerializerOptions::empty_as_braces`. Setting it to `false` emits YAML null
-  for empty block collections without tags or anchors. These values do not round-trip into
-  collection types. Omit the setting to keep the default `true` and emit `[]` or `{}`.
-  Existing serialization behavior remains supported for compatibility.
-
-### Fixed
-
 - Emit matching local tags on unit enum variants without a redundant `null`
   payload, including through optional and tagged wrappers. Existing explicit
   null payloads remain readable; actual variant fields retain their payload
@@ -70,15 +34,141 @@ are the defaults; no legacy alias mode is provided. See
   `!timestamp` can select a present unit variant, and `!maybe null` can select a
   present variant with an absent optional payload. Invalid payloads and unknown
   selectors report the same errors as direct enum targets instead of returning `None`.
-- Preserve application-tagged documents in multi-document APIs instead of
-  skipping them as null before deserializing the target type. Only untagged and
-  standard-tagged null documents are skipped. Optional targets retain tagged values,
-  including null-like enum payloads, as present values.
+- Multi-document APIs now retain former local aliases such as `!null` as
+  application tags. Untagged and standard-tagged null documents are skipped.
+  Optional targets treat application-tagged values as present, including
+  values with null-like enum payloads.
 - An application-tagged `None`, such as `Tagged(None::<String>, Some("!foo".into()))`,
   still emits `!foo null`, but no longer reads back as absence. Its tag denotes a
   present value and its payload must be valid for the inner type. Use untagged or
   standard-tagged null for `None`; use an optional enum payload for a present value
   whose payload is absent.
+- `Options::reject_tagged_field_names` now defaults to `true`, rejecting misplaced
+  tags on struct field names. Set it to `false` to retain the previous behavior.
+- Rename `Options::underscored_numbers_as_strings` to `Options::allow_numeric_underscores`
+  and invert its meaning; the new field defaults to `true`. Replace the old setting
+  `underscored_numbers_as_strings: true` with `allow_numeric_underscores: false` to
+  disallow underscores in all numeric parsing, including typed integer and float
+  keys and values, as well as explicit `!!int`/`!!float` tags. Plain underscored
+  scalars remain strings during inference;
+  `1_000` and `1000` now stay distinct during duplicate-key checks and merge
+  expansion, including inside composite keys
+  ([#278](https://github.com/bourumir-wyngs/serde-saphyr/issues/278)). Leave the option
+  `true` (the default) to accept numeric underscore separators. The independent
+  `leading_zero_numbers_as_strings` option keeps its existing behavior.
+  Disallowed underscores in otherwise valid numbers report
+  `Error::NumericUnderscoresDisabled`, rendered as "Underscores are disabled in
+  configuration" for developers and "Underscores not allowed" for users. Invalid
+  syntax and target-range failures keep their original parser errors.
+
+### Added
+
+- Added `Options::lowercase_radix_prefixes_only` (default: `false`) to require
+  lowercase integer radix prefixes (`0x`, `0o`, `0b`) in the shared integer parser
+  ([#266](https://github.com/bourumir-wyngs/serde-saphyr/issues/266),
+  [#280](https://github.com/bourumir-wyngs/serde-saphyr/pull/280)). When enabled,
+  uppercase-prefixed plain scalars remain strings during inference, while typed
+  integer keys/values and explicit `!!int` tags reject them. Duplicate-key checks,
+  merge expansion, and composite-key comparison use the same restriction.
+  Uppercase hexadecimal digits remain accepted with a lowercase prefix (`0xFF`).
+  Otherwise valid integers report `Error::UppercaseRadixPrefixDisabled`; malformed
+  syntax and target-range failures retain their original errors. This replaces the
+  inference-only uppercase-prefix rule from 2.2.0; the default now accepts uppercase
+  prefixes consistently in both inference and typed parsing.
+
+## 2.2.0
+
+### Added
+
+- Added opt-in `Options::null_as_string` (default: `false`) to preserve plain
+  `null`, `Null`, `NULL`, `~`, and empty scalars as text for string targets in both
+  mapping keys and values, including `String`, `&str`, and `Cow<str>`
+  ([#267](https://github.com/bourumir-wyngs/serde-saphyr/issues/267)). Explicit `!!null`
+  tags remain rejected for strings; `Option<T>`, untyped null inference, mapping-key
+  comparison, and `no_schema` quoting requirements keep their existing behavior.
+- Added `Options::bom_inside_document_as_content` (default `false`) to preserve a
+  BOM at the start of a token inside a document as plain scalar content, including
+  in included YAML. A BOM in a document prefix is still skipped.
+
+### Fixed
+- Preserve uppercase radix prefixes (`0X`, `0O`, `0B`, including signed forms) as
+  strings during implicit type inference, including untagged enums and flattened
+  fields (#266). Direct typed integer parsing, explicit `!!int` tags, and mapping-key
+  comparison retain their existing behavior.
+- Infer plain signed not-a-number spellings (`+.nan`, `-.NaN`, `-.NAN`) as strings
+  during implicit type inference, since the YAML 1.2 Core schema allows a sign on
+  `.inf` only (#271; [#272](https://github.com/bourumir-wyngs/serde-saphyr/pull/272),
+  [#273](https://github.com/bourumir-wyngs/serde-saphyr/pull/273)). This applies under
+  every `NonFiniteFloatPolicy`, including untagged enums and flattened fields.
+  Also accept these spellings without quotes when `no_schema: true` for string
+  values and mapping keys, including `String`, `&str`, and `Cow<str>`. Direct
+  untagged float targets continue to accept them as NaN. Explicit `!!float` scalars
+  now preserve the supplied NaN sign when deserialized as floats.
+
+### Changed
+
+- Updated to granit-parser 2.2.0. Under-indented quoted scalar continuations in block
+  context and tabs before quoted continuations are now accepted by default;
+  `strict_indentation: true` continues to reject them.
+
+## 2.1.1
+
+### Fixed
+- Fixed 2.1.0 regression empty documents producing errors (#265). Empty document is a valid YAML document.
+
+### Performance improvements
+- Significantly reduced allocations when deserializing (#262)
+
+## 2.1.0
+
+### Added
+
+- Added `PropertySyntax::DockerComposeWithNulls`: Compose interpolation where a value that is
+  solely a reference to an unset property, or whose expansion is `null`/`~`, becomes YAML null.
+  Explicitly empty properties and empty defaults stay empty strings, and `DockerCompose` itself
+  is unchanged.
+- Added opt-in `Options::reject_tagged_field_names` to catch misplaced tags on
+  struct field names, with `Error::TaggedStructFieldName` diagnostics. Struct field names can
+  only be strings, `!!str` is still accepted. As other tags can only be ignored, tag on a structure
+  field name is almost for sure placed wrongly. This setting will be default in next major release.
+- Added `Options::leading_zero_numbers_as_strings` and
+  `Options::underscored_numbers_as_strings` to preserve numeric spellings such as
+  `0755` and `1_000` as strings in untyped values, including untagged enums and
+  flattened fields ([#225](https://github.com/bourumir-wyngs/serde-saphyr/issues/225)).
+  Both default to `false`; direct typed parsing, explicit numeric tags, and
+  mapping-key comparison keep their existing behavior.
+- Added `Error::render_to` to append diagnostics to any `std::fmt::Write` using
+  `RenderOptions`, without collecting the complete output in an intermediate string
+  ([#221](https://github.com/bourumir-wyngs/serde-saphyr/issues/221)).
+- Added `DuplicateKeyPolicy::PassThrough` to delegate repeated explicit mapping entries
+  to Serde visitors, matching `serde_yaml`'s handling for structs, standard maps, and custom
+  multimap visitors ([#226](https://github.com/bourumir-wyngs/serde-saphyr/issues/226)).
+  The default remains `Error`; merge expansion retains its precedence rules. See the README
+  migration note for the scope of this option.
+
+### Deprecated
+
+- Deprecated `SerializerOptions::empty_as_braces`. Setting it to `false` emits YAML null
+  for empty block collections without tags or anchors. These values do not round-trip into
+  collection types. Omit the setting to keep the default `true` and emit `[]` or `{}`.
+  Existing serialization behavior remains supported for compatibility.
+
+### Fixed
+
+- Preserve application-tagged null-like documents in multi-document APIs, including
+  the `garde` and `validator` integrations. A document such as `!Maybe null` now reaches
+  enum dispatch instead of being skipped. This also affects default options: an
+  `Option<String>` target receives a `None` item for `!Foo null`, while a `String` target
+  reports `NullIntoString`. Untagged null documents and explicit `!!null` are still skipped.
+- Resolve tagged enum payloads according to their target type under `no_schema`:
+  `!Number 42` can deserialize into a numeric payload, while a string payload still
+  requires quoting, as in `!Text "42"`. This applies independently of property interpolation.
+- Keep validated and ordinary multi-document APIs consistent for interpolated nulls
+  and interpolation work budgets. Reader iterators stop after an interpolation-budget
+  breach, including breaches reported through an alias.
+- Emit empty lines in literal and folded block scalars without indentation,
+  avoiding trailing whitespace while preserving whitespace in the string content
+  ([#249](https://github.com/bourumir-wyngs/serde-saphyr/issues/249)).
 - Expose the original `std::io::Error` from deserialization failures through
   `std::error::Error::source()`. The outer message is `IO error`, so error chains
   include the underlying cause only once. Standalone Miette, Figment, and Figment2
@@ -97,9 +187,18 @@ are the defaults; no legacy alias mode is provided. See
 - Reject YAML null when deserializing sequences, mappings, and mapping-based structs instead
   of silently constructing empty values ([#233](https://github.com/bourumir-wyngs/serde-saphyr/issues/233)).
   Blank values and the plain spellings `~`, `null`, `Null`, and `NULL` are handled consistently.
-  Write `[]` for an empty sequence or `{}` for an empty mapping. Untagged and
-  standard-tagged nulls remain `None` for `Option<T>`; defaults for absent fields
-  are unchanged. See the README for the separate tagged-value presence change.
+  Write `[]` for an empty sequence or `{}` for an empty mapping. `Option<T>` null handling
+  and defaults for absent fields are unchanged; see the README migration notes.
+- Tags selecting unit enum variants now reject non-null payloads instead of silently
+  discarding them (#236). Use a bare variant name, a tag with empty content, or a
+  tag followed by `~` or `null`; quoted strings and collections are rejected.
+- Recognize only the standard plain null spellings: empty, `~`, `null`, `Null`, and `NULL`.
+  Other capitalization such as `NulL` remains a string instead of being rejected, converted
+  to an empty value, or skipped as a document ([#234](https://github.com/bourumir-wyngs/serde-saphyr/issues/234)).
+- `strict_booleans: true` now recognizes only the six YAML 1.2 Core boolean spellings.
+  Other capitalization such as `tRuE` remains a string during inference, is accepted
+  as unquoted text with `no_schema`, and is rejected for boolean targets.
+- Recognize only the YAML 1.2 Core spellings of `.inf` and `.nan` during inference (#254).
 
 ## 2.0.0
 
@@ -174,9 +273,15 @@ are the defaults; no legacy alias mode is provided. See
 
 ### Fixed
 
+- Recognize only the standard plain null spellings: empty, `~`, `null`, `Null`, and `NULL`.
+  Other capitalization such as `NulL` remains a string instead of being rejected, converted
+  to an empty value, or skipped as a document ([#234](https://github.com/bourumir-wyngs/serde-saphyr/issues/234)).
 - Buffered `LastWins` values and inline merges no longer produce alias errors when no
   alias was used. Replay preserves per-node origins, including genuine nested aliases,
   ordinary value locations, and merge use-sites for `Spanned<T>`.
+- `strict_booleans: true` now recognizes only the six YAML 1.2 Core boolean spellings.
+  Other capitalization such as `tRuE` remains a string during inference, is accepted
+  as unquoted text with `no_schema`, and is rejected for boolean targets.
 - Plain alias diagnostics explicitly label the use location with `(used at line X, column Y)`.
   The new `Localizer::alias_used_at` hook controls this suffix independently of failure and
   definition locations. Custom localizers that previously used `attach_location` to format

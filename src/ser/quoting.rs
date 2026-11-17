@@ -208,7 +208,7 @@ fn is_ambiguous(s: &str, yaml_12: bool) -> bool {
         || s.eq_ignore_ascii_case("+inf")
         || s.eq_ignore_ascii_case("-inf")
         || (!yaml_12
-            && (parse_yaml11_bool(s).is_ok()
+            && (parse_yaml11_bool(s).is_some()
                 || is_yaml11_timestamp(s)
                 || matches!(s, "<<" | "=")))
 }
@@ -423,10 +423,12 @@ fn contains_any_or_is_control(string: &str, values: &[char]) -> bool {
 
 fn has_comment_start(string: &str) -> bool {
     // In plain style, `#` starts a comment only when separated by whitespace.
-    string
-        .chars()
-        .zip(string.chars().skip(1))
-        .any(|(prev, curr)| prev.is_whitespace() && curr == '#')
+    string.match_indices('#').any(|(index, _)| {
+        string[..index]
+            .chars()
+            .next_back()
+            .is_some_and(char::is_whitespace)
+    })
 }
 
 #[cfg(test)]

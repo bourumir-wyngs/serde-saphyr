@@ -159,7 +159,7 @@ pub(crate) const INTERNAL_SPANNED_MARKER: &str = "__serde_saphyr_private_spanned
 /// }
 /// # }
 /// ```
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Spanned<T> {
     pub value: T,
     pub referenced: Location,

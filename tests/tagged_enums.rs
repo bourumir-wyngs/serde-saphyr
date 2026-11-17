@@ -36,6 +36,33 @@ fn tagged_enum_with_wrong_type_errors() {
     ));
 }
 
+#[test]
+fn tagged_newtype_payloads_follow_target_schema() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    enum Payload {
+        Number(u16),
+        Text(String),
+    }
+
+    // Keep this independent of the properties feature and interpolation modes.
+    let options = serde_saphyr::options! {
+        no_schema: true,
+    };
+    let number: Payload =
+        serde_saphyr::from_str_with_options("!Number 42", options.clone()).unwrap();
+    assert_eq!(number, Payload::Number(42));
+
+    let error =
+        serde_saphyr::from_str_with_options::<Payload>("!Text 42", options.clone()).unwrap_err();
+    assert!(matches!(
+        error.without_snippet(),
+        serde_saphyr::Error::QuotingRequired { value, .. } if value == "42"
+    ));
+
+    let text: Payload = serde_saphyr::from_str_with_options("!Text '42'", options).unwrap();
+    assert_eq!(text, Payload::Text("42".to_owned()));
+}
+
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 enum Simple {
     VALUE,

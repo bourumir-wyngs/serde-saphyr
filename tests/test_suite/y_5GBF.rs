@@ -1,5 +1,4 @@
 use serde::Deserialize;
-use serde_saphyr::Error;
 
 // 5GBF: Empty lines and chomping behaviors
 #[derive(Debug, Deserialize, PartialEq)]
@@ -11,7 +10,7 @@ struct Doc {
 
 #[test]
 fn yaml_5gbf_empty_lines_and_chomping() {
-    // This is an error: invalid indentation in quoted scalar
+    // Strict mode rejects the under-indented quoted scalar continuations.
     let y_wrong = r#"folding: "Empty line
 as a line feed"
 folding_multi: "More line feeds
@@ -24,7 +23,16 @@ chomping: |
 
 "#;
 
-    let _d: Error = serde_saphyr::from_str::<Doc>(y_wrong).expect_err("This should fail");
+    serde_saphyr::from_str_with_options::<Doc>(
+        y_wrong,
+        serde_saphyr::options! { strict_indentation: true },
+    )
+    .expect_err("strict mode rejects under-indented quoted continuations");
+
+    let relaxed: Doc = serde_saphyr::from_str(y_wrong).expect("relaxed mode accepts continuations");
+    assert_eq!(relaxed.folding, "Empty line as a line feed");
+    assert_eq!(relaxed.folding_multi, "More line feeds\n\nand the end");
+    assert_eq!(relaxed.chomping, "Clipped empty lines\n");
 
     // Line break in quoted scalar must be folded in one space
     let y = r#"

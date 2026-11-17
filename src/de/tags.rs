@@ -11,12 +11,6 @@ const INCLUDE_TAG_PLAIN: [&str; 3] = [
     "tag:yaml.org,2002:!include",
 ];
 
-const INCLUDE_TAG_WITH_FRAGMENT_PREFIX: [&str; 3] = [
-    "!include#",
-    "tag:yaml.org,2002:include#",
-    "tag:yaml.org,2002:!include#",
-];
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum IncludeTag {
     NotInclude,
@@ -30,13 +24,14 @@ pub(crate) fn parse_include_tag(tag: &Option<Cow<Tag>>) -> IncludeTag {
         return IncludeTag::NotInclude;
     };
 
-    let raw = tag.to_string();
-    if INCLUDE_TAG_PLAIN.contains(&raw.as_str()) {
-        return IncludeTag::Plain;
-    }
-
-    for prefix in INCLUDE_TAG_WITH_FRAGMENT_PREFIX {
-        if let Some(fragment) = raw.strip_prefix(prefix) {
+    for prefix in INCLUDE_TAG_PLAIN {
+        let Some(rest) = tag.suffix_in_namespace(prefix) else {
+            continue;
+        };
+        if rest.is_empty() {
+            return IncludeTag::Plain;
+        }
+        if let Some(fragment) = rest.strip_prefix('#') {
             if fragment.is_empty() {
                 return IncludeTag::InvalidFragment;
             }
@@ -110,6 +105,29 @@ pub(crate) enum TagNodeKind {
     Mapping,
 }
 
+fn non_core_tag(tag: &Tag) -> SfTag {
+    // Only the robotics extensions retain their historical bang-prefixed global aliases.
+    // Include tags (and their fragments) have already been handled by parse_include_tag.
+    if let Some(suffix) = tag.suffix_in_namespace(YAML_TAG_NAMESPACE) {
+        return match suffix.as_ref() {
+            "timestamp" => SfTag::TimeStamp,
+            "binary" => SfTag::Binary,
+            "time" | "!time" => SfTag::Time,
+            "degrees" | "!degrees" => SfTag::Degrees,
+            "radians" | "!radians" => SfTag::Radians,
+            _ => SfTag::Other,
+        };
+    }
+
+    match tag.suffix_in_namespace("!").as_deref() {
+        Some("") => SfTag::NonSpecific,
+        Some("time") => SfTag::Time,
+        Some("degrees") => SfTag::Degrees,
+        Some("radians") => SfTag::Radians,
+        _ => SfTag::Other,
+    }
+}
+
 fn core_suffix_to_sf_tag(suffix: &str) -> Option<SfTag> {
     match suffix {
         "null" => Some(SfTag::Null),
@@ -171,21 +189,7 @@ impl SfTag {
                     return SfTag::Value;
                 }
 
-                let key = cow.to_string();
-                match key.as_str() {
-                    "!" => SfTag::NonSpecific,
-                    "tag:yaml.org,2002:timestamp" => SfTag::TimeStamp,
-                    "tag:yaml.org,2002:binary" => SfTag::Binary,
-                    // Intentional application extensions, not aliases of standard YAML types.
-                    "!time" | "tag:yaml.org,2002:time" | "tag:yaml.org,2002:!time" => SfTag::Time,
-                    "!degrees" | "tag:yaml.org,2002:degrees" | "tag:yaml.org,2002:!degrees" => {
-                        SfTag::Degrees
-                    }
-                    "!radians" | "tag:yaml.org,2002:radians" | "tag:yaml.org,2002:!radians" => {
-                        SfTag::Radians
-                    }
-                    _ => SfTag::Other,
-                }
+                non_core_tag(cow)
             }
             None => SfTag::None,
         }
@@ -260,7 +264,10 @@ fn is_yaml_value_tag(tag: &Tag) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{SfTag, TagNodeKind, core_suffix_to_sf_tag, is_yaml_merge_tag, is_yaml_value_tag};
+    use super::{
+        IncludeTag, SfTag, TagNodeKind, core_suffix_to_sf_tag, is_yaml_merge_tag,
+        is_yaml_value_tag, parse_include_tag,
+    };
     use granit_parser::Tag;
     use rstest::rstest;
     use std::borrow::Cow;
@@ -370,6 +377,67 @@ mod tests {
         assert_eq!(sf_tag(timestamp), SfTag::TimeStamp);
         assert_eq!(sf_tag(binary), SfTag::Binary);
         assert_eq!(sf_tag(unknown), SfTag::Other);
+    }
+
+    #[test]
+    fn preserves_tag_classification_across_directive_splits() {
+        for (raw, expected) in [
+            ("!timestamp", SfTag::Other),
+            ("!!timestamp", SfTag::Other),
+            ("tag:yaml.org,2002:timestamp", SfTag::TimeStamp),
+            ("tag:yaml.org,2002:binary", SfTag::Binary),
+            ("tag:yaml.org,2002:!binary", SfTag::Other),
+            ("tag:yaml.org,2002:!time", SfTag::Time),
+            ("tag:yaml.org,2002:degrees", SfTag::Degrees),
+            ("!radians", SfTag::Radians),
+            ("!", SfTag::NonSpecific),
+            ("!!", SfTag::Other),
+            ("!!time", SfTag::Other),
+            ("!!include", SfTag::Other),
+            ("!!degrees", SfTag::Other),
+            ("!!radians", SfTag::Other),
+            ("tag:yaml.org,2002:!", SfTag::Other),
+            ("tag:yaml.org,2002:!!binary", SfTag::Other),
+            ("tag:example.org:timestamp", SfTag::Other),
+            ("!timestämp", SfTag::Other),
+            ("timestamp", SfTag::Other),
+            ("", SfTag::Other),
+        ] {
+            for split in (0..=raw.len()).filter(|&split| raw.is_char_boundary(split)) {
+                let tag = Tag::with_original_handle(&raw[..split], &raw[split..], "!custom!");
+                assert_eq!(sf_tag(tag), expected, "tag {raw:?}, split {split}");
+            }
+        }
+    }
+
+    #[test]
+    fn preserves_include_fragments_across_directive_splits() {
+        for prefix in [
+            "!include",
+            "tag:yaml.org,2002:include",
+            "tag:yaml.org,2002:!include",
+        ] {
+            for (tail, expected) in [
+                ("", IncludeTag::Plain),
+                ("#", IncludeTag::InvalidFragment),
+                ("#séction", IncludeTag::WithFragment("séction".to_owned())),
+                ("_other", IncludeTag::NotInclude),
+            ] {
+                let raw = format!("{prefix}{tail}");
+                for split in (0..=raw.len()).filter(|&split| raw.is_char_boundary(split)) {
+                    let tag = Some(Cow::Owned(Tag::with_original_handle(
+                        &raw[..split],
+                        &raw[split..],
+                        "!custom!",
+                    )));
+                    assert_eq!(
+                        parse_include_tag(&tag),
+                        expected,
+                        "tag {raw:?}, split {split}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

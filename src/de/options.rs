@@ -8,8 +8,18 @@ use std::io;
 use std::path::Path;
 use std::rc::Rc;
 
+#[cfg(feature = "serde_derived_types")]
+const fn default_allow_numeric_underscores() -> bool {
+    true
+}
+
 #[cfg(all(feature = "serde_derived_types", feature = "comments"))]
 const fn default_emit_comments() -> bool {
+    true
+}
+
+#[cfg(feature = "serde_derived_types")]
+const fn default_reject_tagged_field_names() -> bool {
     true
 }
 
@@ -102,6 +112,30 @@ pub enum PropertySyntax {
     /// Property interpolation compatible with [Docker Compose]'s syntax and value expansion.
     /// [Docker Compose]: https://docs.docker.com/reference/compose-file/interpolation/
     DockerCompose,
+
+    /// [`DockerCompose`](Self::DockerCompose) interpolation, except that an expanded value
+    /// can become YAML null:
+    ///
+    /// - A value consisting solely of `$NAME` or `${NAME}` is null when `NAME` is unset.
+    /// - A value whose expansion is exactly `null`, `Null`, `NULL`, or `~` is null.
+    ///
+    /// Everything else keeps the Compose behavior: an explicitly empty property and an empty
+    /// selected default (`${A:-${B}}` with both unset) are empty strings, surrounding text is
+    /// kept (`prefix-$MISSING` is `prefix-`), and numbers and booleans convert as before.
+    ///
+    /// The rules apply to the scalar's text whatever its style, so a quoted `"$NAME"` is null
+    /// as well, while a `|` block keeps its trailing newline and is therefore not a sole
+    /// reference. String-forcing tags (`!!str`, `!`) and other explicit tags keep their
+    /// meaning, and scalars without an expansion are resolved exactly as in other modes.
+    DockerComposeWithNulls,
+}
+
+#[cfg(feature = "properties")]
+impl PropertySyntax {
+    /// Whether this syntax uses Docker Compose interpolation rules.
+    pub(crate) const fn is_docker_compose(self) -> bool {
+        matches!(self, Self::DockerCompose | Self::DockerComposeWithNulls)
+    }
 }
 
 /// Merge key handling policy for YAML mappings.
@@ -247,11 +281,14 @@ pub struct Options {
     #[cfg(feature = "comments")]
     pub emit_comments: bool,
 
-    /// Enforce YAML indentation rules for flow collections (`[...]` and `{...}`).
+    /// Enforce YAML indentation rules for flow collections (`[...]` and `{...}`)
+    /// and scalar continuations.
     ///
     /// When enabled, flow entries, delimiters, and scalar continuation lines must be
-    /// indented beyond the enclosing block collection. Applies to included YAML as well.
-    /// Default: false (accept under-indented flow collections for compatibility).
+    /// indented beyond the enclosing block collection. Quoted scalar continuations
+    /// in block context must also be indented and cannot use tabs for indentation.
+    /// Applies to included YAML as well. Default: false (accept under-indented flow
+    /// collections and relaxed quoted scalar continuations for compatibility).
     ///
     /// Accepted with `strict_indentation: true`: entries and closing delimiters are
     /// indented beyond the enclosing block mapping.
@@ -293,6 +330,19 @@ pub struct Options {
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub strict_indentation: bool,
 
+    /// Treat a byte-order mark (U+FEFF) at the start of a token inside a document
+    /// as the start of a plain scalar, preserving it in the scalar's text.
+    ///
+    /// Default: false (report a parser error for such a BOM). When enabled, this
+    /// matches libyaml's behavior and applies to included YAML as well. A BOM in
+    /// a document prefix is still skipped. BOMs within an existing plain or quoted
+    /// scalar remain content in either mode.
+    ///
+    /// A preserved BOM is part of a mapping key, so `\u{FEFF}key` does not match
+    /// a struct field named `key`.
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
+    pub bom_inside_document_as_content: bool,
+
     /// Policy for duplicate keys.
     pub duplicate_keys: DuplicateKeyPolicy,
     /// Policy for YAML merge keys (`<<` and explicit `!!merge <<`).
@@ -323,23 +373,65 @@ pub struct Options {
     /// tags, and mapping-key equality retain their existing behavior.
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub leading_zero_numbers_as_strings: bool,
-    /// Preserve plain scalars containing underscores as strings during implicit
-    /// type inference (`deserialize_any`), including numeric spellings such as
-    /// `1_000`, `0xFF_FF`, and `0b10_01`.
+    /// Allow supported underscore digit separators in numbers. Default: true.
+    /// This does not enable additional syntax: underscored floats still require
+    /// robotics angle conversions.
     ///
+    /// When false, plain scalars containing underscores remain strings during
+    /// implicit type inference (`deserialize_any`), including untagged enums and
+    /// flattened fields. Examples include `1_000`, `0xFF_FF`, `0b10_01`, and `1_000.5`.
     /// This supports compatibility with `serde_yaml` when reading untyped values.
-    /// It also applies to untagged enums and flattened fields, and takes precedence
-    /// over [`Self::legacy_octal_numbers`] during inference. Direct typed
-    /// deserialization, explicit `!!int`/`!!float` tags, and mapping-key equality
-    /// retain their existing behavior. Default: false.
+    /// Integer and float targets reject these scalars, for both mapping keys and
+    /// values. Explicit `!!int` and `!!float` tags and [`Self::legacy_octal_numbers`]
+    /// do not override this restriction.
+    /// Otherwise valid numeric scalars return
+    /// [`Error::NumericUnderscoresDisabled`](crate::Error::NumericUnderscoresDisabled).
+    /// Invalid syntax and target-range failures retain the parser's original error.
+    ///
+    /// Mapping-key comparison follows the same rule: plain `1_000` and `1000`
+    /// are distinct keys when this option is false, including inside composite
+    /// keys and during merge expansion.
+    #[cfg_attr(
+        feature = "serde_derived_types",
+        serde(default = "default_allow_numeric_underscores")
+    )]
+    pub allow_numeric_underscores: bool,
+    /// Accept only lowercase integer radix prefixes (`0x`, `0o`, `0b`).
+    /// Default: false (also accept `0X`, `0O`, and `0B`).
+    /// Uppercase hexadecimal digits remain accepted, for example `0xFF`.
+    ///
+    /// When true, uppercase-prefixed plain scalars remain strings during implicit
+    /// inference, including untagged enums and flattened fields. Integer targets
+    /// reject these spellings for both mapping keys and values; explicit `!!int`
+    /// tags and [`Self::legacy_octal_numbers`] do not override the restriction.
+    /// Otherwise valid integers return
+    /// [`Error::UppercaseRadixPrefixDisabled`](crate::Error::UppercaseRadixPrefixDisabled).
+    /// Invalid syntax and target-range failures retain the parser's original error.
+    ///
+    /// Mapping-key comparison uses the same integer parser: plain `0XFF` and `255`
+    /// are distinct keys when this option is true, including inside composite
+    /// keys and during merge expansion. With the default false they compare equal.
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
-    pub underscored_numbers_as_strings: bool,
+    pub lowercase_radix_prefixes_only: bool,
     /// If true, accept only YAML 1.2 Core boolean spellings:
     /// `true`, `True`, `TRUE`, `false`, `False`, and `FALSE`.
     /// Other spellings, including YAML 1.1 forms such as `yes`/`no`/`on`/`off`,
     /// are rejected for boolean targets and are not inferred as booleans.
     /// Default: false (accept YAML 1.1 boolean forms).
     pub strict_booleans: bool,
+    /// Preserve plain null-like scalars (`null`, `Null`, `NULL`, `~`, and empty)
+    /// as their text when deserializing directly into a string target.
+    ///
+    /// Applies to both mapping keys and values, including `String`, `&str`, and
+    /// `Cow<str>`. Borrowed targets retain the usual input borrowing requirements.
+    /// Default: false (reject null-like scalars for string targets).
+    ///
+    /// Explicit `!!null` tags remain errors for string targets. `Option<T>`, unit,
+    /// and implicit type inference (`deserialize_any`, including untyped values,
+    /// untagged enums, and flattened fields) retain their existing null semantics.
+    /// [`Self::no_schema`] still requires ambiguous plain strings to be quoted.
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
+    pub null_as_string: bool,
     /// When a field marked with the `!!binary` tag is deserialized into a `String`,
     /// `serde-saphyr` normally expects the value to be base64-encoded UTF-8.
     /// If you want to treat the value as a plain string and ignore the `!!binary` tag,
@@ -355,6 +447,8 @@ pub struct Options {
     /// unquoted strings. This flag is intended for teams that want to enforce
     /// compatibility with YAML parsers that infer types from unquoted values,
     /// requiring such strings to be explicitly quoted.
+    /// Signed NaN spellings such as `+.nan` and `-.nan` remain strings, matching
+    /// implicit inference, even though direct float targets accept them as NaN.
     /// The default is false (a number or boolean will be stored in the string
     /// field exactly as provided, without quoting).
     pub no_schema: bool,
@@ -377,6 +471,65 @@ pub struct Options {
     /// and otherwise ignore them where possible).
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub reject_unsupported_tags: bool,
+
+    /// Reject explicit tags on struct field names, except standard string tags.
+    ///
+    /// A derived struct normally matches each mapping key by its text alone. A
+    /// custom tag on that key can therefore be discarded without the struct ever
+    /// seeing it. Such a tag has no effect on field selection and may be a value
+    /// annotation accidentally placed on the field name. By default, this reports
+    /// [`crate::Error::TaggedStructFieldName`] instead of silently accepting it.
+    /// Set this option to `false` to accept such tags without checking them.
+    ///
+    /// For example, an application can inspect a value's `!secret` tag by reading
+    /// that value as [`crate::Tagged<T>`]:
+    ///
+    /// ```yaml
+    /// password: !secret API_TOKEN
+    /// ```
+    ///
+    /// This misplaced annotation is rejected when the option is enabled:
+    ///
+    /// ```yaml
+    /// !secret password: API_TOKEN
+    /// ```
+    ///
+    /// Untagged and quoted field names remain accepted. Explicit standard string tags
+    /// (`!!str`, including equivalent verbatim or directive-expanded forms) and
+    /// the non-specific `!` tag are also accepted. Field names are the external
+    /// strings used by Serde: `!!str 0.0: Alice` can populate a Rust field marked
+    /// `#[serde(rename = "0.0")]`. Here `!!str` explicitly gives `0.0` string
+    /// semantics, and Serde's rename handles the external field name.
+    /// The exception uses the resolved tag identity; a local `!str` tag is still
+    /// rejected, including when a directive rebinds `!!` to an application namespace.
+    ///
+    /// This option applies only to struct mappings entered through Serde's
+    /// `deserialize_struct`, including externally tagged struct enum variants.
+    /// It checks every key in such a mapping, including unknown keys that Serde
+    /// would otherwise ignore without `#[serde(deny_unknown_fields)]`.
+    /// It also checks field names replayed through aliases and expanded merges.
+    /// Keys are checked before duplicate-key or merge precedence filtering, even
+    /// when their values would otherwise be discarded.
+    /// Ordinary map keys, including string, numeric, and enum keys, and tags on
+    /// values retain their existing behavior. Unlike
+    /// [`Self::reject_unsupported_tags`], it does not reject application tags
+    /// throughout the document.
+    /// Tags consumed by enabled preprocessing, such as `!include`, retain that
+    /// behavior before this check.
+    ///
+    /// Serde can match fields without calling `deserialize_struct`: structs using
+    /// `#[serde(flatten)]` enter through `deserialize_map`, while internally tagged
+    /// and untagged enums buffer their fields first. Adjacently tagged enums also
+    /// buffer content that precedes the discriminator. Fields handled by those
+    /// paths, including structs nested in their buffers, are not covered by this
+    /// option; it is not a document-wide guarantee against tagged field names.
+    ///
+    /// Default: true.
+    #[cfg_attr(
+        feature = "serde_derived_types",
+        serde(default = "default_reject_tagged_field_names")
+    )]
+    pub reject_tagged_field_names: bool,
 
     /// Handling of NaN, positive/negative infinity, and decimal literals that overflow
     /// `f64` (e.g. `1e999`) in `deserialize_any`.
@@ -474,6 +627,7 @@ impl Options {
             parser_options.emit_comments = self.emit_comments;
         }
         parser_options.strict_indentation = self.strict_indentation;
+        parser_options.bom_inside_document_as_content = self.bom_inside_document_as_content;
         parser_options
     }
 
@@ -507,8 +661,8 @@ impl Options {
 
     /// Installs a property map used for `${NAME}` interpolation.
     ///
-    /// [`PropertySyntax::DockerCompose`] also interpolates quoted and block string values;
-    /// the other modes interpolate only plain scalars.
+    /// [`PropertySyntax::DockerCompose`] and [`PropertySyntax::DockerComposeWithNulls`] also
+    /// interpolate quoted and block string values; the other modes interpolate only plain scalars.
     ///
     /// This is the intended public API for the `properties` feature. It consumes the provided
     /// [`HashMap`] and stores it in the internal shared representation used by nested
@@ -662,17 +816,21 @@ impl Default for Options {
             #[cfg(feature = "comments")]
             emit_comments: true,
             strict_indentation: false,
+            bom_inside_document_as_content: false,
             duplicate_keys: DuplicateKeyPolicy::Error,
             merge_keys: MergeKeyPolicy::Merge,
             alias_limits: AliasLimits::default(),
             legacy_octal_numbers: false,
             leading_zero_numbers_as_strings: false,
-            underscored_numbers_as_strings: false,
+            allow_numeric_underscores: true,
+            lowercase_radix_prefixes_only: false,
             strict_booleans: false,
+            null_as_string: false,
             angle_conversions: false,
             ignore_binary_tag_for_string: false,
             no_schema: false,
             reject_unsupported_tags: false,
+            reject_tagged_field_names: true,
             reject_non_finite_typeless_float: true,
             with_snippet: true,
             crop_radius: 64,
@@ -708,6 +866,10 @@ impl std::fmt::Debug for Options {
         debug.field("emit_comments", &self.emit_comments);
         debug
             .field("strict_indentation", &self.strict_indentation)
+            .field(
+                "bom_inside_document_as_content",
+                &self.bom_inside_document_as_content,
+            )
             .field("duplicate_keys", &self.duplicate_keys)
             .field("merge_keys", &self.merge_keys)
             .field("alias_limits", &self.alias_limits)
@@ -716,11 +878,13 @@ impl std::fmt::Debug for Options {
                 "leading_zero_numbers_as_strings",
                 &self.leading_zero_numbers_as_strings,
             )
+            .field("allow_numeric_underscores", &self.allow_numeric_underscores)
             .field(
-                "underscored_numbers_as_strings",
-                &self.underscored_numbers_as_strings,
+                "lowercase_radix_prefixes_only",
+                &self.lowercase_radix_prefixes_only,
             )
             .field("strict_booleans", &self.strict_booleans)
+            .field("null_as_string", &self.null_as_string)
             .field(
                 "ignore_binary_tag_for_string",
                 &self.ignore_binary_tag_for_string,
@@ -728,6 +892,7 @@ impl std::fmt::Debug for Options {
             .field("angle_conversions", &self.angle_conversions)
             .field("no_schema", &self.no_schema)
             .field("reject_unsupported_tags", &self.reject_unsupported_tags)
+            .field("reject_tagged_field_names", &self.reject_tagged_field_names)
             .field("non_finite_float_policy", &self.non_finite_float_policy)
             .field(
                 "reject_non_finite_typeless_float",
@@ -798,17 +963,21 @@ mod tests {
         #[cfg(feature = "comments")]
         assert!(opts.emit_comments);
         assert!(!opts.strict_indentation);
+        assert!(!opts.bom_inside_document_as_content);
         assert!(matches!(opts.duplicate_keys, DuplicateKeyPolicy::Error));
         assert!(matches!(opts.merge_keys, MergeKeyPolicy::Merge));
         assert_eq!(opts.alias_limits.max_total_replayed_events, 1_000_000);
         assert!(!opts.legacy_octal_numbers);
         assert!(!opts.leading_zero_numbers_as_strings);
-        assert!(!opts.underscored_numbers_as_strings);
+        assert!(opts.allow_numeric_underscores);
+        assert!(!opts.lowercase_radix_prefixes_only);
         assert!(!opts.strict_booleans);
+        assert!(!opts.null_as_string);
         assert!(!opts.ignore_binary_tag_for_string);
         assert!(!opts.angle_conversions);
         assert!(!opts.no_schema);
         assert!(!opts.reject_unsupported_tags);
+        assert!(opts.reject_tagged_field_names);
         assert_eq!(
             opts.non_finite_float_policy,
             NonFiniteFloatPolicy::default()
@@ -842,6 +1011,36 @@ mod tests {
 
     #[cfg(feature = "serde_derived_types")]
     #[test]
+    fn null_as_string_serde_roundtrip_and_missing_default() {
+        let options = crate::options! { null_as_string: true };
+        let mut json = serde_json::to_value(&options).unwrap();
+        let restored: Options = serde_json::from_value(json.clone()).unwrap();
+        assert!(restored.null_as_string);
+
+        json.as_object_mut().unwrap().remove("null_as_string");
+        let legacy: Options = serde_json::from_value(json).unwrap();
+        assert!(!legacy.null_as_string);
+    }
+
+    #[cfg(feature = "serde_derived_types")]
+    #[test]
+    fn tagged_field_name_policy_serde_roundtrip_and_missing_default() {
+        for enabled in [true, false] {
+            let options = crate::options! { reject_tagged_field_names: enabled };
+            let mut json = serde_json::to_value(&options).unwrap();
+            let restored: Options = serde_json::from_value(json.clone()).unwrap();
+            assert_eq!(restored.reject_tagged_field_names, enabled);
+
+            json.as_object_mut()
+                .unwrap()
+                .remove("reject_tagged_field_names");
+            let legacy: Options = serde_json::from_value(json).unwrap();
+            assert!(legacy.reject_tagged_field_names);
+        }
+    }
+
+    #[cfg(feature = "serde_derived_types")]
+    #[test]
     fn strict_indentation_serde_roundtrip_and_missing_default() {
         let options = crate::options! { strict_indentation: true };
         let mut json = serde_json::to_value(&options).unwrap();
@@ -851,6 +1050,21 @@ mod tests {
         json.as_object_mut().unwrap().remove("strict_indentation");
         let legacy: Options = serde_json::from_value(json).unwrap();
         assert!(!legacy.strict_indentation);
+    }
+
+    #[cfg(feature = "serde_derived_types")]
+    #[test]
+    fn bom_inside_document_serde_roundtrip_and_missing_default() {
+        let options = crate::options! { bom_inside_document_as_content: true };
+        let mut json = serde_json::to_value(&options).unwrap();
+        let restored: Options = serde_json::from_value(json.clone()).unwrap();
+        assert!(restored.bom_inside_document_as_content);
+
+        json.as_object_mut()
+            .unwrap()
+            .remove("bom_inside_document_as_content");
+        let legacy: Options = serde_json::from_value(json).unwrap();
+        assert!(!legacy.bom_inside_document_as_content);
     }
 
     #[cfg(feature = "serde_derived_types")]
@@ -882,7 +1096,9 @@ mod tests {
         #[cfg(feature = "comments")]
         assert!(debug_str.contains("emit_comments: true"));
         assert!(debug_str.contains("strict_indentation: false"));
+        assert!(debug_str.contains("bom_inside_document_as_content: false"));
         assert!(debug_str.contains("reject_unsupported_tags: false"));
+        assert!(debug_str.contains("reject_tagged_field_names: true"));
         assert!(debug_str.contains("non_finite_float_policy: Default"));
         assert!(debug_str.contains("reject_non_finite_typeless_float: true"));
 

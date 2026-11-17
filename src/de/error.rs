@@ -7,7 +7,7 @@ use crate::input_source::IncludeResolveError;
 use crate::localizer::{DEFAULT_ENGLISH_LOCALIZER, ExternalMessageSource, Localizer};
 use crate::location::Locations;
 use crate::parse_scalars::{
-    parse_int_signed, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish,
+    IntSyntax, parse_int_signed, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish,
 };
 #[cfg(feature = "garde")]
 use crate::path_map::path_key_from_garde;
@@ -1075,6 +1075,20 @@ pub enum Error {
         location: Location,
     },
 
+    /// An otherwise successful numeric conversion contained an underscore while
+    /// [`Options::allow_numeric_underscores`](crate::Options::allow_numeric_underscores)
+    /// was disabled.
+    NumericUnderscoresDisabled {
+        location: Location,
+    },
+
+    /// An otherwise successful integer conversion used `0X`, `0O`, or `0B` while
+    /// [`Options::lowercase_radix_prefixes_only`](crate::Options::lowercase_radix_prefixes_only)
+    /// was enabled.
+    UppercaseRadixPrefixDisabled {
+        location: Location,
+    },
+
     /// In a typeless position (e.g. `deserialize_any` targeting `serde_json::Value`), a
     /// scalar resolved to a non-finite float — NaN, ±Inf, or a decimal literal that
     /// overflows `f64` to infinity (e.g. `1e999`) — and
@@ -1303,6 +1317,13 @@ pub enum Error {
         tag: String,
         location: Location,
     },
+
+    /// A struct field name's explicit tag violates the enabled
+    /// [`crate::Options::reject_tagged_field_names`] policy.
+    TaggedStructFieldName {
+        tag: String,
+        location: Location,
+    },
 }
 
 impl Error {
@@ -1476,6 +1497,19 @@ impl Error {
         }
     }
 
+    /// Whether a persistent interpolation-budget breach ended this operation,
+    /// including errors wrapped with alias locations or source snippets.
+    pub(crate) fn is_property_interpolation_budget_breach(&self) -> bool {
+        matches!(
+            original_error(self),
+            Error::Budget {
+                breach: BudgetBreach::PropertyExpansionDepth { .. }
+                    | BudgetBreach::PropertyInterpolationWork { .. },
+                ..
+            }
+        )
+    }
+
     /// Render this error using the built-in developer formatter.
     ///
     /// This is the deferred-rendering entrypoint. It is equivalent to `Display`/`to_string()`
@@ -1569,9 +1603,9 @@ impl Error {
         // that may be used for attack)
         let location = Location::UNKNOWN;
         let value = if !interpolated
-            && (parse_yaml12_float::<f64>(value, location, SfTag::None, false).is_ok()
-                || parse_int_signed::<i128>(value, "i128", location, false).is_ok()
-                || parse_yaml11_bool(value).is_ok()
+            && (parse_yaml12_float::<f64>(value, location, SfTag::None, false, true).is_ok()
+                || parse_int_signed::<i128>(value, "i128", location, IntSyntax::default()).is_ok()
+                || parse_yaml11_bool(value).is_some()
                 || scalar_is_nullish(value, &ScalarStyle::Plain))
         {
             value.to_string()
@@ -1693,6 +1727,7 @@ impl Error {
             | Error::MergeValueNotMapOrSeqOfMaps { location }
             | Error::MergeKeyNotAllowed { location }
             | Error::UnsupportedTag { location, .. }
+            | Error::TaggedStructFieldName { location, .. }
             | Error::InvalidBinaryBase64 { location }
             | Error::BinaryNotUtf8 { location }
             | Error::TaggedScalarCannotDeserializeIntoString { location }
@@ -1720,6 +1755,8 @@ impl Error {
             | Error::InternalRecursionStackEmpty { location }
             | Error::RecursiveReferencesRequireWeakTypes { location }
             | Error::InvalidScalar { location, .. }
+            | Error::NumericUnderscoresDisabled { location }
+            | Error::UppercaseRadixPrefixDisabled { location }
             | Error::NonFiniteFloat { location, .. }
             | Error::SerdeInvalidType { location, .. }
             | Error::SerdeInvalidValue { location, .. }
@@ -1808,6 +1845,7 @@ impl Error {
             | Error::MergeValueNotMapOrSeqOfMaps { location }
             | Error::MergeKeyNotAllowed { location }
             | Error::UnsupportedTag { location, .. }
+            | Error::TaggedStructFieldName { location, .. }
             | Error::InvalidBinaryBase64 { location }
             | Error::BinaryNotUtf8 { location }
             | Error::TaggedScalarCannotDeserializeIntoString { location }
@@ -1835,6 +1873,8 @@ impl Error {
             | Error::InternalRecursionStackEmpty { location }
             | Error::RecursiveReferencesRequireWeakTypes { location }
             | Error::InvalidScalar { location, .. }
+            | Error::NumericUnderscoresDisabled { location }
+            | Error::UppercaseRadixPrefixDisabled { location }
             | Error::NonFiniteFloat { location, .. }
             | Error::SerdeInvalidType { location, .. }
             | Error::SerdeInvalidValue { location, .. }
@@ -2643,6 +2683,17 @@ fn maybe_attach_fallback_location(mut err: Error) -> Error {
     err
 }
 
+/// Renders a Serde `Unexpected` into a string sized up front: its `Display` writes in several
+/// pieces, which would otherwise regrow the string a few times for every type mismatch, and
+/// untagged enums produce one such mismatch per variant they try.
+fn unexpected_text(unexp: &de::Unexpected<'_>) -> String {
+    use std::fmt::Write as _;
+
+    let mut text = String::with_capacity(64);
+    let _ = write!(text, "{unexp}");
+    text
+}
+
 impl de::Error for Error {
     #[cold]
     #[inline(never)]
@@ -2658,7 +2709,7 @@ impl de::Error for Error {
     fn invalid_type(unexp: de::Unexpected, exp: &dyn de::Expected) -> Self {
         // Mirror serde’s default formatting, but add a best-effort location.
         maybe_attach_fallback_location(Error::SerdeInvalidType {
-            unexpected: redact_dynamic_value(unexp.to_string(), "an interpolated value"),
+            unexpected: redact_dynamic_value(unexpected_text(&unexp), "an interpolated value"),
             expected: exp.to_string(),
             location: Location::UNKNOWN,
         })
@@ -2668,7 +2719,7 @@ impl de::Error for Error {
     #[inline(never)]
     fn invalid_value(unexp: de::Unexpected, exp: &dyn de::Expected) -> Self {
         maybe_attach_fallback_location(Error::SerdeInvalidValue {
-            unexpected: redact_dynamic_value(unexp.to_string(), "an interpolated value"),
+            unexpected: redact_dynamic_value(unexpected_text(&unexp), "an interpolated value"),
             expected: exp.to_string(),
             location: Location::UNKNOWN,
         })

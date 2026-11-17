@@ -139,6 +139,9 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
             Cow::Borrowed("YAML merge keys are not allowed by configured policy")
         }
         Error::UnsupportedTag { tag, .. } => Cow::Owned(format!("unsupported tag `{tag}`")),
+        Error::TaggedStructFieldName { tag, .. } => Cow::Owned(format!(
+            "tag `{tag}` on a struct field name is not allowed by configured policy"
+        )),
         Error::InvalidBinaryBase64 { .. } => Cow::Borrowed("invalid !!binary base64"),
         Error::InvalidUtf8Input => Cow::Borrowed("input is not valid UTF-8"),
         Error::BinaryNotUtf8 { .. } => Cow::Borrowed(
@@ -217,6 +220,12 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
             Cow::Borrowed("recursive references require weak recursion types")
         }
         Error::InvalidScalar { ty, .. } => Cow::Owned(format!("invalid {ty}")),
+        Error::NumericUnderscoresDisabled { .. } => {
+            Cow::Borrowed("Underscores are disabled in configuration")
+        }
+        Error::UppercaseRadixPrefixDisabled { .. } => {
+            Cow::Borrowed("Uppercase radix prefixes are disabled in configuration")
+        }
         Error::NonFiniteFloat { value, .. } => Cow::Owned(format!(
             "non-finite float `{value}` rejected by the configured policy"
         )),
@@ -493,6 +502,10 @@ fn user_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) -> 
         }
         Error::InvalidBooleanStrict { .. } => {
             Cow::Borrowed("invalid boolean (true or false expected)")
+        }
+        Error::NumericUnderscoresDisabled { .. } => Cow::Borrowed("Underscores not allowed"),
+        Error::UppercaseRadixPrefixDisabled { .. } => {
+            Cow::Borrowed("Uppercase radix prefixes not allowed")
         }
         Error::NullIntoString { .. } | Error::InvalidCharNull { .. } => {
             Cow::Borrowed("null is not allowed here")

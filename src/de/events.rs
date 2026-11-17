@@ -47,8 +47,8 @@ impl PropertyInterpolation {
                     budget.max_total_property_interpolation_work,
                 )
             });
-        let property_map = property_map
-            .or_else(|| (syntax == PropertySyntax::DockerCompose).then(|| Rc::new(HashMap::new())));
+        let property_map =
+            property_map.or_else(|| syntax.is_docker_compose().then(|| Rc::new(HashMap::new())));
         Self {
             property_map,
             syntax,
@@ -61,7 +61,7 @@ impl PropertyInterpolation {
 
     pub(super) fn for_key(&self) -> Self {
         let mut properties = self.clone();
-        if properties.syntax == PropertySyntax::DockerCompose {
+        if properties.syntax.is_docker_compose() {
             // Nested deserializers for sequence/mapping keys share this replay source.
             properties.property_map = None;
         }
@@ -154,8 +154,8 @@ pub(super) fn attach_alias_locations_if_missing(
 
 /// Our simplified owned event kind that we feed into Serde.
 ///
-/// This intentionally carries semantic YAML node data, anchors, tags, style, and
-/// locations, but not presentation metadata such as comments. Live streams expose
+/// This carries semantic YAML node data, anchors, tags, style, locations, and
+/// optional source tag spelling for diagnostics. Live streams expose
 /// comments through the `Events` comment hooks; replay streams can only preserve
 /// comments that callers captured separately before buffering/replay.
 #[derive(Clone, Debug)]
@@ -164,7 +164,11 @@ pub(crate) enum Ev<'a> {
     Scalar {
         value: Cow<'a, str>,
         tag: SfTag,
+        /// Resolved tag identity used for semantic interpretation.
         raw_tag: Option<Cow<'a, str>>,
+        /// Normalized source spelling from `Tag::original()`, retained only when
+        /// it differs from `raw_tag`. This does not affect tag interpretation.
+        original_tag: Option<Box<str>>,
         style: ScalarStyle,
         /// Numeric anchor id (0 if none) attached to this scalar node.
         anchor: usize,
@@ -228,7 +232,12 @@ impl Ev<'_> {
     /// Bytes that an [`Ev::clone`] must allocate for owned string payloads.
     pub(crate) fn owned_payload_bytes(&self) -> usize {
         match self {
-            Ev::Scalar { value, raw_tag, .. } => {
+            Ev::Scalar {
+                value,
+                raw_tag,
+                original_tag,
+                ..
+            } => {
                 let value_bytes = match value {
                     Cow::Borrowed(_) => 0,
                     Cow::Owned(value) => value.len(),
@@ -237,7 +246,10 @@ impl Ev<'_> {
                     Some(Cow::Owned(raw_tag)) => raw_tag.len(),
                     Some(Cow::Borrowed(_)) | None => 0,
                 };
-                value_bytes.saturating_add(raw_tag_bytes)
+                let original_tag_bytes = original_tag.as_deref().map_or(0, str::len);
+                value_bytes
+                    .saturating_add(raw_tag_bytes)
+                    .saturating_add(original_tag_bytes)
             }
             Ev::SeqStart { raw_tag, .. } | Ev::MapStart { raw_tag, .. } => match raw_tag {
                 Some(Cow::Owned(raw_tag)) => raw_tag.len(),
@@ -253,9 +265,18 @@ impl Ev<'_> {
     /// Clear the YAML tag attached to a scalar or container-start event.
     pub(super) fn strip_node_tag(&mut self) -> bool {
         match self {
-            Ev::Scalar { tag, raw_tag, .. }
-            | Ev::SeqStart { tag, raw_tag, .. }
-            | Ev::MapStart { tag, raw_tag, .. } => {
+            Ev::Scalar {
+                tag,
+                raw_tag,
+                original_tag,
+                ..
+            } => {
+                *tag = SfTag::None;
+                *raw_tag = None;
+                *original_tag = None;
+                true
+            }
+            Ev::SeqStart { tag, raw_tag, .. } | Ev::MapStart { tag, raw_tag, .. } => {
                 *tag = SfTag::None;
                 *raw_tag = None;
                 true
@@ -280,6 +301,7 @@ impl Ev<'_> {
                 value: Cow::Borrowed(""),
                 tag: SfTag::Null,
                 raw_tag: None,
+                original_tag: None,
                 style: ScalarStyle::Plain,
                 anchor,
                 location,
@@ -307,7 +329,7 @@ pub(crate) enum NodeOrigin {
 /// that buffering an ordinary container does not erase any aliases nested inside it.
 #[derive(Debug, Default)]
 pub(super) struct RecordedEvents<'a> {
-    events: Vec<Ev<'a>>,
+    events: SmallVec<[Ev<'a>; 1]>,
     origins: SmallVec<[(usize, NodeOrigin); 1]>,
 }
 
@@ -318,7 +340,7 @@ impl<'a> RecordedEvents<'a> {
 
     pub(super) fn from_event(event: Ev<'a>, origin: NodeOrigin) -> Self {
         Self {
-            events: vec![event],
+            events: smallvec![event],
             origins: if origin == NodeOrigin::Direct {
                 SmallVec::new()
             } else {
@@ -359,7 +381,7 @@ impl<'a> RecordedEvents<'a> {
 impl<'a> From<Vec<Ev<'a>>> for RecordedEvents<'a> {
     fn from(events: Vec<Ev<'a>>) -> Self {
         Self {
-            events,
+            events: SmallVec::from_vec(events),
             origins: SmallVec::new(),
         }
     }
@@ -407,6 +429,12 @@ pub(crate) trait Events<'de> {
     /// Called by:
     /// - Lookahead logic (merge, container boundaries, option/unit handling).
     fn peek(&mut self) -> Result<Option<&Ev<'de>>, Error>;
+
+    /// Consume the synthetic null representing a stream with no documents.
+    /// Returns false for actual YAML nodes and replayed events.
+    fn take_empty_stream(&mut self) -> Result<bool, Error> {
+        Ok(false)
+    }
 
     /// Strip the tag from the node currently exposed by [`Self::peek`].
     ///
@@ -673,6 +701,7 @@ mod tests {
             value: Cow::Borrowed("value"),
             tag: SfTag::None,
             raw_tag: None,
+            original_tag: None,
             style: ScalarStyle::Plain,
             anchor: 0,
             location,
@@ -698,6 +727,35 @@ mod tests {
                 properties,
             ),
         }
+    }
+
+    #[test]
+    fn scalar_tag_spelling_is_counted_and_cleared_with_the_tag() {
+        let mut event = Ev::Scalar {
+            value: Cow::Owned("payload".to_owned()),
+            tag: SfTag::Other,
+            raw_tag: Some(Cow::Owned("tag:example.com,2026:secret".to_owned())),
+            original_tag: Some("!e!secret".into()),
+            style: ScalarStyle::Plain,
+            anchor: 0,
+            location: Location::new(1, 1),
+        };
+        assert_eq!(
+            event.owned_payload_bytes(),
+            "payload".len() + "tag:example.com,2026:secret".len() + "!e!secret".len()
+        );
+        assert!(event.strip_node_tag());
+        assert!(matches!(
+            &event,
+            Ev::Scalar {
+                tag: SfTag::None,
+                raw_tag: None,
+                original_tag: None,
+                value,
+                ..
+            } if value.as_ref() == "payload"
+        ));
+        assert_eq!(event.owned_payload_bytes(), "payload".len());
     }
 
     #[test]

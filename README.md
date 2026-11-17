@@ -57,7 +57,7 @@ See [release history](https://github.com/bourumir-wyngs/serde-saphyr/releases) o
 
 ### Testing
 
-The test suite currently includes over 3000 passing tests. For [YAML Test Suite v2022-01-17](https://github.com/yaml/yaml-test-suite/releases/tag/v2022-01-17), all 350 active test IDs and all 402 active cases from the [`data-2022-01-17` release](https://github.com/yaml/yaml-test-suite/releases/tag/data-2022-01-17) are represented (9C9N is intentionally relaxed to keep the library compatible with PyYAML and ruamel.yaml). Although we made a reasonable effort, accidental omissions or conversion errors remain possible. Some additional cases are taken from the original serde-yaml tests.
+The test suite currently includes over 4000 passing tests. For [YAML Test Suite v2022-01-17](https://github.com/yaml/yaml-test-suite/releases/tag/v2022-01-17), all 350 active test IDs and all 402 active cases from the [`data-2022-01-17` release](https://github.com/yaml/yaml-test-suite/releases/tag/data-2022-01-17) are represented (9C9N is intentionally relaxed to keep the library compatible with PyYAML and ruamel.yaml). Although we made a reasonable effort, accidental omissions or conversion errors remain possible. Some additional cases are taken from the original serde-yaml tests.
 
 ### Project relationship
 
@@ -165,38 +165,57 @@ of complete `serde_yaml` compatibility. YAML requires unique mapping keys;
 
 #### Numeric-looking strings in untyped values
 
-When migrating code that reads generic values such as `serde_json::Value`, enable
-either of these independent options to preserve numeric spellings as strings:
+`lowercase_radix_prefixes_only` defaults to `false`: both lowercase (`0x`, `0o`,
+`0b`) and uppercase (`0X`, `0O`, `0B`) prefixes are accepted by the shared integer
+parser. Set it to `true` to require lowercase prefixes everywhere. Uppercase-prefixed
+plain scalars then remain strings during implicit inference, including untagged
+enums and flattened fields, while integer targets and explicit `!!int` tags reject
+them. This includes optional `+` or `-` signs. Uppercase hexadecimal digits remain
+valid with a lowercase prefix, such as `0xFF`. Binary notation (`0b101`) remains a
+supported extension to the YAML 1.2 Core schema.
+
+When migrating code that reads generic values such as `serde_json::Value`, configure
+these independent options to preserve numeric spellings as strings:
 
 ```rust
 let options = serde_saphyr::options! {
     leading_zero_numbers_as_strings: true,
-    underscored_numbers_as_strings: true,
+    allow_numeric_underscores: false,
+    lowercase_radix_prefixes_only: true,
 };
 let value: serde_json::Value = serde_saphyr::from_str_with_options(
-    "[0755, -007, +00, 1_000, 0xFF_FF]",
+    "[0755, -007, +00, 1_000, 0xFF_FF, 0XFF]",
     options,
 ).unwrap();
-assert_eq!(value, serde_json::json!(["0755", "-007", "+00", "1_000", "0xFF_FF"]));
+assert_eq!(value, serde_json::json!(["0755", "-007", "+00", "1_000", "0xFF_FF", "0XFF"]));
 ```
 
-Both options default to `false`. `leading_zero_numbers_as_strings` preserves
+`leading_zero_numbers_as_strings` defaults to `false`. Enabling it preserves
 digit-only decimal spellings with redundant leading zeros and an optional sign;
 floats such as `0.5`, `00.5`, and `01e2` still infer as numbers.
-`underscored_numbers_as_strings` preserves numeric spellings containing underscores.
+`leading_zero_numbers_as_strings` affects implicit type inference through Serde's `deserialize_any`,
+including buffering for `#[serde(untagged)]` and `#[serde(flatten)]`, and takes
+precedence over `legacy_octal_numbers` during inference. Direct typed parsing,
+explicit numeric tags, and mapping-key comparison retain their existing behavior.
 
-These options apply to implicit type inference through Serde's `deserialize_any`,
-including buffering for `#[serde(untagged)]` and `#[serde(flatten)]`. Direct typed
-deserialization and explicit `!!int` or `!!float` tags retain their existing behavior.
-Preservation takes precedence over `legacy_octal_numbers` during implicit inference.
-The options do not change [mapping-key comparison](#duplicate-keys): for example,
-`1_000` and `1000` still compare as the same integer key.
+`allow_numeric_underscores` defaults to `true`. Setting it to `false` disallows
+underscores in numbers everywhere.
+Plain scalars such as `1_000`, `0xFF_FF`, and `1_000.5` remain strings during
+implicit inference, including untagged enums and flattened fields. Integer and
+float targets reject these spellings, for both keys and values, even with explicit
+`!!int` or `!!float` tags or with `legacy_octal_numbers: true`.
+[Mapping-key comparison](#duplicate-keys) follows the same rule: `1_000` and `1000`
+are distinct keys, including inside composite keys and during merge expansion.
+Leave this option `true` to retain the supported numeric underscore syntax and
+compare underscored integer keys by their numeric value. This does not add new
+syntax: underscored floats still require robotics angle conversions.
 
 #### Null values for string fields
 
 For a field declared as `hi: String`, `serde_yaml` accepts the plain null forms below
-as their original text. `serde-saphyr` treats these forms as null and reports
-`Error::NullIntoString`. This also applies with the default `no_schema: false` setting.
+as their original text. By default, `serde-saphyr` treats these forms as null and reports
+`Error::NullIntoString`. This also applies with the default `no_schema: false` setting,
+and to string mapping keys.
 
 | YAML input | `serde_yaml` string value | `serde-saphyr` result |
 | --- | --- | --- |
@@ -212,6 +231,32 @@ Here, `hi:` supplies an empty mapping value, which is YAML null.
   These produce `""`, `"~"`, and `"null"`, respectively. An explicit string tag also works,
   for example `hi: !!str null` produces `"null"`.
 
+To accept the original text of plain null-like scalars for string targets, enable
+`null_as_string` (default: `false`). It applies to both mapping keys and values,
+including `null`, `Null`, `NULL`, `~`, and empty scalars:
+
+```rust
+let options = serde_saphyr::options! {
+    null_as_string: true,
+};
+let values: std::collections::HashMap<String, String> =
+    serde_saphyr::from_str_with_options("null: ~\nempty:\n", options).unwrap();
+assert_eq!(values["null"], "~");
+assert_eq!(values["empty"], "");
+```
+
+This also supports `&str` and `Cow<str>`. Borrowing retains the usual input constraints:
+use an in-memory input such as `from_str_with_options` or `from_slice_with_options`,
+and `#[serde(borrow)]` on `Cow<str>` fields when borrowing is wanted.
+
+The option changes direct string deserialization only. Untagged null still gives
+`None` for `Option<T>`, and untyped values still infer null, including Serde's buffering for untagged
+enums and flattened fields. A `serde_json::Value` object can use `"null"` as a key
+because its keys deserialize as strings; null values inside it remain JSON null.
+Explicit `!!null` tags still reject string targets, and `no_schema: true` still requires
+quoting null-like strings. Mapping-key comparison and the skipping of null documents
+in multi-document APIs are unchanged.
+
 ### YAML changes in 3.0.0
 
 Version 3.0 changes YAML interpretation and serialization, even where the same Rust
@@ -219,6 +264,17 @@ code still compiles. Existing documents can produce different values or errors,
 and some serialized output changes. These rules are the defaults in
 `3.0.0-rc.1`; there is no legacy local-type-alias mode. Test existing configuration
 files and stored YAML, not just compilation, before upgrading from 2.x.
+
+Check the following options when upgrading from 2.2.0.
+
+- Struct field names now reject misplaced tags by default. Move the tag to its value
+  or set `reject_tagged_field_names: false` to retain the previous behavior. See [Tags](#tags).
+- Replace `underscored_numbers_as_strings: true` with `allow_numeric_underscores: false`.
+  Typed numeric targets now reject underscores with this setting.
+- Uppercase radix prefixes such as `0XFF` now infer as integers by default. With
+  `lowercase_radix_prefixes_only: true` they infer as strings and are rejected for integer
+  targets. Both numeric restrictions also apply to integer key comparison.
+  See [Numeric-looking strings in untyped values](#numeric-looking-strings-in-untyped-values).
 
 The examples below assume the default tag handles unless a `%TAG` directive is
 shown. [YAML tag handles](https://yaml.org/spec/1.2.2/#6821-tag-handles) are expanded
@@ -340,7 +396,7 @@ represent absence; `%TAG` and verbatim forms of the standard null tag work as be
 
 One formerly supported round-trip intentionally changes:
 `Tagged(None::<String>, Some("!foo".into()))` still writes `!foo null`, but reading
-that node as `Tagged<Option<String>>` now errors instead of producing `None`.
+that node as `Tagged<Option<String>>` now errors with the default options.
 Reading it as `Tagged<Option<()>>` produces a tagged `Some(())`. Likewise, wrapping
 an absent `NullableTilde<T>` in an application tag writes `!foo ~`, which is now a
 present tagged node. For absence, use an untagged or standard-tagged null. For a
@@ -372,17 +428,17 @@ it matters; do not rely on the previous alias-based duplicate detection.
 
 #### Multi-document APIs retain tagged null-like documents
 
-Application-tagged scalar documents with empty or null-like payloads now reach
-the target deserializer instead of being skipped as null. This includes local tags
-and global application-tag URIs, through string, byte, reader, and validation APIs.
-Only implicit null scalar documents and resolved standard-null scalar documents
-are skipped by the multi-document null filter.
+As in 2.1 and 2.2, application-tagged scalar documents reach the target
+deserializer even when their payload is empty or null-like. In 3.0 this also
+applies to former local type aliases such as `!null`. String, byte, reader, and
+validation APIs follow the same rule for local and global application tags.
+The multi-document null filter skips untagged null scalars, including those
+produced by `DockerComposeWithNulls` interpolation, and resolved standard-null scalars.
 
-A stream containing a document `--- !timestamp` can therefore yield an enum value
-where it previously yielded no entry. With `Option<E>`, that document becomes a
-present variant rather than a skipped value or `None`. A retained document with an
-unknown selector or invalid payload now reports an error. Review assumptions about
-result counts, omitted documents, and ignored invalid data when upgrading.
+For example, `--- !null` was skipped as a null document in 2.2. It can now
+select a unit enum variant named `null`, including through `Option<E>`.
+A retained document with an unknown selector or invalid payload can now report
+an error. Review assumptions about document counts and ignored invalid data when upgrading.
 
 #### Tagged unit variants omit the written null payload
 
@@ -436,7 +492,13 @@ settings: {}  # Not settings: or settings: null
 A mapping-based struct must still satisfy its field requirements. Ordinary null
 continues to produce `None` for `Option<T>`. `#[serde(default)]` still handles an
 absent field; it does not make a present null valid for a collection field.
-`SerializerOptions::empty_as_braces` is deprecated since `3.0.0-rc.1`: leave it at
+
+For compatibility, single-document APIs accept a stream with no documents (empty,
+whitespace-only, or comment-only input) as an empty collection or a struct whose fields
+can all be omitted. An explicit empty document (`---`) has a null root and follows the
+null rules above. Multi-document APIs return no items for a stream with no documents.
+
+`SerializerOptions::empty_as_braces` is deprecated since `2.1.0`: leave it at
 its default `true` to write `[]` and `{}`. The retained `false` setting emits blank
 values for empty block collections without tags or anchors; those values are null
 and no longer round-trip into collection types.
@@ -489,7 +551,7 @@ string populated from `error.to_string()`.
 Rendering passes the original error through alias and snippet wrappers to the active
 formatter. Plain messages compose the alias definition and use locations once using the
 active localizer; snippet and `miette` diagnostics use their location labels without
-embedding plain-text location suffixes. Since version 3.0, `Error::WithSnippet`
+embedding plain-text location suffixes. Since version 2.1, `Error::WithSnippet`
 forwards the wrapped error's `source()` to avoid duplicate messages in error chains.
 Use `without_snippet()` to inspect the wrapped error itself. As an exception,
 `Error::AliasError` and its snippet wrappers return the wrapped error directly,
@@ -595,13 +657,25 @@ Adding or removing a single space in YAML indentation may result in a document t
 
 You can require the number of indentation columns to be consistent throughout the document, ensure it is even, or enforce that it is divisible by a specific number (for example, 4 or 6). Configure the desired policy using `Options`.
 
-Set `strict_indentation: true` in `options!` to enforce YAML indentation rules for flow collections (`[...]` and `{...}`), including their entries, delimiters, and multiline scalar content. This also applies to included YAML. The default is `false`, allowing under-indented flow collections for compatibility.
+Set `strict_indentation: true` in `options!` to enforce YAML indentation rules for flow collections (`[...]` and `{...}`), including their entries, delimiters, and multiline scalar content. It also rejects under-indented quoted scalar continuations in block context and tabs before quoted continuations. This also applies to included YAML. The default is `false`, allowing these forms for compatibility.
 
 ### Duplicate keys
 
 Duplicate key handling is configurable. By default it’s an error; “first wins”, “last wins”, and `PassThrough` strategies are available via [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). `PassThrough` delegates duplicate handling to the receiving Serde visitor; see [the migration note](#duplicate-mapping-entries). The duplicate key policy applies not just to strings but also to other types (if used as keys when deserializing into a map).
 
 With `Error`, `FirstWins`, and `LastWins`, YAML integer keys are parsed to their numeric meaning before checking for duplicates, regardless of the target Rust type. For example, `0xB` and `11` are the same integer key, even in a `HashMap<String, _>`. This comparison uses exact integer values within the supported `i128`/`u128` range and respects `legacy_octal_numbers`; values outside that range retain text-based comparison. The same rule applies inside composite keys. Merge expansion uses this comparison under every duplicate key policy.
+
+With `allow_numeric_underscores: false`, underscores are disallowed in numbers,
+so plain `1_000` is a string key distinct from the integer key `1000`. The same
+restriction applies inside composite keys and during merge expansion. Deserializing
+an underscored key into an integer is an error; an explicit `!!int` tag does not
+override the restriction.
+
+With `lowercase_radix_prefixes_only: true`, the same shared integer parser rejects
+uppercase radix prefixes: plain `0XFF` is a string key distinct from `255` and
+`0xFF`, including inside composite keys and during merge expansion. Integer key
+targets and explicit `!!int` tags cannot override the restriction. With the default
+`false`, all three spellings compare as the same integer key.
 
 Deserialization into a string still preserves the original scalar spelling: `0xB` becomes `"0xB"`. “First wins” and “last wins” retain the selected entry's spelling and value; when integer keys require numeric comparison, “last wins” buffers the remaining mapping to select entries before passing them to Serde. Quoted keys and keys tagged `!!str` remain strings, so `"0xB"` and `"11"` are distinct keys. Duplicate checking uses YAML key identity; the target Rust map can still combine distinct YAML keys if they become equal after deserialization.
 
@@ -634,7 +708,8 @@ Other capitalization, such as `tRuE`, remains a string during type inference and
 
 To address the “Norway problem,” the target Rust types serve as an explicit schema. Because the parser knows whether a field expects a string or a boolean, it can correctly accept `1.2` either as a number or as the string `"1.2"`, and interpret the common YAML boolean shorthands (`y`, `on`, `n`, `off`) as actual booleans when appropriate (can be disabled). Likewise, `0x2A` is parsed as a hexadecimal integer when the target field is numeric, and as a string when the target is `String`. As with [StrictYAML](https://hitchdev.com/strictyaml/why/implicit-typing-removed/), **serde-saphyr** uses the Rust type system as the schema for typed deserialization. Integer key comparison is an exception: [duplicate checking](#duplicate-keys) uses the integer's numeric meaning while preserving its original spelling for string targets.
 
-YAML null values are rejected for `String` fields. See
+YAML null values are rejected for string targets by default. Set `null_as_string: true`
+to accept plain null-like scalars as their text in string keys and values. See
 [null values for string fields](#null-values-for-string-fields) for the difference from
 `serde_yaml` and the available representations.
 
@@ -642,7 +717,9 @@ Schema-based parsing can be disabled by setting `no_schema` to true in [`Options
 
 Legacy octal notation such as `0052` can be enabled via `Options`, but it is disabled by default.
 For untyped values, [numeric spelling options](#numeric-looking-strings-in-untyped-values)
-can preserve leading-zero and underscored numbers as strings.
+can preserve leading-zero, underscored, and uppercase-prefixed numbers as strings.
+The underscore and radix-prefix options also restrict numeric parsing for typed
+targets and explicit numeric tags.
 
 The concept that “Rust code is the schema” naturally extends to implemented support for [`validator`](https://crates.io/crates/validator) and [`garde`](https://crates.io/crates/garde), as these crates allow annotations to be added directly to Rust types, providing even stricter control over permissible values.
 
@@ -871,6 +948,12 @@ Overflowing literals such as `1e999` follow the same policy: `Reject` returns an
 scalars and `!!str` scalars remain strings. Direct `f32`/`f64` targets are unaffected: they accept
 YAML non-finite spellings and reject overflowing decimal literals.
 
+The YAML 1.2 Core schema allows a sign on `.inf` only, so plain `+.nan` and `-.nan` infer as
+strings under every policy. These spellings also remain valid unquoted string values and
+mapping keys with `no_schema: true`. Direct `f32`/`f64` targets and explicit `!!float` tags
+still read them as NaN. Explicit `!!float` scalars preserve the supplied NaN sign when
+deserialized as floats; direct untagged float targets keep their existing behavior.
+
 ### Borrowed string deserialization
 
 serde-saphyr supports zero-copy deserialization for string fields when using `from_str`, `from_slice`,
@@ -981,14 +1064,21 @@ equivalent `%TAG` handles are also recognized. Use `MergeKeyPolicy::AsOrdinary`
 to accept these as regular mapping keys, or `MergeKeyPolicy::Error` to reject them.
 
 The YAML 1.1 `!!value` tag is recognized but intentionally has no special default-value
-behavior. Its scalar content is deserialized normally, and a tagged `=` mapping key remains
-an ordinary `"="` key. With `reject_unsupported_tags: true`, this tag is accepted only on that
+behavior. Its scalar content is deserialized normally, and a tagged `=` key in an ordinary map
+remains an ordinary `"="` key. With `reject_unsupported_tags: true`, this tag is accepted only on that
 exact scalar mapping key. The same strict-mode context check limits `!!merge` to a scalar `<<`
 mapping key.
 
 ### Tags
 
 `serde-saphyr` can capture tags. Applications can use custom tags to express units, priorities, accessibility and the like.
+
+`Options::reject_tagged_field_names` defaults to `true`: struct mappings entered through
+Serde's `deserialize_struct` reject explicit tags on field names, except standard `!!str`
+and non-specific `!` tags. For example, `!secret password: token` is rejected; put the value
+tag after the colon (`password: !secret token`). Set the option to `false` to accept tagged
+field names. See the [option documentation](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html#structfield.reject_tagged_field_names)
+for coverage limits involving flattened structs and buffered enum content.
 
 The [`Tagged<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Tagged.html)
 wrapper stores a value and the resolved YAML tag attached to its node. The tag is represented as an
@@ -1059,7 +1149,7 @@ existing meanings. Matching local robotics tags can still select typed enum vari
 An explicit application tag denotes a present value, including inside `NullableTilde<T>`
 and `Tagged<Option<T>>`. Attaching `!foo` to `None` still emits `!foo null`, but that
 node no longer deserializes as absence: its payload must be accepted by the inner type.
-For example, `Tagged<Option<String>>` rejects it rather than returning `None`;
+With default options, `Tagged<Option<String>>` rejects its null payload;
 `Tagged<Option<()>>` reads it as `Some(())`. Use an untagged or standard-tagged null
 for absence, or an enum variant with an optional payload for a present tagged value
 whose payload is absent.
@@ -1249,6 +1339,14 @@ Select `PropertySyntax::DockerCompose` for [Docker Compose interpolation semanti
 - Selected default, replacement, and error text recursively expands both reference forms and `$$` escapes. Property-map values are not expanded again.
 - Malformed or unclosed braced references fail. Each braced reference must fit on one line, and literal braces inside operator text follow Compose's delimiter matching.
 - Expanded strings remain strings when deserializing generic values, even when they contain `null`, `true`, or a number. Explicitly requested numeric types can still parse expanded values.
+
+Select `PropertySyntax::DockerComposeWithNulls` for the same interpolation when an expansion should be able to produce YAML null, as configuration loaders that previously expanded environment variables in a `Value` tree often expect:
+
+- A value consisting solely of `$NAME` or `${NAME}` is null when `NAME` is unset, so it deserializes into `None` for an `Option` field.
+- A value whose expansion is exactly `null`, `Null`, `NULL`, or `~` is null.
+- An explicitly empty property is still an empty string (`Some("")` for `Option<String>`), and so is an empty selected default such as `${A:-${B}}` with both unset. Surrounding text is kept: `prefix-$MISSING` is `prefix-`.
+- These rules apply to the scalar's text whatever its style, so `"$NAME"` is null as well, while a `|` block keeps its trailing newline and is not a sole reference. `!!str` and `!` keep the value a string, and scalars without an expansion resolve as usual.
+- A value that becomes null behaves exactly like a literal `null`; numbers and booleans convert as in `DockerCompose`.
 
 When the property values are secrets, interpolation resolves the final value before Serde finishes deserializing the surrounding type, so a downstream custom deserializer or validation path could otherwise echo the resolved secret.
 `serde-saphyr` tracks interpolated values and redacts them back to their `${...}` form in later error messages.

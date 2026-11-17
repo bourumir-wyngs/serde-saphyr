@@ -35,6 +35,11 @@ impl<'de> Visitor<'de> for ValueBeforeKeyVisitor {
 }
 
 #[test]
+fn empty_stream_map_visitor_misuse_returns_an_error() {
+    assert!(serde_saphyr::from_str::<ValueBeforeKey>("").is_err());
+}
+
+#[test]
 fn null_is_rejected_before_invoking_map_visitor() {
     let err = serde_saphyr::from_str::<ValueBeforeKey>("~").unwrap_err();
 

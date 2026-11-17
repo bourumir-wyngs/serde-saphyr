@@ -4,14 +4,21 @@ use std::mem;
 
 use granit_parser::ScalarStyle;
 
+use super::cfg::Cfg;
+use super::deserializer::YamlDeserializer;
 use super::error::Error;
 #[cfg(feature = "properties")]
 use super::events::PropertyInterpolation;
-use super::events::{Ev, Events, RecordedEvents, ReplayEvents, with_deferred_recursive_aliases};
+use super::events::{
+    Ev, Events, NodeOrigin, RecordedEvents, ReplayEvents, attach_alias_locations_if_missing,
+    with_deferred_recursive_aliases,
+};
 use super::options::{DuplicateKeyPolicy, MergeKeyPolicy};
 use super::tags::SfTag;
 use crate::location::Location;
-use crate::parse_scalars::{parse_int_signed, parse_int_unsigned, scalar_is_null, yaml_trim};
+use crate::parse_scalars::{
+    IntSyntax, parse_int_signed, parse_int_unsigned, scalar_is_null, yaml_trim,
+};
 use crate::tag::{local_enum_variant_name, simple_enum_variant_name};
 
 pub(super) fn simple_tagged_enum_name(
@@ -128,11 +135,14 @@ pub(super) fn canonical_scalar_key_tag<'a>(
     canonical_node_key_tag(tag, raw_tag, SfTag::String)
 }
 
+/// Return an integer identity when `value`, `tag`, and `style` describe an integer.
+/// `syntax` controls legacy octal, digit separators, and radix prefixes. Return `None` when the
+/// scalar is not a valid integer under those rules.
 fn integer_key_fingerprint(
     value: &str,
     tag: SfTag,
     style: ScalarStyle,
-    legacy_octal_numbers: bool,
+    syntax: IntSyntax,
 ) -> Option<KeyFingerprint<'static>> {
     if tag != SfTag::Int && !(tag == SfTag::None && style == ScalarStyle::Plain) {
         return None;
@@ -140,14 +150,10 @@ fn integer_key_fingerprint(
 
     let value = yaml_trim(value);
     let (negative, magnitude) = if value.starts_with('-') {
-        let parsed =
-            parse_int_signed::<i128>(value, "i128", Location::UNKNOWN, legacy_octal_numbers)
-                .ok()?;
+        let parsed = parse_int_signed::<i128>(value, "i128", Location::UNKNOWN, syntax).ok()?;
         (parsed < 0, parsed.unsigned_abs())
     } else {
-        let parsed =
-            parse_int_unsigned::<u128>(value, "u128", Location::UNKNOWN, legacy_octal_numbers)
-                .ok()?;
+        let parsed = parse_int_unsigned::<u128>(value, "u128", Location::UNKNOWN, syntax).ok()?;
         (false, parsed)
     };
     Some(KeyFingerprint::Integer {
@@ -188,6 +194,38 @@ pub(super) enum KeyNode<'a> {
 }
 
 impl<'a> KeyNode<'a> {
+    /// Check a captured struct field name before duplicate or merge filtering can discard it.
+    pub(super) fn validate_field_name_tag(&self) -> Result<(), Error> {
+        let events = match self {
+            Self::Fingerprinted { events, .. } | Self::Scalar { events, .. } => events,
+        };
+        if let Some(Ev::Scalar {
+            raw_tag: Some(raw_tag),
+            original_tag,
+            location,
+            ..
+        }) = events.first()
+            && !matches!(raw_tag.as_ref(), "!" | "tag:yaml.org,2002:str")
+        {
+            let alias_reference_location = match events.origin(0) {
+                NodeOrigin::Alias(location) => Some(location),
+                NodeOrigin::Direct | NodeOrigin::Merge(_) => None,
+            };
+            return Err(attach_alias_locations_if_missing(
+                Error::TaggedStructFieldName {
+                    tag: original_tag
+                        .as_deref()
+                        .unwrap_or(raw_tag.as_ref())
+                        .to_owned(),
+                    location: *location,
+                },
+                alias_reference_location,
+                *location,
+            ));
+        }
+        Ok(())
+    }
+
     /// Original scalar text for diagnostics, independent of the comparison fingerprint.
     pub(super) fn stringy_scalar_value(&self) -> Option<&str> {
         match self.events() {
@@ -296,20 +334,24 @@ pub(super) struct PendingEntry<'a> {
 /// Called by:
 /// - Mapping deserialization to stage keys and values, and by merge processing.
 pub(super) fn capture_node<'a>(ev: &mut dyn Events<'a>) -> Result<KeyNode<'a>, Error> {
-    capture_node_with_legacy_octal(ev, false)
+    capture_node_with_integer_syntax(ev, IntSyntax::default())
 }
 
 /// Capture a node using the configured integer syntax for key comparisons.
-pub(super) fn capture_node_with_legacy_octal<'a>(
+/// `ev` supplies events and `syntax` controls integer parsing. Return the captured
+/// node or a structural error, as for [`capture_node`].
+pub(super) fn capture_node_with_integer_syntax<'a>(
     ev: &mut dyn Events<'a>,
-    legacy_octal_numbers: bool,
+    syntax: IntSyntax,
 ) -> Result<KeyNode<'a>, Error> {
-    with_deferred_recursive_aliases(ev, |ev| capture_node_inner(ev, legacy_octal_numbers))
+    with_deferred_recursive_aliases(ev, |ev| capture_node_inner(ev, syntax))
 }
 
+/// Recursively capture `ev` with `syntax` applied to every scalar fingerprint.
+/// Return the node or a structural error.
 fn capture_node_inner<'a>(
     ev: &mut dyn Events<'a>,
-    legacy_octal_numbers: bool,
+    syntax: IntSyntax,
 ) -> Result<KeyNode<'a>, Error> {
     // Fill live lookahead before capturing origin: pumping the next event can enter
     // or leave an alias-injection frame.
@@ -332,16 +374,17 @@ fn capture_node_inner<'a>(
             value,
             tag,
             raw_tag,
+            original_tag,
             style,
             anchor,
             location,
         } => {
-            let integer_fingerprint =
-                integer_key_fingerprint(&value, tag, style, legacy_octal_numbers);
+            let integer_fingerprint = integer_key_fingerprint(&value, tag, style, syntax);
             let scalar_ev = Ev::Scalar {
                 value,
                 tag,
                 raw_tag,
+                original_tag,
                 style,
                 anchor,
                 location,
@@ -383,7 +426,7 @@ fn capture_node_inner<'a>(
                         break;
                     }
                     Some(_) => {
-                        let mut child = capture_node_inner(ev, legacy_octal_numbers)?;
+                        let mut child = capture_node_inner(ev, syntax)?;
                         let fp = child.take_fingerprint();
                         let child_events = child.take_events();
                         elements.push(fp);
@@ -436,9 +479,9 @@ fn capture_node_inner<'a>(
                         break;
                     }
                     Some(_) => {
-                        let mut key = capture_node_inner(ev, legacy_octal_numbers)?;
+                        let mut key = capture_node_inner(ev, syntax)?;
                         let key_fp = key.take_fingerprint();
-                        let mut value = capture_node_inner(ev, legacy_octal_numbers)?;
+                        let mut value = capture_node_inner(ev, syntax)?;
                         let value_fp = value.take_fingerprint();
                         entries.push((key_fp, value_fp));
                         let key_events = key.take_events();
@@ -534,6 +577,7 @@ pub(super) fn externally_tagged_payload_as_map_events<'a>(
             value: Cow::Owned(variant),
             tag: SfTag::String,
             raw_tag: None,
+            original_tag: None,
             style: ScalarStyle::Plain,
             anchor: 0,
             location: tag_location,
@@ -720,13 +764,14 @@ pub(super) fn apply_duplicate_key_policy_to_entries(
 ///
 /// Called by:
 /// - Mapping deserialization when encountering `<<: value`.
+///
+/// The rejection flag in `cfg` describes the destination mapping. Callers disable it
+/// for ordinary maps; nested merges inherit it without applying it to nested values.
 pub(super) fn pending_entries_from_events<'a>(
     events: impl Into<RecordedEvents<'a>>,
     location: Location,
     reference_location: Location,
-    merge_keys: MergeKeyPolicy,
-    duplicate_keys: DuplicateKeyPolicy,
-    legacy_octal_numbers: bool,
+    cfg: Cfg,
     #[cfg(feature = "properties")] property_interpolation: PropertyInterpolation,
 ) -> Result<Vec<PendingEntry<'a>>, Error> {
     let mut replay = ReplayEvents::with_reference(
@@ -738,20 +783,14 @@ pub(super) fn pending_entries_from_events<'a>(
     if let Some(event) = replay.peek()? {
         super::live_events::validate_node_tag_kind(event)?;
     }
+    if YamlDeserializer::new(&mut replay, cfg).peek_null_value()? {
+        return Ok(Vec::new());
+    }
     match replay.peek()? {
-        Some(Ev::Scalar {
-            value, tag, style, ..
-        }) if scalar_is_null(tag, value, style) => Ok(Vec::new()),
         Some(Ev::Scalar { location, .. }) => Err(Error::MergeValueNotMapOrSeqOfMaps {
             location: *location,
         }),
-        Some(Ev::MapStart { .. }) => collect_entries_from_map(
-            &mut replay,
-            reference_location,
-            merge_keys,
-            duplicate_keys,
-            legacy_octal_numbers,
-        ),
+        Some(Ev::MapStart { .. }) => collect_entries_from_map(&mut replay, reference_location, cfg),
         Some(Ev::SeqStart { .. }) => {
             let mut batches = Vec::new();
             let _ = replay.next()?; // consume SeqStart
@@ -768,14 +807,12 @@ pub(super) fn pending_entries_from_events<'a>(
                         let _ = replay.peek()?;
                         let element_ref_loc = replay.reference_location();
                         let mut element =
-                            capture_node_with_legacy_octal(&mut replay, legacy_octal_numbers)?;
+                            capture_node_with_integer_syntax(&mut replay, cfg.int_syntax())?;
                         batches.push(pending_entries_from_events(
                             element.take_events(),
                             element.location(),
                             element_ref_loc,
-                            merge_keys,
-                            duplicate_keys,
-                            legacy_octal_numbers,
+                            cfg,
                             #[cfg(feature = "properties")]
                             property_interpolation.clone(),
                         )?); // recursive
@@ -814,14 +851,16 @@ pub(super) fn pending_entries_from_events<'a>(
 pub(super) fn pending_entries_from_live_events<'a>(
     ev: &mut dyn Events<'a>,
     merge_reference_location: Location,
-    merge_keys: MergeKeyPolicy,
-    duplicate_keys: DuplicateKeyPolicy,
-    legacy_octal_numbers: bool,
+    cfg: Cfg,
 ) -> Result<Vec<PendingEntry<'a>>, Error> {
     #[cfg(feature = "properties")]
     let property_interpolation = ev.property_interpolation().clone();
     if let Some(event) = ev.peek()? {
         super::live_events::validate_node_tag_kind(event)?;
+    }
+    if YamlDeserializer::new(&mut *ev, cfg).peek_null_value()? {
+        let _ = ev.next()?;
+        return Ok(Vec::new());
     }
     match ev.peek()? {
         Some(event @ Ev::RecursiveAlias { .. }) => {
@@ -831,24 +870,16 @@ pub(super) fn pending_entries_from_live_events<'a>(
             let _ = ev.next()?;
             Ok(Vec::new())
         }
-        Some(Ev::Scalar {
-            value, tag, style, ..
-        }) if scalar_is_null(tag, value, style) => {
-            let _ = ev.next()?;
-            Ok(Vec::new())
-        }
         Some(Ev::Scalar { location, .. }) => Err(Error::MergeValueNotMapOrSeqOfMaps {
             location: *location,
         }),
         Some(Ev::MapStart { .. }) => {
-            let mut node = capture_node_with_legacy_octal(ev, legacy_octal_numbers)?;
+            let mut node = capture_node_with_integer_syntax(ev, cfg.int_syntax())?;
             pending_entries_from_events(
                 node.take_events(),
                 node.location(),
                 merge_reference_location,
-                merge_keys,
-                duplicate_keys,
-                legacy_octal_numbers,
+                cfg,
                 #[cfg(feature = "properties")]
                 property_interpolation,
             )
@@ -865,14 +896,12 @@ pub(super) fn pending_entries_from_live_events<'a>(
                     Some(_) => {
                         let _ = ev.peek()?;
                         let element_ref_loc = ev.reference_location();
-                        let mut element = capture_node_with_legacy_octal(ev, legacy_octal_numbers)?;
+                        let mut element = capture_node_with_integer_syntax(ev, cfg.int_syntax())?;
                         batches.push(pending_entries_from_events(
                             element.take_events(),
                             element.location(),
                             element_ref_loc,
-                            merge_keys,
-                            duplicate_keys,
-                            legacy_octal_numbers,
+                            cfg,
                             #[cfg(feature = "properties")]
                             property_interpolation.clone(),
                         )?);
@@ -906,9 +935,7 @@ pub(super) fn pending_entries_from_live_events<'a>(
 pub(super) fn collect_entries_from_map<'a>(
     ev: &mut dyn Events<'a>,
     reference_location: Location,
-    merge_keys: MergeKeyPolicy,
-    duplicate_keys: DuplicateKeyPolicy,
-    legacy_octal_numbers: bool,
+    cfg: Cfg,
 ) -> Result<Vec<PendingEntry<'a>>, Error> {
     if let Some(event) = ev.peek()? {
         super::live_events::validate_node_tag_kind(event)?;
@@ -930,22 +957,16 @@ pub(super) fn collect_entries_from_map<'a>(
             }
             Some(_) => {
                 let key_comments = ev.take_leading_comments_for_next_node()?;
-                let key = capture_node_with_legacy_octal(ev, legacy_octal_numbers)?;
+                let key = capture_node_with_integer_syntax(ev, cfg.int_syntax())?;
                 if is_merge_key(&key) {
-                    match merge_keys {
+                    match cfg.merge_keys {
                         MergeKeyPolicy::Merge => {
                             // Preserve where the merge value is referenced (use-site). For alias
                             // merges inside merged mappings, node locations point at the anchored
                             // mapping, but we want `referenced` to point at the alias token.
                             let _ = ev.peek()?;
                             let merge_ref_loc = ev.reference_location();
-                            merges.push(pending_entries_from_live_events(
-                                ev,
-                                merge_ref_loc,
-                                merge_keys,
-                                duplicate_keys,
-                                legacy_octal_numbers,
-                            )?);
+                            merges.push(pending_entries_from_live_events(ev, merge_ref_loc, cfg)?);
                             continue;
                         }
                         MergeKeyPolicy::AsOrdinary => {}
@@ -956,10 +977,13 @@ pub(super) fn collect_entries_from_map<'a>(
                         }
                     }
                 }
+                if cfg.reject_tagged_field_names {
+                    key.validate_field_name_tag()?;
+                }
                 let field_comments = key_comments;
                 let value_separator_comments = ev.take_separator_comments_before_mapping_value()?;
                 let value_comments = ev.take_leading_comments_for_next_node()?;
-                let value = capture_node_with_legacy_octal(ev, legacy_octal_numbers)?;
+                let value = capture_node_with_integer_syntax(ev, cfg.int_syntax())?;
                 fields.push(PendingEntry {
                     key,
                     value,
@@ -975,7 +999,8 @@ pub(super) fn collect_entries_from_map<'a>(
         }
     }
 
-    let mut entries = apply_duplicate_key_policy_to_entries(fields, duplicate_keys, merge_keys)?;
+    let mut entries =
+        apply_duplicate_key_policy_to_entries(fields, cfg.dup_policy, cfg.merge_keys)?;
     for mut nested in merges {
         entries.append(&mut nested);
     }

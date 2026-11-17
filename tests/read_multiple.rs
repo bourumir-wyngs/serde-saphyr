@@ -1,9 +1,74 @@
 #![cfg(all(feature = "serialize", feature = "deserialize"))]
+use rstest::rstest;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct Simple {
     id: usize,
+}
+
+#[test]
+fn tagged_null_payloads_are_preserved_as_documents() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    enum Value {
+        Maybe(Option<String>),
+    }
+
+    let yaml = "null\n---\n!Maybe null\n---\n!Maybe present\n";
+    let expected = vec![Value::Maybe(None), Value::Maybe(Some("present".into()))];
+    let values: Vec<Value> = serde_saphyr::from_multiple(yaml).unwrap();
+    assert_eq!(values, expected);
+
+    let mut reader = yaml.as_bytes();
+    let values = serde_saphyr::read::<_, Value>(&mut reader)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(values, expected);
+}
+
+#[rstest]
+#[case::null("!Foo null")]
+#[case::tilde("!Foo ~")]
+#[case::empty("!Foo")]
+fn application_tagged_null_documents_reach_option_targets(#[case] document: &str) {
+    let yaml = format!("{document}\n---\nnull\n");
+    let expected = [Some(())];
+
+    let values = serde_saphyr::from_multiple::<Option<()>>(&yaml).unwrap();
+    assert_eq!(values, expected);
+
+    let mut reader = yaml.as_bytes();
+    let values = serde_saphyr::read::<_, Option<()>>(&mut reader)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(values, expected);
+}
+
+#[rstest]
+#[case::null("!Foo null")]
+#[case::tilde("!Foo ~")]
+#[case::empty("!Foo")]
+fn application_tagged_null_documents_report_string_errors(#[case] document: &str) {
+    let yaml = format!("{document}\n---\npresent\n");
+    for error in [
+        serde_saphyr::from_multiple::<String>(&yaml).unwrap_err(),
+        serde_saphyr::from_multiple::<Option<String>>(&yaml).unwrap_err(),
+    ] {
+        assert!(matches!(
+            error.without_snippet(),
+            serde_saphyr::Error::NullIntoString { .. }
+        ));
+    }
+
+    let mut reader = yaml.as_bytes();
+    let mut values = serde_saphyr::read::<_, String>(&mut reader);
+    let error = values.next().unwrap().unwrap_err();
+    assert!(matches!(
+        error.without_snippet(),
+        serde_saphyr::Error::NullIntoString { .. }
+    ));
+    assert_eq!(values.next().unwrap().unwrap(), "present");
+    assert!(values.next().is_none());
 }
 
 #[test]
