@@ -947,9 +947,6 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             return YamlDeserializer::new(&mut replay, self.cfg).deserialize_map(visitor);
         }
 
-        if let Some(event) = self.ev.peek()? {
-            validate_node_tag_kind(event)?;
-        }
         if let Some((value, tag, style, location)) = self.peek_effective_scalar()? {
             // Explicit scalar types take precedence over implicit null and string inference,
             // including for quoted and block scalars buffered by Serde's flatten support.
