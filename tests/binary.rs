@@ -98,7 +98,12 @@ fn binary_tag_rejects_padding_inside_quad() {
 
 #[rstest::rstest]
 fn optional_binary_values_preserve_null_like_base64(
-    #[values("!!binary", "!binary", "!<tag:yaml.org,2002:binary>")] tag: &str,
+    #[values(
+        "!!binary",
+        "!<tag:yaml.org,2002:binary>",
+        "%TAG ! tag:yaml.org,2002:\n--- !binary"
+    )]
+    tag: &str,
     #[values("null", "Null", "NULL", "")] payload: &str,
 ) {
     let yaml = format!("{tag} {payload}");
@@ -184,4 +189,25 @@ fn document_streams_reject_malformed_binary_values() {
             serde_saphyr::Error::InvalidBinaryBase64 { .. }
         ));
     }
+}
+
+#[rstest::rstest]
+fn local_binary_tag_does_not_decode_null_like_text(
+    #[values("null", "Null", "NULL", "")] payload: &str,
+) {
+    let yaml = format!("!binary {payload}");
+    assert!(serde_saphyr::from_str::<ByteBuf>(&yaml).is_err());
+    assert!(serde_saphyr::from_str::<Option<ByteBuf>>(&yaml).is_err());
+}
+
+#[rstest::rstest]
+#[case("!binary")]
+#[case("!<tag:yaml.org,2002:!binary>")]
+fn application_binary_names_do_not_request_base64_decoding(#[case] tag: &str) {
+    let yaml = format!("{tag} AQID");
+    assert!(serde_saphyr::from_str::<ByteBuf>(&yaml).is_err());
+    assert_eq!(
+        serde_saphyr::from_str::<serde_json::Value>(&yaml).unwrap(),
+        serde_json::json!("AQID"),
+    );
 }

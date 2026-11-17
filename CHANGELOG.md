@@ -1,16 +1,50 @@
 # Changelog
 
-## 3.0.0
+## 3.0.0-rc.1 Unreleased
 
-### Changed
+### Breaking YAML changes
 
+This prerelease changes tag interpretation, optional tagged values, mapping-key
+identity, document filtering, and tagged unit output. These are behavioral
+incompatibilities even when existing Rust code compiles. The corrected semantics
+are the defaults; no legacy alias mode is provided. See
+[YAML changes in 3.0.0](README.md#yaml-changes-in-300) for all migration details.
+
+- Emit matching local tags on unit enum variants without a redundant `null`
+  payload, including through optional and tagged wrappers. Existing explicit
+  null payloads remain readable; actual variant fields retain their payload
+  representation. Share node-property emission to preserve anchors and spacing.
+- Distinguish local application tags from standard YAML types. Without a `%TAG`
+  remapping, `!str`, `!int`, `!bool`, `!float`, `!null`, `!seq`, `!map`, `!timestamp`,
+  and `!binary` no longer force their similarly named standard types. Use `!!str`,
+  `!!int`, and the other standard tags for type annotations. Strict unsupported-tag
+  rejection now treats those local names like other application tags.
+- Keep bare `!` as the separate non-specific tag: scalars resolve as strings and
+  collections keep their ordinary kinds. Remove the false bare `!!` alias and
+  redundant local-type shape and integer-key workarounds.
+- Resolve matching local YAML tags as enum variant selectors before interpreting
+  their payloads (#231). Names such as `!timestamp`, `!str`, `!null`, `!seq`, and
+  `!map` work with unit, scalar, sequence, and mapping variants, including through
+  `Tagged<T>` serialization. Resolved global tags retain their YAML type semantics.
+  Duplicate-key handling preserves resolved local tag identities throughout keys,
+  so local selectors no longer collide with global type annotations or untagged
+  values. This also distinguishes ordinary `!str foo` from `!!str foo`, and keeps
+  local `!int` payload spellings distinct; global `!!int` keys still compare numerically.
+  Optional targets preserve the tagged value before interpreting its payload:
+  `!timestamp` can select a present unit variant, and `!maybe null` can select a
+  present variant with an absent optional payload. Invalid payloads and unknown
+  selectors report the same errors as direct enum targets instead of returning `None`.
+- Multi-document APIs now retain former local aliases such as `!null` as
+  application tags. Untagged and standard-tagged null documents are skipped.
+  Optional targets treat application-tagged values as present, including
+  values with null-like enum payloads.
+- An application-tagged `None`, such as `Tagged(None::<String>, Some("!foo".into()))`,
+  still emits `!foo null`, but no longer reads back as absence. Its tag denotes a
+  present value and its payload must be valid for the inner type. Use untagged or
+  standard-tagged null for `None`; use an optional enum payload for a present value
+  whose payload is absent.
 - `Options::reject_tagged_field_names` now defaults to `true`, rejecting misplaced
   tags on struct field names. Set it to `false` to retain the previous behavior.
-
-## 2.2.0
-
-### Breaking changes (planned for 3.x)
-
 - Rename `Options::underscored_numbers_as_strings` to `Options::allow_numeric_underscores`
   and invert its meaning; the new field defaults to `true`. Replace the old setting
   `underscored_numbers_as_strings: true` with `allow_numeric_underscores: false` to
@@ -39,8 +73,12 @@
   Uppercase hexadecimal digits remain accepted with a lowercase prefix (`0xFF`).
   Otherwise valid integers report `Error::UppercaseRadixPrefixDisabled`; malformed
   syntax and target-range failures retain their original errors. This replaces the
-  unreleased inference-only uppercase-prefix rule; the default now accepts uppercase
+  inference-only uppercase-prefix rule from 2.2.0; the default now accepts uppercase
   prefixes consistently in both inference and typed parsing.
+
+## 2.2.0
+
+### Added
 
 - Added opt-in `Options::null_as_string` (default: `false`) to preserve plain
   `null`, `Null`, `NULL`, `~`, and empty scalars as text for string targets in both
@@ -50,9 +88,13 @@
   comparison, and `no_schema` quoting requirements keep their existing behavior.
 - Added `Options::bom_inside_document_as_content` (default `false`) to preserve a
   BOM at the start of a token inside a document as plain scalar content, including
-  in included YAML. A BOM in a document prefix is still skipped. 
+  in included YAML. A BOM in a document prefix is still skipped.
 
 ### Fixed
+- Preserve uppercase radix prefixes (`0X`, `0O`, `0B`, including signed forms) as
+  strings during implicit type inference, including untagged enums and flattened
+  fields (#266). Direct typed integer parsing, explicit `!!int` tags, and mapping-key
+  comparison retain their existing behavior.
 - Infer plain signed not-a-number spellings (`+.nan`, `-.NaN`, `-.NAN`) as strings
   during implicit type inference, since the YAML 1.2 Core schema allows a sign on
   `.inf` only (#271; [#272](https://github.com/bourumir-wyngs/serde-saphyr/pull/272),
@@ -77,8 +119,8 @@
 ### Performance improvements
 - Significantly reduced allocations when deserializing (#262)
 
-## 2.1.0 
-–
+## 2.1.0
+
 ### Added
 
 - Added `PropertySyntax::DockerComposeWithNulls`: Compose interpolation where a value that is
@@ -147,14 +189,20 @@
   Blank values and the plain spellings `~`, `null`, `Null`, and `NULL` are handled consistently.
   Write `[]` for an empty sequence or `{}` for an empty mapping. `Option<T>` null handling
   and defaults for absent fields are unchanged; see the README migration notes.
-- Reject "wrong case" YAML 1.2 Core spellings like NUlL, .NAn or FAlse (PR #254, #237).  
+- Tags selecting unit enum variants now reject non-null payloads instead of silently
+  discarding them (#236). Use a bare variant name, a tag with empty content, or a
+  tag followed by `~` or `null`; quoted strings and collections are rejected.
+- Recognize only the standard plain null spellings: empty, `~`, `null`, `Null`, and `NULL`.
+  Other capitalization such as `NulL` remains a string instead of being rejected, converted
+  to an empty value, or skipped as a document ([#234](https://github.com/bourumir-wyngs/serde-saphyr/issues/234)).
+- `strict_booleans: true` now recognizes only the six YAML 1.2 Core boolean spellings.
+  Other capitalization such as `tRuE` remains a string during inference, is accepted
+  as unquoted text with `no_schema`, and is rejected for boolean targets.
+- Recognize only the YAML 1.2 Core spellings of `.inf` and `.nan` during inference (#254).
 
 ## 2.0.0
 
 ### YAML changes
-- Tags selecting unit enum variants now reject non-null payloads instead of silently
-  discarding them (#236). Use a bare variant name, a tag with empty content, or a
-  tag followed by `~` or `null`; quoted strings and collections are rejected.
 - Composite mapping keys are not compared regardless of entry order (thanks @yuxi-liu-wired)  .
 - Commented<T> now writes its output replacing characters not allowed in comments (non printable) by spaces.
 

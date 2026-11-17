@@ -83,7 +83,8 @@ pub(crate) enum SfTag {
     Merge,
     /// YAML 1.1 value key (`tag:yaml.org,2002:value`), accepted without special handling.
     Value,
-    /// Non-specific tag "!" (no resolution) — we force scalar to be treated as string
+    /// Bare `!`: a string for scalars, or an ordinary sequence or mapping.
+    /// Distinct from both the standard string tag and application-specific tags.
     NonSpecific,
     /// !include tag - include external resource
     Include,
@@ -104,47 +105,25 @@ pub(crate) enum TagNodeKind {
     Mapping,
 }
 
-fn tag_to_sf_tag(tag: &Tag) -> SfTag {
-    // Core-like spellings kept for compatibility. Resolved YAML 1.2.2 Core Schema tags are
-    // handled first via `Tag::core_suffix()`, which is independent of source handle spelling.
-    // Borrow common spellings; the parser joins only names split across a %TAG directive.
+fn non_core_tag(tag: &Tag) -> SfTag {
+    // Only the robotics extensions retain their historical bang-prefixed global aliases.
+    // Include tags (and their fragments) have already been handled by parse_include_tag.
     if let Some(suffix) = tag.suffix_in_namespace(YAML_TAG_NAMESPACE) {
-        return tag_name_to_sf_tag(suffix.strip_prefix('!').unwrap_or(&suffix));
+        return match suffix.as_ref() {
+            "timestamp" => SfTag::TimeStamp,
+            "binary" => SfTag::Binary,
+            "time" | "!time" => SfTag::Time,
+            "degrees" | "!degrees" => SfTag::Degrees,
+            "radians" | "!radians" => SfTag::Radians,
+            _ => SfTag::Other,
+        };
     }
 
-    let Some(suffix) = tag.suffix_in_namespace("!") else {
-        return SfTag::Other;
-    };
-    match suffix.as_ref() {
-        // Non-specific tags force string handling.
-        "" | "!" => SfTag::NonSpecific,
-        "!timestamp" => SfTag::TimeStamp,
-        "!binary" => SfTag::Binary,
-        name => match name.strip_prefix('!') {
-            // Double-bang compatibility spellings exclude custom time/include/angle tags.
-            Some(name) => core_suffix_to_sf_tag(name).unwrap_or(SfTag::Other),
-            None => tag_name_to_sf_tag(name),
-        },
-    }
-}
-
-fn tag_name_to_sf_tag(name: &str) -> SfTag {
-    match name {
-        "int" => SfTag::Int,
-        "float" => SfTag::Float,
-        "bool" => SfTag::Bool,
-        "null" => SfTag::Null,
-        "seq" => SfTag::Seq,
-        "map" => SfTag::Map,
-        // A null key or value with this tag can be serialized into an empty string.
-        "str" => SfTag::String,
-        "timestamp" => SfTag::TimeStamp,
-        // Custom time duration aliases, distinct from standard timestamps.
-        "time" => SfTag::Time,
-        "binary" => SfTag::Binary,
-        "include" => SfTag::Include,
-        "degrees" => SfTag::Degrees,
-        "radians" => SfTag::Radians,
+    match tag.suffix_in_namespace("!").as_deref() {
+        Some("") => SfTag::NonSpecific,
+        Some("time") => SfTag::Time,
+        Some("degrees") => SfTag::Degrees,
+        Some("radians") => SfTag::Radians,
         _ => SfTag::Other,
     }
 }
@@ -210,7 +189,7 @@ impl SfTag {
                     return SfTag::Value;
                 }
 
-                tag_to_sf_tag(cow)
+                non_core_tag(cow)
             }
             None => SfTag::None,
         }
@@ -301,9 +280,9 @@ mod tests {
     #[case::local_time(("!", "time", "!"), SfTag::Time)]
     #[case::global_time(("tag:yaml.org,2002:", "time", "!!"), SfTag::Time)]
     #[case::global_local_time(("tag:yaml.org,2002:", "!time", "!!"), SfTag::Time)]
-    #[case::local_timestamp(("!", "timestamp", "!"), SfTag::TimeStamp)]
+    #[case::local_timestamp(("!", "timestamp", "!"), SfTag::Other)]
     #[case::global_timestamp(("tag:yaml.org,2002:", "timestamp", "!!"), SfTag::TimeStamp)]
-    #[case::global_local_timestamp(("tag:yaml.org,2002:", "!timestamp", "!!"), SfTag::TimeStamp)]
+    #[case::global_local_timestamp(("tag:yaml.org,2002:", "!timestamp", "!!"), SfTag::Other)]
     fn distinguishes_time_durations_from_timestamps(
         #[case] parts: (&str, &str, &str),
         #[case] expected: SfTag,
@@ -312,7 +291,51 @@ mod tests {
         let tag = sf_tag(Tag::with_original_handle(prefix, suffix, handle));
         assert_eq!(tag, expected);
         assert_eq!(tag.is_robotics(), expected == SfTag::Time);
-        assert!(!tag.can_parse_into_string());
+        assert_eq!(tag.can_parse_into_string(), expected == SfTag::Other);
+    }
+
+    #[rstest]
+    #[case("int")]
+    #[case("float")]
+    #[case("bool")]
+    #[case("null")]
+    #[case("seq")]
+    #[case("map")]
+    #[case("str")]
+    #[case("timestamp")]
+    #[case("binary")]
+    fn local_type_names_do_not_select_standard_types(#[case] name: &str) {
+        assert_eq!(
+            sf_tag(Tag::with_original_handle("!", name, "!")),
+            SfTag::Other
+        );
+        assert_eq!(
+            sf_tag(Tag::with_original_handle(
+                "tag:yaml.org,2002:",
+                format!("!{name}"),
+                "!!"
+            )),
+            SfTag::Other
+        );
+    }
+
+    #[test]
+    fn bare_tag_has_its_own_classification() {
+        let tag = sf_tag(Tag::new("!", ""));
+        assert_eq!(tag, SfTag::NonSpecific);
+        assert_ne!(tag, SfTag::String);
+        assert!(tag.forces_string());
+        assert_eq!(tag.requires(), None);
+        assert_eq!(sf_tag(Tag::new("!", "!")), SfTag::Other);
+    }
+
+    #[rstest]
+    #[case("str")]
+    #[case("int")]
+    #[case("timestamp")]
+    #[case("binary")]
+    fn resolved_local_tags_are_not_standard_shorthands(#[case] name: &str) {
+        assert_eq!(sf_tag(Tag::new("!!", name)), SfTag::Other);
     }
 
     #[test]
@@ -359,14 +382,16 @@ mod tests {
     #[test]
     fn preserves_tag_classification_across_directive_splits() {
         for (raw, expected) in [
-            ("!timestamp", SfTag::TimeStamp),
-            ("!!timestamp", SfTag::TimeStamp),
-            ("tag:yaml.org,2002:!binary", SfTag::Binary),
+            ("!timestamp", SfTag::Other),
+            ("!!timestamp", SfTag::Other),
+            ("tag:yaml.org,2002:timestamp", SfTag::TimeStamp),
+            ("tag:yaml.org,2002:binary", SfTag::Binary),
+            ("tag:yaml.org,2002:!binary", SfTag::Other),
             ("tag:yaml.org,2002:!time", SfTag::Time),
             ("tag:yaml.org,2002:degrees", SfTag::Degrees),
             ("!radians", SfTag::Radians),
             ("!", SfTag::NonSpecific),
-            ("!!", SfTag::NonSpecific),
+            ("!!", SfTag::Other),
             ("!!time", SfTag::Other),
             ("!!include", SfTag::Other),
             ("!!degrees", SfTag::Other),

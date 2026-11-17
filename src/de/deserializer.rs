@@ -17,8 +17,9 @@ use super::key_nodes::{
     KeyFingerprint, KeyNode, PendingEntry, apply_duplicate_key_policy_to_entries,
     capture_node_with_integer_syntax, capture_simple_tagged_node_as_map_events,
     is_empty_mapping_key_fingerprint, is_merge_key, pending_entries_from_live_events,
-    simple_tagged_enum_name, validate_no_merge_keys_in_node_events,
+    tagged_enum_variant_name, validate_no_merge_keys_in_node_events,
 };
+use super::live_events::validate_node_tag_kind;
 #[cfg(feature = "properties")]
 use super::options::PropertySyntax;
 use super::options::{DuplicateKeyPolicy, MergeKeyPolicy, NonFiniteFloatPolicy};
@@ -349,8 +350,8 @@ pub(crate) fn with_root_redaction_unless_null<'de, 'e, T>(
         value, tag, style, ..
     }) = de.ev.peek()?
     {
-        let keep_tagged = *tag == SfTag::Other;
-        if !keep_tagged && scalar_is_null(tag, value, style) {
+        let may_skip_null = matches!(tag, SfTag::None | SfTag::Null);
+        if may_skip_null && scalar_is_null(tag, value, style) {
             let _ = de.ev.next()?;
             return Ok(None);
         }
@@ -362,7 +363,7 @@ pub(crate) fn with_root_redaction_unless_null<'de, 'e, T>(
                 let Some(view) = de.peek_scalar_view()? else {
                     return Err(eof_with_loc(de.ev));
                 };
-                if !keep_tagged
+                if may_skip_null
                     && de.ev.property_interpolation().syntax()
                         == PropertySyntax::DockerComposeWithNulls
                     && view.tag == SfTag::Null
@@ -677,7 +678,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
     /// Expect a sequence start and consume it, or error otherwise.
     fn expect_seq_start(&mut self) -> Result<(), Error> {
         match self.ev.next()? {
-            Some(Ev::SeqStart { .. }) => Ok(()),
+            Some(event @ Ev::SeqStart { .. }) => validate_node_tag_kind(&event),
             Some(other) => Err(Error::unexpected("sequence start").with_location(other.location())),
             None => Err(eof_with_loc(self.ev)),
         }
@@ -686,7 +687,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
     /// Expect a mapping start and consume it, or error otherwise.
     fn expect_map_start(&mut self) -> Result<(), Error> {
         match self.ev.next()? {
-            Some(Ev::MapStart { .. }) => Ok(()),
+            Some(event @ Ev::MapStart { .. }) => validate_node_tag_kind(&event),
             Some(other) => Err(Error::unexpected("mapping start").with_location(other.location())),
             None => Err(eof_with_loc(self.ev)),
         }
@@ -1486,9 +1487,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     /// Deserialize an `Option<T>`.
     ///
     /// **What is treated as `None`?** End-of-input, container end, an explicitly
-    /// tagged null, or a plain empty / `~` / `null` scalar permitting implicit null resolution.
-    /// Explicit non-null core, binary, timestamp, and robotics tags are passed to the inner
-    /// value's deserializer.
+    /// tagged standard null, or an untagged plain empty / `~` / `null` scalar.
+    /// Every other explicit tag denotes a present value and reaches the inner
+    /// deserializer unchanged, even when its payload is empty or null-like.
     fn deserialize_option<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
         // Only when Serde asks for Option<T> do we interpret YAML null-like scalars as None.
         // Special-case for map keys: treat an explicit empty key captured as an empty mapping node
@@ -1497,7 +1498,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         if self.in_key && self.key_empty_map_node {
             // Recorded key is an empty mapping: treat as None for Option<T> in key position
             match self.ev.next()? {
-                Some(Ev::MapStart { .. }) => {}
+                Some(event @ Ev::MapStart { .. }) => validate_node_tag_kind(&event)?,
                 Some(other) => {
                     return Err(
                         Error::unexpected("empty mapping start").with_location(other.location())
@@ -1517,19 +1518,24 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             return visitor.visit_none();
         }
 
+        // Check the original tag before interpolation can resolve the payload as null.
+        // An enum removes its selector before deserializing its own optional payload.
+        match self.ev.peek()? {
+            None | Some(Ev::MapEnd { .. } | Ev::SeqEnd { .. }) => return visitor.visit_none(),
+            Some(Ev::Scalar {
+                tag: SfTag::None | SfTag::Null,
+                ..
+            }) => {}
+            Some(_) => return visitor.visit_some(self),
+        }
+
         if let Some((value, tag, style, _location)) = self.peek_effective_scalar()?
             && scalar_is_null(&tag, &value, &style)
         {
             let _ = self.ev.next()?; // consume the scalar
-            return visitor.visit_none();
-        }
-
-        match self.ev.peek()? {
-            // End of input or an immediate container end both represent a missing value.
-            None | Some(Ev::MapEnd { .. } | Ev::SeqEnd { .. }) => visitor.visit_none(),
-
-            // Otherwise there is a value → Some(...)
-            Some(_) => visitor.visit_some(self),
+            visitor.visit_none()
+        } else {
+            visitor.visit_some(self)
         }
     }
 
@@ -1573,7 +1579,8 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     ) -> Result<V::Value, Self::Error> {
         match self.ev.peek()? {
             // Allow empty mapping `{}` as a unit struct
-            Some(Ev::MapStart { .. }) => {
+            Some(event @ Ev::MapStart { .. }) => {
+                validate_node_tag_kind(event)?;
                 let _ = self.ev.next()?; // consume MapStart
                 match self.ev.peek()? {
                     Some(Ev::MapEnd { .. }) => {
@@ -2709,11 +2716,12 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 location,
                 ..
             }) => {
-                if let Some(tag_name) = simple_tagged_enum_name(&raw_tag, &tag) {
+                if let Some(tag_name) = tagged_enum_variant_name(&raw_tag, &tag, variants) {
                     tagged_enum = Some((tag_name, location));
                 }
-                // A matching application tag selects the variant. Resolve and validate the
-                // scalar as its payload, which may be null or a non-string in no_schema mode.
+                // Resolve the variant before interpreting the payload's tag or spelling.
+                // The selected variant determines the payload type, including
+                // no_schema checks and supported robotics conversions.
                 if let Some((ref tag_name, tag_loc)) = tagged_enum
                     && variants.contains(&tag_name.as_str())
                 {
@@ -2764,15 +2772,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 location,
                 ..
             }) => {
-                // `!map` is classified as `SfTag::Map` for compatibility when used as
-                // an ordinary mapping tag. In a typed enum context it may instead select
-                // a renamed `map` variant. Resolved core forms (`!!map`, verbatim tags,
-                // and directive-expanded handles) have a different `raw_tag` and remain
-                // YAML type annotations.
-                let tag_name = simple_tagged_enum_name(&raw_tag, &tag).or_else(|| {
-                    (tag == SfTag::Map && raw_tag.as_deref() == Some("!map"))
-                        .then(|| "map".to_owned())
-                });
+                let tag_name = tagged_enum_variant_name(&raw_tag, &tag, variants);
                 if let Some(tag_name) = tag_name
                     && variants.contains(&tag_name.as_str())
                 {
@@ -2832,7 +2832,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 location,
                 ..
             }) => {
-                if let Some(tag_name) = simple_tagged_enum_name(&raw_tag, &tag)
+                if let Some(tag_name) = tagged_enum_variant_name(&raw_tag, &tag, variants)
                     && variants.contains(&tag_name.as_str())
                 {
                     // Consume the SeqStart, collect all events until SeqEnd, replay as untagged sequence
@@ -2891,6 +2891,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             location: start_loc,
                         },
                     });
+                }
+                if let Some(event) = self.ev.peek()? {
+                    validate_node_tag_kind(event)?;
                 }
                 return Err(Error::ExternallyTaggedEnumExpectedScalarOrMapping { location });
             }

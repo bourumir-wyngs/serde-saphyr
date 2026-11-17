@@ -19,7 +19,7 @@ use crate::location::Location;
 use crate::parse_scalars::{
     IntSyntax, parse_int_signed, parse_int_unsigned, scalar_is_null, yaml_trim,
 };
-use crate::tag::simple_enum_variant_name;
+use crate::tag::{local_enum_variant_name, simple_enum_variant_name};
 
 pub(super) fn simple_tagged_enum_name(
     raw_tag: &Option<Cow<'_, str>>,
@@ -30,6 +30,24 @@ pub(super) fn simple_tagged_enum_name(
     }
 
     simple_enum_variant_name(raw_tag.as_deref()?).map(ToOwned::to_owned)
+}
+
+/// Select a matching local enum variant before applying built-in YAML tag semantics.
+///
+/// `raw_tag` is the parser-resolved tag identity, `tag` its YAML classification,
+/// and `variants` the target enum's accepted names. Returns a matching local
+/// selector, or the existing custom-tag fallback used for mismatch diagnostics.
+pub(super) fn tagged_enum_variant_name(
+    raw_tag: &Option<Cow<'_, str>>,
+    tag: &SfTag,
+    variants: &[&str],
+) -> Option<String> {
+    if let Some(name) = raw_tag.as_deref().and_then(local_enum_variant_name)
+        && variants.contains(&name)
+    {
+        return Some(name.to_owned());
+    }
+    simple_tagged_enum_name(raw_tag, tag)
 }
 
 /// Canonical tag identity used by [`KeyFingerprint`].
@@ -90,12 +108,12 @@ fn canonical_node_key_tag<'a>(
     raw_tag: &Option<Cow<'a, str>>,
     implicit_tag: SfTag,
 ) -> CanonicalKeyTag<'a> {
-    // `raw_tag` contains the parser-resolved tag identity. Keep it for tags
-    // collapsed into `Other`, and for local `!map`, which is deliberately
-    // distinct from the resolved core map tag in typed enum contexts.
-    if (tag == SfTag::Other
-        || (implicit_tag == SfTag::Map && tag == SfTag::Map && raw_tag.as_deref() == Some("!map")))
-        && let Some(raw_tag) = raw_tag
+    // Resolved local tags have identities distinct from global YAML type tags.
+    // Preserve them at every depth: the node may become an enum selector inside
+    // a newtype, option, tuple, or another enum's payload. Key comparison runs
+    // before Serde reveals those nested target types.
+    if let Some(raw_tag) = raw_tag
+        && (tag == SfTag::Other || local_enum_variant_name(raw_tag).is_some())
     {
         return CanonicalKeyTag::Custom(raw_tag.clone());
     }
@@ -762,6 +780,9 @@ pub(super) fn pending_entries_from_events<'a>(
         #[cfg(feature = "properties")]
         property_interpolation.clone(),
     );
+    if let Some(event) = replay.peek()? {
+        super::live_events::validate_node_tag_kind(event)?;
+    }
     if YamlDeserializer::new(&mut replay, cfg).peek_null_value()? {
         return Ok(Vec::new());
     }
@@ -834,6 +855,9 @@ pub(super) fn pending_entries_from_live_events<'a>(
 ) -> Result<Vec<PendingEntry<'a>>, Error> {
     #[cfg(feature = "properties")]
     let property_interpolation = ev.property_interpolation().clone();
+    if let Some(event) = ev.peek()? {
+        super::live_events::validate_node_tag_kind(event)?;
+    }
     if YamlDeserializer::new(&mut *ev, cfg).peek_null_value()? {
         let _ = ev.next()?;
         return Ok(Vec::new());
@@ -913,6 +937,9 @@ pub(super) fn collect_entries_from_map<'a>(
     reference_location: Location,
     cfg: Cfg,
 ) -> Result<Vec<PendingEntry<'a>>, Error> {
+    if let Some(event) = ev.peek()? {
+        super::live_events::validate_node_tag_kind(event)?;
+    }
     let Some(Ev::MapStart { .. }) = ev.next()? else {
         return Err(Error::MergeValueNotMapOrSeqOfMaps {
             location: ev.last_location(),

@@ -284,19 +284,53 @@ fn null_and_string_identity_applies_throughout_composite_keys(#[case] yaml: &str
     }
 }
 
-#[test]
-fn custom_tagged_null_keys_keep_their_tag_identity() {
-    let yaml = "? {null: 1}\n: 10\n? {!First null: 1}\n: 20\n? {!Second null: 1}\n: 30\n";
+#[rstest]
+#[case::null("null")]
+#[case::tilde("~")]
+#[case::empty("")]
+fn custom_tagged_null_keys_keep_their_tag_identity(#[case] payload: &str) {
+    #[derive(Debug, serde::Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+    enum Choice {
+        First,
+        Second,
+    }
+
+    type EnumCompositeMap = BTreeMap<BTreeMap<Option<Choice>, u32>, u32>;
+    type UnitCompositeMap = BTreeMap<BTreeMap<Option<()>, u32>, u32>;
+
+    let yaml = format!(
+        "? {{null: 1}}\n: 10\n? {{!First {payload}: 1}}\n: 20\n? {{!Second {payload}: 1}}\n: 30\n"
+    );
+    let expected = BTreeMap::from([
+        (BTreeMap::from([(None, 1)]), 10),
+        (BTreeMap::from([(Some(Choice::First), 1)]), 20),
+        (BTreeMap::from([(Some(Choice::Second), 1)]), 30),
+    ]);
     for policy in [
         DuplicateKeyPolicy::Error,
         DuplicateKeyPolicy::FirstWins,
         DuplicateKeyPolicy::LastWins,
     ] {
         let options = serde_saphyr::options! { duplicate_keys: policy };
-        let actual: NullCompositeMap = serde_saphyr::from_str_with_options(yaml, options).unwrap();
-        // These are distinct YAML keys. The target's Option<String> conversion
-        // discards their tags, so the BTreeMap itself retains the final value.
-        assert_eq!(actual, null_composite_entry(30), "{policy:?}");
+        let actual: EnumCompositeMap =
+            serde_saphyr::from_str_with_options(&yaml, options.clone()).unwrap();
+        assert_eq!(actual, expected, "{policy:?}");
+
+        // The YAML keys are distinct. Unit conversion discards the selectors,
+        // so the Rust map combines the two present keys, but never the absent one.
+        let units: UnitCompositeMap =
+            serde_saphyr::from_str_with_options(&yaml, options.clone()).unwrap();
+        assert_eq!(
+            units,
+            BTreeMap::from([
+                (BTreeMap::from([(None, 1)]), 10),
+                (BTreeMap::from([(Some(()), 1)]), 30),
+            ]),
+            "{policy:?}"
+        );
+
+        // An incompatible inner type must report an error, not erase a tagged value.
+        assert!(serde_saphyr::from_str_with_options::<NullCompositeMap>(&yaml, options).is_err());
     }
 }
 

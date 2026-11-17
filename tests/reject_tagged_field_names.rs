@@ -271,15 +271,15 @@ fn duplicate_and_merged_map_keys_keep_their_existing_behavior() {
         (DuplicateKeyPolicy::LastWins, 2),
     ] {
         let map: BTreeMap<String, u32> = from_str_with_options(
-            "{count: 1, !str count: 2}",
+            "{!str count: 1, !str count: 2}",
             options! { reject_tagged_field_names: true, duplicate_keys: policy },
         )
         .unwrap();
         assert_eq!(map.get("count"), Some(&expected));
 
         for (yaml, winner) in [
-            ("{values: {count: 1, !str count: 2}}", expected),
-            ("{values: {count: 9, <<: {!str count: 1}}}", 9),
+            ("{values: {!str count: 1, !str count: 2}}", expected),
+            ("{values: {!str count: 9, <<: {!str count: 1}}}", 9),
         ] {
             let value: WithMap = from_str_with_options(
                 yaml,
