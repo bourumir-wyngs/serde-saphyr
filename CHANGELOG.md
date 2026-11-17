@@ -10,6 +10,9 @@
   ([#267](https://github.com/bourumir-wyngs/serde-saphyr/issues/267)). Explicit `!!null`
   tags remain rejected for strings; `Option<T>`, untyped null inference, mapping-key
   comparison, and `no_schema` quoting requirements keep their existing behavior.
+- Added `Options::bom_inside_document_as_content` (default `false`) to preserve a
+  BOM at the start of a token inside a document as plain scalar content, including
+  in included YAML. A BOM in a document prefix is still skipped. 
 
 ### Fixed
 - Preserve uppercase radix prefixes (`0X`, `0O`, `0B`, including signed forms) as
@@ -26,6 +29,11 @@
   untagged float targets continue to accept them as NaN. Explicit `!!float` scalars
   now preserve the supplied NaN sign when deserialized as floats.
 
+### Changed
+
+- Updated to granit-parser 2.2.0. Under-indented quoted scalar continuations in block
+  context and tabs before quoted continuations are now accepted by default;
+  `strict_indentation: true` continues to reject them.
 ## 2.1.1
 
 ### Fixed

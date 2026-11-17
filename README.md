@@ -411,7 +411,7 @@ Adding or removing a single space in YAML indentation may result in a document t
 
 You can require the number of indentation columns to be consistent throughout the document, ensure it is even, or enforce that it is divisible by a specific number (for example, 4 or 6). Configure the desired policy using `Options`.
 
-Set `strict_indentation: true` in `options!` to enforce YAML indentation rules for flow collections (`[...]` and `{...}`), including their entries, delimiters, and multiline scalar content. This also applies to included YAML. The default is `false`, allowing under-indented flow collections for compatibility.
+Set `strict_indentation: true` in `options!` to enforce YAML indentation rules for flow collections (`[...]` and `{...}`), including their entries, delimiters, and multiline scalar content. It also rejects under-indented quoted scalar continuations in block context and tabs before quoted continuations. This also applies to included YAML. The default is `false`, allowing these forms for compatibility.
 
 ### Duplicate keys
 

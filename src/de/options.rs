@@ -271,11 +271,14 @@ pub struct Options {
     #[cfg(feature = "comments")]
     pub emit_comments: bool,
 
-    /// Enforce YAML indentation rules for flow collections (`[...]` and `{...}`).
+    /// Enforce YAML indentation rules for flow collections (`[...]` and `{...}`)
+    /// and scalar continuations.
     ///
     /// When enabled, flow entries, delimiters, and scalar continuation lines must be
-    /// indented beyond the enclosing block collection. Applies to included YAML as well.
-    /// Default: false (accept under-indented flow collections for compatibility).
+    /// indented beyond the enclosing block collection. Quoted scalar continuations
+    /// in block context must also be indented and cannot use tabs for indentation.
+    /// Applies to included YAML as well. Default: false (accept under-indented flow
+    /// collections and relaxed quoted scalar continuations for compatibility).
     ///
     /// Accepted with `strict_indentation: true`: entries and closing delimiters are
     /// indented beyond the enclosing block mapping.
@@ -316,6 +319,19 @@ pub struct Options {
     /// ```
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub strict_indentation: bool,
+
+    /// Treat a byte-order mark (U+FEFF) at the start of a token inside a document
+    /// as the start of a plain scalar, preserving it in the scalar's text.
+    ///
+    /// Default: false (report a parser error for such a BOM). When enabled, this
+    /// matches libyaml's behavior and applies to included YAML as well. A BOM in
+    /// a document prefix is still skipped. BOMs within an existing plain or quoted
+    /// scalar remain content in either mode.
+    ///
+    /// A preserved BOM is part of a mapping key, so `\u{FEFF}key` does not match
+    /// a struct field named `key`.
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
+    pub bom_inside_document_as_content: bool,
 
     /// Policy for duplicate keys.
     pub duplicate_keys: DuplicateKeyPolicy,
@@ -566,6 +582,7 @@ impl Options {
             parser_options.emit_comments = self.emit_comments;
         }
         parser_options.strict_indentation = self.strict_indentation;
+        parser_options.bom_inside_document_as_content = self.bom_inside_document_as_content;
         parser_options
     }
 
@@ -754,6 +771,7 @@ impl Default for Options {
             #[cfg(feature = "comments")]
             emit_comments: true,
             strict_indentation: false,
+            bom_inside_document_as_content: false,
             duplicate_keys: DuplicateKeyPolicy::Error,
             merge_keys: MergeKeyPolicy::Merge,
             alias_limits: AliasLimits::default(),
@@ -802,6 +820,10 @@ impl std::fmt::Debug for Options {
         debug.field("emit_comments", &self.emit_comments);
         debug
             .field("strict_indentation", &self.strict_indentation)
+            .field(
+                "bom_inside_document_as_content",
+                &self.bom_inside_document_as_content,
+            )
             .field("duplicate_keys", &self.duplicate_keys)
             .field("merge_keys", &self.merge_keys)
             .field("alias_limits", &self.alias_limits)
@@ -894,6 +916,7 @@ mod tests {
         #[cfg(feature = "comments")]
         assert!(opts.emit_comments);
         assert!(!opts.strict_indentation);
+        assert!(!opts.bom_inside_document_as_content);
         assert!(matches!(opts.duplicate_keys, DuplicateKeyPolicy::Error));
         assert!(matches!(opts.merge_keys, MergeKeyPolicy::Merge));
         assert_eq!(opts.alias_limits.max_total_replayed_events, 1_000_000);
@@ -981,6 +1004,21 @@ mod tests {
 
     #[cfg(feature = "serde_derived_types")]
     #[test]
+    fn bom_inside_document_serde_roundtrip_and_missing_default() {
+        let options = crate::options! { bom_inside_document_as_content: true };
+        let mut json = serde_json::to_value(&options).unwrap();
+        let restored: Options = serde_json::from_value(json.clone()).unwrap();
+        assert!(restored.bom_inside_document_as_content);
+
+        json.as_object_mut()
+            .unwrap()
+            .remove("bom_inside_document_as_content");
+        let legacy: Options = serde_json::from_value(json).unwrap();
+        assert!(!legacy.bom_inside_document_as_content);
+    }
+
+    #[cfg(feature = "serde_derived_types")]
+    #[test]
     fn non_finite_float_policy_serde_uses_snake_case() {
         for (policy, name) in [
             (NonFiniteFloatPolicy::Default, "default"),
@@ -1008,6 +1046,7 @@ mod tests {
         #[cfg(feature = "comments")]
         assert!(debug_str.contains("emit_comments: true"));
         assert!(debug_str.contains("strict_indentation: false"));
+        assert!(debug_str.contains("bom_inside_document_as_content: false"));
         assert!(debug_str.contains("reject_unsupported_tags: false"));
         assert!(debug_str.contains("reject_tagged_field_names: false"));
         assert!(debug_str.contains("non_finite_float_policy: Default"));

@@ -112,7 +112,26 @@ fn yaml_dk4h_multiline_flow_key() {
 
 #[test]
 fn yaml_dk95_01_tab_in_double_quoted_continuation() {
-    assert_invalid_case("foo: \"bar\n\tbaz\"\n");
+    use serde_saphyr::granit_parser::ErrorKind;
+    use serde_saphyr::{Error, ExternalMessageSource};
+
+    let yaml = "foo: \"bar\n\tbaz\"\n";
+    assert_json_case(yaml, r#"{"foo": "bar baz"}"#);
+
+    let error = serde_saphyr::from_str_with_options::<serde_json::Value>(
+        yaml,
+        serde_saphyr::options! { strict_indentation: true },
+    )
+    .expect_err("strict mode rejects tabs indenting quoted continuations");
+    assert!(
+        matches!(
+            error.without_snippet(),
+            Error::ExternalMessage { source, .. }
+                if matches!(source.as_ref(), ExternalMessageSource::Parser(error)
+                    if error.kind() == &ErrorKind::TabInIndentation)
+        ),
+        "expected a tab indentation error, got {error}"
+    );
 }
 
 #[test]
