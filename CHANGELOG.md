@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.0.0
+
+### Changed
+
+- `Options::reject_tagged_field_names` now defaults to `true`, rejecting misplaced
+  tags on struct field names. Set it to `false` to retain the previous behavior.
+
 ## 2.2.0
 
 ### Added
@@ -34,6 +41,7 @@
 - Updated to granit-parser 2.2.0. Under-indented quoted scalar continuations in block
   context and tabs before quoted continuations are now accepted by default;
   `strict_indentation: true` continues to reject them.
+
 ## 2.1.1
 
 ### Fixed

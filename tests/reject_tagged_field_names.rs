@@ -29,7 +29,7 @@ fn inner_error(mut error: &Error) -> &Error {
 }
 
 fn assert_rejected<T: for<'de> Deserialize<'de> + std::fmt::Debug>(yaml: &str) {
-    let error = from_str_with_options::<T>(yaml, strict_options()).unwrap_err();
+    let error = from_str::<T>(yaml).unwrap_err();
     assert!(
         matches!(inner_error(&error), Error::TaggedStructFieldName { .. }),
         "{yaml:?}: unexpected error: {error:?}"
@@ -38,9 +38,18 @@ fn assert_rejected<T: for<'de> Deserialize<'de> + std::fmt::Debug>(yaml: &str) {
 }
 
 #[test]
-fn tagged_field_names_keep_their_existing_behavior_by_default() {
-    assert!(!Options::default().reject_tagged_field_names);
-    let entry: Entry = from_str("{name: a, !custom count: 1}").unwrap();
+fn tagged_field_names_are_rejected_by_default() {
+    assert!(Options::default().reject_tagged_field_names);
+    assert_rejected::<Entry>("{name: a, !custom count: 1}");
+}
+
+#[test]
+fn tagged_field_names_can_be_allowed_explicitly() {
+    let entry: Entry = from_str_with_options(
+        "{name: a, !custom count: 1}",
+        options! { reject_tagged_field_names: false },
+    )
+    .unwrap();
     assert_eq!(entry.count, Some(1));
     assert_eq!(entry.name.0, "a");
 }

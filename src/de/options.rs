@@ -13,6 +13,11 @@ const fn default_emit_comments() -> bool {
     true
 }
 
+#[cfg(feature = "serde_derived_types")]
+const fn default_reject_tagged_field_names() -> bool {
+    true
+}
+
 /// Duplicate key handling policy for mappings.
 ///
 /// Except with [`Self::PassThrough`], YAML integer keys are compared by their
@@ -436,8 +441,9 @@ pub struct Options {
     /// A derived struct normally matches each mapping key by its text alone. A
     /// custom tag on that key can therefore be discarded without the struct ever
     /// seeing it. Such a tag has no effect on field selection and may be a value
-    /// annotation accidentally placed on the field name. Enable this option to
-    /// report [`crate::Error::TaggedStructFieldName`] instead of silently accepting it.
+    /// annotation accidentally placed on the field name. By default, this reports
+    /// [`crate::Error::TaggedStructFieldName`] instead of silently accepting it.
+    /// Set this option to `false` to accept such tags without checking them.
     ///
     /// For example, an application can inspect a value's `!secret` tag by reading
     /// that value as [`crate::Tagged<T>`]:
@@ -482,8 +488,11 @@ pub struct Options {
     /// paths, including structs nested in their buffers, are not covered by this
     /// option; it is not a document-wide guarantee against tagged field names.
     ///
-    /// Default: false (retain existing field-name handling).
-    #[cfg_attr(feature = "serde_derived_types", serde(default))]
+    /// Default: true.
+    #[cfg_attr(
+        feature = "serde_derived_types",
+        serde(default = "default_reject_tagged_field_names")
+    )]
     pub reject_tagged_field_names: bool,
 
     /// Handling of NaN, positive/negative infinity, and decimal literals that overflow
@@ -784,7 +793,7 @@ impl Default for Options {
             ignore_binary_tag_for_string: false,
             no_schema: false,
             reject_unsupported_tags: false,
-            reject_tagged_field_names: false,
+            reject_tagged_field_names: true,
             reject_non_finite_typeless_float: true,
             with_snippet: true,
             crop_radius: 64,
@@ -929,7 +938,7 @@ mod tests {
         assert!(!opts.angle_conversions);
         assert!(!opts.no_schema);
         assert!(!opts.reject_unsupported_tags);
-        assert!(!opts.reject_tagged_field_names);
+        assert!(opts.reject_tagged_field_names);
         assert_eq!(
             opts.non_finite_float_policy,
             NonFiniteFloatPolicy::default()
@@ -977,16 +986,18 @@ mod tests {
     #[cfg(feature = "serde_derived_types")]
     #[test]
     fn tagged_field_name_policy_serde_roundtrip_and_missing_default() {
-        let options = crate::options! { reject_tagged_field_names: true };
-        let mut json = serde_json::to_value(&options).unwrap();
-        let restored: Options = serde_json::from_value(json.clone()).unwrap();
-        assert!(restored.reject_tagged_field_names);
+        for enabled in [true, false] {
+            let options = crate::options! { reject_tagged_field_names: enabled };
+            let mut json = serde_json::to_value(&options).unwrap();
+            let restored: Options = serde_json::from_value(json.clone()).unwrap();
+            assert_eq!(restored.reject_tagged_field_names, enabled);
 
-        json.as_object_mut()
-            .unwrap()
-            .remove("reject_tagged_field_names");
-        let legacy: Options = serde_json::from_value(json).unwrap();
-        assert!(!legacy.reject_tagged_field_names);
+            json.as_object_mut()
+                .unwrap()
+                .remove("reject_tagged_field_names");
+            let legacy: Options = serde_json::from_value(json).unwrap();
+            assert!(legacy.reject_tagged_field_names);
+        }
     }
 
     #[cfg(feature = "serde_derived_types")]
@@ -1048,7 +1059,7 @@ mod tests {
         assert!(debug_str.contains("strict_indentation: false"));
         assert!(debug_str.contains("bom_inside_document_as_content: false"));
         assert!(debug_str.contains("reject_unsupported_tags: false"));
-        assert!(debug_str.contains("reject_tagged_field_names: false"));
+        assert!(debug_str.contains("reject_tagged_field_names: true"));
         assert!(debug_str.contains("non_finite_float_policy: Default"));
         assert!(debug_str.contains("reject_non_finite_typeless_float: true"));
 

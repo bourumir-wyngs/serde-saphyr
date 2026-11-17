@@ -791,14 +791,21 @@ equivalent `%TAG` handles are also recognized. Use `MergeKeyPolicy::AsOrdinary`
 to accept these as regular mapping keys, or `MergeKeyPolicy::Error` to reject them.
 
 The YAML 1.1 `!!value` tag is recognized but intentionally has no special default-value
-behavior. Its scalar content is deserialized normally, and a tagged `=` mapping key remains
-an ordinary `"="` key. With `reject_unsupported_tags: true`, this tag is accepted only on that
+behavior. Its scalar content is deserialized normally, and a tagged `=` key in an ordinary map
+remains an ordinary `"="` key. With `reject_unsupported_tags: true`, this tag is accepted only on that
 exact scalar mapping key. The same strict-mode context check limits `!!merge` to a scalar `<<`
 mapping key.
 
 ### Tags
 
 `serde-saphyr` can capture tags. Applications can use custom tags to express units, priorities, accessibility and the like.
+
+`Options::reject_tagged_field_names` defaults to `true`: struct mappings entered through
+Serde's `deserialize_struct` reject explicit tags on field names, except standard `!!str`
+and non-specific `!` tags. For example, `!secret password: token` is rejected; put the value
+tag after the colon (`password: !secret token`). Set the option to `false` to accept tagged
+field names. See the [option documentation](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Options.html#structfield.reject_tagged_field_names)
+for coverage limits involving flattened structs and buffered enum content.
 
 The [`Tagged<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Tagged.html)
 wrapper stores a value and the resolved YAML tag attached to its node. The tag is represented as an
