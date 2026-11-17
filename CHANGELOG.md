@@ -22,6 +22,19 @@
 
 ### Added
 
+- Added `Options::lowercase_radix_prefixes_only` (default: `false`) to require
+  lowercase integer radix prefixes (`0x`, `0o`, `0b`) in the shared integer parser
+  ([#266](https://github.com/bourumir-wyngs/serde-saphyr/issues/266),
+  [#280](https://github.com/bourumir-wyngs/serde-saphyr/pull/280)). When enabled,
+  uppercase-prefixed plain scalars remain strings during inference, while typed
+  integer keys/values and explicit `!!int` tags reject them. Duplicate-key checks,
+  merge expansion, and composite-key comparison use the same restriction.
+  Uppercase hexadecimal digits remain accepted with a lowercase prefix (`0xFF`).
+  Otherwise valid integers report `Error::UppercaseRadixPrefixDisabled`; malformed
+  syntax and target-range failures retain their original errors. This replaces the
+  unreleased inference-only uppercase-prefix rule; the default now accepts uppercase
+  prefixes consistently in both inference and typed parsing.
+
 - Added opt-in `Options::null_as_string` (default: `false`) to preserve plain
   `null`, `Null`, `NULL`, `~`, and empty scalars as text for string targets in both
   mapping keys and values, including `String`, `&str`, and `Cow<str>`
@@ -30,10 +43,6 @@
   comparison, and `no_schema` quoting requirements keep their existing behavior.
 
 ### Fixed
-- Preserve uppercase radix prefixes (`0X`, `0O`, `0B`, including signed forms) as
-  strings during implicit type inference, including untagged enums and flattened
-  fields (#266). Direct typed integer parsing, explicit `!!int` tags, and mapping-key
-  comparison retain their existing behavior.
 - Infer plain signed not-a-number spellings (`+.nan`, `-.NaN`, `-.NAN`) as strings
   during implicit type inference, since the YAML 1.2 Core schema allows a sign on
   `.inf` only (#271; [#272](https://github.com/bourumir-wyngs/serde-saphyr/pull/272),

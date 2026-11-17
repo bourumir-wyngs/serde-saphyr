@@ -1082,6 +1082,13 @@ pub enum Error {
         location: Location,
     },
 
+    /// An otherwise successful integer conversion used `0X`, `0O`, or `0B` while
+    /// [`Options::lowercase_radix_prefixes_only`](crate::Options::lowercase_radix_prefixes_only)
+    /// was enabled.
+    UppercaseRadixPrefixDisabled {
+        location: Location,
+    },
+
     /// In a typeless position (e.g. `deserialize_any` targeting `serde_json::Value`), a
     /// scalar resolved to a non-finite float — NaN, ±Inf, or a decimal literal that
     /// overflows `f64` to infinity (e.g. `1e999`) — and
@@ -1749,6 +1756,7 @@ impl Error {
             | Error::RecursiveReferencesRequireWeakTypes { location }
             | Error::InvalidScalar { location, .. }
             | Error::NumericUnderscoresDisabled { location }
+            | Error::UppercaseRadixPrefixDisabled { location }
             | Error::NonFiniteFloat { location, .. }
             | Error::SerdeInvalidType { location, .. }
             | Error::SerdeInvalidValue { location, .. }
@@ -1866,6 +1874,7 @@ impl Error {
             | Error::RecursiveReferencesRequireWeakTypes { location }
             | Error::InvalidScalar { location, .. }
             | Error::NumericUnderscoresDisabled { location }
+            | Error::UppercaseRadixPrefixDisabled { location }
             | Error::NonFiniteFloat { location, .. }
             | Error::SerdeInvalidType { location, .. }
             | Error::SerdeInvalidValue { location, .. }

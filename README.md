@@ -153,13 +153,14 @@ of complete `serde_yaml` compatibility. YAML requires unique mapping keys;
 
 #### Numeric-looking strings in untyped values
 
-Plain scalars with uppercase radix prefixes (`0X1F`, `0O17`, `0B101`, including
-optional `+` or `-` signs) are preserved as strings during implicit type inference.
-Lowercase prefixes still infer integers, including hexadecimal digits `A`–`F`.
-This also applies to untagged enums and flattened fields. Direct typed integer
-deserialization, explicit `!!int` tags, and mapping-key comparison retain their
-existing behavior. Lowercase binary notation (`0b101`) remains a supported extension
-to the YAML 1.2 Core schema.
+`lowercase_radix_prefixes_only` defaults to `false`: both lowercase (`0x`, `0o`,
+`0b`) and uppercase (`0X`, `0O`, `0B`) prefixes are accepted by the shared integer
+parser. Set it to `true` to require lowercase prefixes everywhere. Uppercase-prefixed
+plain scalars then remain strings during implicit inference, including untagged
+enums and flattened fields, while integer targets and explicit `!!int` tags reject
+them. This includes optional `+` or `-` signs. Uppercase hexadecimal digits remain
+valid with a lowercase prefix, such as `0xFF`. Binary notation (`0b101`) remains a
+supported extension to the YAML 1.2 Core schema.
 
 When migrating code that reads generic values such as `serde_json::Value`, configure
 these independent options to preserve numeric spellings as strings:
@@ -168,12 +169,13 @@ these independent options to preserve numeric spellings as strings:
 let options = serde_saphyr::options! {
     leading_zero_numbers_as_strings: true,
     allow_numeric_underscores: false,
+    lowercase_radix_prefixes_only: true,
 };
 let value: serde_json::Value = serde_saphyr::from_str_with_options(
-    "[0755, -007, +00, 1_000, 0xFF_FF]",
+    "[0755, -007, +00, 1_000, 0xFF_FF, 0XFF]",
     options,
 ).unwrap();
-assert_eq!(value, serde_json::json!(["0755", "-007", "+00", "1_000", "0xFF_FF"]));
+assert_eq!(value, serde_json::json!(["0755", "-007", "+00", "1_000", "0xFF_FF", "0XFF"]));
 ```
 
 `leading_zero_numbers_as_strings` defaults to `false`. Enabling it preserves
@@ -433,6 +435,12 @@ restriction applies inside composite keys and during merge expansion. Deserializ
 an underscored key into an integer is an error; an explicit `!!int` tag does not
 override the restriction.
 
+With `lowercase_radix_prefixes_only: true`, the same shared integer parser rejects
+uppercase radix prefixes: plain `0XFF` is a string key distinct from `255` and
+`0xFF`, including inside composite keys and during merge expansion. Integer key
+targets and explicit `!!int` tags cannot override the restriction. With the default
+`false`, all three spellings compare as the same integer key.
+
 Deserialization into a string still preserves the original scalar spelling: `0xB` becomes `"0xB"`. “First wins” and “last wins” retain the selected entry's spelling and value; when integer keys require numeric comparison, “last wins” buffers the remaining mapping to select entries before passing them to Serde. Quoted keys and keys tagged `!!str` remain strings, so `"0xB"` and `"11"` are distinct keys. Duplicate checking uses YAML key identity; the target Rust map can still combine distinct YAML keys if they become equal after deserialization.
 
 Buffered “last wins” entries use the same replay mechanism as struct fields: trailing comments and comments nested inside buffered values are not preserved, and nested `Spanned::referenced` locations use the buffered value's reference location. The default error policy and “first wins” do not require this additional buffering.
@@ -460,9 +468,9 @@ Schema-based parsing can be disabled by setting `no_schema` to true in [`Options
 
 Legacy octal notation such as `0052` can be enabled via `Options`, but it is disabled by default.
 For untyped values, [numeric spelling options](#numeric-looking-strings-in-untyped-values)
-can preserve leading-zero and underscored numbers as strings.
-The underscore option also rejects underscored spellings for numeric targets and
-explicit numeric tags.
+can preserve leading-zero, underscored, and uppercase-prefixed numbers as strings.
+The underscore and radix-prefix options also restrict numeric parsing for typed
+targets and explicit numeric tags.
 
 The concept that “Rust code is the schema” naturally extends to implemented support for [`validator`](https://crates.io/crates/validator) and [`garde`](https://crates.io/crates/garde), as these crates allow annotations to be added directly to Rust types, providing even stricter control over permissible values.
 

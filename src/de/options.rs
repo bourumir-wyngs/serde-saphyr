@@ -375,6 +375,23 @@ pub struct Options {
         serde(default = "default_allow_numeric_underscores")
     )]
     pub allow_numeric_underscores: bool,
+    /// Accept only lowercase integer radix prefixes (`0x`, `0o`, `0b`).
+    /// Default: false (also accept `0X`, `0O`, and `0B`).
+    /// Uppercase hexadecimal digits remain accepted, for example `0xFF`.
+    ///
+    /// When true, uppercase-prefixed plain scalars remain strings during implicit
+    /// inference, including untagged enums and flattened fields. Integer targets
+    /// reject these spellings for both mapping keys and values; explicit `!!int`
+    /// tags and [`Self::legacy_octal_numbers`] do not override the restriction.
+    /// Otherwise valid integers return
+    /// [`Error::UppercaseRadixPrefixDisabled`](crate::Error::UppercaseRadixPrefixDisabled).
+    /// Invalid syntax and target-range failures retain the parser's original error.
+    ///
+    /// Mapping-key comparison uses the same integer parser: plain `0XFF` and `255`
+    /// are distinct keys when this option is true, including inside composite
+    /// keys and during merge expansion. With the default false they compare equal.
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
+    pub lowercase_radix_prefixes_only: bool,
     /// If true, accept only YAML 1.2 Core boolean spellings:
     /// `true`, `True`, `TRUE`, `false`, `False`, and `FALSE`.
     /// Other spellings, including YAML 1.1 forms such as `yes`/`no`/`on`/`off`,
@@ -777,6 +794,7 @@ impl Default for Options {
             legacy_octal_numbers: false,
             leading_zero_numbers_as_strings: false,
             allow_numeric_underscores: true,
+            lowercase_radix_prefixes_only: false,
             strict_booleans: false,
             null_as_string: false,
             angle_conversions: false,
@@ -828,6 +846,10 @@ impl std::fmt::Debug for Options {
                 &self.leading_zero_numbers_as_strings,
             )
             .field("allow_numeric_underscores", &self.allow_numeric_underscores)
+            .field(
+                "lowercase_radix_prefixes_only",
+                &self.lowercase_radix_prefixes_only,
+            )
             .field("strict_booleans", &self.strict_booleans)
             .field("null_as_string", &self.null_as_string)
             .field(
@@ -914,6 +936,7 @@ mod tests {
         assert!(!opts.legacy_octal_numbers);
         assert!(!opts.leading_zero_numbers_as_strings);
         assert!(opts.allow_numeric_underscores);
+        assert!(!opts.lowercase_radix_prefixes_only);
         assert!(!opts.strict_booleans);
         assert!(!opts.null_as_string);
         assert!(!opts.ignore_binary_tag_for_string);

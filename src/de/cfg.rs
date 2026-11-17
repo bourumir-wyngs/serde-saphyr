@@ -16,6 +16,8 @@ pub(crate) struct Cfg {
     pub(crate) leading_zero_numbers_as_strings: bool,
     /// Allow underscore digit separators in numeric parsing. Default: true.
     pub(crate) allow_numeric_underscores: bool,
+    /// Reject uppercase radix prefixes during integer parsing. Default: false.
+    pub(crate) lowercase_radix_prefixes_only: bool,
     /// If true, accept only the six YAML 1.2 Core boolean spellings.
     pub(crate) strict_booleans: bool,
     /// Preserve plain null-like text when a string target is requested.
@@ -45,6 +47,7 @@ impl Cfg {
         IntSyntax {
             legacy_octal: self.legacy_octal_numbers,
             allow_underscores: self.allow_numeric_underscores,
+            lowercase_radix_prefixes_only: self.lowercase_radix_prefixes_only,
         }
     }
 
@@ -57,6 +60,7 @@ impl Cfg {
             legacy_octal_numbers: options.legacy_octal_numbers,
             leading_zero_numbers_as_strings: options.leading_zero_numbers_as_strings,
             allow_numeric_underscores: options.allow_numeric_underscores,
+            lowercase_radix_prefixes_only: options.lowercase_radix_prefixes_only,
             strict_booleans: options.strict_booleans,
             null_as_string: options.null_as_string,
             angle_conversions: options.angle_conversions,

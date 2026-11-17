@@ -118,7 +118,7 @@ pub(super) fn canonical_scalar_key_tag<'a>(
 }
 
 /// Return an integer identity when `value`, `tag`, and `style` describe an integer.
-/// `syntax` controls legacy octal and digit separators. Return `None` when the
+/// `syntax` controls legacy octal, digit separators, and radix prefixes. Return `None` when the
 /// scalar is not a valid integer under those rules.
 fn integer_key_fingerprint(
     value: &str,

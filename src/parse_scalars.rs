@@ -191,6 +191,8 @@ pub(crate) struct IntSyntax {
     pub(crate) legacy_octal: bool,
     /// Accept otherwise valid underscore digit separators.
     pub(crate) allow_underscores: bool,
+    /// Reject uppercase radix prefixes in otherwise valid integers.
+    pub(crate) lowercase_radix_prefixes_only: bool,
 }
 
 #[cfg(feature = "deserialize")]
@@ -199,6 +201,7 @@ impl Default for IntSyntax {
         Self {
             legacy_octal: false,
             allow_underscores: true,
+            lowercase_radix_prefixes_only: false,
         }
     }
 }
@@ -226,12 +229,37 @@ fn check_numeric_underscores<T>(
     Ok(value)
 }
 
+/// Enforce integer syntax policies after a successful numeric conversion.
+///
+/// - `value`: parsed integer after target-range validation.
+/// - `unsigned`: trimmed scalar text with its optional sign removed.
+/// - `location`: source location for a rejected scalar.
+/// - `syntax`: configured underscore and radix-prefix restrictions.
+///
+/// Returns `value`, or the configuration error for a disallowed spelling.
+#[cfg(feature = "deserialize")]
+#[inline]
+fn check_integer_syntax<T>(
+    value: T,
+    unsigned: &str,
+    location: Location,
+    syntax: IntSyntax,
+) -> Result<T, Error> {
+    let value = check_numeric_underscores(value, unsigned, location, syntax.allow_underscores)?;
+    if syntax.lowercase_radix_prefixes_only
+        && matches!(unsigned.as_bytes(), [b'0', b'X' | b'O' | b'B', ..])
+    {
+        return Err(Error::UppercaseRadixPrefixDisabled { location });
+    }
+    Ok(value)
+}
+
 /// Parse a signed integer using the configured numeric syntax.
 ///
 /// - `s`: scalar text, including any sign or radix prefix.
 /// - `ty`: numeric target name used in diagnostics.
 /// - `location`: source location for a rejected scalar.
-/// - `syntax`: whether legacy octal and underscore separators are accepted.
+/// - `syntax`: accepted legacy octal, underscore, and radix-prefix syntax.
 ///
 /// Returns the integer, or an error for invalid syntax or target overflow.
 #[cfg(feature = "deserialize")]
@@ -263,7 +291,7 @@ where
         }
         let val_i128 = parse_decimal_signed_i128(digits, neg).ok_or_else(invalid)?;
         let value = T::try_from(val_i128).map_err(|_| invalid())?;
-        return check_numeric_underscores(value, s, location, syntax.allow_underscores);
+        return check_integer_syntax(value, rest, location, syntax);
     }
 
     let mag = parse_digits_u128(digits, radix).ok_or_else(invalid)?;
@@ -278,7 +306,7 @@ where
         mag.try_into().map_err(|_| invalid())?
     };
     let value = T::try_from(val_i128).map_err(|_| invalid())?;
-    check_numeric_underscores(value, s, location, syntax.allow_underscores)
+    check_integer_syntax(value, rest, location, syntax)
 }
 
 /// Parse an unsigned integer with the same arguments and syntax as [`parse_int_signed`].
@@ -309,12 +337,12 @@ where
         }
         let val_u128 = parse_decimal_unsigned_u128(digits).ok_or_else(invalid)?;
         let value = T::try_from(val_u128).map_err(|_| invalid())?;
-        return check_numeric_underscores(value, s, location, syntax.allow_underscores);
+        return check_integer_syntax(value, rest, location, syntax);
     }
 
     let mag = parse_digits_u128(digits, radix).ok_or_else(invalid)?;
     let value = T::try_from(mag).map_err(|_| invalid())?;
-    check_numeric_underscores(value, s, location, syntax.allow_underscores)
+    check_integer_syntax(value, rest, location, syntax)
 }
 
 #[cfg(feature = "deserialize")]
@@ -520,7 +548,7 @@ pub(crate) fn is_signed_nan(t: &str) -> bool {
 /// - `s`: scalar text before trimming.
 /// - `style`: scalar style; only plain scalars require this check.
 /// - `strict_booleans`: whether to recognize only YAML 1.2 boolean spellings.
-/// - `allow_underscores`: whether underscored integers count as numeric spellings.
+/// - `syntax`: numeric spelling policies; legacy octal remains ignored here.
 ///
 /// Returns `true` for ambiguous boolean, numeric, or null-like plain scalars.
 #[cfg(feature = "deserialize")]
@@ -528,19 +556,20 @@ pub(crate) fn maybe_not_string(
     s: &str,
     style: &ScalarStyle,
     strict_booleans: bool,
-    allow_underscores: bool,
+    syntax: IntSyntax,
 ) -> bool {
     let location = Location::UNKNOWN;
     style == &ScalarStyle::Plain
         && !is_signed_nan(yaml_trim(s))
-        && (parse_yaml12_float::<f64>(s, location, SfTag::None, false, allow_underscores).is_ok()
+        && (parse_yaml12_float::<f64>(s, location, SfTag::None, false, syntax.allow_underscores)
+            .is_ok()
             || parse_int_signed::<i128>(
                 s,
                 "i128",
                 location,
                 IntSyntax {
-                    allow_underscores,
-                    ..IntSyntax::default()
+                    legacy_octal: false,
+                    ..syntax
                 },
             )
             .is_ok()

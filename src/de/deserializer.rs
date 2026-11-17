@@ -1026,10 +1026,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             let t = yaml_trim(&effective);
             // Preserve selected spellings before either numeric parser can consume
             // them. Explicit numeric tags have already dispatched above.
-            let unsigned = t.strip_prefix(['+', '-']).unwrap_or(t);
-            let uppercase_radix = matches!(unsigned.as_bytes(), [b'0', b'X' | b'O' | b'B', ..]);
-            if uppercase_radix
-                || is_signed_nan(t)
+            if is_signed_nan(t)
                 || (self.cfg.leading_zero_numbers_as_strings && leading_zero_decimal(t))
             {
                 return match effective {
@@ -1239,7 +1236,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     &view.effective,
                     &view.style,
                     self.cfg.strict_booleans,
-                    self.cfg.allow_numeric_underscores,
+                    self.cfg.int_syntax(),
                 )
             {
                 // Require quoting for ambiguous plain scalars in no_schema mode.
@@ -1289,7 +1286,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                         &view.effective,
                         &view.style,
                         self.cfg.strict_booleans,
-                        self.cfg.allow_numeric_underscores,
+                        self.cfg.int_syntax(),
                     )
                     && !view.tag.forces_string()
                 {
@@ -1387,7 +1384,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     &view.effective,
                     &view.style,
                     self.cfg.strict_booleans,
-                    self.cfg.allow_numeric_underscores,
+                    self.cfg.int_syntax(),
                 )
                 && !view.tag.forces_string()
             {
@@ -2751,7 +2748,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             &view.effective,
                             &style,
                             self.cfg.strict_booleans,
-                            self.cfg.allow_numeric_underscores,
+                            self.cfg.int_syntax(),
                         )
                     {
                         let view = self.take_scalar_view()?;
@@ -2810,7 +2807,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             &view.raw,
                             &view.style,
                             self.cfg.strict_booleans,
-                            self.cfg.allow_numeric_underscores,
+                            self.cfg.int_syntax(),
                         )
                     {
                         let view = key_de.take_scalar_view()?;
