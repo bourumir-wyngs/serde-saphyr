@@ -220,6 +220,12 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
             Cow::Borrowed("recursive references require weak recursion types")
         }
         Error::InvalidScalar { ty, .. } => Cow::Owned(format!("invalid {ty}")),
+        Error::NumericUnderscoresDisabled { .. } => {
+            Cow::Borrowed("Underscores are disabled in configuration")
+        }
+        Error::UppercaseRadixPrefixDisabled { .. } => {
+            Cow::Borrowed("Uppercase radix prefixes are disabled in configuration")
+        }
         Error::NonFiniteFloat { value, .. } => Cow::Owned(format!(
             "non-finite float `{value}` rejected by the configured policy"
         )),
@@ -496,6 +502,10 @@ fn user_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) -> 
         }
         Error::InvalidBooleanStrict { .. } => {
             Cow::Borrowed("invalid boolean (true or false expected)")
+        }
+        Error::NumericUnderscoresDisabled { .. } => Cow::Borrowed("Underscores not allowed"),
+        Error::UppercaseRadixPrefixDisabled { .. } => {
+            Cow::Borrowed("Uppercase radix prefixes not allowed")
         }
         Error::NullIntoString { .. } | Error::InvalidCharNull { .. } => {
             Cow::Borrowed("null is not allowed here")

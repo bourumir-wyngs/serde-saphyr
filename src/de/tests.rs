@@ -182,7 +182,8 @@ fn cfg_and_replay_events_follow_options_and_reference_overrides() {
         merge_keys: MergeKeyPolicy::AsOrdinary,
         legacy_octal_numbers: true,
         leading_zero_numbers_as_strings: true,
-        underscored_numbers_as_strings: true,
+        allow_numeric_underscores: false,
+        lowercase_radix_prefixes_only: true,
         strict_booleans: true,
         null_as_string: true,
         angle_conversions: true,
@@ -197,7 +198,8 @@ fn cfg_and_replay_events_follow_options_and_reference_overrides() {
     assert!(matches!(cfg.merge_keys, MergeKeyPolicy::AsOrdinary));
     assert!(cfg.legacy_octal_numbers);
     assert!(cfg.leading_zero_numbers_as_strings);
-    assert!(cfg.underscored_numbers_as_strings);
+    assert!(!cfg.allow_numeric_underscores);
+    assert!(cfg.lowercase_radix_prefixes_only);
     assert!(cfg.strict_booleans);
     assert!(cfg.null_as_string);
     assert!(cfg.angle_conversions);

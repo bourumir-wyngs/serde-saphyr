@@ -7,7 +7,7 @@ use crate::input_source::IncludeResolveError;
 use crate::localizer::{DEFAULT_ENGLISH_LOCALIZER, ExternalMessageSource, Localizer};
 use crate::location::Locations;
 use crate::parse_scalars::{
-    parse_int_signed, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish,
+    IntSyntax, parse_int_signed, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish,
 };
 #[cfg(feature = "garde")]
 use crate::path_map::path_key_from_garde;
@@ -1075,6 +1075,20 @@ pub enum Error {
         location: Location,
     },
 
+    /// An otherwise successful numeric conversion contained an underscore while
+    /// [`Options::allow_numeric_underscores`](crate::Options::allow_numeric_underscores)
+    /// was disabled.
+    NumericUnderscoresDisabled {
+        location: Location,
+    },
+
+    /// An otherwise successful integer conversion used `0X`, `0O`, or `0B` while
+    /// [`Options::lowercase_radix_prefixes_only`](crate::Options::lowercase_radix_prefixes_only)
+    /// was enabled.
+    UppercaseRadixPrefixDisabled {
+        location: Location,
+    },
+
     /// In a typeless position (e.g. `deserialize_any` targeting `serde_json::Value`), a
     /// scalar resolved to a non-finite float — NaN, ±Inf, or a decimal literal that
     /// overflows `f64` to infinity (e.g. `1e999`) — and
@@ -1589,8 +1603,8 @@ impl Error {
         // that may be used for attack)
         let location = Location::UNKNOWN;
         let value = if !interpolated
-            && (parse_yaml12_float::<f64>(value, location, SfTag::None, false).is_ok()
-                || parse_int_signed::<i128>(value, "i128", location, false).is_ok()
+            && (parse_yaml12_float::<f64>(value, location, SfTag::None, false, true).is_ok()
+                || parse_int_signed::<i128>(value, "i128", location, IntSyntax::default()).is_ok()
                 || parse_yaml11_bool(value).is_some()
                 || scalar_is_nullish(value, &ScalarStyle::Plain))
         {
@@ -1741,6 +1755,8 @@ impl Error {
             | Error::InternalRecursionStackEmpty { location }
             | Error::RecursiveReferencesRequireWeakTypes { location }
             | Error::InvalidScalar { location, .. }
+            | Error::NumericUnderscoresDisabled { location }
+            | Error::UppercaseRadixPrefixDisabled { location }
             | Error::NonFiniteFloat { location, .. }
             | Error::SerdeInvalidType { location, .. }
             | Error::SerdeInvalidValue { location, .. }
@@ -1857,6 +1873,8 @@ impl Error {
             | Error::InternalRecursionStackEmpty { location }
             | Error::RecursiveReferencesRequireWeakTypes { location }
             | Error::InvalidScalar { location, .. }
+            | Error::NumericUnderscoresDisabled { location }
+            | Error::UppercaseRadixPrefixDisabled { location }
             | Error::NonFiniteFloat { location, .. }
             | Error::SerdeInvalidType { location, .. }
             | Error::SerdeInvalidValue { location, .. }

@@ -16,7 +16,9 @@ use super::events::{
 use super::options::{DuplicateKeyPolicy, MergeKeyPolicy};
 use super::tags::SfTag;
 use crate::location::Location;
-use crate::parse_scalars::{parse_int_signed, parse_int_unsigned, scalar_is_null, yaml_trim};
+use crate::parse_scalars::{
+    IntSyntax, parse_int_signed, parse_int_unsigned, scalar_is_null, yaml_trim,
+};
 use crate::tag::simple_enum_variant_name;
 
 pub(super) fn simple_tagged_enum_name(
@@ -115,11 +117,14 @@ pub(super) fn canonical_scalar_key_tag<'a>(
     canonical_node_key_tag(tag, raw_tag, SfTag::String)
 }
 
+/// Return an integer identity when `value`, `tag`, and `style` describe an integer.
+/// `syntax` controls legacy octal, digit separators, and radix prefixes. Return `None` when the
+/// scalar is not a valid integer under those rules.
 fn integer_key_fingerprint(
     value: &str,
     tag: SfTag,
     style: ScalarStyle,
-    legacy_octal_numbers: bool,
+    syntax: IntSyntax,
 ) -> Option<KeyFingerprint<'static>> {
     if tag != SfTag::Int && !(tag == SfTag::None && style == ScalarStyle::Plain) {
         return None;
@@ -127,14 +132,10 @@ fn integer_key_fingerprint(
 
     let value = yaml_trim(value);
     let (negative, magnitude) = if value.starts_with('-') {
-        let parsed =
-            parse_int_signed::<i128>(value, "i128", Location::UNKNOWN, legacy_octal_numbers)
-                .ok()?;
+        let parsed = parse_int_signed::<i128>(value, "i128", Location::UNKNOWN, syntax).ok()?;
         (parsed < 0, parsed.unsigned_abs())
     } else {
-        let parsed =
-            parse_int_unsigned::<u128>(value, "u128", Location::UNKNOWN, legacy_octal_numbers)
-                .ok()?;
+        let parsed = parse_int_unsigned::<u128>(value, "u128", Location::UNKNOWN, syntax).ok()?;
         (false, parsed)
     };
     Some(KeyFingerprint::Integer {
@@ -315,20 +316,24 @@ pub(super) struct PendingEntry<'a> {
 /// Called by:
 /// - Mapping deserialization to stage keys and values, and by merge processing.
 pub(super) fn capture_node<'a>(ev: &mut dyn Events<'a>) -> Result<KeyNode<'a>, Error> {
-    capture_node_with_legacy_octal(ev, false)
+    capture_node_with_integer_syntax(ev, IntSyntax::default())
 }
 
 /// Capture a node using the configured integer syntax for key comparisons.
-pub(super) fn capture_node_with_legacy_octal<'a>(
+/// `ev` supplies events and `syntax` controls integer parsing. Return the captured
+/// node or a structural error, as for [`capture_node`].
+pub(super) fn capture_node_with_integer_syntax<'a>(
     ev: &mut dyn Events<'a>,
-    legacy_octal_numbers: bool,
+    syntax: IntSyntax,
 ) -> Result<KeyNode<'a>, Error> {
-    with_deferred_recursive_aliases(ev, |ev| capture_node_inner(ev, legacy_octal_numbers))
+    with_deferred_recursive_aliases(ev, |ev| capture_node_inner(ev, syntax))
 }
 
+/// Recursively capture `ev` with `syntax` applied to every scalar fingerprint.
+/// Return the node or a structural error.
 fn capture_node_inner<'a>(
     ev: &mut dyn Events<'a>,
-    legacy_octal_numbers: bool,
+    syntax: IntSyntax,
 ) -> Result<KeyNode<'a>, Error> {
     // Fill live lookahead before capturing origin: pumping the next event can enter
     // or leave an alias-injection frame.
@@ -356,8 +361,7 @@ fn capture_node_inner<'a>(
             anchor,
             location,
         } => {
-            let integer_fingerprint =
-                integer_key_fingerprint(&value, tag, style, legacy_octal_numbers);
+            let integer_fingerprint = integer_key_fingerprint(&value, tag, style, syntax);
             let scalar_ev = Ev::Scalar {
                 value,
                 tag,
@@ -404,7 +408,7 @@ fn capture_node_inner<'a>(
                         break;
                     }
                     Some(_) => {
-                        let mut child = capture_node_inner(ev, legacy_octal_numbers)?;
+                        let mut child = capture_node_inner(ev, syntax)?;
                         let fp = child.take_fingerprint();
                         let child_events = child.take_events();
                         elements.push(fp);
@@ -457,9 +461,9 @@ fn capture_node_inner<'a>(
                         break;
                     }
                     Some(_) => {
-                        let mut key = capture_node_inner(ev, legacy_octal_numbers)?;
+                        let mut key = capture_node_inner(ev, syntax)?;
                         let key_fp = key.take_fingerprint();
-                        let mut value = capture_node_inner(ev, legacy_octal_numbers)?;
+                        let mut value = capture_node_inner(ev, syntax)?;
                         let value_fp = value.take_fingerprint();
                         entries.push((key_fp, value_fp));
                         let key_events = key.take_events();
@@ -782,7 +786,7 @@ pub(super) fn pending_entries_from_events<'a>(
                         let _ = replay.peek()?;
                         let element_ref_loc = replay.reference_location();
                         let mut element =
-                            capture_node_with_legacy_octal(&mut replay, cfg.legacy_octal_numbers)?;
+                            capture_node_with_integer_syntax(&mut replay, cfg.int_syntax())?;
                         batches.push(pending_entries_from_events(
                             element.take_events(),
                             element.location(),
@@ -846,7 +850,7 @@ pub(super) fn pending_entries_from_live_events<'a>(
             location: *location,
         }),
         Some(Ev::MapStart { .. }) => {
-            let mut node = capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
+            let mut node = capture_node_with_integer_syntax(ev, cfg.int_syntax())?;
             pending_entries_from_events(
                 node.take_events(),
                 node.location(),
@@ -868,8 +872,7 @@ pub(super) fn pending_entries_from_live_events<'a>(
                     Some(_) => {
                         let _ = ev.peek()?;
                         let element_ref_loc = ev.reference_location();
-                        let mut element =
-                            capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
+                        let mut element = capture_node_with_integer_syntax(ev, cfg.int_syntax())?;
                         batches.push(pending_entries_from_events(
                             element.take_events(),
                             element.location(),
@@ -927,7 +930,7 @@ pub(super) fn collect_entries_from_map<'a>(
             }
             Some(_) => {
                 let key_comments = ev.take_leading_comments_for_next_node()?;
-                let key = capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
+                let key = capture_node_with_integer_syntax(ev, cfg.int_syntax())?;
                 if is_merge_key(&key) {
                     match cfg.merge_keys {
                         MergeKeyPolicy::Merge => {
@@ -953,7 +956,7 @@ pub(super) fn collect_entries_from_map<'a>(
                 let field_comments = key_comments;
                 let value_separator_comments = ev.take_separator_comments_before_mapping_value()?;
                 let value_comments = ev.take_leading_comments_for_next_node()?;
-                let value = capture_node_with_legacy_octal(ev, cfg.legacy_octal_numbers)?;
+                let value = capture_node_with_integer_syntax(ev, cfg.int_syntax())?;
                 fields.push(PendingEntry {
                     key,
                     value,
