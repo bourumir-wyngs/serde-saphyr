@@ -7,7 +7,7 @@ use crate::input_source::IncludeResolveError;
 use crate::localizer::{DEFAULT_ENGLISH_LOCALIZER, ExternalMessageSource, Localizer};
 use crate::location::Locations;
 use crate::parse_scalars::{
-    IntSyntax, parse_int_signed, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish,
+    NumericSyntax, parse_int_signed, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish,
 };
 #[cfg(feature = "garde")]
 use crate::path_map::path_key_from_garde;
@@ -1603,8 +1603,10 @@ impl Error {
         // that may be used for attack)
         let location = Location::UNKNOWN;
         let value = if !interpolated
-            && (parse_yaml12_float::<f64>(value, location, SfTag::None, false, true).is_ok()
-                || parse_int_signed::<i128>(value, "i128", location, IntSyntax::default()).is_ok()
+            && (parse_yaml12_float::<f64>(value, location, SfTag::None, NumericSyntax::default())
+                .is_ok()
+                || parse_int_signed::<i128>(value, "i128", location, NumericSyntax::default())
+                    .is_ok()
                 || parse_yaml11_bool(value).is_some()
                 || scalar_is_nullish(value, &ScalarStyle::Plain))
         {

@@ -193,10 +193,12 @@ assert_eq!(value, serde_json::json!(["0755", "-007", "+00", "1_000", "0xFF_FF", 
 `leading_zero_numbers_as_strings` defaults to `false`. Enabling it preserves
 digit-only decimal spellings with redundant leading zeros and an optional sign;
 floats such as `0.5`, `00.5`, and `01e2` still infer as numbers.
-`leading_zero_numbers_as_strings` affects implicit type inference through Serde's `deserialize_any`,
-including buffering for `#[serde(untagged)]` and `#[serde(flatten)]`, and takes
-precedence over `legacy_octal_numbers` during inference. Direct typed parsing,
-explicit numeric tags, and mapping-key comparison retain their existing behavior.
+The restriction applies to implicit type inference through Serde's `deserialize_any`,
+including buffering for `#[serde(untagged)]` and `#[serde(flatten)]`, and to typed
+integer and float parsing. Explicit numeric tags and `legacy_octal_numbers` cannot
+override it. Mapping-key comparison keeps these strings distinct from integers,
+including inside composite keys and during merge expansion. In `no_schema` mode,
+these spellings can be read as strings without quoting.
 
 `allow_numeric_underscores` defaults to `true`. Setting it to `false` disallows
 underscores in numbers everywhere.
@@ -207,8 +209,9 @@ float targets reject these spellings, for both keys and values, even with explic
 [Mapping-key comparison](#duplicate-keys) follows the same rule: `1_000` and `1000`
 are distinct keys, including inside composite keys and during merge expansion.
 Leave this option `true` to retain the supported numeric underscore syntax and
-compare underscored integer keys by their numeric value. This does not add new
-syntax: underscored floats still require robotics angle conversions.
+compare underscored integer keys by their numeric value. Integer spellings use
+the same syntax when converted to floats; underscores in fractional or
+exponential spellings still require robotics angle conversions.
 
 #### Null values for string fields
 
@@ -272,9 +275,18 @@ Check the following options when upgrading from 2.2.0.
 - Replace `underscored_numbers_as_strings: true` with `allow_numeric_underscores: false`.
   Typed numeric targets now reject underscores with this setting.
 - Uppercase radix prefixes such as `0XFF` now infer as integers by default. With
-  `lowercase_radix_prefixes_only: true` they infer as strings and are rejected for integer
-  targets. Both numeric restrictions also apply to integer key comparison.
+  `lowercase_radix_prefixes_only: true` they infer as strings and are rejected for numeric
+  targets. Numeric spelling restrictions also apply to integer key comparison.
   See [Numeric-looking strings in untyped values](#numeric-looking-strings-in-untyped-values).
+- `leading_zero_numbers_as_strings: true` now rejects redundant leading-zero
+  integer spellings for typed numeric targets and explicit numeric tags, and takes
+  precedence over `legacy_octal_numbers` everywhere. Composite keys and merges
+  treat these spellings as strings. With the option disabled, floating-point
+  targets use the same integer interpretation as integer targets: for example,
+  `010` becomes `8.0` with legacy octal enabled, and `0x10` becomes `16.0`.
+  Invalid or overflowing legacy octal spellings, such as `09`, no longer fall
+  back to decimal float parsing: numeric targets reject them and untyped values
+  preserve them as strings.
 
 The examples below assume the default tag handles unless a `%TAG` directive is
 shown. [YAML tag handles](https://yaml.org/spec/1.2.2/#6821-tag-handles) are expanded
@@ -677,6 +689,11 @@ uppercase radix prefixes: plain `0XFF` is a string key distinct from `255` and
 targets and explicit `!!int` tags cannot override the restriction. With the default
 `false`, all three spellings compare as the same integer key.
 
+With `leading_zero_numbers_as_strings: true`, plain `010` stays distinct from
+the integer `8`, including when `legacy_octal_numbers` is enabled. Numeric targets
+and explicit numeric tags reject `010`; string targets preserve its spelling.
+The restriction applies recursively to composite keys and during merge expansion.
+
 Deserialization into a string still preserves the original scalar spelling: `0xB` becomes `"0xB"`. “First wins” and “last wins” retain the selected entry's spelling and value; when integer keys require numeric comparison, “last wins” buffers the remaining mapping to select entries before passing them to Serde. Quoted keys and keys tagged `!!str` remain strings, so `"0xB"` and `"11"` are distinct keys. Duplicate checking uses YAML key identity; the target Rust map can still combine distinct YAML keys if they become equal after deserialization.
 
 Local tags retain their resolved identity and scalar spelling when comparing keys,
@@ -718,7 +735,7 @@ Schema-based parsing can be disabled by setting `no_schema` to true in [`Options
 Legacy octal notation such as `0052` can be enabled via `Options`, but it is disabled by default.
 For untyped values, [numeric spelling options](#numeric-looking-strings-in-untyped-values)
 can preserve leading-zero, underscored, and uppercase-prefixed numbers as strings.
-The underscore and radix-prefix options also restrict numeric parsing for typed
+All three options also restrict numeric parsing for typed
 targets and explicit numeric tags.
 
 The concept that “Rust code is the schema” naturally extends to implemented support for [`validator`](https://crates.io/crates/validator) and [`garde`](https://crates.io/crates/garde), as these crates allow annotations to be added directly to Rust types, providing even stricter control over permissible values.

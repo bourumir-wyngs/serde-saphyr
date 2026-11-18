@@ -17,7 +17,7 @@ use super::options::{DuplicateKeyPolicy, MergeKeyPolicy};
 use super::tags::SfTag;
 use crate::location::Location;
 use crate::parse_scalars::{
-    IntSyntax, parse_int_signed, parse_int_unsigned, scalar_is_null, yaml_trim,
+    NumericSyntax, parse_int_signed, parse_int_unsigned, scalar_is_null, yaml_trim,
 };
 use crate::tag::{local_enum_variant_name, simple_enum_variant_name};
 
@@ -142,7 +142,7 @@ fn integer_key_fingerprint(
     value: &str,
     tag: SfTag,
     style: ScalarStyle,
-    syntax: IntSyntax,
+    syntax: NumericSyntax,
 ) -> Option<KeyFingerprint<'static>> {
     if tag != SfTag::Int && !(tag == SfTag::None && style == ScalarStyle::Plain) {
         return None;
@@ -334,7 +334,7 @@ pub(super) struct PendingEntry<'a> {
 /// Called by:
 /// - Mapping deserialization to stage keys and values, and by merge processing.
 pub(super) fn capture_node<'a>(ev: &mut dyn Events<'a>) -> Result<KeyNode<'a>, Error> {
-    capture_node_with_integer_syntax(ev, IntSyntax::default())
+    capture_node_with_integer_syntax(ev, NumericSyntax::default())
 }
 
 /// Capture a node using the configured integer syntax for key comparisons.
@@ -342,7 +342,7 @@ pub(super) fn capture_node<'a>(ev: &mut dyn Events<'a>) -> Result<KeyNode<'a>, E
 /// node or a structural error, as for [`capture_node`].
 pub(super) fn capture_node_with_integer_syntax<'a>(
     ev: &mut dyn Events<'a>,
-    syntax: IntSyntax,
+    syntax: NumericSyntax,
 ) -> Result<KeyNode<'a>, Error> {
     with_deferred_recursive_aliases(ev, |ev| capture_node_inner(ev, syntax))
 }
@@ -351,7 +351,7 @@ pub(super) fn capture_node_with_integer_syntax<'a>(
 /// Return the node or a structural error.
 fn capture_node_inner<'a>(
     ev: &mut dyn Events<'a>,
-    syntax: IntSyntax,
+    syntax: NumericSyntax,
 ) -> Result<KeyNode<'a>, Error> {
     // Fill live lookahead before capturing origin: pumping the next event can enter
     // or leave an alias-injection frame.
@@ -807,7 +807,7 @@ pub(super) fn pending_entries_from_events<'a>(
                         let _ = replay.peek()?;
                         let element_ref_loc = replay.reference_location();
                         let mut element =
-                            capture_node_with_integer_syntax(&mut replay, cfg.int_syntax())?;
+                            capture_node_with_integer_syntax(&mut replay, cfg.numeric_syntax())?;
                         batches.push(pending_entries_from_events(
                             element.take_events(),
                             element.location(),
@@ -874,7 +874,7 @@ pub(super) fn pending_entries_from_live_events<'a>(
             location: *location,
         }),
         Some(Ev::MapStart { .. }) => {
-            let mut node = capture_node_with_integer_syntax(ev, cfg.int_syntax())?;
+            let mut node = capture_node_with_integer_syntax(ev, cfg.numeric_syntax())?;
             pending_entries_from_events(
                 node.take_events(),
                 node.location(),
@@ -896,7 +896,8 @@ pub(super) fn pending_entries_from_live_events<'a>(
                     Some(_) => {
                         let _ = ev.peek()?;
                         let element_ref_loc = ev.reference_location();
-                        let mut element = capture_node_with_integer_syntax(ev, cfg.int_syntax())?;
+                        let mut element =
+                            capture_node_with_integer_syntax(ev, cfg.numeric_syntax())?;
                         batches.push(pending_entries_from_events(
                             element.take_events(),
                             element.location(),
@@ -957,7 +958,7 @@ pub(super) fn collect_entries_from_map<'a>(
             }
             Some(_) => {
                 let key_comments = ev.take_leading_comments_for_next_node()?;
-                let key = capture_node_with_integer_syntax(ev, cfg.int_syntax())?;
+                let key = capture_node_with_integer_syntax(ev, cfg.numeric_syntax())?;
                 if is_merge_key(&key) {
                     match cfg.merge_keys {
                         MergeKeyPolicy::Merge => {
@@ -983,7 +984,7 @@ pub(super) fn collect_entries_from_map<'a>(
                 let field_comments = key_comments;
                 let value_separator_comments = ev.take_separator_comments_before_mapping_value()?;
                 let value_comments = ev.take_leading_comments_for_next_node()?;
-                let value = capture_node_with_integer_syntax(ev, cfg.int_syntax())?;
+                let value = capture_node_with_integer_syntax(ev, cfg.numeric_syntax())?;
                 fields.push(PendingEntry {
                     key,
                     value,

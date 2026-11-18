@@ -54,12 +54,23 @@ are the defaults; no legacy alias mode is provided. See
   `1_000` and `1000` now stay distinct during duplicate-key checks and merge
   expansion, including inside composite keys
   ([#278](https://github.com/bourumir-wyngs/serde-saphyr/issues/278)). Leave the option
-  `true` (the default) to accept numeric underscore separators. The independent
-  `leading_zero_numbers_as_strings` option keeps its existing behavior.
+  `true` (the default) to accept numeric underscore separators.
   Disallowed underscores in otherwise valid numbers report
   `Error::NumericUnderscoresDisabled`, rendered as "Underscores are disabled in
   configuration" for developers and "Underscores not allowed" for users. Invalid
   syntax and target-range failures keep their original parser errors.
+- Apply numeric spelling policies through shared helpers for typed values,
+  explicit numeric tags, implicit inference, and composite-key comparison.
+  `leading_zero_numbers_as_strings: true` now rejects redundant leading-zero
+  integer spellings in integer and float targets, even with explicit numeric
+  tags or legacy octal enabled. Duplicate checks and merge expansion keep those
+  spellings distinct from integer keys. Float targets now use the shared integer
+  interpretation before float parsing, so legacy `010` means `8.0` and `0x10`
+  means `16.0`; integer syntax restrictions apply equally to these conversions.
+  Invalid or overflowing legacy octal spellings no longer fall back to decimal
+  floats: numeric targets reject them and implicit inference retains their text.
+  `no_schema` string checks honor configured legacy syntax and the full unsigned
+  128-bit range. Tag-specific signed NaN handling is preserved.
 
 ### Added
 

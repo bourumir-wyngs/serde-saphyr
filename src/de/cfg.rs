@@ -1,7 +1,7 @@
 use super::options::{DuplicateKeyPolicy, MergeKeyPolicy, NonFiniteFloatPolicy, Options};
 use super::{Error, Location};
 use crate::budget::BudgetBreach;
-use crate::parse_scalars::IntSyntax;
+use crate::parse_scalars::NumericSyntax;
 
 /// Small immutable runtime configuration that `YamlDeserializer` needs.
 #[derive(Copy, Clone)]
@@ -12,7 +12,7 @@ pub(crate) struct Cfg {
     pub(crate) merge_keys: MergeKeyPolicy,
     /// If true, accept legacy octal numbers that start with `0`.
     pub(crate) legacy_octal_numbers: bool,
-    /// Preserve redundant-zero decimal integer spellings during implicit inference.
+    /// Reject redundant-zero decimal integer spellings in all numeric parsers.
     pub(crate) leading_zero_numbers_as_strings: bool,
     /// Allow underscore digit separators in numeric parsing. Default: true.
     pub(crate) allow_numeric_underscores: bool,
@@ -41,13 +41,16 @@ pub(crate) struct Cfg {
 }
 
 impl Cfg {
-    /// Integer syntax used for both scalar values and key fingerprints.
+    /// Numeric syntax used for scalar values, ambiguity checks, and key fingerprints.
     #[inline]
-    pub(crate) fn int_syntax(self) -> IntSyntax {
-        IntSyntax {
+    pub(crate) fn numeric_syntax(self) -> NumericSyntax {
+        NumericSyntax {
             legacy_octal: self.legacy_octal_numbers,
             allow_underscores: self.allow_numeric_underscores,
             lowercase_radix_prefixes_only: self.lowercase_radix_prefixes_only,
+            leading_zero_numbers_as_strings: self.leading_zero_numbers_as_strings,
+            #[cfg(feature = "robotics")]
+            angle_conversions: self.angle_conversions,
         }
     }
 
