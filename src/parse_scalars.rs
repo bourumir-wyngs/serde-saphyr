@@ -183,26 +183,61 @@ fn parse_decimal_signed_i128(digits: &str, neg: bool) -> Option<i128> {
     }
 }
 
-/// Integer syntax shared by scalar parsing and mapping-key fingerprints.
+/// Numeric syntax shared by scalar parsing and mapping-key fingerprints.
 #[cfg(feature = "deserialize")]
 #[derive(Clone, Copy)]
-pub(crate) struct IntSyntax {
+pub(crate) struct NumericSyntax {
     /// Accept legacy octal numbers and separators after radix prefixes.
     pub(crate) legacy_octal: bool,
     /// Accept otherwise valid underscore digit separators.
     pub(crate) allow_underscores: bool,
     /// Reject uppercase radix prefixes in otherwise valid integers.
     pub(crate) lowercase_radix_prefixes_only: bool,
+    /// Keep redundant-zero decimal integer spellings out of all numeric parsers.
+    pub(crate) leading_zero_numbers_as_strings: bool,
+    /// Enable robotics expressions and unit conversions for floating-point values.
+    #[cfg(feature = "robotics")]
+    pub(crate) angle_conversions: bool,
 }
 
 #[cfg(feature = "deserialize")]
-impl Default for IntSyntax {
+impl Default for NumericSyntax {
     fn default() -> Self {
         Self {
             legacy_octal: false,
             allow_underscores: true,
             lowercase_radix_prefixes_only: false,
+            leading_zero_numbers_as_strings: false,
+            #[cfg(feature = "robotics")]
+            angle_conversions: false,
         }
+    }
+}
+
+#[cfg(feature = "deserialize")]
+impl NumericSyntax {
+    /// Whether trimmed `s` must stay text after 64-bit integer inference fails.
+    /// Radix, legacy-octal, and digit-separated integer spellings must not become
+    /// lossy floats. Plain decimals retain their float fallback; fractional,
+    /// exponential, and robotics expression syntax remains eligible too.
+    pub(crate) fn blocks_implicit_float_fallback(self, s: &str) -> bool {
+        let unsigned = s.strip_prefix(['+', '-']).unwrap_or(s);
+        self.is_legacy_octal(s)
+            || radix_and_digits(false, unsigned).0 != 10
+            // Without legacy octal, leading-zero spellings are not accepted
+            // integers and may still use robotics decimal parsing.
+            || (!unsigned.starts_with('0')
+                && unsigned.contains('_')
+                && unsigned.bytes().all(|b| b.is_ascii_digit() || b == b'_'))
+    }
+
+    /// Whether a trimmed spelling is reserved for the legacy octal integer parser.
+    /// Such spellings must never fall back to decimal interpretation on overflow.
+    fn is_legacy_octal(self, s: &str) -> bool {
+        let unsigned = s.strip_prefix(['+', '-']).unwrap_or(s);
+        self.legacy_octal
+            && unsigned.starts_with('0')
+            && unsigned.bytes().all(|b| b.is_ascii_digit() || b == b'_')
     }
 }
 
@@ -243,7 +278,7 @@ fn check_integer_syntax<T>(
     value: T,
     unsigned: &str,
     location: Location,
-    syntax: IntSyntax,
+    syntax: NumericSyntax,
 ) -> Result<T, Error> {
     let value = check_numeric_underscores(value, unsigned, location, syntax.allow_underscores)?;
     if syntax.lowercase_radix_prefixes_only
@@ -267,7 +302,7 @@ pub(crate) fn parse_int_signed<T>(
     s: &str,
     ty: &'static str,
     location: Location,
-    syntax: IntSyntax,
+    syntax: NumericSyntax,
 ) -> Result<T, Error>
 where
     T: TryFrom<i128>,
@@ -275,6 +310,9 @@ where
     let invalid = || Error::InvalidScalar { ty, location };
 
     let t = yaml_trim(s);
+    if syntax.leading_zero_numbers_as_strings && leading_zero_decimal(t) {
+        return Err(invalid());
+    }
     let (neg, rest) = match t.strip_prefix('+') {
         Some(r) => (false, r),
         None => match t.strip_prefix('-') {
@@ -316,7 +354,7 @@ pub(crate) fn parse_int_unsigned<T>(
     s: &str,
     ty: &'static str,
     location: Location,
-    syntax: IntSyntax,
+    syntax: NumericSyntax,
 ) -> Result<T, Error>
 where
     T: TryFrom<u128>,
@@ -324,6 +362,9 @@ where
     let invalid = || Error::InvalidScalar { ty, location };
 
     let t = yaml_trim(s);
+    if syntax.leading_zero_numbers_as_strings && leading_zero_decimal(t) {
+        return Err(invalid());
+    }
     if t.starts_with('-') {
         return Err(invalid());
     }
@@ -427,110 +468,162 @@ where
     }
 }
 
-/// Parse scalar `s` as a float, reporting errors at `location`.
-/// `tag` controls explicit numeric semantics, `angle_conversions` enables robotics
-/// expressions, and `allow_underscores` checks digit separators after successful parsing.
-/// Return the float or an invalid-scalar/expression error.
-#[cfg(all(feature = "deserialize", feature = "robotics"))]
-pub(crate) fn parse_yaml12_float<T>(
-    s: &str,
-    location: Location,
-    tag: SfTag,
-    angle_conversions: bool,
-    allow_underscores: bool,
-) -> Result<T, Error>
-where
-    T: FromStr + crate::robotics::FromF64,
-    T: num_traits::Float,
-{
-    let t = yaml_trim(s);
-    if let Some(value) = parse_tagged_signed_nan(t, tag) {
-        return Ok(value);
-    }
-    if angle_conversions {
-        let value = crate::robotics::parse_yaml12_float_angle_converting(s, location, tag)?;
-        return check_numeric_underscores(value, s, location, allow_underscores);
-    }
-    match parse_yaml12_non_finite_float(t) {
-        Some(value) => Ok(value),
-        None => {
-            let value = parse_yaml12_finite_float_fallback(t, location)?;
-            check_numeric_underscores(value, s, location, allow_underscores)
-        }
-    }
-}
-
-/// Parse scalar `s` as a float, reporting errors at `location`.
-/// `tag` controls explicit numeric semantics, `_angle_conversions` is inactive
-/// without robotics, and `allow_underscores` checks separators after successful parsing.
-/// Return the float or an invalid-scalar error.
-#[cfg(all(feature = "deserialize", not(feature = "robotics")))]
-pub(crate) fn parse_yaml12_float<T>(
-    s: &str,
-    location: Location,
-    tag: SfTag,
-    _angle_conversions: bool,
-    allow_underscores: bool,
-) -> Result<T, Error>
-where
-    T: FromStr,
-    T: num_traits::Float,
-{
-    let t = yaml_trim(s);
-    if let Some(value) = parse_tagged_signed_nan(t, tag) {
-        return Ok(value);
-    }
-    match parse_yaml12_non_finite_float(t) {
-        Some(value) => Ok(value),
-        None => {
-            let value = parse_yaml12_finite_float_fallback(t, location)?;
-            check_numeric_underscores(value, s, location, allow_underscores)
-        }
-    }
-}
-
+/// Interpret integer spellings before converting them to a floating-point value.
+///
+/// - `s`: trimmed scalar text, including its optional sign and radix prefix.
+/// - `location`: source location for syntax-policy errors.
+/// - `syntax`: the same numeric spelling rules used for integer values and keys.
+///
+/// Returns a converted integer, `None` for non-integer syntax, or a policy error.
 #[cfg(feature = "deserialize")]
-/// Like [`parse_yaml12_float`], but a decimal/exponential literal that overflows `f64` to
-/// infinity (e.g. `1e999`, `9e400`) is treated as a successful non-finite parse instead of
-/// an error.
+fn parse_integer_as_float<T: num_traits::Float>(
+    s: &str,
+    location: Location,
+    syntax: NumericSyntax,
+) -> Result<Option<T>, Error> {
+    let invalid = || Error::InvalidScalar {
+        ty: "floating point",
+        location,
+    };
+    let parsed = if s.starts_with('-') {
+        parse_int_signed::<i128>(s, "i128", location, syntax).and_then(|value| {
+            // Integer identity normalizes zero, but floating-point conversion must
+            // retain its sign, including alternate-radix spellings such as -0x0.
+            if value == 0 {
+                Ok(-T::zero())
+            } else {
+                T::from(value).ok_or_else(invalid)
+            }
+        })
+    } else {
+        parse_int_unsigned::<u128>(s, "u128", location, syntax)
+            .and_then(|value| T::from(value).ok_or_else(invalid))
+    };
+    match parsed {
+        Ok(value) => Ok(Some(value)),
+        Err(Error::InvalidScalar { .. }) => {
+            if syntax.is_legacy_octal(s) {
+                // Invalid or overflowing legacy octal must not be retried as a
+                // decimal float. Fractional/exponential forms still use floats.
+                Err(invalid())
+            } else {
+                Ok(None)
+            }
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// Parse scalar `s` as a float, reporting errors at `location`.
 ///
-/// This is used only by `deserialize_any`'s typeless path (e.g. `serde_json::Value`), where
-/// non-finite floats are rejected by default. `NonFiniteFloatPolicy` can instead pass
-/// them to the visitor as floats or represent them as canonical strings.
-/// Elsewhere, overflowing literals continue to be rejected as invalid floats via
-/// [`parse_yaml12_float`], so this function must not replace it as the general entry point.
+/// - `s`: scalar text, including optional sign and radix prefix.
+/// - `location`: source location for errors.
+/// - `tag`: preserves explicit NaN signs and selects robotics unit conversion.
+/// - `syntax`: shared numeric spelling policies and optional robotics expressions.
 ///
-/// Deliberately narrower than a bare `str::parse::<f64>()`: Rust's parser also accepts
-/// alphabetic spellings (`inf`, `infinity`, `nan`) that YAML/serde-saphyr correctly keep as
-/// plain strings, so only numeral-shaped literals (optional sign, then a leading digit) are
-/// considered here.
+/// Returns the float or a numeric syntax/range/expression error. Spellings accepted
+/// by the shared integer parser use its interpretation before float conversion.
+/// Other spellings may fall back to decimal float parsing: with default options,
+/// `010` becomes `10.0`, although integer targets reject it.
+#[cfg(feature = "deserialize")]
+pub(crate) fn parse_yaml12_float<T>(
+    s: &str,
+    location: Location,
+    tag: SfTag,
+    syntax: NumericSyntax,
+) -> Result<T, Error>
+where
+    T: FromStr + num_traits::Float,
+{
+    let t = yaml_trim(s);
+    if syntax.leading_zero_numbers_as_strings && leading_zero_decimal(t) {
+        return Err(Error::InvalidScalar {
+            ty: "floating point",
+            location,
+        });
+    }
+    if let Some(value) = parse_tagged_signed_nan(t, tag) {
+        return Ok(value);
+    }
+    #[cfg(feature = "robotics")]
+    if syntax.angle_conversions {
+        let value = match parse_integer_as_float::<f64>(t, location, syntax)? {
+            Some(value) => crate::robotics::convert_bare_angle(value, tag),
+            None => crate::robotics::parse_yaml12_float_angle_converting::<f64>(s, location, tag)?,
+        };
+        let converted = T::from(value).ok_or(Error::InvalidScalar {
+            ty: "floating point",
+            location,
+        })?;
+        // Preserve non-finite literals and expression results, but reject
+        // overflow introduced by narrowing a finite result (for example to f32).
+        if value.is_finite() && !converted.is_finite() {
+            return Err(Error::InvalidScalar {
+                ty: "floating point",
+                location,
+            });
+        }
+        return check_numeric_underscores(converted, s, location, syntax.allow_underscores);
+    }
+    if let Some(value) = parse_yaml12_non_finite_float(t) {
+        return Ok(value);
+    }
+    if let Some(value) = parse_integer_as_float(t, location, syntax)? {
+        // u128::MAX rounds to infinity in f32; this remains a target-range error.
+        if T::is_finite(value) {
+            return Ok(value);
+        }
+        return Err(Error::InvalidScalar {
+            ty: "floating point",
+            location,
+        });
+    }
+    let value = parse_yaml12_finite_float_fallback(t, location)?;
+    check_numeric_underscores(value, s, location, syntax.allow_underscores)
+}
+
+/// Parse the same float syntax as [`parse_yaml12_float`], retaining numeric overflow.
 ///
-/// `s`, `location`, `tag`, `angle_conversions`, and `allow_underscores` have the same
-/// meaning as in [`parse_yaml12_float`]. Preserve its error for invalid numeric
-/// syntax so explicit tags retain configuration-specific diagnostics.
+/// - `s`: scalar text.
+/// - `location`: source location for errors.
+/// - `tag`: NaN sign and robotics unit semantics, as in [`parse_yaml12_float`].
+/// - `syntax`: shared numeric spelling policies.
+///
+/// Returns a float, including infinity for a numeral such as `1e999`, or a syntax
+/// error. Typeless visitors apply `NonFiniteFloatPolicy` after this classification;
+/// typed targets still reject overflow. Alphabetic Rust spellings stay strings.
+#[cfg(feature = "deserialize")]
 pub(crate) fn try_parse_float_incl_overflow(
     s: &str,
     location: Location,
     tag: SfTag,
-    angle_conversions: bool,
-    allow_underscores: bool,
+    syntax: NumericSyntax,
 ) -> Result<f64, Error> {
-    let error =
-        match parse_yaml12_float::<f64>(s, location, tag, angle_conversions, allow_underscores) {
-            Ok(v) => return Ok(v),
-            // A configuration rejection must not reach the permissive overflow fallback.
-            Err(error @ Error::NumericUnderscoresDisabled { .. }) => return Err(error),
-            Err(error) => error,
-        };
+    let error = match parse_yaml12_float::<f64>(s, location, tag, syntax) {
+        Ok(v) => return Ok(v),
+        // Configuration rejections must never reach the permissive fallback.
+        Err(
+            error @ (Error::NumericUnderscoresDisabled { .. }
+            | Error::UppercaseRadixPrefixDisabled { .. }),
+        ) => return Err(error),
+        Err(error) => error,
+    };
 
     let t = yaml_trim(s);
+    if (syntax.leading_zero_numbers_as_strings && leading_zero_decimal(t))
+        || syntax.is_legacy_octal(t)
+    {
+        return Err(error);
+    }
     let unsigned = t.strip_prefix(['+', '-']).unwrap_or(t);
     if !unsigned.as_bytes().first().is_some_and(u8::is_ascii_digit) {
         return Err(error);
     }
 
     match t.parse::<f64>() {
-        Ok(v) if v.is_infinite() => check_numeric_underscores(v, s, location, allow_underscores),
+        Ok(v) if v.is_infinite() => {
+            check_numeric_underscores(v, s, location, syntax.allow_underscores)
+        }
         _ => Err(error),
     }
 }
@@ -548,7 +641,7 @@ pub(crate) fn is_signed_nan(t: &str) -> bool {
 /// - `s`: scalar text before trimming.
 /// - `style`: scalar style; only plain scalars require this check.
 /// - `strict_booleans`: whether to recognize only YAML 1.2 boolean spellings.
-/// - `syntax`: numeric spelling policies; legacy octal remains ignored here.
+/// - `syntax`: shared numeric spelling policies, including legacy octal and robotics.
 ///
 /// Returns `true` for ambiguous boolean, numeric, or null-like plain scalars.
 #[cfg(feature = "deserialize")]
@@ -556,23 +649,12 @@ pub(crate) fn maybe_not_string(
     s: &str,
     style: &ScalarStyle,
     strict_booleans: bool,
-    syntax: IntSyntax,
+    syntax: NumericSyntax,
 ) -> bool {
     let location = Location::UNKNOWN;
     style == &ScalarStyle::Plain
         && !is_signed_nan(yaml_trim(s))
-        && (parse_yaml12_float::<f64>(s, location, SfTag::None, false, syntax.allow_underscores)
-            .is_ok()
-            || parse_int_signed::<i128>(
-                s,
-                "i128",
-                location,
-                IntSyntax {
-                    legacy_octal: false,
-                    ..syntax
-                },
-            )
-            .is_ok()
+        && (try_parse_float_incl_overflow(s, location, SfTag::None, syntax).is_ok()
             || maybe_bool(s, strict_booleans)
             || scalar_is_nullish(s, &ScalarStyle::Plain))
 }
@@ -641,10 +723,10 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
-    fn legacy_int_syntax() -> IntSyntax {
-        IntSyntax {
+    fn legacy_numeric_syntax() -> NumericSyntax {
+        NumericSyntax {
             legacy_octal: true,
-            ..IntSyntax::default()
+            ..NumericSyntax::default()
         }
     }
 
@@ -690,10 +772,11 @@ mod tests {
     #[test]
     fn parse_int_signed_supports_alternate_radices_and_underscores() {
         let loc = sample_location();
-        let value: i64 = parse_int_signed("0x7_fF", "i64", loc, IntSyntax::default()).unwrap();
+        let value: i64 = parse_int_signed("0x7_fF", "i64", loc, NumericSyntax::default()).unwrap();
         assert_eq!(value, 0x7ff);
 
-        let value: i32 = parse_int_signed("0b1010_1010", "i32", loc, IntSyntax::default()).unwrap();
+        let value: i32 =
+            parse_int_signed("0b1010_1010", "i32", loc, NumericSyntax::default()).unwrap();
         assert_eq!(value, 0b1010_1010);
     }
 
@@ -704,12 +787,12 @@ mod tests {
             "-0x80000000000000000000000000000000",
             "i128",
             loc,
-            IntSyntax::default(),
+            NumericSyntax::default(),
         )
         .unwrap();
         let binary_min = format!("-0b1{}", "0".repeat(127));
         let binary: i128 =
-            parse_int_signed(&binary_min, "i128", loc, IntSyntax::default()).unwrap();
+            parse_int_signed(&binary_min, "i128", loc, NumericSyntax::default()).unwrap();
 
         assert_eq!(hex, i128::MIN);
         assert_eq!(binary, i128::MIN);
@@ -718,7 +801,7 @@ mod tests {
                 "0x80000000000000000000000000000000",
                 "i128",
                 loc,
-                IntSyntax::default()
+                NumericSyntax::default()
             )
             .is_err()
         );
@@ -728,19 +811,19 @@ mod tests {
     fn parse_int_signed_rejects_invalid_underscores() {
         let loc = sample_location();
         // Leading underscore
-        assert!(parse_int_signed::<i32>("_1", "i32", loc, IntSyntax::default()).is_err());
+        assert!(parse_int_signed::<i32>("_1", "i32", loc, NumericSyntax::default()).is_err());
         // Trailing underscore
-        assert!(parse_int_signed::<i32>("1000_", "i32", loc, IntSyntax::default()).is_err());
+        assert!(parse_int_signed::<i32>("1000_", "i32", loc, NumericSyntax::default()).is_err());
         // Double underscore
-        assert!(parse_int_signed::<i32>("1__0", "i32", loc, IntSyntax::default()).is_err());
+        assert!(parse_int_signed::<i32>("1__0", "i32", loc, NumericSyntax::default()).is_err());
         // Valid underscores
-        assert!(parse_int_signed::<i32>("1000_1000", "i32", loc, IntSyntax::default()).is_ok());
+        assert!(parse_int_signed::<i32>("1000_1000", "i32", loc, NumericSyntax::default()).is_ok());
     }
 
     #[test]
     fn parse_int_signed_honors_legacy_octal_prefixes() {
         let loc = sample_location();
-        let value: i32 = parse_int_signed("00077", "i32", loc, legacy_int_syntax()).unwrap();
+        let value: i32 = parse_int_signed("00077", "i32", loc, legacy_numeric_syntax()).unwrap();
         assert_eq!(value, 0o77);
     }
 
@@ -748,14 +831,15 @@ mod tests {
     fn parse_int_signed_honors_legacy_prefix_underscores() {
         let loc = sample_location();
 
-        let octal: i32 = parse_int_signed("0_10", "i32", loc, legacy_int_syntax()).unwrap();
-        let plus_octal: i32 = parse_int_signed("+0_10", "i32", loc, legacy_int_syntax()).unwrap();
+        let octal: i32 = parse_int_signed("0_10", "i32", loc, legacy_numeric_syntax()).unwrap();
+        let plus_octal: i32 =
+            parse_int_signed("+0_10", "i32", loc, legacy_numeric_syntax()).unwrap();
         let negative_octal: i32 =
-            parse_int_signed("-0_10", "i32", loc, legacy_int_syntax()).unwrap();
-        let hex: i32 = parse_int_signed("0x_10", "i32", loc, legacy_int_syntax()).unwrap();
+            parse_int_signed("-0_10", "i32", loc, legacy_numeric_syntax()).unwrap();
+        let hex: i32 = parse_int_signed("0x_10", "i32", loc, legacy_numeric_syntax()).unwrap();
         let explicit_octal: i32 =
-            parse_int_signed("0o_10", "i32", loc, legacy_int_syntax()).unwrap();
-        let binary: i32 = parse_int_signed("0b_10", "i32", loc, legacy_int_syntax()).unwrap();
+            parse_int_signed("0o_10", "i32", loc, legacy_numeric_syntax()).unwrap();
+        let binary: i32 = parse_int_signed("0b_10", "i32", loc, legacy_numeric_syntax()).unwrap();
 
         assert_eq!(octal, 0o10);
         assert_eq!(plus_octal, 0o10);
@@ -769,15 +853,16 @@ mod tests {
     fn parse_int_signed_keeps_prefix_underscores_opt_in() {
         let loc = sample_location();
 
-        assert!(parse_int_signed::<i32>("0_10", "i32", loc, IntSyntax::default()).is_err());
-        assert!(parse_int_signed::<i32>("0x_10", "i32", loc, IntSyntax::default()).is_err());
+        assert!(parse_int_signed::<i32>("0_10", "i32", loc, NumericSyntax::default()).is_err());
+        assert!(parse_int_signed::<i32>("0x_10", "i32", loc, NumericSyntax::default()).is_err());
     }
 
     #[test]
     fn parse_int_signed_preserves_error_location() {
         let loc = sample_location();
-        let err = parse_int_signed::<i64>("0x8000000000000000", "i64", loc, IntSyntax::default())
-            .unwrap_err();
+        let err =
+            parse_int_signed::<i64>("0x8000000000000000", "i64", loc, NumericSyntax::default())
+                .unwrap_err();
         match err {
             Error::InvalidScalar { location, .. } => assert_eq!(location, loc),
             other => panic!("unexpected error variant: {:?}", other),
@@ -787,7 +872,8 @@ mod tests {
     #[test]
     fn parse_int_unsigned_rejects_negative_inputs() {
         let loc = sample_location();
-        let err = parse_int_unsigned::<u32>("-5", "u32", loc, IntSyntax::default()).unwrap_err();
+        let err =
+            parse_int_unsigned::<u32>("-5", "u32", loc, NumericSyntax::default()).unwrap_err();
         match err {
             Error::InvalidScalar { location, .. } => assert_eq!(location, loc),
             other => panic!("unexpected error variant: {:?}", other),
@@ -798,12 +884,13 @@ mod tests {
     fn parse_int_unsigned_honors_legacy_prefix_underscores() {
         let loc = sample_location();
 
-        let octal: u32 = parse_int_unsigned("0_10", "u32", loc, legacy_int_syntax()).unwrap();
-        let plus_octal: u32 = parse_int_unsigned("+0_10", "u32", loc, legacy_int_syntax()).unwrap();
-        let hex: u32 = parse_int_unsigned("0x_10", "u32", loc, legacy_int_syntax()).unwrap();
+        let octal: u32 = parse_int_unsigned("0_10", "u32", loc, legacy_numeric_syntax()).unwrap();
+        let plus_octal: u32 =
+            parse_int_unsigned("+0_10", "u32", loc, legacy_numeric_syntax()).unwrap();
+        let hex: u32 = parse_int_unsigned("0x_10", "u32", loc, legacy_numeric_syntax()).unwrap();
         let explicit_octal: u32 =
-            parse_int_unsigned("0o_10", "u32", loc, legacy_int_syntax()).unwrap();
-        let binary: u32 = parse_int_unsigned("0b_10", "u32", loc, legacy_int_syntax()).unwrap();
+            parse_int_unsigned("0o_10", "u32", loc, legacy_numeric_syntax()).unwrap();
+        let binary: u32 = parse_int_unsigned("0b_10", "u32", loc, legacy_numeric_syntax()).unwrap();
 
         assert_eq!(octal, 0o10);
         assert_eq!(plus_octal, 0o10);
@@ -816,13 +903,16 @@ mod tests {
     fn parse_yaml12_floats_handle_nan_and_infinity_forms() {
         let loc = sample_location();
 
-        let nan: f64 = parse_yaml12_float(" .NaN ", loc, SfTag::None, false, true).unwrap();
+        let nan: f64 =
+            parse_yaml12_float(" .NaN ", loc, SfTag::None, NumericSyntax::default()).unwrap();
         assert!(nan.is_nan());
 
-        let inf: f64 = parse_yaml12_float("+.INF", loc, SfTag::None, false, true).unwrap();
+        let inf: f64 =
+            parse_yaml12_float("+.INF", loc, SfTag::None, NumericSyntax::default()).unwrap();
         assert!(inf.is_infinite() && inf.is_sign_positive());
 
-        let neg_inf: f64 = parse_yaml12_float("-.Inf", loc, SfTag::None, false, true).unwrap();
+        let neg_inf: f64 =
+            parse_yaml12_float("-.Inf", loc, SfTag::None, NumericSyntax::default()).unwrap();
         assert!(neg_inf.is_infinite() && neg_inf.is_sign_negative());
     }
 
@@ -836,7 +926,9 @@ mod tests {
     #[case::plus_infinity("+Infinity")]
     #[case::minus_infinity("-Infinity")]
     fn parse_yaml12_float_rejects_rust_nonfinite_spellings(#[case] input: &str) {
-        assert!(parse_yaml12_float::<f64>(input, loc(), SfTag::None, false, true).is_err());
+        assert!(
+            parse_yaml12_float::<f64>(input, loc(), SfTag::None, NumericSyntax::default()).is_err()
+        );
     }
 
     fn loc() -> Location {
@@ -852,11 +944,12 @@ mod tests {
     #[test]
     fn test_normal_values() {
         assert_eq!(
-            parse_yaml12_float::<f32>("1.5", loc(), SfTag::None, false, true).unwrap(),
+            parse_yaml12_float::<f32>("1.5", loc(), SfTag::None, NumericSyntax::default()).unwrap(),
             1.5f32
         );
         assert_eq!(
-            parse_yaml12_float::<f32>("-123.456", loc(), SfTag::None, false, true).unwrap(),
+            parse_yaml12_float::<f32>("-123.456", loc(), SfTag::None, NumericSyntax::default())
+                .unwrap(),
             -123.456f32
         );
     }
@@ -864,24 +957,27 @@ mod tests {
     #[test]
     fn test_zero_values() {
         assert_eq!(
-            parse_yaml12_float::<f32>("0", loc(), SfTag::None, false, true).unwrap(),
+            parse_yaml12_float::<f32>("0", loc(), SfTag::None, NumericSyntax::default()).unwrap(),
             0.0f32
         );
         assert_eq!(
-            parse_yaml12_float::<f32>("-0", loc(), SfTag::None, false, true).unwrap(),
+            parse_yaml12_float::<f32>("-0", loc(), SfTag::None, NumericSyntax::default()).unwrap(),
             -0.0f32
         );
     }
 
     #[test]
     fn test_nan_and_infinity() {
-        let nan: f32 = parse_yaml12_float(".nan", loc(), SfTag::None, false, true).unwrap();
+        let nan: f32 =
+            parse_yaml12_float(".nan", loc(), SfTag::None, NumericSyntax::default()).unwrap();
         assert!(nan.is_nan());
 
-        let inf: f64 = parse_yaml12_float(".inf", loc(), SfTag::None, false, true).unwrap();
+        let inf: f64 =
+            parse_yaml12_float(".inf", loc(), SfTag::None, NumericSyntax::default()).unwrap();
         assert!(inf.is_infinite() && inf.is_sign_positive());
 
-        let ninf: f32 = parse_yaml12_float("-.Inf", loc(), SfTag::None, false, true).unwrap();
+        let ninf: f32 =
+            parse_yaml12_float("-.Inf", loc(), SfTag::None, NumericSyntax::default()).unwrap();
         assert!(ninf.is_infinite() && ninf.is_sign_negative());
     }
 
@@ -889,14 +985,20 @@ mod tests {
     fn test_subnormal_preserved() {
         // Smallest positive subnormal f32
         let smallest = f32::from_bits(1) as f64;
-        let val: f32 =
-            parse_yaml12_float(&format!("{}", smallest), loc(), SfTag::None, false, true).unwrap();
+        let val: f32 = parse_yaml12_float(
+            &format!("{}", smallest),
+            loc(),
+            SfTag::None,
+            NumericSyntax::default(),
+        )
+        .unwrap();
         assert_eq!(val, f32::from_bits(1));
     }
 
     #[test]
     fn test_negative_zero_preserved() {
-        let val: f32 = parse_yaml12_float("-0.0", loc(), SfTag::None, false, true).unwrap();
+        let val: f32 =
+            parse_yaml12_float("-0.0", loc(), SfTag::None, NumericSyntax::default()).unwrap();
         assert_eq!(val.to_bits(), (-0.0f32).to_bits());
     }
 }

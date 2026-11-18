@@ -198,18 +198,13 @@ fn quoted_and_explicit_string_scalars_keep_their_text() {
 }
 
 #[test]
-fn leading_zero_preservation_does_not_override_explicit_numeric_tags() {
-    for (yaml, expected) in [
-        ("!!float 0755", json!(755.0)),
-        ("!!float -0755", json!(-755.0)),
-        ("!!float '0755'", json!(755.0)),
-    ] {
-        assert_inferred(yaml, expected, preserve_both());
-    }
-
+fn explicit_numeric_tags_obey_preservation_restrictions() {
     // Preservation cannot turn an invalid explicitly tagged number into a string.
     for yaml in [
         "!!int 0755",
+        "!!float 0755",
+        "!!float -0755",
+        "!!float '0755'",
         "!!int 1_000",
         "!!int -1_000",
         "!!int 0xFF_FF",
@@ -222,18 +217,17 @@ fn leading_zero_preservation_does_not_override_explicit_numeric_tags() {
 }
 
 #[test]
-fn direct_numeric_and_string_targets_obey_underscore_restriction() {
+fn direct_numeric_and_string_targets_obey_preservation_restrictions() {
     assert!(from_str_with_options::<i64>("-1_000", preserve_both()).is_err());
     assert!(from_reader_with_options::<_, u64>("0xFF_FF".as_bytes(), preserve_both()).is_err());
-    let float: f64 = from_str_with_options("0755", preserve_both()).unwrap();
     let text: String = from_str_with_options("0755", preserve_both()).unwrap();
-    assert_eq!(float, 755.0);
     assert_eq!(text, "0755");
+    assert!(from_str_with_options::<f64>("0755", preserve_both()).is_err());
     assert!(from_str_with_options::<u64>("0755", preserve_both()).is_err());
 }
 
 #[test]
-fn preservation_takes_precedence_over_implicit_legacy_octal() {
+fn preservation_takes_precedence_over_legacy_octal() {
     let options = serde_saphyr::options! {
         leading_zero_numbers_as_strings: true,
         allow_numeric_underscores: false,
@@ -242,10 +236,9 @@ fn preservation_takes_precedence_over_implicit_legacy_octal() {
     for yaml in ["0755", "-0755", "009", "0_10", "+0_10", "0x_FF"] {
         assert_inferred(yaml, json!(yaml), options.clone());
     }
-    assert_inferred("!!int 0755", json!(493), options.clone());
+    assert!(from_str_with_options::<Value>("!!int 0755", options.clone()).is_err());
     assert!(from_str_with_options::<Value>("!!int 0_10", options.clone()).is_err());
-    let typed: u64 = from_str_with_options("0755", options).unwrap();
-    assert_eq!(typed, 493);
+    assert!(from_str_with_options::<u64>("0755", options).is_err());
 }
 
 #[test]

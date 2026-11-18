@@ -358,9 +358,12 @@ pub struct Options {
     pub alias_limits: AliasLimits,
     /// Enable legacy octal parsing where values starting with `0` are treated as base-8.
     /// They are deprecated in YAML 1.2. Default: false.
+    /// Applies to integer spellings converted to floats as well as integer targets
+    /// and mapping-key comparison. Invalid or overflowing octal spellings do not
+    /// fall back to decimal float parsing.
     pub legacy_octal_numbers: bool,
     /// Preserve plain decimal integer spellings with redundant leading zeros as
-    /// strings during implicit type inference (`deserialize_any`).
+    /// strings and reject them in numeric parsing.
     ///
     /// Examples include `0755`, `-007`, and `+00`. Floating-point spellings such as
     /// `0.5`, `00.5`, and `01e2`, and explicit radix prefixes, are unaffected.
@@ -368,13 +371,17 @@ pub struct Options {
     /// Default: false.
     ///
     /// Applies to untyped values and Serde's buffering for untagged enums and
-    /// flattened fields. Takes precedence over [`Self::legacy_octal_numbers`]
-    /// during inference. Direct typed deserialization, explicit `!!int`/`!!float`
-    /// tags, and mapping-key equality retain their existing behavior.
+    /// flattened fields. Integer and float targets reject these spellings,
+    /// including explicit `!!int`/`!!float` tags and quoted scalars. Takes
+    /// precedence over [`Self::legacy_octal_numbers`] in every numeric parser.
+    /// Mapping-key comparison, including composite keys and merge expansion,
+    /// keeps these strings distinct from integers. In [`Self::no_schema`] mode,
+    /// these spellings can be read as strings without quoting.
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub leading_zero_numbers_as_strings: bool,
     /// Allow supported underscore digit separators in numbers. Default: true.
-    /// This does not enable additional syntax: underscored floats still require
+    /// Integer spellings use the same syntax when converted to floats.
+    /// Underscores in fractional or exponential spellings still require
     /// robotics angle conversions.
     ///
     /// When false, plain scalars containing underscores remain strings during
@@ -401,9 +408,9 @@ pub struct Options {
     /// Uppercase hexadecimal digits remain accepted, for example `0xFF`.
     ///
     /// When true, uppercase-prefixed plain scalars remain strings during implicit
-    /// inference, including untagged enums and flattened fields. Integer targets
-    /// reject these spellings for both mapping keys and values; explicit `!!int`
-    /// tags and [`Self::legacy_octal_numbers`] do not override the restriction.
+    /// inference, including untagged enums and flattened fields. Integer and float
+    /// targets reject these spellings for both mapping keys and values; explicit
+    /// `!!int`/`!!float` tags and [`Self::legacy_octal_numbers`] do not override it.
     /// Otherwise valid integers return
     /// [`Error::UppercaseRadixPrefixDisabled`](crate::Error::UppercaseRadixPrefixDisabled).
     /// Invalid syntax and target-range failures retain the parser's original error.
