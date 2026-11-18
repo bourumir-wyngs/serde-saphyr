@@ -300,6 +300,76 @@ fn robotics_unit_conversion_follows_shared_integer_parsing() {
     }
 }
 
+#[cfg(feature = "robotics")]
+#[rstest]
+#[case::radix("0xffffffffffffffffffffffffffffffff")]
+#[case::tagged_radix("!!float 0xffffffffffffffffffffffffffffffff")]
+#[case::quoted_radix("'0xffffffffffffffffffffffffffffffff'")]
+#[case::decimal("340282366920938463463374607431768211455")]
+#[case::positive_exponent("1e39")]
+#[case::negative_exponent("-1e39")]
+#[case::expression("1e38 * 10")]
+#[case::radians("!radians 0xffffffffffffffffffffffffffffffff")]
+#[case::degrees("!degrees 1e41")]
+fn robotics_float_conversion_rejects_f32_overflow(#[case] scalar: &str) {
+    let options = serde_saphyr::options! { angle_conversions: true };
+    let value: f64 = from_str_with_options(scalar, options.clone()).unwrap();
+    assert!(value.is_finite());
+    assert!((value as f32).is_infinite());
+
+    for error in [
+        from_str_with_options::<f32>(scalar, options.clone()).unwrap_err(),
+        from_reader_with_options::<_, f32>(scalar.as_bytes(), options).unwrap_err(),
+    ] {
+        assert!(matches!(
+            error.without_snippet(),
+            Error::InvalidScalar {
+                ty: "floating point",
+                ..
+            }
+        ));
+    }
+}
+
+#[cfg(feature = "robotics")]
+#[test]
+fn robotics_float_range_check_follows_unit_conversion() {
+    let scalar = "!degrees 0xffffffffffffffffffffffffffffffff";
+    let options = serde_saphyr::options! { angle_conversions: true };
+    let expected: f64 = from_str_with_options(scalar, options.clone()).unwrap();
+    for value in [
+        from_str_with_options::<f32>(scalar, options.clone()).unwrap(),
+        from_reader_with_options::<_, f32>(scalar.as_bytes(), options).unwrap(),
+    ] {
+        assert!(value.is_finite());
+        assert_eq!(value, expected as f32);
+    }
+}
+
+#[cfg(feature = "robotics")]
+#[rstest]
+#[case::positive_infinity(".inf", f32::INFINITY)]
+#[case::negative_infinity("-.inf", f32::NEG_INFINITY)]
+#[case::nan(".nan", f32::NAN)]
+#[case::division_by_zero("1/0", f32::INFINITY)]
+#[case::nan_expression("nan + 1", f32::NAN)]
+fn robotics_float_conversion_preserves_non_finite_values(
+    #[case] scalar: &str,
+    #[case] expected: f32,
+) {
+    let options = serde_saphyr::options! { angle_conversions: true };
+    for value in [
+        from_str_with_options::<f32>(scalar, options.clone()).unwrap(),
+        from_reader_with_options::<_, f32>(scalar.as_bytes(), options).unwrap(),
+    ] {
+        if expected.is_nan() {
+            assert!(value.is_nan());
+        } else {
+            assert_eq!(value, expected);
+        }
+    }
+}
+
 /// Store the bits so a float visitor can be used inside an ordered composite key.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct FloatKey(u64);

@@ -534,11 +534,19 @@ where
             Some(value) => crate::robotics::convert_bare_angle(value, tag),
             None => crate::robotics::parse_yaml12_float_angle_converting::<f64>(s, location, tag)?,
         };
-        let value = T::from(value).ok_or(Error::InvalidScalar {
+        let converted = T::from(value).ok_or(Error::InvalidScalar {
             ty: "floating point",
             location,
         })?;
-        return check_numeric_underscores(value, s, location, syntax.allow_underscores);
+        // Preserve non-finite literals and expression results, but reject
+        // overflow introduced by narrowing a finite result (for example to f32).
+        if value.is_finite() && !converted.is_finite() {
+            return Err(Error::InvalidScalar {
+                ty: "floating point",
+                location,
+            });
+        }
+        return check_numeric_underscores(converted, s, location, syntax.allow_underscores);
     }
     if let Some(value) = parse_yaml12_non_finite_float(t) {
         return Ok(value);

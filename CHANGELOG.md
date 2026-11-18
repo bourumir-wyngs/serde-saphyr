@@ -74,6 +74,8 @@ are the defaults; no legacy alias mode is provided. See
 
 ### Fixed
 
+- Reject finite robotics results that overflow when converted to `f32`, while
+  preserving explicitly non-finite values and expression results.
 - Keep scalar parsing temporaries out of recursive collection dispatch so deeply
   nested mappings report the configured depth-budget error without overflowing
   the Windows test-thread stack.
