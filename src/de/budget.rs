@@ -605,7 +605,13 @@ impl BudgetEnforcer {
         }
 
         match ev {
-            Event::Scalar(value, style, anchor_id, tag_opt) => {
+            Event::Scalar {
+                value,
+                style,
+                anchor_id,
+                tag: tag_opt,
+                ..
+            } => {
                 self.bump_nodes()?;
                 self.bump_total_scalar_bytes(
                     value
@@ -615,7 +621,11 @@ impl BudgetEnforcer {
                 self.record_anchor(*anchor_id)?;
                 self.handle_scalar(value, style, tag_opt.as_deref())?;
             }
-            Event::MappingStart(_style, anchor_id, tag_opt) => {
+            Event::MappingStart {
+                anchor_id,
+                tag: tag_opt,
+                ..
+            } => {
                 self.enter_container(*anchor_id, tag_opt.as_deref(), |from_mapping_value| {
                     ContainerState::Mapping {
                         expecting_key: true,
@@ -623,21 +633,25 @@ impl BudgetEnforcer {
                     }
                 })?;
             }
-            Event::MappingEnd => {
+            Event::MappingEnd { .. } => {
                 self.leave_container(ContainerKind::Mapping)?;
             }
-            Event::SequenceStart(_style, anchor_id, tag_opt) => {
+            Event::SequenceStart {
+                anchor_id,
+                tag: tag_opt,
+                ..
+            } => {
                 self.enter_container(*anchor_id, tag_opt.as_deref(), |from_mapping_value| {
                     ContainerState::Sequence { from_mapping_value }
                 })?;
             }
-            Event::SequenceEnd => {
+            Event::SequenceEnd { .. } => {
                 self.leave_container(ContainerKind::Sequence)?;
             }
-            Event::Alias(_anchor_id) => {
+            Event::Alias { .. } => {
                 self.observe_alias_event(true)?;
             }
-            Event::DocumentStart(..) => {
+            Event::DocumentStart { .. } => {
                 if self.scope == EnforcingPolicy::PerDocument {
                     self.finalize_document()?;
                     self.report.reset();
@@ -652,7 +666,7 @@ impl BudgetEnforcer {
                 }
             }
             #[cfg(feature = "comments")]
-            Event::Comment(text, _) => {
+            Event::Comment { value: text, .. } => {
                 self.report.total_comment_bytes =
                     self.report.total_comment_bytes.saturating_add(text.len());
                 if self.report.total_comment_bytes > self.budget.max_total_comment_bytes {
@@ -828,8 +842,7 @@ impl BudgetEnforcer {
             if *expecting_key {
                 if matches!(self.merge_keys, MergeKeyPolicy::Merge)
                     && value == "<<"
-                    && (tag.is_some_and(is_yaml_merge_tag)
-                        || tag.is_none() && matches!(style, ScalarStyle::Plain))
+                    && (tag.is_some_and(is_yaml_merge_tag) || tag.is_none() && style.is_plain())
                 {
                     self.report.merge_keys += 1;
                     if self.report.merge_keys > self.budget.max_merge_keys {

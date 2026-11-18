@@ -367,7 +367,7 @@ enum CollectAnchorEventsError {
 
 fn anchored_event_initial_depth(event: &Event<'_>) -> usize {
     match event {
-        Event::SequenceStart(_, _, _) | Event::MappingStart(_, _, _) => 1,
+        Event::SequenceStart { .. } | Event::MappingStart { .. } => 1,
         _ => 0,
     }
 }
@@ -399,7 +399,7 @@ fn observe_expanded_comment_budget(
     total_expanded_comment_bytes: &mut usize,
     budget: &crate::Budget,
 ) -> Result<(), CollectAnchorEventsError> {
-    if let Event::Comment(text, _) = event {
+    if let Event::Comment { value: text, .. } = event {
         *total_expanded_comment_bytes = total_expanded_comment_bytes.saturating_add(text.len());
 
         if *total_expanded_comment_bytes > budget.max_total_comment_bytes {
@@ -420,7 +420,7 @@ fn observe_expanded_scalar_budget(
     total_expanded_scalar_bytes: &mut usize,
     budget: &crate::Budget,
 ) -> Result<(), CollectAnchorEventsError> {
-    if let Event::Scalar(value, _, _, _) = event {
+    if let Event::Scalar { value, .. } = event {
         *total_expanded_scalar_bytes = total_expanded_scalar_bytes.saturating_add(value.len());
 
         if *total_expanded_scalar_bytes > budget.max_total_scalar_bytes {
@@ -500,7 +500,7 @@ fn collect_anchor_events_with_parser_options_and_state(
         })?;
         let (span, token_type) = token.into_parts();
         let marker_offset = span.start.index();
-        if let TokenType::Anchor(name) = token_type {
+        if let TokenType::Anchor { name, .. } = token_type {
             anchor_defs.push((name.into_owned(), marker_offset));
             if anchor_defs.len() > budget.max_anchors {
                 return Err(CollectAnchorEventsError::Budget(BudgetBreach::Anchors {
@@ -522,7 +522,7 @@ fn collect_anchor_events_with_parser_options_and_state(
                 "failed to parse include fragment '{target_anchor}': {err}"
             ))
         })?;
-        if matches!(event, Event::DocumentStart(..)) {
+        if matches!(event, Event::DocumentStart { .. }) {
             document_count += 1;
             if document_count > 1 {
                 return Err(CollectAnchorEventsError::Message(format!(
@@ -531,7 +531,7 @@ fn collect_anchor_events_with_parser_options_and_state(
             }
         }
         match &event {
-            Event::SequenceStart(_, _, _) | Event::MappingStart(_, _, _) => {
+            Event::SequenceStart { .. } | Event::MappingStart { .. } => {
                 current_depth += 1;
                 if current_depth > budget.max_depth {
                     return Err(CollectAnchorEventsError::Budget(BudgetBreach::Depth {
@@ -539,12 +539,12 @@ fn collect_anchor_events_with_parser_options_and_state(
                     }));
                 }
             }
-            Event::SequenceEnd | Event::MappingEnd => {
+            Event::SequenceEnd { .. } | Event::MappingEnd { .. } => {
                 current_depth = current_depth.saturating_sub(1);
             }
             _ => {}
         }
-        if let Event::Scalar(ref value, _, _, _) = event {
+        if let Event::Scalar { ref value, .. } = event {
             total_scalar_bytes = total_scalar_bytes.saturating_add(value.len());
             if total_scalar_bytes > budget.max_total_scalar_bytes {
                 return Err(CollectAnchorEventsError::Budget(
@@ -553,7 +553,10 @@ fn collect_anchor_events_with_parser_options_and_state(
             }
         }
         #[cfg(feature = "comments")]
-        if let Event::Comment(ref text, _) = event {
+        if let Event::Comment {
+            value: ref text, ..
+        } = event
+        {
             total_comment_bytes = total_comment_bytes.saturating_add(text.len());
             if total_comment_bytes > budget.max_total_comment_bytes {
                 return Err(CollectAnchorEventsError::Budget(
@@ -596,7 +599,7 @@ fn collect_anchor_events_with_parser_options_and_state(
         #[cfg(feature = "comments")]
         let start = events[event_cursor..node_start]
             .iter()
-            .position(|(event, _)| matches!(event, Event::Comment(_, _)))
+            .position(|(event, _)| matches!(event, Event::Comment { .. }))
             .map_or(node_start, |comment_offset| event_cursor + comment_offset);
         #[cfg(not(feature = "comments"))]
         let start = node_start;
@@ -607,8 +610,8 @@ fn collect_anchor_events_with_parser_options_and_state(
         } else {
             for (idx, (event, _)) in events.iter().enumerate().skip(node_start + 1) {
                 match event {
-                    Event::SequenceStart(_, _, _) | Event::MappingStart(_, _, _) => depth += 1,
-                    Event::SequenceEnd | Event::MappingEnd => {
+                    Event::SequenceStart { .. } | Event::MappingStart { .. } => depth += 1,
+                    Event::SequenceEnd { .. } | Event::MappingEnd { .. } => {
                         if depth == 0 {
                             return Err(CollectAnchorEventsError::Message(format!(
                                 "include fragment '{target_anchor}' became unbalanced while replaying events"
@@ -677,7 +680,7 @@ fn collect_anchor_events_with_parser_options_and_state(
         };
 
         let (event, span) = &events[event_index];
-        if let Event::Alias(id) = &event
+        if let Event::Alias { anchor_id: id, .. } = &event
             && let Some(alias_node) = anchor_nodes_by_id.get(id)
         {
             if active_anchor_ids.contains(id) {
@@ -779,31 +782,53 @@ fn collect_anchor_events_with_parser_options_and_state(
 }
 fn own_event(event: Event<'_>) -> Result<Event<'static>, CollectAnchorEventsError> {
     let event = match event {
-        Event::StreamStart => Event::StreamStart,
-        Event::StreamEnd => Event::StreamEnd,
-        Event::DocumentStart(explicit, version) => Event::DocumentStart(explicit, version),
-        Event::DocumentEnd => Event::DocumentEnd,
-        Event::Alias(anchor_id) => Event::Alias(anchor_id),
-        Event::Scalar(value, style, anchor_id, tag) => Event::Scalar(
+        Event::StreamStart { .. } => Event::stream_start(),
+        Event::StreamEnd { .. } => Event::stream_end(),
+        Event::DocumentStart {
+            explicit, version, ..
+        } => Event::document_start(explicit, version),
+        Event::DocumentEnd { .. } => Event::document_end(),
+        Event::Alias { anchor_id, .. } => Event::alias(anchor_id),
+        Event::Scalar {
+            value,
+            style,
+            anchor_id,
+            tag,
+            ..
+        } => Event::new_scalar(
             Cow::Owned(value.into_owned()),
             style,
             anchor_id,
             tag.map(|tag| Cow::Owned(tag.into_owned())),
         ),
-        Event::SequenceStart(style, anchor_id, tag) => Event::SequenceStart(
+        Event::SequenceStart {
+            style,
+            anchor_id,
+            tag,
+            ..
+        } => Event::sequence_start(
             style,
             anchor_id,
             tag.map(|tag| Cow::Owned(tag.into_owned())),
         ),
-        Event::SequenceEnd => Event::SequenceEnd,
-        Event::MappingStart(style, anchor_id, tag) => Event::MappingStart(
+        Event::SequenceEnd { .. } => Event::sequence_end(),
+        Event::MappingStart {
+            style,
+            anchor_id,
+            tag,
+            ..
+        } => Event::mapping_start(
             style,
             anchor_id,
             tag.map(|tag| Cow::Owned(tag.into_owned())),
         ),
-        Event::MappingEnd => Event::MappingEnd,
+        Event::MappingEnd { .. } => Event::mapping_end(),
         #[cfg(feature = "comments")]
-        Event::Comment(text, placement) => Event::Comment(Cow::Owned(text.into_owned()), placement),
+        Event::Comment {
+            value: text,
+            placement,
+            ..
+        } => Event::comment(Cow::Owned(text.into_owned()), placement),
         _ => {
             return Err(CollectAnchorEventsError::Message(
                 "include fragment produced an unsupported parser event".to_owned(),
@@ -822,13 +847,13 @@ impl<'input> Iterator for ParserStack<'input> {
                 // If they continue iterating, the next `Ok` event will sync it.
                 Some(Err(e))
             }
-            Some(Ok((Event::DocumentStart(explicit, version), span))) => {
+            Some(Ok((event @ Event::DocumentStart { .. }, span))) => {
                 self.sync_source_tracking(self.inner.stack().len());
                 if self.inner.stack().len() == 1 {
                     self.fragment_aliases = 0;
                     self.prune_resolved_sources();
                 }
-                Some(Ok((Event::DocumentStart(explicit, version), span)))
+                Some(Ok((event, span)))
             }
             other => {
                 self.sync_source_tracking(self.inner.stack().len());
@@ -902,7 +927,7 @@ mod tests {
         let mut scanned = Vec::new();
         for token in scanner {
             let (_, token_type) = token.expect("anchor fixture should scan").into_parts();
-            if let TokenType::Anchor(name) = token_type {
+            if let TokenType::Anchor { name, .. } = token_type {
                 scanned.push(name.into_owned());
             }
         }
@@ -917,10 +942,10 @@ mod tests {
         .expect("anchor collection should succeed");
 
         let has_user_key = collected.events.iter().any(
-            |(event, _)| matches!(event, Event::Scalar(value, _, _, _) if value.as_ref() == "user"),
+            |(event, _)| matches!(event, Event::Scalar { value, .. } if value.as_ref() == "user"),
         );
         let has_name_key = collected.events.iter().any(
-            |(event, _)| matches!(event, Event::Scalar(value, _, _, _) if value.as_ref() == "name"),
+            |(event, _)| matches!(event, Event::Scalar { value, .. } if value.as_ref() == "name"),
         );
 
         assert!(has_user_key, "target mapping key should be preserved");
@@ -932,7 +957,7 @@ mod tests {
             !collected
                 .events
                 .iter()
-                .any(|(event, _)| matches!(event, Event::Alias(_))),
+                .any(|(event, _)| matches!(event, Event::Alias { .. })),
             "expanded event stream should not retain unresolved aliases"
         );
     }
@@ -989,7 +1014,7 @@ mod tests {
             .events
             .iter()
             .filter(|(event, _)| {
-                matches!(event, Event::Scalar(value, _, _, _) if value.as_ref() == "value")
+                matches!(event, Event::Scalar { value, .. } if value.as_ref() == "value")
             })
             .count();
         assert_eq!(values, 2);
@@ -1108,18 +1133,18 @@ mod tests {
 
         let first_node = collected.events.iter().find(|(event, _)| event.is_node());
         assert!(
-            matches!(first_node, Some((Event::MappingStart(_, _, _), _))),
+            matches!(first_node, Some((Event::MappingStart { .. }, _))),
             "target anchor's first node should be the mapping, got: {first_node:?}"
         );
         assert!(
             collected.events.iter().any(
-                |(event, _)| matches!(event, Event::Scalar(value, _, _, _) if value.as_ref() == "user"),
+                |(event, _)| matches!(event, Event::Scalar { value, .. } if value.as_ref() == "user"),
             ),
             "target mapping key should be preserved"
         );
         #[cfg(feature = "comments")]
         assert!(
-            !matches!(collected.events.as_slice(), [(Event::Comment(_, _), _)]),
+            !matches!(collected.events.as_slice(), [(Event::Comment { .. }, _)]),
             "comment must not be the only collected anchor event"
         );
     }
@@ -1144,7 +1169,7 @@ mod tests {
             !collected
                 .events
                 .iter()
-                .any(|(event, _)| matches!(event, Event::Comment(_, _)))
+                .any(|(event, _)| matches!(event, Event::Comment { .. }))
         );
     }
 
@@ -1167,7 +1192,7 @@ mod tests {
         assert!(
             !events
                 .iter()
-                .any(|(event, _)| matches!(event, Event::Comment(_, _)))
+                .any(|(event, _)| matches!(event, Event::Comment { .. }))
         );
     }
 
@@ -1183,13 +1208,13 @@ mod tests {
 
         assert!(
             collected.events.iter().any(
-                |(event, _)| matches!(event, Event::Scalar(value, _, _, _) if value.as_ref() == "1"),
+                |(event, _)| matches!(event, Event::Scalar { value, .. } if value.as_ref() == "1"),
             ),
             "alias should expand to the preceding &x definition"
         );
         assert!(
             !collected.events.iter().any(
-                |(event, _)| matches!(event, Event::Scalar(value, _, _, _) if value.as_ref() == "2"),
+                |(event, _)| matches!(event, Event::Scalar { value, .. } if value.as_ref() == "2"),
             ),
             "later &x redefinition must not affect an earlier alias"
         );
@@ -1197,7 +1222,7 @@ mod tests {
             !collected
                 .events
                 .iter()
-                .any(|(event, _)| matches!(event, Event::Alias(_))),
+                .any(|(event, _)| matches!(event, Event::Alias { .. })),
             "expanded event stream should not retain unresolved aliases"
         );
     }
@@ -1476,7 +1501,7 @@ selected: &selected
         // Read until the first document finishes and the second document starts
         let mut doc_starts = 0;
         for item in stack.by_ref() {
-            if let Ok((Event::DocumentStart(..), _)) = item {
+            if let Ok((Event::DocumentStart { .. }, _)) = item {
                 doc_starts += 1;
                 if doc_starts == 2 {
                     break;

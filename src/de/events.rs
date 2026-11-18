@@ -302,7 +302,7 @@ impl Ev<'_> {
                 tag: SfTag::Null,
                 raw_tag: None,
                 original_tag: None,
-                style: ScalarStyle::Plain,
+                style: ScalarStyle::plain(),
                 anchor,
                 location,
             };
@@ -702,7 +702,7 @@ mod tests {
             tag: SfTag::None,
             raw_tag: None,
             original_tag: None,
-            style: ScalarStyle::Plain,
+            style: ScalarStyle::plain(),
             anchor: 0,
             location,
         }
@@ -736,7 +736,7 @@ mod tests {
             tag: SfTag::Other,
             raw_tag: Some(Cow::Owned("tag:example.com,2026:secret".to_owned())),
             original_tag: Some("!e!secret".into()),
-            style: ScalarStyle::Plain,
+            style: ScalarStyle::plain(),
             anchor: 0,
             location: Location::new(1, 1),
         };

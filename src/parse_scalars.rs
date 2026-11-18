@@ -442,12 +442,12 @@ pub(crate) fn is_signed_nan(t: &str) -> bool {
 #[cfg(feature = "deserialize")]
 pub(crate) fn maybe_not_string(s: &str, style: &ScalarStyle, strict_booleans: bool) -> bool {
     let location = Location::UNKNOWN;
-    style == &ScalarStyle::Plain
+    style.is_plain()
         && !is_signed_nan(yaml_trim(s))
         && (parse_yaml12_float::<f64>(s, location, SfTag::None, false).is_ok()
             || parse_int_signed::<i128>(s, "i128", location, false).is_ok()
             || maybe_bool(s, strict_booleans)
-            || scalar_is_nullish(s, &ScalarStyle::Plain))
+            || scalar_is_nullish(s, style))
 }
 
 /// Check if a scalar looks like a YAML boolean, respecting `strict_booleans`.
@@ -476,7 +476,7 @@ fn maybe_bool(s: &str, strict: bool) -> bool {
 #[cfg(feature = "deserialize")]
 #[inline]
 pub(crate) fn scalar_is_nullish(value: &str, style: &ScalarStyle) -> bool {
-    if !matches!(style, ScalarStyle::Plain) {
+    if !style.is_plain() {
         return false;
     }
     matches!(value, "" | "~" | "null" | "Null" | "NULL")
@@ -526,10 +526,10 @@ mod tests {
     #[test]
     fn null_resolution_preserves_explicit_binary_scalars() {
         for value in ["null", "Null", "NULL", "~", ""] {
-            assert!(scalar_is_null(&SfTag::None, value, &ScalarStyle::Plain));
-            assert!(scalar_is_null(&SfTag::Null, value, &ScalarStyle::Plain));
+            assert!(scalar_is_null(&SfTag::None, value, &ScalarStyle::plain()));
+            assert!(scalar_is_null(&SfTag::Null, value, &ScalarStyle::plain()));
             assert!(
-                !scalar_is_null(&SfTag::Binary, value, &ScalarStyle::Plain),
+                !scalar_is_null(&SfTag::Binary, value, &ScalarStyle::plain()),
                 "explicit binary scalar must reach its deserializer: {value:?}"
             );
         }

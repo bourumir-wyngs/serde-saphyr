@@ -65,25 +65,40 @@ pub(super) fn assert_valid_events_with_options(
 
 fn render_event(event: Event<'_>) -> Option<String> {
     let rendered = match event {
-        Event::StreamStart => "+STR".to_owned(),
-        Event::StreamEnd => "-STR".to_owned(),
-        Event::DocumentStart(..) => "+DOC".to_owned(),
-        Event::DocumentEnd => "-DOC".to_owned(),
-        Event::SequenceStart(_, anchor, tag) => {
+        Event::StreamStart { .. } => "+STR".to_owned(),
+        Event::StreamEnd { .. } => "-STR".to_owned(),
+        Event::DocumentStart { .. } => "+DOC".to_owned(),
+        Event::DocumentEnd { .. } => "-DOC".to_owned(),
+        Event::SequenceStart {
+            anchor_id: anchor,
+            tag,
+            ..
+        } => {
             format!("+SEQ{}{}", format_anchor(anchor), format_tag(tag.as_ref()))
         }
-        Event::SequenceEnd => "-SEQ".to_owned(),
-        Event::MappingStart(_, anchor, tag) => {
+        Event::SequenceEnd { .. } => "-SEQ".to_owned(),
+        Event::MappingStart {
+            anchor_id: anchor,
+            tag,
+            ..
+        } => {
             format!("+MAP{}{}", format_anchor(anchor), format_tag(tag.as_ref()))
         }
-        Event::MappingEnd => "-MAP".to_owned(),
-        Event::Scalar(text, style, anchor, tag) => {
+        Event::MappingEnd { .. } => "-MAP".to_owned(),
+        Event::Scalar {
+            value: text,
+            style,
+            anchor_id: anchor,
+            tag,
+            ..
+        } => {
             let style = match style {
-                ScalarStyle::Plain => ":",
-                ScalarStyle::SingleQuoted => "'",
-                ScalarStyle::DoubleQuoted => "\"",
-                ScalarStyle::Literal => "|",
-                ScalarStyle::Folded => ">",
+                ScalarStyle::Plain { .. } => ":",
+                ScalarStyle::SingleQuoted { .. } => "'",
+                ScalarStyle::DoubleQuoted { .. } => "\"",
+                ScalarStyle::Literal { .. } => "|",
+                ScalarStyle::Folded { .. } => ">",
+                _ => panic!("unsupported scalar style: {style:?}"),
             };
             format!(
                 "=VAL{}{} {style}{}",
@@ -92,9 +107,11 @@ fn render_event(event: Event<'_>) -> Option<String> {
                 escape_text(&text)
             )
         }
-        Event::Alias(anchor) => format!("=ALI *{anchor}"),
+        Event::Alias {
+            anchor_id: anchor, ..
+        } => format!("=ALI *{anchor}"),
         #[cfg(feature = "comments")]
-        Event::Comment(..) => return None,
+        Event::Comment { .. } => return None,
         _ => return None,
     };
 

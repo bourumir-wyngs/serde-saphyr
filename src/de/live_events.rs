@@ -994,7 +994,7 @@ impl<'a> LiveEvents<'a> {
             }
 
             if let Some(ref mut budget) = self.budget {
-                let budget_result = if matches!(raw, Event::Alias(_)) {
+                let budget_result = if matches!(raw, Event::Alias { .. }) {
                     Ok(())
                 } else {
                     budget.observe(&raw)
@@ -1005,7 +1005,13 @@ impl<'a> LiveEvents<'a> {
             }
 
             match raw {
-                Event::Scalar(val, style, anchor_id, tag) => {
+                Event::Scalar {
+                    value: val,
+                    style,
+                    anchor_id,
+                    tag,
+                    ..
+                } => {
                     #[cfg(feature = "include")]
                     let mut anchor_id = anchor_id;
 
@@ -1074,7 +1080,7 @@ impl<'a> LiveEvents<'a> {
                     return Ok(Some(ev));
                 }
 
-                Event::SequenceStart(_style, anchor_id, tag) => {
+                Event::SequenceStart { anchor_id, tag, .. } => {
                     #[cfg(feature = "include")]
                     let mut anchor_id = anchor_id;
                     let tag_s = SfTag::from_optional_cow(&tag);
@@ -1136,7 +1142,7 @@ impl<'a> LiveEvents<'a> {
                     self.produced_any_in_doc = true;
                     return Ok(Some(ev));
                 }
-                Event::SequenceEnd => {
+                Event::SequenceEnd { .. } => {
                     self.finish_tagged_container(false);
                     let ev = Ev::SeqEnd { location };
                     self.record(&ev, false, false)?;
@@ -1149,7 +1155,7 @@ impl<'a> LiveEvents<'a> {
                     return Ok(Some(ev));
                 }
 
-                Event::MappingStart(_style, anchor_id, tag) => {
+                Event::MappingStart { anchor_id, tag, .. } => {
                     let tag_s = SfTag::from_optional_cow(&tag);
                     self.validate_container_tag(
                         tag_s,
@@ -1205,7 +1211,7 @@ impl<'a> LiveEvents<'a> {
                     self.produced_any_in_doc = true;
                     return Ok(Some(ev));
                 }
-                Event::MappingEnd => {
+                Event::MappingEnd { .. } => {
                     self.finish_tagged_container(true);
                     let ev = Ev::MapEnd { location };
                     self.record(&ev, false, false)?;
@@ -1218,7 +1224,7 @@ impl<'a> LiveEvents<'a> {
                     return Ok(Some(ev));
                 }
 
-                Event::Alias(anchor_id) => {
+                Event::Alias { anchor_id, .. } => {
                     #[cfg(feature = "include")]
                     {
                         self.pending_include_anchor = 0;
@@ -1291,27 +1297,31 @@ impl<'a> LiveEvents<'a> {
                     return self.next_impl();
                 }
 
-                Event::DocumentStart(..) => {
+                Event::DocumentStart { .. } => {
                     // Skip doc start and reset per-document state.
                     self.reset_document_state();
                     self.last_location = location;
                     continue;
                 }
-                Event::DocumentEnd => {
+                Event::DocumentEnd { .. } => {
                     // On document end, skip the parser marker.
                     self.reset_document_state();
                     self.last_location = location;
                     continue;
                 }
 
-                Event::StreamStart | Event::StreamEnd => {
+                Event::StreamStart { .. } | Event::StreamEnd { .. } => {
                     // Skip stream markers.
                     self.last_location = location;
                     continue;
                 }
 
                 #[cfg(feature = "comments")]
-                Event::Comment(text, placement) => {
+                Event::Comment {
+                    value: text,
+                    placement,
+                    ..
+                } => {
                     self.remember_comment(text, placement, location);
                     self.last_location = location;
                     continue;
@@ -1333,7 +1343,7 @@ impl<'a> LiveEvents<'a> {
                 tag: SfTag::Null,
                 raw_tag: None,
                 original_tag: None,
-                style: ScalarStyle::Plain,
+                style: ScalarStyle::plain(),
                 anchor: 0,
                 location: self.last_location,
             };
@@ -1402,16 +1412,16 @@ impl<'a> LiveEvents<'a> {
                 // ordinary `<<` scalar. Preserve that semantic tag while replaying aliases.
                 let tag = (*tag == SfTag::Merge)
                     .then(|| Cow::Owned(Tag::new("tag:yaml.org,2002:", "merge")));
-                Event::Scalar(Cow::Borrowed(value), *style, 0, tag)
+                Event::new_scalar(Cow::Borrowed(value), *style, 0, tag)
             }
-            Ev::SeqStart { .. } => Event::SequenceStart(StructureStyle::Block, 0, None),
-            Ev::SeqEnd { .. } => Event::SequenceEnd,
-            Ev::MapStart { .. } => Event::MappingStart(StructureStyle::Block, 0, None),
-            Ev::MapEnd { .. } => Event::MappingEnd,
+            Ev::SeqStart { .. } => Event::sequence_start(StructureStyle::Block, 0, None),
+            Ev::SeqEnd { .. } => Event::sequence_end(),
+            Ev::MapStart { .. } => Event::mapping_start(StructureStyle::Block, 0, None),
+            Ev::MapEnd { .. } => Event::mapping_end(),
             // A recursive reference replays the same scalar placeholder as before; the
             // alias reference itself was already charged when reading the parser event.
             Ev::RecursiveAlias { .. } => {
-                Event::Scalar(Cow::Borrowed(""), ScalarStyle::Plain, 0, None)
+                Event::new_scalar(Cow::Borrowed(""), ScalarStyle::plain(), 0, None)
             }
             Ev::Taken { location } => {
                 return Err(Error::unexpected("consumed event").with_location(*location));
@@ -1779,18 +1789,18 @@ impl LiveEvents<'_> {
             }
 
             match raw {
-                Event::DocumentStart(..) => {
+                Event::DocumentStart { .. } => {
                     // Found the start of the next document
                     self.reset_document_state();
                     self.produced_any_in_doc = false;
                     return true;
                 }
-                Event::DocumentEnd => {
+                Event::DocumentEnd { .. } => {
                     // End of current document; reset state and continue looking for next
                     self.reset_document_state();
                     self.produced_any_in_doc = false;
                 }
-                Event::StreamEnd => {
+                Event::StreamEnd { .. } => {
                     // End of stream
                     return false;
                 }

@@ -329,13 +329,13 @@ mod tests {
                 Ok((ev, _)) => {
                     // Keep only a small subset we care about
                     match &ev {
-                        Event::SequenceStart(_, _, _)
-                        | Event::SequenceEnd
-                        | Event::Scalar(..)
-                        | Event::StreamStart
-                        | Event::StreamEnd
-                        | Event::DocumentStart(..)
-                        | Event::DocumentEnd => {
+                        Event::SequenceStart { .. }
+                        | Event::SequenceEnd { .. }
+                        | Event::Scalar { .. }
+                        | Event::StreamStart { .. }
+                        | Event::StreamEnd { .. }
+                        | Event::DocumentStart { .. }
+                        | Event::DocumentEnd { .. } => {
                             events.push(ev.clone());
                         }
                         _ => {}
@@ -356,12 +356,14 @@ mod tests {
         assert!(
             events
                 .iter()
-                .any(|e| matches!(e, Event::SequenceStart(_, _, _))),
+                .any(|e| matches!(e, Event::SequenceStart { .. })),
             "no SequenceStart in events: {:?}",
             events
         );
         assert!(
-            events.iter().any(|e| matches!(e, Event::SequenceEnd)),
+            events
+                .iter()
+                .any(|e| matches!(e, Event::SequenceEnd { .. })),
             "no SequenceEnd in events: {:?}",
             events
         );
@@ -369,7 +371,7 @@ mod tests {
         events
             .iter()
             .filter_map(|e| match e {
-                Event::Scalar(v, _, _, _) => Some(v.to_string()),
+                Event::Scalar { value: v, .. } => Some(v.to_string()),
                 _ => None,
             })
             .collect()
@@ -505,7 +507,7 @@ mod tests {
         assert!(
             events
                 .iter()
-                .any(|event| matches!(event, Event::Scalar(..)))
+                .any(|event| matches!(event, Event::Scalar { .. }))
         );
 
         let limited = buffered_input_from_reader_with_limit(Cursor::new(b"- value"), Some(0)).0;

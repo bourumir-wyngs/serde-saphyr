@@ -15,7 +15,7 @@ fn test_parser_direct_borrowing() {
     // Scalar
     let (event, _span) = parser.next().unwrap().unwrap();
     match event {
-        Event::Scalar(cow, _, _, _) => {
+        Event::Scalar { value: cow, .. } => {
             match cow {
                 Cow::Borrowed(_) => (),
                 Cow::Owned(s) => panic!("Expected Borrowed, got Owned: '{}'", s),
@@ -42,7 +42,7 @@ fn test_parser_direct_borrowing_quoted() {
     // Scalar
     let (event, _span) = parser.next().unwrap().unwrap();
     match event {
-        Event::Scalar(cow, _, _, _) => {
+        Event::Scalar { value: cow, .. } => {
             match cow {
                 Cow::Borrowed(_) => (),
                 Cow::Owned(s) => panic!("Expected Borrowed, got Owned: '{}'", s),

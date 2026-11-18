@@ -287,7 +287,7 @@ impl<'de> ScalarView<'de> {
         // span. Alias replay retains the definition span, including for readers.
         if null_as_string
             && !self.interpolated
-            && self.style == ScalarStyle::Plain
+            && self.style.is_plain()
             && self.raw == "~"
             && self.location.span().is_empty()
         {
@@ -521,7 +521,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
 
         match properties.syntax() {
             syntax if syntax.is_docker_compose() => tag.can_parse_into_string(),
-            _ => style == ScalarStyle::Plain,
+            _ => style.is_plain(),
         }
     }
 
@@ -981,7 +981,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 }
                 _ => {}
             }
-            let is_plain = matches!(style, ScalarStyle::Plain);
+            let is_plain = style.is_plain();
             // String tags (!!str and !) preserve null-like text (null, ~, empty).
             if scalar_is_null(&tag, &value, &style) {
                 let _ = self.ev.next()?; // consume

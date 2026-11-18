@@ -121,7 +121,7 @@ fn integer_key_fingerprint(
     style: ScalarStyle,
     legacy_octal_numbers: bool,
 ) -> Option<KeyFingerprint<'static>> {
-    if tag != SfTag::Int && !(tag == SfTag::None && style == ScalarStyle::Plain) {
+    if tag != SfTag::Int && !(tag == SfTag::None && style.is_plain()) {
         return None;
     }
 
@@ -556,7 +556,7 @@ pub(super) fn externally_tagged_payload_as_map_events<'a>(
             tag: SfTag::String,
             raw_tag: None,
             original_tag: None,
-            style: ScalarStyle::Plain,
+            style: ScalarStyle::plain(),
             anchor: 0,
             location: tag_location,
         },
@@ -614,8 +614,7 @@ pub(super) fn is_merge_key_event(event: &Ev<'_>) -> bool {
         value, tag, style, ..
     } = event
     {
-        value.as_ref() == "<<"
-            && (*tag == SfTag::Merge || *tag == SfTag::None && matches!(style, ScalarStyle::Plain))
+        value.as_ref() == "<<" && (*tag == SfTag::Merge || *tag == SfTag::None && style.is_plain())
     } else {
         false
     }

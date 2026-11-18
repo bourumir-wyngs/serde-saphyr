@@ -341,7 +341,7 @@ mod tests {
 
         // Scalar "foo"
         let (event, parser_span) = parser.next().unwrap().unwrap();
-        assert!(matches!(event, Event::Scalar(..)));
+        assert!(matches!(event, Event::Scalar { .. }));
 
         let loc = location_from_span(&parser_span);
 
@@ -368,7 +368,7 @@ mod tests {
         parser.next().unwrap().unwrap();
 
         let (event, parser_span) = parser.next().unwrap().unwrap();
-        assert!(matches!(event, Event::Scalar(..)));
+        assert!(matches!(event, Event::Scalar { .. }));
 
         let loc = location_from_span(&parser_span);
 

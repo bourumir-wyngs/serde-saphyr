@@ -214,7 +214,7 @@ fn cfg_and_replay_events_follow_options_and_reference_overrides() {
             "value",
             SfTag::String,
             None,
-            ScalarStyle::Plain,
+            ScalarStyle::plain(),
             value_loc,
         )],
         alias_loc,
@@ -345,7 +345,7 @@ fn simple_tagged_enum_helpers_accept_only_simple_variant_names() {
         "payload",
         SfTag::Other,
         Some("!ScalarVariant"),
-        ScalarStyle::Plain,
+        ScalarStyle::plain(),
         scalar_loc,
     );
     assert_eq!(
@@ -393,10 +393,10 @@ fn key_fingerprint_helpers_normalize_string_like_tags() {
         CanonicalKeyTag::Custom(Cow::Borrowed("!Variant"))
     );
 
-    let stringy = scalar_key_node("hello", SfTag::Other, ScalarStyle::Plain, loc(8, 1));
+    let stringy = scalar_key_node("hello", SfTag::Other, ScalarStyle::plain(), loc(8, 1));
     assert_eq!(stringy.stringy_scalar_value(), Some("hello"));
 
-    let binary = scalar_key_node("SGVsbG8=", SfTag::Binary, ScalarStyle::Plain, loc(8, 2));
+    let binary = scalar_key_node("SGVsbG8=", SfTag::Binary, ScalarStyle::plain(), loc(8, 2));
     assert_eq!(binary.stringy_scalar_value(), None);
     let mut replay = replay_events(vec![
         seq_start(SfTag::None, None, loc(8, 3)),
@@ -410,7 +410,7 @@ fn key_fingerprint_helpers_normalize_string_like_tags() {
 
 #[test]
 fn scalar_key_fingerprint_borrows_event_value() {
-    let key = scalar_key_node("borrowed", SfTag::None, ScalarStyle::Plain, loc(9, 1));
+    let key = scalar_key_node("borrowed", SfTag::None, ScalarStyle::plain(), loc(9, 1));
 
     assert!(matches!(
         key.fingerprint().into_owned(),
@@ -427,40 +427,40 @@ fn captured_fingerprints_include_canonical_root_tag_identity() {
         "1",
         SfTag::Other,
         Some("!First"),
-        ScalarStyle::Plain,
+        ScalarStyle::plain(),
         loc(9, 2),
     )]);
     let scalar_second = captured_fingerprint(vec![scalar(
         "1",
         SfTag::Other,
         Some("!Second"),
-        ScalarStyle::Plain,
+        ScalarStyle::plain(),
         loc(9, 3),
     )]);
     assert_ne!(scalar_first, scalar_second);
 
     let sequence_first = captured_fingerprint(vec![
         seq_start(SfTag::Other, Some("!First"), loc(9, 4)),
-        scalar("1", SfTag::None, None, ScalarStyle::Plain, loc(9, 5)),
+        scalar("1", SfTag::None, None, ScalarStyle::plain(), loc(9, 5)),
         seq_end(loc(9, 6)),
     ]);
     let sequence_second = captured_fingerprint(vec![
         seq_start(SfTag::Other, Some("!Second"), loc(9, 7)),
-        scalar("1", SfTag::None, None, ScalarStyle::Plain, loc(9, 8)),
+        scalar("1", SfTag::None, None, ScalarStyle::plain(), loc(9, 8)),
         seq_end(loc(9, 9)),
     ]);
     assert_ne!(sequence_first, sequence_second);
 
     let mapping_first = captured_fingerprint(vec![
         tagged_map_start(SfTag::Other, Some("!First"), loc(9, 10)),
-        scalar("x", SfTag::None, None, ScalarStyle::Plain, loc(9, 11)),
-        scalar("1", SfTag::None, None, ScalarStyle::Plain, loc(9, 12)),
+        scalar("x", SfTag::None, None, ScalarStyle::plain(), loc(9, 11)),
+        scalar("1", SfTag::None, None, ScalarStyle::plain(), loc(9, 12)),
         map_end(loc(9, 13)),
     ]);
     let mapping_second = captured_fingerprint(vec![
         tagged_map_start(SfTag::Other, Some("!Second"), loc(9, 14)),
-        scalar("x", SfTag::None, None, ScalarStyle::Plain, loc(9, 15)),
-        scalar("1", SfTag::None, None, ScalarStyle::Plain, loc(9, 16)),
+        scalar("x", SfTag::None, None, ScalarStyle::plain(), loc(9, 15)),
+        scalar("1", SfTag::None, None, ScalarStyle::plain(), loc(9, 16)),
         map_end(loc(9, 17)),
     ]);
     assert_ne!(mapping_first, mapping_second);
@@ -508,10 +508,10 @@ fn capture_node_captures_nested_fingerprints_and_rejects_invalid_streams() {
     let start = loc(15, 1);
     let mut replay = replay_events(vec![
         seq_start(SfTag::None, None, start),
-        scalar("a", SfTag::None, None, ScalarStyle::Plain, loc(15, 2)),
+        scalar("a", SfTag::None, None, ScalarStyle::plain(), loc(15, 2)),
         map_start(loc(15, 3)),
-        scalar("b", SfTag::None, None, ScalarStyle::Plain, loc(15, 4)),
-        scalar("c", SfTag::None, None, ScalarStyle::Plain, loc(15, 5)),
+        scalar("b", SfTag::None, None, ScalarStyle::plain(), loc(15, 4)),
+        scalar("c", SfTag::None, None, ScalarStyle::plain(), loc(15, 5)),
         map_end(loc(15, 6)),
         seq_end(loc(15, 7)),
     ]);
@@ -576,7 +576,7 @@ fn tagged_payload_helpers_strip_root_tags_and_build_external_map_events() {
     let seq_loc = loc(19, 1);
     let mut seq_payload = vec![
         seq_start(SfTag::Other, Some("!SeqVariant"), seq_loc),
-        scalar("item", SfTag::None, None, ScalarStyle::Plain, loc(19, 2)),
+        scalar("item", SfTag::None, None, ScalarStyle::plain(), loc(19, 2)),
         seq_end(loc(19, 3)),
     ];
     strip_root_tag_for_externally_tagged_payload(&mut seq_payload);
@@ -591,8 +591,8 @@ fn tagged_payload_helpers_strip_root_tags_and_build_external_map_events() {
     let map_loc = loc(19, 4);
     let mut map_payload = vec![
         tagged_map_start(SfTag::Other, Some("!MapVariant"), map_loc),
-        scalar("key", SfTag::None, None, ScalarStyle::Plain, loc(19, 5)),
-        scalar("value", SfTag::None, None, ScalarStyle::Plain, loc(19, 6)),
+        scalar("key", SfTag::None, None, ScalarStyle::plain(), loc(19, 5)),
+        scalar("value", SfTag::None, None, ScalarStyle::plain(), loc(19, 6)),
         map_end(loc(19, 7)),
     ];
     strip_root_tag_for_externally_tagged_payload(&mut map_payload);
@@ -619,7 +619,7 @@ fn tagged_payload_helpers_strip_root_tags_and_build_external_map_events() {
         "payload",
         SfTag::Other,
         Some("!Variant"),
-        ScalarStyle::Plain,
+        ScalarStyle::plain(),
         scalar_loc,
     )]);
     let captured = capture_simple_tagged_node_as_map_events(&mut replay)
@@ -656,7 +656,7 @@ fn tagged_payload_helpers_strip_root_tags_and_build_external_map_events() {
         "payload",
         SfTag::String,
         None,
-        ScalarStyle::Plain,
+        ScalarStyle::plain(),
         scalar_loc,
     )]);
     assert!(
@@ -668,8 +668,8 @@ fn tagged_payload_helpers_strip_root_tags_and_build_external_map_events() {
     let tagged_map_loc = loc(20, 2);
     let mut tagged_map = replay_events(vec![
         tagged_map_start(SfTag::Other, Some("!Mapping"), tagged_map_loc),
-        scalar("key", SfTag::None, None, ScalarStyle::Plain, loc(20, 3)),
-        scalar("value", SfTag::None, None, ScalarStyle::Plain, loc(20, 4)),
+        scalar("key", SfTag::None, None, ScalarStyle::plain(), loc(20, 3)),
+        scalar("value", SfTag::None, None, ScalarStyle::plain(), loc(20, 4)),
         map_end(loc(20, 5)),
     ]);
     let captured = capture_simple_tagged_node_as_map_events(&mut tagged_map)
@@ -694,37 +694,37 @@ fn is_merge_key_accepts_implicit_and_explicit_merge_tags() {
     assert!(is_merge_key(&scalar_key_node(
         "<<",
         SfTag::None,
-        ScalarStyle::Plain,
+        ScalarStyle::plain(),
         loc(21, 1)
     )));
     assert!(!is_merge_key(&scalar_key_node(
         "<<",
         SfTag::String,
-        ScalarStyle::Plain,
+        ScalarStyle::plain(),
         loc(21, 2)
     )));
     assert!(!is_merge_key(&scalar_key_node(
         "<<",
         SfTag::None,
-        ScalarStyle::SingleQuoted,
+        ScalarStyle::single_quoted(),
         loc(21, 3)
     )));
     assert!(is_merge_key(&scalar_key_node(
         "<<",
         SfTag::Merge,
-        ScalarStyle::Plain,
+        ScalarStyle::plain(),
         loc(21, 4)
     )));
     assert!(is_merge_key(&scalar_key_node(
         "<<",
         SfTag::Merge,
-        ScalarStyle::SingleQuoted,
+        ScalarStyle::single_quoted(),
         loc(21, 5)
     )));
     assert!(!is_merge_key(&scalar_key_node(
         "not-merge",
         SfTag::Merge,
-        ScalarStyle::Plain,
+        ScalarStyle::plain(),
         loc(21, 6)
     )));
     assert!(!is_merge_key(&KeyNode::Fingerprinted {
@@ -743,7 +743,7 @@ fn pending_entries_from_events_handles_scalars_maps_sequences_and_eof() {
             "null",
             SfTag::None,
             None,
-            ScalarStyle::Plain,
+            ScalarStyle::plain(),
             loc(22, 1),
         )],
         loc(22, 1),
@@ -757,7 +757,7 @@ fn pending_entries_from_events_handles_scalars_maps_sequences_and_eof() {
             "42",
             SfTag::None,
             None,
-            ScalarStyle::Plain,
+            ScalarStyle::plain(),
             loc(23, 1),
         )],
         loc(23, 1),
@@ -771,8 +771,8 @@ fn pending_entries_from_events_handles_scalars_maps_sequences_and_eof() {
     let map_entries = pending_from_events(
         vec![
             map_start(loc(24, 1)),
-            scalar("a", SfTag::None, None, ScalarStyle::Plain, loc(24, 2)),
-            scalar("1", SfTag::None, None, ScalarStyle::Plain, loc(24, 3)),
+            scalar("a", SfTag::None, None, ScalarStyle::plain(), loc(24, 2)),
+            scalar("1", SfTag::None, None, ScalarStyle::plain(), loc(24, 3)),
             map_end(loc(24, 4)),
         ],
         loc(24, 1),
@@ -789,12 +789,18 @@ fn pending_entries_from_events_handles_scalars_maps_sequences_and_eof() {
         vec![
             seq_start(SfTag::None, None, loc(25, 1)),
             map_start(loc(25, 2)),
-            scalar("first", SfTag::None, None, ScalarStyle::Plain, loc(25, 3)),
-            scalar("1", SfTag::None, None, ScalarStyle::Plain, loc(25, 4)),
+            scalar("first", SfTag::None, None, ScalarStyle::plain(), loc(25, 3)),
+            scalar("1", SfTag::None, None, ScalarStyle::plain(), loc(25, 4)),
             map_end(loc(25, 5)),
             map_start(loc(26, 2)),
-            scalar("second", SfTag::None, None, ScalarStyle::Plain, loc(26, 3)),
-            scalar("2", SfTag::None, None, ScalarStyle::Plain, loc(26, 4)),
+            scalar(
+                "second",
+                SfTag::None,
+                None,
+                ScalarStyle::plain(),
+                loc(26, 3),
+            ),
+            scalar("2", SfTag::None, None, ScalarStyle::plain(), loc(26, 4)),
             map_end(loc(26, 5)),
             seq_end(loc(27, 1)),
         ],
@@ -824,7 +830,7 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
         "~",
         SfTag::None,
         None,
-        ScalarStyle::Plain,
+        ScalarStyle::plain(),
         loc(29, 1),
     )]);
     assert!(
@@ -841,7 +847,7 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
         "42",
         SfTag::None,
         None,
-        ScalarStyle::Plain,
+        ScalarStyle::plain(),
         loc(30, 1),
     )]);
     let err = unwrap_err(pending_entries_from_live_events(
@@ -857,12 +863,12 @@ fn pending_entries_from_live_events_handles_null_scalars_sequences_and_eof() {
     let mut seq_replay = replay_events(vec![
         seq_start(SfTag::None, None, loc(31, 1)),
         map_start(loc(31, 2)),
-        scalar("a", SfTag::None, None, ScalarStyle::Plain, loc(31, 3)),
-        scalar("1", SfTag::None, None, ScalarStyle::Plain, loc(31, 4)),
+        scalar("a", SfTag::None, None, ScalarStyle::plain(), loc(31, 3)),
+        scalar("1", SfTag::None, None, ScalarStyle::plain(), loc(31, 4)),
         map_end(loc(31, 5)),
         map_start(loc(32, 2)),
-        scalar("b", SfTag::None, None, ScalarStyle::Plain, loc(32, 3)),
-        scalar("2", SfTag::None, None, ScalarStyle::Plain, loc(32, 4)),
+        scalar("b", SfTag::None, None, ScalarStyle::plain(), loc(32, 3)),
+        scalar("2", SfTag::None, None, ScalarStyle::plain(), loc(32, 4)),
         map_end(loc(32, 5)),
         seq_end(loc(33, 1)),
     ]);
@@ -897,7 +903,7 @@ fn collect_entries_from_map_expands_merges_and_preserves_reference_locations() {
         "oops",
         SfTag::None,
         None,
-        ScalarStyle::Plain,
+        ScalarStyle::plain(),
         loc(34, 1),
     )]);
     let err = unwrap_err(collect_entries_from_map(
@@ -914,13 +920,13 @@ fn collect_entries_from_map_expands_merges_and_preserves_reference_locations() {
     let merge_value_location = loc(35, 3);
     let mut replay = replay_events(vec![
         map_start(loc(35, 1)),
-        scalar("<<", SfTag::None, None, ScalarStyle::Plain, loc(35, 2)),
+        scalar("<<", SfTag::None, None, ScalarStyle::plain(), loc(35, 2)),
         map_start(merge_value_location),
-        scalar("base", SfTag::None, None, ScalarStyle::Plain, loc(35, 4)),
-        scalar("1", SfTag::None, None, ScalarStyle::Plain, loc(35, 5)),
+        scalar("base", SfTag::None, None, ScalarStyle::plain(), loc(35, 4)),
+        scalar("1", SfTag::None, None, ScalarStyle::plain(), loc(35, 5)),
         map_end(loc(35, 6)),
-        scalar("own", SfTag::None, None, ScalarStyle::Plain, loc(35, 7)),
-        scalar("2", SfTag::None, None, ScalarStyle::Plain, loc(35, 8)),
+        scalar("own", SfTag::None, None, ScalarStyle::plain(), loc(35, 7)),
+        scalar("2", SfTag::None, None, ScalarStyle::plain(), loc(35, 8)),
         map_end(loc(35, 10)),
     ]);
 
@@ -946,8 +952,8 @@ fn collect_entries_from_map_treats_merge_key_as_ordinary_under_policy() {
     let reference = loc(36, 9);
     let mut replay = replay_events(vec![
         map_start(loc(36, 1)),
-        scalar("<<", SfTag::None, None, ScalarStyle::Plain, loc(36, 2)),
-        scalar("1", SfTag::None, None, ScalarStyle::Plain, loc(36, 3)),
+        scalar("<<", SfTag::None, None, ScalarStyle::plain(), loc(36, 2)),
+        scalar("1", SfTag::None, None, ScalarStyle::plain(), loc(36, 3)),
         map_end(loc(36, 4)),
     ]);
 
@@ -969,8 +975,8 @@ fn collect_entries_from_map_treats_merge_key_as_ordinary_under_policy() {
 fn collect_entries_from_map_rejects_merge_key_under_error_policy() {
     let mut replay = replay_events(vec![
         map_start(loc(37, 1)),
-        scalar("<<", SfTag::None, None, ScalarStyle::Plain, loc(37, 2)),
-        scalar("1", SfTag::None, None, ScalarStyle::Plain, loc(37, 3)),
+        scalar("<<", SfTag::None, None, ScalarStyle::plain(), loc(37, 2)),
+        scalar("1", SfTag::None, None, ScalarStyle::plain(), loc(37, 3)),
         map_end(loc(37, 4)),
     ]);
 
@@ -997,8 +1003,8 @@ fn capture_node_reports_eof_at_root_and_inside_mapping() {
 
     let mut unterminated_map = replay_events(vec![
         map_start(loc(42, 1)),
-        scalar("key", SfTag::None, None, ScalarStyle::Plain, loc(42, 2)),
-        scalar("value", SfTag::None, None, ScalarStyle::Plain, loc(42, 3)),
+        scalar("key", SfTag::None, None, ScalarStyle::plain(), loc(42, 2)),
+        scalar("value", SfTag::None, None, ScalarStyle::plain(), loc(42, 3)),
     ]);
     let err = unwrap_err(capture_node(&mut unterminated_map));
     assert!(matches!(
@@ -1037,8 +1043,8 @@ fn merge_key_validator_reports_malformed_recorded_nodes() {
 
     let err = unwrap_err(validate_no_merge_keys_in_node_events(&[
         map_start(loc(45, 1)),
-        scalar("key", SfTag::None, None, ScalarStyle::Plain, loc(45, 2)),
-        scalar("value", SfTag::None, None, ScalarStyle::Plain, loc(45, 3)),
+        scalar("key", SfTag::None, None, ScalarStyle::plain(), loc(45, 2)),
+        scalar("value", SfTag::None, None, ScalarStyle::plain(), loc(45, 3)),
     ]));
     assert!(matches!(
         err,
@@ -1051,8 +1057,8 @@ fn merge_key_validator_reports_malformed_recorded_nodes() {
     assert_eq!(err.location(), Some(loc(46, 1)));
 
     let err = unwrap_err(validate_no_merge_keys_in_node_events(&[
-        scalar("one", SfTag::None, None, ScalarStyle::Plain, loc(47, 1)),
-        scalar("two", SfTag::None, None, ScalarStyle::Plain, loc(47, 2)),
+        scalar("one", SfTag::None, None, ScalarStyle::plain(), loc(47, 1)),
+        scalar("two", SfTag::None, None, ScalarStyle::plain(), loc(47, 2)),
     ]));
     assert!(matches!(
         err,
@@ -1064,14 +1070,14 @@ fn merge_key_validator_reports_malformed_recorded_nodes() {
 fn duplicate_filter_validates_discarded_values_when_merges_are_forbidden() {
     let mut replay = replay_events(vec![
         map_start(loc(48, 1)),
-        scalar("same", SfTag::None, None, ScalarStyle::Plain, loc(48, 2)),
-        scalar("kept", SfTag::None, None, ScalarStyle::Plain, loc(48, 3)),
-        scalar("same", SfTag::None, None, ScalarStyle::Plain, loc(48, 4)),
+        scalar("same", SfTag::None, None, ScalarStyle::plain(), loc(48, 2)),
+        scalar("kept", SfTag::None, None, ScalarStyle::plain(), loc(48, 3)),
+        scalar("same", SfTag::None, None, ScalarStyle::plain(), loc(48, 4)),
         map_start(loc(48, 5)),
-        scalar("<<", SfTag::None, None, ScalarStyle::Plain, loc(48, 6)),
+        scalar("<<", SfTag::None, None, ScalarStyle::plain(), loc(48, 6)),
         map_start(loc(48, 7)),
-        scalar("admin", SfTag::None, None, ScalarStyle::Plain, loc(48, 8)),
-        scalar("true", SfTag::None, None, ScalarStyle::Plain, loc(48, 9)),
+        scalar("admin", SfTag::None, None, ScalarStyle::plain(), loc(48, 8)),
+        scalar("true", SfTag::None, None, ScalarStyle::plain(), loc(48, 9)),
         map_end(loc(48, 10)),
         map_end(loc(48, 11)),
         map_end(loc(48, 12)),
