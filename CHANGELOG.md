@@ -1,6 +1,108 @@
 # Changelog
 
-## Unreleased
+## 3.0.0-rc.1 Unreleased
+
+### Breaking YAML changes
+
+This prerelease changes tag interpretation, optional tagged values, mapping-key
+identity, document filtering, and tagged unit output. These are behavioral
+incompatibilities even when existing Rust code compiles. The corrected semantics
+are the defaults; no legacy alias mode is provided. See
+[YAML changes in 3.0.0](README.md#yaml-changes-in-300) for all migration details.
+
+- Emit matching local tags on unit enum variants without a redundant `null`
+  payload, including through optional and tagged wrappers. Existing explicit
+  null payloads remain readable; actual variant fields retain their payload
+  representation. Share node-property emission to preserve anchors and spacing.
+- Distinguish local application tags from standard YAML types. Without a `%TAG`
+  remapping, `!str`, `!int`, `!bool`, `!float`, `!null`, `!seq`, `!map`, `!timestamp`,
+  and `!binary` no longer force their similarly named standard types. Use `!!str`,
+  `!!int`, and the other standard tags for type annotations. Strict unsupported-tag
+  rejection now treats those local names like other application tags.
+- Keep bare `!` as the separate non-specific tag: scalars resolve as strings and
+  collections keep their ordinary kinds. Remove the false bare `!!` alias and
+  redundant local-type shape and integer-key workarounds.
+- Resolve matching local YAML tags as enum variant selectors before interpreting
+  their payloads (#231). Names such as `!timestamp`, `!str`, `!null`, `!seq`, and
+  `!map` work with unit, scalar, sequence, and mapping variants, including through
+  `Tagged<T>` serialization. Resolved global tags retain their YAML type semantics.
+  Duplicate-key handling preserves resolved local tag identities throughout keys,
+  so local selectors no longer collide with global type annotations or untagged
+  values. This also distinguishes ordinary `!str foo` from `!!str foo`, and keeps
+  local `!int` payload spellings distinct; global `!!int` keys still compare numerically.
+  Optional targets preserve the tagged value before interpreting its payload:
+  `!timestamp` can select a present unit variant, and `!maybe null` can select a
+  present variant with an absent optional payload. Invalid payloads and unknown
+  selectors report the same errors as direct enum targets instead of returning `None`.
+- Multi-document APIs now retain former local aliases such as `!null` as
+  application tags. Untagged and standard-tagged null documents are skipped.
+  Optional targets treat application-tagged values as present, including
+  values with null-like enum payloads.
+- An application-tagged `None`, such as `Tagged(None::<String>, Some("!foo".into()))`,
+  still emits `!foo null`, but no longer reads back as absence. Its tag denotes a
+  present value and its payload must be valid for the inner type. Use untagged or
+  standard-tagged null for `None`; use an optional enum payload for a present value
+  whose payload is absent.
+- `Options::reject_tagged_field_names` now defaults to `true`, rejecting misplaced
+  tags on struct field names. Set it to `false` to retain the previous behavior.
+- Rename `Options::underscored_numbers_as_strings` to `Options::allow_numeric_underscores`
+  and invert its meaning; the new field defaults to `true`. Replace the old setting
+  `underscored_numbers_as_strings: true` with `allow_numeric_underscores: false` to
+  disallow underscores in all numeric parsing, including typed integer and float
+  keys and values, as well as explicit `!!int`/`!!float` tags. Plain underscored
+  scalars remain strings during inference;
+  `1_000` and `1000` now stay distinct during duplicate-key checks and merge
+  expansion, including inside composite keys
+  ([#278](https://github.com/bourumir-wyngs/serde-saphyr/issues/278)). Leave the option
+  `true` (the default) to accept numeric underscore separators.
+  Disallowed underscores in otherwise valid numbers report
+  `Error::NumericUnderscoresDisabled`, rendered as "Underscores are disabled in
+  configuration" for developers and "Underscores not allowed" for users. Invalid
+  syntax and target-range failures keep their original parser errors.
+- Apply numeric spelling policies through shared helpers for typed values,
+  explicit numeric tags, implicit inference, and composite-key comparison.
+  `leading_zero_numbers_as_strings: true` now rejects redundant leading-zero
+  integer spellings in integer and float targets, even with explicit numeric
+  tags or legacy octal enabled. Duplicate checks and merge expansion keep those
+  spellings distinct from integer keys. Float targets now use the shared integer
+  interpretation before float parsing, so legacy `010` means `8.0` and `0x10`
+  means `16.0`; integer syntax restrictions apply equally to these conversions.
+  Invalid legacy octal spellings and those outside the shared `i128`/`u128`
+  parsing range no longer fall back to decimal floats: numeric targets reject
+  them and implicit inference retains their text.
+  `no_schema` string checks honor configured legacy syntax and the full unsigned
+  128-bit range. Tag-specific signed NaN handling is preserved.
+
+### Fixed
+
+- Retain the scalar text in `QuotingRequired` diagnostics for overflowing floats,
+  legacy integer separators, and robotics expressions under the active options.
+- Preserve radix-prefixed, underscored, and legacy-octal integers outside the
+  `i64`/`u64` visitor range as strings during implicit inference, including untagged
+  enums and flattened fields. Plain decimal integers retain their float fallback.
+- Reject finite robotics results that overflow when converted to `f32`, while
+  preserving explicitly non-finite values and expression results.
+- Keep scalar parsing temporaries out of recursive collection dispatch so deeply
+  nested mappings report the configured depth-budget error without overflowing
+  the Windows test-thread stack.
+
+### Added
+
+- Added `Options::lowercase_radix_prefixes_only` (default: `false`) to require
+  lowercase integer radix prefixes (`0x`, `0o`, `0b`) in the shared integer parser
+  ([#266](https://github.com/bourumir-wyngs/serde-saphyr/issues/266),
+  [#280](https://github.com/bourumir-wyngs/serde-saphyr/pull/280)). When enabled,
+  uppercase-prefixed plain scalars remain strings during inference, while typed
+  integer and float keys/values and explicit `!!int`/`!!float` tags reject them.
+  Duplicate-key checks, merge expansion, and composite-key comparison use the
+  same restriction.
+  Uppercase hexadecimal digits remain accepted with a lowercase prefix (`0xFF`).
+  Otherwise valid integers report `Error::UppercaseRadixPrefixDisabled`; malformed
+  syntax and target-range failures retain their original errors. This replaces the
+  inference-only uppercase-prefix rule from 2.2.0; the default now accepts uppercase
+  prefixes consistently in both inference and typed parsing.
+
+## 2.2.0
 
 ### Added
 
@@ -12,7 +114,7 @@
   comparison, and `no_schema` quoting requirements keep their existing behavior.
 - Added `Options::bom_inside_document_as_content` (default `false`) to preserve a
   BOM at the start of a token inside a document as plain scalar content, including
-  in included YAML. A BOM in a document prefix is still skipped. 
+  in included YAML. A BOM in a document prefix is still skipped.
 
 ### Fixed
 - Preserve uppercase radix prefixes (`0X`, `0O`, `0B`, including signed forms) as
@@ -34,6 +136,7 @@
 - Updated to granit-parser 2.2.0. Under-indented quoted scalar continuations in block
   context and tabs before quoted continuations are now accepted by default;
   `strict_indentation: true` continues to reject them.
+
 ## 2.1.1
 
 ### Fixed
@@ -42,8 +145,8 @@
 ### Performance improvements
 - Significantly reduced allocations when deserializing (#262)
 
-## 2.1.0 
-–
+## 2.1.0
+
 ### Added
 
 - Added `PropertySyntax::DockerComposeWithNulls`: Compose interpolation where a value that is
@@ -112,14 +215,20 @@
   Blank values and the plain spellings `~`, `null`, `Null`, and `NULL` are handled consistently.
   Write `[]` for an empty sequence or `{}` for an empty mapping. `Option<T>` null handling
   and defaults for absent fields are unchanged; see the README migration notes.
-- Reject "wrong case" YAML 1.2 Core spellings like NUlL, .NAn or FAlse (PR #254, #237).  
+- Tags selecting unit enum variants now reject non-null payloads instead of silently
+  discarding them (#236). Use a bare variant name, a tag with empty content, or a
+  tag followed by `~` or `null`; quoted strings and collections are rejected.
+- Recognize only the standard plain null spellings: empty, `~`, `null`, `Null`, and `NULL`.
+  Other capitalization such as `NulL` remains a string instead of being rejected, converted
+  to an empty value, or skipped as a document ([#234](https://github.com/bourumir-wyngs/serde-saphyr/issues/234)).
+- `strict_booleans: true` now recognizes only the six YAML 1.2 Core boolean spellings.
+  Other capitalization such as `tRuE` remains a string during inference, is accepted
+  as unquoted text with `no_schema`, and is rejected for boolean targets.
+- Recognize only the YAML 1.2 Core spellings of `.inf` and `.nan` during inference (#254).
 
 ## 2.0.0
 
 ### YAML changes
-- Tags selecting unit enum variants now reject non-null payloads instead of silently
-  discarding them (#236). Use a bare variant name, a tag with empty content, or a
-  tag followed by `~` or `null`; quoted strings and collections are rejected.
 - Composite mapping keys are not compared regardless of entry order (thanks @yuxi-liu-wired)  .
 - Commented<T> now writes its output replacing characters not allowed in comments (non printable) by spaces.
 

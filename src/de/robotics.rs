@@ -62,6 +62,15 @@ impl FromF64 for f32 {
 // Evaluator result: (value, used_unitized, saw_plain_outside)
 type Eval = (f64, bool, bool);
 
+/// Apply a unit tag to an already parsed bare number, returning radians for degrees.
+pub(crate) fn convert_bare_angle(value: f64, tag: SfTag) -> f64 {
+    if tag == SfTag::Degrees {
+        value * DEG2RAD
+    } else {
+        value
+    }
+}
+
 /// Parse/evaluate expression with angle conversion semantics.
 pub(crate) fn parse_yaml12_float_angle_converting<T>(
     s: &str,
@@ -88,8 +97,8 @@ where
                  wrap bare terms with deg(...) or rad(...), or remove the tag",
             ));
         }
-    } else if matches!(tag, SfTag::Degrees) {
-        value *= DEG2RAD;
+    } else {
+        value = convert_bare_angle(value, tag);
     }
 
     Ok(T::from_f64(value))

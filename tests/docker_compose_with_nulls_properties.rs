@@ -409,11 +409,21 @@ fn null_document_probe_enforces_interpolation_work_budget(#[case] first_document
 fn tagged_documents_preserve_null_payloads(#[case] yaml: &str, #[case] expected: NullPayload) {
     let single: NullPayload = from_str_with_options(yaml, with_nulls()).unwrap();
     assert_eq!(single, expected);
+    let optional: Option<NullPayload> = from_str_with_options(yaml, with_nulls()).unwrap();
+    assert_eq!(optional.as_ref(), Some(&expected));
     let stream = format!("{yaml}\n---\n!Number 42\n");
     for values in document_values::<NullPayload>(&stream, with_nulls()) {
         assert_eq!(values.len(), 2);
         assert_eq!(values[0], expected);
         assert_eq!(values[1], NullPayload::Number(42));
+    }
+}
+
+#[test]
+fn only_untagged_or_standard_null_documents_are_skipped_after_interpolation() {
+    let yaml = "!!value $MISSING\n---\n$MISSING\n---\n!!null null\n";
+    for values in document_values::<Option<()>>(yaml, with_nulls()) {
+        assert_eq!(values, [Some(())]);
     }
 }
 

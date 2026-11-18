@@ -8,8 +8,18 @@ use std::io;
 use std::path::Path;
 use std::rc::Rc;
 
+#[cfg(feature = "serde_derived_types")]
+const fn default_allow_numeric_underscores() -> bool {
+    true
+}
+
 #[cfg(all(feature = "serde_derived_types", feature = "comments"))]
 const fn default_emit_comments() -> bool {
+    true
+}
+
+#[cfg(feature = "serde_derived_types")]
+const fn default_reject_tagged_field_names() -> bool {
     true
 }
 
@@ -348,9 +358,12 @@ pub struct Options {
     pub alias_limits: AliasLimits,
     /// Enable legacy octal parsing where values starting with `0` are treated as base-8.
     /// They are deprecated in YAML 1.2. Default: false.
+    /// Applies to integer spellings converted to floats as well as integer targets
+    /// and mapping-key comparison. Invalid or overflowing octal spellings do not
+    /// fall back to decimal float parsing.
     pub legacy_octal_numbers: bool,
     /// Preserve plain decimal integer spellings with redundant leading zeros as
-    /// strings during implicit type inference (`deserialize_any`).
+    /// strings and reject them in numeric parsing.
     ///
     /// Examples include `0755`, `-007`, and `+00`. Floating-point spellings such as
     /// `0.5`, `00.5`, and `01e2`, and explicit radix prefixes, are unaffected.
@@ -358,22 +371,55 @@ pub struct Options {
     /// Default: false.
     ///
     /// Applies to untyped values and Serde's buffering for untagged enums and
-    /// flattened fields. Takes precedence over [`Self::legacy_octal_numbers`]
-    /// during inference. Direct typed deserialization, explicit `!!int`/`!!float`
-    /// tags, and mapping-key equality retain their existing behavior.
+    /// flattened fields. Integer and float targets reject these spellings,
+    /// including explicit `!!int`/`!!float` tags and quoted scalars. Takes
+    /// precedence over [`Self::legacy_octal_numbers`] in every numeric parser.
+    /// Mapping-key comparison, including composite keys and merge expansion,
+    /// keeps these strings distinct from integers. In [`Self::no_schema`] mode,
+    /// these spellings can be read as strings without quoting.
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub leading_zero_numbers_as_strings: bool,
-    /// Preserve plain scalars containing underscores as strings during implicit
-    /// type inference (`deserialize_any`), including numeric spellings such as
-    /// `1_000`, `0xFF_FF`, and `0b10_01`.
+    /// Allow supported underscore digit separators in numbers. Default: true.
+    /// Integer spellings use the same syntax when converted to floats.
+    /// Underscores in fractional or exponential spellings still require
+    /// robotics angle conversions.
     ///
+    /// When false, plain scalars containing underscores remain strings during
+    /// implicit type inference (`deserialize_any`), including untagged enums and
+    /// flattened fields. Examples include `1_000`, `0xFF_FF`, `0b10_01`, and `1_000.5`.
     /// This supports compatibility with `serde_yaml` when reading untyped values.
-    /// It also applies to untagged enums and flattened fields, and takes precedence
-    /// over [`Self::legacy_octal_numbers`] during inference. Direct typed
-    /// deserialization, explicit `!!int`/`!!float` tags, and mapping-key equality
-    /// retain their existing behavior. Default: false.
+    /// Integer and float targets reject these scalars, for both mapping keys and
+    /// values. Explicit `!!int` and `!!float` tags and [`Self::legacy_octal_numbers`]
+    /// do not override this restriction.
+    /// Otherwise valid numeric scalars return
+    /// [`Error::NumericUnderscoresDisabled`](crate::Error::NumericUnderscoresDisabled).
+    /// Invalid syntax and target-range failures retain the parser's original error.
+    ///
+    /// Mapping-key comparison follows the same rule: plain `1_000` and `1000`
+    /// are distinct keys when this option is false, including inside composite
+    /// keys and during merge expansion.
+    #[cfg_attr(
+        feature = "serde_derived_types",
+        serde(default = "default_allow_numeric_underscores")
+    )]
+    pub allow_numeric_underscores: bool,
+    /// Accept only lowercase integer radix prefixes (`0x`, `0o`, `0b`).
+    /// Default: false (also accept `0X`, `0O`, and `0B`).
+    /// Uppercase hexadecimal digits remain accepted, for example `0xFF`.
+    ///
+    /// When true, uppercase-prefixed plain scalars remain strings during implicit
+    /// inference, including untagged enums and flattened fields. Integer and float
+    /// targets reject these spellings for both mapping keys and values; explicit
+    /// `!!int`/`!!float` tags and [`Self::legacy_octal_numbers`] do not override it.
+    /// Otherwise valid integers return
+    /// [`Error::UppercaseRadixPrefixDisabled`](crate::Error::UppercaseRadixPrefixDisabled).
+    /// Invalid syntax and target-range failures retain the parser's original error.
+    ///
+    /// Mapping-key comparison uses the same integer parser: plain `0XFF` and `255`
+    /// are distinct keys when this option is true, including inside composite
+    /// keys and during merge expansion. With the default false they compare equal.
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
-    pub underscored_numbers_as_strings: bool,
+    pub lowercase_radix_prefixes_only: bool,
     /// If true, accept only YAML 1.2 Core boolean spellings:
     /// `true`, `True`, `TRUE`, `false`, `False`, and `FALSE`.
     /// Other spellings, including YAML 1.1 forms such as `yes`/`no`/`on`/`off`,
@@ -419,8 +465,10 @@ pub struct Options {
     /// This includes application-specific local and global tags. YAML 1.1 `!!merge`
     /// and `!!value` tags are accepted only on their exact scalar mapping keys, `<<`
     /// and `=` respectively. Known scalar, sequence, and mapping tags are accepted
-    /// only on matching node kinds; this node-kind requirement is enforced regardless
-    /// of this option. Robotics-only `!degrees`, `!radians`, and `!time` tags are
+    /// only on matching node kinds. These shape checks are independent of this option.
+    /// Local robotics tags may instead select typed enum variants; their deferred
+    /// collection-shape checks do not run on discarded values, which have no target type.
+    /// Robotics-only `!degrees`, `!radians`, and `!time` tags are
     /// supported only when the `robotics` crate feature and
     /// [`Self::angle_conversions`] are both enabled. The `!include` tag is supported
     /// only when the `include` crate feature is enabled and an include resolver is
@@ -436,8 +484,9 @@ pub struct Options {
     /// A derived struct normally matches each mapping key by its text alone. A
     /// custom tag on that key can therefore be discarded without the struct ever
     /// seeing it. Such a tag has no effect on field selection and may be a value
-    /// annotation accidentally placed on the field name. Enable this option to
-    /// report [`crate::Error::TaggedStructFieldName`] instead of silently accepting it.
+    /// annotation accidentally placed on the field name. By default, this reports
+    /// [`crate::Error::TaggedStructFieldName`] instead of silently accepting it.
+    /// Set this option to `false` to accept such tags without checking them.
     ///
     /// For example, an application can inspect a value's `!secret` tag by reading
     /// that value as [`crate::Tagged<T>`]:
@@ -482,8 +531,11 @@ pub struct Options {
     /// paths, including structs nested in their buffers, are not covered by this
     /// option; it is not a document-wide guarantee against tagged field names.
     ///
-    /// Default: false (retain existing field-name handling).
-    #[cfg_attr(feature = "serde_derived_types", serde(default))]
+    /// Default: true.
+    #[cfg_attr(
+        feature = "serde_derived_types",
+        serde(default = "default_reject_tagged_field_names")
+    )]
     pub reject_tagged_field_names: bool,
 
     /// Handling of NaN, positive/negative infinity, and decimal literals that overflow
@@ -777,14 +829,15 @@ impl Default for Options {
             alias_limits: AliasLimits::default(),
             legacy_octal_numbers: false,
             leading_zero_numbers_as_strings: false,
-            underscored_numbers_as_strings: false,
+            allow_numeric_underscores: true,
+            lowercase_radix_prefixes_only: false,
             strict_booleans: false,
             null_as_string: false,
             angle_conversions: false,
             ignore_binary_tag_for_string: false,
             no_schema: false,
             reject_unsupported_tags: false,
-            reject_tagged_field_names: false,
+            reject_tagged_field_names: true,
             reject_non_finite_typeless_float: true,
             with_snippet: true,
             crop_radius: 64,
@@ -832,9 +885,10 @@ impl std::fmt::Debug for Options {
                 "leading_zero_numbers_as_strings",
                 &self.leading_zero_numbers_as_strings,
             )
+            .field("allow_numeric_underscores", &self.allow_numeric_underscores)
             .field(
-                "underscored_numbers_as_strings",
-                &self.underscored_numbers_as_strings,
+                "lowercase_radix_prefixes_only",
+                &self.lowercase_radix_prefixes_only,
             )
             .field("strict_booleans", &self.strict_booleans)
             .field("null_as_string", &self.null_as_string)
@@ -922,14 +976,15 @@ mod tests {
         assert_eq!(opts.alias_limits.max_total_replayed_events, 1_000_000);
         assert!(!opts.legacy_octal_numbers);
         assert!(!opts.leading_zero_numbers_as_strings);
-        assert!(!opts.underscored_numbers_as_strings);
+        assert!(opts.allow_numeric_underscores);
+        assert!(!opts.lowercase_radix_prefixes_only);
         assert!(!opts.strict_booleans);
         assert!(!opts.null_as_string);
         assert!(!opts.ignore_binary_tag_for_string);
         assert!(!opts.angle_conversions);
         assert!(!opts.no_schema);
         assert!(!opts.reject_unsupported_tags);
-        assert!(!opts.reject_tagged_field_names);
+        assert!(opts.reject_tagged_field_names);
         assert_eq!(
             opts.non_finite_float_policy,
             NonFiniteFloatPolicy::default()
@@ -977,16 +1032,18 @@ mod tests {
     #[cfg(feature = "serde_derived_types")]
     #[test]
     fn tagged_field_name_policy_serde_roundtrip_and_missing_default() {
-        let options = crate::options! { reject_tagged_field_names: true };
-        let mut json = serde_json::to_value(&options).unwrap();
-        let restored: Options = serde_json::from_value(json.clone()).unwrap();
-        assert!(restored.reject_tagged_field_names);
+        for enabled in [true, false] {
+            let options = crate::options! { reject_tagged_field_names: enabled };
+            let mut json = serde_json::to_value(&options).unwrap();
+            let restored: Options = serde_json::from_value(json.clone()).unwrap();
+            assert_eq!(restored.reject_tagged_field_names, enabled);
 
-        json.as_object_mut()
-            .unwrap()
-            .remove("reject_tagged_field_names");
-        let legacy: Options = serde_json::from_value(json).unwrap();
-        assert!(!legacy.reject_tagged_field_names);
+            json.as_object_mut()
+                .unwrap()
+                .remove("reject_tagged_field_names");
+            let legacy: Options = serde_json::from_value(json).unwrap();
+            assert!(legacy.reject_tagged_field_names);
+        }
     }
 
     #[cfg(feature = "serde_derived_types")]
@@ -1048,7 +1105,7 @@ mod tests {
         assert!(debug_str.contains("strict_indentation: false"));
         assert!(debug_str.contains("bom_inside_document_as_content: false"));
         assert!(debug_str.contains("reject_unsupported_tags: false"));
-        assert!(debug_str.contains("reject_tagged_field_names: false"));
+        assert!(debug_str.contains("reject_tagged_field_names: true"));
         assert!(debug_str.contains("non_finite_float_policy: Default"));
         assert!(debug_str.contains("reject_non_finite_typeless_float: true"));
 

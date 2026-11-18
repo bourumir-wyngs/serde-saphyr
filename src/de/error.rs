@@ -6,15 +6,12 @@ use crate::de_snippet::{
 use crate::input_source::IncludeResolveError;
 use crate::localizer::{DEFAULT_ENGLISH_LOCALIZER, ExternalMessageSource, Localizer};
 use crate::location::Locations;
-use crate::parse_scalars::{
-    parse_int_signed, parse_yaml11_bool, parse_yaml12_float, scalar_is_nullish,
-};
+use crate::parse_scalars::{NumericSyntax, maybe_not_string};
 #[cfg(feature = "garde")]
 use crate::path_map::path_key_from_garde;
 use crate::properties_redaction::{
     redact_custom_message, redact_dynamic_identifier, redact_dynamic_value,
 };
-use crate::tags::SfTag;
 #[cfg(any(feature = "garde", feature = "validator"))]
 use crate::{
     localizer::ExternalMessage,
@@ -1075,6 +1072,20 @@ pub enum Error {
         location: Location,
     },
 
+    /// An otherwise successful numeric conversion contained an underscore while
+    /// [`Options::allow_numeric_underscores`](crate::Options::allow_numeric_underscores)
+    /// was disabled.
+    NumericUnderscoresDisabled {
+        location: Location,
+    },
+
+    /// An otherwise successful integer conversion used `0X`, `0O`, or `0B` while
+    /// [`Options::lowercase_radix_prefixes_only`](crate::Options::lowercase_radix_prefixes_only)
+    /// was enabled.
+    UppercaseRadixPrefixDisabled {
+        location: Location,
+    },
+
     /// In a typeless position (e.g. `deserialize_any` targeting `serde_json::Value`), a
     /// scalar resolved to a non-finite float — NaN, ±Inf, or a decimal literal that
     /// overflows `f64` to infinity (e.g. `1e999`) — and
@@ -1580,19 +1591,26 @@ impl Error {
     }
 
     /// Construct a `QuotingRequired` error with no known location.
+    ///
+    /// `value` is raw scalar text; `interpolated` prevents echoing property values.
+    /// `strict_booleans` and `syntax` match the active scalar-classification rules.
+    /// Returns the error with recognized raw text, or an empty value for redaction.
+    ///
     /// Called by:
     /// - Deserializer, when deserializing into string if `no_schema` set to true.
     #[cold]
     #[inline(never)]
-    pub(crate) fn quoting_required(value: &str, interpolated: bool) -> Self {
-        // Ensure the value really is like number or boolean (do not reflect back content
-        // that may be used for attack)
+    pub(crate) fn quoting_required(
+        value: &str,
+        interpolated: bool,
+        strict_booleans: bool,
+        syntax: NumericSyntax,
+    ) -> Self {
+        // Recheck raw text with the same rules as no_schema. Expanded property
+        // values remain redacted regardless of their numeric or boolean syntax.
         let location = Location::UNKNOWN;
         let value = if !interpolated
-            && (parse_yaml12_float::<f64>(value, location, SfTag::None, false).is_ok()
-                || parse_int_signed::<i128>(value, "i128", location, false).is_ok()
-                || parse_yaml11_bool(value).is_some()
-                || scalar_is_nullish(value, &ScalarStyle::plain()))
+            && maybe_not_string(value, &ScalarStyle::plain(), strict_booleans, syntax)
         {
             value.to_string()
         } else {
@@ -1741,6 +1759,8 @@ impl Error {
             | Error::InternalRecursionStackEmpty { location }
             | Error::RecursiveReferencesRequireWeakTypes { location }
             | Error::InvalidScalar { location, .. }
+            | Error::NumericUnderscoresDisabled { location }
+            | Error::UppercaseRadixPrefixDisabled { location }
             | Error::NonFiniteFloat { location, .. }
             | Error::SerdeInvalidType { location, .. }
             | Error::SerdeInvalidValue { location, .. }
@@ -1857,6 +1877,8 @@ impl Error {
             | Error::InternalRecursionStackEmpty { location }
             | Error::RecursiveReferencesRequireWeakTypes { location }
             | Error::InvalidScalar { location, .. }
+            | Error::NumericUnderscoresDisabled { location }
+            | Error::UppercaseRadixPrefixDisabled { location }
             | Error::NonFiniteFloat { location, .. }
             | Error::SerdeInvalidType { location, .. }
             | Error::SerdeInvalidValue { location, .. }
