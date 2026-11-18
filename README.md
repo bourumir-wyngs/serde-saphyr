@@ -169,10 +169,10 @@ of complete `serde_yaml` compatibility. YAML requires unique mapping keys;
 `0b`) and uppercase (`0X`, `0O`, `0B`) prefixes are accepted by the shared integer
 parser. Set it to `true` to require lowercase prefixes everywhere. Uppercase-prefixed
 plain scalars then remain strings during implicit inference, including untagged
-enums and flattened fields, while integer targets and explicit `!!int` tags reject
-them. This includes optional `+` or `-` signs. Uppercase hexadecimal digits remain
-valid with a lowercase prefix, such as `0xFF`. Binary notation (`0b101`) remains a
-supported extension to the YAML 1.2 Core schema.
+enums and flattened fields, while integer and float targets and explicit `!!int`
+and `!!float` tags reject them. This includes optional `+` or `-` signs. Uppercase
+hexadecimal digits remain valid with a lowercase prefix, such as `0xFF`. Binary
+notation (`0b101`) remains a supported extension to the YAML 1.2 Core schema.
 
 When migrating code that reads generic values such as `serde_json::Value`, configure
 these independent options to preserve numeric spellings as strings:
@@ -282,8 +282,9 @@ Check the following options when upgrading from 2.2.0.
   integer spellings for typed numeric targets and explicit numeric tags, and takes
   precedence over `legacy_octal_numbers` everywhere. Composite keys and merges
   treat these spellings as strings. With the option disabled, floating-point
-  targets use the same integer interpretation as integer targets: for example,
-  `010` becomes `8.0` with legacy octal enabled, and `0x10` becomes `16.0`.
+  targets first try the shared integer parser: `010` becomes `8.0` with legacy
+  octal enabled, and `0x10` becomes `16.0`. With default options, `010` instead
+  falls back to decimal float parsing as `10.0`, while integer targets reject it.
   Invalid or overflowing legacy octal spellings, such as `09`, no longer fall
   back to decimal float parsing: numeric targets reject them and untyped values
   preserve them as strings.

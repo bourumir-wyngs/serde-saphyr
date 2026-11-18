@@ -506,8 +506,10 @@ fn parse_integer_as_float<T: num_traits::Float>(
 /// - `tag`: preserves explicit NaN signs and selects robotics unit conversion.
 /// - `syntax`: shared numeric spelling policies and optional robotics expressions.
 ///
-/// Returns the float or a numeric syntax/range/expression error. Integer spellings
-/// use the same interpretation as integer targets and mapping-key fingerprints.
+/// Returns the float or a numeric syntax/range/expression error. Spellings accepted
+/// by the shared integer parser use its interpretation before float conversion.
+/// Other spellings may fall back to decimal float parsing: with default options,
+/// `010` becomes `10.0`, although integer targets reject it.
 #[cfg(feature = "deserialize")]
 pub(crate) fn parse_yaml12_float<T>(
     s: &str,

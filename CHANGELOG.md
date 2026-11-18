@@ -87,8 +87,9 @@ are the defaults; no legacy alias mode is provided. See
   ([#266](https://github.com/bourumir-wyngs/serde-saphyr/issues/266),
   [#280](https://github.com/bourumir-wyngs/serde-saphyr/pull/280)). When enabled,
   uppercase-prefixed plain scalars remain strings during inference, while typed
-  integer keys/values and explicit `!!int` tags reject them. Duplicate-key checks,
-  merge expansion, and composite-key comparison use the same restriction.
+  integer and float keys/values and explicit `!!int`/`!!float` tags reject them.
+  Duplicate-key checks, merge expansion, and composite-key comparison use the
+  same restriction.
   Uppercase hexadecimal digits remain accepted with a lowercase prefix (`0xFF`).
   Otherwise valid integers report `Error::UppercaseRadixPrefixDisabled`; malformed
   syntax and target-range failures retain their original errors. This replaces the
