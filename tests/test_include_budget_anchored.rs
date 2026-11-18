@@ -339,3 +339,60 @@ fn test_alias_replay_limit_is_shared_with_ordinary_aliases() {
         }
     ));
 }
+
+#[test]
+fn test_anchor_metadata_does_not_consume_fragment_event_budget() {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    // Twelve ordinary events: stream/document boundaries, mapping boundaries,
+    // and six scalars. The three anchor metadata events must not consume this budget.
+    const FRAGMENT: &str = "first: &first one\nsecond: &second two\nselected: &selected value\n";
+
+    for max_events in [12, 11] {
+        let reports = Rc::new(RefCell::new(Vec::new()));
+        let callback_reports = Rc::clone(&reports);
+        let options = serde_saphyr::options! {
+            budget: serde_saphyr::budget! {
+                max_events: max_events,
+                // Only the include scalar and the selected scalar are deserialized.
+                max_nodes: 2,
+                max_anchors: 3,
+            },
+        }
+        .with_budget_report(move |report| callback_reports.borrow_mut().push(report))
+        .with_include_resolver(|req| {
+            Ok(ResolvedInclude::new(
+                req.spec,
+                req.spec,
+                InputSource::AnchoredText {
+                    text: FRAGMENT.to_owned(),
+                    anchor: "selected".to_owned(),
+                },
+            ))
+        });
+
+        let result =
+            from_reader_with_options::<_, String>(b"!include f.yml#selected\n".as_slice(), options);
+        if max_events == 12 {
+            assert_eq!(
+                result.expect("ordinary events exactly fit the budget"),
+                "value"
+            );
+            let reports = reports.borrow();
+            assert_eq!(reports.len(), 1);
+            assert_eq!(reports[0].nodes, 2);
+            assert_eq!(reports[0].anchors, 1);
+            assert_eq!(reports[0].events, 6);
+        } else {
+            let error = result.expect_err("ordinary fragment events must still be charged");
+            assert!(matches!(
+                error.without_snippet(),
+                Error::Budget {
+                    breach: serde_saphyr::budget::BudgetBreach::Events { events: 12 },
+                    ..
+                }
+            ));
+        }
+    }
+}

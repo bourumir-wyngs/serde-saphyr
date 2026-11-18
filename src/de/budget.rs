@@ -3,9 +3,11 @@
 //! This inspects the parser's event stream and enforces simple budgets to
 //! avoid pathological inputs
 
-use super::tags::is_yaml_merge_tag;
+use super::error::{Error, budget_error};
+use super::events::Ev;
+use super::tags::{SfTag, is_yaml_merge_tag};
 use crate::options::MergeKeyPolicy;
-use granit_parser::{Event, Parser, ScalarStyle, ScanError, Tag};
+use granit_parser::{Event, Parser, ScanError, Tag};
 use smallvec::SmallVec;
 use std::collections::HashSet;
 
@@ -588,22 +590,72 @@ impl BudgetEnforcer {
     ///
     /// Returns `Err(BudgetBreach)` as soon as a limit is exceeded.
     pub fn observe(&mut self, ev: &Event) -> Result<(), BudgetBreach> {
+        self.observe_event(|enforcer| enforcer.observe_inner(ev))
+    }
+
+    /// Charge a replayed node without counting its anchor definition again.
+    ///
+    /// Replay preserves the existing scalar accounting: ordinary tags have already
+    /// been charged at their definition, while an explicit merge tag participates
+    /// in both merge-key recognition and scalar-byte accounting on every replay.
+    pub(crate) fn observe_replay(&mut self, ev: &Ev<'_>) -> Result<(), Error> {
+        let result = match ev {
+            Ev::Scalar {
+                value, tag, style, ..
+            } => self.observe_event(|enforcer| {
+                let explicit_merge = *tag == SfTag::Merge;
+                let tag_bytes = if explicit_merge {
+                    "tag:yaml.org,2002:merge".len()
+                } else {
+                    0
+                };
+                enforcer.observe_scalar(value, 0, tag_bytes, explicit_merge || style.is_plain())
+            }),
+            Ev::SeqStart { .. } => self
+                .observe_event(|enforcer| enforcer.enter_container(0, 0, ContainerKind::Sequence)),
+            Ev::SeqEnd { .. } => {
+                self.observe_event(|enforcer| enforcer.leave_container(ContainerKind::Sequence))
+            }
+            Ev::MapStart { .. } => self
+                .observe_event(|enforcer| enforcer.enter_container(0, 0, ContainerKind::Mapping)),
+            Ev::MapEnd { .. } => {
+                self.observe_event(|enforcer| enforcer.leave_container(ContainerKind::Mapping))
+            }
+            // The alias reference was charged when it was read. Its recursive
+            // placeholder still occupies a scalar node and advances mapping state.
+            Ev::RecursiveAlias { .. } => {
+                self.observe_event(|enforcer| enforcer.observe_scalar("", 0, 0, true))
+            }
+            Ev::Taken { location } => {
+                return Err(Error::unexpected("consumed event").with_location(*location));
+            }
+        };
+        result.map_err(budget_error)
+    }
+
+    fn observe_event(
+        &mut self,
+        observe: impl FnOnce(&mut Self) -> Result<(), BudgetBreach>,
+    ) -> Result<(), BudgetBreach> {
         if let Some(breach) = self.report.breached.as_ref() {
             return Err(breach.clone());
         }
-        let result = self.observe_inner(ev);
+        let result = self.bump_events().and_then(|()| observe(self));
         self.remember_breach(&result);
         result
     }
 
-    fn observe_inner(&mut self, ev: &Event) -> Result<(), BudgetBreach> {
+    fn bump_events(&mut self) -> Result<(), BudgetBreach> {
         self.report.events += 1;
         if self.report.events > self.budget.max_events {
             return Err(BudgetBreach::Events {
                 events: self.report.events,
             });
         }
+        Ok(())
+    }
 
+    fn observe_inner(&mut self, ev: &Event) -> Result<(), BudgetBreach> {
         match ev {
             Event::Scalar {
                 value,
@@ -612,26 +664,24 @@ impl BudgetEnforcer {
                 tag: tag_opt,
                 ..
             } => {
-                self.bump_nodes()?;
-                self.bump_total_scalar_bytes(
-                    value
-                        .len()
-                        .saturating_add(tag_display_len(tag_opt.as_deref())),
+                self.observe_scalar(
+                    value,
+                    *anchor_id,
+                    tag_display_len(tag_opt.as_deref()),
+                    tag_opt.as_deref().is_some_and(is_yaml_merge_tag)
+                        || tag_opt.is_none() && style.is_plain(),
                 )?;
-                self.record_anchor(*anchor_id)?;
-                self.handle_scalar(value, style, tag_opt.as_deref())?;
             }
             Event::MappingStart {
                 anchor_id,
                 tag: tag_opt,
                 ..
             } => {
-                self.enter_container(*anchor_id, tag_opt.as_deref(), |from_mapping_value| {
-                    ContainerState::Mapping {
-                        expecting_key: true,
-                        from_mapping_value,
-                    }
-                })?;
+                self.enter_container(
+                    *anchor_id,
+                    tag_display_len(tag_opt.as_deref()),
+                    ContainerKind::Mapping,
+                )?;
             }
             Event::MappingEnd { .. } => {
                 self.leave_container(ContainerKind::Mapping)?;
@@ -641,9 +691,11 @@ impl BudgetEnforcer {
                 tag: tag_opt,
                 ..
             } => {
-                self.enter_container(*anchor_id, tag_opt.as_deref(), |from_mapping_value| {
-                    ContainerState::Sequence { from_mapping_value }
-                })?;
+                self.enter_container(
+                    *anchor_id,
+                    tag_display_len(tag_opt.as_deref()),
+                    ContainerKind::Sequence,
+                )?;
             }
             Event::SequenceEnd { .. } => {
                 self.leave_container(ContainerKind::Sequence)?;
@@ -687,12 +739,7 @@ impl BudgetEnforcer {
     /// This is used by `LiveEvents`, where alias references are immediately
     /// expanded into replayed events that already advance mapping state.
     pub(crate) fn observe_alias_reference(&mut self) -> Result<(), BudgetBreach> {
-        if let Some(breach) = self.report.breached.as_ref() {
-            return Err(breach.clone());
-        }
-        let result = self.observe_alias_reference_inner();
-        self.remember_breach(&result);
-        result
+        self.observe_event(|enforcer| enforcer.observe_alias_event(false))
     }
 
     /// Charge one event clone that is about to be retained in an anchor buffer.
@@ -730,16 +777,6 @@ impl BudgetEnforcer {
         }
 
         Ok(())
-    }
-
-    fn observe_alias_reference_inner(&mut self) -> Result<(), BudgetBreach> {
-        self.report.events += 1;
-        if self.report.events > self.budget.max_events {
-            return Err(BudgetBreach::Events {
-                events: self.report.events,
-            });
-        }
-        self.observe_alias_event(false)
     }
 
     fn remember_breach<T>(&mut self, result: &Result<T, BudgetBreach>) {
@@ -809,14 +846,20 @@ impl BudgetEnforcer {
     fn enter_container(
         &mut self,
         anchor_id: usize,
-        tag: Option<&Tag>,
-        container: impl FnOnce(bool) -> ContainerState,
+        tag_bytes: usize,
+        kind: ContainerKind,
     ) -> Result<(), BudgetBreach> {
         self.bump_nodes()?;
         self.enter_depth()?;
-        self.bump_total_scalar_bytes(tag_display_len(tag))?;
+        self.bump_total_scalar_bytes(tag_bytes)?;
         let from_mapping_value = self.entering_container();
-        self.containers.push(container(from_mapping_value));
+        self.containers.push(match kind {
+            ContainerKind::Sequence => ContainerState::Sequence { from_mapping_value },
+            ContainerKind::Mapping => ContainerState::Mapping {
+                expecting_key: true,
+                from_mapping_value,
+            },
+        });
         self.record_anchor(anchor_id)
     }
 
@@ -832,17 +875,21 @@ impl BudgetEnforcer {
         Ok(())
     }
 
-    fn handle_scalar(
+    fn observe_scalar(
         &mut self,
         value: &str,
-        style: &ScalarStyle,
-        tag: Option<&Tag>,
+        anchor_id: usize,
+        tag_bytes: usize,
+        can_be_merge_key: bool,
     ) -> Result<(), BudgetBreach> {
+        self.bump_nodes()?;
+        self.bump_total_scalar_bytes(value.len().saturating_add(tag_bytes))?;
+        self.record_anchor(anchor_id)?;
         if let Some(ContainerState::Mapping { expecting_key, .. }) = self.containers.last_mut() {
             if *expecting_key {
                 if matches!(self.merge_keys, MergeKeyPolicy::Merge)
                     && value == "<<"
-                    && (tag.is_some_and(is_yaml_merge_tag) || tag.is_none() && style.is_plain())
+                    && can_be_merge_key
                 {
                     self.report.merge_keys += 1;
                     if self.report.merge_keys > self.budget.max_merge_keys {
@@ -1026,7 +1073,135 @@ pub fn parse_yaml(input: &str, budget: Budget) -> Result<bool, ScanError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Location;
+    use granit_parser::ScalarStyle;
     use std::fmt::Write as _;
+
+    fn replayed_scalar(value: &'static str, tag: SfTag, style: ScalarStyle) -> Ev<'static> {
+        Ev::Scalar {
+            value: value.into(),
+            tag,
+            raw_tag: Some("tag:example.com,2026:already-counted".into()),
+            original_tag: None,
+            style,
+            anchor: 42,
+            location: Location::UNKNOWN,
+        }
+    }
+
+    #[test]
+    fn replay_charges_nodes_without_redefining_anchors_or_recharging_ordinary_tags() {
+        let budget = Budget {
+            max_anchors: 0,
+            max_total_scalar_bytes: 3,
+            max_aliases: 1,
+            ..Budget::default()
+        };
+        let mut enforcer =
+            BudgetEnforcer::new(budget, EnforcingPolicy::AllContent, MergeKeyPolicy::Merge);
+        enforcer.observe_alias_reference().unwrap();
+        for event in [
+            Ev::SeqStart {
+                anchor: 42,
+                tag: SfTag::Seq,
+                raw_tag: Some("tag:yaml.org,2002:seq".into()),
+                location: Location::UNKNOWN,
+            },
+            replayed_scalar("abc", SfTag::String, ScalarStyle::plain()),
+            Ev::RecursiveAlias {
+                anchor: 42,
+                location: Location::UNKNOWN,
+            },
+            Ev::SeqEnd {
+                location: Location::UNKNOWN,
+            },
+        ] {
+            enforcer.observe_replay(&event).unwrap();
+        }
+        let report = enforcer.finalize();
+        assert!(report.breached.is_none());
+        assert_eq!(report.events, 5);
+        assert_eq!(report.nodes, 3);
+        assert_eq!(report.anchors, 0);
+        assert_eq!(report.aliases, 1);
+        assert_eq!(report.max_depth, 1);
+        assert_eq!(report.total_scalar_bytes, 3);
+    }
+
+    #[test]
+    fn replay_preserves_explicit_merge_tags_and_quoted_ordinary_keys() {
+        let budget = Budget {
+            max_merge_keys: 1,
+            max_total_scalar_bytes: 4 + "tag:yaml.org,2002:merge".len(),
+            ..Budget::default()
+        };
+        let mut enforcer =
+            BudgetEnforcer::new(budget, EnforcingPolicy::AllContent, MergeKeyPolicy::Merge);
+        for event in [
+            Ev::MapStart {
+                anchor: 42,
+                tag: SfTag::None,
+                raw_tag: None,
+                location: Location::UNKNOWN,
+            },
+            replayed_scalar("<<", SfTag::Merge, ScalarStyle::single_quoted()),
+            Ev::SeqStart {
+                anchor: 0,
+                tag: SfTag::None,
+                raw_tag: None,
+                location: Location::UNKNOWN,
+            },
+            Ev::SeqEnd {
+                location: Location::UNKNOWN,
+            },
+            replayed_scalar("<<", SfTag::None, ScalarStyle::single_quoted()),
+            replayed_scalar("", SfTag::None, ScalarStyle::plain()),
+            Ev::MapEnd {
+                location: Location::UNKNOWN,
+            },
+        ] {
+            enforcer.observe_replay(&event).unwrap();
+        }
+        let report = enforcer.finalize();
+        assert!(report.breached.is_none());
+        assert_eq!(report.merge_keys, 1);
+        assert_eq!(
+            report.total_scalar_bytes,
+            4 + "tag:yaml.org,2002:merge".len()
+        );
+        assert_eq!(report.max_depth, 2);
+    }
+
+    #[test]
+    fn replay_preserves_first_breach_and_rejects_consumed_events_without_charging() {
+        let budget = Budget {
+            max_nodes: 0,
+            ..Budget::default()
+        };
+        let mut enforcer =
+            BudgetEnforcer::new(budget, EnforcingPolicy::AllContent, MergeKeyPolicy::Merge);
+        for _ in 0..2 {
+            assert!(matches!(
+                enforcer.observe_replay(&replayed_scalar("abc", SfTag::None, ScalarStyle::plain())),
+                Err(Error::Budget {
+                    breach: BudgetBreach::Nodes { nodes: 1 },
+                    ..
+                })
+            ));
+        }
+        let location = Location::new(3, 5);
+        assert!(matches!(
+            enforcer.observe_replay(&Ev::Taken { location }),
+            Err(Error::Unexpected { location: actual, .. }) if actual == location
+        ));
+        let report = enforcer.finalize();
+        assert!(matches!(
+            report.breached,
+            Some(BudgetBreach::Nodes { nodes: 1 })
+        ));
+        assert_eq!(report.events, 1);
+        assert_eq!(report.nodes, 1);
+    }
 
     #[test]
     fn tiny_yaml_ok() {

@@ -95,7 +95,7 @@ fn included_sources_honor_strict_indentation_with_and_without_budget() {
                                 Error::ResolverError {
                                     error: IncludeResolveError::Message(message),
                                     ..
-                                } if message.contains("failed to scan include fragment 'selected'")
+                                } if message.contains("failed to parse include fragment 'selected'")
                                     && message.contains("invalid indentation")
                             ));
                         } else {

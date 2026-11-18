@@ -188,13 +188,13 @@ fn included_sources_honor_bom_option_with_and_without_budget() {
                 } else {
                     let error = result.expect_err(source_kind);
                     if source_kind == "anchored" {
-                        // Anchor collection wraps scanner errors in resolver messages.
+                        // Anchor collection wraps parser errors in resolver messages.
                         assert!(matches!(
                             error.without_snippet(),
                             Error::ResolverError {
                                 error: IncludeResolveError::Message(message),
                                 ..
-                            } if message.contains("failed to scan include fragment 'selected'")
+                            } if message.contains("failed to parse include fragment 'selected'")
                         ));
                     } else {
                         assert_bom_error(&error);

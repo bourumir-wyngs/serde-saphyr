@@ -40,7 +40,7 @@ use crate::options::BudgetReportCallback;
 use crate::tags::{SfTag, TagNodeKind};
 #[cfg(feature = "comments")]
 use granit_parser::Placement;
-use granit_parser::{Event, ScalarStyle, ScanError, Span, StructureStyle, Tag};
+use granit_parser::{Event, ScalarStyle, ScanError, Span, Tag};
 
 #[cfg(not(feature = "include"))]
 use granit_parser::StrInput;
@@ -1492,42 +1492,21 @@ impl<'a> LiveEvents<'a> {
 
     /// Observe the configured budget for a replayed (injected) event.
     ///
-    /// Reconstructs a parser Event equivalent to the Ev and passes it to the
-    /// `BudgetEnforcer`, attaching the alias use and anchor definition locations on error.
+    /// Passes the replayed node directly to the budget checker, attaching the
+    /// alias use and anchor definition locations on error.
     fn observe_budget_for_replay(&mut self, ev: &Ev) -> Result<(), Error> {
         let defined_location = ev.location();
         let reference_location = self.inject.last().map(|frame| frame.reference_location);
         let Some(budget) = self.budget.as_mut() else {
             return Ok(());
         };
+        if let Ev::Taken { location } = ev {
+            return Err(Error::unexpected("consumed event").with_location(*location));
+        }
 
-        let raw = match ev {
-            Ev::Scalar {
-                value, tag, style, ..
-            } => {
-                // The budget distinguishes an explicitly tagged merge key from a quoted
-                // ordinary `<<` scalar. Preserve that semantic tag while replaying aliases.
-                let tag = (*tag == SfTag::Merge)
-                    .then(|| Cow::Owned(Tag::new("tag:yaml.org,2002:", "merge")));
-                Event::new_scalar(Cow::Borrowed(value), *style, 0, tag)
-            }
-            Ev::SeqStart { .. } => Event::sequence_start(StructureStyle::Block, 0, None),
-            Ev::SeqEnd { .. } => Event::sequence_end(),
-            Ev::MapStart { .. } => Event::mapping_start(StructureStyle::Block, 0, None),
-            Ev::MapEnd { .. } => Event::mapping_end(),
-            // A recursive reference replays the same scalar placeholder as before; the
-            // alias reference itself was already charged when reading the parser event.
-            Ev::RecursiveAlias { .. } => {
-                Event::new_scalar(Cow::Borrowed(""), ScalarStyle::plain(), 0, None)
-            }
-            Ev::Taken { location } => {
-                return Err(Error::unexpected("consumed event").with_location(*location));
-            }
-        };
-
-        budget.observe(&raw).map_err(|breach| {
+        budget.observe_replay(ev).map_err(|error| {
             attach_alias_locations_if_missing(
-                budget_error(breach).with_location(defined_location),
+                error.with_location(defined_location),
                 reference_location,
                 defined_location,
             )

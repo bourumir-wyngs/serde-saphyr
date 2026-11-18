@@ -6,7 +6,7 @@ use crate::de::AliasLimits;
 use crate::input_source::{IncludeResolveError, IncludeResolver, InputSource, ResolvedInclude};
 use granit_parser::{
     Event, Options as ParserOptions, Parser, ParserStack as GranitParserStack, ReplayParser,
-    ScanError, Scanner, Span, StrInput, TokenType,
+    ScanError, Span, StrInput,
 };
 use std::{
     borrow::Cow,
@@ -490,28 +490,12 @@ fn collect_anchor_events_with_parser_options_and_state(
     mut expansion_state: AnchorExpansionState<'_>,
 ) -> Result<CollectedAnchorEvents, CollectAnchorEventsError> {
     let mut document_count = 0usize;
-    let mut anchor_defs: Vec<(String, usize)> = Vec::new();
-    let scanner = Scanner::with_options(StrInput::new(text), parser_options.clone());
-    for token in scanner {
-        let token = token.map_err(|err| {
-            CollectAnchorEventsError::Message(format!(
-                "failed to scan include fragment '{target_anchor}': {err}"
-            ))
-        })?;
-        let (span, token_type) = token.into_parts();
-        let marker_offset = span.start.index();
-        if let TokenType::Anchor { name, .. } = token_type {
-            anchor_defs.push((name.into_owned(), marker_offset));
-            if anchor_defs.len() > budget.max_anchors {
-                return Err(CollectAnchorEventsError::Budget(BudgetBreach::Anchors {
-                    anchors: anchor_defs.len(),
-                }));
-            }
-        }
-    }
-    let mut parser = Parser::with_options(StrInput::new(text), parser_options.clone());
+    let mut anchor_defs: Vec<(String, AnchoredNode)> = Vec::new();
+    let mut parser_options = parser_options.clone();
+    parser_options.emit_anchor_events = true;
+    let mut parser = Parser::with_options(StrInput::new(text), parser_options);
     parser.set_anchor_offset(anchor_offset.max(1));
-    let mut events = Vec::new();
+    let mut events: Vec<(Event<'static>, Span)> = Vec::new();
     let mut current_depth: usize = 0;
     let mut total_scalar_bytes: usize = 0;
     #[cfg(feature = "comments")]
@@ -522,6 +506,44 @@ fn collect_anchor_events_with_parser_options_and_state(
                 "failed to parse include fragment '{target_anchor}': {err}"
             ))
         })?;
+        if let Event::Anchor {
+            anchor_id, name, ..
+        } = event
+        {
+            // Granit emits anchor metadata immediately after the anchored node,
+            // before its children. Keep it out of replay and event/node budgets.
+            let node_start = events.len().checked_sub(1).ok_or_else(|| {
+                CollectAnchorEventsError::Message(format!(
+                    "include fragment '{target_anchor}' has anchor metadata without a node"
+                ))
+            })?;
+            debug_assert_eq!(events[node_start].0.anchor_id(), Some(anchor_id));
+            #[cfg(feature = "comments")]
+            let start = events[..node_start]
+                .iter()
+                .rposition(|(event, comment_span)| {
+                    !matches!(event, Event::Comment { .. })
+                        || comment_span.start.index() < span.start.index()
+                })
+                .map_or(0, |index| index + 1);
+            #[cfg(not(feature = "comments"))]
+            let start = node_start;
+            // Include comments between the anchor property and its node. The
+            // range's end is extended below once collection ends are available.
+            anchor_defs.push((
+                name.into_owned(),
+                AnchoredNode {
+                    anchor_id: Some(anchor_id),
+                    events: start..=node_start,
+                },
+            ));
+            if anchor_defs.len() > budget.max_anchors {
+                return Err(CollectAnchorEventsError::Budget(BudgetBreach::Anchors {
+                    anchors: anchor_defs.len(),
+                }));
+            }
+            continue;
+        }
         if matches!(event, Event::DocumentStart { .. }) {
             document_count += 1;
             if document_count > 1 {
@@ -578,31 +600,8 @@ fn collect_anchor_events_with_parser_options_and_state(
         HashMap::with_capacity(anchor_defs.len());
     let mut anchor_nodes_by_id: HashMap<usize, AnchoredNode> =
         HashMap::with_capacity(anchor_defs.len());
-    let mut event_cursor = 0usize;
-
-    for (name, offset) in &anchor_defs {
-        while event_cursor < events.len() && events[event_cursor].1.start.index() < *offset {
-            event_cursor += 1;
-        }
-        if event_cursor >= events.len() {
-            break;
-        }
-
-        let mut node_start = event_cursor;
-        while node_start < events.len() && !events[node_start].0.is_node() {
-            node_start += 1;
-        }
-        if node_start >= events.len() {
-            break;
-        }
-
-        #[cfg(feature = "comments")]
-        let start = events[event_cursor..node_start]
-            .iter()
-            .position(|(event, _)| matches!(event, Event::Comment { .. }))
-            .map_or(node_start, |comment_offset| event_cursor + comment_offset);
-        #[cfg(not(feature = "comments"))]
-        let start = node_start;
+    for (name, mut node) in anchor_defs {
+        let node_start = *node.events.end();
         let mut end = node_start;
         let mut depth = anchored_event_initial_depth(&events[node_start].0);
         if depth == 0 {
@@ -627,15 +626,11 @@ fn collect_anchor_events_with_parser_options_and_state(
                 }
             }
         }
-        let node = AnchoredNode {
-            anchor_id: events[node_start].0.anchor_id(),
-            events: start..=end,
-        };
+        node.events = *node.events.start()..=end;
         if let Some(anchor_id) = node.anchor_id {
             anchor_nodes_by_id.insert(anchor_id, node.clone());
         }
-        anchor_nodes_by_name.insert(name.clone(), node);
-        event_cursor = node_start + 1;
+        anchor_nodes_by_name.insert(name, node);
     }
 
     let target_node = anchor_nodes_by_name
@@ -921,18 +916,6 @@ mod tests {
 
     #[test]
     fn collect_anchor_events_expands_aliases_defined_outside_target_anchor() {
-        let scanner = Scanner::new(StrInput::new(
-            "base: &base\n  name: Alice\n\nselected: &selected\n  user: *base\n",
-        ));
-        let mut scanned = Vec::new();
-        for token in scanner {
-            let (_, token_type) = token.expect("anchor fixture should scan").into_parts();
-            if let TokenType::Anchor { name, .. } = token_type {
-                scanned.push(name.into_owned());
-            }
-        }
-        assert_eq!(scanned, vec!["base".to_string(), "selected".to_string()]);
-
         let collected = collect_anchor_events(
             "base: &base\n  name: Alice\n\nselected: &selected\n  user: *base\n",
             "selected",
@@ -1146,6 +1129,34 @@ mod tests {
         assert!(
             !matches!(collected.events.as_slice(), [(Event::Comment { .. }, _)]),
             "comment must not be the only collected anchor event"
+        );
+    }
+
+    #[cfg(feature = "comments")]
+    #[test]
+    fn collect_anchor_events_keeps_only_comments_after_the_anchor_property() {
+        let collected = collect_anchor_events(
+            "previous: ignored # outside inline\n# outside leading\nselected: &selected # selected comment\n  value\n",
+            "selected",
+            0,
+            &crate::Budget::default(),
+        )
+        .expect("anchor collection should preserve comments between the property and node");
+
+        let comments: Vec<_> = collected
+            .events
+            .iter()
+            .filter_map(|(event, _)| match event {
+                Event::Comment { value, .. } => Some(value.as_ref()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(comments, [" selected comment"]);
+        assert!(
+            !collected
+                .events
+                .iter()
+                .any(|(event, _)| matches!(event, Event::Anchor { .. }))
         );
     }
 
