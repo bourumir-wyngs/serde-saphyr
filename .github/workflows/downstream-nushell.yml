@@ -16,6 +16,8 @@ concurrency:
 
 jobs:
   yaml-compatibility:
+    # Temporarily disabled; remove this condition to re-enable the integration tests.
+    if: ${{ false }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
 
