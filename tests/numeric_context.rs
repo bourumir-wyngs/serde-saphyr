@@ -238,7 +238,7 @@ fn no_schema_recognizes_all_supported_integer_spellings(#[case] scalar: &str) {
     ] {
         assert!(matches!(
             error.without_snippet(),
-            Error::QuotingRequired { .. }
+            Error::QuotingRequired { value, .. } if value == scalar
         ));
     }
 }
@@ -252,7 +252,7 @@ fn no_schema_recognizes_overflowing_float_literals() {
     ] {
         assert!(matches!(
             error.without_snippet(),
-            Error::QuotingRequired { .. }
+            Error::QuotingRequired { value, .. } if value == "1e999"
         ));
     }
 }

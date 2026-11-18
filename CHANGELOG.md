@@ -75,6 +75,8 @@ are the defaults; no legacy alias mode is provided. See
 
 ### Fixed
 
+- Retain the scalar text in `QuotingRequired` diagnostics for overflowing floats,
+  legacy integer separators, and robotics expressions under the active options.
 - Preserve radix-prefixed, underscored, and legacy-octal integers outside the
   `i64`/`u64` visitor range as strings during implicit inference, including untagged
   enums and flattened fields. Plain decimal integers retain their float fallback.

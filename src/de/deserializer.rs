@@ -505,8 +505,14 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         }
     }
 
-    fn quoting_required_for_scalar(view: &ScalarView<'de>) -> Error {
-        Error::quoting_required(view.raw.as_ref(), view.interpolated).with_location(view.location)
+    fn quoting_required_for_scalar(&self, view: &ScalarView<'de>) -> Error {
+        Error::quoting_required(
+            view.raw.as_ref(),
+            view.interpolated,
+            self.cfg.strict_booleans,
+            self.cfg.numeric_syntax(),
+        )
+        .with_location(view.location)
     }
 
     #[cfg(feature = "properties")]
@@ -1233,7 +1239,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             {
                 // Require quoting for ambiguous plain scalars in no_schema mode.
                 let view = self.take_scalar_view()?;
-                return Err(Self::quoting_required_for_scalar(&view));
+                return Err(self.quoting_required_for_scalar(&view));
             }
         }
 
@@ -1283,7 +1289,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     && !view.tag.forces_string()
                 {
                     let view = self.take_scalar_view()?;
-                    return Err(Self::quoting_required_for_scalar(&view));
+                    return Err(self.quoting_required_for_scalar(&view));
                 }
 
                 if view.tag == SfTag::Binary && !self.cfg.ignore_binary_tag_for_string {
@@ -1382,7 +1388,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             {
                 // Consume the scalar to anchor the error at the correct location.
                 let view = self.take_scalar_view()?;
-                return Err(Self::quoting_required_for_scalar(&view));
+                return Err(self.quoting_required_for_scalar(&view));
             }
             if view.tag == SfTag::Binary && !self.cfg.ignore_binary_tag_for_string {
                 return visitor.visit_string(self.take_string_scalar()?);
@@ -2755,7 +2761,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                         )
                     {
                         let view = self.take_scalar_view()?;
-                        return Err(Self::quoting_required_for_scalar(&view));
+                        return Err(self.quoting_required_for_scalar(&view));
                     }
                     let view = self.take_scalar_view()?;
                     Mode::Unit(EnumScalarId::from_view(view))
@@ -2806,7 +2812,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                         )
                     {
                         let view = key_de.take_scalar_view()?;
-                        return Err(Self::quoting_required_for_scalar(&view));
+                        return Err(key_de.quoting_required_for_scalar(&view));
                     }
                     let view = key_de.take_scalar_view()?;
                     Mode::Map(view.raw.into_owned(), view.location)
