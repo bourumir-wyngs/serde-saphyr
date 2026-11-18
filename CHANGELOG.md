@@ -72,6 +72,12 @@ are the defaults; no legacy alias mode is provided. See
   `no_schema` string checks honor configured legacy syntax and the full unsigned
   128-bit range. Tag-specific signed NaN handling is preserved.
 
+### Fixed
+
+- Keep scalar parsing temporaries out of recursive collection dispatch so deeply
+  nested mappings report the configured depth-budget error without overflowing
+  the Windows test-thread stack.
+
 ### Added
 
 - Added `Options::lowercase_radix_prefixes_only` (default: `false`) to require
