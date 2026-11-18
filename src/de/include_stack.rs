@@ -6,10 +6,9 @@ use crate::de::AliasLimits;
 use crate::input_source::{IncludeResolveError, IncludeResolver, InputSource, ResolvedInclude};
 use granit_parser::{
     Event, Options as ParserOptions, Parser, ParserStack as GranitParserStack, ReplayParser,
-    ScanError, Span, StrInput,
+    ScanError, SourceId, Span, StrInput,
 };
 use std::{
-    borrow::Cow,
     collections::{HashMap, HashSet},
     io::Cursor,
     ops::RangeInclusive,
@@ -43,7 +42,7 @@ pub struct ParserStack<'input> {
     parser_options: ParserOptions,
     active_ids: Vec<(usize, String)>,
     next_source_id: u32,
-    active_source_ids: Vec<u32>,
+    current_source_id: u32,
     pub(crate) resolved_sources: HashMap<u32, RecordedSource>,
 }
 impl<'input> ParserStack<'input> {
@@ -85,7 +84,7 @@ impl<'input> ParserStack<'input> {
             parser_options,
             active_ids: Vec::new(),
             next_source_id: 1,
-            active_source_ids: Vec::new(),
+            current_source_id: 0,
             resolved_sources: HashMap::new(),
         }
     }
@@ -113,11 +112,14 @@ impl<'input> ParserStack<'input> {
         name: &str,
         snippet: Option<&SnippetFrame>,
         include_location: crate::Location,
-    ) {
+    ) -> SourceId {
         let source_id = self.next_source_id;
         self.next_source_id += 1;
-        let parent_source_id = self.active_source_ids.last().copied();
-        self.active_source_ids.push(source_id);
+        let parent_source_id = self
+            .inner
+            .current_source_id()
+            .and_then(|id| u32::try_from(id.0).ok());
+        self.current_source_id = source_id;
         let recorded = RecordedSource {
             parent_source_id,
             name: snippet.map_or_else(|| name.to_owned(), |snippet| snippet.name.clone()),
@@ -125,6 +127,7 @@ impl<'input> ParserStack<'input> {
             include_location,
         };
         self.resolved_sources.insert(source_id, recorded);
+        SourceId(u64::from(source_id))
     }
     pub(crate) fn push_str_parser_with_snippet(
         &mut self,
@@ -133,8 +136,9 @@ impl<'input> ParserStack<'input> {
         snippet: Option<&SnippetFrame>,
         include_location: crate::Location,
     ) {
-        self.register_source(&name, snippet, include_location);
-        self.inner.push_str_parser(parser, name);
+        let source_id = self.register_source(&name, snippet, include_location);
+        self.inner
+            .push_str_parser_with_source_id(parser, name, source_id);
     }
     fn push_stream_parser_with_snippet(
         &mut self,
@@ -143,8 +147,9 @@ impl<'input> ParserStack<'input> {
         snippet: Option<&SnippetFrame>,
         include_location: crate::Location,
     ) {
-        self.register_source(&name, snippet, include_location);
-        self.inner.push_custom_parser(parser, name);
+        let source_id = self.register_source(&name, snippet, include_location);
+        self.inner
+            .push_custom_parser_with_source_id(parser, name, source_id);
     }
     fn push_replay_parser_with_snippet(
         &mut self,
@@ -153,11 +158,12 @@ impl<'input> ParserStack<'input> {
         snippet: Option<&SnippetFrame>,
         include_location: crate::Location,
     ) {
-        self.register_source(&name, snippet, include_location);
-        self.inner.push_replay_parser(parser, name);
+        let source_id = self.register_source(&name, snippet, include_location);
+        self.inner
+            .push_replay_parser_with_source_id(parser, name, source_id);
     }
     pub fn current_source_id(&self) -> u32 {
-        self.active_source_ids.last().copied().unwrap_or(0)
+        self.current_source_id
     }
     pub(crate) fn recorded_source_chain(&self, source_id: u32) -> Vec<&RecordedSource> {
         let mut chain = Vec::new();
@@ -172,12 +178,11 @@ impl<'input> ParserStack<'input> {
     }
     fn sync_source_tracking(&mut self, current_len: usize) {
         self.active_ids.retain(|(depth, _)| *depth <= current_len);
-        self.active_source_ids.truncate(current_len);
     }
     pub(crate) fn prune_resolved_sources(&mut self) {
-        let active_source_ids: HashSet<u32> = self.active_source_ids.iter().copied().collect();
+        let active_source_ids: HashSet<SourceId> = self.inner.source_ids().flatten().collect();
         self.resolved_sources
-            .retain(|id, _| active_source_ids.contains(id));
+            .retain(|id, _| active_source_ids.contains(&SourceId(u64::from(*id))));
     }
     #[cfg(test)]
     pub fn resolve(
@@ -211,7 +216,7 @@ impl<'input> ParserStack<'input> {
             );
         };
 
-        let include_depth = u32::try_from(self.inner.stack().len()).unwrap_or(u32::MAX);
+        let include_depth = u32::try_from(self.inner.depth()).unwrap_or(u32::MAX);
         if include_depth > self.budget.max_inclusion_depth {
             return Err(crate::de_error::Error::Budget {
                 breach: crate::budget::BudgetBreach::InclusionDepth {
@@ -221,9 +226,10 @@ impl<'input> ParserStack<'input> {
             });
         }
         let from_name = self
-            .active_source_ids
-            .last()
-            .and_then(|source_id| self.resolved_sources.get(source_id))
+            .inner
+            .current_source_id()
+            .and_then(|id| u32::try_from(id.0).ok())
+            .and_then(|source_id| self.resolved_sources.get(&source_id))
             .map_or("", |source| source.name.as_str());
         let from_id = self.active_ids.last().map(|(_, id)| id.as_str());
 
@@ -259,7 +265,7 @@ impl<'input> ParserStack<'input> {
             });
         }
         // Track the include as active at the depth of the pushed parser.
-        let active_depth = self.inner.stack().len() + 1;
+        let active_depth = self.inner.depth() + 1;
         self.active_ids.push((active_depth, resolved.id));
         let name = resolved.name;
         match resolved.source {
@@ -588,7 +594,7 @@ fn collect_anchor_events_with_parser_options_and_state(
                 ));
             }
         }
-        events.push((own_event(event)?, span));
+        events.push((event.into_owned(), span));
         if events.len() > budget.max_events {
             return Err(CollectAnchorEventsError::Budget(BudgetBreach::Events {
                 events: events.len(),
@@ -775,86 +781,23 @@ fn collect_anchor_events_with_parser_options_and_state(
         anchor_offset: parser.anchor_offset(),
     })
 }
-fn own_event(event: Event<'_>) -> Result<Event<'static>, CollectAnchorEventsError> {
-    let event = match event {
-        Event::StreamStart { .. } => Event::stream_start(),
-        Event::StreamEnd { .. } => Event::stream_end(),
-        Event::DocumentStart {
-            explicit, version, ..
-        } => Event::document_start(explicit, version),
-        Event::DocumentEnd { .. } => Event::document_end(),
-        Event::Alias { anchor_id, .. } => Event::alias(anchor_id),
-        Event::Scalar {
-            value,
-            style,
-            anchor_id,
-            tag,
-            ..
-        } => Event::new_scalar(
-            Cow::Owned(value.into_owned()),
-            style,
-            anchor_id,
-            tag.map(|tag| Cow::Owned(tag.into_owned())),
-        ),
-        Event::SequenceStart {
-            style,
-            anchor_id,
-            tag,
-            ..
-        } => Event::sequence_start(
-            style,
-            anchor_id,
-            tag.map(|tag| Cow::Owned(tag.into_owned())),
-        ),
-        Event::SequenceEnd { .. } => Event::sequence_end(),
-        Event::MappingStart {
-            style,
-            anchor_id,
-            tag,
-            ..
-        } => Event::mapping_start(
-            style,
-            anchor_id,
-            tag.map(|tag| Cow::Owned(tag.into_owned())),
-        ),
-        Event::MappingEnd { .. } => Event::mapping_end(),
-        #[cfg(feature = "comments")]
-        Event::Comment {
-            value: text,
-            placement,
-            ..
-        } => Event::comment(Cow::Owned(text.into_owned()), placement),
-        _ => {
-            return Err(CollectAnchorEventsError::Message(
-                "include fragment produced an unsupported parser event".to_owned(),
-            ));
-        }
-    };
-    Ok(event)
-}
 impl<'input> Iterator for ParserStack<'input> {
     type Item = Result<(Event<'input>, Span), ScanError>;
     fn next(&mut self) -> Option<Self::Item> {
-        match self.inner.next() {
-            Some(Err(e)) => {
-                // Do not sync source tracking yet on error. The caller (like `LiveEvents`)
-                // needs `current_source_id()` to map the error location correctly.
-                // If they continue iterating, the next `Ok` event will sync it.
-                Some(Err(e))
-            }
-            Some(Ok((event @ Event::DocumentStart { .. }, span))) => {
-                self.sync_source_tracking(self.inner.stack().len());
-                if self.inner.stack().len() == 1 {
-                    self.fragment_aliases = 0;
-                    self.prune_resolved_sources();
-                }
-                Some(Ok((event, span)))
-            }
-            other => {
-                self.sync_source_tracking(self.inner.stack().len());
-                other
-            }
+        let next = self.inner.next_sourced();
+        self.current_source_id = next
+            .as_ref()
+            .and_then(|item| item.source_id)
+            .and_then(|id| u32::try_from(id.0).ok())
+            .unwrap_or(0);
+        // The result retains its source even when Granit has already popped it.
+        self.sync_source_tracking(self.inner.depth());
+        let item = next?.value;
+        if matches!(&item, Ok((Event::DocumentStart { .. }, _))) && self.inner.depth() == 1 {
+            self.fragment_aliases = 0;
+            self.prune_resolved_sources();
         }
+        Some(item)
     }
 }
 #[cfg(test)]
@@ -1448,6 +1391,37 @@ selected: &selected
             error.contains("must come from a single YAML document"),
             "unexpected error: {error}"
         );
+    }
+
+    #[test]
+    fn source_identity_survives_error_and_stream_end_pops() {
+        let reader_bytes_read = Rc::new(Cell::new(0));
+        let mut stack = ParserStack::new(reader_bytes_read, &crate::Budget::default());
+        push_test_str_parser(&mut stack, Parser::new_from_str("root: 1\n"), "same.yaml");
+        push_test_str_parser(&mut stack, Parser::new_from_str("broken: [\n"), "same.yaml");
+
+        let error = stack.by_ref().find_map(Result::err);
+        assert!(error.is_some());
+        assert_eq!(stack.inner.depth(), 1);
+        assert_eq!(stack.current_source_id(), 2);
+        assert_eq!(stack.recorded_source_chain(2).len(), 2);
+
+        // Stack iteration is terminal after a syntax error. Check normal EOF on
+        // a separate stack, where the root parser is popped before StreamEnd.
+        let reader_bytes_read = Rc::new(Cell::new(0));
+        let mut stack = ParserStack::new(reader_bytes_read, &crate::Budget::default());
+        push_test_str_parser(&mut stack, Parser::new_from_str("root: 1\n"), "same.yaml");
+        let mut saw_end = false;
+        while let Some(item) = stack.next() {
+            let (event, _) = item.expect("the root parser remains valid");
+            assert_eq!(stack.current_source_id(), 1);
+            if matches!(event, Event::StreamEnd { .. }) {
+                assert_eq!(stack.inner.depth(), 0);
+                saw_end = true;
+            }
+        }
+        assert!(saw_end);
+        assert_eq!(stack.current_source_id(), 0);
     }
 
     #[test]

@@ -7,9 +7,7 @@
 //! (BOM-aware), then buffering via `BufReader`.
 
 use encoding_rs_io::DecodeReaderBytesBuilder;
-use granit_parser::{
-    BorrowedInput, ErrorKind as ParserErrorKind, FallibleBufferedInput, Input, InputIoError,
-};
+use granit_parser::{ErrorKind as ParserErrorKind, FallibleBufferedInput, InputIoError};
 use std::cell::Cell;
 use std::io::{self, BufReader, Read};
 use std::rc::Rc;
@@ -20,79 +18,8 @@ type DynBufReader<'a> = BufReader<DynReader<'a>>;
 /// Streaming YAML input backed by a reader.
 ///
 /// This does **not** support zero-copy borrowing of scalar slices, so
-/// [`BorrowedInput::slice_borrowed`] always returns `None`.
-pub struct ReaderInput<'a>(FallibleBufferedInput<ChunkedChars<DynBufReader<'a>>>);
-
-impl<'a> ReaderInput<'a> {
-    #[inline]
-    pub fn new(inner: FallibleBufferedInput<ChunkedChars<DynBufReader<'a>>>) -> Self {
-        Self(inner)
-    }
-}
-
-impl Input for ReaderInput<'_> {
-    #[inline]
-    fn lookahead(&mut self, count: usize) {
-        self.0.lookahead(count);
-    }
-
-    #[inline]
-    fn buflen(&self) -> usize {
-        self.0.buflen()
-    }
-
-    #[inline]
-    fn bufmaxlen(&self) -> usize {
-        self.0.bufmaxlen()
-    }
-
-    #[inline]
-    fn raw_read_ch(&mut self) -> char {
-        self.0.raw_read_ch()
-    }
-
-    #[inline]
-    fn raw_read_non_breakz_ch(&mut self) -> Option<char> {
-        self.0.raw_read_non_breakz_ch()
-    }
-
-    #[inline]
-    fn skip(&mut self) {
-        self.0.skip();
-    }
-
-    #[inline]
-    fn skip_n(&mut self, count: usize) {
-        self.0.skip_n(count);
-    }
-
-    #[inline]
-    fn peek(&self) -> char {
-        self.0.peek()
-    }
-
-    #[inline]
-    fn peek_nth(&self, n: usize) -> char {
-        self.0.peek_nth(n)
-    }
-
-    #[inline]
-    fn next_is_z(&self) -> bool {
-        self.0.next_is_z()
-    }
-
-    #[inline]
-    fn take_source_error(&mut self) -> Option<ParserErrorKind> {
-        self.0.take_source_error()
-    }
-}
-
-impl<'a> BorrowedInput<'a> for ReaderInput<'a> {
-    #[inline]
-    fn slice_borrowed(&self, _start: usize, _end: usize) -> Option<&'a str> {
-        None
-    }
-}
+/// [`granit_parser::BorrowedInput::slice_borrowed`] always returns `None`.
+pub type ReaderInput<'a> = FallibleBufferedInput<ChunkedChars<DynBufReader<'a>>>;
 
 pub(crate) type ReaderInputBytesRead = Rc<Cell<usize>>;
 
@@ -244,7 +171,7 @@ pub fn buffered_input_from_reader_with_limit_shared<'a, R: Read + 'a>(
 
     let br = BufReader::new(Box::new(decoder) as DynReader<'a>);
     let char_iter = ChunkedChars::new(br, max_bytes, bytes_read);
-    ReaderInput::new(FallibleBufferedInput::new(char_iter))
+    ReaderInput::new(char_iter)
 }
 
 #[cfg(test)]

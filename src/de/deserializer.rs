@@ -284,14 +284,8 @@ impl<'de> ScalarView<'de> {
     /// Recover omitted scalar text for string targets without changing the
     /// recorded events used for null inference and mapping-key comparison.
     fn into_string_value(self, null_as_string: bool) -> Cow<'de, str> {
-        // granit-parser represents an omitted plain scalar as "~" with an empty
-        // span. Alias replay retains the definition span, including for readers.
-        if null_as_string
-            && !self.interpolated
-            && self.style.is_plain()
-            && self.raw == "~"
-            && self.location.span().is_empty()
-        {
+        // Omission is preserved in the scalar style, including through alias replay.
+        if null_as_string && !self.interpolated && self.style.is_omitted() {
             Cow::Borrowed("")
         } else {
             self.effective
