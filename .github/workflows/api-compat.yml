@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  BASELINE_REF: "2.0.0"
+  BASELINE_REF: "3.0.0"
 
 jobs:
   semver:
