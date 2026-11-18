@@ -216,6 +216,21 @@ impl Default for NumericSyntax {
 
 #[cfg(feature = "deserialize")]
 impl NumericSyntax {
+    /// Whether trimmed `s` must stay text after 64-bit integer inference fails.
+    /// Radix, legacy-octal, and digit-separated integer spellings must not become
+    /// lossy floats. Plain decimals retain their float fallback; fractional,
+    /// exponential, and robotics expression syntax remains eligible too.
+    pub(crate) fn blocks_implicit_float_fallback(self, s: &str) -> bool {
+        let unsigned = s.strip_prefix(['+', '-']).unwrap_or(s);
+        self.is_legacy_octal(s)
+            || radix_and_digits(false, unsigned).0 != 10
+            // Without legacy octal, leading-zero spellings are not accepted
+            // integers and may still use robotics decimal parsing.
+            || (!unsigned.starts_with('0')
+                && unsigned.contains('_')
+                && unsigned.bytes().all(|b| b.is_ascii_digit() || b == b'_'))
+    }
+
     /// Whether a trimmed spelling is reserved for the legacy octal integer parser.
     /// Such spellings must never fall back to decimal interpretation on overflow.
     fn is_legacy_octal(self, s: &str) -> bool {

@@ -174,6 +174,12 @@ and `!!float` tags reject them. This includes optional `+` or `-` signs. Upperca
 hexadecimal digits remain valid with a lowercase prefix, such as `0xFF`. Binary
 notation (`0b101`) remains a supported extension to the YAML 1.2 Core schema.
 
+Implicit inference uses `i64` for negative integers and `u64` for non-negative
+integers. Radix-prefixed and underscored integers, and legacy octal when enabled,
+remain strings when they exceed that range. Plain decimal integers retain their
+floating-point fallback. Direct float targets and explicit `!!float` tags can
+convert integers within the shared `i128`/`u128` parsing range, with possible rounding.
+
 When migrating code that reads generic values such as `serde_json::Value`, configure
 these independent options to preserve numeric spellings as strings:
 
@@ -285,9 +291,10 @@ Check the following options when upgrading from 2.2.0.
   targets first try the shared integer parser: `010` becomes `8.0` with legacy
   octal enabled, and `0x10` becomes `16.0`. With default options, `010` instead
   falls back to decimal float parsing as `10.0`, while integer targets reject it.
-  Invalid or overflowing legacy octal spellings, such as `09`, no longer fall
-  back to decimal float parsing: numeric targets reject them and untyped values
-  preserve them as strings.
+  Invalid legacy octal spellings, such as `09`, and those outside the shared
+  `i128`/`u128` parsing range no longer fall back to decimal float parsing.
+  Untyped values also preserve legacy octal that exceeds their `i64`/`u64` range
+  as strings.
 
 The examples below assume the default tag handles unless a `%TAG` directive is
 shown. [YAML tag handles](https://yaml.org/spec/1.2.2/#6821-tag-handles) are expanded

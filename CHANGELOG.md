@@ -67,13 +67,17 @@ are the defaults; no legacy alias mode is provided. See
   spellings distinct from integer keys. Float targets now use the shared integer
   interpretation before float parsing, so legacy `010` means `8.0` and `0x10`
   means `16.0`; integer syntax restrictions apply equally to these conversions.
-  Invalid or overflowing legacy octal spellings no longer fall back to decimal
-  floats: numeric targets reject them and implicit inference retains their text.
+  Invalid legacy octal spellings and those outside the shared `i128`/`u128`
+  parsing range no longer fall back to decimal floats: numeric targets reject
+  them and implicit inference retains their text.
   `no_schema` string checks honor configured legacy syntax and the full unsigned
   128-bit range. Tag-specific signed NaN handling is preserved.
 
 ### Fixed
 
+- Preserve radix-prefixed, underscored, and legacy-octal integers outside the
+  `i64`/`u64` visitor range as strings during implicit inference, including untagged
+  enums and flattened fields. Plain decimal integers retain their float fallback.
 - Reject finite robotics results that overflow when converted to `f32`, while
   preserving explicitly non-finite values and expression results.
 - Keep scalar parsing temporaries out of recursive collection dispatch so deeply

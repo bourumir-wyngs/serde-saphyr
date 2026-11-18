@@ -975,20 +975,21 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         }
 
         // Try integers: signed if leading '-', else unsigned, using 64-bit visitors.
+        let syntax = self.cfg.numeric_syntax();
         if t.starts_with('-') {
-            if let Ok(v) = parse_int_signed::<i64>(t, "i64", location, self.cfg.numeric_syntax()) {
+            if let Ok(v) = parse_int_signed::<i64>(t, "i64", location, syntax) {
                 return visitor.visit_i64(v);
             }
-        } else if let Ok(v) =
-            parse_int_unsigned::<u64>(t, "u64", location, self.cfg.numeric_syntax())
-        {
+        } else if let Ok(v) = parse_int_unsigned::<u64>(t, "u64", location, syntax) {
             return visitor.visit_u64(v);
         }
 
         // Try float per YAML 1.2 forms, treating an f64-overflowing literal (e.g.
         // `1e999`) as non-finite too, so both shapes are handled consistently below.
-        if let Ok(v) =
-            try_parse_float_incl_overflow(&effective, location, view.tag, self.cfg.numeric_syntax())
+        // Preserve integer-only spellings that missed the 64-bit visitor range
+        // instead of rounding them through the wider integer-to-float conversion.
+        if !syntax.blocks_implicit_float_fallback(t)
+            && let Ok(v) = try_parse_float_incl_overflow(&effective, location, view.tag, syntax)
         {
             return self.visit_typeless_float(v, view.raw.into_owned(), location, visitor);
         }
