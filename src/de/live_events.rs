@@ -1619,6 +1619,15 @@ impl<'a> LiveEvents<'a> {
         Ok(())
     }
 
+    /// Record a breach found while deserializing (for example a newtype or alias-expanded
+    /// level the parser never counts), so the report and later documents see it.
+    #[cold]
+    pub(crate) fn record_budget_breach(&mut self, breach: crate::budget::BudgetBreach) {
+        if let Some(budget) = self.budget.as_mut() {
+            budget.record_external_breach(breach);
+        }
+    }
+
     /// Finalize the stream: flush and report budget breaches, if any.
     ///
     /// Should be called after parsing completes to surface any delayed

@@ -1657,7 +1657,17 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     visitor.visit_newtype_struct(self)
                 })
             }
-            _ => visitor.visit_newtype_struct(self),
+            _ => {
+                // A newtype consumes no event, so `Newtype(Option<Box<Newtype>>)` re-reads
+                // the same node forever. Count it against the depth budget, as serde_yaml
+                // charged `remaining_depth` for every newtype struct.
+                let location = match self.ev.peek()? {
+                    Some(ev) => ev.location(),
+                    None => self.ev.last_location(),
+                };
+                self.cfg = self.cfg.enter_container(location)?;
+                visitor.visit_newtype_struct(self)
+            }
         }
     }
 

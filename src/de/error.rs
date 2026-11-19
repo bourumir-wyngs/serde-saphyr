@@ -1507,6 +1507,14 @@ impl Error {
         )
     }
 
+    /// The budget breach behind this error, including through alias or snippet wrappers.
+    pub(crate) fn budget_breach(&self) -> Option<&BudgetBreach> {
+        match original_error(self) {
+            Error::Budget { breach, .. } => Some(breach),
+            _ => None,
+        }
+    }
+
     /// Render this error using the built-in developer formatter.
     ///
     /// This is the deferred-rendering entrypoint. It is equivalent to `Display`/`to_string()`

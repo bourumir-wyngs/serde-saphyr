@@ -85,6 +85,14 @@ are the defaults; no legacy alias mode is provided. See
 - Keep scalar parsing temporaries out of recursive collection dispatch so deeply
   nested mappings report the configured depth-budget error without overflowing
   the Windows test-thread stack.
+- Charge each newtype struct one level of `max_depth`. A newtype reads no YAML
+  event, so a self-nesting type such as `struct Chain(Option<Box<Chain>>)` re-entered
+  the same node until the stack overflowed; it now reports the depth-budget error.
+  Documents that nest newtypes more deeply than `max_depth` now fail the same way.
+- Record depth-budget breaches found during deserialization (newtype structs,
+  alias expansion, merged nodes) in the budget report. Like parser-level budget
+  breaches, they now end the `read` iterators instead of recovering at the next
+  document.
 
 ### Added
 
