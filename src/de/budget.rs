@@ -212,7 +212,12 @@ pub struct Budget {
         serde(default = "default_max_total_property_interpolation_work")
     )]
     pub max_total_property_interpolation_work: usize,
-    /// Maximum structural nesting depth (sequences + mappings).
+    /// Maximum nesting depth.
+    ///
+    /// The parser counts nested sequences and mappings. Deserialization counts the
+    /// sequences and mappings it enters, including those reached through aliases, and
+    /// charges each newtype struct one level, since a newtype reads no YAML event.
+    /// Either count above this limit fails with [`BudgetBreach::Depth`].
     ///
     /// This also raises the parser's block-collection nesting limit as needed.
     /// The separate [`Self::flow_nesting_limit`] remains an independent cap on
@@ -353,9 +358,11 @@ pub enum BudgetBreach {
         anchors: usize,
     },
 
-    /// The structural nesting depth exceeded [`Budget::max_depth`].
+    /// The nesting depth exceeded [`Budget::max_depth`].
     ///
-    /// Depth counts nested `SequenceStart` and `MappingStart` events.
+    /// The parser counts nested `SequenceStart` and `MappingStart` events. Deserialization
+    /// also charges each newtype struct one level, so a newtype-heavy type can breach
+    /// this limit while the collection nesting stays within it.
     Depth {
         /// Maximum depth reached when the breach occurred.
         depth: usize,
@@ -488,7 +495,11 @@ pub struct BudgetReport {
     /// Total number of nodes encountered (scalars + sequence starts + mapping starts).
     pub nodes: usize,
 
-    /// Maximum structural nesting depth reached at any point in the stream.
+    /// Maximum collection nesting depth (sequences + mappings) the parser reached.
+    ///
+    /// Levels counted only during deserialization (newtype structs, alias expansion)
+    /// are not included, but a depth breach they cause is still recorded in
+    /// [`Self::breached`].
     pub max_depth: usize,
 
     /// Sum of bytes across all scalar values (`Scalar.value.len()`), saturating on overflow.
@@ -788,7 +799,6 @@ impl BudgetEnforcer {
     }
 
     /// Record a breach detected by a deserialization stage that shares this budget.
-    #[cfg(feature = "properties")]
     pub(crate) fn record_external_breach(&mut self, breach: BudgetBreach) {
         if self.report.breached.is_none() {
             self.report.breached = Some(breach);

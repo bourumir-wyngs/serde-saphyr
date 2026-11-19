@@ -25,6 +25,11 @@ where
             Ok(v)
         }
         Err(e) => {
+            // Depth charged by the deserializer (newtypes, alias expansion, replayed nodes)
+            // is never seen by the parser; record it so the budget report shows it.
+            if let Some(breach) = e.budget_breach() {
+                src.record_budget_breach(breach.clone());
+            }
             if src.synthesized_null_emitted() && synthesized_null_should_be_eof(&e) {
                 // If the only thing in the input was an empty document (synthetic null),
                 // surface this as an EOF error to preserve expected error semantics
