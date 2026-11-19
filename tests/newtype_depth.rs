@@ -22,8 +22,11 @@ fn with_max_depth(max_depth: usize) -> serde_saphyr::Options {
     }
 }
 
-fn depth_breach(err: &Error) -> Option<usize> {
-    match err.without_snippet() {
+fn depth_breach(mut err: &Error) -> Option<usize> {
+    while let Error::WithSnippet { error, .. } | Error::AliasError { error, .. } = err {
+        err = error;
+    }
+    match err {
         Error::Budget {
             breach: BudgetBreach::Depth { depth },
             ..
@@ -117,12 +120,16 @@ fn newtype_carried_sequence_depth_breach_is_in_budget_report() {
 
 #[test]
 fn merged_newtype_depth_breach_is_in_budget_report() {
-    // The parser stays within 4 levels; the merged `v` adds two newtype levels.
+    // Doc + Item + W2 + W + Vec reaches deserializer depth 5.
+    // The merged value must still deserialize when that depth is permitted.
     let yaml = "base: &b {v: [1]}\nitem:\n  <<: *b\n";
+    let doc: Doc = serde_saphyr::from_str_with_options(yaml, with_max_depth(5)).unwrap();
+    assert_eq!(doc.item.v.0.0, vec![1]);
+
     let (depth, reported) = depth_breach_and_report::<Doc>(yaml, 4);
-    assert!(depth.is_some(), "want a depth budget error");
+    assert_eq!(depth, Some(5));
     assert!(
-        matches!(reported, Some(BudgetBreach::Depth { .. })),
+        matches!(reported, Some(BudgetBreach::Depth { depth: 5 })),
         "got {reported:?}"
     );
 }
