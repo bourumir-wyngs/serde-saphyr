@@ -1042,19 +1042,26 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 };
             }
 
-            // Try integers: signed if leading '-', else unsigned, using 64-bit visitors.
+            // Parse the full integer range before trying a potentially lossy float
+            // conversion. Keep 64-bit visitors for values that fit in that range.
             if t.starts_with('-') {
                 if (!leading_zero_decimal(t) || self.cfg.legacy_octal_numbers)
                     && let Ok(v) =
-                        parse_int_signed::<i64>(t, "i64", location, self.cfg.legacy_octal_numbers)
+                        parse_int_signed::<i128>(t, "i128", location, self.cfg.legacy_octal_numbers)
                 {
-                    return visitor.visit_i64(v);
+                    return match i64::try_from(v) {
+                        Ok(v) => visitor.visit_i64(v),
+                        Err(_) => visitor.visit_i128(v),
+                    };
                 }
             } else {
                 if let Ok(v) =
-                    parse_int_unsigned::<u64>(t, "u64", location, self.cfg.legacy_octal_numbers)
+                    parse_int_unsigned::<u128>(t, "u128", location, self.cfg.legacy_octal_numbers)
                 {
-                    return visitor.visit_u64(v);
+                    return match u64::try_from(v) {
+                        Ok(v) => visitor.visit_u64(v),
+                        Err(_) => visitor.visit_u128(v),
+                    };
                 }
             }
 
