@@ -44,7 +44,7 @@ fn assert_prefix_diagnostic(error: &Error) {
 #[case::octal("0O37")]
 #[case::binary("0B11111")]
 #[case::positive("+0X1F")]
-#[case::quoted("'  +0X1F  '")]
+#[case::quoted("!!int '  +0X1F  '")]
 #[case::tagged("!!int 0X1F")]
 #[case::tagged_quoted("!!int '0X1F'")]
 #[case::verbatim("!<tag:yaml.org,2002:int> 0X1F")]

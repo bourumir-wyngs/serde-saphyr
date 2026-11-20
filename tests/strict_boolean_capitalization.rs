@@ -46,10 +46,9 @@ fn strict_boolean_capitalization_is_consistent_across_targets(
     #[case] expected: bool,
 ) -> Result<(), Error> {
     for (text, accepted) in case_variants(word) {
-        // Typed conversion retains its existing quoted/padded behavior.
+        // Explicit bool tags allow quoted and padded boolean spellings.
         for yaml in [
             text.clone(),
-            format!("\" \t{text}\t \""),
             format!("!!bool {text}"),
             format!("!!bool \" \t{text}\t \""),
         ] {
@@ -127,6 +126,10 @@ fn strict_booleans_preserve_quoted_and_tagged_strings(
     #[case] suffix: &str,
 ) -> Result<(), Error> {
     let yaml = format!("{prefix}{text}{suffix}");
+    assert!(matches!(
+        strict::<bool>(&yaml, false).unwrap_err().without_snippet(),
+        Error::InvalidScalar { ty: "boolean", .. }
+    ));
     assert_eq!(strict::<String>(&yaml, true)?, text);
     assert_eq!(
         strict::<Value>(&yaml, false)?,

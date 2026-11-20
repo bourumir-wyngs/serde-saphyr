@@ -4,12 +4,17 @@
 
 ### Breaking YAML changes
 
-This prerelease changes tag interpretation, optional tagged values, mapping-key
-identity, document filtering, and tagged unit output. These are behavioral
+This prerelease changes scalar and tag interpretation, optional tagged values,
+mapping-key identity, document filtering, and tagged unit output. These are behavioral
 incompatibilities even when existing Rust code compiles. The corrected semantics
 are the defaults; no legacy alias mode is provided. See
 [YAML changes in 3.0.0](README.md#yaml-changes-in-300) for all migration details.
 
+- Reject quoted and block scalars without an explicit type tag, and scalars tagged
+  with standalone `!`, for integer, float, and boolean targets (#284). These scalars
+  are strings even when a Rust field requests another type. Remove the quotes or
+  use a matching standard tag such as `!!int "16"`, `!!float "1.5"`, or
+  `!!bool "true"`. This behavior is always enabled; no compatibility option is provided.
 - Emit matching local tags on unit enum variants without a redundant `null`
   payload, including through optional and tagged wrappers. Existing explicit
   null payloads remain readable; actual variant fields retain their payload

@@ -110,6 +110,10 @@ pub enum PropertySyntax {
     BracedOrBare,
 
     /// Property interpolation compatible with [Docker Compose]'s syntax and value expansion.
+    /// Expanded values remain strings for generic targets. Numeric and boolean targets can
+    /// parse expansions from plain scalars; quoted and block scalars, and scalars tagged
+    /// with `!!str` or standalone `!`, are rejected for these targets.
+    ///
     /// [Docker Compose]: https://docs.docker.com/reference/compose-file/interpolation/
     DockerCompose,
 
@@ -121,7 +125,8 @@ pub enum PropertySyntax {
     ///
     /// Everything else keeps the Compose behavior: an explicitly empty property and an empty
     /// selected default (`${A:-${B}}` with both unset) are empty strings, surrounding text is
-    /// kept (`prefix-$MISSING` is `prefix-`), and numbers and booleans convert as before.
+    /// kept (`prefix-$MISSING` is `prefix-`), and numeric and boolean targets can parse
+    /// expansions from plain scalars without string-forcing tags.
     ///
     /// The rules apply to the scalar's text whatever its style, so a quoted `"$NAME"` is null
     /// as well, while a `|` block keeps its trailing newline and is therefore not a sole

@@ -128,7 +128,6 @@ fn aliases_preserve_incompatible_core_tags_for_floats(#[case] scalar: &str) {
 
 #[rstest]
 #[case::plain("1.5", 1.5)]
-#[case::quoted("'1.5'", 1.5)]
 #[case::plain_integer("42", 42.0)]
 #[case::tagged_float("!!float 1.5", 1.5)]
 #[case::integer_looking_float("!!float 42", 42.0)]

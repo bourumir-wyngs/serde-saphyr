@@ -304,7 +304,7 @@ fn robotics_unit_conversion_follows_shared_integer_parsing() {
 #[rstest]
 #[case::radix("0xffffffffffffffffffffffffffffffff")]
 #[case::tagged_radix("!!float 0xffffffffffffffffffffffffffffffff")]
-#[case::quoted_radix("'0xffffffffffffffffffffffffffffffff'")]
+#[case::quoted_radix("!!float '0xffffffffffffffffffffffffffffffff'")]
 #[case::decimal("340282366920938463463374607431768211455")]
 #[case::positive_exponent("1e39")]
 #[case::negative_exponent("-1e39")]

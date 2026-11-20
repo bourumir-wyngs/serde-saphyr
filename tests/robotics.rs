@@ -29,7 +29,7 @@ mod tests {
         func_deg: f64, // deg(180) => PI
         func_rad: f64, // rad(pi) => PI
 
-        // Quoted functions should also be parsed (typed target is f64)
+        // Explicit float tags allow quoted functions.
         quoted_deg: f64,
         quoted_rad: f64,
 
@@ -63,8 +63,8 @@ ninf: -.INF
 nan1: .NaN
 func_deg: deg(180)
 func_rad: rad(pi)
-quoted_deg: "deg(90)"
-quoted_rad: 'rad(pi/2)'
+quoted_deg: !!float "deg(90)"
+quoted_rad: !!float 'rad(pi/2)'
 f32_from_deg: deg(90)
 f32_plain: 1.25
 time_secs: -01:02:03
@@ -101,7 +101,7 @@ angle_from_sexagesimal_rad: !radians 8:32:53.2
         assert!((v.func_deg - PI).abs() < 1e-12);
         assert!((v.func_rad - PI).abs() < 1e-12);
 
-        // Quoted forms should be parsed the same since the target is f64
+        // Explicitly tagged quoted forms use the same conversions.
         assert!((v.quoted_deg - (PI / 2.0)).abs() < 1e-12); // deg(90) = PI/2
         assert!((v.quoted_rad - (PI / 2.0)).abs() < 1e-12); // rad(pi/2) = PI/2
 

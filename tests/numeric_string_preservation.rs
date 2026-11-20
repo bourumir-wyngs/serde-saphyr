@@ -454,10 +454,9 @@ fn sequence_keys_keep_both_spellings_and_reject_integer_elements(#[case] yaml: &
 
 #[rstest]
 #[case::plain("1_0")]
-#[case::single_quoted("'1_0'")]
-#[case::double_quoted("\"1_0\"")]
 #[case::tagged("!!int 1_0")]
-#[case::tagged_quoted("!!int '1_0'")]
+#[case::tagged_single_quoted("!!int '1_0'")]
+#[case::tagged_double_quoted("!!int \"1_0\"")]
 #[case::verbatim_tag("!<tag:yaml.org,2002:int> 1_0")]
 fn every_integer_target_rejects_disallowed_underscores(#[case] yaml: &str) {
     macro_rules! check {
@@ -597,9 +596,9 @@ fn numeric_mapping_keys_and_values_obey_underscore_restriction(
 
 #[rstest]
 #[case::plain("1_000.0")]
-#[case::quoted("'1_000.0'")]
 #[case::tagged("!!float 1_000.0")]
-#[case::tagged_quoted("!!float '1_000.0'")]
+#[case::tagged_single_quoted("!!float '1_000.0'")]
+#[case::tagged_double_quoted("!!float \"1_000.0\"")]
 #[case::exponent("1e1_0")]
 #[case::fraction("1.0_0")]
 fn float_targets_reject_disallowed_underscores(#[case] yaml: &str) {

@@ -636,7 +636,7 @@ fn interpolated_yaml_strings_are_not_retyped() {
 }
 
 #[test]
-fn explicitly_requested_scalar_types_parse_expanded_strings() {
+fn explicitly_requested_scalar_types_parse_expanded_plain_scalars() {
     #[derive(Debug, Deserialize, PartialEq)]
     struct Typed {
         port: u16,
@@ -645,7 +645,7 @@ fn explicitly_requested_scalar_types_parse_expanded_strings() {
         optional: Option<u32>,
     }
     let parsed: Typed = from_str_with_options(
-        "port: '$PORT'\nenabled: $ENABLED\nmarker: ${MARKER}\noptional: \"${PORT}\"\n",
+        "port: $PORT\nenabled: $ENABLED\nmarker: ${MARKER}\noptional: ${PORT}\n",
         compose_options(&[("PORT", "8080"), ("ENABLED", "true"), ("MARKER", "~")]),
     )
     .unwrap();

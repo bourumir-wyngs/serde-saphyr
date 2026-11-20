@@ -304,6 +304,16 @@ The examples below assume the default tag handles unless a `%TAG` directive is
 shown. [YAML tag handles](https://yaml.org/spec/1.2.2/#6821-tag-handles) are expanded
 before interpretation; counting exclamation marks alone is not sufficient.
 
+#### Quoted scalars remain strings
+
+Quoted and block scalars without an explicit type tag, and scalars tagged with
+standalone `!`, now reject integer, float, and boolean targets. For example,
+`depth: "16"`, `depth: '16'`, and `depth: ! 16` no longer fill a `u16` field.
+Use `depth: 16` or an explicit standard type tag such as `depth: !!int "16"`.
+Likewise, `!!float "1.5"` and `!!bool "true"` remain valid for matching targets.
+This rule is always enabled, independently of `no_schema` and `strict_booleans`;
+there is no option to restore the previous coercion.
+
 #### Local type aliases are removed
 
 Earlier releases treated the following local application tags as aliases of
@@ -736,6 +746,10 @@ Other capitalization, such as `tRuE`, remains a string during type inference and
 ### Rust types as schema
 
 To address the “Norway problem,” the target Rust types serve as an explicit schema. Because the parser knows whether a field expects a string or a boolean, it can correctly accept `1.2` either as a number or as the string `"1.2"`, and interpret the common YAML boolean shorthands (`y`, `on`, `n`, `off`) as actual booleans when appropriate (can be disabled). Likewise, `0x2A` is parsed as a hexadecimal integer when the target field is numeric, and as a string when the target is `String`. As with [StrictYAML](https://hitchdev.com/strictyaml/why/implicit-typing-removed/), **serde-saphyr** uses the Rust type system as the schema for typed deserialization. Integer key comparison is an exception: [duplicate checking](#duplicate-keys) uses the integer's numeric meaning while preserving its original spelling for string targets.
+
+Quoted and block scalars without an explicit type tag, and scalars tagged with
+standalone `!`, remain strings and are rejected for numeric and boolean targets.
+Explicit standard tags still apply to quoted scalars, such as `!!int "16"`.
 
 YAML null values are rejected for string targets by default. Set `null_as_string: true`
 to accept plain null-like scalars as their text in string keys and values. See
@@ -1367,7 +1381,7 @@ Select `PropertySyntax::DockerCompose` for [Docker Compose interpolation semanti
 - Unset direct references silently produce an empty string, not an error. The default, alternative, and required operators use the conditions in the table above.
 - Selected default, replacement, and error text recursively expands both reference forms and `$$` escapes. Property-map values are not expanded again.
 - Malformed or unclosed braced references fail. Each braced reference must fit on one line, and literal braces inside operator text follow Compose's delimiter matching.
-- Expanded strings remain strings when deserializing generic values, even when they contain `null`, `true`, or a number. Explicitly requested numeric types can still parse expanded values.
+- Expanded strings remain strings when deserializing generic values, even when they contain `null`, `true`, or a number. Numeric and boolean targets can parse expansions from plain scalars. Quoted and block scalars, and scalars tagged with `!!str` or standalone `!`, are rejected for these targets.
 
 Select `PropertySyntax::DockerComposeWithNulls` for the same interpolation when an expansion should be able to produce YAML null, as configuration loaders that previously expanded environment variables in a `Value` tree often expect:
 

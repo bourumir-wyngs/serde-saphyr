@@ -107,7 +107,7 @@ fn untyped(#[case] yaml: &str, #[case] expected: serde_json::Value) {
 }
 
 #[test]
-fn typed_conversions_are_unchanged() {
+fn typed_conversions_accept_expanded_plain_scalars() {
     assert_eq!(load::<u16>("value: $PORT\n", with_nulls()), Ok(5432));
     assert_eq!(
         load::<Option<u16>>("value: $PORT\n", with_nulls()),
@@ -117,7 +117,7 @@ fn typed_conversions_are_unchanged() {
         load::<Option<u16>>("value: $MISSING\n", with_nulls()),
         Ok(None)
     );
-    assert_eq!(load::<bool>("value: \"$FLAG\"\n", with_nulls()), Ok(true));
+    assert_eq!(load::<bool>("value: $FLAG\n", with_nulls()), Ok(true));
     assert_eq!(
         load::<Option<bool>>("value: $MISSING\n", with_nulls()),
         Ok(None)
