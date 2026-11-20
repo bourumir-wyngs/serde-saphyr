@@ -175,10 +175,14 @@ hexadecimal digits remain valid with a lowercase prefix, such as `0xFF`. Binary
 notation (`0b101`) remains a supported extension to the YAML 1.2 Core schema.
 
 Implicit inference uses `i64` for negative integers and `u64` for non-negative
-integers. Radix-prefixed and underscored integers, and legacy octal when enabled,
-remain strings when they exceed that range. Plain decimal integers retain their
-floating-point fallback. Direct float targets and explicit `!!float` tags can
-convert integers within the shared `i128`/`u128` parsing range, with possible rounding.
+integers when they fit, then `i128` or `u128` for larger values. This preserves
+accepted decimal, radix-prefixed, underscored, and enabled legacy-octal integers
+exactly. Visitors without support for these larger integers, including
+`serde_json::Value` without `arbitrary_precision`, return an error. Radix-prefixed,
+underscored, and legacy-octal integers beyond the 128-bit range remain strings;
+plain decimal integers beyond that range retain their floating-point fallback.
+Direct float targets and explicit `!!float` tags can convert integers within the
+shared `i128`/`u128` parsing range, with possible rounding.
 
 When migrating code that reads generic values such as `serde_json::Value`, configure
 these independent options to preserve numeric spellings as strings:

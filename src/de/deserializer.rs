@@ -974,20 +974,27 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
             };
         }
 
-        // Try integers: signed if leading '-', else unsigned, using 64-bit visitors.
+        // Parse the full integer range before trying a potentially lossy float
+        // conversion. Keep 64-bit visitors for values that fit in that range.
         let syntax = self.cfg.numeric_syntax();
         if t.starts_with('-') {
-            if let Ok(v) = parse_int_signed::<i64>(t, "i64", location, syntax) {
-                return visitor.visit_i64(v);
+            if let Ok(v) = parse_int_signed::<i128>(t, "i128", location, syntax) {
+                return match i64::try_from(v) {
+                    Ok(v) => visitor.visit_i64(v),
+                    Err(_) => visitor.visit_i128(v),
+                };
             }
-        } else if let Ok(v) = parse_int_unsigned::<u64>(t, "u64", location, syntax) {
-            return visitor.visit_u64(v);
+        } else if let Ok(v) = parse_int_unsigned::<u128>(t, "u128", location, syntax) {
+            return match u64::try_from(v) {
+                Ok(v) => visitor.visit_u64(v),
+                Err(_) => visitor.visit_u128(v),
+            };
         }
 
         // Try float per YAML 1.2 forms, treating an f64-overflowing literal (e.g.
         // `1e999`) as non-finite too, so both shapes are handled consistently below.
-        // Preserve integer-only spellings that missed the 64-bit visitor range
-        // instead of rounding them through the wider integer-to-float conversion.
+        // Preserve integer-only spellings that missed the 128-bit visitor range
+        // instead of reinterpreting them as floats.
         if !syntax.blocks_implicit_float_fallback(t)
             && let Ok(v) = try_parse_float_incl_overflow(&effective, location, view.tag, syntax)
         {

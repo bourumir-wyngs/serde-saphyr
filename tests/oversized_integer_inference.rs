@@ -65,22 +65,12 @@ fn assert_preserved(scalar: &str, options: Options) {
 }
 
 #[rstest]
-#[case::hex_65_bits("0x10000000000000000", false)]
-#[case::hex_identifier("0x550e8400e29b41d4a716446655440000", false)]
-#[case::uppercase_signed("+0X10000000000000000", false)]
-#[case::below_i64_min("-0x8000000000000001", false)]
-#[case::u128_max("0xffffffffffffffffffffffffffffffff", false)]
-#[case::i128_min("-0x80000000000000000000000000000000", false)]
 #[case::below_i128_min("-0x80000000000000000000000000000001", false)]
 #[case::hex_129_bits("0x100000000000000000000000000000000", false)]
 #[case::hex_160_bits("0xffffffffffffffffffffffffffffffffffffffff", false)]
-#[case::binary_65_bits(concat!("0b1", "0000000000000000", "0000000000000000", "0000000000000000", "0000000000000000"), false)]
-#[case::octal_65_bits("0o2000000000000000000000", false)]
-#[case::underscored_decimal("18_446_744_073_709_551_616", false)]
-#[case::negative_underscored_decimal("-9_223_372_036_854_775_809", false)]
-#[case::legacy_octal("0637536023236517573056667", true)]
+#[case::underscored_over_u128("340_282_366_920_938_463_463_374_607_431_768_211_456", false)]
 #[case::legacy_octal_over_u128("077777777777777777777777777777777777777777777777777", true)]
-fn oversized_integer_spellings_remain_text(
+fn integer_spellings_beyond_128_bits_remain_text(
     #[case] scalar: &str,
     #[case] legacy_octal_numbers: bool,
 ) {
@@ -90,9 +80,55 @@ fn oversized_integer_spellings_remain_text(
     );
 }
 
+#[track_caller]
+fn assert_rejected<T: DeserializeOwned>(yaml: &str, options: Options) {
+    assert!(
+        from_str_with_options::<T>(yaml, options.clone()).is_err(),
+        "string input must reject an unsupported 128-bit integer: {yaml}"
+    );
+    assert!(
+        from_reader_with_options::<_, T>(yaml.as_bytes(), options).is_err(),
+        "reader input must reject an unsupported 128-bit integer: {yaml}"
+    );
+}
+
+#[track_caller]
+fn assert_unsupported_integer(scalar: &str, options: Options) {
+    assert_rejected::<Value>(scalar, options.clone());
+    assert_rejected::<NumberOrText>(scalar, options.clone());
+    assert_rejected::<FlattenedId>(&format!("id: {scalar}\n"), options);
+}
+
+#[rstest]
+#[case::hex_65_bits("0x10000000000000000", false)]
+#[case::hex_identifier("0x550e8400e29b41d4a716446655440000", false)]
+#[case::uppercase_signed("+0X10000000000000000", false)]
+#[case::below_i64_min("-0x8000000000000001", false)]
+#[case::u128_max("0xffffffffffffffffffffffffffffffff", false)]
+#[case::i128_min("-0x80000000000000000000000000000000", false)]
+#[case::binary_65_bits(concat!("0b1", "0000000000000000", "0000000000000000", "0000000000000000", "0000000000000000"), false)]
+#[case::octal_65_bits("0o2000000000000000000000", false)]
+#[case::underscored_decimal("18_446_744_073_709_551_616", false)]
+#[case::negative_underscored_decimal("-9_223_372_036_854_775_809", false)]
+#[case::legacy_octal("0637536023236517573056667", true)]
+#[case::decimal_above_u64("18446744073709551616", false)]
+#[case::decimal_below_i64("-9223372036854775809", false)]
+#[case::decimal_u128_max("340282366920938463463374607431768211455", false)]
+fn consumers_without_128_bit_support_reject_wide_integers(
+    #[case] scalar: &str,
+    #[case] legacy_octal_numbers: bool,
+) {
+    // These consumers cannot represent the inferred integer. They must receive
+    // an error rather than a lossy float or a string selected by the 64-bit limit.
+    assert_unsupported_integer(
+        scalar,
+        serde_saphyr::options! { legacy_octal_numbers: legacy_octal_numbers },
+    );
+}
+
 #[cfg(feature = "robotics")]
 #[test]
-fn angle_conversions_preserve_oversized_integer_text() {
+fn angle_conversions_preserve_integer_range_handling() {
     let options = serde_saphyr::options! {
         legacy_octal_numbers: true,
         angle_conversions: true,
@@ -101,6 +137,13 @@ fn angle_conversions_preserve_oversized_integer_text() {
         "0x10000000000000000",
         "18_446_744_073_709_551_616",
         "0637536023236517573056667",
+    ] {
+        assert_unsupported_integer(scalar, options.clone());
+    }
+    for scalar in [
+        "0x100000000000000000000000000000000",
+        "340_282_366_920_938_463_463_374_607_431_768_211_456",
+        "077777777777777777777777777777777777777777777777777",
     ] {
         assert_preserved(scalar, options.clone());
     }
@@ -142,11 +185,9 @@ fn integer_spellings_in_visitor_range_remain_integers(
 }
 
 #[rstest]
-#[case::above_u64("18446744073709551616")]
-#[case::below_i64("-9223372036854775809")]
-#[case::u128_max("340282366920938463463374607431768211455")]
 #[case::above_u128("340282366920938463463374607431768211456")]
-fn oversized_plain_decimals_keep_float_inference(#[case] scalar: &str) {
+#[case::below_i128("-170141183460469231731687303715884105729")]
+fn plain_decimals_beyond_128_bits_keep_float_inference(#[case] scalar: &str) {
     let expected = scalar.parse::<f64>().unwrap();
     assert_decoded(scalar, json!(expected), Options::default());
 }

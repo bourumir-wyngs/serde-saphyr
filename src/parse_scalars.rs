@@ -216,7 +216,7 @@ impl Default for NumericSyntax {
 
 #[cfg(feature = "deserialize")]
 impl NumericSyntax {
-    /// Whether trimmed `s` must stay text after 64-bit integer inference fails.
+    /// Whether trimmed `s` must stay text after 128-bit integer inference fails.
     /// Radix, legacy-octal, and digit-separated integer spellings must not become
     /// lossy floats. Plain decimals retain their float fallback; fractional,
     /// exponential, and robotics expression syntax remains eligible too.

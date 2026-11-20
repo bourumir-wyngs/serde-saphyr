@@ -77,9 +77,12 @@ are the defaults; no legacy alias mode is provided. See
 
 - Retain the scalar text in `QuotingRequired` diagnostics for overflowing floats,
   legacy integer separators, and robotics expressions under the active options.
-- Preserve radix-prefixed, underscored, and legacy-octal integers outside the
-  `i64`/`u64` visitor range as strings during implicit inference, including untagged
-  enums and flattened fields. Plain decimal integers retain their float fallback.
+- Infer accepted integers exactly through `i128`/`u128` during implicit inference,
+  retaining the 64-bit visitors for smaller values (#286). This includes radix,
+  underscore-separated, and enabled legacy-octal spellings. Visitors without
+  128-bit support reject larger values instead of receiving rounded floats or
+  strings. Beyond the `i128`/`u128` range, radix-prefixed, underscored, and
+  legacy-octal integers remain strings; plain decimals retain their float fallback.
 - Reject finite robotics results that overflow when converted to `f32`, while
   preserving explicitly non-finite values and expression results.
 - Keep scalar parsing temporaries out of recursive collection dispatch so deeply
