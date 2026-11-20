@@ -210,6 +210,16 @@ impl Default for Ev<'_> {
 }
 
 impl Ev<'_> {
+    /// The resolved YAML tag on a scalar, sequence, or mapping.
+    pub(super) fn raw_tag(&self) -> Option<&str> {
+        match self {
+            Self::Scalar { raw_tag, .. }
+            | Self::SeqStart { raw_tag, .. }
+            | Self::MapStart { raw_tag, .. } => raw_tag.as_deref(),
+            _ => None,
+        }
+    }
+
     /// Get the source location attached to this event.
     ///
     /// Returns:

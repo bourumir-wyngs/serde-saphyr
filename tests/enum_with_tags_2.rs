@@ -197,13 +197,22 @@ fn custom_mapping_tag_survives_untagged_enum_buffering() {
     );
 }
 
-#[test]
-fn custom_yaml_mapping_tag_does_not_hide_serde_internal_tag() {
+#[rstest]
+fn custom_yaml_mapping_tag_does_not_hide_serde_internal_tag(
+    #[values(false, true)] local_tags_as_maps: bool,
+) {
+    let yaml = "!metadata {kind: Struct, a: 1, b: 2}";
+    let opts = serde_saphyr::options! { local_tags_as_maps: local_tags_as_maps };
     let actual: InternallyTaggedMapping =
-        serde_saphyr::from_str("!metadata {kind: Struct, a: 1, b: 2}")
-            .expect("the YAML tag must not rewrite an internally tagged enum");
+        serde_saphyr::from_str_with_options(yaml, opts.clone()).unwrap();
+    let wrapped = serde_saphyr::with_deserializer_from_str_with_options(yaml, opts, |de| {
+        serde_path_to_error::deserialize::<_, InternallyTaggedMapping>(de)
+            .map_err(|e| e.into_inner())
+    })
+    .unwrap();
 
     assert_eq!(actual, InternallyTaggedMapping::Struct { a: 1, b: 2 });
+    assert_eq!(wrapped, actual);
 }
 
 #[test]

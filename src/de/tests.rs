@@ -391,6 +391,32 @@ fn simple_tagged_enum_helpers_accept_only_simple_variant_names() {
     assert_eq!(simple_tagged_node_name(&map_start(loc(10, 1))), None);
 }
 
+#[cfg(any(feature = "garde", feature = "validator"))]
+#[test]
+fn local_tags_as_maps_records_payload_locations() {
+    use super::live_events::LiveEvents;
+    use super::path_map::{PathKey, PathRecorder};
+    use serde::Deserialize;
+
+    let yaml = "entry: !Tag\n  first: 0\n  second: 1\nsibling: 2";
+    let opts = crate::options! { local_tags_as_maps: true };
+    let cfg = super::Cfg::from_options(&opts);
+    let mut events = LiveEvents::from_str(yaml, opts);
+    let mut paths = PathRecorder::new();
+    let de = super::YamlDeserializer::new_with_path_recorder(&mut events, cfg, &mut paths);
+    serde_json::Value::deserialize(de).unwrap();
+
+    let field = PathKey::new()
+        .join_key("entry")
+        .join_key("Tag")
+        .join_key("second");
+    let sibling = PathKey::new().join_key("sibling");
+    let field = paths.map.locations_for(&field).unwrap();
+    let sibling = paths.map.locations_for(&sibling).unwrap();
+    assert_eq!(field.defined_location.line(), 3);
+    assert_eq!(sibling.defined_location.line(), 4);
+}
+
 #[test]
 fn key_fingerprint_helpers_normalize_string_like_tags() {
     let no_raw_tag = None;

@@ -965,6 +965,11 @@ fn main() -> Result<(), serde_saphyr::Error> {
 
 If you must work with abstract types, you can also deserialize YAML into [`serde_json::Value`](https://docs.rs/serde_json/latest/serde_json/value/index.html). Serde will drive the process through [`deserialize_any`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Deserializer.html#method.deserialize_any) because `Value` does not fix a Rust primitive type ahead of time. You lose the strict type control provided by Rust `struct` data types. Also, unlike YAML, JSON does not allow composite keys; keys must be strings. Mapping entries are presented to Serde in source order. Whether the target retains that order depends on its implementation.
 
+Set `Options::local_tags_as_maps` to `true` to read a node with a local tag
+as a single-entry map. The resolved tag name without the leading `!` is the key.
+The tagged scalar, sequence, or mapping is the value. Tag validation and
+include resolution happen before the value reaches the visitor.
+
 By default, `deserialize_any` rejects `.nan`, `.inf`, and `-.inf` with an error and source location.
 Set `Options::non_finite_float_policy` to choose how these values are delivered:
 
@@ -1209,7 +1214,8 @@ other scalar is rejected in strict mode. Standard scalar, sequence, and mapping 
 are accepted only on matching node kinds, even when `reject_unsupported_tags` is false.
 Local robotics tag shape checks are deferred until a non-enum consumer is known. Robotics-only
 `!degrees`, `!radians`, and `!time` tags require the `robotics` crate feature and
-`angle_conversions: true` for floating-point deserialization and untyped reads.
+`angle_conversions: true` to convert their payloads to floats. With
+`local_tags_as_maps: true`, an untyped visitor reads the local tag as a map key.
 
 Likewise, in strict mode, `!include` is accepted only when the `include` crate feature is enabled
 and an include resolver is configured. Tag capture does not bypass normal YAML tag semantics or

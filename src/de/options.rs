@@ -613,6 +613,19 @@ pub struct Options {
     #[cfg(feature = "properties")]
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub property_syntax: PropertySyntax,
+
+    /// Read a node with a local tag as a single-entry map in `deserialize_any`.
+    ///
+    /// The key is the resolved tag name without the leading `!`. The tagged
+    /// scalar, sequence, or mapping is the value. A bare `!` yields a string,
+    /// sequence, or mapping according to the node's kind.
+    ///
+    /// This includes local robotics tags even when [`Self::angle_conversions`]
+    /// is enabled. Tag validation and include resolution happen first. Serde's
+    /// internally tagged enums still read their tag field from the mapping.
+    /// Defaults to `false`.
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
+    pub local_tags_as_maps: bool,
 }
 
 #[cfg(feature = "include")]
@@ -855,6 +868,7 @@ impl Default for Options {
             #[cfg(feature = "properties")]
             property_syntax: PropertySyntax::Braced,
             non_finite_float_policy: NonFiniteFloatPolicy::default(),
+            local_tags_as_maps: false,
         }
     }
 }
@@ -903,6 +917,7 @@ impl std::fmt::Debug for Options {
             )
             .field("angle_conversions", &self.angle_conversions)
             .field("no_schema", &self.no_schema)
+            .field("local_tags_as_maps", &self.local_tags_as_maps)
             .field("reject_unsupported_tags", &self.reject_unsupported_tags)
             .field("reject_tagged_field_names", &self.reject_tagged_field_names)
             .field("non_finite_float_policy", &self.non_finite_float_policy)
@@ -989,6 +1004,7 @@ mod tests {
         assert!(!opts.angle_conversions);
         assert!(!opts.no_schema);
         assert!(!opts.reject_unsupported_tags);
+        assert!(!opts.local_tags_as_maps);
         assert!(opts.reject_tagged_field_names);
         assert_eq!(
             opts.non_finite_float_policy,
@@ -1019,6 +1035,20 @@ mod tests {
             DuplicateKeyPolicy::LastWins
         ));
         assert!(serde_json::from_str::<DuplicateKeyPolicy>("\"FirstWins\"").is_err());
+    }
+
+    #[cfg(feature = "serde_derived_types")]
+    #[test]
+    fn local_tags_as_maps_defaults_to_false_in_older_options() {
+        let opts = crate::options! { local_tags_as_maps: true };
+        let mut fields = serde_json::to_value(opts).unwrap();
+        let fields = fields.as_object_mut().unwrap();
+        assert_eq!(fields.shift_remove("local_tags_as_maps"), Some(true.into()));
+
+        let sequence = serde_json::Value::Array(fields.values().cloned().collect());
+        let restored: Options = serde_json::from_value(sequence).unwrap();
+        assert!(!restored.local_tags_as_maps);
+        assert!(restored.reject_tagged_field_names);
     }
 
     #[cfg(feature = "serde_derived_types")]
