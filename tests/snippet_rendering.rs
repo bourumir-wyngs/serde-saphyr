@@ -208,6 +208,111 @@ fn snippet_crops_very_long_lines_around_error_column() {
     );
 }
 
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct CroppedConfig {
+    a: String,
+    b: String,
+    depth: u16,
+}
+
+#[test]
+fn cropped_snippet_reports_source_column_without_changing_layout() {
+    // Issue #285: the token starts at source column 99, but cropped column 66.
+    let yaml = format!(
+        "{{a: {}, b: {}, depth: sixteen}}\n",
+        "x".repeat(40),
+        "y".repeat(40)
+    );
+    let err = from_str::<CroppedConfig>(&yaml).unwrap_err();
+    let location = err.location().unwrap();
+    assert_eq!((location.line(), location.column()), (1, 99));
+    assert_eq!(
+        err.to_string(),
+        concat!(
+            "error: line 1 column 99: invalid u16\n",
+            " --> <input>:1:99\n",
+            "  |\n",
+            "1 | …xxxxxxxxxx, b: yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy, depth: sixteen}\n",
+            "  |                                                                  ^ invalid u16",
+        )
+    );
+}
+
+#[rstest::rstest]
+#[case(10, "x", 8)]
+#[case(64, "x", 40)]
+#[case(300, "x", 9)]
+#[case(10, "é", 40)]
+#[case(64, "é", 8)]
+#[case(300, "é", 9)]
+fn cropped_snippet_preserves_source_coordinates_for_strings_and_readers(
+    #[case] crop_radius: usize,
+    #[case] padding: &str,
+    #[case] preceding_lines: usize,
+) {
+    // The preceding lines exercise stored snippet windows with a nonzero line offset.
+    // Multibyte characters must count as characters, not bytes, in source columns.
+    // Ending on line 9 or 10 also checks gutter alignment around a digit boundary.
+    let yaml = format!(
+        "{}{{a: {}, b: {}, depth: sixteen}}\r\n",
+        "# context\r\n".repeat(preceding_lines),
+        padding.repeat(40),
+        padding.repeat(40),
+    );
+    for err in [
+        from_str_with_options::<CroppedConfig>(
+            &yaml,
+            serde_saphyr::options! { crop_radius: crop_radius },
+        )
+        .unwrap_err(),
+        serde_saphyr::from_reader_with_options::<_, CroppedConfig>(
+            yaml.as_bytes(),
+            serde_saphyr::options! { crop_radius: crop_radius },
+        )
+        .unwrap_err(),
+    ] {
+        let location = err.location().unwrap();
+        assert_eq!(
+            (location.line(), location.column()),
+            (preceding_lines as u64 + 1, 99),
+        );
+        for line_offset in [0, 9_999] {
+            let rendered = err.render_with_options(serde_saphyr::render_options! {
+                source_name: Some("config.yaml"),
+                line_offset: line_offset,
+            });
+            let row = location.line() + line_offset;
+            assert!(
+                rendered.contains(&format!("--> config.yaml:{row}:99\n")),
+                "{rendered}"
+            );
+            assert!(
+                rendered.contains(&format!("line {row} column 99: invalid u16")),
+                "{rendered}"
+            );
+            assert_eq!(rendered.matches("-->").count(), 1, "{rendered}");
+            assert!(!rendered.contains(":::"), "{rendered}");
+            let mut lines = rendered.lines();
+            let source = lines.find(|line| line.contains("depth: sixteen")).unwrap();
+            let marker = lines.next().unwrap();
+            let origin = rendered.lines().find(|line| line.contains("-->")).unwrap();
+            assert_eq!(
+                origin.find("-->").unwrap() + 1,
+                source.find('|').unwrap(),
+                "{rendered}"
+            );
+            assert_eq!(
+                source.chars().position(|ch| ch == 's'),
+                marker.chars().position(|ch| ch == '^'),
+                "{rendered}",
+            );
+            assert_eq!(source.contains('…'), crop_radius < 99, "{rendered}");
+        }
+        assert_eq!(err.location(), Some(location));
+    }
+}
+
 /// Test that using `Spanned<T>` inside an untagged enum succeeds but loses location info.
 /// Previously this would fail; now the fallback plain-value path in `Spanned<T>::deserialize`
 /// allows it to succeed with `Location::UNKNOWN` for both `referenced` and `defined`.
