@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::fmt;
 
 use annotate_snippets::{
-    AnnotationKind, Level, Renderer, Snippet as AnnotateSnippet, renderer::DecorStyle,
+    AnnotationKind, Group, Level, Renderer, Snippet as AnnotateSnippet, renderer::DecorStyle,
 };
 
 use crate::Location;
@@ -757,15 +757,21 @@ impl<'a> Snippet<'a> {
             sanitize_message_text(Cow::Owned(l10n.snippet_location_prefix(displayed_location)));
         let line_offset = (displayed_location.line - location.line) as usize;
 
-        let report = &[level.primary_title(format!("{loc_prefix}: {msg}")).element(
+        let start_line = window
+            .rows
+            .window_start_absolute_row
+            .saturating_add(line_offset);
+        // Match the renderer's gutter width; a trailing newline does not add a source line.
+        let gutter_width = start_line
+            .saturating_add(window_text.lines().count().saturating_sub(1))
+            .to_string()
+            .len();
+        let title = &[Group::with_title(
+            level.clone().primary_title(format!("{loc_prefix}: {msg}")),
+        )];
+        let report = &[Group::with_level(level).element(
             AnnotateSnippet::source(&window_text)
-                .line_start(
-                    window
-                        .rows
-                        .window_start_absolute_row
-                        .saturating_add(line_offset),
-                )
-                .path(source_path.as_ref())
+                .line_start(start_line)
                 .fold(false)
                 .annotation(
                     AnnotationKind::Primary
@@ -778,6 +784,15 @@ impl<'a> Snippet<'a> {
         // This keeps error strings stable (e.g. for tests) and avoids emitting escape
         // sequences when the output is not a TTY.
         let renderer = Renderer::plain().decor_style(DecorStyle::Ascii);
+        // A snippet path makes annotate-snippets derive the origin column from the
+        // cropped span. Write the original location separately, leaving the rebased
+        // span solely responsible for caret placement in the pathless snippet.
+        writeln!(f, "{}", renderer.render(title))?;
+        writeln!(
+            f,
+            "{:>gutter_width$}--> {source_path}:{}:{}",
+            "", displayed_location.line, displayed_location.column,
+        )?;
         write!(f, "{}", renderer.render(report))
     }
 }
