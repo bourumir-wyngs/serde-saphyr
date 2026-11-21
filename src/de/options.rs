@@ -637,6 +637,10 @@ pub struct Options {
     /// Each entry has the shape Serde expects for an externally tagged enum,
     /// so the application can recover both operations from the stored value.
     ///
+    /// When Serde buffers an untagged enum or a field collected by
+    /// `#[serde(flatten)]`, simple, unrecognized tags can appear as maps even
+    /// with this option disabled. For example, `!Add 5` becomes `{"Add": 5}`.
+    ///
     /// The map key is the resolved local tag name with the leading `!` removed.
     /// Its value is the tagged scalar, sequence, or mapping. A bare `!` yields
     /// a string, sequence, or mapping according to the node's kind. Global tags
@@ -650,8 +654,8 @@ pub struct Options {
     ///   `port`. Enabling this option puts `{"note": 8080}` there, so code that
     ///   reads `port` as a number will fail. This also applies to a field of type
     ///   `serde_json::Value` inside a typed struct.
-    /// - **You want the tag only in the metadata of [`Tagged`](crate::Tagged).**
-    ///   Reading `!T 5` as `Tagged<serde_json::Value>` yields `Tagged(5, Some("!T"))`
+    /// - **You want the tag only in the metadata of [`Tagged<serde_json::Value>`](crate::Tagged).**
+    ///   Reading `!T 5` into this type yields `Tagged(5, Some("!T"))`
     ///   by default. Enabling this option also puts the tag name in the inner value
     ///   as a map key, yielding `Tagged({"T": 5}, Some("!T"))`. Reading the same
     ///   input as `Tagged<u32>` yields `Tagged(5, Some("!T"))` with either setting.

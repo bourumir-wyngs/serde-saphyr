@@ -197,6 +197,21 @@ fn is_serde_content_buffer<V>() -> bool {
     name.contains("::private::de::") && bare_name.ends_with("::ContentVisitor")
 }
 
+/// Recognize Serde's internally tagged enum visitor in the concrete type name.
+/// Adapters such as `serde_path_to_error` retain the visitor as a type argument.
+pub(super) fn is_serde_internal_tag_visitor<V>() -> bool {
+    std::any::type_name::<V>().contains("::private::de::content::TaggedContentVisitor<")
+}
+
+/// The single map entry that stands in for a local tag.
+struct TagEntry {
+    /// The tag name, until the visitor reads it as the key.
+    name: Option<String>,
+    location: Location,
+    /// The payload retains the original YAML node's key position.
+    in_key: bool,
+}
+
 /// Selects how the deserializer presents map entries to a Serde visitor.
 enum MapKind {
     /// Read key/value pairs from an ordinary YAML mapping.
@@ -1094,13 +1109,12 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     /// Flow: We inspect the next event; scalars are parsed with the heuristic above; containers
     /// delegate to `deserialize_seq`/`deserialize_map`.
     fn deserialize_any<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        // An internally tagged enum needs the original mapping to read its tag
-        // field. A Serde adapter can wrap its visitor, e.g. serde_path_to_error.
+        // An internally tagged enum needs the original mapping to read its tag field.
         if self.cfg.local_tags_as_maps
             && let Some(event) = self.ev.peek()?
             && let Some(name) = event.raw_tag().and_then(|tag| tag.strip_prefix('!'))
             && !name.is_empty()
-            && !std::any::type_name::<V>().contains("::private::de::content::TaggedContentVisitor<")
+            && !is_serde_internal_tag_visitor::<V>()
         {
             let location = event.location();
             self.map_kind = MapKind::Tagged(name.to_owned());
@@ -1948,10 +1962,14 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         let child_cfg = self.cfg.enter_container(map_location)?;
         let struct_mode = matches!(self.map_kind, MapKind::Struct);
         let mut map_start_comments = Vec::new();
-        let tag_key = match self.map_kind {
+        let tag_entry = match self.map_kind {
             MapKind::Tagged(name) => {
                 self.ev.strip_peeked_node_tag()?;
-                Some((name, map_location))
+                Some(TagEntry {
+                    name: Some(name),
+                    location: map_location,
+                    in_key: self.in_key,
+                })
             }
             _ => {
                 // Separator comments belong to the map itself. Leading comments
@@ -2087,9 +2105,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             cfg: Cfg,
             struct_mode: bool,
             have_key: bool,
-            tag_key: Option<(String, Location)>,
-            /// A synthetic entry's payload retains the original YAML node's key position.
-            tagged_payload_in_key: Option<bool>,
+            tag_entry: Option<TagEntry>,
 
             // Persist a best-effort “current location” across `next_key_seed` returning to Serde.
             // This allows Serde-produced structural/type errors (e.g. `unknown_field`) to carry
@@ -2257,7 +2273,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
             fn size_hint(&self) -> Option<usize> {
                 (self.live_done && self.pending.is_empty())
-                    .then(|| usize::from(self.tag_key.is_some()))
+                    .then(|| usize::from(self.tag_entry.as_ref().is_some_and(|e| e.name.is_some())))
             }
 
             /// Produce the next key for the visitor, honoring duplicate policy and merges.
@@ -2265,7 +2281,10 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             where
                 K: de::DeserializeSeed<'de>,
             {
-                if let Some((tag, location)) = self.tag_key.take() {
+                if let Some(entry) = self.tag_entry.as_mut()
+                    && let Some(tag) = entry.name.take()
+                {
+                    let location = entry.location;
                     self.have_key = true;
                     #[cfg(any(feature = "garde", feature = "validator"))]
                     {
@@ -2612,10 +2631,10 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                         )
                     })
                 } else {
-                    let in_key = if let Some(in_key) = self.tagged_payload_in_key {
+                    let in_key = if let Some(entry) = &self.tag_entry {
                         // The synthetic tag key consumed no YAML event. The payload still
                         // owns its leading comments, and there is no mapping separator.
-                        in_key
+                        entry.in_key
                     } else {
                         value_separator_comments
                             .extend(self.ev.take_separator_comments_before_mapping_value()?);
@@ -2688,7 +2707,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             }
         }
 
-        let tagged = tag_key.is_some();
+        let tagged = tag_entry.is_some();
         let (pending, pending_first_key_comments, live_done) =
             if struct_mode && matches!(self.cfg.dup_policy, DuplicateKeyPolicy::LastWins) {
                 (
@@ -2715,8 +2734,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             cfg: child_cfg,
             struct_mode,
             have_key: false,
-            tagged_payload_in_key: tagged.then_some(self.in_key),
-            tag_key,
+            tag_entry,
 
             fallback_guard: None,
 

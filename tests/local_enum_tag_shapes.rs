@@ -148,6 +148,71 @@ fn local_tags_as_maps_uses_resolved_tags(#[case] yaml: &str, #[case] expected: V
     );
 }
 
+#[test]
+fn local_tags_as_maps_wraps_each_document() {
+    let opts = options! { local_tags_as_maps: true };
+    let documents: Vec<Value> =
+        serde_saphyr::from_multiple_with_options("--- !Stop\n--- !Add 5\n--- 6\n", opts).unwrap();
+    assert_eq!(
+        documents,
+        [json!({"Stop": null}), json!({"Add": 5}), json!(6)]
+    );
+}
+
+#[rstest]
+#[case(false, json!(5))]
+#[case(true, json!({"T": 5}))]
+fn tagged_value_preserves_metadata_with_either_payload_shape(
+    #[case] local_tags_as_maps: bool,
+    #[case] expected_payload: Value,
+    #[values("!T 5", "%TAG !v! !\n--- !v!T 5")] yaml: &str,
+) {
+    use serde_saphyr::Tagged;
+
+    let opts = options! { local_tags_as_maps: local_tags_as_maps };
+    let value: Tagged<Value> = from_str_with_options(yaml, opts.clone()).unwrap();
+    assert_eq!(value, Tagged(expected_payload, Some("!T".into())));
+
+    let number: Tagged<u32> = from_str_with_options(yaml, opts).unwrap();
+    assert_eq!(number, Tagged(5, Some("!T".into())));
+}
+
+#[test]
+fn local_tags_as_maps_preserves_tags_inside_repeated_aliases() {
+    let opts = options! { local_tags_as_maps: true };
+    let value: Value = from_str_with_options("[&items [!Add 5], *items, *items]", opts).unwrap();
+    let items = json!([{"Add": 5}]);
+    assert_eq!(value, json!([items, items, items]));
+}
+
+#[test]
+fn local_tags_as_maps_charges_one_level_of_depth_per_tag() {
+    use serde_saphyr::budget::BudgetBreach;
+
+    let yaml = "[!Outer [!Inner [1]]]";
+    let parse = |local_tags_as_maps: bool, max_depth: usize| {
+        let opts = options! {
+            local_tags_as_maps: local_tags_as_maps,
+            budget: serde_saphyr::budget! { max_depth: max_depth },
+        };
+        from_str_with_options::<Value>(yaml, opts)
+    };
+
+    assert_eq!(parse(false, 3).unwrap(), json!([[[1]]]));
+    let err = parse(true, 4).unwrap_err();
+    assert!(matches!(
+        err.without_snippet(),
+        Error::Budget {
+            breach: BudgetBreach::Depth { depth: 5 },
+            ..
+        }
+    ));
+    assert_eq!(
+        parse(true, 5).unwrap(),
+        json!([{"Outer": [{"Inner": [1]}]}])
+    );
+}
+
 #[cfg(feature = "robotics")]
 #[test]
 fn local_tags_as_maps_with_angle_conversions() {

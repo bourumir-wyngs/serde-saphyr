@@ -1132,6 +1132,10 @@ The [`Tagged<T>`](https://docs.rs/serde-saphyr/latest/serde_saphyr/struct.Tagged
 wrapper stores a value and the resolved YAML tag attached to its node. The tag is represented as an
 `Option<String>`. An empty string is not a valid tag value; use `None` instead.
 
+With `local_tags_as_maps` enabled, reading `!T 5` as `Tagged<serde_json::Value>`
+stores `{"T": 5}` in the value and `Some("!T")` in the metadata. Reading it as
+`Tagged<u32>` stores `5` and `Some("!T")` with either setting.
+
 Tag handles are resolved while parsing. For example, `!!str` becomes
 `tag:yaml.org,2002:str`, while the local tag `!nanoseconds` remains `!nanoseconds`. Given:
 
