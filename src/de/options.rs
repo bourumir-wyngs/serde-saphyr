@@ -614,16 +614,40 @@ pub struct Options {
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub property_syntax: PropertySyntax,
 
-    /// Read a node with a local tag as a single-entry map in `deserialize_any`.
-    ///
-    /// The key is the resolved tag name without the leading `!`. The tagged
-    /// scalar, sequence, or mapping is the value. A bare `!` yields a string,
-    /// sequence, or mapping according to the node's kind.
-    ///
-    /// This includes local robotics tags even when [`Self::angle_conversions`]
-    /// is enabled. Tag validation and include resolution happen first. Serde's
-    /// internally tagged enums still read their tag field from the mapping.
+    /// Preserve local YAML tags as single-entry maps in `deserialize_any`.
     /// Defaults to `false`.
+    ///
+    /// Both operations in this configuration take `5` as their argument.
+    ///
+    /// ```yaml
+    /// - !Add 5
+    /// - !Subtract 5
+    /// ```
+    ///
+    /// When reading directly into `Vec<Operation>`, Serde can use the tags to
+    /// select `Operation::Add(5)` and `Operation::Subtract(5)`. A configuration
+    /// layer may first load the YAML into a generic value such as
+    /// `serde_json::Value` or Figment's `Value`. With the default settings,
+    /// that value holds `[5, 5]`. By the time the application asks for
+    /// `Vec<Operation>`, the information that distinguished the variants is gone.
+    ///
+    /// Set `local_tags_as_maps` to `true` to keep the variant names in the
+    /// intermediate value. The same input then yields
+    /// `[{"Add": 5}, {"Subtract": 5}]`.
+    /// Each entry has the shape Serde expects for an externally tagged enum,
+    /// so the application can recover both operations from the stored value.
+    ///
+    /// The map key is the resolved local tag name with the leading `!` removed.
+    /// Its value is the tagged scalar, sequence, or mapping. A bare `!` yields
+    /// a string, sequence, or mapping according to the node's kind. Global tags
+    /// such as `!!str` keep their usual meaning. Tag validation and configured
+    /// include resolution happen first. Local robotics tags such as `!degrees`
+    /// also become map keys when [`Self::angle_conversions`] is enabled.
+    ///
+    /// An internally tagged enum read directly from a YAML mapping can still
+    /// use its discriminator field. If an intermediate value or a type-erasing
+    /// adapter exposes the outer tag as a map key, that field is one level
+    /// deeper than the enum expects.
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub local_tags_as_maps: bool,
 }
