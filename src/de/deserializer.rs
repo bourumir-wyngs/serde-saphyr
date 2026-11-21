@@ -197,11 +197,14 @@ fn is_serde_content_buffer<V>() -> bool {
     name.contains("::private::de::") && bare_name.ends_with("::ContentVisitor")
 }
 
+/// Selects how the deserializer presents map entries to a Serde visitor.
 enum MapKind {
+    /// Read key/value pairs from an ordinary YAML mapping.
     Map,
-    /// A derived struct needs duplicate fields collapsed before its visitor sees them.
+    /// Read struct fields, collapsing duplicates before visiting when `LastWins` is set.
     Struct,
-    /// The tag name supplies the only key. The event stream starts at its value.
+    /// Use the resolved local tag name without its leading `!` as the only key.
+    /// For `!Add 5`, the string holds `"Add"` and the event stream supplies `5`.
     Tagged(String),
 }
 
