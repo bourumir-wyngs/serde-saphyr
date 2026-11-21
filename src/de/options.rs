@@ -650,6 +650,11 @@ pub struct Options {
     ///   `port`. Enabling this option puts `{"note": 8080}` there, so code that
     ///   reads `port` as a number will fail. This also applies to a field of type
     ///   `serde_json::Value` inside a typed struct.
+    /// - **You want the tag only in the metadata of [`Tagged`](crate::Tagged).**
+    ///   Reading `!T 5` as `Tagged<serde_json::Value>` yields `Tagged(5, Some("!T"))`
+    ///   by default. Enabling this option also puts the tag name in the inner value
+    ///   as a map key, yielding `Tagged({"T": 5}, Some("!T"))`. Reading the same
+    ///   input as `Tagged<u32>` yields `Tagged(5, Some("!T"))` with either setting.
     /// - **An enum needs its discriminator after buffering or type erasure.** An
     ///   internally tagged enum read directly can use the `kind` field in
     ///   `!ns:meta {kind: Known}`. If a generic value or a type-erasing adapter
