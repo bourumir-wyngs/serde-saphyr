@@ -205,8 +205,8 @@ pub struct Commented<T>(pub T, pub String);
 ///
 /// Resolution deliberately discards source spelling: for example, `!!str` is
 /// captured as `Some("tag:yaml.org,2002:str")`, while a local tag such as
-/// `!widget` is captured as `Some("!widget")`. Tags resolved through a `%TAG`
-/// directive are captured as their complete URI. A present tag always has a
+/// `!widget` is captured as `Some("!widget")`. A `%TAG` directive can expand
+/// a handle to a local tag or a global tag URI. A present tag always has a
 /// non-empty resolved identity; `Some("")` is invalid when serializing rather
 /// than an alternative spelling of `None`.
 ///

@@ -392,6 +392,77 @@ fn simple_tagged_enum_helpers_accept_only_simple_variant_names() {
 }
 
 #[test]
+fn internal_tag_visitor_is_recognized() {
+    use super::deserializer::is_serde_internal_tag_visitor;
+    use serde::Deserialize;
+    use serde::de::value::Error;
+    use serde::de::{Deserializer, Visitor};
+
+    #[derive(Debug, Deserialize)]
+    #[serde(tag = "kind")]
+    enum Internal {
+        Known,
+    }
+
+    #[derive(Debug, Deserialize)]
+    #[serde(untagged)]
+    enum Untagged {
+        Empty,
+    }
+
+    struct Probe;
+
+    impl<'de> Deserializer<'de> for Probe {
+        type Error = Error;
+
+        fn deserialize_any<V: Visitor<'de>>(self, _visitor: V) -> Result<V::Value, Error> {
+            Err(serde::de::Error::custom(
+                is_serde_internal_tag_visitor::<V>(),
+            ))
+        }
+
+        serde::forward_to_deserialize_any! {
+            bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string bytes
+            byte_buf option unit unit_struct newtype_struct seq tuple tuple_struct map
+            struct enum identifier ignored_any
+        }
+    }
+
+    let direct = Internal::deserialize(Probe).unwrap_err();
+    assert_eq!(direct.to_string(), "true");
+    let wrapped = serde_path_to_error::deserialize::<_, Internal>(Probe).unwrap_err();
+    assert_eq!(wrapped.into_inner().to_string(), "true");
+    let untagged = Untagged::deserialize(Probe).unwrap_err();
+    assert_eq!(untagged.to_string(), "false");
+}
+
+#[cfg(any(feature = "garde", feature = "validator"))]
+#[test]
+fn local_tags_as_maps_records_payload_locations() {
+    use super::live_events::LiveEvents;
+    use super::path_map::{PathKey, PathRecorder};
+    use serde::Deserialize;
+
+    let yaml = "entry: !Tag\n  first: 0\n  second: 1\nsibling: 2";
+    let opts = crate::options! { local_tags_as_maps: true };
+    let cfg = super::Cfg::from_options(&opts);
+    let mut events = LiveEvents::from_str(yaml, opts);
+    let mut paths = PathRecorder::new();
+    let de = super::YamlDeserializer::new_with_path_recorder(&mut events, cfg, &mut paths);
+    serde_json::Value::deserialize(de).unwrap();
+
+    let field = PathKey::new()
+        .join_key("entry")
+        .join_key("Tag")
+        .join_key("second");
+    let sibling = PathKey::new().join_key("sibling");
+    let field = paths.map.locations_for(&field).unwrap();
+    let sibling = paths.map.locations_for(&sibling).unwrap();
+    assert_eq!(field.defined_location.line(), 3);
+    assert_eq!(sibling.defined_location.line(), 4);
+}
+
+#[test]
 fn key_fingerprint_helpers_normalize_string_like_tags() {
     let no_raw_tag = None;
     assert_eq!(

@@ -280,6 +280,61 @@ fn commented_deserialize_keeps_trailing_and_dash_comments_separate() {
     assert_eq!(value[1], Commented(2, "two".to_string()));
 }
 
+mod local_tag_comments {
+    use super::*;
+    use serde::de::{Deserializer, MapAccess, Visitor};
+    use serde_saphyr::{from_str_with_options, options};
+    use std::fmt;
+
+    struct TaggedItems(String, Commented<Vec<Commented<u8>>>);
+
+    impl<'de> Deserialize<'de> for TaggedItems {
+        fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+            struct Entry;
+
+            impl<'de> Visitor<'de> for Entry {
+                type Value = TaggedItems;
+
+                fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    formatter.write_str("a tagged list")
+                }
+
+                fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+                    let (tag, items) = map
+                        .next_entry()?
+                        .ok_or_else(|| serde::de::Error::custom("missing tag"))?;
+                    Ok(TaggedItems(tag, items))
+                }
+            }
+
+            de.deserialize_any(Entry)
+        }
+    }
+
+    #[test]
+    fn root_comment_belongs_to_tagged_collection() {
+        let opts = options! { local_tags_as_maps: true };
+        let TaggedItems(tag, items) = from_str_with_options("# root\n!Box [1]", opts).unwrap();
+        assert_eq!(tag, "Box");
+        assert_eq!(
+            items,
+            Commented(vec![Commented(1, String::new())], "root".into())
+        );
+    }
+
+    #[test]
+    fn tagged_item_keeps_only_its_own_dash_comment() {
+        let opts = options! { local_tags_as_maps: true };
+        let (_, TaggedItems(tag, items)): (u8, TaggedItems) =
+            from_str_with_options("- 1 # first\n- # second\n  !Box [2]", opts).unwrap();
+        assert_eq!(tag, "Box");
+        assert_eq!(
+            items,
+            Commented(vec![Commented(2, String::new())], "second".into())
+        );
+    }
+}
+
 #[test]
 fn commented_deserialize_does_not_leak_parent_comments_into_nested_values() {
     #[derive(Debug, Deserialize, PartialEq)]

@@ -543,6 +543,19 @@ pub(super) fn strip_root_tag_for_externally_tagged_payload(events: &mut [Ev<'_>]
     }
 }
 
+/// A resolved tag name is a literal string when presented as a mapping key.
+pub(super) fn tag_name_key_event(name: String, location: Location) -> Ev<'static> {
+    Ev::Scalar {
+        value: Cow::Owned(name),
+        tag: SfTag::String,
+        raw_tag: None,
+        original_tag: None,
+        style: ScalarStyle::single_quoted(),
+        anchor: 0,
+        location,
+    }
+}
+
 /// Encode a YAML tag-selected enum variant as the Serde externally-tagged map form.
 ///
 /// Arguments:
@@ -572,18 +585,7 @@ pub(super) fn externally_tagged_payload_as_map_events<'a>(
         },
         origin,
     );
-    events.push(
-        Ev::Scalar {
-            value: Cow::Owned(variant),
-            tag: SfTag::String,
-            raw_tag: None,
-            original_tag: None,
-            style: ScalarStyle::plain(),
-            anchor: 0,
-            location: tag_location,
-        },
-        origin,
-    );
+    events.push(tag_name_key_event(variant, tag_location), origin);
     events.extend(payload_events);
     events.push(
         Ev::MapEnd {

@@ -17,7 +17,7 @@ use super::key_nodes::{
     KeyFingerprint, KeyNode, PendingEntry, apply_duplicate_key_policy_to_entries,
     capture_node_with_integer_syntax, capture_simple_tagged_node_as_map_events,
     is_empty_mapping_key_fingerprint, is_merge_key, pending_entries_from_live_events,
-    tagged_enum_variant_name, validate_no_merge_keys_in_node_events,
+    tag_name_key_event, tagged_enum_variant_name, validate_no_merge_keys_in_node_events,
 };
 use super::live_events::validate_node_tag_kind;
 #[cfg(feature = "properties")]
@@ -197,6 +197,32 @@ fn is_serde_content_buffer<V>() -> bool {
     name.contains("::private::de::") && bare_name.ends_with("::ContentVisitor")
 }
 
+/// Recognize Serde's internally tagged enum visitor in the concrete type name.
+/// Adapters such as `serde_path_to_error` retain the visitor as a type argument.
+pub(super) fn is_serde_internal_tag_visitor<V>() -> bool {
+    std::any::type_name::<V>().contains("::private::de::content::TaggedContentVisitor<")
+}
+
+/// The single map entry that stands in for a local tag.
+struct TagEntry {
+    /// The tag name, until the visitor reads it as the key.
+    name: Option<String>,
+    location: Location,
+    /// The payload retains the original YAML node's key position.
+    in_key: bool,
+}
+
+/// Selects how the deserializer presents map entries to a Serde visitor.
+enum MapKind {
+    /// Read key/value pairs from an ordinary YAML mapping.
+    Map,
+    /// Read struct fields, collapsing duplicates before visiting when `LastWins` is set.
+    Struct,
+    /// Use the resolved local tag name without its leading `!` as the only key.
+    /// For `!Add 5`, the string holds `"Add"` and the event stream supplies `5`.
+    Tagged(String),
+}
+
 /// The streaming Serde deserializer.
 ///
 /// ## Important: this deserializer *borrows* and is only available in a closure
@@ -243,11 +269,7 @@ pub struct YamlDeserializer<'de, 'e> {
     pub(super) cfg: Cfg,
     /// True when deserializing a map key.
     in_key: bool,
-    /// True when Serde entered through `deserialize_struct`.
-    ///
-    /// Derived struct visitors reject repeated fields themselves, so `LastWins`
-    /// needs duplicate fields collapsed before they reach Serde.
-    struct_mode: bool,
+    map_kind: MapKind,
     /// True when the recorded key node was exactly an empty mapping (`MapStart` followed by `MapEnd`).
     key_empty_map_node: bool,
     /// Comments that the parent mapping associated with this value.
@@ -484,7 +506,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
             ev,
             cfg,
             in_key: false,
-            struct_mode: false,
+            map_kind: MapKind::Map,
             key_empty_map_node: false,
             pending_comments: Vec::new(),
             pending_value_separator_comments: Vec::new(),
@@ -560,7 +582,7 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
             ev,
             cfg,
             in_key: false,
-            struct_mode: false,
+            map_kind: MapKind::Map,
             key_empty_map_node: false,
             pending_comments: Vec::new(),
             pending_value_separator_comments: Vec::new(),
@@ -1087,9 +1109,20 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
     /// Flow: We inspect the next event; scalars are parsed with the heuristic above; containers
     /// delegate to `deserialize_seq`/`deserialize_map`.
     fn deserialize_any<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value, Self::Error> {
-        // Only Serde's generic Content buffer needs tagged nodes represented as
-        // synthetic maps. General untyped visitors discard YAML tags, while other
-        // private Serde visitors may attach their own meaning to the original map.
+        // An internally tagged enum needs the original mapping to read its tag field.
+        if self.cfg.local_tags_as_maps
+            && let Some(event) = self.ev.peek()?
+            && let Some(name) = event.raw_tag().and_then(|tag| tag.strip_prefix('!'))
+            && !name.is_empty()
+            && !is_serde_internal_tag_visitor::<V>()
+        {
+            let location = event.location();
+            self.map_kind = MapKind::Tagged(name.to_owned());
+            let alias = self.ev.alias_reference_location();
+            return with_interp_redaction_scope(|| self.deserialize_map(visitor))
+                .map_err(|error| attach_alias_locations_if_missing(error, alias, location));
+        }
+
         if is_serde_content_buffer::<V>()
             && let Some(events) = capture_simple_tagged_node_as_map_events(self.ev)?
         {
@@ -1921,23 +1954,33 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                 location: self.ev.last_location(),
             });
         }
-        // Same-line separator comments on the parent field belong to this mapping node.
-        // `Commented<Container>` consumes those comments before this point; a plain map
-        // must not reattach them to the first child key.
-        let _map_node_comments = std::mem::take(&mut self.pending_value_separator_comments);
-        // Comments already inside the map, before the first key, remain first-key
-        // comments. `Commented<Container>` defers these instead of capturing them.
-        // If this map is reached through a nested alias, alias replay exposes the
-        // anchored map start here; comments above the alias follow the same rule.
-        let mut map_start_comments = std::mem::take(&mut self.pending_value_comments);
-        map_start_comments.extend(self.ev.take_leading_comments_for_next_node()?);
         let map_location = match self.ev.peek()? {
             Some(ev) => ev.location(),
             None => self.ev.last_location(),
         };
         let map_reference_location = self.ev.reference_location();
         let child_cfg = self.cfg.enter_container(map_location)?;
-        self.expect_map_start()?;
+        let struct_mode = matches!(self.map_kind, MapKind::Struct);
+        let mut map_start_comments = Vec::new();
+        let tag_entry = match self.map_kind {
+            MapKind::Tagged(name) => {
+                self.ev.strip_peeked_node_tag()?;
+                Some(TagEntry {
+                    name: Some(name),
+                    location: map_location,
+                    in_key: self.in_key,
+                })
+            }
+            _ => {
+                // Separator comments belong to the map itself. Leading comments
+                // inside the map belong to its first key, including on an alias.
+                self.pending_value_separator_comments.clear();
+                map_start_comments = std::mem::take(&mut self.pending_value_comments);
+                map_start_comments.extend(self.ev.take_leading_comments_for_next_node()?);
+                self.expect_map_start()?;
+                None
+            }
+        };
 
         // Ensure "missing field" errors (which have no natural span) get attributed to the
         // current container.
@@ -2062,6 +2105,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             cfg: Cfg,
             struct_mode: bool,
             have_key: bool,
+            tag_entry: Option<TagEntry>,
 
             // Persist a best-effort “current location” across `next_key_seed` returning to Serde.
             // This allows Serde-produced structural/type errors (e.g. `unknown_field`) to carry
@@ -2164,7 +2208,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     ev: &mut replay,
                     cfg: self.cfg,
                     in_key: true,
-                    struct_mode: false,
+                    map_kind: MapKind::Map,
                     key_empty_map_node: kemn,
                     pending_comments: Vec::new(),
                     pending_value_separator_comments: Vec::new(),
@@ -2227,11 +2271,30 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         impl<'de> de::MapAccess<'de> for MA<'de, '_> {
             type Error = Error;
 
+            fn size_hint(&self) -> Option<usize> {
+                (self.live_done && self.pending.is_empty())
+                    .then(|| usize::from(self.tag_entry.as_ref().is_some_and(|e| e.name.is_some())))
+            }
+
             /// Produce the next key for the visitor, honoring duplicate policy and merges.
             fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Error>
             where
                 K: de::DeserializeSeed<'de>,
             {
+                if let Some(entry) = self.tag_entry.as_mut()
+                    && let Some(tag) = entry.name.take()
+                {
+                    let location = entry.location;
+                    self.have_key = true;
+                    #[cfg(any(feature = "garde", feature = "validator"))]
+                    {
+                        self.pending_path_segment = Some(tag.clone());
+                    }
+                    let key = tag_name_key_event(tag, location);
+                    let events = RecordedEvents::from_event(key, self.ev.node_origin());
+                    return self.deserialize_recorded_key(seed, events, false).map(Some);
+                }
+
                 let mut seed = Some(seed);
 
                 loop {
@@ -2568,9 +2631,16 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                         )
                     })
                 } else {
-                    value_separator_comments
-                        .extend(self.ev.take_separator_comments_before_mapping_value()?);
-                    value_comments.extend(self.ev.take_leading_comments_for_next_node()?);
+                    let in_key = if let Some(entry) = &self.tag_entry {
+                        // The synthetic tag key consumed no YAML event. The payload still
+                        // owns its leading comments, and there is no mapping separator.
+                        entry.in_key
+                    } else {
+                        value_separator_comments
+                            .extend(self.ev.take_separator_comments_before_mapping_value()?);
+                        value_comments.extend(self.ev.take_leading_comments_for_next_node()?);
+                        false
+                    };
 
                     // Live stream: get both locations for potential alias error reporting.
                     let defined_location = match self.ev.peek()? {
@@ -2601,6 +2671,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             let mut de = YamlDeserializer::new_with_path_recorder(
                                 self.ev, self.cfg, recorder,
                             );
+                            de.in_key = in_key;
                             de.pending_comments = field_comments;
                             de.pending_value_separator_comments = value_separator_comments;
                             de.pending_value_comments = value_comments;
@@ -2620,6 +2691,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     }
 
                     let mut de = YamlDeserializer::new(self.ev, self.cfg);
+                    de.in_key = in_key;
                     de.pending_comments = field_comments;
                     de.pending_value_separator_comments = value_separator_comments;
                     de.pending_value_comments = value_comments;
@@ -2635,8 +2707,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             }
         }
 
+        let tagged = tag_entry.is_some();
         let (pending, pending_first_key_comments, live_done) =
-            if self.struct_mode && matches!(self.cfg.dup_policy, DuplicateKeyPolicy::LastWins) {
+            if struct_mode && matches!(self.cfg.dup_policy, DuplicateKeyPolicy::LastWins) {
                 (
                     collect_last_wins_entries(
                         self.ev,
@@ -2650,7 +2723,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     true,
                 )
             } else {
-                (VecDeque::new(), map_start_comments, false)
+                (VecDeque::new(), map_start_comments, tagged)
             };
 
         #[cfg(any(feature = "garde", feature = "validator"))]
@@ -2659,8 +2732,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         let mut access = MA {
             ev: self.ev,
             cfg: child_cfg,
-            struct_mode: self.struct_mode,
+            struct_mode,
             have_key: false,
+            tag_entry,
 
             fallback_guard: None,
 
@@ -2669,7 +2743,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             #[cfg(any(feature = "garde", feature = "validator"))]
             pending_path_segment: None,
 
-            seen: if remembers_seen_keys(&child_cfg) {
+            seen: if !tagged && remembers_seen_keys(&child_cfg) {
                 HashSet::with_capacity(8)
             } else {
                 HashSet::new()
@@ -2679,9 +2753,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             flushing_merges: false,
             live_done,
             pending_value: None,
-            pending_field_comments: Vec::new(),
-            pending_value_separator_comments: Vec::new(),
-            pending_value_comments: Vec::new(),
+            pending_field_comments: self.pending_comments,
+            pending_value_separator_comments: self.pending_value_separator_comments,
+            pending_value_comments: self.pending_value_comments,
             pending_first_key_comments,
         };
         let result = visitor.visit_map(&mut access)?;
@@ -2703,7 +2777,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
         let mut de = self;
-        de.struct_mode = true;
+        de.map_kind = MapKind::Struct;
         de.deserialize_map(visitor)
     }
 
