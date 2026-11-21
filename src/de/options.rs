@@ -641,16 +641,30 @@ pub struct Options {
     /// Its value is the tagged scalar, sequence, or mapping. A bare `!` yields
     /// a string, sequence, or mapping according to the node's kind. Global tags
     /// such as `!!str` keep their usual meaning. Tag validation and configured
-    /// include resolution happen first. Local robotics tags such as `!degrees`
-    /// also become map keys when [`Self::angle_conversions`] is enabled.
+    /// include resolution happen first.
     ///
-    /// An internally tagged enum read directly from a YAML mapping can still
-    /// use its discriminator field. If an intermediate value or a type-erasing
-    /// adapter exposes the outer tag as a map key, that field is one level
-    /// deeper than the enum expects. Serde also buffers the mapping when the
-    /// enum has a final `#[serde(untagged)]` fallback variant. If the fallback
-    /// accepts the wrapped map, deserialization succeeds with that variant
-    /// even when the discriminator names a different one.
+    /// # When to leave this disabled
+    ///
+    /// - **Your application treats local tags as annotations.** For
+    ///   `port: !note 8080`, a generic value normally holds the integer `8080` at
+    ///   `port`. Enabling this option puts `{"note": 8080}` there, so code that
+    ///   reads `port` as a number will fail. This also applies to a field of type
+    ///   `serde_json::Value` inside a typed struct.
+    /// - **An enum needs its discriminator after buffering or type erasure.** An
+    ///   internally tagged enum read directly can use the `kind` field in
+    ///   `!ns:meta {kind: Known}`. If a generic value or a type-erasing adapter
+    ///   exposes `{"ns:meta": {"kind": "Known"}}`, Serde can report a missing
+    ///   `kind`. Serde also buffers enums with a final `#[serde(untagged)]`
+    ///   fallback. If that variant accepts the map, the read can silently select
+    ///   the fallback even though `kind` says `Known`.
+    /// - **Your generic values need converted robotics units.** With the `robotics`
+    ///   feature and [`Self::angle_conversions`] enabled, `!degrees 180` normally
+    ///   yields π radians. Enabling this option yields `{"degrees": 180}` in a
+    ///   generic value. A direct `f64` read still yields π.
+    ///
+    /// Each tag exposed as a map also adds one level of nesting during
+    /// deserialization. A document that previously fit within [`Budget::max_depth`]
+    /// can exceed that limit when it contains nested tagged values.
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub local_tags_as_maps: bool,
 }
