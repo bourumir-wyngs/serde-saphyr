@@ -216,6 +216,28 @@ fn custom_yaml_mapping_tag_does_not_hide_serde_internal_tag(
 }
 
 #[test]
+fn buffered_internal_tag_can_select_untagged_fallback() {
+    #[derive(Debug, PartialEq, Deserialize)]
+    #[serde(tag = "kind")]
+    enum Choice {
+        Known,
+        #[serde(untagged)]
+        Fallback(serde_json::Value),
+    }
+
+    let yaml = "!ns:meta {kind: Known}";
+    let default = serde_saphyr::from_str::<Choice>(yaml).unwrap();
+    assert_eq!(default, Choice::Known);
+
+    let opts = serde_saphyr::options! { local_tags_as_maps: true };
+    let actual = serde_saphyr::from_str_with_options::<Choice>(yaml, opts).unwrap();
+    assert_eq!(
+        actual,
+        Choice::Fallback(serde_json::json!({"ns:meta": {"kind": "Known"}}))
+    );
+}
+
+#[test]
 fn custom_yaml_mapping_tag_does_not_hide_serde_adjacent_tag() {
     let actual: AdjacentlyTaggedMapping =
         serde_saphyr::from_str("!metadata {data: {a: 1, b: 2}, kind: Struct}")

@@ -647,7 +647,10 @@ pub struct Options {
     /// An internally tagged enum read directly from a YAML mapping can still
     /// use its discriminator field. If an intermediate value or a type-erasing
     /// adapter exposes the outer tag as a map key, that field is one level
-    /// deeper than the enum expects.
+    /// deeper than the enum expects. Serde also buffers the mapping when the
+    /// enum has a final `#[serde(untagged)]` fallback variant. If the fallback
+    /// accepts the wrapped map, deserialization succeeds with that variant
+    /// even when the discriminator names a different one.
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub local_tags_as_maps: bool,
 }
