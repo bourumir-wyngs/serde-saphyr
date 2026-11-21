@@ -2085,8 +2085,8 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             struct_mode: bool,
             have_key: bool,
             tag_key: Option<(String, Location)>,
-            /// A tagged YAML key is still in key position while reading its payload.
-            value_in_key: bool,
+            /// A synthetic entry's payload retains the original YAML node's key position.
+            tagged_payload_in_key: Option<bool>,
 
             // Persist a best-effort “current location” across `next_key_seed` returning to Serde.
             // This allows Serde-produced structural/type errors (e.g. `unknown_field`) to carry
@@ -2609,9 +2609,16 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                         )
                     })
                 } else {
-                    value_separator_comments
-                        .extend(self.ev.take_separator_comments_before_mapping_value()?);
-                    value_comments.extend(self.ev.take_leading_comments_for_next_node()?);
+                    let in_key = if let Some(in_key) = self.tagged_payload_in_key {
+                        // The synthetic tag key consumed no YAML event. The payload still
+                        // owns its leading comments, and there is no mapping separator.
+                        in_key
+                    } else {
+                        value_separator_comments
+                            .extend(self.ev.take_separator_comments_before_mapping_value()?);
+                        value_comments.extend(self.ev.take_leading_comments_for_next_node()?);
+                        false
+                    };
 
                     // Live stream: get both locations for potential alias error reporting.
                     let defined_location = match self.ev.peek()? {
@@ -2642,7 +2649,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                             let mut de = YamlDeserializer::new_with_path_recorder(
                                 self.ev, self.cfg, recorder,
                             );
-                            de.in_key = self.value_in_key;
+                            de.in_key = in_key;
                             de.pending_comments = field_comments;
                             de.pending_value_separator_comments = value_separator_comments;
                             de.pending_value_comments = value_comments;
@@ -2662,7 +2669,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
                     }
 
                     let mut de = YamlDeserializer::new(self.ev, self.cfg);
-                    de.in_key = self.value_in_key;
+                    de.in_key = in_key;
                     de.pending_comments = field_comments;
                     de.pending_value_separator_comments = value_separator_comments;
                     de.pending_value_comments = value_comments;
@@ -2705,7 +2712,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             cfg: child_cfg,
             struct_mode,
             have_key: false,
-            value_in_key: tagged && self.in_key,
+            tagged_payload_in_key: tagged.then_some(self.in_key),
             tag_key,
 
             fallback_guard: None,
