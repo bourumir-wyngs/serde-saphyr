@@ -740,6 +740,22 @@ mod tests {
     }
 
     #[test]
+    fn collection_ends_and_placeholders_have_no_raw_tag() {
+        let location = Location::UNKNOWN;
+        for event in [
+            Ev::SeqEnd { location },
+            Ev::MapEnd { location },
+            Ev::RecursiveAlias {
+                anchor: 1,
+                location,
+            },
+            Ev::Taken { location },
+        ] {
+            assert_eq!(event.raw_tag(), None, "{event:?}");
+        }
+    }
+
+    #[test]
     fn scalar_tag_spelling_is_counted_and_cleared_with_the_tag() {
         let mut event = Ev::Scalar {
             value: Cow::Owned("payload".to_owned()),
