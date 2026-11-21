@@ -17,7 +17,7 @@ use super::key_nodes::{
     KeyFingerprint, KeyNode, PendingEntry, apply_duplicate_key_policy_to_entries,
     capture_node_with_integer_syntax, capture_simple_tagged_node_as_map_events,
     is_empty_mapping_key_fingerprint, is_merge_key, pending_entries_from_live_events,
-    tagged_enum_variant_name, validate_no_merge_keys_in_node_events,
+    tag_name_key_event, tagged_enum_variant_name, validate_no_merge_keys_in_node_events,
 };
 use super::live_events::validate_node_tag_kind;
 #[cfg(feature = "properties")]
@@ -1948,7 +1948,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         let tag_key = match self.map_kind {
             MapKind::Tagged(name) => {
                 self.ev.strip_peeked_node_tag()?;
-                Some(name)
+                Some((name, map_location))
             }
             _ => {
                 // Separator comments belong to the map itself. Leading comments
@@ -2084,7 +2084,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             cfg: Cfg,
             struct_mode: bool,
             have_key: bool,
-            tag_key: Option<String>,
+            tag_key: Option<(String, Location)>,
             /// A tagged YAML key is still in key position while reading its payload.
             value_in_key: bool,
 
@@ -2262,13 +2262,15 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             where
                 K: de::DeserializeSeed<'de>,
             {
-                if let Some(tag) = self.tag_key.take() {
+                if let Some((tag, location)) = self.tag_key.take() {
                     self.have_key = true;
                     #[cfg(any(feature = "garde", feature = "validator"))]
                     {
                         self.pending_path_segment = Some(tag.clone());
                     }
-                    return seed.deserialize(tag.into_deserializer()).map(Some);
+                    let key = tag_name_key_event(tag, location);
+                    let events = RecordedEvents::from_event(key, self.ev.node_origin());
+                    return self.deserialize_recorded_key(seed, events, false).map(Some);
                 }
 
                 let mut seed = Some(seed);

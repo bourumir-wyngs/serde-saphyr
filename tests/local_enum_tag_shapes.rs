@@ -181,6 +181,46 @@ fn untagged_enum_reads_a_local_extension_as_a_map() {
     assert_eq!(map["time"], [1, 2]);
 }
 
+#[rstest]
+#[case("!Add 5", "Add")]
+#[case("!123 5", "123")]
+#[case("!null 5", "null")]
+#[case("!%24%7BPORT%7D 5", "${PORT}")]
+fn local_tag_map_keys_support_string_newtypes(#[case] tagged: &str, #[case] name: &str) {
+    use serde::de::{Deserializer, MapAccess, Visitor};
+    use std::fmt;
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct TagName(Option<String>);
+
+    struct Entry;
+
+    impl<'de> Visitor<'de> for Entry {
+        type Value = Option<(TagName, u8)>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("a single-entry map")
+        }
+
+        fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+            map.next_entry()
+        }
+    }
+
+    let opts = options! { local_tags_as_maps: true };
+    #[cfg(feature = "properties")]
+    let opts = opts.with_properties([("PORT".into(), "80".into())].into());
+    let explicit = format!("{{'{name}': 5}}");
+    for yaml in [explicit.as_str(), tagged] {
+        let entry =
+            serde_saphyr::with_deserializer_from_str_with_options(yaml, opts.clone(), |de| {
+                de.deserialize_any(Entry)
+            })
+            .unwrap();
+        assert_eq!(entry, Some((TagName(Some(name.to_owned())), 5)));
+    }
+}
+
 #[cfg(feature = "properties")]
 #[test]
 fn local_tags_as_maps_leaves_properties_in_keys_alone() {
