@@ -33,7 +33,7 @@ struct WrapUS {
 }
 
 #[test]
-fn unit_struct_accepts_null_forms_and_empty_map() {
+fn unit_struct_accepts_null_forms_and_refuses_empty_map() {
     // explicit null
     let y1 = "s: null\n";
     let w1: WrapUS = serde_saphyr::from_str(y1).unwrap();
@@ -49,8 +49,7 @@ fn unit_struct_accepts_null_forms_and_empty_map() {
     let w3: WrapUS = serde_saphyr::from_str(y3).unwrap();
     assert_eq!(w3, WrapUS { s: US });
 
-    // empty mapping
+    // empty mapping is not a unit value
     let y4 = "s: {}\n";
-    let w4: WrapUS = serde_saphyr::from_str(y4).unwrap();
-    assert_eq!(w4, WrapUS { s: US });
+    assert!(serde_saphyr::from_str::<WrapUS>(y4).is_err());
 }

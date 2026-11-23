@@ -93,11 +93,14 @@ fn char_empty_error() {
 #[derive(Debug, Deserialize, PartialEq)]
 struct UnitStruct;
 
-/// Unit struct from empty mapping.
+/// Unit struct from empty mapping → error.
 #[test]
-fn unit_struct_from_empty_map() {
-    let v: UnitStruct = serde_saphyr::from_str("{}\n").unwrap();
-    assert_eq!(v, UnitStruct);
+fn unit_struct_from_empty_map_error() {
+    let err = serde_saphyr::from_str::<UnitStruct>("{}\n").unwrap_err();
+    assert!(matches!(
+        err.without_snippet(),
+        Error::UnexpectedValueForUnit { .. }
+    ));
 }
 
 /// Unit struct from null scalar.
@@ -113,7 +116,7 @@ fn unit_struct_from_non_empty_map_error() {
     let err = serde_saphyr::from_str::<UnitStruct>("{a: 1}\n").unwrap_err();
     assert!(matches!(
         err.without_snippet(),
-        Error::ExpectedEmptyMappingForUnitStruct { .. }
+        Error::UnexpectedValueForUnit { .. }
     ));
 }
 
