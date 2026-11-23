@@ -1274,6 +1274,11 @@ mod tests {
         );
     }
 
+    #[test]
+    fn one_of_empty_names_is_empty() {
+        assert_eq!(one_of(&[]), "");
+    }
+
     #[rstest::rstest]
     #[case::none(vec![], "unknown field `x`, there are no fields")]
     #[case::one(vec!["a"], "unknown field `x`, expected `a`")]
