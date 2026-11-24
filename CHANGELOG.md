@@ -2,6 +2,11 @@
 
 ## 3.0.0-rc.1 Unreleased
 
+- Expose `Options::block_scalar_indent_at_least_one` (default `false`) to require
+  at least one column of indentation for auto-detected block scalars, matching
+  libyaml. A column-0 line after a top-level `|` or `>` then ends the scalar and
+  is scanned as the next token. Applies to included YAML as well.
+
 ### Breaking YAML changes
 
 This prerelease changes scalar and tag interpretation, optional tagged values,

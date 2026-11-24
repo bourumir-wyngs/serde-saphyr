@@ -693,6 +693,8 @@ You can require the number of indentation columns to be consistent throughout th
 
 Set `strict_indentation: true` in `options!` to enforce YAML indentation rules for flow collections (`[...]` and `{...}`), including their entries, delimiters, and multiline scalar content. It also rejects under-indented quoted scalar continuations in block context and tabs before quoted continuations. This also applies to included YAML. The default is `false`, allowing these forms for compatibility.
 
+Set `block_scalar_indent_at_least_one: true` to give auto-detected block scalars at least one column of indentation (matching libyaml). 
+
 ### Duplicate keys
 
 Duplicate key handling is configurable. By default it’s an error; “first wins”, “last wins”, and `PassThrough` strategies are available via [`Options`](https://docs.rs/serde-saphyr/latest/serde_saphyr/options/struct.Options.html). `PassThrough` delegates duplicate handling to the receiving Serde visitor; see [the migration note](#duplicate-mapping-entries). The duplicate key policy applies not just to strings but also to other types (if used as keys when deserializing into a map).

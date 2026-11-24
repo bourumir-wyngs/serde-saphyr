@@ -676,6 +676,16 @@ pub struct Options {
     /// can exceed that limit when it contains nested tagged values.
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub local_tags_as_maps: bool,
+
+    /// Give an auto-detected block scalar at least one column of indentation,
+    /// matching libyaml's behavior.
+    ///
+    /// Default: false (top-level `|` or `>` scalars without an explicit indentation
+    /// indicator may contain text at column 0). When enabled, a column-0 line ends
+    /// the scalar and is scanned as the next token. Explicit indentation indicators
+    /// are unaffected. Applies to included YAML as well.
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
+    pub block_scalar_indent_at_least_one: bool,
 }
 
 #[cfg(feature = "include")]
@@ -703,6 +713,7 @@ impl Options {
         }
         parser_options.strict_indentation = self.strict_indentation;
         parser_options.bom_inside_document_as_content = self.bom_inside_document_as_content;
+        parser_options.block_scalar_indent_at_least_one = self.block_scalar_indent_at_least_one;
         parser_options
     }
 
@@ -919,6 +930,7 @@ impl Default for Options {
             property_syntax: PropertySyntax::Braced,
             non_finite_float_policy: NonFiniteFloatPolicy::default(),
             local_tags_as_maps: false,
+            block_scalar_indent_at_least_one: false,
         }
     }
 }
@@ -942,6 +954,10 @@ impl std::fmt::Debug for Options {
         debug.field("emit_comments", &self.emit_comments);
         debug
             .field("strict_indentation", &self.strict_indentation)
+            .field(
+                "block_scalar_indent_at_least_one",
+                &self.block_scalar_indent_at_least_one,
+            )
             .field(
                 "bom_inside_document_as_content",
                 &self.bom_inside_document_as_content,
@@ -1040,6 +1056,7 @@ mod tests {
         #[cfg(feature = "comments")]
         assert!(opts.emit_comments);
         assert!(!opts.strict_indentation);
+        assert!(!opts.block_scalar_indent_at_least_one);
         assert!(!opts.bom_inside_document_as_content);
         assert!(matches!(opts.duplicate_keys, DuplicateKeyPolicy::Error));
         assert!(matches!(opts.merge_keys, MergeKeyPolicy::Merge));
@@ -1094,6 +1111,7 @@ mod tests {
         let mut fields = serde_json::to_value(opts).unwrap();
         let fields = fields.as_object_mut().unwrap();
         assert_eq!(fields.shift_remove("local_tags_as_maps"), Some(true.into()));
+        fields.shift_remove("block_scalar_indent_at_least_one");
 
         let sequence = serde_json::Value::Array(fields.values().cloned().collect());
         let restored: Options = serde_json::from_value(sequence).unwrap();
@@ -1146,6 +1164,43 @@ mod tests {
 
     #[cfg(feature = "serde_derived_types")]
     #[test]
+    fn block_scalar_indent_serde_roundtrip_and_missing_default() {
+        for enabled in [false, true] {
+            let options = crate::options! { block_scalar_indent_at_least_one: enabled };
+            let mut json = serde_json::to_value(&options).unwrap();
+            let restored: Options = serde_json::from_value(json.clone()).unwrap();
+            assert_eq!(restored.block_scalar_indent_at_least_one, enabled);
+
+            json.as_object_mut()
+                .unwrap()
+                .remove("block_scalar_indent_at_least_one");
+            let legacy: Options = serde_json::from_value(json).unwrap();
+            assert!(!legacy.block_scalar_indent_at_least_one);
+        }
+    }
+
+    #[cfg(feature = "serde_derived_types")]
+    #[test]
+    fn block_scalar_indent_defaults_to_false_in_older_options_sequence() {
+        let options = crate::options! {
+            local_tags_as_maps: true,
+            block_scalar_indent_at_least_one: true,
+        };
+        let mut fields = serde_json::to_value(options).unwrap();
+        let fields = fields.as_object_mut().unwrap();
+        assert_eq!(
+            fields.shift_remove("block_scalar_indent_at_least_one"),
+            Some(true.into()),
+        );
+
+        let sequence = serde_json::Value::Array(fields.values().cloned().collect());
+        let restored: Options = serde_json::from_value(sequence).unwrap();
+        assert!(!restored.block_scalar_indent_at_least_one);
+        assert!(restored.local_tags_as_maps);
+    }
+
+    #[cfg(feature = "serde_derived_types")]
+    #[test]
     fn bom_inside_document_serde_roundtrip_and_missing_default() {
         let options = crate::options! { bom_inside_document_as_content: true };
         let mut json = serde_json::to_value(&options).unwrap();
@@ -1188,6 +1243,7 @@ mod tests {
         #[cfg(feature = "comments")]
         assert!(debug_str.contains("emit_comments: true"));
         assert!(debug_str.contains("strict_indentation: false"));
+        assert!(debug_str.contains("block_scalar_indent_at_least_one: false"));
         assert!(debug_str.contains("bom_inside_document_as_content: false"));
         assert!(debug_str.contains("reject_unsupported_tags: false"));
         assert!(debug_str.contains("reject_tagged_field_names: true"));
