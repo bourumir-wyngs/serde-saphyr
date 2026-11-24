@@ -1,6 +1,6 @@
 [package]
 name = "serde-saphyr"
-version = "3.0.0-rc.1"
+version = "3.0.0-rc.2"
 edition = "2024"
 rust-version = "1.89"
 license = "MIT OR Apache-2.0"
@@ -15,7 +15,7 @@ exclude = ["Cargo.lock", ".github/**", ".idea/**"]
 [dependencies]
 # Temporary local development dependency; restore the git source after publishing these API changes.
 # granit-parser = { version = "3.0.0", path = "/home/audrius/bourumir/granit-parser", optional = true, default-features = false, features = ["std", "error_messages"] }
-granit-parser = { version = "3.0.0-rc1", optional = true, default-features = false, features = ["std", "error_messages"] }
+granit-parser = { version = "3.0.0-rc2", optional = true, default-features = false, features = ["std", "error_messages"] }
 
 # Normal builds use core only, to allow building serde-saphyr in parallel with serde.
 # Complete serde is only used when serde_derived_types is enabled (off by default)
