@@ -80,6 +80,10 @@ are the defaults; no legacy alias mode is provided. See
 
 ### Fixed
 
+- Render the expected names in unknown field and unknown variant errors as serde
+  does: `` expected `a` ``, `` expected `a` or `b` ``, `` expected one of `a`, `b`, `c` ``,
+  and "there are no fields" / "there are no variants" when the list is empty.
+  Before, the names were unquoted and an empty list rendered as "expected one of ".
 - Retain the scalar text in `QuotingRequired` diagnostics for overflowing floats,
   legacy integer separators, and robotics expressions under the active options.
 - Infer accepted integers exactly through `i128`/`u128` during implicit inference,
@@ -104,6 +108,9 @@ are the defaults; no legacy alias mode is provided. See
 
 ### Added
 
+- Added `Options::local_tags_as_maps` to read a node with a local tag as a
+  single-entry map in `deserialize_any`. The resolved tag name without the
+  leading `!` is the key, and the tagged node is the value (#287).
 - Added `Options::lowercase_radix_prefixes_only` (default: `false`) to require
   lowercase integer radix prefixes (`0x`, `0o`, `0b`) in the shared integer parser
   ([#266](https://github.com/bourumir-wyngs/serde-saphyr/issues/266),

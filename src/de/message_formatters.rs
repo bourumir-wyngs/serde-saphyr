@@ -244,16 +244,18 @@ fn default_format_message<'a>(formatter: &dyn MessageFormatter, err: &'a Error) 
         }
         Error::SerdeUnknownVariant {
             variant, expected, ..
-        } => Cow::Owned(format!(
-            "unknown variant `{variant}`, expected one of {}",
-            expected.join(", ")
-        )),
+        } => Cow::Owned(if expected.is_empty() {
+            format!("unknown variant `{variant}`, there are no variants")
+        } else {
+            format!("unknown variant `{variant}`, expected {}", one_of(expected))
+        }),
         Error::SerdeUnknownField {
             field, expected, ..
-        } => Cow::Owned(format!(
-            "unknown field `{field}`, expected one of {}",
-            expected.join(", ")
-        )),
+        } => Cow::Owned(if expected.is_empty() {
+            format!("unknown field `{field}`, there are no fields")
+        } else {
+            format!("unknown field `{field}`, expected {}", one_of(expected))
+        }),
         Error::SerdeMissingField { field, .. } => Cow::Owned(format!("missing field `{field}`")),
         Error::UnexpectedContainerEndWhileReadingKeyNode { .. } => {
             Cow::Borrowed("unexpected container end while reading key")
@@ -637,6 +639,20 @@ impl UserMessageFormatter {
     #[must_use]
     pub fn with_localizer<'a>(&self, localizer: &'a dyn Localizer) -> impl MessageFormatter + 'a {
         UserMessageFormatterWithLocalizer { localizer }
+    }
+}
+
+/// The expected names as serde's own `de::Error::unknown_field` and `unknown_variant` render
+/// them: "`a`", "`a` or `b`", or "one of `a`, `b`, `c`".
+fn one_of(names: &[&str]) -> String {
+    match names {
+        [] => String::new(),
+        [one] => format!("`{one}`"),
+        [a, b] => format!("`{a}` or `{b}`"),
+        _ => {
+            let quoted: Vec<String> = names.iter().map(|n| format!("`{n}`")).collect();
+            format!("one of {}", quoted.join(", "))
+        }
     }
 }
 
@@ -1256,5 +1272,44 @@ mod tests {
             DefaultMessageFormatter.format_message(&error),
             "validation error at name: too short at line 7, column 8"
         );
+    }
+
+    #[test]
+    fn one_of_empty_names_is_empty() {
+        assert_eq!(one_of(&[]), "");
+    }
+
+    #[rstest::rstest]
+    #[case::none(vec![], "unknown field `x`, there are no fields")]
+    #[case::one(vec!["a"], "unknown field `x`, expected `a`")]
+    #[case::two(vec!["a", "b"], "unknown field `x`, expected `a` or `b`")]
+    #[case::three(vec!["a", "b", "c"], "unknown field `x`, expected one of `a`, `b`, `c`")]
+    fn unknown_field_names_render_as_serde_does(
+        #[case] expected: Vec<&'static str>,
+        #[case] message: &str,
+    ) {
+        let err = Error::SerdeUnknownField {
+            field: "x".to_owned(),
+            expected,
+            location: loc(),
+        };
+        assert_eq!(DefaultMessageFormatter.format_message(&err), message);
+    }
+
+    #[rstest::rstest]
+    #[case::none(vec![], "unknown variant `x`, there are no variants")]
+    #[case::one(vec!["a"], "unknown variant `x`, expected `a`")]
+    #[case::two(vec!["a", "b"], "unknown variant `x`, expected `a` or `b`")]
+    #[case::three(vec!["a", "b", "c"], "unknown variant `x`, expected one of `a`, `b`, `c`")]
+    fn unknown_variant_names_render_as_serde_does(
+        #[case] expected: Vec<&'static str>,
+        #[case] message: &str,
+    ) {
+        let err = Error::SerdeUnknownVariant {
+            variant: "x".to_owned(),
+            expected,
+            location: loc(),
+        };
+        assert_eq!(DefaultMessageFormatter.format_message(&err), message);
     }
 }

@@ -613,6 +613,69 @@ pub struct Options {
     #[cfg(feature = "properties")]
     #[cfg_attr(feature = "serde_derived_types", serde(default))]
     pub property_syntax: PropertySyntax,
+
+    /// Preserve local YAML tags as single-entry maps in `deserialize_any`.
+    /// Defaults to `false`.
+    ///
+    /// Both operations in this configuration take `5` as their argument.
+    ///
+    /// ```yaml
+    /// - !Add 5
+    /// - !Subtract 5
+    /// ```
+    ///
+    /// When reading directly into `Vec<Operation>`, Serde can use the tags to
+    /// select `Operation::Add(5)` and `Operation::Subtract(5)`. A configuration
+    /// layer may first load the YAML into a generic value such as
+    /// `serde_json::Value` or Figment's `Value`. With the default settings,
+    /// that value holds `[5, 5]`. By the time the application asks for
+    /// `Vec<Operation>`, the information that distinguished the variants is gone.
+    ///
+    /// Set `local_tags_as_maps` to `true` to keep the variant names in the
+    /// intermediate value. The same input then yields
+    /// `[{"Add": 5}, {"Subtract": 5}]`.
+    /// Each entry has the shape Serde expects for an externally tagged enum,
+    /// so the application can recover both operations from the stored value.
+    ///
+    /// When Serde buffers an untagged enum or a field collected by
+    /// `#[serde(flatten)]`, simple, unrecognized tags can appear as maps even
+    /// with this option disabled. For example, `!Add 5` becomes `{"Add": 5}`.
+    ///
+    /// The map key is the resolved local tag name with the leading `!` removed.
+    /// Its value is the tagged scalar, sequence, or mapping. A bare `!` yields
+    /// a string, sequence, or mapping according to the node's kind. Global tags
+    /// such as `!!str` keep their usual meaning. Tag validation and configured
+    /// include resolution happen first.
+    ///
+    /// # When to leave this disabled
+    ///
+    /// - **Your application treats local tags as annotations.** For
+    ///   `port: !note 8080`, a generic value normally holds the integer `8080` at
+    ///   `port`. Enabling this option puts `{"note": 8080}` there, so code that
+    ///   reads `port` as a number will fail. This also applies to a field of type
+    ///   `serde_json::Value` inside a typed struct.
+    /// - **You want the tag only in the metadata of [`Tagged<serde_json::Value>`](crate::Tagged).**
+    ///   Reading `!T 5` into this type yields `Tagged(5, Some("!T"))`
+    ///   by default. Enabling this option also puts the tag name in the inner value
+    ///   as a map key, yielding `Tagged({"T": 5}, Some("!T"))`. Reading the same
+    ///   input as `Tagged<u32>` yields `Tagged(5, Some("!T"))` with either setting.
+    /// - **An enum needs its discriminator after buffering or type erasure.** An
+    ///   internally tagged enum read directly can use the `kind` field in
+    ///   `!ns:meta {kind: Known}`. If a generic value or a type-erasing adapter
+    ///   exposes `{"ns:meta": {"kind": "Known"}}`, Serde can report a missing
+    ///   `kind`. Serde also buffers enums with a final `#[serde(untagged)]`
+    ///   fallback. If that variant accepts the map, the read can silently select
+    ///   the fallback even though `kind` says `Known`.
+    /// - **Your generic values need converted robotics units.** With the `robotics`
+    ///   feature and [`Self::angle_conversions`] enabled, `!degrees 180` normally
+    ///   yields π radians. Enabling this option yields `{"degrees": 180}` in a
+    ///   generic value. A direct `f64` read still yields π.
+    ///
+    /// Each tag exposed as a map also adds one level of nesting during
+    /// deserialization. A document that previously fit within [`Budget::max_depth`]
+    /// can exceed that limit when it contains nested tagged values.
+    #[cfg_attr(feature = "serde_derived_types", serde(default))]
+    pub local_tags_as_maps: bool,
 }
 
 #[cfg(feature = "include")]
@@ -855,6 +918,7 @@ impl Default for Options {
             #[cfg(feature = "properties")]
             property_syntax: PropertySyntax::Braced,
             non_finite_float_policy: NonFiniteFloatPolicy::default(),
+            local_tags_as_maps: false,
         }
     }
 }
@@ -903,6 +967,7 @@ impl std::fmt::Debug for Options {
             )
             .field("angle_conversions", &self.angle_conversions)
             .field("no_schema", &self.no_schema)
+            .field("local_tags_as_maps", &self.local_tags_as_maps)
             .field("reject_unsupported_tags", &self.reject_unsupported_tags)
             .field("reject_tagged_field_names", &self.reject_tagged_field_names)
             .field("non_finite_float_policy", &self.non_finite_float_policy)
@@ -989,6 +1054,7 @@ mod tests {
         assert!(!opts.angle_conversions);
         assert!(!opts.no_schema);
         assert!(!opts.reject_unsupported_tags);
+        assert!(!opts.local_tags_as_maps);
         assert!(opts.reject_tagged_field_names);
         assert_eq!(
             opts.non_finite_float_policy,
@@ -1019,6 +1085,20 @@ mod tests {
             DuplicateKeyPolicy::LastWins
         ));
         assert!(serde_json::from_str::<DuplicateKeyPolicy>("\"FirstWins\"").is_err());
+    }
+
+    #[cfg(feature = "serde_derived_types")]
+    #[test]
+    fn local_tags_as_maps_defaults_to_false_in_older_options() {
+        let opts = crate::options! { local_tags_as_maps: true };
+        let mut fields = serde_json::to_value(opts).unwrap();
+        let fields = fields.as_object_mut().unwrap();
+        assert_eq!(fields.shift_remove("local_tags_as_maps"), Some(true.into()));
+
+        let sequence = serde_json::Value::Array(fields.values().cloned().collect());
+        let restored: Options = serde_json::from_value(sequence).unwrap();
+        assert!(!restored.local_tags_as_maps);
+        assert!(restored.reject_tagged_field_names);
     }
 
     #[cfg(feature = "serde_derived_types")]

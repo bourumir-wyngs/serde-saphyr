@@ -15,17 +15,7 @@ pub(super) fn deserialize_yaml_tagged<'de, V>(
 where
     V: Visitor<'de>,
 {
-    let tag = match de.ev.peek()? {
-        Some(
-            Ev::Scalar { raw_tag, .. }
-            | Ev::SeqStart { raw_tag, .. }
-            | Ev::MapStart { raw_tag, .. },
-        ) => raw_tag.as_deref().map(str::to_owned),
-        Some(
-            Ev::SeqEnd { .. } | Ev::MapEnd { .. } | Ev::RecursiveAlias { .. } | Ev::Taken { .. },
-        )
-        | None => None,
-    };
+    let tag = de.ev.peek()?.and_then(Ev::raw_tag).map(str::to_owned);
 
     visitor.visit_seq(TaggedSeqAccess { de, tag, state: 0 })
 }
