@@ -499,7 +499,7 @@ fn multiple_documents_preserve_quoted_null_like_scalars() {
 
 #[test]
 fn reader_matches_from_str_multiple_for_tagged_null_like_scalars() {
-    let y = "--- !!str null\n--- !!null not-null\n--- kept\n";
+    let y = "--- !!str null\n--- !!null null\n--- kept\n";
     let expected = vec!["null".to_owned(), "kept".to_owned()];
 
     let docs: Vec<String> = serde_saphyr::from_str_multiple(y).expect("parse tagged docs");

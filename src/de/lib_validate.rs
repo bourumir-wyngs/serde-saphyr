@@ -231,7 +231,7 @@ where
 
 /// Deserialize multiple YAML documents with configurable [`Options`] and validate each with `garde`.
 ///
-/// Empty documents, untagged plain nulls, and explicit `!!null` documents are skipped.
+/// Empty documents, untagged plain nulls, and `!!null` documents with a null spelling are skipped.
 /// `PropertySyntax::DockerComposeWithNulls` also skips interpolated nulls. Application-tagged
 /// roots, such as `!Variant null`, are deserialized and validated.
 ///
@@ -492,7 +492,7 @@ where
 
 /// Create an iterator over validated YAML documents from a reader with configurable options.
 ///
-/// Empty documents, untagged plain nulls, and explicit `!!null` documents are skipped.
+/// Empty documents, untagged plain nulls, and `!!null` documents with a null spelling are skipped.
 /// `PropertySyntax::DockerComposeWithNulls` also skips interpolated nulls. Application-tagged
 /// roots, such as `!Variant null`, are deserialized and validated.
 ///
@@ -551,7 +551,7 @@ pub fn from_multiple_validate<T: DeserializeOwned + ValidatorValidate>(
 
 /// Deserialize multiple YAML documents with configurable [`Options`] and validate each with `validator`.
 ///
-/// Empty documents, untagged plain nulls, and explicit `!!null` documents are skipped.
+/// Empty documents, untagged plain nulls, and `!!null` documents with a null spelling are skipped.
 /// `PropertySyntax::DockerComposeWithNulls` also skips interpolated nulls. Application-tagged
 /// roots, such as `!Variant null`, are deserialized and validated.
 ///
@@ -662,7 +662,7 @@ where
 
 /// Create an iterator over validated YAML documents from a reader with configurable options.
 ///
-/// Empty documents, untagged plain nulls, and explicit `!!null` documents are skipped.
+/// Empty documents, untagged plain nulls, and `!!null` documents with a null spelling are skipped.
 /// `PropertySyntax::DockerComposeWithNulls` also skips interpolated nulls. Application-tagged
 /// roots, such as `!Variant null`, are deserialized and validated.
 ///

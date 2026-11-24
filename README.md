@@ -543,6 +543,8 @@ and no longer round-trip into collection types.
 Implicit null recognition uses only the standard plain spellings: empty, `~`,
 `null`, `Null`, and `NULL`. Mixed capitalization such as `NulL` remains a string,
 not null, so it is not skipped as a null document or treated as outer `None`.
+An explicit `!!null` tag requires the same spellings, quoted or not: `!!null foo`
+is rejected instead of read as null, and a multi-document stream does not skip it.
 With `strict_booleans: true`, only `true`, `True`, `TRUE`, `false`, `False`, and
 `FALSE` are boolean spellings. Mixed forms such as `tRuE` remain strings during
 inference, are allowed as unquoted text with `no_schema`, and are rejected for

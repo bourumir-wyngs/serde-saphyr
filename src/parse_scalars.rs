@@ -688,6 +688,14 @@ pub(crate) fn scalar_is_nullish(value: &str, style: &ScalarStyle) -> bool {
     if !style.is_plain() {
         return false;
     }
+    is_null_spelling(value)
+}
+
+/// Returns `true` for the YAML 1.2 core schema null spellings: empty, `~`, `null`,
+/// `Null`, or `NULL`.
+#[cfg(feature = "deserialize")]
+#[inline]
+fn is_null_spelling(value: &str) -> bool {
     matches!(value, "" | "~" | "null" | "Null" | "NULL")
 }
 
@@ -695,8 +703,9 @@ pub(crate) fn scalar_is_nullish(value: &str, style: &ScalarStyle) -> bool {
 #[inline]
 /// Resolve null while honoring explicit scalar types and string-forcing tags.
 /// Non-null typed scalars must reach their deserializer even when their text looks null-like.
+/// An explicit `!!null` still requires a null spelling, in any style: `!!null foo` is not null.
 pub(crate) fn scalar_is_null(tag: &SfTag, value: &str, style: &ScalarStyle) -> bool {
-    *tag == SfTag::Null
+    (*tag == SfTag::Null && is_null_spelling(value))
         || (!tag.is_core()
             && !tag.forces_string()
             && !matches!(tag, SfTag::Binary | SfTag::TimeStamp)

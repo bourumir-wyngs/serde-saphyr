@@ -942,10 +942,8 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
         // Explicit scalar types take precedence over implicit null and string inference,
         // including for quoted and block scalars buffered by Serde's flatten support.
         match tag {
-            SfTag::Null => {
-                let _ = self.take_scalar_event()?;
-                return visitor.visit_unit();
-            }
+            // deserialize_unit refuses `!!null` whose text is not a null spelling.
+            SfTag::Null => return self.deserialize_unit(visitor),
             SfTag::Bool => return self.deserialize_bool(visitor),
             SfTag::Int if yaml_trim(&value).starts_with('-') => {
                 return self.deserialize_i64(visitor);

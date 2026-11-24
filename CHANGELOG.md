@@ -23,6 +23,11 @@ are the defaults; no legacy alias mode is provided. See
 - Read a unit struct only from null, as serde_yaml does (#292). A mapping, including
   `{}`, now reports `UnexpectedValueForUnit` like any other non-null value; null, `~`,
   an empty value, and `!!null` still read. No compatibility option is provided.
+- Require a YAML 1.2 core null spelling (empty, `~`, `null`, `Null`, or `NULL`) for a
+  `!!null`-tagged scalar, as serde_yaml does (#292). `!!null foo` is no longer read as
+  null: unit and untyped targets report `UnexpectedValueForUnit`, `Option<T>` passes it
+  to `T`, which rejects it, and multi-document APIs no longer skip such a document.
+  No compatibility option is provided.
 - Emit matching local tags on unit enum variants without a redundant `null`
   payload, including through optional and tagged wrappers. Existing explicit
   null payloads remain readable; actual variant fields retain their payload
