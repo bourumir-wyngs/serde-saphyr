@@ -116,3 +116,18 @@ fn internally_tagged_enum_as_a_field() {
         (3, 3)
     );
 }
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct RequiredFirst {
+    required: u32,
+    item: Item,
+}
+
+#[test]
+fn outer_mapping_when_a_complete_inner_one_is_last() {
+    assert_eq!(
+        missing_field_at::<RequiredFirst>("item:\n  name: a\n  platform: b\n"),
+        (1, 1)
+    );
+}
