@@ -27,6 +27,29 @@ struct Outer {
     required: u32,
 }
 
+// Serde buffers an internally tagged enum's mapping and builds the variant after
+// `deserialize_map` has returned, so the missing field is raised after that mapping ended.
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+#[allow(dead_code)]
+enum Shape {
+    Rectangle { width: u32, height: u32 },
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct Shapes {
+    name: String,
+    items: Vec<Shape>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct Drawing {
+    name: String,
+    shape: Shape,
+}
+
 #[track_caller]
 fn missing_field_at<T: DeserializeOwned + std::fmt::Debug>(yaml: &str) -> (u64, u64) {
     let err = serde_saphyr::from_str::<T>(yaml).expect_err("a field is missing");
@@ -75,5 +98,21 @@ fn outer_mapping_after_a_complete_inner_one() {
     assert_eq!(
         missing_field_at::<Outer>("item:\n  name: a\n  platform: b\nlast: 1\n"),
         (1, 1)
+    );
+}
+
+#[test]
+fn internally_tagged_enum_in_a_sequence() {
+    assert_eq!(
+        missing_field_at::<Shapes>("name: x\nitems:\n  - type: rectangle\n    width: 10\n"),
+        (3, 5)
+    );
+}
+
+#[test]
+fn internally_tagged_enum_as_a_field() {
+    assert_eq!(
+        missing_field_at::<Drawing>("name: x\nshape:\n  type: rectangle\n  width: 10\n"),
+        (3, 3)
     );
 }
