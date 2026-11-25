@@ -20,6 +20,9 @@ are the defaults; no legacy alias mode is provided. See
   are strings even when a Rust field requests another type. Remove the quotes or
   use a matching standard tag such as `!!int "16"`, `!!float "1.5"`, or
   `!!bool "true"`. This behavior is always enabled; no compatibility option is provided.
+- Read a unit struct only from null, as serde_yaml does (#292). A mapping, including
+  `{}`, now reports `UnexpectedValueForUnit` like any other non-null value; null, `~`,
+  an empty value, and `!!null` still read. No compatibility option is provided.
 - Emit matching local tags on unit enum variants without a redundant `null`
   payload, including through optional and tagged wrappers. Existing explicit
   null payloads remain readable; actual variant fields retain their payload

@@ -523,6 +523,9 @@ items: []     # Not items: or items: null
 settings: {}  # Not settings: or settings: null
 ```
 
+Conversely, a mapping no longer constructs a unit struct: `{}` and other mappings
+are rejected, and a unit struct reads only from null.
+
 A mapping-based struct must still satisfy its field requirements. Ordinary null
 continues to produce `None` for `Option<T>`. `#[serde(default)]` still handles an
 absent field; it does not make a present null valid for a collection field.

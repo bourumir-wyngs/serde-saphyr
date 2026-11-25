@@ -1609,9 +1609,9 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
 
     /// Deserialize a unit struct.
     ///
-    /// **Delegation:** Struct unit forms are handled by allowing an **empty mapping**
-    /// (`{}`) as the YAML representation, or by deferring to the same null-like
-    /// forms accepted by `deserialize_unit`.  
+    /// **Delegation:** A unit struct reads from the same null-like forms as
+    /// `deserialize_unit` (null, `~`, an empty value, `!!null`). Any mapping,
+    /// including `{}`, is refused with `UnexpectedValueForUnit`, as serde_yaml does.
     /// `Visitor` origin: Serde generates a visitor when
     /// deserializing the target unit struct type (via `derive(Deserialize)` or a
     /// manual impl). That visitor expects us to call `Visitor::visit_unit`.
@@ -1620,25 +1620,7 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
         _name: &'static str,
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
-        match self.ev.peek()? {
-            // Allow empty mapping `{}` as a unit struct
-            Some(event @ Ev::MapStart { .. }) => {
-                validate_node_tag_kind(event)?;
-                let _ = self.ev.next()?; // consume MapStart
-                match self.ev.peek()? {
-                    Some(Ev::MapEnd { .. }) => {
-                        let _ = self.ev.next()?; // consume MapEnd
-                        visitor.visit_unit()
-                    }
-                    Some(other) => Err(Error::ExpectedEmptyMappingForUnitStruct {
-                        location: other.location(),
-                    }),
-                    None => Err(eof_with_loc(self.ev)),
-                }
-            }
-            // Otherwise, delegate to unit handling (null, ~, empty scalar, EOF, etc.)
-            _ => self.deserialize_unit(visitor),
-        }
+        self.deserialize_unit(visitor)
     }
 
     /// Deserialize a newtype struct (`struct Wrapper(T);`) by delegating to its inner value.
