@@ -789,6 +789,32 @@ thread_local! {
     static MISSING_FIELD_FALLBACK: Cell<Option<Location>> = const { Cell::new(None) };
 }
 
+// The start of the mapping being deserialized. A missing field is reported here, as
+// serde_yaml does: the first key of a block mapping, or the `{` of a flow mapping. Set by
+// [`MappingStartGuard`] when a mapping is entered and restored when it is left, so a nested
+// mapping does not leak its start into the enclosing one.
+thread_local! {
+    static MAPPING_START: Cell<Option<Location>> = const { Cell::new(None) };
+}
+
+/// RAII guard for [`MAPPING_START`]. Saves the previous value on creation, restores it on drop.
+pub(crate) struct MappingStartGuard {
+    prev: Option<Location>,
+}
+
+impl MappingStartGuard {
+    pub(crate) fn new(start: Location) -> Self {
+        let prev = MAPPING_START.with(|c| c.replace(Some(start)));
+        Self { prev }
+    }
+}
+
+impl Drop for MappingStartGuard {
+    fn drop(&mut self) {
+        MAPPING_START.with(|c| c.set(self.prev));
+    }
+}
+
 /// RAII guard for [`MISSING_FIELD_FALLBACK`]. Saves the previous value on creation,
 /// restores it on drop.
 pub(crate) struct MissingFieldLocationGuard {
@@ -2770,10 +2796,14 @@ impl de::Error for Error {
     #[cold]
     #[inline(never)]
     fn missing_field(field: &'static str) -> Self {
-        maybe_attach_fallback_location(Error::SerdeMissingField {
+        let error = Error::SerdeMissingField {
             field,
             location: Location::UNKNOWN,
-        })
+        };
+        match MAPPING_START.with(std::cell::Cell::get) {
+            Some(start) if start != Location::UNKNOWN => error.with_location(start),
+            _ => maybe_attach_fallback_location(error),
+        }
     }
 }
 

@@ -88,6 +88,9 @@ are the defaults; no legacy alias mode is provided. See
 
 ### Fixed
 
+- Report a missing field at the start of the mapping it is missing from, as serde_yaml
+  does: the first key of a block mapping, or the `{` of a flow mapping (#292). Before,
+  the error was placed at the last key read.
 - Render the expected names in unknown field and unknown variant errors as serde
   does: `` expected `a` ``, `` expected `a` or `b` ``, `` expected one of `a`, `b`, `c` ``,
   and "there are no fields" / "there are no variants" when the list is empty.

@@ -8,7 +8,7 @@ use super::base64::decode_base64_yaml;
 use super::cfg::Cfg;
 #[cfg(feature = "comments")]
 use super::commented_deser;
-use super::error::{Error, MissingFieldLocationGuard, TransformReason};
+use super::error::{Error, MappingStartGuard, MissingFieldLocationGuard, TransformReason};
 use super::events::{
     Ev, Events, RecordedEvents, ReplayEvents, attach_alias_locations_if_missing, eof_with_loc,
     with_deferred_recursive_aliases,
@@ -1964,9 +1964,11 @@ impl<'de> de::Deserializer<'de> for YamlDeserializer<'de, '_> {
             }
         };
 
-        // Ensure "missing field" errors (which have no natural span) get attributed to the
+        // Ensure Serde's structural errors (which have no natural span) get attributed to the
         // current container.
         let _missing_field_guard = MissingFieldLocationGuard::new(map_reference_location);
+        // A missing field itself is reported at this mapping's start, as serde_yaml does.
+        let _mapping_start_guard = MappingStartGuard::new(map_location);
 
         #[cfg(any(feature = "garde", feature = "validator"))]
         if let Some(recorder) = self.garde.as_mut() {
