@@ -978,7 +978,7 @@ fn read_valid_uses_default_options() {
 
 #[test]
 fn read_valid_skips_explicit_null_tagged_scalar_documents() {
-    let mut reader = std::io::Cursor::new("!!null not-null\n---\na: ok\n".as_bytes());
+    let mut reader = std::io::Cursor::new("!!null null\n---\na: ok\n".as_bytes());
     let mut it = serde_saphyr::read_valid::<_, Root>(&mut reader);
 
     let value = it

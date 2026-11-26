@@ -384,8 +384,9 @@ pub(crate) fn maybe_with_snippet_from_events(
 }
 
 /// Deserialize multiple YAML documents from a single string into a vector of `T`.
-/// Completely empty documents, untagged plain null-like documents, and explicit `!!null`
-/// documents are skipped. Application-tagged roots are deserialized, even with null payloads.
+/// Completely empty documents, untagged plain null-like documents, and `!!null` documents
+/// with a null spelling are skipped. Application-tagged roots are deserialized, even with
+/// null payloads.
 ///
 /// Supports both owned values and values borrowing from the input string. Borrowed values
 /// cannot outlive the input, and strings requiring transformation cannot be borrowed as `&str`;
@@ -431,7 +432,7 @@ where
 /// Deserialize multiple YAML documents into a vector with configurable [`Options`].
 ///
 /// Like [`from_multiple`], this supports owned and borrowed values and skips empty,
-/// untagged null-like, and explicit `!!null` documents. With `DockerComposeWithNulls`,
+/// untagged null-like, and `!!null` documents with a null spelling. With `DockerComposeWithNulls`,
 /// interpolated nulls are also skipped. Application-tagged roots are deserialized.
 /// Use [`from_str_multiple_with_options`] to collect into other collection types.
 ///
@@ -483,7 +484,7 @@ where
 }
 
 /// Deserialize multiple YAML documents from a string into a collection, supporting borrowed values.
-/// Empty, untagged null-like, and explicit `!!null` documents are skipped, as with
+/// Empty, untagged null-like, and `!!null` documents with a null spelling are skipped, as with
 /// [`from_multiple`]. Application-tagged roots are deserialized, even with null payloads.
 ///
 /// The collection is initialized with [`Default`] and extended with each document in input
@@ -666,7 +667,7 @@ where
 }
 
 /// Deserialize multiple YAML documents from a UTF-8 byte slice into a vector of `T`.
-/// Empty, untagged null-like, and explicit `!!null` documents are skipped, as with
+/// Empty, untagged null-like, and `!!null` documents with a null spelling are skipped, as with
 /// [`from_multiple`]. Application-tagged roots are deserialized, even with null payloads.
 ///
 /// Supports both owned values and values borrowing from the input byte slice. Borrowed
@@ -765,7 +766,7 @@ where
 }
 
 /// Deserialize multiple YAML documents from a UTF-8 byte slice into a collection, supporting borrowed values.
-/// Empty, untagged null-like, and explicit `!!null` documents are skipped, as with
+/// Empty, untagged null-like, and `!!null` documents with a null spelling are skipped, as with
 /// [`from_str_multiple`]. Application-tagged roots are deserialized, even with null payloads.
 ///
 /// This is equivalent to [`from_str_multiple`], but validates that the bytes are UTF-8
@@ -943,7 +944,7 @@ pub fn from_reader_with_options<'a, R: std::io::Read + 'a, T: DeserializeOwned>(
 ///
 /// - It streams the reader without loading the whole input into memory.
 /// - Each item produced by the returned iterator is one deserialized YAML document of type `T`.
-/// - Empty, untagged null-like, and explicit `!!null` documents are skipped.
+/// - Empty, untagged null-like, and `!!null` documents with a null spelling are skipped.
 ///   Application-tagged roots are deserialized, even with null payloads.
 ///
 /// Generic parameters
