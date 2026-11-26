@@ -16,6 +16,8 @@ struct Holder<T> {
 #[case::lowercase("v: !!null null\n")]
 #[case::capitalized("v: !!null Null\n")]
 #[case::uppercase("v: !!null NULL\n")]
+#[case::quoted("v: !!null \"Null\"\n")]
+#[case::stripped_block("v: !!null |-\n  null\n")]
 fn null_tag_reads_each_null_spelling(#[case] yaml: &str) {
     assert_eq!(from_str::<Holder<()>>(yaml).unwrap(), Holder { v: () });
     assert_eq!(
@@ -38,6 +40,7 @@ fn null_tag_reads_each_null_spelling(#[case] yaml: &str) {
 #[rstest]
 #[case::word("v: !!null foo\n")]
 #[case::quoted_word("v: !!null \"foo\"\n")]
+#[case::clipped_block("v: !!null |\n  null\n")]
 #[case::zero("v: !!null 0\n")]
 #[case::boolean("v: !!null false\n")]
 #[case::mixed_case("v: !!null nULL\n")]

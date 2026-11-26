@@ -1030,7 +1030,7 @@ where
 /// This is the multi-document counterpart to [`from_reader_with_options`]. It does not load
 /// the entire input into memory. Instead, it streams the reader, deserializing one document
 /// at a time into values of type `T`, yielding them through the returned iterator. Documents
-/// that are empty, untagged null-like, or explicitly tagged `!!null` are skipped.
+/// that are empty, untagged null-like, or tagged `!!null` with a null spelling are skipped.
 /// With `DockerComposeWithNulls`, interpolated nulls are also skipped.
 /// Application-tagged roots are deserialized, even with null payloads.
 /// Like [`from_reader_with_options`], BOM-marked UTF-8, UTF-16LE, and UTF-16BE

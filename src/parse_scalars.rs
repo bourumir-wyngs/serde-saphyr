@@ -695,7 +695,7 @@ pub(crate) fn scalar_is_nullish(value: &str, style: &ScalarStyle) -> bool {
 /// `Null`, or `NULL`.
 #[cfg(feature = "deserialize")]
 #[inline]
-fn is_null_spelling(value: &str) -> bool {
+pub(crate) fn is_null_spelling(value: &str) -> bool {
     matches!(value, "" | "~" | "null" | "Null" | "NULL")
 }
 

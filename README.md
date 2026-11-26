@@ -1169,8 +1169,8 @@ be selected by `!timestamp` (unit) or `!timestamp text` (a string newtype). Unit
 require empty or null content. `Tagged<T>` serialization follows the same rule.
 `Option<E>` preserves the same selector and payload: `!timestamp` becomes
 `Some(E::Timestamp)`, and `!maybe null` becomes `Some(E::Maybe(None))` when `Maybe`
-has an optional payload. Untagged empty scalars, `~`, `null`, and the standard `!!null`
-tag still represent `None`. Unknown selectors and invalid payloads produce the same
+has an optional payload. Untagged plain nulls and `!!null` scalars with a null spelling
+represent `None`. Unknown selectors and invalid payloads produce the same
 errors as they do without the outer `Option`.
 
 Multi-document APIs retain application-tagged documents and pass them to the target
