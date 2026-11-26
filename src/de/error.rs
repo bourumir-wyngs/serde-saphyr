@@ -789,6 +789,51 @@ thread_local! {
     static MISSING_FIELD_FALLBACK: Cell<Option<Location>> = const { Cell::new(None) };
 }
 
+// The start of the mapping being deserialized. A missing field is reported here, as
+// serde_yaml does: the first key of a block mapping, or the `{` of a flow mapping. Set by
+// [`MappingStartGuard`] when a mapping is entered and restored when it is left, so a nested
+// mapping does not leak its start into the enclosing one.
+thread_local! {
+    static MAPPING_START: Cell<Option<Location>> = const { Cell::new(None) };
+}
+
+// The start of a mapping that has just ended, kept until the enclosing container reads on.
+// Serde buffers an internally tagged enum's mapping and builds the variant only after
+// `deserialize_map` has returned, so its missing field is raised after the mapping ended,
+// when [`MAPPING_START`] already holds the enclosing mapping's start.
+thread_local! {
+    static ENDED_MAPPING_START: Cell<Option<Location>> = const { Cell::new(None) };
+}
+
+/// RAII guard for [`MAPPING_START`]. Saves the previous value on creation, restores it on drop.
+/// On drop it also records its own start in [`ENDED_MAPPING_START`].
+pub(crate) struct MappingStartGuard {
+    start: Location,
+    prev: Option<Location>,
+}
+
+impl MappingStartGuard {
+    pub(crate) fn new(start: Location) -> Self {
+        ENDED_MAPPING_START.with(|c| c.set(None));
+        let prev = MAPPING_START.with(|c| c.replace(Some(start)));
+        Self { start, prev }
+    }
+}
+
+impl Drop for MappingStartGuard {
+    fn drop(&mut self) {
+        MAPPING_START.with(|c| c.set(self.prev));
+        ENDED_MAPPING_START.with(|c| c.set(Some(self.start)));
+    }
+}
+
+/// Called when a mapping or sequence reads its next key or element. A mapping that ended
+/// before that point is complete, so a missing field raised later belongs to the container
+/// that read on, not to the ended mapping.
+pub(crate) fn clear_ended_mapping_start() {
+    ENDED_MAPPING_START.with(|c| c.set(None));
+}
+
 /// RAII guard for [`MISSING_FIELD_FALLBACK`]. Saves the previous value on creation,
 /// restores it on drop.
 pub(crate) struct MissingFieldLocationGuard {
@@ -2770,10 +2815,15 @@ impl de::Error for Error {
     #[cold]
     #[inline(never)]
     fn missing_field(field: &'static str) -> Self {
-        maybe_attach_fallback_location(Error::SerdeMissingField {
+        let error = Error::SerdeMissingField {
             field,
             location: Location::UNKNOWN,
-        })
+        };
+        let ended = ENDED_MAPPING_START.with(std::cell::Cell::get);
+        match ended.or_else(|| MAPPING_START.with(std::cell::Cell::get)) {
+            Some(start) if start != Location::UNKNOWN => error.with_location(start),
+            _ => maybe_attach_fallback_location(error),
+        }
     }
 }
 
