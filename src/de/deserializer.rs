@@ -296,6 +296,11 @@ struct ScalarView<'de> {
 type EffectiveScalar<'de> = (Cow<'de, str>, SfTag, ScalarStyle, Location);
 
 impl<'de> ScalarView<'de> {
+    #[cfg(feature = "properties")]
+    fn is_tagged_null(&self) -> bool {
+        self.tag == SfTag::Null && crate::parse_scalars::is_null_spelling(&self.effective)
+    }
+
     fn redaction_ctx(&self) -> Option<ScalarRedactionCtx> {
         self.interpolated.then(|| ScalarRedactionCtx {
             raw: self.raw.as_ref().to_owned(),
@@ -379,11 +384,7 @@ pub(crate) fn with_root_redaction_unless_null<'de, 'e, T>(
                 let Some(view) = de.peek_scalar_view()? else {
                     return Err(eof_with_loc(de.ev));
                 };
-                if may_skip_null
-                    && de.ev.property_interpolation().syntax()
-                        == PropertySyntax::DockerComposeWithNulls
-                    && view.tag == SfTag::Null
-                {
+                if may_skip_null && view.is_tagged_null() {
                     let _ = de.ev.next()?;
                     return Ok(None);
                 }
@@ -749,8 +750,8 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
 
     /// Check for a null scalar without consuming it.
     ///
-    /// Structural consumers historically inspect the raw event. Only the opt-in Compose
-    /// null mode also resolves an eligible interpolation here; other modes keep that behavior.
+    /// An explicit `!!null` must still have a null spelling after interpolation.
+    /// Compose with nulls can also assign the null tag to an expanded scalar.
     pub(super) fn peek_null_value(&mut self) -> Result<bool, Error> {
         match self.ev.peek()? {
             Some(Ev::Scalar {
@@ -763,14 +764,14 @@ impl<'de, 'e> YamlDeserializer<'de, 'e> {
                 #[cfg(feature = "properties")]
                 {
                     let (tag, style) = (*tag, *style);
-                    if self.ev.property_interpolation().syntax()
-                        == PropertySyntax::DockerComposeWithNulls
+                    let syntax = self.ev.property_interpolation().syntax();
+                    if (tag == SfTag::Null || syntax == PropertySyntax::DockerComposeWithNulls)
                         && !tag.forces_string()
                         && self.interpolation_possible(tag, style)
                     {
                         return Ok(self
                             .peek_scalar_view()?
-                            .is_some_and(|view| view.tag == SfTag::Null));
+                            .is_some_and(|view| view.is_tagged_null()));
                     }
                 }
 

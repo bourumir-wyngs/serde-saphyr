@@ -24,9 +24,11 @@ are the defaults; no legacy alias mode is provided. See
   `{}`, now reports `UnexpectedValueForUnit` like any other non-null value; null, `~`,
   an empty value, and `!!null` still read. No compatibility option is provided.
 - Require a YAML 1.2 core null spelling (empty, `~`, `null`, `Null`, or `NULL`) for a
-  `!!null`-tagged scalar, as serde_yaml does (#292). `!!null foo` is no longer read as
-  null: unit and untyped targets report `UnexpectedValueForUnit`, `Option<T>` passes it
-  to `T`, which rejects it, and multi-document APIs no longer skip such a document.
+  `!!null`-tagged scalar, including quoted spellings such as `!!null "Null"` (#292).
+  As in serde_yaml, a unit target rejects `!!null foo`. Unit and untyped targets report
+  `UnexpectedValueForUnit`, `Option<T>` passes the scalar to `T`, and multi-document APIs
+  retain the document for deserialization. When property interpolation applies, the
+  expanded text determines whether an explicitly tagged scalar is null.
   No compatibility option is provided.
 - Emit matching local tags on unit enum variants without a redundant `null`
   payload, including through optional and tagged wrappers. Existing explicit

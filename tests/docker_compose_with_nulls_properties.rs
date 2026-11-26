@@ -261,6 +261,34 @@ fn null_documents_are_skipped(#[case] scalar: &str) {
 }
 
 #[rstest]
+#[case::braced(PropertySyntax::Braced, "${NUL}")]
+#[case::bare(PropertySyntax::BracedOrBare, "$NUL")]
+fn braced_expansions_skip_only_explicitly_tagged_null_documents(
+    #[case] syntax: PropertySyntax,
+    #[case] reference: &str,
+) {
+    let yaml = format!("!!null {reference}\n---\n{reference}\n---\nkept\n");
+    for values in document_values::<String>(&yaml, options(syntax)) {
+        assert_eq!(values, ["null", "kept"]);
+    }
+    for values in document_values::<Option<String>>(&yaml, options(syntax)) {
+        assert_eq!(values, [None, Some("kept".to_owned())]);
+    }
+}
+
+#[test]
+fn invalid_explicit_null_expansion_reports_a_document_error() {
+    let yaml = "!!null ${SET}\n---\nkept\n";
+    let options = options(PropertySyntax::Braced);
+    for result in document_results::<String>(yaml, options.clone()) {
+        assert!(result.is_err());
+    }
+    for result in document_results::<Option<String>>(yaml, options) {
+        assert!(result.is_err());
+    }
+}
+
+#[rstest]
 #[case::empty("$EMPTY", "")]
 #[case::string_tag("!!str $MISSING", "")]
 #[case::non_specific_tag("! $MISSING", "")]
@@ -304,6 +332,20 @@ enum NullPayload {
     Maybe(Option<String>),
     Text(String),
     Number(u16),
+}
+
+#[test]
+fn mapped_unit_and_merge_values_check_explicit_null_after_expansion() {
+    let options = options(PropertySyntax::Braced);
+    let unit: NullPayload = from_str_with_options("Unit: !!null ${NUL}", options.clone()).unwrap();
+    assert_eq!(unit, NullPayload::Unit);
+
+    let yaml = "value:\n  <<: !!null ${NUL}\n  name: kept\n";
+    let merged: BTreeMap<String, String> = load(yaml, options.clone()).unwrap();
+    assert_eq!(merged, BTreeMap::from([("name".into(), "kept".into())]));
+
+    assert!(from_str_with_options::<NullPayload>("Unit: !!null ${SET}", options.clone()).is_err());
+    assert!(load::<BTreeMap<String, String>>("value:\n  <<: !!null ${SET}\n", options).is_err());
 }
 
 #[rstest]
